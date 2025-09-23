@@ -1,0 +1,77 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+*__pycache__*
+
+# Virtual environments
+.venv
+
+# IDE
+.vscode
+.idea
+.cursorrules
+.cursor
+
+# claude files (CLAUDE.md should be tracked, removing it from gitignore)
+CLAUDE.md
+PRD.md
+.claude
+
+# context chunks
+context_chunks/
+
+# Sensitive data - IMPORTANT: Never commit these
+.config/
+*.token
+*.key
+*.pem
+*.crt
+credentials/
+secrets/
+api_keys/
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+dev-debug.log
+
+# Dependency directories
+node_modules/
+
+# Environment variables
+.env
+
+# Local environment files
+.env.local
+.env.*.local
+
+# MCP configuration with real API keys
+.mcp.json
+mcp.json
+
+# Editor directories and files
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+*.swp
+*.swo
+*~
+# OS specific
+.DS_Store
+
+# taskmaster
+.taskmaster/
+.rules/
+
+# packages
+package-lock.json
+package.json
