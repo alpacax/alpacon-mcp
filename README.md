@@ -112,7 +112,139 @@ python -c "from server import run; run('sse')"
 
 3. **Token Search**: If tokens are not found in the configured directory, search in other directories as well
 
-## 6. Security Considerations
+## 6. MCP Client Integration
+
+This section explains how to integrate the Alpacon MCP server with various MCP clients like Claude Desktop, Cursor, VS Code, and others.
+
+### Claude Desktop
+
+Add the following configuration to your Claude Desktop settings file:
+
+**macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+**Windows**: `%APPDATA%/Claude/claude_desktop_config.json`
+
+```json
+{
+  "mcpServers": {
+    "alpacon-mcp": {
+      "command": "uv",
+      "args": ["run", "python", "main.py"],
+      "cwd": "/path/to/alpacon-mcp"
+    }
+  }
+}
+```
+
+Alternative using virtual environment directly:
+```json
+{
+  "mcpServers": {
+    "alpacon-mcp": {
+      "command": "/path/to/alpacon-mcp/.venv/bin/python",
+      "args": ["main.py"],
+      "cwd": "/path/to/alpacon-mcp"
+    }
+  }
+}
+```
+
+### Cursor IDE
+
+Create or update `.cursor/mcp_config.json` in your project root:
+
+```json
+{
+  "mcpServers": {
+    "alpacon-mcp": {
+      "command": "uv",
+      "args": ["run", "python", "main.py"],
+      "cwd": "./path/to/alpacon-mcp"
+    }
+  }
+}
+```
+
+### VS Code with MCP Extension
+
+Install the MCP extension and add to your VS Code settings (`settings.json`):
+
+```json
+{
+  "mcp.servers": {
+    "alpacon-mcp": {
+      "command": "uv",
+      "args": ["run", "python", "main.py"],
+      "cwd": "./path/to/alpacon-mcp"
+    }
+  }
+}
+```
+
+### Generic MCP Client Configuration
+
+For any MCP client that supports the Model Context Protocol:
+
+**Using uv (recommended):**
+```json
+{
+  "mcpServers": {
+    "alpacon-mcp": {
+      "command": "uv",
+      "args": ["run", "python", "main.py"],
+      "cwd": "/absolute/path/to/alpacon-mcp",
+      "env": {
+        "ALPACON_DEV": "true"
+      }
+    }
+  }
+}
+```
+
+**Using virtual environment directly:**
+```json
+{
+  "mcpServers": {
+    "alpacon-mcp": {
+      "command": "/absolute/path/to/alpacon-mcp/.venv/bin/python",
+      "args": ["main.py"],
+      "cwd": "/absolute/path/to/alpacon-mcp",
+      "env": {
+        "ALPACON_DEV": "true"
+      }
+    }
+  }
+}
+```
+
+### Configuration Options
+
+- **command**:
+  - `uv` (recommended): Uses uv to run Python with proper virtual environment
+  - `/path/to/.venv/bin/python`: Direct path to virtual environment Python
+  - `python` or `python3`: System Python (not recommended unless globally installed)
+- **args**: Arguments to pass to the server script
+  - With uv: `["run", "python", "main.py"]`
+  - With direct Python: `["main.py"]`
+- **cwd**: Working directory (absolute path recommended)
+- **env**: Environment variables (optional)
+  - `ALPACON_DEV=true`: Use development mode with `.config` directory
+
+### Verification
+
+After configuration, restart your MCP client and verify the connection:
+
+1. Check that the Alpacon MCP server appears in available tools
+2. Test basic functionality with `auth_set_token` tool
+3. Verify authentication resources are accessible
+
+### Troubleshooting
+
+- Ensure Python virtual environment is activated if using one
+- Check that all dependencies are installed (`mcp[cli]`, `httpx`)
+- Verify file paths are absolute and correct
+- Check server logs for connection errors
+
+## 7. Security Considerations
 
 - `config/token.json` and `.config/` directory are included in `.gitignore` and will not be committed to Git
 - Never upload token files to public repositories
