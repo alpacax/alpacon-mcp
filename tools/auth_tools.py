@@ -62,9 +62,9 @@ def auth_set_token(
     return token_manager.set_token(region, workspace, token)
 
 
-# 토큰 제거 도구
+# Token removal tool
 @mcp.tool(
-    description="특정 region과 워크스페이스의 API 토큰을 제거합니다"
+    description="Remove API token for specific region and workspace"
 )
 def auth_remove_token(
     region: str,
@@ -82,11 +82,11 @@ def auth_remove_token(
     return token_manager.remove_token(region, workspace)
 
 
-# 인증 상태 자원
+# Authentication status resource
 @mcp.resource(
     uri="auth://status/{region}/{workspace}",
-    name="인증 상태",
-    description="현재 인증 상태와 사용 가능한 토큰 정보를 확인합니다",
+    name="Authentication Status",
+    description="Check current authentication status and available token information",
     mime_type="application/json"
 )
 def auth_status(region: str, workspace: str) -> Dict[str, any]:
@@ -104,11 +104,11 @@ def auth_status(region: str, workspace: str) -> Dict[str, any]:
     }
 
 
-# Config 정보 자원
+# Config information resource
 @mcp.resource(
     uri="auth://config",
-    name="Config 정보",
-    description="현재 설정 디렉토리 정보를 확인합니다 (개발/프로덕션 모드)",
+    name="Config Information",
+    description="Check current configuration directory information (development/production mode)",
     mime_type="application/json"
 )
 def auth_config_info() -> Dict[str, any]:
@@ -122,11 +122,11 @@ def auth_config_info() -> Dict[str, any]:
     }
 
 
-# 토큰 조회 자원
+# Token query resource
 @mcp.resource(
     uri="auth://tokens/{region}/{workspace}",
-    name="저장된 토큰 조회",
-    description="특정 region과 워크스페이스의 저장된 토큰을 조회합니다",
+    name="Stored Token Query",
+    description="Query stored token for specific region and workspace",
     mime_type="application/json"
 )
 def auth_get_token(region: str, workspace: str) -> Optional[Dict[str, str]]:
@@ -153,7 +153,7 @@ def auth_get_token(region: str, workspace: str) -> Optional[Dict[str, str]]:
     }
 
 
-# 리소스 목록 (FastMCP에서 resource_list 지원하지 않음)
+# Resource list (resource_list not supported in FastMCP)
 # @mcp.resource_list()
 def list_auth_resources() -> List[Dict[str, str]]:
     """List available authentication resources.
@@ -164,14 +164,14 @@ def list_auth_resources() -> List[Dict[str, str]]:
     resources = [
         {
             "uri": "auth://status",
-            "name": "인증 상태",
-            "description": "현재 인증 상태 확인",
+            "name": "Authentication Status",
+            "description": "Check current authentication status",
             "mime_type": "application/json"
         },
         {
             "uri": "auth://config",
-            "name": "Config 정보",
-            "description": "설정 디렉토리 정보 확인 (개발/프로덕션 모드)",
+            "name": "Config Information",
+            "description": "Check configuration directory information (development/production mode)",
             "mime_type": "application/json"
         }
     ]
@@ -183,8 +183,8 @@ def list_auth_resources() -> List[Dict[str, str]]:
         for workspace in env_info["workspaces"]:
             resources.append({
                 "uri": f"auth://tokens/{env}/{workspace}",
-                "name": f"{workspace}.{env} 토큰",
-                "description": f"{env} 환경 {workspace} 워크스페이스 토큰",
+                "name": f"{workspace}.{env} Token",
+                "description": f"{env} environment {workspace} workspace token",
                 "mime_type": "application/json"
             })
 
