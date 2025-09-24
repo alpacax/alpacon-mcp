@@ -1,280 +1,263 @@
 # Alpacon MCP Server
 
-This project is an MCP server based on the FastMCP framework that provides server management, web shell, and web FTP functionality by directly calling the Alpacon API.
+> 🚀 **AI-Powered Server Management** - Connect Claude, Cursor, and other AI tools directly to your Alpacon infrastructure
 
-## 1. Environment Setup
+An advanced MCP (Model Context Protocol) server that bridges AI assistants with Alpacon's server management platform, enabling natural language server administration, monitoring, and automation.
 
-### Install uv (skip if already installed)
+[![Python Version](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://python.org)
+[![MCP Compatible](https://img.shields.io/badge/MCP-Compatible-green.svg)](https://modelcontextprotocol.io)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
+## ✨ What is Alpacon MCP Server?
+
+The Alpacon MCP Server transforms how you interact with your server infrastructure by connecting AI assistants directly to Alpacon's management platform. Instead of switching between interfaces, you can now manage servers, monitor metrics, execute commands, and troubleshoot issues using natural language.
+
+### 🎯 Key Benefits
+
+- **Natural Language Server Management** - "Show me CPU usage for all web servers in production"
+- **AI-Powered Troubleshooting** - "Investigate why server-web-01 is slow and suggest fixes"
+- **Unified Multi-Region Control** - Manage servers across AP1, US1, EU1 regions seamlessly
+- **Real-Time Monitoring Integration** - Access metrics, logs, and events through AI conversations
+- **Secure WebSH & File Operations** - Execute commands and transfer files via AI interface
+
+## 🌟 Core Features
+
+### 🖥️ **Server Management**
+- List and monitor servers across regions
+- Get detailed system information and specifications
+- Create and manage server documentation
+- Multi-workspace and multi-region support
+
+### 📊 **Real-Time Monitoring**
+- CPU, memory, disk, and network metrics
+- Performance trend analysis
+- Top server identification
+- Custom alert rule management
+- Comprehensive health dashboards
+
+### 💻 **System Administration**
+- User and group management
+- Package inventory and updates
+- Network interface monitoring
+- Disk and partition analysis
+- System time and uptime tracking
+
+### 🔧 **Remote Operations**
+- WebSH sessions for secure shell access
+- Command execution with real-time output
+- File upload/download via WebFTP
+- Session management and monitoring
+
+### 📋 **Event Management**
+- Command acknowledgment and tracking
+- Event search and filtering
+- Execution history and status
+- Automated workflow coordination
+
+## 🚀 Quick Start
+
+### 1. **Installation**
 ```bash
-pipx install uv  # or brew install uv
-```
+# Clone and setup
+git clone https://github.com/your-repo/alpacon-mcp.git
+cd alpacon-mcp
 
-### Create virtual environment and install packages
-
-```bash
-uv venv
-source .venv/bin/activate
+# Install with UV (recommended)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+uv venv && source .venv/bin/activate
 uv pip install mcp[cli] httpx
+
+# Test installation
+python main.py --test
 ```
 
-## 2. Token Configuration
-
-### Development Environment Setup (using .config directory)
-
-For development, use the `.config` directory:
-
+### 2. **Configure Authentication**
 ```bash
-# Set development mode environment variable (optional)
-export ALPACON_DEV=true
-
-# Set up tokens in .config directory
-mkdir -p .config
-cp .config/token.json.example .config/token.json
-# Edit token.json file to input actual tokens
-```
-
-### Production Environment Setup (using config directory)
-
-When using with MCP clients, use the `config` directory:
-
-```bash
+# Setup tokens
 mkdir -p config
-# Set up tokens in config/token.json file
+cp config/token.json.example config/token.json
+# Edit with your Alpacon API tokens
 ```
 
-### Token File Format
-
-The new simplified format:
-
+**Token Configuration:**
 ```json
 {
-  "dev": {
-    "alpacax": "your-dev-api-token-here",
-    "test": "your-test-api-token-here"
-  },
   "ap1": {
-    "alpacax": "your-prod-api-token-here",
-    "production": "your-prod-api-token-here"
+    "company-prod": "your-company-prod-token",
+    "company-dev": "your-company-dev-token"
+  },
+  "us1": {
+    "backup-site": "your-backup-token"
   }
 }
 ```
 
-Where:
-- **Region** (first level): Region name like `dev`, `ap1`, `us1`, `eu1`
-- **Workspace** (second level): Workspace/schema name like `alpacax`, `test`, `production`
-- **Token** (value): The actual API token string
+### 3. **Connect to AI Client**
 
-## 3. Running MCP Server
+#### Claude Desktop
+```json
+{
+  "mcpServers": {
+    "alpacon-mcp": {
+      "command": "uv",
+      "args": ["run", "python", "main.py"],
+      "cwd": "/path/to/alpacon-mcp"
+    }
+  }
+}
+```
 
-### Stdio Mode (Default MCP mode)
+#### Cursor IDE
+```json
+{
+  "mcpServers": {
+    "alpacon-mcp": {
+      "command": "uv",
+      "args": ["run", "python", "main.py"],
+      "cwd": "./alpacon-mcp"
+    }
+  }
+}
+```
 
+## 💬 Usage Examples
+
+### Server Health Monitoring
+> *"Give me a comprehensive health check for server web-01 including CPU, memory, and disk usage for the last 24 hours"*
+
+### Performance Analysis
+> *"Show me the top 5 servers with highest CPU usage and analyze performance trends"*
+
+### System Administration
+> *"List all users who can login on server web-01 and check for any users with sudo privileges"*
+
+### Automated Troubleshooting
+> *"Server web-01 is responding slowly. Help me investigate CPU, memory, disk I/O, and network usage to find the bottleneck"*
+
+### Command Execution
+> *"Execute 'systemctl status nginx' on server web-01 and check the service logs"*
+
+## 🔧 Available Tools
+
+### 🖥️ Server Management
+- **servers_list** - List all servers in region/workspace
+- **server_get** - Get detailed server information
+- **server_notes_list** - View server documentation
+- **server_note_create** - Create server notes
+
+### 📊 Monitoring & Metrics
+- **get_cpu_usage** - CPU utilization metrics
+- **get_memory_usage** - Memory consumption data
+- **get_disk_usage** - Disk space and I/O metrics
+- **get_network_traffic** - Network bandwidth usage
+- **get_server_metrics_summary** - Comprehensive health overview
+- **get_cpu_top_servers** - Identify performance leaders
+
+### 💻 System Information
+- **get_system_info** - Hardware specifications and details
+- **get_os_version** - Operating system information
+- **list_system_users** - User account management
+- **list_system_groups** - Group membership details
+- **list_system_packages** - Installed software inventory
+- **get_network_interfaces** - Network configuration
+- **get_disk_info** - Storage device information
+
+### 🔧 Remote Operations
+- **websh_session_create** - Start secure shell sessions
+- **websh_command_execute** - Execute commands remotely
+- **webftp_upload_file** - Transfer files to servers
+- **webftp_downloads_list** - Browse downloadable content
+
+### 📋 Event Management
+- **list_events** - Browse server events and logs
+- **search_events** - Find specific events
+- **acknowledge_command** - Confirm command receipt
+- **finish_command** - Mark commands as complete
+
+### 🔐 Authentication
+- **auth_set_token** - Configure API tokens
+- **auth_remove_token** - Remove stored tokens
+
+## 🌍 Supported Platforms
+
+| Platform | Status | Notes |
+|----------|--------|-------|
+| **Claude Desktop** | ✅ Full Support | Recommended client |
+| **Cursor IDE** | ✅ Full Support | Native MCP integration |
+| **VS Code** | ✅ Full Support | Requires MCP extension |
+| **Continue** | ✅ Full Support | Via MCP protocol |
+| **Other MCP Clients** | ✅ Compatible | Standard protocol support |
+
+## 📖 Documentation
+
+- 📚 **[Complete Documentation](docs/README.md)** - Full documentation index
+- 🚀 **[Getting Started Guide](docs/getting-started.md)** - Step-by-step setup
+- ⚙️ **[Configuration Guide](docs/configuration.md)** - Advanced configuration
+- 🔧 **[API Reference](docs/api-reference.md)** - Complete tool documentation
+- 💡 **[Usage Examples](docs/examples.md)** - Real-world scenarios
+- 🛠️ **[Installation Guide](docs/installation.md)** - Platform-specific setup
+- 🔍 **[Troubleshooting](docs/troubleshooting.md)** - Common issues and solutions
+
+## 🚀 Advanced Usage
+
+### Multi-Region Management
 ```bash
-# Using default config file discovery
+# Configure tokens for multiple regions
+python -c "
+from utils.token_manager import TokenManager
+tm = TokenManager()
+tm.set_token('ap1', 'company-prod', 'ap1-company-prod-token')
+tm.set_token('us1', 'backup-site', 'us1-backup-token')
+tm.set_token('eu1', 'company-eu', 'eu1-company-token')
+"
+```
+
+### Custom Config File
+```bash
+# Use custom config file location
+export ALPACON_CONFIG_FILE="/path/to/custom-tokens.json"
 python main.py
-
-# Using specific config file
-python main.py --config-file /path/to/your/token.json
 ```
 
-### SSE Mode (Server-Sent Events)
-
+### Docker Deployment
 ```bash
-# Using default config file discovery
+# Build and run with Docker
+docker build -t alpacon-mcp .
+docker run -v $(pwd)/config:/app/config:ro alpacon-mcp
+```
+
+### SSE Mode (HTTP Transport)
+```bash
+# Run in Server-Sent Events mode for web integration
 python main_sse.py
-
-# Using specific config file
-python main_sse.py --config-file /path/to/your/token.json
+# Server available at http://localhost:8005
 ```
 
-### Direct Execution
+## 🔒 Security & Best Practices
 
-```bash
-# Stdio mode
-python -c "from server import run; run('stdio')"
+- **Secure Token Storage** - Tokens encrypted and never committed to git
+- **Region-Based Access Control** - Separate tokens per environment
+- **Audit Logging** - All operations logged for security review
+- **Connection Validation** - API endpoints verified before execution
 
-# SSE mode
-python -c "from server import run; run('sse')"
-```
+## 🤝 Contributing
 
-## 4. Available MCP Tools
+We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
 
-### Authentication Management
-- `auth_set_token`: Set API token
-- `auth_remove_token`: Remove API token
-- `alpacon_login`: Alpacon server login (legacy compatibility)
-- `alpacon_logout`: Alpacon server logout (legacy compatibility)
+- 🐛 **Bug Reports** - Use GitHub issues
+- 💡 **Feature Requests** - Open discussions
+- 📝 **Documentation** - Help improve guides
+- 🔧 **Code Contributions** - Submit pull requests
 
-### Authentication Resources
-- `auth://status`: Check authentication status
-- `auth://config`: Check configuration directory information
-- `auth://tokens/{env}/{workspace}`: Query specific token
+## 📄 License
 
-## 5. Configuration Directory Priority
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-1. **Development Mode**: Use `.config` directory with priority
-   - When `.config` directory exists or
-   - When `ALPACON_DEV=true` environment variable is set
+---
 
-2. **Production Mode**: Use `config` directory
-   - General MCP client environment
+**Ready to transform your server management experience?**
+- 📖 Start with our [Getting Started Guide](docs/getting-started.md)
+- 🔧 Explore the [API Reference](docs/api-reference.md)
+- 💬 Join our community discussions
 
-3. **Token Search**: If tokens are not found in the configured directory, search in other directories as well
-
-## 6. MCP Client Integration
-
-This section explains how to integrate the Alpacon MCP server with various MCP clients like Claude Desktop, Cursor, VS Code, and others.
-
-### Claude Desktop
-
-Add the following configuration to your Claude Desktop settings file:
-
-**macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
-**Windows**: `%APPDATA%/Claude/claude_desktop_config.json`
-
-```json
-{
-  "mcpServers": {
-    "alpacon-mcp": {
-      "command": "uv",
-      "args": ["run", "python", "main.py"],
-      "cwd": "/path/to/alpacon-mcp"
-    }
-  }
-}
-```
-
-Alternative using virtual environment directly:
-```json
-{
-  "mcpServers": {
-    "alpacon-mcp": {
-      "command": "/path/to/alpacon-mcp/.venv/bin/python",
-      "args": ["main.py"],
-      "cwd": "/path/to/alpacon-mcp"
-    }
-  }
-}
-```
-
-### Cursor IDE
-
-Create or update `.cursor/mcp_config.json` in your project root:
-
-```json
-{
-  "mcpServers": {
-    "alpacon-mcp": {
-      "command": "uv",
-      "args": ["run", "python", "main.py"],
-      "cwd": "./path/to/alpacon-mcp"
-    }
-  }
-}
-```
-
-### VS Code with MCP Extension
-
-Install the MCP extension and add to your VS Code settings (`settings.json`):
-
-```json
-{
-  "mcp.servers": {
-    "alpacon-mcp": {
-      "command": "uv",
-      "args": ["run", "python", "main.py"],
-      "cwd": "./path/to/alpacon-mcp"
-    }
-  }
-}
-```
-
-### Generic MCP Client Configuration
-
-For any MCP client that supports the Model Context Protocol:
-
-**Using uv (recommended):**
-```json
-{
-  "mcpServers": {
-    "alpacon-mcp": {
-      "command": "uv",
-      "args": ["run", "python", "main.py"],
-      "cwd": "/absolute/path/to/alpacon-mcp",
-      "env": {
-        "ALPACON_DEV": "true"
-      }
-    }
-  }
-}
-```
-
-**Using virtual environment directly:**
-```json
-{
-  "mcpServers": {
-    "alpacon-mcp": {
-      "command": "/absolute/path/to/alpacon-mcp/.venv/bin/python",
-      "args": ["main.py"],
-      "cwd": "/absolute/path/to/alpacon-mcp",
-      "env": {
-        "ALPACON_DEV": "true"
-      }
-    }
-  }
-}
-```
-
-**Using custom config file path:**
-```json
-{
-  "mcpServers": {
-    "alpacon-mcp": {
-      "command": "uv",
-      "args": ["run", "python", "main.py", "--config-file", "/path/to/your/custom-token.json"],
-      "cwd": "/absolute/path/to/alpacon-mcp"
-    }
-  }
-}
-```
-
-### Configuration Options
-
-- **command**:
-  - `uv` (recommended): Uses uv to run Python with proper virtual environment
-  - `/path/to/.venv/bin/python`: Direct path to virtual environment Python
-  - `python` or `python3`: System Python (not recommended unless globally installed)
-- **args**: Arguments to pass to the server script
-  - With uv: `["run", "python", "main.py"]`
-  - With direct Python: `["main.py"]`
-  - With custom config: `["run", "python", "main.py", "--config-file", "/path/to/config.json"]`
-- **cwd**: Working directory (absolute path recommended)
-- **env**: Environment variables (optional)
-  - `ALPACON_DEV=true`: Use development mode with `.config` directory
-
-### Config File Options
-
-- **Default config discovery**: Uses `.config/token.json` (dev mode) or `config/token.json` (prod mode)
-- **Custom config path**: Use `--config-file` argument to specify exact path to your token configuration file
-- **Priority**: Custom config file > environment variable > default discovery
-
-### Verification
-
-After configuration, restart your MCP client and verify the connection:
-
-1. Check that the Alpacon MCP server appears in available tools
-2. Test basic functionality with `auth_set_token` tool
-3. Verify authentication resources are accessible
-
-### Troubleshooting
-
-- Ensure Python virtual environment is activated if using one
-- Check that all dependencies are installed (`mcp[cli]`, `httpx`)
-- Verify file paths are absolute and correct
-- Check server logs for connection errors
-
-## 7. Security Considerations
-
-- `config/token.json` and `.config/` directory are included in `.gitignore` and will not be committed to Git
-- Never upload token files to public repositories
-- Keep development and production tokens separated 
+*Built with ❤️ for the Alpacon ecosystem* 

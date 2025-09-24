@@ -9,38 +9,25 @@ from typing import Dict, Optional, Any
 class TokenManager:
     """Manages API tokens for different regions and workspaces."""
 
-    def __init__(self, config_dir: Optional[str] = None, config_file: Optional[str] = None):
+    def __init__(self, config_file: Optional[str] = None):
         """Initialize token manager.
 
         Args:
-            config_dir: Directory to store token configuration.
-                       If None, will try .config first (dev), then config (prod)
-            config_file: Full path to config file. If provided, this takes precedence over config_dir
+            config_file: Full path to config file. If None, uses ALPACON_CONFIG_FILE env var
+                        or defaults to config/token.json
         """
         if config_file:
             # Use specific config file path
             self.token_file = Path(config_file)
-            self.config_dir = self.token_file.parent
-            self.config_dirs = [self.config_dir]
-        elif config_dir:
-            self.config_dir = Path(config_dir)
-            self.config_dirs = [self.config_dir]
-            self.token_file = self.config_dir / "token.json"
         else:
-            # Development: .config (hidden directory for local dev)
-            # Production: config (standard directory for MCP)
-            self.dev_config = Path(".config")
-            self.prod_config = Path("config")
-            self.config_dirs = [self.dev_config, self.prod_config]
-
-            # Use .config if it exists or if we're in development mode
-            # Otherwise use config for production
-            if self.dev_config.exists() or os.getenv("ALPACON_DEV", "false").lower() == "true":
-                self.config_dir = self.dev_config
+            # Check environment variable first, then default
+            env_config_file = os.getenv("ALPACON_CONFIG_FILE")
+            if env_config_file:
+                self.token_file = Path(env_config_file)
             else:
-                self.config_dir = self.prod_config
+                self.token_file = Path("config/token.json")
 
-            self.token_file = self.config_dir / "token.json"
+        self.config_dir = self.token_file.parent
 
         # Ensure config directory exists
         self.config_dir.mkdir(exist_ok=True)
@@ -49,34 +36,15 @@ class TokenManager:
     def _load_tokens(self) -> Dict[str, Any]:
         """Load tokens from configuration file.
 
-        Tries to load from multiple config directories in order.
-
         Returns:
             Dictionary containing token data
         """
-        # Try to load from primary config directory first
         if self.token_file.exists():
             try:
                 with open(self.token_file, 'r') as f:
                     return json.load(f)
             except (json.JSONDecodeError, IOError):
                 pass
-
-        # If using automatic config detection, try other directories
-        if hasattr(self, 'config_dirs') and len(self.config_dirs) > 1:
-            for config_dir in self.config_dirs:
-                if config_dir != self.config_dir:
-                    token_file = config_dir / "token.json"
-                    if token_file.exists():
-                        try:
-                            with open(token_file, 'r') as f:
-                                tokens = json.load(f)
-                                # Copy tokens to primary config if they exist
-                                if tokens:
-                                    self._save_tokens_to_file(tokens, self.token_file)
-                                return tokens
-                        except (json.JSONDecodeError, IOError):
-                            continue
 
         return {}
 
@@ -194,7 +162,7 @@ class TokenManager:
             "total_tokens": total_tokens,
             "regions": regions,
             "config_dir": str(self.config_dir),
-            "is_dev_mode": str(self.config_dir).endswith(".config")
+            "token_file": str(self.token_file)
         }
 
     def get_config_info(self) -> Dict[str, Any]:
@@ -203,20 +171,9 @@ class TokenManager:
         Returns:
             Configuration directory details
         """
-        available_configs = []
-        if hasattr(self, 'config_dirs'):
-            for config_dir in self.config_dirs:
-                token_file = config_dir / "token.json"
-                available_configs.append({
-                    "dir": str(config_dir),
-                    "exists": config_dir.exists(),
-                    "token_file_exists": token_file.exists(),
-                    "is_current": config_dir == self.config_dir
-                })
-
         return {
-            "current_config_dir": str(self.config_dir),
-            "is_dev_mode": str(self.config_dir).endswith(".config"),
-            "available_configs": available_configs,
-            "env_var_dev_mode": os.getenv("ALPACON_DEV", "false").lower() == "true"
+            "config_dir": str(self.config_dir),
+            "token_file": str(self.token_file),
+            "token_file_exists": self.token_file.exists(),
+            "env_config_file": os.getenv("ALPACON_CONFIG_FILE")
         }
