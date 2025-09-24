@@ -244,6 +244,36 @@ class AlpaconHTTPClient:
             json_data=data
         )
 
+    async def patch(
+        self,
+        region: str,
+        workspace: str,
+        endpoint: str,
+        token: str,
+        data: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """Execute PATCH request.
+
+        Args:
+            region: Region (ap1, us1, eu1, etc.)
+            workspace: Workspace name
+            endpoint: API endpoint path
+            token: API token
+            data: Request body data
+
+        Returns:
+            Response data
+        """
+        base_url = self.get_base_url(region, workspace)
+        full_url = urljoin(base_url, endpoint)
+
+        return await self.request(
+            method="PATCH",
+            url=full_url,
+            token=token,
+            json_data=data
+        )
+
     async def delete(
         self,
         region: str,

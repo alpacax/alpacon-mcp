@@ -11,7 +11,7 @@ token_manager = TokenManager()
 
 
 @mcp.tool(description="Create a new WebFTP session")
-def webftp_session_create(
+async def webftp_session_create(
     server_id: str,
     username: str,
     region: str = "ap1",
@@ -30,18 +30,11 @@ def webftp_session_create(
     """
     try:
         # Get stored token
-        token_info = token_manager.get_token(region, workspace)
-        if not token_info:
-            return {
-                "status": "error",
-                "message": f"No token found for {workspace}.{region}. Please set token first."
-            }
-
-        token = token_info.get("token")
+        token = token_manager.get_token(region, workspace)
         if not token:
             return {
                 "status": "error",
-                "message": f"Invalid token data for {workspace}.{region}"
+                "message": f"No token found for {workspace}.{region}. Please set token first."
             }
 
         # Prepare FTP session data
@@ -51,16 +44,13 @@ def webftp_session_create(
         }
 
         # Make async call to create FTP session
-        result = asyncio.run(
-            http_client.post(
+        result = await http_client.post(
                 region=region,
                 workspace=workspace,
                 endpoint="/api/webftp/sessions/",
                 token=token,
                 data=session_data
-            )
         )
-
         return {
             "status": "success",
             "data": result,
@@ -78,7 +68,7 @@ def webftp_session_create(
 
 
 @mcp.tool(description="Get list of WebFTP sessions")
-def webftp_sessions_list(
+async def webftp_sessions_list(
     server_id: Optional[str] = None,
     region: str = "ap1",
     workspace: str = "alpamon"
@@ -95,18 +85,11 @@ def webftp_sessions_list(
     """
     try:
         # Get stored token
-        token_info = token_manager.get_token(region, workspace)
-        if not token_info:
-            return {
-                "status": "error",
-                "message": f"No token found for {workspace}.{region}. Please set token first."
-            }
-
-        token = token_info.get("token")
+        token = token_manager.get_token(region, workspace)
         if not token:
             return {
                 "status": "error",
-                "message": f"Invalid token data for {workspace}.{region}"
+                "message": f"No token found for {workspace}.{region}. Please set token first."
             }
 
         # Prepare query parameters
@@ -115,16 +98,13 @@ def webftp_sessions_list(
             params["server"] = server_id
 
         # Make async call to get FTP sessions
-        result = asyncio.run(
-            http_client.get(
+        result = await http_client.get(
                 region=region,
                 workspace=workspace,
                 endpoint="/api/webftp/sessions/",
                 token=token,
                 params=params
-            )
         )
-
         return {
             "status": "success",
             "data": result,
@@ -141,7 +121,7 @@ def webftp_sessions_list(
 
 
 @mcp.tool(description="Upload a file through WebFTP session")
-def webftp_upload_file(
+async def webftp_upload_file(
     session_id: str,
     file_path: str,
     file_data: str,
@@ -162,18 +142,11 @@ def webftp_upload_file(
     """
     try:
         # Get stored token
-        token_info = token_manager.get_token(region, workspace)
-        if not token_info:
-            return {
-                "status": "error",
-                "message": f"No token found for {workspace}.{region}. Please set token first."
-            }
-
-        token = token_info.get("token")
+        token = token_manager.get_token(region, workspace)
         if not token:
             return {
                 "status": "error",
-                "message": f"Invalid token data for {workspace}.{region}"
+                "message": f"No token found for {workspace}.{region}. Please set token first."
             }
 
         # Prepare upload data
@@ -183,16 +156,13 @@ def webftp_upload_file(
         }
 
         # Make async call to upload file
-        result = asyncio.run(
-            http_client.post(
+        result = await http_client.post(
                 region=region,
                 workspace=workspace,
                 endpoint=f"/api/webftp/sessions/{session_id}/upload/",
                 token=token,
                 data=upload_data
-            )
         )
-
         return {
             "status": "success",
             "data": result,
@@ -210,7 +180,7 @@ def webftp_upload_file(
 
 
 @mcp.tool(description="Get list of downloadable files from WebFTP session")
-def webftp_downloads_list(
+async def webftp_downloads_list(
     session_id: str,
     region: str = "ap1",
     workspace: str = "alpamon"
@@ -227,28 +197,19 @@ def webftp_downloads_list(
     """
     try:
         # Get stored token
-        token_info = token_manager.get_token(region, workspace)
-        if not token_info:
+        token = token_manager.get_token(region, workspace)
+        if not token:
             return {
                 "status": "error",
                 "message": f"No token found for {workspace}.{region}. Please set token first."
             }
 
-        token = token_info.get("token")
-        if not token:
-            return {
-                "status": "error",
-                "message": f"Invalid token data for {workspace}.{region}"
-            }
-
         # Make async call to get downloads list
-        result = asyncio.run(
-            http_client.get(
+        result = await http_client.get(
                 region=region,
                 workspace=workspace,
                 endpoint=f"/api/webftp/sessions/{session_id}/downloads/",
                 token=token
-            )
         )
 
         return {
@@ -273,7 +234,7 @@ def webftp_downloads_list(
     description="Get list of WebFTP sessions",
     mime_type="application/json"
 )
-def webftp_sessions_resource(region: str, workspace: str) -> Dict[str, Any]:
+async def webftp_sessions_resource(region: str, workspace: str) -> Dict[str, Any]:
     """Get WebFTP sessions as a resource.
 
     Args:
@@ -296,7 +257,7 @@ def webftp_sessions_resource(region: str, workspace: str) -> Dict[str, Any]:
     description="Get list of downloadable files from WebFTP session",
     mime_type="application/json"
 )
-def webftp_downloads_resource(session_id: str, region: str, workspace: str) -> Dict[str, Any]:
+async def webftp_downloads_resource(session_id: str, region: str, workspace: str) -> Dict[str, Any]:
     """Get WebFTP downloads as a resource.
 
     Args:

@@ -11,7 +11,7 @@ token_manager = TokenManager()
 
 
 @mcp.tool(description="Get system hardware information")
-def system_info(
+async def system_info(
     server_id: str,
     region: str = "ap1",
     workspace: str = "alpamon"
@@ -28,28 +28,19 @@ def system_info(
     """
     try:
         # Get stored token
-        token_info = token_manager.get_token(region, workspace)
-        if not token_info:
+        token = token_manager.get_token(region, workspace)
+        if not token:
             return {
                 "status": "error",
                 "message": f"No token found for {workspace}.{region}. Please set token first."
             }
 
-        token = token_info.get("token")
-        if not token:
-            return {
-                "status": "error",
-                "message": f"Invalid token data for {workspace}.{region}"
-            }
-
         # Make async call to get system info
-        result = asyncio.run(
-            http_client.get(
-                region=region,
-                workspace=workspace,
-                endpoint=f"/api/servers/{server_id}/system/info/",
-                token=token
-            )
+        result = await http_client.get(
+            region=region,
+            workspace=workspace,
+            endpoint=f"/api/servers/{server_id}/system/info/",
+            token=token
         )
 
         return {
@@ -68,7 +59,7 @@ def system_info(
 
 
 @mcp.tool(description="Get system users list")
-def system_users_list(
+async def system_users_list(
     server_id: str,
     region: str = "ap1",
     workspace: str = "alpamon"
@@ -85,28 +76,19 @@ def system_users_list(
     """
     try:
         # Get stored token
-        token_info = token_manager.get_token(region, workspace)
-        if not token_info:
+        token = token_manager.get_token(region, workspace)
+        if not token:
             return {
                 "status": "error",
                 "message": f"No token found for {workspace}.{region}. Please set token first."
             }
 
-        token = token_info.get("token")
-        if not token:
-            return {
-                "status": "error",
-                "message": f"Invalid token data for {workspace}.{region}"
-            }
-
         # Make async call to get users list
-        result = asyncio.run(
-            http_client.get(
+        result = await http_client.get(
                 region=region,
                 workspace=workspace,
                 endpoint=f"/api/servers/{server_id}/system/users/",
                 token=token
-            )
         )
 
         return {
@@ -125,7 +107,7 @@ def system_users_list(
 
 
 @mcp.tool(description="Get system packages list")
-def system_packages_list(
+async def system_packages_list(
     server_id: str,
     region: str = "ap1",
     workspace: str = "alpamon"
@@ -142,28 +124,19 @@ def system_packages_list(
     """
     try:
         # Get stored token
-        token_info = token_manager.get_token(region, workspace)
-        if not token_info:
+        token = token_manager.get_token(region, workspace)
+        if not token:
             return {
                 "status": "error",
                 "message": f"No token found for {workspace}.{region}. Please set token first."
             }
 
-        token = token_info.get("token")
-        if not token:
-            return {
-                "status": "error",
-                "message": f"Invalid token data for {workspace}.{region}"
-            }
-
         # Make async call to get packages list
-        result = asyncio.run(
-            http_client.get(
+        result = await http_client.get(
                 region=region,
                 workspace=workspace,
                 endpoint=f"/api/servers/{server_id}/system/packages/",
                 token=token
-            )
         )
 
         return {
@@ -182,7 +155,7 @@ def system_packages_list(
 
 
 @mcp.tool(description="Get system disk information")
-def system_disk_info(
+async def system_disk_info(
     server_id: str,
     region: str = "ap1",
     workspace: str = "alpamon"
@@ -199,28 +172,19 @@ def system_disk_info(
     """
     try:
         # Get stored token
-        token_info = token_manager.get_token(region, workspace)
-        if not token_info:
+        token = token_manager.get_token(region, workspace)
+        if not token:
             return {
                 "status": "error",
                 "message": f"No token found for {workspace}.{region}. Please set token first."
             }
 
-        token = token_info.get("token")
-        if not token:
-            return {
-                "status": "error",
-                "message": f"Invalid token data for {workspace}.{region}"
-            }
-
         # Make async call to get disk info
-        result = asyncio.run(
-            http_client.get(
+        result = await http_client.get(
                 region=region,
                 workspace=workspace,
                 endpoint=f"/api/servers/{server_id}/system/disk/",
                 token=token
-            )
         )
 
         return {

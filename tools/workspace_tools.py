@@ -11,7 +11,7 @@ token_manager = TokenManager()
 
 
 @mcp.tool(description="Get list of available workspaces")
-def workspace_list(
+async def workspace_list(
     region: str = "ap1"
 ) -> Dict[str, Any]:
     """Get list of available workspaces.
@@ -54,7 +54,7 @@ def workspace_list(
 
 
 @mcp.tool(description="Get user settings")
-def user_settings_get(
+async def user_settings_get(
     region: str = "ap1",
     workspace: str = "alpamon"
 ) -> Dict[str, Any]:
@@ -69,28 +69,19 @@ def user_settings_get(
     """
     try:
         # Get stored token
-        token_info = token_manager.get_token(region, workspace)
-        if not token_info:
+        token = token_manager.get_token(region, workspace)
+        if not token:
             return {
                 "status": "error",
                 "message": f"No token found for {workspace}.{region}. Please set token first."
             }
 
-        token = token_info.get("token")
-        if not token:
-            return {
-                "status": "error",
-                "message": f"Invalid token data for {workspace}.{region}"
-            }
-
         # Make async call to get user settings
-        result = asyncio.run(
-            http_client.get(
+        result = await http_client.get(
                 region=region,
                 workspace=workspace,
                 endpoint="/api/user/settings/",
                 token=token
-            )
         )
 
         return {
@@ -108,7 +99,7 @@ def user_settings_get(
 
 
 @mcp.tool(description="Update user settings")
-def user_settings_update(
+async def user_settings_update(
     settings: Dict[str, Any],
     region: str = "ap1",
     workspace: str = "alpamon"
@@ -125,31 +116,21 @@ def user_settings_update(
     """
     try:
         # Get stored token
-        token_info = token_manager.get_token(region, workspace)
-        if not token_info:
+        token = token_manager.get_token(region, workspace)
+        if not token:
             return {
                 "status": "error",
                 "message": f"No token found for {workspace}.{region}. Please set token first."
             }
 
-        token = token_info.get("token")
-        if not token:
-            return {
-                "status": "error",
-                "message": f"Invalid token data for {workspace}.{region}"
-            }
-
         # Make async call to update user settings
-        result = asyncio.run(
-            http_client.patch(
+        result = await http_client.patch(
                 region=region,
                 workspace=workspace,
                 endpoint="/api/user/settings/",
                 token=token,
                 data=settings
-            )
         )
-
         return {
             "status": "success",
             "data": result,
@@ -166,7 +147,7 @@ def user_settings_update(
 
 
 @mcp.tool(description="Get user profile information")
-def user_profile_get(
+async def user_profile_get(
     region: str = "ap1",
     workspace: str = "alpamon"
 ) -> Dict[str, Any]:
@@ -181,28 +162,19 @@ def user_profile_get(
     """
     try:
         # Get stored token
-        token_info = token_manager.get_token(region, workspace)
-        if not token_info:
+        token = token_manager.get_token(region, workspace)
+        if not token:
             return {
                 "status": "error",
                 "message": f"No token found for {workspace}.{region}. Please set token first."
             }
 
-        token = token_info.get("token")
-        if not token:
-            return {
-                "status": "error",
-                "message": f"Invalid token data for {workspace}.{region}"
-            }
-
         # Make async call to get user profile
-        result = asyncio.run(
-            http_client.get(
+        result = await http_client.get(
                 region=region,
                 workspace=workspace,
                 endpoint="/api/user/profile/",
                 token=token
-            )
         )
 
         return {
@@ -248,7 +220,7 @@ def workspaces_resource(region: str) -> Dict[str, Any]:
     description="Get user settings",
     mime_type="application/json"
 )
-def user_settings_resource(region: str, workspace: str) -> Dict[str, Any]:
+async def user_settings_resource(region: str, workspace: str) -> Dict[str, Any]:
     """Get user settings as a resource.
 
     Args:

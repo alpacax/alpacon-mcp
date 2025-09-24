@@ -45,37 +45,46 @@ mkdir -p config
 
 ### Token File Format
 
+The new simplified format:
+
 ```json
 {
   "dev": {
-    "alpacax": {
-      "token": "your-dev-api-token-here",
-      "workspace": "alpacax",
-      "env": "dev"
-    }
+    "alpacax": "your-dev-api-token-here",
+    "test": "your-test-api-token-here"
   },
-  "prod": {
-    "alpacax": {
-      "token": "your-prod-api-token-here",
-      "workspace": "alpacax",
-      "env": "prod"
-    }
+  "ap1": {
+    "alpacax": "your-prod-api-token-here",
+    "production": "your-prod-api-token-here"
   }
 }
 ```
+
+Where:
+- **Region** (first level): Region name like `dev`, `ap1`, `us1`, `eu1`
+- **Workspace** (second level): Workspace/schema name like `alpacax`, `test`, `production`
+- **Token** (value): The actual API token string
 
 ## 3. Running MCP Server
 
 ### Stdio Mode (Default MCP mode)
 
 ```bash
+# Using default config file discovery
 python main.py
+
+# Using specific config file
+python main.py --config-file /path/to/your/token.json
 ```
 
 ### SSE Mode (Server-Sent Events)
 
 ```bash
+# Using default config file discovery
 python main_sse.py
+
+# Using specific config file
+python main_sse.py --config-file /path/to/your/token.json
 ```
 
 ### Direct Execution
@@ -216,6 +225,19 @@ For any MCP client that supports the Model Context Protocol:
 }
 ```
 
+**Using custom config file path:**
+```json
+{
+  "mcpServers": {
+    "alpacon-mcp": {
+      "command": "uv",
+      "args": ["run", "python", "main.py", "--config-file", "/path/to/your/custom-token.json"],
+      "cwd": "/absolute/path/to/alpacon-mcp"
+    }
+  }
+}
+```
+
 ### Configuration Options
 
 - **command**:
@@ -225,9 +247,16 @@ For any MCP client that supports the Model Context Protocol:
 - **args**: Arguments to pass to the server script
   - With uv: `["run", "python", "main.py"]`
   - With direct Python: `["main.py"]`
+  - With custom config: `["run", "python", "main.py", "--config-file", "/path/to/config.json"]`
 - **cwd**: Working directory (absolute path recommended)
 - **env**: Environment variables (optional)
   - `ALPACON_DEV=true`: Use development mode with `.config` directory
+
+### Config File Options
+
+- **Default config discovery**: Uses `.config/token.json` (dev mode) or `config/token.json` (prod mode)
+- **Custom config path**: Use `--config-file` argument to specify exact path to your token configuration file
+- **Priority**: Custom config file > environment variable > default discovery
 
 ### Verification
 

@@ -9,16 +9,23 @@ from typing import Dict, Optional, Any
 class TokenManager:
     """Manages API tokens for different regions and workspaces."""
 
-    def __init__(self, config_dir: Optional[str] = None):
+    def __init__(self, config_dir: Optional[str] = None, config_file: Optional[str] = None):
         """Initialize token manager.
 
         Args:
             config_dir: Directory to store token configuration.
                        If None, will try .config first (dev), then config (prod)
+            config_file: Full path to config file. If provided, this takes precedence over config_dir
         """
-        if config_dir:
+        if config_file:
+            # Use specific config file path
+            self.token_file = Path(config_file)
+            self.config_dir = self.token_file.parent
+            self.config_dirs = [self.config_dir]
+        elif config_dir:
             self.config_dir = Path(config_dir)
             self.config_dirs = [self.config_dir]
+            self.token_file = self.config_dir / "token.json"
         else:
             # Development: .config (hidden directory for local dev)
             # Production: config (standard directory for MCP)
@@ -33,9 +40,10 @@ class TokenManager:
             else:
                 self.config_dir = self.prod_config
 
+            self.token_file = self.config_dir / "token.json"
+
         # Ensure config directory exists
         self.config_dir.mkdir(exist_ok=True)
-        self.token_file = self.config_dir / "token.json"
         self.tokens = self._load_tokens()
 
     def _load_tokens(self) -> Dict[str, Any]:
@@ -102,11 +110,8 @@ class TokenManager:
         if region not in self.tokens:
             self.tokens[region] = {}
 
-        self.tokens[region][workspace] = {
-            "token": token,
-            "workspace": workspace,
-            "region": region
-        }
+        # Simplified structure: region -> workspace -> token (string only)
+        self.tokens[region][workspace] = token
 
         self._save_tokens()
 
@@ -117,7 +122,7 @@ class TokenManager:
             "workspace": workspace
         }
 
-    def get_token(self, region: str, workspace: str) -> Optional[Dict[str, str]]:
+    def get_token(self, region: str, workspace: str) -> Optional[str]:
         """Get token for specific region and workspace.
 
         Args:
@@ -125,7 +130,7 @@ class TokenManager:
             workspace: Workspace name
 
         Returns:
-            Token information if found, None otherwise
+            Token string if found, None otherwise
         """
         if region in self.tokens and workspace in self.tokens[region]:
             return self.tokens[region][workspace]

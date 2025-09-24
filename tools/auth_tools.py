@@ -1,12 +1,14 @@
 """Authentication tools for Alpacon MCP server."""
 
+import os
 from typing import Dict, Optional, List
 from server import mcp
 from utils.auth import login, logout, get_token
 from utils.token_manager import TokenManager
 
-# Initialize token manager
-token_manager = TokenManager()
+# Initialize token manager with optional config file from environment
+config_file = os.getenv("ALPACON_CONFIG_FILE")
+token_manager = TokenManager(config_file=config_file)
 
 
 # Login function registered as MCP Tool
@@ -139,11 +141,15 @@ def auth_get_token(region: str, workspace: str) -> Optional[Dict[str, str]]:
     Returns:
         Token information if found
     """
-    token_info = token_manager.get_token(region, workspace)
+    token = token_manager.get_token(region, workspace)
 
-    if token_info:
+    if token:
         return {
-            "content": token_info
+            "content": {
+                "token": token,
+                "region": region,
+                "workspace": workspace
+            }
         }
 
     return {
@@ -178,13 +184,13 @@ def list_auth_resources() -> List[Dict[str, str]]:
 
     # Add token resources for each stored token
     auth_status_data = token_manager.get_auth_status()
-    for env_info in auth_status_data["environments"]:
-        env = env_info["env"]
-        for workspace in env_info["workspaces"]:
+    for region_info in auth_status_data["regions"]:
+        region = region_info["region"]
+        for workspace in region_info["workspaces"]:
             resources.append({
-                "uri": f"auth://tokens/{env}/{workspace}",
-                "name": f"{workspace}.{env} Token",
-                "description": f"{env} environment {workspace} workspace token",
+                "uri": f"auth://tokens/{region}/{workspace}",
+                "name": f"{workspace}.{region} Token",
+                "description": f"{region} region {workspace} workspace token",
                 "mime_type": "application/json"
             })
 

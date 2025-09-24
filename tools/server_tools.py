@@ -11,7 +11,7 @@ token_manager = TokenManager()
 
 
 @mcp.tool(description="Get list of servers")
-def servers_list(region: str = "ap1", workspace: str = "alpamon") -> Dict[str, Any]:
+async def servers_list(region: str = "ap1", workspace: str = "alpamon") -> Dict[str, Any]:
     """Get list of servers.
 
     Args:
@@ -23,28 +23,19 @@ def servers_list(region: str = "ap1", workspace: str = "alpamon") -> Dict[str, A
     """
     try:
         # Get stored token
-        token_info = token_manager.get_token(region, workspace)
-        if not token_info:
+        token = token_manager.get_token(region, workspace)
+        if not token:
             return {
                 "status": "error",
                 "message": f"No token found for {workspace}.{region}. Please set token first."
             }
 
-        token = token_info.get("token")
-        if not token:
-            return {
-                "status": "error",
-                "message": f"Invalid token data for {workspace}.{region}"
-            }
-
         # Make async call to servers endpoint
-        result = asyncio.run(
-            http_client.get(
-                region=region,
-                workspace=workspace,
-                endpoint="/api/servers/servers/",
-                token=token
-            )
+        result = await http_client.get(
+            region=region,
+            workspace=workspace,
+            endpoint="/api/servers/servers/",
+            token=token
         )
 
         return {
@@ -62,7 +53,7 @@ def servers_list(region: str = "ap1", workspace: str = "alpamon") -> Dict[str, A
 
 
 @mcp.tool(description="Get detailed information of a specific server")
-def server_get(
+async def server_get(
     server_id: str,
     region: str = "ap1",
     workspace: str = "alpamon"
@@ -79,28 +70,19 @@ def server_get(
     """
     try:
         # Get stored token
-        token_info = token_manager.get_token(region, workspace)
-        if not token_info:
+        token = token_manager.get_token(region, workspace)
+        if not token:
             return {
                 "status": "error",
                 "message": f"No token found for {workspace}.{region}. Please set token first."
             }
 
-        token = token_info.get("token")
-        if not token:
-            return {
-                "status": "error",
-                "message": f"Invalid token data for {workspace}.{region}"
-            }
-
         # Make async call to server detail endpoint
-        result = asyncio.run(
-            http_client.get(
-                region=region,
-                workspace=workspace,
-                endpoint=f"/api/servers/{server_id}/",
-                token=token
-            )
+        result = await http_client.get(
+            region=region,
+            workspace=workspace,
+            endpoint=f"/api/servers/{server_id}/",
+            token=token
         )
 
         return {
@@ -119,7 +101,7 @@ def server_get(
 
 
 @mcp.tool(description="Get list of server notes")
-def server_notes_list(
+async def server_notes_list(
     server_id: str,
     region: str = "ap1",
     workspace: str = "alpamon"
@@ -136,28 +118,19 @@ def server_notes_list(
     """
     try:
         # Get stored token
-        token_info = token_manager.get_token(region, workspace)
-        if not token_info:
+        token = token_manager.get_token(region, workspace)
+        if not token:
             return {
                 "status": "error",
                 "message": f"No token found for {workspace}.{region}. Please set token first."
             }
 
-        token = token_info.get("token")
-        if not token:
-            return {
-                "status": "error",
-                "message": f"Invalid token data for {workspace}.{region}"
-            }
-
         # Make async call to server notes endpoint
-        result = asyncio.run(
-            http_client.get(
-                region=region,
-                workspace=workspace,
-                endpoint=f"/api/servers/{server_id}/notes/",
-                token=token
-            )
+        result = await http_client.get(
+            region=region,
+            workspace=workspace,
+            endpoint=f"/api/servers/{server_id}/notes/",
+            token=token
         )
 
         return {
@@ -176,7 +149,7 @@ def server_notes_list(
 
 
 @mcp.tool(description="Create a new note for server")
-def server_note_create(
+async def server_note_create(
     server_id: str,
     title: str,
     content: str,
@@ -197,18 +170,11 @@ def server_note_create(
     """
     try:
         # Get stored token
-        token_info = token_manager.get_token(region, workspace)
-        if not token_info:
-            return {
-                "status": "error",
-                "message": f"No token found for {workspace}.{region}. Please set token first."
-            }
-
-        token = token_info.get("token")
+        token = token_manager.get_token(region, workspace)
         if not token:
             return {
                 "status": "error",
-                "message": f"Invalid token data for {workspace}.{region}"
+                "message": f"No token found for {workspace}.{region}. Please set token first."
             }
 
         # Prepare note data
@@ -218,14 +184,12 @@ def server_note_create(
         }
 
         # Make async call to create note
-        result = asyncio.run(
-            http_client.post(
-                region=region,
-                workspace=workspace,
-                endpoint=f"/api/servers/{server_id}/notes/",
-                token=token,
-                data=note_data
-            )
+        result = await http_client.post(
+            region=region,
+            workspace=workspace,
+            endpoint=f"/api/servers/{server_id}/notes/",
+            token=token,
+            data=note_data
         )
 
         return {
