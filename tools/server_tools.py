@@ -4,19 +4,19 @@ import asyncio
 from typing import Dict, List, Any, Optional
 from server import mcp
 from utils.http_client import http_client
-from utils.token_manager import TokenManager
+from utils.token_manager import get_token_manager
 
-# Initialize token manager
-token_manager = TokenManager()
+# Get global token manager instance
+token_manager = get_token_manager()
 
 
 @mcp.tool(description="Get list of servers")
-async def servers_list(region: str = "ap1", workspace: str = "alpamon") -> Dict[str, Any]:
+async def servers_list(workspace: str, region: str = "ap1") -> Dict[str, Any]:
     """Get list of servers.
 
     Args:
         region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
-        workspace: Workspace name. Defaults to 'alpamon'
+        workspace: Workspace name. Required parameter
 
     Returns:
         Server list response
@@ -55,15 +55,15 @@ async def servers_list(region: str = "ap1", workspace: str = "alpamon") -> Dict[
 @mcp.tool(description="Get detailed information of a specific server")
 async def server_get(
     server_id: str,
+    workspace: str,
     region: str = "ap1",
-    workspace: str = "alpamon"
 ) -> Dict[str, Any]:
     """Get detailed information about a specific server.
 
     Args:
         server_id: Server ID
         region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
-        workspace: Workspace name. Defaults to 'alpamon'
+        workspace: Workspace name. Required parameter
 
     Returns:
         Server details response
@@ -103,15 +103,15 @@ async def server_get(
 @mcp.tool(description="Get list of server notes")
 async def server_notes_list(
     server_id: str,
+    workspace: str,
     region: str = "ap1",
-    workspace: str = "alpamon"
 ) -> Dict[str, Any]:
     """Get list of notes for a specific server.
 
     Args:
         server_id: Server ID
         region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
-        workspace: Workspace name. Defaults to 'alpamon'
+        workspace: Workspace name. Required parameter
 
     Returns:
         Server notes list response
@@ -153,8 +153,8 @@ async def server_note_create(
     server_id: str,
     title: str,
     content: str,
+    workspace: str,
     region: str = "ap1",
-    workspace: str = "alpamon"
 ) -> Dict[str, Any]:
     """Create a new note for a specific server.
 
@@ -163,7 +163,7 @@ async def server_note_create(
         title: Note title
         content: Note content
         region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
-        workspace: Workspace name. Defaults to 'alpamon'
+        workspace: Workspace name. Required parameter
 
     Returns:
         Note creation response

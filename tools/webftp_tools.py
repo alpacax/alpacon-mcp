@@ -4,18 +4,18 @@ import asyncio
 from typing import Dict, Any, Optional
 from server import mcp
 from utils.http_client import http_client
-from utils.token_manager import TokenManager
+from utils.token_manager import get_token_manager
 
 # Initialize token manager
-token_manager = TokenManager()
+token_manager = get_token_manager()
 
 
 @mcp.tool(description="Create a new WebFTP session")
 async def webftp_session_create(
     server_id: str,
     username: str,
-    region: str = "ap1",
-    workspace: str = "alpamon"
+    workspace: str,
+    region: str = "ap1"
 ) -> Dict[str, Any]:
     """Create a new WebFTP session.
 
@@ -23,7 +23,7 @@ async def webftp_session_create(
         server_id: Server ID to create FTP session on
         username: Username for the FTP session
         region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
-        workspace: Workspace name. Defaults to 'alpamon'
+        workspace: Workspace name. Required parameter
 
     Returns:
         FTP session creation response
@@ -69,16 +69,16 @@ async def webftp_session_create(
 
 @mcp.tool(description="Get list of WebFTP sessions")
 async def webftp_sessions_list(
+    workspace: str,
     server_id: Optional[str] = None,
-    region: str = "ap1",
-    workspace: str = "alpamon"
+    region: str = "ap1"
 ) -> Dict[str, Any]:
     """Get list of WebFTP sessions.
 
     Args:
         server_id: Optional server ID to filter sessions
         region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
-        workspace: Workspace name. Defaults to 'alpamon'
+        workspace: Workspace name. Required parameter
 
     Returns:
         FTP sessions list response
@@ -125,8 +125,8 @@ async def webftp_upload_file(
     session_id: str,
     file_path: str,
     file_data: str,
-    region: str = "ap1",
-    workspace: str = "alpamon"
+    workspace: str,
+    region: str = "ap1"
 ) -> Dict[str, Any]:
     """Upload a file through WebFTP session.
 
@@ -135,7 +135,7 @@ async def webftp_upload_file(
         file_path: Path where to upload the file
         file_data: File content (base64 encoded or text)
         region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
-        workspace: Workspace name. Defaults to 'alpamon'
+        workspace: Workspace name. Required parameter
 
     Returns:
         File upload response
@@ -182,15 +182,15 @@ async def webftp_upload_file(
 @mcp.tool(description="Get list of downloadable files from WebFTP session")
 async def webftp_downloads_list(
     session_id: str,
-    region: str = "ap1",
-    workspace: str = "alpamon"
+    workspace: str,
+    region: str = "ap1"
 ) -> Dict[str, Any]:
     """Get list of downloadable files from WebFTP session.
 
     Args:
         session_id: WebFTP session ID
         region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
-        workspace: Workspace name. Defaults to 'alpamon'
+        workspace: Workspace name. Required parameter
 
     Returns:
         Downloads list response

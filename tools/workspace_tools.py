@@ -4,10 +4,10 @@ import asyncio
 from typing import Dict, Any
 from server import mcp
 from utils.http_client import http_client
-from utils.token_manager import TokenManager
+from utils.token_manager import get_token_manager
 
 # Initialize token manager
-token_manager = TokenManager()
+token_manager = get_token_manager()
 
 
 @mcp.tool(description="Get list of available workspaces")
@@ -55,14 +55,14 @@ async def workspace_list(
 
 @mcp.tool(description="Get user settings")
 async def user_settings_get(
-    region: str = "ap1",
-    workspace: str = "alpamon"
+    workspace: str,
+    region: str = "ap1"
 ) -> Dict[str, Any]:
     """Get user settings.
 
     Args:
         region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
-        workspace: Workspace name. Defaults to 'alpamon'
+        workspace: Workspace name. Required parameter
 
     Returns:
         User settings response
@@ -101,15 +101,15 @@ async def user_settings_get(
 @mcp.tool(description="Update user settings")
 async def user_settings_update(
     settings: Dict[str, Any],
-    region: str = "ap1",
-    workspace: str = "alpamon"
+    workspace: str,
+    region: str = "ap1"
 ) -> Dict[str, Any]:
     """Update user settings.
 
     Args:
         settings: Settings to update (dict format)
         region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
-        workspace: Workspace name. Defaults to 'alpamon'
+        workspace: Workspace name. Required parameter
 
     Returns:
         User settings update response
@@ -148,14 +148,14 @@ async def user_settings_update(
 
 @mcp.tool(description="Get user profile information")
 async def user_profile_get(
-    region: str = "ap1",
-    workspace: str = "alpamon"
+    workspace: str,
+    region: str = "ap1"
 ) -> Dict[str, Any]:
     """Get user profile information.
 
     Args:
         region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
-        workspace: Workspace name. Defaults to 'alpamon'
+        workspace: Workspace name. Required parameter
 
     Returns:
         User profile response

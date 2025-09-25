@@ -6,7 +6,7 @@ This guide will help you set up and configure the Alpacon MCP Server in just a f
 
 Before you begin, make sure you have:
 
-- [ ] **Python 3.8 or higher** installed on your system
+- [ ] **Python 3.12 or higher** installed on your system
 - [ ] **An active Alpacon account** with server access
 - [ ] **API tokens** for your Alpacon workspace
 - [ ] **An MCP-compatible client** (Claude Desktop, Cursor, VS Code, etc.)

@@ -1,0 +1,12 @@
+{
+  "ap1": {
+    "company-main": "your-ap1-company-main-token-here",
+    "company-backup": "your-ap1-company-backup-token-here"
+  },
+  "us1": {
+    "backup-site": "your-us1-backup-token-here"
+  },
+  "eu1": {
+    "enterprise": "your-eu1-enterprise-token-here"
+  }
+}

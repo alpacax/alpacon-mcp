@@ -6,18 +6,18 @@ import websockets
 from typing import Dict, Any, Optional
 from server import mcp
 from utils.http_client import http_client
-from utils.token_manager import TokenManager
+from utils.token_manager import get_token_manager
 
 # Initialize token manager
-token_manager = TokenManager()
+token_manager = get_token_manager()
 
 
 @mcp.tool(description="Create a new WebSH session")
 async def websh_session_create(
     server_id: str,
+    workspace: str,
     username: Optional[str] = None,
-    region: str = "ap1",
-    workspace: str = "alpamon"
+    region: str = "ap1"
 ) -> Dict[str, Any]:
     """Create a new WebSH session.
 
@@ -25,7 +25,7 @@ async def websh_session_create(
         server_id: Server ID to create session on
         username: Optional username for the session (if not provided, uses authenticated user's name)
         region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
-        workspace: Workspace name. Defaults to 'alpamon'
+        workspace: Workspace name. Required parameter
 
     Returns:
         Session creation response
@@ -76,16 +76,16 @@ async def websh_session_create(
 
 @mcp.tool(description="Get list of WebSH sessions")
 async def websh_sessions_list(
+    workspace: str,
     server_id: Optional[str] = None,
-    region: str = "ap1",
-    workspace: str = "alpamon"
+    region: str = "ap1"
 ) -> Dict[str, Any]:
     """Get list of WebSH sessions.
 
     Args:
         server_id: Optional server ID to filter sessions
         region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
-        workspace: Workspace name. Defaults to 'alpamon'
+        workspace: Workspace name. Required parameter
 
     Returns:
         Sessions list response
@@ -131,8 +131,8 @@ async def websh_sessions_list(
 async def websh_command_execute(
     session_id: str,
     command: str,
-    region: str = "ap1",
-    workspace: str = "alpamon"
+    workspace: str,
+    region: str = "ap1"
 ) -> Dict[str, Any]:
     """Execute a command in a WebSH session.
 
@@ -140,7 +140,7 @@ async def websh_command_execute(
         session_id: WebSH session ID
         command: Command to execute
         region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
-        workspace: Workspace name. Defaults to 'alpamon'
+        workspace: Workspace name. Required parameter
 
     Returns:
         Command execution response
@@ -186,8 +186,8 @@ async def websh_command_execute(
 @mcp.tool(description="Create a new user channel for an existing WebSH session")
 async def websh_session_reconnect(
     session_id: str,
-    region: str = "ap1",
-    workspace: str = "alpamon"
+    workspace: str,
+    region: str = "ap1"
 ) -> Dict[str, Any]:
     """Create a new user channel for an existing WebSH session.
     This allows reconnecting to a session that has lost its user channel connection.
@@ -196,7 +196,7 @@ async def websh_session_reconnect(
     Args:
         session_id: Existing WebSH session ID to reconnect to
         region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
-        workspace: Workspace name. Defaults to 'alpamon'
+        workspace: Workspace name. Required parameter
 
     Returns:
         Reconnection response with new WebSocket URL and user channel
@@ -259,15 +259,15 @@ async def websh_session_reconnect(
 @mcp.tool(description="Terminate a WebSH session")
 async def websh_session_terminate(
     session_id: str,
-    region: str = "ap1",
-    workspace: str = "alpamon"
+    workspace: str,
+    region: str = "ap1"
 ) -> Dict[str, Any]:
     """Terminate a WebSH session.
 
     Args:
         session_id: WebSH session ID to terminate
         region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
-        workspace: Workspace name. Defaults to 'alpamon'
+        workspace: Workspace name. Required parameter
 
     Returns:
         Session termination response

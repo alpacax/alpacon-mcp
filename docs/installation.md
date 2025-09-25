@@ -6,7 +6,7 @@ Complete installation guide for the Alpacon MCP Server across different platform
 
 ### System Requirements
 
-- **Python 3.8 or higher**
+- **Python 3.12 or higher**
 - **Git** (for cloning the repository)
 - **UV package manager** (recommended) or **pip**
 - **Active Alpacon account** with API access
@@ -91,7 +91,7 @@ uv pip install mcp[cli] httpx
 
 ```bash
 # Verify Python version
-python3 --version  # Should be 3.8+
+python3 --version  # Should be 3.12+
 
 # Install UV
 curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -128,7 +128,7 @@ mkdir -p ~/Library/Application\ Support/Claude/
 sudo apt update
 
 # Install Python and dependencies
-sudo apt install python3.9 python3.9-venv python3.9-pip git curl
+sudo apt install python3.12 python3.12-venv python3.12-pip git curl
 
 # Install UV
 curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -188,10 +188,10 @@ sudo systemctl status alpacon-mcp
 
 ```bash
 # RHEL/CentOS 8+
-sudo dnf install python3.9 python3.9-pip git curl
+sudo dnf install python3.12 python3.12-pip git curl
 
 # Or using yum (older versions)
-sudo yum install python39 python39-pip git curl
+sudo yum install python312 python312-pip git curl
 
 # Install UV
 curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -252,7 +252,7 @@ wsl --install -d Ubuntu
 
 # In WSL2, follow Ubuntu installation steps
 sudo apt update
-sudo apt install python3.9 python3.9-venv python3.9-pip git curl
+sudo apt install python3.12 python3.12-venv python3.12-pip git curl
 # ... continue with Linux setup
 ```
 
@@ -475,7 +475,7 @@ python --version
 python3 --version
 
 # Use specific Python version
-python3.9 -m venv .venv
+python3.12 -m venv .venv
 ```
 
 #### UV Installation Issues

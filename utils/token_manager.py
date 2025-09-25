@@ -17,13 +17,16 @@ class TokenManager:
                         or defaults to config/token.json
         """
         if config_file:
-            # Use specific config file path
-            self.token_file = Path(config_file)
+            # Use specific config file path, expand ~ to home directory
+            expanded_path = os.path.expanduser(config_file)
+            self.token_file = Path(expanded_path)
         else:
             # Check environment variable first, then default
             env_config_file = os.getenv("ALPACON_CONFIG_FILE")
             if env_config_file:
-                self.token_file = Path(env_config_file)
+                # Expand ~ to home directory
+                expanded_path = os.path.expanduser(env_config_file)
+                self.token_file = Path(expanded_path)
             else:
                 self.token_file = Path("config/token.json")
 
@@ -177,3 +180,19 @@ class TokenManager:
             "token_file_exists": self.token_file.exists(),
             "env_config_file": os.getenv("ALPACON_CONFIG_FILE")
         }
+
+
+# Global token manager instance
+_global_token_manager = None
+
+def get_token_manager() -> TokenManager:
+    """Get the global token manager instance.
+
+    Returns:
+        Global TokenManager instance
+    """
+    global _global_token_manager
+    if _global_token_manager is None:
+        # Let TokenManager handle config file resolution logic
+        _global_token_manager = TokenManager()
+    return _global_token_manager

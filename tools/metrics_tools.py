@@ -4,19 +4,19 @@ from typing import Dict, Any, Optional, List
 from datetime import datetime, timedelta
 from server import mcp
 from utils.http_client import http_client
-from utils.token_manager import TokenManager
+from utils.token_manager import get_token_manager
 
 # Initialize token manager
-token_manager = TokenManager()
+token_manager = get_token_manager()
 
 
 @mcp.tool(description="Get server CPU usage metrics")
 async def get_cpu_usage(
     server_id: str,
+    workspace: str,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     region: str = "ap1",
-    workspace: str = "alpamon"
 ) -> Dict[str, Any]:
     """Get CPU usage metrics for a server.
 
@@ -25,7 +25,7 @@ async def get_cpu_usage(
         start_date: Start date in ISO format (e.g., '2024-01-01T00:00:00Z')
         end_date: End date in ISO format (e.g., '2024-01-02T00:00:00Z')
         region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
-        workspace: Workspace name. Defaults to 'alpamon'
+        workspace: Workspace name. Required parameter
 
     Returns:
         CPU usage metrics response
@@ -74,10 +74,10 @@ async def get_cpu_usage(
 @mcp.tool(description="Get server memory usage metrics")
 async def get_memory_usage(
     server_id: str,
+    workspace: str,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     region: str = "ap1",
-    workspace: str = "alpamon"
 ) -> Dict[str, Any]:
     """Get memory usage metrics for a server.
 
@@ -86,7 +86,7 @@ async def get_memory_usage(
         start_date: Start date in ISO format (e.g., '2024-01-01T00:00:00Z')
         end_date: End date in ISO format (e.g., '2024-01-02T00:00:00Z')
         region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
-        workspace: Workspace name. Defaults to 'alpamon'
+        workspace: Workspace name. Required parameter
 
     Returns:
         Memory usage metrics response
@@ -135,12 +135,12 @@ async def get_memory_usage(
 @mcp.tool(description="Get server disk usage metrics")
 async def get_disk_usage(
     server_id: str,
+    workspace: str,
     device: Optional[str] = None,
     partition: Optional[str] = None,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     region: str = "ap1",
-    workspace: str = "alpamon"
 ) -> Dict[str, Any]:
     """Get disk usage metrics for a server.
 
@@ -151,7 +151,7 @@ async def get_disk_usage(
         start_date: Start date in ISO format (e.g., '2024-01-01T00:00:00Z')
         end_date: End date in ISO format (e.g., '2024-01-02T00:00:00Z')
         region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
-        workspace: Workspace name. Defaults to 'alpamon'
+        workspace: Workspace name. Required parameter
 
     Returns:
         Disk usage metrics response
@@ -206,11 +206,11 @@ async def get_disk_usage(
 @mcp.tool(description="Get server network traffic metrics")
 async def get_network_traffic(
     server_id: str,
+    workspace: str,
     interface: Optional[str] = None,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     region: str = "ap1",
-    workspace: str = "alpamon"
 ) -> Dict[str, Any]:
     """Get network traffic metrics for a server.
 
@@ -220,7 +220,7 @@ async def get_network_traffic(
         start_date: Start date in ISO format (e.g., '2024-01-01T00:00:00Z')
         end_date: End date in ISO format (e.g., '2024-01-02T00:00:00Z')
         region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
-        workspace: Workspace name. Defaults to 'alpamon'
+        workspace: Workspace name. Required parameter
 
     Returns:
         Network traffic metrics response
@@ -271,14 +271,14 @@ async def get_network_traffic(
 
 @mcp.tool(description="Get top performing servers by CPU usage")
 async def get_cpu_top_servers(
+    workspace: str,
     region: str = "ap1",
-    workspace: str = "alpamon"
 ) -> Dict[str, Any]:
     """Get top 5 servers by CPU usage in the last 24 hours.
 
     Args:
         region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
-        workspace: Workspace name. Defaults to 'alpamon'
+        workspace: Workspace name. Required parameter
 
     Returns:
         Top CPU usage servers response
@@ -317,16 +317,16 @@ async def get_cpu_top_servers(
 
 @mcp.tool(description="Get alert rules")
 async def get_alert_rules(
+    workspace: str,
     server_id: Optional[str] = None,
     region: str = "ap1",
-    workspace: str = "alpamon"
 ) -> Dict[str, Any]:
     """Get alert rules for servers.
 
     Args:
         server_id: Optional server ID to filter rules
         region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
-        workspace: Workspace name. Defaults to 'alpamon'
+        workspace: Workspace name. Required parameter
 
     Returns:
         Alert rules response
@@ -372,9 +372,9 @@ async def get_alert_rules(
 @mcp.tool(description="Get server metrics summary")
 async def get_server_metrics_summary(
     server_id: str,
+    workspace: str,
     hours: int = 24,
     region: str = "ap1",
-    workspace: str = "alpamon"
 ) -> Dict[str, Any]:
     """Get comprehensive metrics summary for a server.
 
@@ -382,7 +382,7 @@ async def get_server_metrics_summary(
         server_id: Server ID to get metrics for
         hours: Number of hours back to get metrics (default: 24)
         region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
-        workspace: Workspace name. Defaults to 'alpamon'
+        workspace: Workspace name. Required parameter
 
     Returns:
         Comprehensive server metrics summary

@@ -12,15 +12,15 @@ token_manager = TokenManager()
 @mcp.tool(description="Get system information for a server")
 async def get_system_info(
     server_id: str,
+    workspace: str,
     region: str = "ap1",
-    workspace: str = "alpamon"
 ) -> Dict[str, Any]:
     """Get detailed system information for a server.
 
     Args:
         server_id: Server ID to get system info for
         region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
-        workspace: Workspace name. Defaults to 'alpamon'
+        workspace: Workspace name. Required parameter
 
     Returns:
         System information response
@@ -61,15 +61,15 @@ async def get_system_info(
 @mcp.tool(description="Get OS version information for a server")
 async def get_os_version(
     server_id: str,
+    workspace: str,
     region: str = "ap1",
-    workspace: str = "alpamon"
 ) -> Dict[str, Any]:
     """Get operating system version information for a server.
 
     Args:
         server_id: Server ID to get OS info for
         region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
-        workspace: Workspace name. Defaults to 'alpamon'
+        workspace: Workspace name. Required parameter
 
     Returns:
         OS version information response
@@ -110,10 +110,10 @@ async def get_os_version(
 @mcp.tool(description="List system users on a server")
 async def list_system_users(
     server_id: str,
+    workspace: str,
     username_filter: Optional[str] = None,
     login_enabled_only: bool = False,
     region: str = "ap1",
-    workspace: str = "alpamon"
 ) -> Dict[str, Any]:
     """List system users on a server.
 
@@ -122,7 +122,7 @@ async def list_system_users(
         username_filter: Optional username to search for
         login_enabled_only: Only return users that can login. Defaults to False
         region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
-        workspace: Workspace name. Defaults to 'alpamon'
+        workspace: Workspace name. Required parameter
 
     Returns:
         System users list response
@@ -172,9 +172,9 @@ async def list_system_users(
 @mcp.tool(description="List system groups on a server")
 async def list_system_groups(
     server_id: str,
+    workspace: str,
     groupname_filter: Optional[str] = None,
     region: str = "ap1",
-    workspace: str = "alpamon"
 ) -> Dict[str, Any]:
     """List system groups on a server.
 
@@ -182,7 +182,7 @@ async def list_system_groups(
         server_id: Server ID to get groups from
         groupname_filter: Optional group name to search for
         region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
-        workspace: Workspace name. Defaults to 'alpamon'
+        workspace: Workspace name. Required parameter
 
     Returns:
         System groups list response
@@ -229,11 +229,11 @@ async def list_system_groups(
 @mcp.tool(description="List installed packages on a server")
 async def list_system_packages(
     server_id: str,
+    workspace: str,
     package_name: Optional[str] = None,
     architecture: Optional[str] = None,
     limit: int = 100,
     region: str = "ap1",
-    workspace: str = "alpamon"
 ) -> Dict[str, Any]:
     """List installed system packages on a server.
 
@@ -243,7 +243,7 @@ async def list_system_packages(
         architecture: Optional architecture filter (e.g., 'x86_64', 'aarch64')
         limit: Maximum number of packages to return. Defaults to 100
         region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
-        workspace: Workspace name. Defaults to 'alpamon'
+        workspace: Workspace name. Required parameter
 
     Returns:
         System packages list response
@@ -297,15 +297,15 @@ async def list_system_packages(
 @mcp.tool(description="Get network interfaces information")
 async def get_network_interfaces(
     server_id: str,
+    workspace: str,
     region: str = "ap1",
-    workspace: str = "alpamon"
 ) -> Dict[str, Any]:
     """Get network interfaces information for a server.
 
     Args:
         server_id: Server ID to get network interfaces for
         region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
-        workspace: Workspace name. Defaults to 'alpamon'
+        workspace: Workspace name. Required parameter
 
     Returns:
         Network interfaces information response
@@ -346,15 +346,15 @@ async def get_network_interfaces(
 @mcp.tool(description="Get disk and partition information")
 async def get_disk_info(
     server_id: str,
+    workspace: str,
     region: str = "ap1",
-    workspace: str = "alpamon"
 ) -> Dict[str, Any]:
     """Get disk and partition information for a server.
 
     Args:
         server_id: Server ID to get disk info for
         region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
-        workspace: Workspace name. Defaults to 'alpamon'
+        workspace: Workspace name. Required parameter
 
     Returns:
         Disk and partition information response
@@ -417,15 +417,15 @@ async def get_disk_info(
 @mcp.tool(description="Get system time information")
 async def get_system_time(
     server_id: str,
+    workspace: str,
     region: str = "ap1",
-    workspace: str = "alpamon"
 ) -> Dict[str, Any]:
     """Get system time and uptime information for a server.
 
     Args:
         server_id: Server ID to get time info for
         region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
-        workspace: Workspace name. Defaults to 'alpamon'
+        workspace: Workspace name. Required parameter
 
     Returns:
         System time information response
@@ -466,15 +466,15 @@ async def get_system_time(
 @mcp.tool(description="Get comprehensive server overview")
 async def get_server_overview(
     server_id: str,
+    workspace: str,
     region: str = "ap1",
-    workspace: str = "alpamon"
 ) -> Dict[str, Any]:
     """Get comprehensive overview of server system information.
 
     Args:
         server_id: Server ID to get overview for
         region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
-        workspace: Workspace name. Defaults to 'alpamon'
+        workspace: Workspace name. Required parameter
 
     Returns:
         Comprehensive server overview

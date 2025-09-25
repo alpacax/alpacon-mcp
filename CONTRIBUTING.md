@@ -6,7 +6,7 @@ Thank you for your interest in contributing to the Alpacon MCP Server! This guid
 
 ### Prerequisites
 
-- Python 3.8 or higher
+- Python 3.12 or higher
 - Git
 - UV package manager (recommended)
 - Active Alpacon account for testing
@@ -202,15 +202,15 @@ async def test_servers_list_success():
    @mcp.tool(description="Your tool description")
    async def your_tool_function(
        parameter: str,
-       region: str = "ap1",
-       workspace: str = "alpamon"
+       workspace: str,
+       region: str = "ap1"
    ) -> Dict[str, Any]:
        """Your tool documentation.
 
        Args:
            parameter: Description of parameter
+           workspace: Workspace name (required)
            region: Region name
-           workspace: Workspace name
 
        Returns:
            Tool response

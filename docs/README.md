@@ -56,7 +56,7 @@ AI Client (Claude/Cursor/VS Code)
 
 ## 📋 Prerequisites
 
-- **Python 3.8+**
+- **Python 3.12+**
 - **uv** package manager (recommended)
 - **Alpacon API tokens** for your workspace
 - **Active Alpacon account** with server access

@@ -4,24 +4,24 @@ import asyncio
 from typing import Dict, Any
 from server import mcp
 from utils.http_client import http_client
-from utils.token_manager import TokenManager
+from utils.token_manager import get_token_manager
 
 # Initialize token manager
-token_manager = TokenManager()
+token_manager = get_token_manager()
 
 
 @mcp.tool(description="Get system hardware information")
 async def system_info(
     server_id: str,
-    region: str = "ap1",
-    workspace: str = "alpamon"
+    workspace: str,
+    region: str = "ap1"
 ) -> Dict[str, Any]:
     """Get system hardware information.
 
     Args:
         server_id: Server ID to get system info from
         region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
-        workspace: Workspace name. Defaults to 'alpamon'
+        workspace: Workspace name. Required parameter
 
     Returns:
         System information response
@@ -61,15 +61,15 @@ async def system_info(
 @mcp.tool(description="Get system users list")
 async def system_users_list(
     server_id: str,
-    region: str = "ap1",
-    workspace: str = "alpamon"
+    workspace: str,
+    region: str = "ap1"
 ) -> Dict[str, Any]:
     """Get system users list.
 
     Args:
         server_id: Server ID to get users from
         region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
-        workspace: Workspace name. Defaults to 'alpamon'
+        workspace: Workspace name. Required parameter
 
     Returns:
         System users list response
@@ -109,15 +109,15 @@ async def system_users_list(
 @mcp.tool(description="Get system packages list")
 async def system_packages_list(
     server_id: str,
-    region: str = "ap1",
-    workspace: str = "alpamon"
+    workspace: str,
+    region: str = "ap1"
 ) -> Dict[str, Any]:
     """Get system packages list.
 
     Args:
         server_id: Server ID to get packages from
         region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
-        workspace: Workspace name. Defaults to 'alpamon'
+        workspace: Workspace name. Required parameter
 
     Returns:
         System packages list response
@@ -157,15 +157,15 @@ async def system_packages_list(
 @mcp.tool(description="Get system disk information")
 async def system_disk_info(
     server_id: str,
-    region: str = "ap1",
-    workspace: str = "alpamon"
+    workspace: str,
+    region: str = "ap1"
 ) -> Dict[str, Any]:
     """Get system disk information.
 
     Args:
         server_id: Server ID to get disk info from
         region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
-        workspace: Workspace name. Defaults to 'alpamon'
+        workspace: Workspace name. Required parameter
 
     Returns:
         System disk information response

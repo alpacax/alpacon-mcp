@@ -5,10 +5,10 @@ import asyncio
 from typing import Dict, Any, Optional
 from server import mcp
 from utils.http_client import http_client
-from utils.token_manager import TokenManager
+from utils.token_manager import get_token_manager
 
 # Initialize token manager
-token_manager = TokenManager()
+token_manager = get_token_manager()
 
 
 @mcp.tool()
@@ -23,12 +23,12 @@ def run_command(args: list[str]):
 async def execute_command(
     server_id: str,
     command: str,
+    workspace: str,
     shell: str = "internal",
     username: Optional[str] = None,
     groupname: str = "alpacon",
     env: Optional[Dict[str, str]] = None,
     region: str = "ap1",
-    workspace: str = "alpamon"
 ) -> Dict[str, Any]:
     """Execute a command on a specified server.
 
@@ -40,7 +40,7 @@ async def execute_command(
         groupname: Group name for the command execution. Defaults to 'alpacon'
         env: Optional environment variables as key-value pairs
         region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
-        workspace: Workspace name. Defaults to 'alpamon'
+        workspace: Workspace name. Required parameter
 
     Returns:
         Command execution response
@@ -100,15 +100,15 @@ async def execute_command(
 @mcp.tool(description="Get command execution result by command ID")
 async def get_command_result(
     command_id: str,
+    workspace: str,
     region: str = "ap1",
-    workspace: str = "alpamon"
 ) -> Dict[str, Any]:
     """Get the result of a previously executed command.
 
     Args:
         command_id: Command ID to get result for
         region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
-        workspace: Workspace name. Defaults to 'alpamon'
+        workspace: Workspace name. Required parameter
 
     Returns:
         Command result response
@@ -147,10 +147,10 @@ async def get_command_result(
 
 @mcp.tool(description="List recent commands executed on servers")
 async def list_commands(
+    workspace: str,
     server_id: Optional[str] = None,
     limit: int = 20,
     region: str = "ap1",
-    workspace: str = "alpamon"
 ) -> Dict[str, Any]:
     """List recent commands executed on servers.
 
@@ -158,7 +158,7 @@ async def list_commands(
         server_id: Optional server ID to filter commands
         limit: Maximum number of commands to return. Defaults to 20
         region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
-        workspace: Workspace name. Defaults to 'alpamon'
+        workspace: Workspace name. Required parameter
 
     Returns:
         Commands list response
@@ -210,13 +210,13 @@ async def list_commands(
 async def execute_command_sync(
     server_id: str,
     command: str,
+    workspace: str,
     shell: str = "bash",
     username: Optional[str] = None,
     groupname: str = "alpacon",
     env: Optional[Dict[str, str]] = None,
     timeout: int = 30,
     region: str = "ap1",
-    workspace: str = "alpamon"
 ) -> Dict[str, Any]:
     """Execute a command and wait for the result (synchronous execution).
 
@@ -229,7 +229,7 @@ async def execute_command_sync(
         env: Optional environment variables as key-value pairs
         timeout: Timeout in seconds to wait for result. Defaults to 30
         region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
-        workspace: Workspace name. Defaults to 'alpamon'
+        workspace: Workspace name. Required parameter
 
     Returns:
         Command execution result
@@ -250,7 +250,17 @@ async def execute_command_sync(
         if exec_result["status"] != "success":
             return exec_result
 
-        command_id = exec_result["data"]["id"]
+        # Handle case where data is a list (array) instead of object
+        if isinstance(exec_result["data"], list):
+            if len(exec_result["data"]) > 0:
+                command_id = exec_result["data"][0]["id"]
+            else:
+                return {
+                    "status": "error",
+                    "message": "No command data returned from execute_command",
+                }
+        else:
+            command_id = exec_result["data"]["id"]
 
         # Wait for command completion
         start_time = asyncio.get_event_loop().time()

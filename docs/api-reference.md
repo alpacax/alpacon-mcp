@@ -37,7 +37,7 @@ List all servers in a region and workspace.
 
 **Parameters:**
 - `region` (string, default: "ap1"): Region name
-- `workspace` (string, default: "alpamon"): Workspace name
+- `workspace` (string): Workspace name
 
 **Returns:** Array of server objects with ID, name, status, and metadata.
 
@@ -47,7 +47,7 @@ Get detailed information about a specific server.
 **Parameters:**
 - `server_id` (string): Server ID to get details for
 - `region` (string, default: "ap1"): Region name
-- `workspace` (string, default: "alpamon"): Workspace name
+- `workspace` (string): Workspace name
 
 **Returns:** Complete server information including hardware specs, status, and configuration.
 
@@ -57,7 +57,7 @@ List notes for a specific server.
 **Parameters:**
 - `server_id` (string): Server ID
 - `region` (string, default: "ap1"): Region name
-- `workspace` (string, default: "alpamon"): Workspace name
+- `workspace` (string): Workspace name
 
 ### `server_note_create`
 Create a new note for a server.
@@ -67,7 +67,7 @@ Create a new note for a server.
 - `title` (string): Note title
 - `content` (string): Note content
 - `region` (string, default: "ap1"): Region name
-- `workspace` (string, default: "alpamon"): Workspace name
+- `workspace` (string): Workspace name
 
 ---
 
@@ -81,7 +81,7 @@ Get CPU usage metrics for a server.
 - `start_date` (string, optional): Start date in ISO format
 - `end_date` (string, optional): End date in ISO format
 - `region` (string, default: "ap1"): Region name
-- `workspace` (string, default: "alpamon"): Workspace name
+- `workspace` (string): Workspace name
 
 **Example:**
 ```json
@@ -107,7 +107,7 @@ Get disk usage metrics for a server.
 - `start_date` (string, optional): Start date
 - `end_date` (string, optional): End date
 - `region` (string, default: "ap1"): Region name
-- `workspace` (string, default: "alpamon"): Workspace name
+- `workspace` (string): Workspace name
 
 ### `get_network_traffic`
 Get network traffic metrics for a server.
@@ -118,14 +118,14 @@ Get network traffic metrics for a server.
 - `start_date` (string, optional): Start date
 - `end_date` (string, optional): End date
 - `region` (string, default: "ap1"): Region name
-- `workspace` (string, default: "alpamon"): Workspace name
+- `workspace` (string): Workspace name
 
 ### `get_cpu_top_servers`
 Get top 5 servers by CPU usage in the last 24 hours.
 
 **Parameters:**
 - `region` (string, default: "ap1"): Region name
-- `workspace` (string, default: "alpamon"): Workspace name
+- `workspace` (string): Workspace name
 
 ### `get_alert_rules`
 Get alert rules for servers.
@@ -133,7 +133,7 @@ Get alert rules for servers.
 **Parameters:**
 - `server_id` (string, optional): Server ID to filter rules
 - `region` (string, default: "ap1"): Region name
-- `workspace` (string, default: "alpamon"): Workspace name
+- `workspace` (string): Workspace name
 
 ### `get_server_metrics_summary`
 Get comprehensive metrics summary for a server.
@@ -142,7 +142,7 @@ Get comprehensive metrics summary for a server.
 - `server_id` (string): Server ID
 - `hours` (integer, default: 24): Number of hours back to get metrics
 - `region` (string, default: "ap1"): Region name
-- `workspace` (string, default: "alpamon"): Workspace name
+- `workspace` (string): Workspace name
 
 ---
 
@@ -154,7 +154,7 @@ Get detailed system information for a server.
 **Parameters:**
 - `server_id` (string): Server ID
 - `region` (string, default: "ap1"): Region name
-- `workspace` (string, default: "alpamon"): Workspace name
+- `workspace` (string): Workspace name
 
 **Returns:** Hardware specs, CPU details, memory info, and system identifiers.
 
@@ -164,7 +164,7 @@ Get operating system version information.
 **Parameters:**
 - `server_id` (string): Server ID
 - `region` (string, default: "ap1"): Region name
-- `workspace` (string, default: "alpamon"): Workspace name
+- `workspace` (string): Workspace name
 
 ### `list_system_users`
 List system users on a server.
@@ -174,7 +174,7 @@ List system users on a server.
 - `username_filter` (string, optional): Username to search for
 - `login_enabled_only` (boolean, default: false): Only return users that can login
 - `region` (string, default: "ap1"): Region name
-- `workspace` (string, default: "alpamon"): Workspace name
+- `workspace` (string): Workspace name
 
 ### `list_system_groups`
 List system groups on a server.
@@ -183,7 +183,7 @@ List system groups on a server.
 - `server_id` (string): Server ID
 - `groupname_filter` (string, optional): Group name to search for
 - `region` (string, default: "ap1"): Region name
-- `workspace` (string, default: "alpamon"): Workspace name
+- `workspace` (string): Workspace name
 
 ### `list_system_packages`
 List installed system packages on a server.
@@ -194,7 +194,7 @@ List installed system packages on a server.
 - `architecture` (string, optional): Architecture filter (e.g., 'x86_64')
 - `limit` (integer, default: 100): Maximum number of packages to return
 - `region` (string, default: "ap1"): Region name
-- `workspace` (string, default: "alpamon"): Workspace name
+- `workspace` (string): Workspace name
 
 ### `get_network_interfaces`
 Get network interfaces information for a server.
@@ -202,7 +202,7 @@ Get network interfaces information for a server.
 **Parameters:**
 - `server_id` (string): Server ID
 - `region` (string, default: "ap1"): Region name
-- `workspace` (string, default: "alpamon"): Workspace name
+- `workspace` (string): Workspace name
 
 ### `get_disk_info`
 Get disk and partition information for a server.
@@ -210,7 +210,7 @@ Get disk and partition information for a server.
 **Parameters:**
 - `server_id` (string): Server ID
 - `region` (string, default: "ap1"): Region name
-- `workspace` (string, default: "alpamon"): Workspace name
+- `workspace` (string): Workspace name
 
 **Returns:** Both disk and partition information in a single response.
 
@@ -220,7 +220,7 @@ Get system time and uptime information.
 **Parameters:**
 - `server_id` (string): Server ID
 - `region` (string, default: "ap1"): Region name
-- `workspace` (string, default: "alpamon"): Workspace name
+- `workspace` (string): Workspace name
 
 ### `get_server_overview`
 Get comprehensive overview of server system information.
@@ -228,7 +228,7 @@ Get comprehensive overview of server system information.
 **Parameters:**
 - `server_id` (string): Server ID
 - `region` (string, default: "ap1"): Region name
-- `workspace` (string, default: "alpamon"): Workspace name
+- `workspace` (string): Workspace name
 
 **Returns:** Combined system info, OS version, time, network interfaces, and disk info.
 
@@ -244,7 +244,7 @@ List server events.
 - `reporter` (string, optional): Reporter name to filter events
 - `limit` (integer, default: 50): Maximum number of events to return
 - `region` (string, default: "ap1"): Region name
-- `workspace` (string, default: "alpamon"): Workspace name
+- `workspace` (string): Workspace name
 
 ### `get_event`
 Get detailed information about a specific event.
@@ -252,7 +252,7 @@ Get detailed information about a specific event.
 **Parameters:**
 - `event_id` (string): Event ID to get details for
 - `region` (string, default: "ap1"): Region name
-- `workspace` (string, default: "alpamon"): Workspace name
+- `workspace` (string): Workspace name
 
 ### `search_events`
 Search events by criteria.
@@ -262,7 +262,7 @@ Search events by criteria.
 - `server_id` (string, optional): Server ID to limit search scope
 - `limit` (integer, default: 20): Maximum number of results to return
 - `region` (string, default: "ap1"): Region name
-- `workspace` (string, default: "alpamon"): Workspace name
+- `workspace` (string): Workspace name
 
 ### `acknowledge_command`
 Acknowledge that a command has been received and started.
@@ -272,7 +272,7 @@ Acknowledge that a command has been received and started.
 - `success` (boolean, default: true): Whether command started successfully
 - `result` (string, optional): Optional result message
 - `region` (string, default: "ap1"): Region name
-- `workspace` (string, default: "alpamon"): Workspace name
+- `workspace` (string): Workspace name
 
 ### `finish_command`
 Mark a command as finished with results.
@@ -283,7 +283,7 @@ Mark a command as finished with results.
 - `result` (string, optional): Optional result output or error message
 - `elapsed_time` (float, optional): Optional execution time in seconds
 - `region` (string, default: "ap1"): Region name
-- `workspace` (string, default: "alpamon"): Workspace name
+- `workspace` (string): Workspace name
 
 ### `get_command_status`
 Get detailed status and execution information for a command.
@@ -291,7 +291,7 @@ Get detailed status and execution information for a command.
 **Parameters:**
 - `command_id` (string): Command ID to get status for
 - `region` (string, default: "ap1"): Region name
-- `workspace` (string, default: "alpamon"): Workspace name
+- `workspace` (string): Workspace name
 
 ### `delete_command`
 Delete a scheduled command that hasn't been delivered yet.
@@ -299,7 +299,7 @@ Delete a scheduled command that hasn't been delivered yet.
 **Parameters:**
 - `command_id` (string): Command ID to delete
 - `region` (string, default: "ap1"): Region name
-- `workspace` (string, default: "alpamon"): Workspace name
+- `workspace` (string): Workspace name
 
 ---
 
@@ -312,7 +312,7 @@ Create a new WebSH session for remote shell access.
 - `server_id` (string): Server ID to create session for
 - `username` (string, optional): Username for the session
 - `region` (string, default: "ap1"): Region name
-- `workspace` (string, default: "alpamon"): Workspace name
+- `workspace` (string): Workspace name
 
 **Returns:** Session ID and connection details.
 
@@ -322,7 +322,7 @@ Get list of active WebSH sessions.
 **Parameters:**
 - `server_id` (string, optional): Filter by server ID
 - `region` (string, default: "ap1"): Region name
-- `workspace` (string, default: "alpamon"): Workspace name
+- `workspace` (string): Workspace name
 
 ### `websh_command_execute`
 Execute a command in a WebSH session.
@@ -331,7 +331,7 @@ Execute a command in a WebSH session.
 - `session_id` (string): WebSH session ID
 - `command` (string): Command to execute
 - `region` (string, default: "ap1"): Region name
-- `workspace` (string, default: "alpamon"): Workspace name
+- `workspace` (string): Workspace name
 
 ### `websh_session_reconnect`
 Create a new user channel for an existing WebSH session.
@@ -339,7 +339,7 @@ Create a new user channel for an existing WebSH session.
 **Parameters:**
 - `session_id` (string): Session ID to reconnect
 - `region` (string, default: "ap1"): Region name
-- `workspace` (string, default: "alpamon"): Workspace name
+- `workspace` (string): Workspace name
 
 ### `websh_session_terminate`
 Terminate a WebSH session.
@@ -347,7 +347,7 @@ Terminate a WebSH session.
 **Parameters:**
 - `session_id` (string): Session ID to terminate
 - `region` (string, default: "ap1"): Region name
-- `workspace` (string, default: "alpamon"): Workspace name
+- `workspace` (string): Workspace name
 
 ### `websh_websocket_execute`
 Execute commands in WebSH session via WebSocket.
@@ -368,7 +368,7 @@ Create a new WebFTP session for file transfer.
 - `server_id` (string): Server ID
 - `username` (string): Username for FTP access
 - `region` (string, default: "ap1"): Region name
-- `workspace` (string, default: "alpamon"): Workspace name
+- `workspace` (string): Workspace name
 
 ### `webftp_sessions_list`
 Get list of WebFTP sessions.
@@ -376,7 +376,7 @@ Get list of WebFTP sessions.
 **Parameters:**
 - `server_id` (string, optional): Filter by server ID
 - `region` (string, default: "ap1"): Region name
-- `workspace` (string, default: "alpamon"): Workspace name
+- `workspace` (string): Workspace name
 
 ### `webftp_upload_file`
 Upload a file through WebFTP session.
@@ -386,7 +386,7 @@ Upload a file through WebFTP session.
 - `file_path` (string): Target file path on server
 - `file_data` (string): File content (base64 encoded for binary files)
 - `region` (string, default: "ap1"): Region name
-- `workspace` (string, default: "alpamon"): Workspace name
+- `workspace` (string): Workspace name
 
 ### `webftp_downloads_list`
 Get list of downloadable files from WebFTP session.
@@ -394,7 +394,7 @@ Get list of downloadable files from WebFTP session.
 **Parameters:**
 - `session_id` (string): WebFTP session ID
 - `region` (string, default: "ap1"): Region name
-- `workspace` (string, default: "alpamon"): Workspace name
+- `workspace` (string): Workspace name
 
 ---
 
@@ -411,7 +411,7 @@ Get user settings.
 
 **Parameters:**
 - `region` (string, default: "ap1"): Region name
-- `workspace` (string, default: "alpamon"): Workspace name
+- `workspace` (string): Workspace name
 
 ### `user_settings_update`
 Update user settings.
@@ -419,14 +419,14 @@ Update user settings.
 **Parameters:**
 - `settings` (object): Settings object to update
 - `region` (string, default: "ap1"): Region name
-- `workspace` (string, default: "alpamon"): Workspace name
+- `workspace` (string): Workspace name
 
 ### `user_profile_get`
 Get user profile information.
 
 **Parameters:**
 - `region` (string, default: "ap1"): Region name
-- `workspace` (string, default: "alpamon"): Workspace name
+- `workspace` (string): Workspace name
 
 ---
 

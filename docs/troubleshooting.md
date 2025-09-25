@@ -499,12 +499,12 @@ chmod 600 ~/.config/token.json
 
 **Python Version Issues:**
 ```bash
-# Install Python 3.8+
+# Install Python 3.12+
 sudo apt update
-sudo apt install python3.9 python3.9-venv python3.9-pip
+sudo apt install python3.12 python3.12-venv python3.12-pip
 
 # Create virtual environment with specific Python
-python3.9 -m venv .venv
+python3.12 -m venv .venv
 ```
 
 **Service Configuration:**

@@ -3,19 +3,19 @@
 from typing import Dict, Any, Optional, List
 from server import mcp
 from utils.http_client import http_client
-from utils.token_manager import TokenManager
+from utils.token_manager import get_token_manager
 
 # Initialize token manager
-token_manager = TokenManager()
+token_manager = get_token_manager()
 
 
 @mcp.tool(description="List server events")
 async def list_events(
+    workspace: str,
     server_id: Optional[str] = None,
     reporter: Optional[str] = None,
     limit: int = 50,
-    region: str = "ap1",
-    workspace: str = "alpamon"
+    region: str = "ap1"
 ) -> Dict[str, Any]:
     """List events from servers.
 
@@ -24,7 +24,7 @@ async def list_events(
         reporter: Optional reporter name to filter events
         limit: Maximum number of events to return. Defaults to 50
         region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
-        workspace: Workspace name. Defaults to 'alpamon'
+        workspace: Workspace name. Required parameter
 
     Returns:
         Events list response
@@ -78,15 +78,15 @@ async def list_events(
 @mcp.tool(description="Get event details by ID")
 async def get_event(
     event_id: str,
-    region: str = "ap1",
-    workspace: str = "alpamon"
+    workspace: str,
+    region: str = "ap1"
 ) -> Dict[str, Any]:
     """Get detailed information about a specific event.
 
     Args:
         event_id: Event ID to get details for
         region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
-        workspace: Workspace name. Defaults to 'alpamon'
+        workspace: Workspace name. Required parameter
 
     Returns:
         Event details response
@@ -126,10 +126,10 @@ async def get_event(
 @mcp.tool(description="Acknowledge command execution")
 async def acknowledge_command(
     command_id: str,
+    workspace: str,
     success: bool = True,
     result: Optional[str] = None,
-    region: str = "ap1",
-    workspace: str = "alpamon"
+    region: str = "ap1"
 ) -> Dict[str, Any]:
     """Acknowledge that a command has been received and started.
 
@@ -138,7 +138,7 @@ async def acknowledge_command(
         success: Whether command started successfully. Defaults to True
         result: Optional result message
         region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
-        workspace: Workspace name. Defaults to 'alpamon'
+        workspace: Workspace name. Required parameter
 
     Returns:
         Acknowledgment response
@@ -187,11 +187,11 @@ async def acknowledge_command(
 @mcp.tool(description="Mark command as finished")
 async def finish_command(
     command_id: str,
+    workspace: str,
     success: bool = True,
     result: Optional[str] = None,
     elapsed_time: Optional[float] = None,
-    region: str = "ap1",
-    workspace: str = "alpamon"
+    region: str = "ap1"
 ) -> Dict[str, Any]:
     """Mark a command as finished with results.
 
@@ -201,7 +201,7 @@ async def finish_command(
         result: Optional result output or error message
         elapsed_time: Optional execution time in seconds
         region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
-        workspace: Workspace name. Defaults to 'alpamon'
+        workspace: Workspace name. Required parameter
 
     Returns:
         Finish response
@@ -252,15 +252,15 @@ async def finish_command(
 @mcp.tool(description="Get command execution status and history")
 async def get_command_status(
     command_id: str,
-    region: str = "ap1",
-    workspace: str = "alpamon"
+    workspace: str,
+    region: str = "ap1"
 ) -> Dict[str, Any]:
     """Get detailed status and execution information for a command.
 
     Args:
         command_id: Command ID to get status for
         region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
-        workspace: Workspace name. Defaults to 'alpamon'
+        workspace: Workspace name. Required parameter
 
     Returns:
         Command status response with detailed execution info
@@ -300,15 +300,15 @@ async def get_command_status(
 @mcp.tool(description="Delete a scheduled command")
 async def delete_command(
     command_id: str,
-    region: str = "ap1",
-    workspace: str = "alpamon"
+    workspace: str,
+    region: str = "ap1"
 ) -> Dict[str, Any]:
     """Delete a scheduled command that hasn't been delivered yet.
 
     Args:
         command_id: Command ID to delete
         region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
-        workspace: Workspace name. Defaults to 'alpamon'
+        workspace: Workspace name. Required parameter
 
     Returns:
         Deletion response
@@ -348,10 +348,10 @@ async def delete_command(
 @mcp.tool(description="Search events by criteria")
 async def search_events(
     search_query: str,
+    workspace: str,
     server_id: Optional[str] = None,
     limit: int = 20,
-    region: str = "ap1",
-    workspace: str = "alpamon"
+    region: str = "ap1"
 ) -> Dict[str, Any]:
     """Search events by server name, reporter, record, or description.
 
@@ -360,7 +360,7 @@ async def search_events(
         server_id: Optional server ID to limit search scope
         limit: Maximum number of results to return. Defaults to 20
         region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
-        workspace: Workspace name. Defaults to 'alpamon'
+        workspace: Workspace name. Required parameter
 
     Returns:
         Search results response
