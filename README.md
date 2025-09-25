@@ -261,7 +261,7 @@ docker run -v $(pwd)/config:/app/config:ro alpacon-mcp
 ```bash
 # Run in Server-Sent Events mode for web integration
 python main_sse.py
-# Server available at http://localhost:8005
+# Server available at http://localhost:8237
 ```
 
 ## 🔒 Security & Best Practices

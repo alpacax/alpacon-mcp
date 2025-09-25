@@ -280,7 +280,7 @@ docker pull alpacon/mcp-server:latest
 docker run -d \
   --name alpacon-mcp \
   -v $(pwd)/config:/app/config:ro \
-  -p 8005:8005 \
+  -p 8237:8237 \
   alpacon/mcp-server:latest
 ```
 
@@ -298,7 +298,7 @@ docker build -t alpacon-mcp:local .
 docker run -d \
   --name alpacon-mcp \
   -v $(pwd)/config:/app/config:ro \
-  -p 8005:8005 \
+  -p 8237:8237 \
   alpacon-mcp:local
 ```
 
@@ -315,12 +315,12 @@ services:
     volumes:
       - ./config:/app/config:ro
     ports:
-      - "8005:8005"
+      - "8237:8237"
     environment:
       - ALPACON_CONFIG_FILE=/app/config/token.json
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8005/health')"]
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8237/health')"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -351,8 +351,8 @@ chmod 600 .config/token.json
 
 ```bash
 # Firewall rules (if needed for SSE mode)
-sudo ufw allow 8005/tcp  # Ubuntu/Debian
-sudo firewall-cmd --add-port=8005/tcp --permanent  # RHEL/CentOS
+sudo ufw allow 8237/tcp  # Ubuntu/Debian
+sudo firewall-cmd --add-port=8237/tcp --permanent  # RHEL/CentOS
 ```
 
 ### User Isolation

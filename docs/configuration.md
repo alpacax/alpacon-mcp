@@ -176,7 +176,7 @@ python main.py
 #### SSE Mode (Server-Sent Events)
 - HTTP-based transport with Server-Sent Events
 - Useful for web-based integrations
-- Runs on host 0.0.0.0:8005
+- Runs on host 0.0.0.0:8237
 
 ```bash
 python main_sse.py
@@ -305,7 +305,7 @@ services:
     environment:
       - ALPACON_CONFIG_FILE=/app/config/tokens.json
     ports:
-      - "8005:8005"  # For SSE mode
+      - "8237:8237"  # For SSE mode
 ```
 
 #### MCP Client Docker Configuration
@@ -459,10 +459,10 @@ export ALPACON_ALLOWED_IPS="10.0.0.0/8,192.168.0.0/16"
 
 ```bash
 # Check server health (SSE mode)
-curl http://localhost:8005/health
+curl http://localhost:8237/health
 
 # Check authentication status
-curl http://localhost:8005/auth/status
+curl http://localhost:8237/auth/status
 ```
 
 ### Monitoring Configuration

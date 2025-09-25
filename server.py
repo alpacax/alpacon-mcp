@@ -5,7 +5,7 @@ from mcp.server.fastmcp import FastMCP
 mcp = FastMCP(
     "alpacon",
     host=os.getenv("ALPACON_MCP_HOST", "127.0.0.1"),  # Default to localhost for security
-    port=int(os.getenv("ALPACON_MCP_PORT", "8005")),  # Allow port configuration via env var
+    port=int(os.getenv("ALPACON_MCP_PORT", "8237")),  # Default port 8237 (MCAR - MCP Alpacon Remote)
 )
 
 

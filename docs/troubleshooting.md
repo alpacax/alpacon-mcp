@@ -362,7 +362,7 @@ with open('file.txt', 'r') as f:
 ps aux | grep python | grep main.py
 
 # Monitor network connections
-netstat -an | grep :8005
+netstat -an | grep :8237
 ```
 
 **Optimize Configuration:**
