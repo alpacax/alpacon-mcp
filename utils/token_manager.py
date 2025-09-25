@@ -22,7 +22,7 @@ class TokenManager:
             self.token_file = Path(expanded_path)
         else:
             # Check environment variable first, then default
-            env_config_file = os.getenv("ALPACON_CONFIG_FILE")
+            env_config_file = os.getenv("ALPACON_MCP_CONFIG_FILE")
             if env_config_file:
                 # Expand ~ to home directory
                 expanded_path = os.path.expanduser(env_config_file)
@@ -103,6 +103,13 @@ class TokenManager:
         Returns:
             Token string if found, None otherwise
         """
+        # First try environment variable: ALPACON_MCP_<REGION>_<WORKSPACE>_TOKEN
+        env_var_name = f"ALPACON_MCP_{region.upper()}_{workspace.upper()}_TOKEN"
+        env_token = os.getenv(env_var_name)
+        if env_token:
+            return env_token
+
+        # Fall back to config file
         if region in self.tokens and workspace in self.tokens[region]:
             return self.tokens[region][workspace]
         return None

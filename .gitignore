@@ -26,6 +26,7 @@ context_chunks/
 
 # Sensitive data - IMPORTANT: Never commit these
 .config/
+config/token.json
 *.token
 *.key
 *.pem
