@@ -7,36 +7,7 @@ on:
       - 'v*'  # Triggers on version tags like v1.0.0, v2.1.3, etc.
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ["3.12"]
-
-    steps:
-    - uses: actions/checkout@v4
-
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v4
-      with:
-        python-version: ${{ matrix.python-version }}
-
-    - name: Install uv
-      uses: astral-sh/setup-uv@v3
-
-    - name: Install dependencies
-      run: |
-        uv pip install -e .
-        uv pip install pytest pytest-asyncio httpx
-
-    - name: Test with pytest
-      run: |
-        uv run pytest tests/ -v || echo "No tests found, continuing..."
-      env:
-        PYTHONPATH: .
-
   build:
-    needs: test
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4

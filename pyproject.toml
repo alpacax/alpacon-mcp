@@ -53,8 +53,8 @@ Issues = "https://github.com/alpacax/alpacon-mcp/issues"
 Changelog = "https://github.com/alpacax/alpacon-mcp/blob/main/CHANGELOG.md"
 
 [project.scripts]
-alpacon-mcp = "alpacon_mcp.main:main"
-alpacon-mcp-sse = "alpacon_mcp.main_sse:main"
+alpacon-mcp = "main:main"
+alpacon-mcp-sse = "main_sse:main"
 
 [project.optional-dependencies]
 dev = [
@@ -67,4 +67,4 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["alpacon_mcp"]
+packages = ["."]
