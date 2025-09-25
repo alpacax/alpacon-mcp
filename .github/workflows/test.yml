@@ -1,0 +1,50 @@
+# Test workflow - runs on every push and PR
+name: Test
+
+on:
+  push:
+    branches: [ "main", "develop" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12"]
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v3
+
+    - name: Create virtual environment
+      run: uv venv
+
+    - name: Install dependencies
+      run: |
+        uv pip install -e .
+        uv pip install pytest pytest-asyncio httpx
+
+    - name: Lint with ruff (if available)
+      run: |
+        if uv pip list | grep -q ruff; then
+          uv run ruff check .
+        else
+          echo "Ruff not available, skipping linting"
+        fi
+      continue-on-error: true
+
+    - name: Test with pytest
+      run: |
+        uv run pytest tests/ -v
+      env:
+        PYTHONPATH: .

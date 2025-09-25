@@ -36,6 +36,8 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: System :: Systems Administration",
     "Topic :: System :: Monitoring",
+    "Operating System :: OS Independent",
+    "Environment :: Console",
 ]
 dependencies = [
     "mcp[cli]>=1.9.4",
