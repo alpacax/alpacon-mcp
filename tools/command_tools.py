@@ -1,6 +1,5 @@
 """Command execution tools for Alpacon MCP server."""
 
-import subprocess
 import asyncio
 from typing import Dict, Any, Optional
 from server import mcp
@@ -10,13 +9,6 @@ from utils.token_manager import get_token_manager
 # Initialize token manager
 token_manager = get_token_manager()
 
-
-@mcp.tool()
-def run_command(args: list[str]):
-    """Run alpacon CLI command locally."""
-    result = subprocess.run(["alpacon", *args], capture_output=True, text=True)
-    print(result.stdout)
-    return result.stdout, result.stderr
 
 
 @mcp.tool(description="Execute a command on a server")

@@ -430,22 +430,6 @@ Get user profile information.
 
 ---
 
-## 📋 Generic Command Execution
-
-### `run_command`
-Execute generic Alpacon CLI commands.
-
-**Parameters:**
-- `args` (array): Array of command arguments
-
-**Example:**
-```json
-{
-  "args": ["server", "list", "--region", "ap1"]
-}
-```
-
----
 
 ## 🔍 Resources
 
