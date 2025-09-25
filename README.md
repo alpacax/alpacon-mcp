@@ -106,36 +106,33 @@ uv pip install -e .
 
 ### 3. **Configure Authentication**
 
-#### **Option A: Using Environment Variables (Recommended)**
+#### **Option A: Using Configuration File (Recommended for MCP Clients)**
 ```bash
-# Set environment variables for tokens
+# Create configuration file
+mkdir -p ~/.config/alpacon
+echo '{
+  "ap1": {
+    "production": "your-production-token",
+    "staging": "your-staging-token"
+  },
+  "us1": {
+    "backup": "your-us-token"
+  }
+}' > ~/.config/alpacon/tokens.json
+
+# Run with uvx using config file
+ALPACON_MCP_CONFIG_FILE=~/.config/alpacon/tokens.json uvx alpacon-mcp
+```
+
+#### **Option B: Using Environment Variables (For CLI/Testing)**
+```bash
+# Set environment variables for direct usage
 export ALPACON_MCP_AP1_PRODUCTION_TOKEN="your-production-token"
 export ALPACON_MCP_AP1_STAGING_TOKEN="your-staging-token"
 export ALPACON_MCP_US1_BACKUP_TOKEN="your-us-token"
 
-# Run with uvx
+# Run with uvx using environment variables
 uvx alpacon-mcp
-```
-
-#### **Option B: Using Configuration File**
-```bash
-# Setup token configuration file
-mkdir -p config
-echo '{
-  "ap1": {
-    "production": "your-api-token-from-web-interface",
-    "staging": "your-staging-token"
-  },
-  "us1": {
-    "backup-site": "your-us-token"
-  },
-  "dev": {
-    "alpacax": "your-dev-token"
-  }
-}' > config/token.json
-
-# Run with config file
-uvx alpacon-mcp --config-file config/token.json
 ```
 
 ### 4. **Connect to AI Client**
@@ -148,8 +145,7 @@ uvx alpacon-mcp --config-file config/token.json
       "command": "uvx",
       "args": ["alpacon-mcp"],
       "env": {
-        "ALPACON_MCP_AP1_PRODUCTION_TOKEN": "your-production-token",
-        "ALPACON_MCP_AP1_STAGING_TOKEN": "your-staging-token"
+        "ALPACON_MCP_CONFIG_FILE": "/path/to/your/alpacon-tokens.json"
       }
     }
   }
@@ -163,7 +159,9 @@ uvx alpacon-mcp --config-file config/token.json
     "alpacon": {
       "command": "uvx",
       "args": ["alpacon-mcp"],
-      "cwd": "./alpacon-mcp"
+      "env": {
+        "ALPACON_MCP_CONFIG_FILE": "./config/token.json"
+      }
     }
   }
 }

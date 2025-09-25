@@ -20,6 +20,8 @@ export ALPACON_MCP_EU1_ENTERPRISE_TOKEN="your-eu1-enterprise-token"
 
 #### Using with uvx
 
+Environment variables are best for CLI usage and testing:
+
 ```bash
 # Set environment variables
 export ALPACON_MCP_AP1_PRODUCTION_TOKEN="your-token-here"
@@ -84,28 +86,30 @@ uvx alpacon-mcp
 - **Windows**: `%APPDATA%/Claude/claude_desktop_config.json`
 - **Linux**: `~/.config/Claude/claude_desktop_config.json`
 
-**Basic Configuration:**
+**Using uvx (Recommended):**
 ```json
 {
   "mcpServers": {
-    "alpacon-mcp": {
-      "command": "uv",
-      "args": ["run", "python", "main.py"],
-      "cwd": "/absolute/path/to/alpacon-mcp"
+    "alpacon": {
+      "command": "uvx",
+      "args": ["alpacon-mcp"],
+      "env": {
+        "ALPACON_MCP_CONFIG_FILE": "/Users/username/.config/alpacon/tokens.json"
+      }
     }
   }
 }
 ```
 
-**Custom Config File:**
+**Development Setup:**
 ```json
 {
   "mcpServers": {
-    "alpacon-mcp": {
+    "alpacon-mcp-dev": {
       "command": "uv",
       "args": ["run", "python", "main.py"],
       "env": {
-        "ALPACON_CONFIG_FILE": "/path/to/custom-config.json"
+        "ALPACON_MCP_CONFIG_FILE": "./config/token.json"
       },
       "cwd": "/absolute/path/to/alpacon-mcp"
     }
