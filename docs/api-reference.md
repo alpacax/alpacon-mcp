@@ -2,6 +2,39 @@
 
 Complete reference for all Alpacon MCP Server tools and capabilities.
 
+## 📋 Response Structure
+
+All MCP tools follow a consistent response structure:
+
+### Successful HTTP Request
+```json
+{
+  "status": "success",
+  "data": { /* API response data */ },
+  "server_id": "server-uuid",
+  "region": "ap1",
+  "workspace": "production"
+}
+```
+
+### HTTP Request with API Error
+```json
+{
+  "status": "success",  // HTTP request succeeded
+  "data": {
+    "error": "HTTP Error",
+    "status_code": 403,  // Actual API error code
+    "message": "Client error '403 Forbidden'...",
+    "response": "Access denied"
+  },
+  "server_id": "server-uuid",
+  "region": "ap1",
+  "workspace": "production"
+}
+```
+
+> **Note**: `"status": "success"` indicates successful HTTP communication. Check the `data.error` field for API-level errors like ACL permission issues (403/404).
+
 ## 🔐 Authentication Tools
 
 ### `auth_set_token`
@@ -305,6 +338,8 @@ Delete a scheduled command that hasn't been delivered yet.
 
 ## 🖥️ WebSH and Command Execution Tools
 
+> ⚠️ **ACL Configuration Required**: All command execution tools require pre-approved commands in your token's Access Control List (ACL). Configure permissions by clicking on your token in the Alpacon web interface → ACL settings.
+
 ### `websh_session_create`
 Create a new WebSH session for remote shell access.
 
@@ -356,6 +391,39 @@ Execute commands in WebSH session via WebSocket.
 - `websocket_url` (string): WebSocket URL
 - `command` (string): Command to execute
 - `timeout` (integer, default: 10): Timeout in seconds
+
+### `websh_channel_connect`
+Connect to WebSH user channel and maintain persistent connection.
+
+**Parameters:**
+- `channel_id` (string): User channel ID
+- `websocket_url` (string): WebSocket URL from user channel creation
+- `session_id` (string): Session ID for reference
+
+**Returns:** Connection status and channel information.
+
+### `websh_channel_execute`
+Execute command using existing WebSocket connection from pool.
+
+**Parameters:**
+- `channel_id` (string): User channel ID
+- `command` (string): Command to execute
+- `timeout` (integer, default: 10): Timeout in seconds
+
+**Returns:** Command execution result with output.
+
+### `websh_channels_list`
+List all active WebSocket connections in the pool.
+
+**Returns:** List of active channels with connection status.
+
+### `websh_channel_disconnect`
+Disconnect and remove WebSocket connection from pool.
+
+**Parameters:**
+- `channel_id` (string): User channel ID to disconnect
+
+**Returns:** Disconnection status.
 
 ---
 

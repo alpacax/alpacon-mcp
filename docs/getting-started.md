@@ -46,7 +46,39 @@ source .venv/bin/activate  # Linux/macOS
 uv pip install mcp[cli] httpx
 ```
 
-### Step 3: Configure Authentication
+### Step 3: Get API Token from Alpacon
+
+Before configuring authentication, you need to obtain API tokens from your Alpacon workspace:
+
+#### 3.1 Generate API Token
+
+1. **Visit your Alpacon workspace**: `https://workspace.region.alpacon.io`
+   - Example: `https://production.ap1.alpacon.io`
+   - Example: `https://alpacax.dev.alpacon.io`
+
+2. **Log in** to your Alpacon account
+
+3. **Navigate to API Token**:
+   - Click **"API Token"** in the left sidebar
+   - This section manages your authentication tokens
+
+4. **Generate or Copy Token**:
+   - Click "Create New Token" if you don't have one
+   - Or copy an existing token
+   - **Save this token securely** - you'll need it for configuration
+
+5. **Configure Token Permissions (ACL)**:
+   - **Click on the token** to open its details page
+   - Navigate to **Access Control List (ACL)** settings
+   - **Configure permissions** for:
+     - Allowed commands (e.g., `ls`, `pwd`, `systemctl status`)
+     - Server access permissions
+     - File transfer operations
+   - **Save the ACL configuration**
+
+> ⚠️ **Important**: Command execution will fail with 403/404 errors if commands are not pre-approved in ACL settings
+
+#### 3.2 Configure Authentication
 
 Create your token configuration file:
 

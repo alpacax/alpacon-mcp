@@ -71,28 +71,41 @@ uv pip install mcp[cli] httpx
 python main.py --test
 ```
 
-### 2. **Configure Authentication**
-```bash
-# Setup tokens
-mkdir -p config
-cp config/token.json.example config/token.json
-# Edit with your Alpacon API tokens
-```
+### 2. **Get API Token from Alpacon**
+1. Visit your Alpacon workspace: `https://workspace.region.alpacon.io`
+   - Example: `https://production.ap1.alpacon.io`
+2. Log in to your account
+3. Click **"API Token"** in the left sidebar
+4. Create a new token or copy existing token
+5. **Configure Token Permissions (ACL)**:
+   - Click on the generated token to open details
+   - Configure Access Control List (ACL) settings
+   - **Important**: Command execution requires specific ACL permissions
+   - Set allowed commands, servers, and operations as needed
+6. Save the token securely
 
-**Token Configuration:**
-```json
-{
+### 3. **Configure Authentication**
+```bash
+# Setup token configuration
+mkdir -p config
+echo '{
   "ap1": {
-    "company-prod": "your-company-prod-token",
-    "company-dev": "your-company-dev-token"
+    "production": "your-api-token-from-web-interface",
+    "staging": "your-staging-token"
   },
   "us1": {
-    "backup-site": "your-backup-token"
+    "backup-site": "your-us-token"
+  },
+  "dev": {
+    "alpacax": "your-dev-token"
   }
-}
+}' > config/token.json
+
+# Test token configuration
+python -c "from utils.token_manager import get_token_manager; print('✅ Ready!' if get_token_manager().get_token('ap1', 'production') else '❌ Token not found')"
 ```
 
-### 3. **Connect to AI Client**
+### 4. **Connect to AI Client**
 
 #### Claude Desktop
 ```json
@@ -137,6 +150,12 @@ cp config/token.json.example config/token.json
 ### Command Execution
 > *"Execute 'systemctl status nginx' on server web-01 and check the service logs"*
 
+### File Management
+> *"Upload my config.txt file to /home/user/ on server web-01 and then download the logs folder as a zip"*
+
+### Persistent Shell Sessions
+> *"Create a persistent shell connection to server web-01 and run these commands: check disk usage, list running processes, and create a backup directory"*
+
 ## 🔧 Available Tools
 
 ### 🖥️ Server Management
@@ -163,10 +182,22 @@ cp config/token.json.example config/token.json
 - **get_disk_info** - Storage device information
 
 ### 🔧 Remote Operations
-- **websh_session_create** - Start secure shell sessions
-- **websh_command_execute** - Execute commands remotely
-- **webftp_upload_file** - Transfer files to servers
-- **webftp_downloads_list** - Browse downloadable content
+
+#### WebSH (Shell Access)
+- **websh_session_create** - Create secure shell sessions
+- **websh_command_execute** - Execute single commands
+- **websh_websocket_execute** - Single command via WebSocket
+- **websh_channel_connect** - Persistent connection management
+- **websh_channel_execute** - Execute commands using persistent channels
+- **websh_channels_list** - List active WebSocket channels
+- **websh_session_terminate** - Close sessions
+
+#### WebFTP (File Management)
+- **webftp_upload_file** - Upload files using S3 presigned URLs
+- **webftp_download_file** - Download files/folders (folders as .zip)
+- **webftp_uploads_list** - Upload history
+- **webftp_downloads_list** - Download history
+- **webftp_sessions_list** - Active FTP sessions
 
 ### 📋 Event Management
 - **list_events** - Browse server events and logs
@@ -237,8 +268,18 @@ python main_sse.py
 
 - **Secure Token Storage** - Tokens encrypted and never committed to git
 - **Region-Based Access Control** - Separate tokens per environment
+- **ACL Configuration Required** - Configure token permissions in Alpacon web interface for command execution
 - **Audit Logging** - All operations logged for security review
 - **Connection Validation** - API endpoints verified before execution
+
+### ⚠️ Command Execution Limitations
+
+**Important**: WebSH and command execution tools can only run **pre-approved commands** configured in your token's ACL settings:
+
+1. **Visit token details** in Alpacon web interface (click on your token)
+2. **Configure ACL permissions** for allowed commands, servers, and operations
+3. **Commands not in ACL** will be rejected with 403/404 errors
+4. **Contact your administrator** if you need additional command permissions
 
 ## 🤝 Contributing
 
