@@ -182,7 +182,7 @@ Add this to your Claude Desktop configuration file:
       "command": "uvx",
       "args": ["alpacon-mcp"],
       "env": {
-        "ALPACON_MCP_CONFIG_FILE": "/Users/yourusername/.config/alpacon/tokens.json"
+        "ALPACON_MCP_CONFIG_FILE": "~/.config/alpacon/tokens.json"
       }
     }
   }
@@ -199,7 +199,7 @@ Create `.cursor/mcp.json` in your project root:
       "command": "uvx",
       "args": ["alpacon-mcp"],
       "env": {
-        "ALPACON_MCP_CONFIG_FILE": "/Users/yourusername/.config/alpacon/tokens.json"
+        "ALPACON_MCP_CONFIG_FILE": "~/.config/alpacon/tokens.json"
       }
     }
   }
@@ -319,8 +319,8 @@ tm.set_token('eu1', 'company-eu', 'eu1-company-token')
 ### Custom Config File
 ```bash
 # Use custom config file location
-export ALPACON_CONFIG_FILE="/path/to/custom-tokens.json"
-python main.py
+export ALPACON_MCP_CONFIG_FILE="/path/to/custom-tokens.json"
+uvx alpacon-mcp
 ```
 
 ### Docker Deployment
