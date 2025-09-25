@@ -106,38 +106,75 @@ uv pip install -e .
 
 ### 3. **Configure Authentication**
 
-#### **Option A: Using Configuration File (Recommended for MCP Clients)**
-```bash
-# Create configuration file
-mkdir -p ~/.config/alpacon
-echo '{
-  "ap1": {
-    "production": "your-production-token",
-    "staging": "your-staging-token"
-  },
-  "us1": {
-    "backup": "your-us-token"
-  }
-}' > ~/.config/alpacon/tokens.json
+You need to create a token configuration file with your Alpacon API tokens. The server supports multiple regions and workspaces.
 
-# Run with uvx using config file
-ALPACON_MCP_CONFIG_FILE=~/.config/alpacon/tokens.json uvx alpacon-mcp
+#### **Create Token Configuration File**
+
+**Step 1: Create the token file anywhere you prefer**
+```bash
+# Example: Create in your home directory
+mkdir -p ~/.config/alpacon
+nano ~/.config/alpacon/tokens.json
 ```
 
-#### **Option B: Using Environment Variables (For CLI/Testing)**
-```bash
-# Set environment variables for direct usage
-export ALPACON_MCP_AP1_PRODUCTION_TOKEN="your-production-token"
-export ALPACON_MCP_AP1_STAGING_TOKEN="your-staging-token"
-export ALPACON_MCP_US1_BACKUP_TOKEN="your-us-token"
+**Step 2: Add your tokens using this format**
+```json
+{
+  "ap1": {
+    "your-workspace-name": "your-api-token-from-alpacon-web-interface"
+  },
+  "us1": {
+    "your-workspace-name": "your-api-token-from-alpacon-web-interface"
+  },
+  "eu1": {
+    "your-workspace-name": "your-api-token-from-alpacon-web-interface"
+  }
+}
+```
 
-# Run with uvx using environment variables
+**Real Example:**
+```json
+{
+  "ap1": {
+    "production": "alpat-ABC123xyz789...",
+    "staging": "alpat-DEF456uvw012...",
+    "development": "alpat-GHI789rst345..."
+  },
+  "us1": {
+    "backup": "alpat-JKL012def678..."
+  }
+}
+```
+
+**Step 3: Run with your token file**
+```bash
+# Method 1: Using environment variable (recommended)
+ALPACON_MCP_CONFIG_FILE=~/.config/alpacon/tokens.json uvx alpacon-mcp
+
+# Method 2: Using command line flag
+uvx alpacon-mcp --config-file ~/.config/alpacon/tokens.json
+```
+
+#### **Alternative: Environment Variables (For CLI/Testing)**
+Instead of a config file, you can use environment variables:
+```bash
+# Format: ALPACON_MCP_<REGION>_<WORKSPACE>_TOKEN
+export ALPACON_MCP_AP1_PRODUCTION_TOKEN="alpat-ABC123xyz789..."
+export ALPACON_MCP_AP1_STAGING_TOKEN="alpat-DEF456uvw012..."
+export ALPACON_MCP_US1_BACKUP_TOKEN="alpat-JKL012def678..."
+
+# Run with environment variables
 uvx alpacon-mcp
 ```
 
 ### 4. **Connect to AI Client**
 
 #### **Claude Desktop**
+Add this to your Claude Desktop configuration file:
+- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Windows**: `%APPDATA%/Claude/claude_desktop_config.json`
+- **Linux**: `~/.config/Claude/claude_desktop_config.json`
+
 ```json
 {
   "mcpServers": {
@@ -145,7 +182,7 @@ uvx alpacon-mcp
       "command": "uvx",
       "args": ["alpacon-mcp"],
       "env": {
-        "ALPACON_MCP_CONFIG_FILE": "/path/to/your/alpacon-tokens.json"
+        "ALPACON_MCP_CONFIG_FILE": "/Users/yourusername/.config/alpacon/tokens.json"
       }
     }
   }
@@ -153,6 +190,8 @@ uvx alpacon-mcp
 ```
 
 #### **Cursor IDE**
+Create `.cursor/mcp_config.json` in your project root:
+
 ```json
 {
   "mcpServers": {
@@ -160,7 +199,7 @@ uvx alpacon-mcp
       "command": "uvx",
       "args": ["alpacon-mcp"],
       "env": {
-        "ALPACON_MCP_CONFIG_FILE": "./config/token.json"
+        "ALPACON_MCP_CONFIG_FILE": "/Users/yourusername/.config/alpacon/tokens.json"
       }
     }
   }
