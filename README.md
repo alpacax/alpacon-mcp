@@ -190,7 +190,7 @@ Add this to your Claude Desktop configuration file:
 ```
 
 #### **Cursor IDE**
-Create `.cursor/mcp_config.json` in your project root:
+Create `.cursor/mcp.json` in your project root:
 
 ```json
 {
