@@ -57,18 +57,38 @@ The Alpacon MCP Server transforms how you interact with your server infrastructu
 ## 🚀 Quick Start
 
 ### 1. **Installation**
+
+#### **Option A: Using uvx (Recommended)**
 ```bash
-# Clone and setup
-git clone https://github.com/your-repo/alpacon-mcp.git
-cd alpacon-mcp
-
-# Install with UV (recommended)
+# Install UV first (if not already installed)
 curl -LsSf https://astral.sh/uv/install.sh | sh
-uv venv && source .venv/bin/activate
-uv pip install mcp[cli] httpx
 
-# Test installation
-python main.py --test
+# Run directly without installation
+uvx alpacon-mcp --help
+
+# Run with configuration
+uvx alpacon-mcp --config-file /path/to/config.json
+```
+
+#### **Option B: Traditional Installation**
+```bash
+# Install from PyPI
+pip install alpacon-mcp
+
+# Or using UV
+uv tool install alpacon-mcp
+
+# Run the server
+alpacon-mcp
+```
+
+#### **Option C: Development Installation**
+```bash
+# Clone and setup for development
+git clone https://github.com/alpacax/alpacon-mcp.git
+cd alpacon-mcp
+uv venv && source .venv/bin/activate
+uv pip install -e .
 ```
 
 ### 2. **Get API Token from Alpacon**
@@ -85,8 +105,21 @@ python main.py --test
 6. Save the token securely
 
 ### 3. **Configure Authentication**
+
+#### **Option A: Using Environment Variables (Recommended)**
 ```bash
-# Setup token configuration
+# Set environment variables for tokens
+export ALPACON_MCP_AP1_PRODUCTION_TOKEN="your-production-token"
+export ALPACON_MCP_AP1_STAGING_TOKEN="your-staging-token"
+export ALPACON_MCP_US1_BACKUP_TOKEN="your-us-token"
+
+# Run with uvx
+uvx alpacon-mcp
+```
+
+#### **Option B: Using Configuration File**
+```bash
+# Setup token configuration file
 mkdir -p config
 echo '{
   "ap1": {
@@ -101,32 +134,35 @@ echo '{
   }
 }' > config/token.json
 
-# Test token configuration
-python -c "from utils.token_manager import get_token_manager; print('✅ Ready!' if get_token_manager().get_token('ap1', 'production') else '❌ Token not found')"
+# Run with config file
+uvx alpacon-mcp --config-file config/token.json
 ```
 
 ### 4. **Connect to AI Client**
 
-#### Claude Desktop
+#### **Claude Desktop**
 ```json
 {
   "mcpServers": {
-    "alpacon-mcp": {
-      "command": "uv",
-      "args": ["run", "python", "main.py"],
-      "cwd": "/path/to/alpacon-mcp"
+    "alpacon": {
+      "command": "uvx",
+      "args": ["alpacon-mcp"],
+      "env": {
+        "ALPACON_MCP_AP1_PRODUCTION_TOKEN": "your-production-token",
+        "ALPACON_MCP_AP1_STAGING_TOKEN": "your-staging-token"
+      }
     }
   }
 }
 ```
 
-#### Cursor IDE
+#### **Cursor IDE**
 ```json
 {
   "mcpServers": {
-    "alpacon-mcp": {
-      "command": "uv",
-      "args": ["run", "python", "main.py"],
+    "alpacon": {
+      "command": "uvx",
+      "args": ["alpacon-mcp"],
       "cwd": "./alpacon-mcp"
     }
   }

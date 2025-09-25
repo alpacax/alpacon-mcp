@@ -27,6 +27,29 @@ Complete installation guide for the Alpacon MCP Server across different platform
 
 ## 🚀 Quick Installation
 
+### Using uvx (Recommended)
+
+```bash
+# Install UV if not already installed
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Run Alpacon MCP Server directly
+uvx alpacon-mcp --help
+
+# Run with environment variables
+ALPACON_MCP_AP1_PRODUCTION_TOKEN="your-token" uvx alpacon-mcp
+
+# Run specific version
+uvx alpacon-mcp@0.1.0
+```
+
+**Benefits of uvx:**
+- ✅ No installation required
+- ✅ Automatic dependency management
+- ✅ Version isolation
+- ✅ Always runs latest version
+- ✅ Easy to update
+
 ### One-Line Installation (Unix/Linux/macOS)
 
 ```bash

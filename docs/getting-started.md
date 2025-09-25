@@ -13,9 +13,23 @@ Before you begin, make sure you have:
 
 ## 🚀 Quick Setup
 
-### Step 1: Install UV Package Manager
+### Method 1: Using uvx (Recommended - Zero Installation)
 
-UV is the recommended package manager for this project:
+```bash
+# Install UV if not already installed
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Run directly without any installation
+uvx alpacon-mcp --help
+
+# Set up environment variables and run
+export ALPACON_MCP_AP1_PRODUCTION_TOKEN="your-token-here"
+uvx alpacon-mcp
+```
+
+### Method 2: Traditional Installation
+
+#### Step 1: Install UV Package Manager
 
 ```bash
 # macOS/Linux
@@ -28,11 +42,24 @@ pip install uv
 brew install uv
 ```
 
-### Step 2: Clone and Setup Project
+#### Step 2: Install from PyPI
+
+```bash
+# Install alpacon-mcp
+pip install alpacon-mcp
+
+# Or using UV
+uv tool install alpacon-mcp
+
+# Run the server
+alpacon-mcp
+```
+
+### Method 3: Development Setup
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-repo/alpacon-mcp.git
+git clone https://github.com/alpacax/alpacon-mcp.git
 cd alpacon-mcp
 
 # Create virtual environment

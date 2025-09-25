@@ -4,9 +4,34 @@ Comprehensive configuration guide for the Alpacon MCP Server.
 
 ## 🔐 Authentication Configuration
 
-### Token Management
+### Method 1: Environment Variables (Recommended for uvx)
 
-The Alpacon MCP Server uses a flexible token management system that supports multiple regions and workspaces.
+The Alpacon MCP Server supports environment variables for token management, perfect for uvx usage:
+
+#### Environment Variable Format
+
+```bash
+# Format: ALPACON_MCP_<REGION>_<WORKSPACE>_TOKEN
+export ALPACON_MCP_AP1_PRODUCTION_TOKEN="your-ap1-production-token"
+export ALPACON_MCP_AP1_STAGING_TOKEN="your-ap1-staging-token"
+export ALPACON_MCP_US1_BACKUP_TOKEN="your-us1-backup-token"
+export ALPACON_MCP_EU1_ENTERPRISE_TOKEN="your-eu1-enterprise-token"
+```
+
+#### Using with uvx
+
+```bash
+# Set environment variables
+export ALPACON_MCP_AP1_PRODUCTION_TOKEN="your-token-here"
+
+# Run with uvx
+uvx alpacon-mcp
+
+# Or inline for one-time use
+ALPACON_MCP_AP1_PRODUCTION_TOKEN="your-token" uvx alpacon-mcp
+```
+
+### Method 2: Configuration File
 
 #### Token File Structure
 
@@ -26,26 +51,26 @@ The Alpacon MCP Server uses a flexible token management system that supports mul
 }
 ```
 
-#### Configuration File Location
+#### Configuration Priority
 
-The server uses a simple priority system to find the token configuration:
+The server uses this priority system to find tokens:
 
-1. **Environment Variable**: If `ALPACON_CONFIG_FILE` is set, use that path
-2. **Default Location**: Otherwise, use `config/token.json`
+1. **Environment Variables**: `ALPACON_MCP_<REGION>_<WORKSPACE>_TOKEN`
+2. **Config File**: Path from `ALPACON_MCP_CONFIG_FILE` environment variable
+3. **Default Location**: `config/token.json`
 
 #### Examples
 
 ```bash
 # Use default location (config/token.json)
-python main.py
+uvx alpacon-mcp
 
-# Use custom config file
-export ALPACON_CONFIG_FILE="/path/to/custom-tokens.json"
-python main.py
+# Use custom config file with uvx
+ALPACON_MCP_CONFIG_FILE="/path/to/tokens.json" uvx alpacon-mcp
 
-# Use local config for development
-export ALPACON_CONFIG_FILE=".config/token.json"
-python main.py
+# Use environment variable for config path
+export ALPACON_MCP_CONFIG_FILE=".config/token.json"
+uvx alpacon-mcp
 ```
 
 ---
