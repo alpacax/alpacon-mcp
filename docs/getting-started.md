@@ -79,9 +79,8 @@ Before configuring authentication, you need to obtain API tokens from your Alpac
 
 #### 3.1 Generate API Token
 
-1. **Visit your Alpacon workspace**: `https://workspace.region.alpacon.io`
-   - Example: `https://production.ap1.alpacon.io`
-   - Example: `https://alpacax.dev.alpacon.io`
+1. **Visit your Alpacon workspace**: `https://alpacon.io`
+   - Or if you have a specific workspace: `https://alpacon.io/workspace/`
 
 2. **Log in** to your Alpacon account
 

@@ -45,6 +45,16 @@ async def servers_list(workspace: str, region: str = "ap1") -> Dict[str, Any]:
             token=token
         )
 
+        # Check if result is an error response from http_client
+        if isinstance(result, dict) and "error" in result:
+            logger.error(f"servers_list HTTP error for {workspace}.{region}: {result}")
+            return {
+                "status": "error",
+                "message": result.get("message", str(result.get("error", "Unknown error"))),
+                "region": region,
+                "workspace": workspace
+            }
+
         logger.info(f"servers_list completed successfully for {workspace}.{region}")
         return {
             "status": "success",
@@ -93,6 +103,16 @@ async def server_get(
             endpoint=f"/api/servers/{server_id}/",
             token=token
         )
+
+        # Check if result is an error response from http_client
+        if isinstance(result, dict) and "error" in result:
+            return {
+                "status": "error",
+                "message": result.get("message", str(result.get("error", "Unknown error"))),
+                "server_id": server_id,
+                "region": region,
+                "workspace": workspace
+            }
 
         return {
             "status": "success",

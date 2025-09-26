@@ -1,4 +1,4 @@
-"""WebSH (Web Shell) management tools for Alpacon MCP server."""
+"""Websh (Web Shell) management tools for Alpacon MCP server."""
 
 import asyncio
 import json
@@ -12,14 +12,14 @@ from utils.token_manager import get_token_manager
 token_manager = get_token_manager()
 
 
-@mcp.tool(description="Create a new WebSH session")
+@mcp.tool(description="Create a new Websh session")
 async def websh_session_create(
     server_id: str,
     workspace: str,
     username: Optional[str] = None,
     region: str = "ap1"
 ) -> Dict[str, Any]:
-    """Create a new WebSH session.
+    """Create a new Websh session.
 
     Args:
         server_id: Server ID to create session on
@@ -70,17 +70,17 @@ async def websh_session_create(
     except Exception as e:
         return {
             "status": "error",
-            "message": f"Failed to create WebSH session: {str(e)}"
+            "message": f"Failed to create Websh session: {str(e)}",
         }
 
 
-@mcp.tool(description="Get list of WebSH sessions")
+@mcp.tool(description="Get list of Websh sessions")
 async def websh_sessions_list(
     workspace: str,
     server_id: Optional[str] = None,
     region: str = "ap1"
 ) -> Dict[str, Any]:
-    """Get list of WebSH sessions.
+    """Get list of Websh sessions.
 
     Args:
         server_id: Optional server ID to filter sessions
@@ -121,23 +121,20 @@ async def websh_sessions_list(
         }
 
     except Exception as e:
-        return {
-            "status": "error",
-            "message": f"Failed to get WebSH sessions: {str(e)}"
-        }
+        return {"status": "error", "message": f"Failed to get Websh sessions: {str(e)}"}
 
 
-@mcp.tool(description="Execute a command in a WebSH session")
+@mcp.tool(description="Execute a command in a Websh session")
 async def websh_command_execute(
     session_id: str,
     command: str,
     workspace: str,
     region: str = "ap1"
 ) -> Dict[str, Any]:
-    """Execute a command in a WebSH session.
+    """Execute a command in a Websh session.
 
     Args:
-        session_id: WebSH session ID
+        session_id: Websh session ID
         command: Command to execute
         region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
         workspace: Workspace name. Required parameter
@@ -179,22 +176,22 @@ async def websh_command_execute(
     except Exception as e:
         return {
             "status": "error",
-            "message": f"Failed to execute WebSH command: {str(e)}"
+            "message": f"Failed to execute Websh command: {str(e)}",
         }
 
 
-@mcp.tool(description="Create a new user channel for an existing WebSH session")
+@mcp.tool(description="Create a new user channel for an existing Websh session")
 async def websh_session_reconnect(
     session_id: str,
     workspace: str,
     region: str = "ap1"
 ) -> Dict[str, Any]:
-    """Create a new user channel for an existing WebSH session.
+    """Create a new user channel for an existing Websh session.
     This allows reconnecting to a session that has lost its user channel connection.
     Only works for sessions created by the current user.
 
     Args:
-        session_id: Existing WebSH session ID to reconnect to
+        session_id: Existing Websh session ID to reconnect to
         region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
         workspace: Workspace name. Required parameter
 
@@ -252,20 +249,20 @@ async def websh_session_reconnect(
     except Exception as e:
         return {
             "status": "error",
-            "message": f"Failed to reconnect to WebSH session: {str(e)}"
+            "message": f"Failed to reconnect to Websh session: {str(e)}",
         }
 
 
-@mcp.tool(description="Terminate a WebSH session")
+@mcp.tool(description="Terminate a Websh session")
 async def websh_session_terminate(
     session_id: str,
     workspace: str,
     region: str = "ap1"
 ) -> Dict[str, Any]:
-    """Terminate a WebSH session.
+    """Terminate a Websh session.
 
     Args:
-        session_id: WebSH session ID to terminate
+        session_id: Websh session ID to terminate
         region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
         workspace: Workspace name. Required parameter
 
@@ -301,26 +298,26 @@ async def websh_session_terminate(
     except Exception as e:
         return {
             "status": "error",
-            "message": f"Failed to terminate WebSH session: {str(e)}"
+            "message": f"Failed to terminate Websh session: {str(e)}",
         }
 
 
-# WebSH sessions resource
+# Websh sessions resource
 @mcp.resource(
     uri="websh://sessions/{region}/{workspace}",
-    name="WebSH Sessions List",
-    description="Get list of WebSH sessions",
-    mime_type="application/json"
+    name="Websh Sessions List",
+    description="Get list of Websh sessions",
+    mime_type="application/json",
 )
 async def websh_sessions_resource(region: str, workspace: str) -> Dict[str, Any]:
-    """Get WebSH sessions as a resource.
+    """Get Websh sessions as a resource.
 
     Args:
         region: Region (ap1, us1, eu1, etc.)
         workspace: Workspace name
 
     Returns:
-        WebSH sessions information
+        Websh sessions information
     """
     sessions_data = websh_sessions_list(region=region, workspace=workspace)
     return {
@@ -333,13 +330,16 @@ websocket_pool = {}  # {channel_id: {'websocket': connection, 'url': url, 'sessi
 
 # WebSocket-based tools for direct terminal interaction
 
-@mcp.tool(description="Connect to WebSH user channel and maintain persistent connection")
+
+@mcp.tool(
+    description="Connect to Websh user channel and maintain persistent connection"
+)
 async def websh_channel_connect(
     channel_id: str,
     websocket_url: str,
     session_id: str
 ) -> Dict[str, Any]:
-    """Connect to WebSH user channel and store connection for reuse.
+    """Connect to Websh user channel and store connection for reuse.
 
     Args:
         channel_id: User channel ID
@@ -568,13 +568,13 @@ async def websh_channel_execute(
         }
 
 
-@mcp.tool(description="Execute commands in WebSH session via WebSocket")
+@mcp.tool(description="Execute commands in Websh session via WebSocket")
 async def websh_websocket_execute(
     websocket_url: str,
     command: str,
     timeout: int = 10
 ) -> Dict[str, Any]:
-    """Execute a command via WebSocket connection to WebSH session.
+    """Execute a command via WebSocket connection to Websh session.
 
     Args:
         websocket_url: WebSocket URL from user channel creation
@@ -603,7 +603,7 @@ async def websh_websocket_execute(
                     if isinstance(message, bytes):
                         output_lines.append(message.decode('utf-8', errors='ignore'))
                     elif message.startswith('{"type":'):
-                        # Parse JSON messages (WebSH protocol)
+                        # Parse JSON messages (Websh protocol)
                         try:
                             data = json.loads(message)
                             if data.get("type") == "output":
@@ -635,7 +635,7 @@ async def websh_websocket_execute(
         }
 
 
-@mcp.tool(description="Execute multiple commands in WebSH session via WebSocket")
+@mcp.tool(description="Execute multiple commands in Websh session via WebSocket")
 async def websh_websocket_batch_execute(
     websocket_url: str,
     commands: list,

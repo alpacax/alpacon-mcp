@@ -41,7 +41,7 @@ All MCP tools follow a consistent response structure:
 Set or update API tokens for specific region and workspace.
 
 **Parameters:**
-- `region` (string): Region name (e.g., 'ap1', 'us1', 'eu1')
+- `region` (string): Region name (currently supports 'ap1')
 - `workspace` (string): Workspace name
 - `token` (string): API token
 
@@ -336,12 +336,12 @@ Delete a scheduled command that hasn't been delivered yet.
 
 ---
 
-## 🖥️ WebSH and Command Execution Tools
+## 🖥️ Websh and Command Execution Tools
 
 > ⚠️ **ACL Configuration Required**: All command execution tools require pre-approved commands in your token's Access Control List (ACL). Configure permissions by clicking on your token in the Alpacon web interface → ACL settings.
 
 ### `websh_session_create`
-Create a new WebSH session for remote shell access.
+Create a new Websh session for remote shell access.
 
 **Parameters:**
 - `server_id` (string): Server ID to create session for
@@ -352,7 +352,7 @@ Create a new WebSH session for remote shell access.
 **Returns:** Session ID and connection details.
 
 ### `websh_sessions_list`
-Get list of active WebSH sessions.
+Get list of active Websh sessions.
 
 **Parameters:**
 - `server_id` (string, optional): Filter by server ID
@@ -360,16 +360,16 @@ Get list of active WebSH sessions.
 - `workspace` (string): Workspace name
 
 ### `websh_command_execute`
-Execute a command in a WebSH session.
+Execute a command in a Websh session.
 
 **Parameters:**
-- `session_id` (string): WebSH session ID
+- `session_id` (string): Websh session ID
 - `command` (string): Command to execute
 - `region` (string, default: "ap1"): Region name
 - `workspace` (string): Workspace name
 
 ### `websh_session_reconnect`
-Create a new user channel for an existing WebSH session.
+Create a new user channel for an existing Websh session.
 
 **Parameters:**
 - `session_id` (string): Session ID to reconnect
@@ -377,7 +377,7 @@ Create a new user channel for an existing WebSH session.
 - `workspace` (string): Workspace name
 
 ### `websh_session_terminate`
-Terminate a WebSH session.
+Terminate a Websh session.
 
 **Parameters:**
 - `session_id` (string): Session ID to terminate
@@ -385,7 +385,7 @@ Terminate a WebSH session.
 - `workspace` (string): Workspace name
 
 ### `websh_websocket_execute`
-Execute commands in WebSH session via WebSocket.
+Execute commands in Websh session via WebSocket.
 
 **Parameters:**
 - `websocket_url` (string): WebSocket URL
@@ -393,7 +393,7 @@ Execute commands in WebSH session via WebSocket.
 - `timeout` (integer, default: 10): Timeout in seconds
 
 ### `websh_channel_connect`
-Connect to WebSH user channel and maintain persistent connection.
+Connect to Websh user channel and maintain persistent connection.
 
 **Parameters:**
 - `channel_id` (string): User channel ID
@@ -463,6 +463,218 @@ Get list of downloadable files from WebFTP session.
 - `session_id` (string): WebFTP session ID
 - `region` (string, default: "ap1"): Region name
 - `workspace` (string): Workspace name
+
+---
+
+## 🔐 Identity and Access Management (IAM)
+
+> **Comprehensive IAM System** - Manage users, groups, roles, and permissions with workspace-level isolation and RBAC support.
+
+### User Management
+
+#### `iam_users_list`
+List all IAM users in workspace with pagination support.
+
+**Parameters:**
+- `workspace` (string): Workspace name
+- `region` (string, default: "ap1"): Region name
+- `page` (number, optional): Page number for pagination
+- `page_size` (number, optional): Users per page
+
+**Example:**
+```json
+{
+  "workspace": "production",
+  "page": 1,
+  "page_size": 20
+}
+```
+
+**Returns:** Paginated list of users with metadata, groups, and creation dates.
+
+#### `iam_user_get`
+Get detailed information about a specific IAM user.
+
+**Parameters:**
+- `user_id` (string): IAM user ID
+- `workspace` (string): Workspace name
+- `region` (string, default: "ap1"): Region name
+
+**Returns:** Complete user profile including permissions and group memberships.
+
+#### `iam_user_create`
+Create new IAM user with optional group assignment.
+
+**Parameters:**
+- `username` (string): Unique username
+- `email` (string): Email address
+- `workspace` (string): Workspace name
+- `first_name` (string, optional): First name
+- `last_name` (string, optional): Last name
+- `is_active` (boolean, default: true): Active status
+- `groups` (array, optional): List of group IDs to assign
+- `region` (string, default: "ap1"): Region name
+
+**Example:**
+```json
+{
+  "username": "john.doe",
+  "email": "john@company.com",
+  "first_name": "John",
+  "last_name": "Doe",
+  "workspace": "production",
+  "groups": ["developers", "team-leads"]
+}
+```
+
+#### `iam_user_update`
+Update existing user information and group memberships.
+
+**Parameters:**
+- `user_id` (string): User ID to update
+- `workspace` (string): Workspace name
+- `email` (string, optional): New email address
+- `first_name` (string, optional): New first name
+- `last_name` (string, optional): New last name
+- `is_active` (boolean, optional): New active status
+- `groups` (array, optional): New list of group IDs
+- `region` (string, default: "ap1"): Region name
+
+**Note:** Only provided fields will be updated. Omitted fields remain unchanged.
+
+#### `iam_user_delete`
+Delete IAM user from workspace.
+
+**Parameters:**
+- `user_id` (string): User ID to delete
+- `workspace` (string): Workspace name
+- `region` (string, default: "ap1"): Region name
+
+**⚠️ Warning:** This action is irreversible and will remove all user permissions and group memberships.
+
+### Group Management
+
+#### `iam_groups_list`
+List all IAM groups in workspace with pagination support.
+
+**Parameters:**
+- `workspace` (string): Workspace name
+- `region` (string, default: "ap1"): Region name
+- `page` (number, optional): Page number
+- `page_size` (number, optional): Groups per page
+
+**Returns:** List of groups with member counts and permission summaries.
+
+#### `iam_group_create`
+Create new IAM group with permission assignments.
+
+**Parameters:**
+- `name` (string): Group name
+- `workspace` (string): Workspace name
+- `description` (string, optional): Group description
+- `permissions` (array, optional): List of permission IDs
+- `region` (string, default: "ap1"): Region name
+
+**Example:**
+```json
+{
+  "name": "senior-developers",
+  "workspace": "production",
+  "description": "Senior development team with elevated permissions",
+  "permissions": ["deploy-staging", "read-prod-logs", "manage-users"]
+}
+```
+
+### Role and Permission Management
+
+#### `iam_roles_list`
+List all IAM roles in workspace.
+
+**Parameters:**
+- `workspace` (string): Workspace name
+- `region` (string, default: "ap1"): Region name
+- `page` (number, optional): Page number
+- `page_size` (number, optional): Roles per page
+
+**Returns:** Available roles with descriptions and associated permissions.
+
+#### `iam_permissions_list`
+List all available permissions in workspace.
+
+**Parameters:**
+- `workspace` (string): Workspace name
+- `region` (string, default: "ap1"): Region name
+- `page` (number, optional): Page number
+- `page_size` (number, optional): Permissions per page
+
+**Returns:** Complete permission catalog with descriptions and scopes.
+
+#### `iam_user_assign_role`
+Assign a role to a user.
+
+**Parameters:**
+- `user_id` (string): IAM user ID
+- `role_id` (string): Role ID to assign
+- `workspace` (string): Workspace name
+- `region` (string, default: "ap1"): Region name
+
+**Example:**
+```json
+{
+  "user_id": "user-123",
+  "role_id": "admin-role",
+  "workspace": "production"
+}
+```
+
+#### `iam_user_permissions_get`
+Get user's effective permissions (direct + inherited from groups).
+
+**Parameters:**
+- `user_id` (string): IAM user ID
+- `workspace` (string): Workspace name
+- `region` (string, default: "ap1"): Region name
+
+**Returns:**
+```json
+{
+  "status": "success",
+  "data": {
+    "direct_permissions": [
+      {
+        "id": "perm-read-servers",
+        "name": "Read Servers",
+        "description": "Can view server information"
+      }
+    ],
+    "group_permissions": [
+      {
+        "group": "developers",
+        "permissions": [
+          {
+            "id": "perm-deploy-staging",
+            "name": "Deploy to Staging"
+          }
+        ]
+      }
+    ],
+    "effective_permissions": ["perm-read-servers", "perm-deploy-staging"]
+  }
+}
+```
+
+### IAM Best Practices
+
+**Security Guidelines:**
+1. **Least Privilege**: Grant minimum required permissions
+2. **Group-Based Management**: Use groups for permission inheritance
+3. **Regular Audits**: Review user permissions periodically
+4. **Workspace Isolation**: Separate environments with different workspaces
+
+**Performance Tips:**
+1. **Pagination**: Use page_size for large user/group lists
+2. **Caching**: Cache permission lookups for better performance
+3. **Bulk Operations**: Group multiple user operations when possible
 
 ---
 

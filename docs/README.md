@@ -40,7 +40,7 @@ Alpacon MCP Server connects AI tools directly to Alpacon's server management pla
 - **Real-time Metrics**: CPU, memory, disk, and network monitoring
 - **System Information**: Hardware details, OS info, users, and packages
 - **Event Management**: Command execution and event tracking
-- **WebSH & WebFTP**: Secure shell and file transfer capabilities
+- **Websh & WebFTP**: Secure shell and file transfer capabilities
 
 ## 🏗️ Architecture
 
@@ -81,7 +81,7 @@ AI Client (Claude/Cursor/VS Code)
 - Installed packages inventory
 - Network interface details
 
-### WebSH & Command Execution
+### Websh & Command Execution
 - Secure shell sessions
 - Command execution with history
 - Session management
@@ -103,18 +103,16 @@ AI Client (Claude/Cursor/VS Code)
 | Continue | ✅ Full | Via MCP protocol |
 | Other MCP Clients | ✅ Full | Standard MCP protocol |
 
-## 📊 Regions & Workspaces
+## 📊 Workspaces
 
-Supports multiple Alpacon regions:
-- **ap1** - Asia Pacific 1
-- **us1** - US East 1
-- **eu1** - Europe 1
-- **dev** - Development environment
+Supports Alpacon workspaces with secure API authentication:
+- **ap1** - Currently supported region
+- Multiple workspaces per region supported
 
 ## 🔐 Security
 
 - Secure token management
-- Region-based access control
+- Workspace-based access control
 - No token storage in repositories
 - Multi-workspace separation
 

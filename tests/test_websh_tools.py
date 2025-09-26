@@ -1,9 +1,10 @@
 """
-Unit tests for WebSH tools module.
+Unit tests for Websh tools module.
 
-Tests WebSH session management functionality including session creation,
+Tests Websh session management functionality including session creation,
 command execution, WebSocket connections, and session termination.
 """
+
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 import asyncio
@@ -67,12 +68,12 @@ def mock_websocket():
         yield mock_ws, mock_connection
 
 
-class TestWebSHSessionCreate:
+class TestWebshSessionCreate:
     """Test websh_session_create function."""
 
     @pytest.mark.asyncio
     async def test_session_create_success(self, mock_http_client, mock_token_manager):
-        """Test successful WebSH session creation."""
+        """Test successful Websh session creation."""
         from tools.websh_tools import websh_session_create
 
         # Mock successful response
@@ -115,7 +116,7 @@ class TestWebSHSessionCreate:
 
     @pytest.mark.asyncio
     async def test_session_create_without_username(self, mock_http_client, mock_token_manager):
-        """Test WebSH session creation without username."""
+        """Test Websh session creation without username."""
         from tools.websh_tools import websh_session_create
 
         mock_http_client.post.return_value = {"id": "session-123"}
@@ -161,15 +162,15 @@ class TestWebSHSessionCreate:
         )
 
         assert result["status"] == "error"
-        assert "Failed to create WebSH session" in result["message"]
+        assert "Failed to create Websh session" in result["message"]
 
 
-class TestWebSHSessionsList:
+class TestWebshSessionsList:
     """Test websh_sessions_list function."""
 
     @pytest.mark.asyncio
     async def test_sessions_list_success(self, mock_http_client, mock_token_manager):
-        """Test successful WebSH sessions listing."""
+        """Test successful Websh sessions listing."""
         from tools.websh_tools import websh_sessions_list
 
         # Mock successful response
@@ -228,7 +229,7 @@ class TestWebSHSessionsList:
         assert call_args[1]["params"]["server"] == "server-001"
 
 
-class TestWebSHCommandExecute:
+class TestWebshCommandExecute:
     """Test websh_command_execute function."""
 
     @pytest.mark.asyncio
@@ -267,7 +268,7 @@ class TestWebSHCommandExecute:
         )
 
 
-class TestWebSHSessionReconnect:
+class TestWebshSessionReconnect:
     """Test websh_session_reconnect function."""
 
     @pytest.mark.asyncio
@@ -320,7 +321,7 @@ class TestWebSHSessionReconnect:
         assert "Session nonexistent not found" in result["message"]
 
 
-class TestWebSHSessionTerminate:
+class TestWebshSessionTerminate:
     """Test websh_session_terminate function."""
 
     @pytest.mark.asyncio
@@ -353,9 +354,8 @@ class TestWebSHSessionTerminate:
         )
 
 
-class TestWebSHChannelManagement:
+class TestWebshChannelManagement:
     """Test WebSocket channel management functions."""
-
 
     def test_websh_channel_connect_already_connected(self):
         """Test connecting to already connected channel."""
@@ -539,7 +539,7 @@ class TestWebSocketExecution:
         assert result["results"][1]["command"] == "echo cmd2"
 
 
-class TestWebSHChannelExecute:
+class TestWebshChannelExecute:
     """Test persistent channel command execution."""
 
     def test_channel_execute_success(self):

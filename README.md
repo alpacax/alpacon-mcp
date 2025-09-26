@@ -16,17 +16,17 @@ The Alpacon MCP Server transforms how you interact with your server infrastructu
 
 - **Natural Language Server Management** - "Show me CPU usage for all web servers in production"
 - **AI-Powered Troubleshooting** - "Investigate why server-web-01 is slow and suggest fixes"
-- **Unified Multi-Region Control** - Manage servers across AP1, US1, EU1 regions seamlessly
+- **Multi-Workspace Support** - Connect to your Alpacon workspaces with secure API authentication
 - **Real-Time Monitoring Integration** - Access metrics, logs, and events through AI conversations
-- **Secure WebSH & File Operations** - Execute commands and transfer files via AI interface
+- **Secure Websh & File Operations** - Execute commands and transfer files via AI interface
 
 ## 🌟 Core Features
 
 ### 🖥️ **Server Management**
-- List and monitor servers across regions
+- List and monitor servers in your workspace
 - Get detailed system information and specifications
 - Create and manage server documentation
-- Multi-workspace and multi-region support
+- Multi-workspace support with API token management
 
 ### 📊 **Real-Time Monitoring**
 - CPU, memory, disk, and network metrics
@@ -43,7 +43,7 @@ The Alpacon MCP Server transforms how you interact with your server infrastructu
 - System time and uptime tracking
 
 ### 🔧 **Remote Operations**
-- WebSH sessions for secure shell access
+- Websh sessions for secure shell access
 - Command execution with real-time output
 - File upload/download via WebFTP
 - Session management and monitoring
@@ -92,8 +92,8 @@ uv pip install -e .
 ```
 
 ### 2. **Get API Token from Alpacon**
-1. Visit your Alpacon workspace: `https://workspace.region.alpacon.io`
-   - Example: `https://production.ap1.alpacon.io`
+1. Visit your Alpacon workspace: `https://alpacon.io`
+   - Or if you have a specific workspace: `https://alpacon.io/workspace/`
 2. Log in to your account
 3. Click **"API Token"** in the left sidebar
 4. Create a new token or copy existing token
@@ -106,7 +106,7 @@ uv pip install -e .
 
 ### 3. **Configure Authentication**
 
-You need to create a token configuration file with your Alpacon API tokens. The server supports multiple regions and workspaces.
+You need to create a token configuration file with your Alpacon API tokens. The server supports multiple workspaces.
 
 #### **Create Token Configuration File**
 
@@ -122,12 +122,6 @@ nano ~/.config/alpacon/tokens.json
 {
   "ap1": {
     "your-workspace-name": "your-api-token-from-alpacon-web-interface"
-  },
-  "us1": {
-    "your-workspace-name": "your-api-token-from-alpacon-web-interface"
-  },
-  "eu1": {
-    "your-workspace-name": "your-api-token-from-alpacon-web-interface"
   }
 }
 ```
@@ -139,9 +133,6 @@ nano ~/.config/alpacon/tokens.json
     "production": "alpat-ABC123xyz789...",
     "staging": "alpat-DEF456uvw012...",
     "development": "alpat-GHI789rst345..."
-  },
-  "us1": {
-    "backup": "alpat-JKL012def678..."
   }
 }
 ```
@@ -158,10 +149,9 @@ uvx alpacon-mcp --config-file ~/.config/alpacon/tokens.json
 #### **Alternative: Environment Variables (For CLI/Testing)**
 Instead of a config file, you can use environment variables:
 ```bash
-# Format: ALPACON_MCP_<REGION>_<WORKSPACE>_TOKEN
+# Format: ALPACON_MCP_<REGION>_<WORKSPACE>_TOKEN (currently ap1 supported)
 export ALPACON_MCP_AP1_PRODUCTION_TOKEN="alpat-ABC123xyz789..."
 export ALPACON_MCP_AP1_STAGING_TOKEN="alpat-DEF456uvw012..."
-export ALPACON_MCP_US1_BACKUP_TOKEN="alpat-JKL012def678..."
 
 # Run with environment variables
 uvx alpacon-mcp
@@ -232,7 +222,7 @@ Create `.cursor/mcp.json` in your project root:
 ## 🔧 Available Tools
 
 ### 🖥️ Server Management
-- **servers_list** - List all servers in region/workspace
+- **servers_list** - List all servers in workspace
 - **server_get** - Get detailed server information
 - **server_notes_list** - View server documentation
 - **server_note_create** - Create server notes
@@ -256,7 +246,7 @@ Create `.cursor/mcp.json` in your project root:
 
 ### 🔧 Remote Operations
 
-#### WebSH (Shell Access)
+#### Websh (Shell Access)
 - **websh_session_create** - Create secure shell sessions
 - **websh_command_execute** - Execute single commands
 - **websh_websocket_execute** - Single command via WebSocket
@@ -277,6 +267,29 @@ Create `.cursor/mcp.json` in your project root:
 - **search_events** - Find specific events
 - **acknowledge_command** - Confirm command receipt
 - **finish_command** - Mark commands as complete
+
+### 🔐 Identity and Access Management (IAM)
+
+**User Management**:
+- **iam_users_list** - List workspace IAM users with pagination
+- **iam_user_get** - Get detailed user information
+- **iam_user_create** - Create new users with group assignment
+- **iam_user_update** - Update user details and group memberships
+- **iam_user_delete** - Remove users from workspace
+- **iam_user_permissions_get** - View effective user permissions
+- **iam_user_assign_role** - Assign roles to users
+
+**Group & Role Management**:
+- **iam_groups_list** - List all workspace groups
+- **iam_group_create** - Create groups with permissions
+- **iam_roles_list** - List available roles
+- **iam_permissions_list** - View all permissions
+
+**Advanced IAM Features**:
+- Workspace-level isolation for multi-tenant security
+- Role-based access control (RBAC) implementation
+- Group-based permission inheritance
+- Comprehensive audit trails and logging
 
 ### 🔐 Authentication
 - **auth_set_token** - Configure API tokens
@@ -304,15 +317,15 @@ Create `.cursor/mcp.json` in your project root:
 
 ## 🚀 Advanced Usage
 
-### Multi-Region Management
+### Multi-Workspace Management
 ```bash
-# Configure tokens for multiple regions
+# Configure tokens for multiple workspaces (ap1 region)
 python -c "
 from utils.token_manager import TokenManager
 tm = TokenManager()
 tm.set_token('ap1', 'company-prod', 'ap1-company-prod-token')
-tm.set_token('us1', 'backup-site', 'us1-backup-token')
-tm.set_token('eu1', 'company-eu', 'eu1-company-token')
+tm.set_token('ap1', 'company-staging', 'ap1-company-staging-token')
+tm.set_token('ap1', 'company-dev', 'ap1-company-dev-token')
 "
 ```
 
@@ -340,14 +353,14 @@ python main_sse.py
 ## 🔒 Security & Best Practices
 
 - **Secure Token Storage** - Tokens encrypted and never committed to git
-- **Region-Based Access Control** - Separate tokens per environment
+- **Workspace-Based Access Control** - Separate tokens per workspace environment
 - **ACL Configuration Required** - Configure token permissions in Alpacon web interface for command execution
 - **Audit Logging** - All operations logged for security review
 - **Connection Validation** - API endpoints verified before execution
 
 ### ⚠️ Command Execution Limitations
 
-**Important**: WebSH and command execution tools can only run **pre-approved commands** configured in your token's ACL settings:
+**Important**: Websh and command execution tools can only run **pre-approved commands** configured in your token's ACL settings:
 
 1. **Visit token details** in Alpacon web interface (click on your token)
 2. **Configure ACL permissions** for allowed commands, servers, and operations

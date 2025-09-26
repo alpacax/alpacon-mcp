@@ -50,7 +50,7 @@ python main.py
 ```
 2024-01-20 10:30:20 - alpacon_mcp.server_tools - INFO - [server_tools.py:26] - servers_list called - workspace: production, region: ap1
 2024-01-20 10:30:20 - alpacon_mcp.token_manager - INFO - [token_manager.py:130] - Found token for production.ap1 from config file
-2024-01-20 10:30:20 - alpacon_mcp.http_client - INFO - [http_client.py:87] - HTTP GET request to https://production.ap1.alpacon.io/api/servers/servers/
+2024-01-20 10:30:20 - alpacon_mcp.http_client - INFO - [http_client.py:87] - HTTP GET request to https://alpacon.io/api/servers/servers/
 2024-01-20 10:30:21 - alpacon_mcp.http_client - INFO - [http_client.py:109] - HTTP GET success - Status: 200, Content-Length: 1024
 ```
 

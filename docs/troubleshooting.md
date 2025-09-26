@@ -130,7 +130,7 @@ python -c "import json; json.load(open('config/token.json'))"
 **Test Token Manually:**
 ```bash
 curl -H "Authorization: Bearer your-token-here" \
-     "https://your-workspace.ap1.alpacon.io/api/servers/"
+     "https://alpacon.io/api/servers/"
 ```
 
 **Debug Token Loading:**
@@ -250,11 +250,11 @@ cat ~/.config/Code/User/settings.json | grep -A5 "mcp.servers"
 ```bash
 # Test server list endpoint
 curl -H "Authorization: Bearer your-token" \
-     "https://workspace.ap1.alpacon.io/api/servers/"
+     "https://alpacon.io/api/servers/"
 
 # Test specific server
 curl -H "Authorization: Bearer your-token" \
-     "https://workspace.ap1.alpacon.io/api/servers/server-id/"
+     "https://alpacon.io/api/servers/server-id/"
 ```
 
 **Verify Server Status:**
@@ -273,13 +273,13 @@ print(result)
 
 ---
 
-### 5. WebSH Session Issues
+### 5. Websh Session Issues
 
 #### Symptoms
 ```json
 {
   "status": "error",
-  "message": "Failed to create WebSH session"
+  "message": "Failed to create Websh session"
 }
 ```
 
@@ -293,7 +293,7 @@ result = await server_get(server_id='your-server-id')
 print("Server status:", result.get('data', {}).get('status'))
 ```
 
-**Test WebSH Prerequisites:**
+**Test Websh Prerequisites:**
 ```bash
 # Ensure server allows SSH connections
 # Check with Alpacon web interface first
@@ -328,7 +328,7 @@ print(result)
 **Check File Permissions:**
 ```bash
 # Ensure target directory exists and is writable
-# Check via WebSH first:
+# Check via Websh first:
 websh_command_execute(command="ls -la /target/directory/")
 ```
 
@@ -379,7 +379,7 @@ export MAX_CONCURRENT_REQUESTS=20
 ```bash
 # Test API response time
 time curl -H "Authorization: Bearer token" \
-          "https://workspace.ap1.alpacon.io/api/servers/"
+          "https://alpacon.io/api/servers/"
 ```
 
 ---

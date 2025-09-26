@@ -150,7 +150,7 @@ tests/
 ├── test_auth.py           # Authentication tests
 ├── test_server_tools.py   # Server management tests
 ├── test_metrics_tools.py  # Metrics tools tests
-├── test_websh_tools.py    # WebSH functionality tests
+├── test_websh_tools.py    # Websh functionality tests
 └── conftest.py           # Test configuration and fixtures
 ```
 
@@ -495,7 +495,7 @@ Brief description of changes.
    ```markdown
    ## [1.1.0] - 2024-01-15
    ### Added
-   - New WebSH session management
+   - New Websh session management
    - Enhanced error handling
 
    ### Fixed

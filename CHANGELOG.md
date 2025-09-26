@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial release of Alpacon MCP Server
 - Authentication tools for login/logout functionality
 - Server management tools (list, get details, notes)
-- WebSH tools for secure shell session management
+- Websh tools for secure shell session management
 - WebFTP tools for file transfer operations
 - System information tools for hardware and OS details
 - Metrics tools for performance monitoring (CPU, memory, disk, network)
@@ -27,7 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Server Management**: List and monitor servers across regions
 - **Real-Time Monitoring**: CPU, memory, disk, and network metrics
 - **System Administration**: User management, package inventory, system information
-- **Remote Operations**: WebSH sessions and file transfers
+- **Remote Operations**: Websh sessions and file transfers
 - **Event Management**: Command tracking and execution history
 - **Authentication**: Secure token-based authentication with multi-workspace support
 
