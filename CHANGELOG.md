@@ -46,6 +46,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Environment variable-based configuration
 - Comprehensive error handling and logging
 
+## [0.2.0] - 2024-09-26
+
+### Added
+- **Comprehensive IAM Management System**: Complete identity and access management tools
+  - User management (list, get, create, update, delete)
+  - Group management with permission inheritance
+  - Role-based access control (RBAC) system
+  - Permission management and user effective permissions
+  - Workspace-level isolation for multi-tenant environments
+- **Comprehensive Test Suite**: 246+ test cases covering all MCP tools and scenarios
+  - Unit tests for all tools and utilities
+  - Integration tests for API workflows
+  - Error handling and edge case validation
+  - Mock server testing infrastructure
+- **Enhanced Logging System**: Comprehensive logging and monitoring capabilities
+  - Structured logging with configurable levels
+  - Request/response tracking for debugging
+  - Performance metrics and monitoring
+  - Error tracking and reporting
+
+### Fixed
+- Corrected environment variable names and paths in README for better clarity
+- Fixed Cursor IDE MCP configuration file name to use correct `mcp.json` format
+- Updated URL patterns and documentation to reflect current architecture
+
+### Documentation
+- Improved token configuration guide with clearer examples and file paths
+- Enhanced documentation structure with current architecture patterns
+- Added comprehensive testing documentation
+- Updated language guidelines for better consistency
+- Improved API reference with detailed examples
+
+### Technical
+- Enhanced error handling across all tools
+- Improved code organization and maintainability
+- Added comprehensive type checking and validation
+- Enhanced security practices and token management
+
+## [0.1.1] - 2024-09-25
+
+### Fixed
+- Updated MCP client configuration to use config file instead of direct token exposure for improved security
+- Enhanced token management documentation for better security practices
+
+### Documentation
+- Added comprehensive uvx support across all documentation
+- Improved token configuration examples with security best practices
+- Enhanced installation instructions with uvx integration
+
 ## [Unreleased]
 
 ### Planned
