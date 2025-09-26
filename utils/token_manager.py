@@ -4,6 +4,9 @@ import json
 import os
 from pathlib import Path
 from typing import Dict, Optional, Any
+from utils.logger import get_logger
+
+logger = get_logger("token_manager")
 
 
 class TokenManager:
@@ -20,6 +23,7 @@ class TokenManager:
             # Use specific config file path, expand ~ to home directory
             expanded_path = os.path.expanduser(config_file)
             self.token_file = Path(expanded_path)
+            logger.info(f"Using specified config file: {self.token_file}")
         else:
             # Check environment variable first, then default
             env_config_file = os.getenv("ALPACON_MCP_CONFIG_FILE")
@@ -27,13 +31,17 @@ class TokenManager:
                 # Expand ~ to home directory
                 expanded_path = os.path.expanduser(env_config_file)
                 self.token_file = Path(expanded_path)
+                logger.info(f"Using config file from environment: {self.token_file}")
             else:
                 self.token_file = Path("config/token.json")
+                logger.info(f"Using default config file: {self.token_file}")
 
         self.config_dir = self.token_file.parent
 
         # Ensure config directory exists
         self.config_dir.mkdir(exist_ok=True)
+        logger.debug(f"Config directory created/verified: {self.config_dir}")
+
         self.tokens = self._load_tokens()
 
     def _load_tokens(self) -> Dict[str, Any]:
@@ -45,10 +53,15 @@ class TokenManager:
         if self.token_file.exists():
             try:
                 with open(self.token_file, 'r') as f:
-                    return json.load(f)
-            except (json.JSONDecodeError, IOError):
-                pass
+                    tokens = json.load(f)
+                logger.info(f"Loaded tokens from {self.token_file}: {len(tokens)} regions")
+                return tokens
+            except json.JSONDecodeError as e:
+                logger.error(f"JSON decode error in {self.token_file}: {e}")
+            except IOError as e:
+                logger.error(f"IO error reading {self.token_file}: {e}")
 
+        logger.warning(f"No valid token file found at {self.token_file}, starting with empty tokens")
         return {}
 
     def _save_tokens_to_file(self, tokens: Dict[str, Any], file_path: Path) -> None:
@@ -103,15 +116,21 @@ class TokenManager:
         Returns:
             Token string if found, None otherwise
         """
+        logger.debug(f"Getting token for {workspace}.{region}")
+
         # First try environment variable: ALPACON_MCP_<REGION>_<WORKSPACE>_TOKEN
         env_var_name = f"ALPACON_MCP_{region.upper()}_{workspace.upper()}_TOKEN"
         env_token = os.getenv(env_var_name)
         if env_token:
+            logger.info(f"Found token for {workspace}.{region} from environment variable")
             return env_token
 
         # Fall back to config file
         if region in self.tokens and workspace in self.tokens[region]:
+            logger.info(f"Found token for {workspace}.{region} from config file")
             return self.tokens[region][workspace]
+
+        logger.warning(f"No token found for {workspace}.{region}")
         return None
 
     def get_all_tokens(self) -> Dict[str, Any]:

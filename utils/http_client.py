@@ -6,6 +6,9 @@ from typing import Dict, Any, Optional, Union
 from urllib.parse import urljoin
 import httpx
 import time
+from utils.logger import get_logger
+
+logger = get_logger("http_client")
 
 
 class AlpaconHTTPClient:
@@ -17,6 +20,7 @@ class AlpaconHTTPClient:
         self.max_retries = 3
         self.retry_delay = 1.0
         self.max_retry_delay = 30.0
+        logger.info(f"AlpaconHTTPClient initialized - timeout: {self.base_timeout.read}s, max_retries: {self.max_retries}")
 
     def get_base_url(self, region: str, workspace: str) -> str:
         """Get base URL for API calls.
@@ -28,7 +32,9 @@ class AlpaconHTTPClient:
         Returns:
             Base URL for API calls
         """
-        return f"https://{workspace}.{region}.alpacon.io"
+        base_url = f"https://{workspace}.{region}.alpacon.io"
+        logger.debug(f"Generated base URL: {base_url}")
+        return base_url
 
     async def request(
         self,
@@ -77,6 +83,14 @@ class AlpaconHTTPClient:
         retry_count = 0
         retry_delay = self.retry_delay
 
+        # Log request details (without sensitive data)
+        logger.info(f"HTTP {method} request to {url}")
+        logger.debug(f"Request headers: {dict((k, v if k != 'Authorization' else '[REDACTED]') for k, v in request_headers.items())}")
+        if params:
+            logger.debug(f"Request params: {params}")
+        if json_data:
+            logger.debug(f"Request body: {json_data}")
+
         while retry_count < self.max_retries:
             try:
                 async with httpx.AsyncClient(timeout=request_timeout) as client:
@@ -91,68 +105,92 @@ class AlpaconHTTPClient:
                     # Check for success
                     response.raise_for_status()
 
+                    # Log successful response
+                    logger.info(f"HTTP {method} success - Status: {response.status_code}, Content-Length: {len(response.content)}")
+                    logger.debug(f"Response headers: {dict(response.headers)}")
+
                     # Return JSON response
                     if response.text:
-                        return response.json()
+                        result = response.json()
+                        logger.debug(f"Response body: {result}")
+                        return result
                     else:
-                        return {"status": "success", "status_code": response.status_code}
+                        result = {"status": "success", "status_code": response.status_code}
+                        logger.debug(f"Empty response, returning: {result}")
+                        return result
 
             except httpx.HTTPStatusError as e:
                 # Handle HTTP errors (4xx, 5xx)
+                logger.error(f"HTTP {method} error - Status: {e.response.status_code}, URL: {url}")
+                logger.error(f"Response body: {e.response.text}")
+
                 if e.response.status_code >= 500:
                     # Server error - retry
                     retry_count += 1
+                    logger.warning(f"Server error, retrying ({retry_count}/{self.max_retries}) in {retry_delay}s")
                     if retry_count < self.max_retries:
                         await asyncio.sleep(retry_delay)
                         retry_delay = min(retry_delay * 2, self.max_retry_delay)
                         continue
                 else:
                     # Client error - don't retry
-                    return {
+                    error_response = {
                         "error": "HTTP Error",
                         "status_code": e.response.status_code,
                         "message": str(e),
                         "response": e.response.text
                     }
+                    logger.error(f"Client error, not retrying: {error_response}")
+                    return error_response
 
             except httpx.TimeoutException as e:
                 # Timeout - retry
                 retry_count += 1
+                logger.warning(f"Request timeout, retrying ({retry_count}/{self.max_retries}) in {retry_delay}s")
                 if retry_count < self.max_retries:
                     await asyncio.sleep(retry_delay)
                     retry_delay = min(retry_delay * 2, self.max_retry_delay)
                     continue
                 else:
-                    return {
+                    error_response = {
                         "error": "Timeout",
                         "message": f"Request timed out after {self.max_retries} retries"
                     }
+                    logger.error(f"Request timeout after all retries: {error_response}")
+                    return error_response
 
             except httpx.RequestError as e:
                 # Network error - retry
                 retry_count += 1
+                logger.warning(f"Network error: {e}, retrying ({retry_count}/{self.max_retries}) in {retry_delay}s")
                 if retry_count < self.max_retries:
                     await asyncio.sleep(retry_delay)
                     retry_delay = min(retry_delay * 2, self.max_retry_delay)
                     continue
                 else:
-                    return {
+                    error_response = {
                         "error": "Request Error",
                         "message": str(e)
                     }
+                    logger.error(f"Network error after all retries: {error_response}")
+                    return error_response
 
             except Exception as e:
                 # Unexpected error - don't retry
-                return {
+                error_response = {
                     "error": "Unexpected Error",
                     "message": str(e)
                 }
+                logger.error(f"Unexpected error: {error_response}", exc_info=True)
+                return error_response
 
         # Should not reach here, but just in case
-        return {
+        error_response = {
             "error": "Max retries exceeded",
             "message": f"Failed after {self.max_retries} attempts"
         }
+        logger.error(f"Unexpected fallback - max retries exceeded: {error_response}")
+        return error_response
 
     async def get(
         self,

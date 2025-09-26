@@ -43,6 +43,9 @@ yarn-debug.log*
 yarn-error.log*
 dev-debug.log
 
+# Local debug scripts (not for production)
+run_debug.py
+
 # Dependency directories
 node_modules/
 

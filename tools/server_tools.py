@@ -5,9 +5,11 @@ from typing import Dict, List, Any, Optional
 from server import mcp
 from utils.http_client import http_client
 from utils.token_manager import get_token_manager
+from utils.logger import get_logger
 
 # Get global token manager instance
 token_manager = get_token_manager()
+logger = get_logger("server_tools")
 
 
 @mcp.tool(description="Get list of servers")
@@ -21,14 +23,19 @@ async def servers_list(workspace: str, region: str = "ap1") -> Dict[str, Any]:
     Returns:
         Server list response
     """
+    logger.info(f"servers_list called - workspace: {workspace}, region: {region}")
+
     try:
         # Get stored token
         token = token_manager.get_token(region, workspace)
         if not token:
+            logger.error(f"No token found for {workspace}.{region}")
             return {
                 "status": "error",
                 "message": f"No token found for {workspace}.{region}. Please set token first."
             }
+
+        logger.debug(f"Token found for {workspace}.{region}, making API call")
 
         # Make async call to servers endpoint
         result = await http_client.get(
@@ -38,6 +45,7 @@ async def servers_list(workspace: str, region: str = "ap1") -> Dict[str, Any]:
             token=token
         )
 
+        logger.info(f"servers_list completed successfully for {workspace}.{region}")
         return {
             "status": "success",
             "data": result,
@@ -46,6 +54,7 @@ async def servers_list(workspace: str, region: str = "ap1") -> Dict[str, Any]:
         }
 
     except Exception as e:
+        logger.error(f"servers_list failed for {workspace}.{region}: {e}", exc_info=True)
         return {
             "status": "error",
             "message": f"Failed to get servers list: {str(e)}"

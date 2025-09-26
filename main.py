@@ -1,6 +1,7 @@
 # main.py
 import argparse
 from server import run
+from utils.logger import get_logger
 
 import tools.command_tools
 import tools.server_tools
@@ -9,8 +10,12 @@ import tools.webftp_tools
 import tools.system_tools
 import tools.workspace_tools
 
+logger = get_logger("main")
+
 def main():
     """Main entry point for the CLI."""
+    logger.info("Starting Alpacon MCP Server")
+
     parser = argparse.ArgumentParser(description="Alpacon MCP Server")
     parser.add_argument(
         "--config-file",
@@ -19,9 +24,16 @@ def main():
     )
 
     args = parser.parse_args()
-    run("stdio", config_file=args.config_file)
+    logger.info(f"Configuration: config_file={args.config_file}")
+
+    try:
+        run("stdio", config_file=args.config_file)
+    except Exception as e:
+        logger.error(f"Failed to start MCP server: {e}", exc_info=True)
+        raise
 
 
 # Entry point to run the server
 if __name__ == "__main__":
+    logger.info("Alpacon MCP Server entry point called")
     main()
