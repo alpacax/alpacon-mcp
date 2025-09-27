@@ -1,11 +1,16 @@
 """Server management tools for Alpacon MCP server."""
 
-import asyncio
-from typing import Dict, List, Any, Optional
+from typing import Dict, Any
 from server import mcp
 from utils.http_client import http_client
 from utils.token_manager import get_token_manager
 from utils.logger import get_logger
+from utils.error_handler import (
+    validate_workspace_format,
+    validate_region_format,
+    format_user_friendly_error,
+    format_validation_error
+)
 
 # Get global token manager instance
 token_manager = get_token_manager()
@@ -25,15 +30,22 @@ async def servers_list(workspace: str, region: str = "ap1") -> Dict[str, Any]:
     """
     logger.info(f"servers_list called - workspace: {workspace}, region: {region}")
 
+    # Input validation
+    if not validate_workspace_format(workspace):
+        return format_validation_error("workspace", workspace)
+
+    if not validate_region_format(region):
+        return format_validation_error("region", region)
+
     try:
         # Get stored token
         token = token_manager.get_token(region, workspace)
         if not token:
             logger.error(f"No token found for {workspace}.{region}")
-            return {
-                "status": "error",
-                "message": f"No token found for {workspace}.{region}. Please set token first."
-            }
+            return format_user_friendly_error("401", {
+                "workspace": workspace,
+                "region": region
+            })
 
         logger.debug(f"Token found for {workspace}.{region}, making API call")
 
@@ -48,12 +60,29 @@ async def servers_list(workspace: str, region: str = "ap1") -> Dict[str, Any]:
         # Check if result is an error response from http_client
         if isinstance(result, dict) and "error" in result:
             logger.error(f"servers_list HTTP error for {workspace}.{region}: {result}")
-            return {
-                "status": "error",
-                "message": result.get("message", str(result.get("error", "Unknown error"))),
-                "region": region,
-                "workspace": workspace
-            }
+
+            # Convert HTTP client errors to user-friendly messages
+            if "status_code" in result:
+                return format_user_friendly_error(str(result["status_code"]), {
+                    "workspace": workspace,
+                    "region": region
+                })
+            elif result.get("error") == "Timeout":
+                return format_user_friendly_error("timeout", {
+                    "workspace": workspace,
+                    "region": region
+                })
+            elif result.get("error") == "Request Error":
+                return format_user_friendly_error("network", {
+                    "workspace": workspace,
+                    "region": region
+                })
+            else:
+                return format_user_friendly_error("500", {
+                    "workspace": workspace,
+                    "region": region,
+                    "detail": result.get("message", "Unknown error")
+                })
 
         logger.info(f"servers_list completed successfully for {workspace}.{region}")
         return {

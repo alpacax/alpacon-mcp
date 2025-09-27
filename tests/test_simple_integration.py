@@ -83,7 +83,7 @@ class TestTokenManagement:
 
         # Should return error status
         assert result["status"] == "error"
-        assert "No token found" in result["message"]
+        assert "Authentication failed" in result["message"]
 
 
 class TestModuleImports:

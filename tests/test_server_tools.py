@@ -134,7 +134,7 @@ class TestServersList:
         result = await servers_list(workspace="testworkspace")
 
         assert result["status"] == "error"
-        assert "No token found" in result["message"]
+        assert "Authentication failed" in result["message"]
         mock_http_client.get.assert_not_called()
 
     @pytest.mark.asyncio

@@ -14,17 +14,27 @@ from utils.http_client import http_client
 def mock_httpx_client():
     """Mock httpx AsyncClient for testing."""
     with patch('utils.http_client.httpx.AsyncClient') as mock_client_class:
-        # Create a mock client that doesn't use AsyncMock for responses
+        # Disable connection pooling for all tests
+        http_client._disable_pooling = True
+
+        # Create a mock client with AsyncMock methods
         mock_client = MagicMock()
-        # Make the client context manager work properly
-        mock_client_class.return_value.__aenter__.return_value = mock_client
+        mock_client_class.return_value = mock_client
+
+        # Set up async context manager
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+
+        # Make sure the client is closed property returns False
+        mock_client.is_closed = False
+
         # HTTP methods should be AsyncMock so they can be awaited
-        mock_client.get = AsyncMock()
-        mock_client.post = AsyncMock()
-        mock_client.patch = AsyncMock()
-        mock_client.delete = AsyncMock()
         mock_client.request = AsyncMock()
         yield mock_client
+
+        # Clean up after tests
+        if hasattr(http_client, '_disable_pooling'):
+            delattr(http_client, '_disable_pooling')
 
 def create_mock_response(status_code=200, json_data=None, text_data="", headers=None):
     """Create a properly configured mock response."""
