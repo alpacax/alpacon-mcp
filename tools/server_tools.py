@@ -18,7 +18,7 @@ logger = get_logger("server_tools")
 
 
 @mcp.tool(description="Get list of servers")
-async def servers_list(workspace: str, region: str = "ap1") -> Dict[str, Any]:
+async def list_servers(workspace: str, region: str = "ap1") -> Dict[str, Any]:
     """Get list of servers.
 
     Args:
@@ -101,7 +101,7 @@ async def servers_list(workspace: str, region: str = "ap1") -> Dict[str, Any]:
 
 
 @mcp.tool(description="Get detailed information of a specific server")
-async def server_get(
+async def get_server(
     server_id: str,
     workspace: str,
     region: str = "ap1",
@@ -159,7 +159,7 @@ async def server_get(
 
 
 @mcp.tool(description="Get list of server notes")
-async def server_notes_list(
+async def list_server_notes(
     server_id: str,
     workspace: str,
     region: str = "ap1",
@@ -207,7 +207,7 @@ async def server_notes_list(
 
 
 @mcp.tool(description="Create a new note for server")
-async def server_note_create(
+async def create_server_note(
     server_id: str,
     title: str,
     content: str,

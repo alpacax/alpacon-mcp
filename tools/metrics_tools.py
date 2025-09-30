@@ -270,7 +270,7 @@ async def get_network_traffic(
 
 
 @mcp.tool(description="Get top performing servers by CPU usage")
-async def get_cpu_top_servers(
+async def get_top_cpu_servers(
     workspace: str,
     region: str = "ap1",
 ) -> Dict[str, Any]:

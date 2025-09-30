@@ -11,7 +11,7 @@ token_manager = get_token_manager()
 
 
 @mcp.tool(description="Get list of available workspaces")
-async def workspace_list(
+async def list_workspaces(
     region: str = "ap1"
 ) -> Dict[str, Any]:
     """Get list of available workspaces.
@@ -54,7 +54,7 @@ async def workspace_list(
 
 
 @mcp.tool(description="Get user settings")
-async def user_settings_get(
+async def get_user_settings(
     workspace: str,
     region: str = "ap1"
 ) -> Dict[str, Any]:
@@ -99,7 +99,7 @@ async def user_settings_get(
 
 
 @mcp.tool(description="Update user settings")
-async def user_settings_update(
+async def update_user_settings(
     settings: Dict[str, Any],
     workspace: str,
     region: str = "ap1"
@@ -147,7 +147,7 @@ async def user_settings_update(
 
 
 @mcp.tool(description="Get user profile information")
-async def user_profile_get(
+async def get_user_profile(
     workspace: str,
     region: str = "ap1"
 ) -> Dict[str, Any]:

@@ -16,7 +16,7 @@ logger = get_logger("iam_tools")
 # ===============================
 
 @mcp.tool(description="List all IAM users in workspace")
-async def iam_users_list(
+async def list_iam_users(
     workspace: str,
     region: str = "ap1",
     page: Optional[int] = None,
@@ -80,7 +80,7 @@ async def iam_users_list(
 
 
 @mcp.tool(description="Get detailed information about a specific IAM user")
-async def iam_user_get(
+async def get_iam_user(
     user_id: str,
     workspace: str,
     region: str = "ap1"
@@ -135,7 +135,7 @@ async def iam_user_get(
 
 
 @mcp.tool(description="Create a new IAM user")
-async def iam_user_create(
+async def create_iam_user(
     username: str,
     email: str,
     workspace: str,
@@ -215,7 +215,7 @@ async def iam_user_create(
 
 
 @mcp.tool(description="Update an existing IAM user")
-async def iam_user_update(
+async def update_iam_user(
     user_id: str,
     workspace: str,
     email: Optional[str] = None,
@@ -300,7 +300,7 @@ async def iam_user_update(
 
 
 @mcp.tool(description="Delete an IAM user")
-async def iam_user_delete(
+async def delete_iam_user(
     user_id: str,
     workspace: str,
     region: str = "ap1"
@@ -359,7 +359,7 @@ async def iam_user_delete(
 # ===============================
 
 @mcp.tool(description="List all IAM groups in workspace")
-async def iam_groups_list(
+async def list_iam_groups(
     workspace: str,
     region: str = "ap1",
     page: Optional[int] = None,
@@ -423,7 +423,7 @@ async def iam_groups_list(
 
 
 @mcp.tool(description="Create a new IAM group")
-async def iam_group_create(
+async def create_iam_group(
     name: str,
     workspace: str,
     description: Optional[str] = None,
@@ -497,7 +497,7 @@ async def iam_group_create(
 # ===============================
 
 @mcp.tool(description="List all IAM roles in workspace")
-async def iam_roles_list(
+async def list_iam_roles(
     workspace: str,
     region: str = "ap1",
     page: Optional[int] = None,
@@ -561,7 +561,7 @@ async def iam_roles_list(
 
 
 @mcp.tool(description="Assign a role to a user")
-async def iam_user_assign_role(
+async def assign_iam_user_role(
     user_id: str,
     role_id: str,
     workspace: str,
@@ -629,7 +629,7 @@ async def iam_user_assign_role(
 # ===============================
 
 @mcp.tool(description="List all available permissions in workspace")
-async def iam_permissions_list(
+async def list_iam_permissions(
     workspace: str,
     region: str = "ap1",
     page: Optional[int] = None,
@@ -693,7 +693,7 @@ async def iam_permissions_list(
 
 
 @mcp.tool(description="Get user's effective permissions")
-async def iam_user_permissions_get(
+async def get_iam_user_permissions(
     user_id: str,
     workspace: str,
     region: str = "ap1"
