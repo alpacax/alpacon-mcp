@@ -1,7 +1,7 @@
 """Command execution tools for Alpacon MCP server."""
 
 import asyncio
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from server import mcp
 from utils.http_client import http_client
 from utils.token_manager import get_token_manager
@@ -297,4 +297,190 @@ async def execute_command_sync(
         return {
             "status": "error",
             "message": f"Failed to execute command synchronously: {str(e)}"
+        }
+
+
+@mcp.tool(description="Execute command on multiple servers simultaneously (Deploy Shell)")
+async def execute_command_multi_server(
+    server_ids: List[str],
+    command: str,
+    workspace: str,
+    shell: str = "internal",
+    username: Optional[str] = None,
+    groupname: str = "alpacon",
+    env: Optional[Dict[str, str]] = None,
+    region: str = "ap1",
+    parallel: bool = True
+) -> Dict[str, Any]:
+    """Execute a command on multiple servers using Deploy Shell.
+
+    Args:
+        server_ids: List of server IDs to execute command on
+        command: Command line to execute (must be ACL-approved for Deploy Shell)
+        workspace: Workspace name. Required parameter
+        shell: Shell type (internal, bash, sh, etc.). Defaults to 'internal'
+        username: Optional username for the command execution
+        groupname: Group name for the command execution. Defaults to 'alpacon'
+        env: Optional environment variables as key-value pairs
+        region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
+        parallel: Whether to execute in parallel (default: True)
+
+    Returns:
+        Dict with execution results for each server
+    """
+    try:
+        # Validate inputs
+        if not server_ids:
+            return {
+                "status": "error",
+                "message": "server_ids cannot be empty"
+            }
+
+        token = token_manager.get_token(region, workspace)
+        if not token:
+            return {
+                "status": "error",
+                "message": f"No token found for {workspace}.{region}. Please set token first."
+            }
+
+        if parallel:
+            # Execute commands in parallel on all servers
+            tasks = []
+            for server_id in server_ids:
+                task = execute_command(
+                    server_id=server_id,
+                    command=command,
+                    workspace=workspace,
+                    shell=shell,
+                    username=username,
+                    groupname=groupname,
+                    env=env,
+                    region=region
+                )
+                tasks.append(task)
+
+            # Wait for all commands to complete
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            # Process results
+            deploy_results = {}
+            successful_count = 0
+            failed_count = 0
+
+            for i, result in enumerate(results):
+                server_id = server_ids[i]
+                if isinstance(result, Exception):
+                    deploy_results[server_id] = {
+                        "status": "error",
+                        "message": f"Exception occurred: {str(result)}"
+                    }
+                    failed_count += 1
+                else:
+                    deploy_results[server_id] = result
+                    if result.get("status") == "success":
+                        successful_count += 1
+                    else:
+                        failed_count += 1
+
+            return {
+                "status": "success",
+                "deploy_shell_results": deploy_results,
+                "command": command,
+                "total_servers": len(server_ids),
+                "successful_count": successful_count,
+                "failed_count": failed_count,
+                "execution_type": "parallel",
+                "region": region,
+                "workspace": workspace
+            }
+        else:
+            # Execute commands sequentially
+            deploy_results = {}
+            successful_count = 0
+            failed_count = 0
+
+            for server_id in server_ids:
+                result = await execute_command(
+                    server_id=server_id,
+                    command=command,
+                    workspace=workspace,
+                    shell=shell,
+                    username=username,
+                    groupname=groupname,
+                    env=env,
+                    region=region
+                )
+
+                deploy_results[server_id] = result
+                if result.get("status") == "success":
+                    successful_count += 1
+                else:
+                    failed_count += 1
+
+            return {
+                "status": "success",
+                "deploy_shell_results": deploy_results,
+                "command": command,
+                "total_servers": len(server_ids),
+                "successful_count": successful_count,
+                "failed_count": failed_count,
+                "execution_type": "sequential",
+                "region": region,
+                "workspace": workspace
+            }
+
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Deploy Shell execution failed: {str(e)}"
+        }
+
+
+@mcp.tool(description="Get ACL-approved commands for Deploy Shell")
+async def get_deploy_shell_acl_commands(
+    workspace: str,
+    region: str = "ap1"
+) -> Dict[str, Any]:
+    """Get list of ACL-approved commands for Deploy Shell execution.
+
+    Args:
+        workspace: Workspace name. Required parameter
+        region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
+
+    Returns:
+        List of ACL-approved commands that can be used with Deploy Shell
+    """
+    try:
+        token = token_manager.get_token(region, workspace)
+        if not token:
+            return {
+                "status": "error",
+                "message": f"No token found for {workspace}.{region}. Please set token first."
+            }
+
+        # Try to get ACL commands from the events/commands endpoint
+        # Note: This may need adjustment based on actual Alpacon API structure
+        result = await http_client.get(
+            region=region,
+            workspace=workspace,
+            endpoint="/api/events/commands/acl/",
+            token=token
+        )
+
+        return {
+            "status": "success",
+            "acl_commands": result,
+            "workspace": workspace,
+            "region": region,
+            "note": "These are the commands approved for Deploy Shell execution via ACL"
+        }
+
+    except Exception as e:
+        # If ACL endpoint doesn't exist, provide helpful error message
+        return {
+            "status": "error",
+            "message": f"Failed to get ACL commands: {str(e)}",
+            "suggestion": "ACL commands may need to be configured in Alpacon web interface or the API endpoint may be different",
+            "workspace": workspace,
+            "region": region
         }
