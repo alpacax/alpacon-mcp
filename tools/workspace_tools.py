@@ -1,12 +1,11 @@
-"""Workspace management tools for Alpacon MCP server - Refactored version."""
+"""Workspace management tools for Alpacon MCP server."""
 
 from typing import Dict, Any
-from utils.http_client import http_client
-from utils.common import success_response, error_response, validate_token
-from utils.decorators import mcp_tool_handler
+from utils.common import success_response
+from server import mcp
 
 
-@mcp_tool_handler(description="Get list of available workspaces")
+@mcp.tool(description="Get list of available workspaces")
 async def list_workspaces(region: str = "ap1") -> Dict[str, Any]:
     """Get list of available workspaces.
 
@@ -25,13 +24,22 @@ async def list_workspaces(region: str = "ap1") -> Dict[str, Any]:
     workspaces = []
     for region_key, region_data in all_tokens.items():
         if region_key == region:
-            for workspace_key, workspace_data in region_data.items():
-                workspaces.append({
-                    "workspace": workspace_key,
-                    "region": region_key,
-                    "has_token": bool(workspace_data.get("token")),
-                    "domain": f"{workspace_key}.{region_key}.alpacon.io"
-                })
+            # region_data can be either a dict or a string (token directly)
+            if isinstance(region_data, dict):
+                for workspace_key, workspace_data in region_data.items():
+                    # workspace_data can be either a dict or a string (token directly)
+                    if isinstance(workspace_data, dict):
+                        has_token = bool(workspace_data.get("token"))
+                    else:
+                        # If workspace_data is a string, it's the token itself
+                        has_token = bool(workspace_data)
+
+                    workspaces.append({
+                        "workspace": workspace_key,
+                        "region": region_key,
+                        "has_token": has_token,
+                        "domain": f"{workspace_key}.{region_key}.alpacon.io"
+                    })
 
     return success_response(
         data={"workspaces": workspaces, "region": region},
@@ -39,103 +47,15 @@ async def list_workspaces(region: str = "ap1") -> Dict[str, Any]:
     )
 
 
-@mcp_tool_handler(description="Get user settings")
-async def get_user_settings(
-    workspace: str,
-    region: str = "ap1",
-    **kwargs
-) -> Dict[str, Any]:
-    """Get user settings.
-
-    Args:
-        workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
-
-    Returns:
-        User settings response
-    """
-    # Get token (injected by decorator)
-    token = kwargs.get('token')
-
-    # Make async call to get user settings
-    result = await http_client.get(
-        region=region,
-        workspace=workspace,
-        endpoint="/api/user/settings/",
-        token=token
-    )
-
-    return success_response(
-        data=result,
-        workspace=workspace,
-        region=region
-    )
-
-
-@mcp_tool_handler(description="Update user settings")
-async def update_user_settings(
-    settings: Dict[str, Any],
-    workspace: str,
-    region: str = "ap1",
-    **kwargs
-) -> Dict[str, Any]:
-    """Update user settings.
-
-    Args:
-        settings: Settings data to update
-        workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
-
-    Returns:
-        Settings update response
-    """
-    # Get token (injected by decorator)
-    token = kwargs.get('token')
-
-    # Make async call to update settings
-    result = await http_client.put(
-        region=region,
-        workspace=workspace,
-        endpoint="/api/user/settings/",
-        token=token,
-        data=settings
-    )
-
-    return success_response(
-        data=result,
-        workspace=workspace,
-        region=region
-    )
-
-
-@mcp_tool_handler(description="Get user profile information")
-async def get_user_profile(
-    workspace: str,
-    region: str = "ap1",
-    **kwargs
-) -> Dict[str, Any]:
-    """Get user profile information.
-
-    Args:
-        workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
-
-    Returns:
-        User profile response
-    """
-    # Get token (injected by decorator)
-    token = kwargs.get('token')
-
-    # Make async call to get user profile
-    result = await http_client.get(
-        region=region,
-        workspace=workspace,
-        endpoint="/api/user/profile/",
-        token=token
-    )
-
-    return success_response(
-        data=result,
-        workspace=workspace,
-        region=region
-    )
+# ===============================
+# NOTE: User settings and profile endpoints are not implemented in the server
+# The following functions have been removed:
+# - get_user_settings (was using /api/user/settings/)
+# - update_user_settings (was using /api/user/settings/)
+# - get_user_profile (was using /api/user/profile/)
+#
+# Alternative endpoints available in the server:
+# - /api/profiles/preferences/ (profiles app)
+# - /api/workspaces/preferences/ (workspaces app)
+# - /api/auth0/users/ (auth0 app)
+# ===============================

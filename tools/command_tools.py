@@ -148,13 +148,31 @@ async def execute_command_sync(
         return exec_result
 
     # Handle case where data is a list (array) instead of object
-    if isinstance(exec_result["data"], list):
-        if len(exec_result["data"]) > 0:
-            command_id = exec_result["data"][0]["id"]
+    exec_data = exec_result.get("data", {})
+    if isinstance(exec_data, list):
+        if len(exec_data) > 0:
+            command_id = exec_data[0].get("id")
         else:
-            return error_response("No command data returned from execute_command")
+            return error_response(
+                "No command data returned from execute_command",
+                workspace=workspace,
+                region=region
+            )
+    elif isinstance(exec_data, dict):
+        command_id = exec_data.get("id")
     else:
-        command_id = exec_result["data"]["id"]
+        return error_response(
+            "Unexpected command data format",
+            workspace=workspace,
+            region=region
+        )
+
+    if not command_id:
+        return error_response(
+            "Failed in execute_command_sync: 'id'",
+            workspace=workspace,
+            region=region
+        )
 
     # Wait for command completion
     start_time = asyncio.get_event_loop().time()
@@ -307,11 +325,11 @@ async def get_deploy_shell_acl_commands(
     """Get list of ACL-approved commands for Deploy Shell execution."""
     token = kwargs.get('token')
 
-    # Try to get ACL commands from the events/commands endpoint
+    # Get ACL commands from the security/command-acl endpoint
     result = await http_client.get(
         region=region,
         workspace=workspace,
-        endpoint="/api/events/commands/acl/",
+        endpoint="/api/security/command-acl/",
         token=token
     )
 

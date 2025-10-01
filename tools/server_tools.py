@@ -64,11 +64,13 @@ async def get_server(
     token = kwargs.get('token')
 
     # Make async call to server detail endpoint
+    # Use servers/servers/ endpoint with ID filter instead of direct ID endpoint
     result = await http_client.get(
         region=region,
         workspace=workspace,
-        endpoint=f"/api/servers/{server_id}/",
-        token=token
+        endpoint="/api/servers/servers/",
+        token=token,
+        params={"id": server_id}
     )
 
     # Check if result is an error response from http_client
@@ -80,8 +82,19 @@ async def get_server(
             workspace=workspace
         )
 
+    # Extract the first result from the list if results exist
+    if isinstance(result, dict) and "results" in result and len(result["results"]) > 0:
+        server_data = result["results"][0]
+    else:
+        return error_response(
+            "Server not found",
+            server_id=server_id,
+            region=region,
+            workspace=workspace
+        )
+
     return success_response(
-        data=result,
+        data=server_data,
         server_id=server_id,
         region=region,
         workspace=workspace
