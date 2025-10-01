@@ -308,6 +308,8 @@ async def get_server_metrics_summary(
     Returns:
         Comprehensive server metrics summary (limited size response)
     """
+    token = kwargs.get('token')
+
     # Limit hours to prevent response size overflow
     if hours > 168:  # Max 1 week
         hours = 168
@@ -319,11 +321,17 @@ async def get_server_metrics_summary(
     start_date = start_time.isoformat()
     end_date = end_time.isoformat()
 
-    # Get all metrics concurrently
-    cpu_task = get_cpu_usage(server_id, workspace, start_date, end_date, region, **kwargs)
-    memory_task = get_memory_usage(server_id, workspace, start_date, end_date, region, **kwargs)
-    disk_task = get_disk_usage(server_id, workspace, None, None, start_date, end_date, region, **kwargs)
-    traffic_task = get_network_traffic(server_id, workspace, None, start_date, end_date, region, **kwargs)
+    # Prepare query parameters
+    cpu_params = {"server": server_id, "start": start_date, "end": end_date}
+    memory_params = {"server": server_id, "start": start_date, "end": end_date}
+    disk_params = {"server": server_id, "start": start_date, "end": end_date}
+    traffic_params = {"server": server_id, "start": start_date, "end": end_date}
+
+    # Get all metrics concurrently using http_client directly
+    cpu_task = http_client.get(region, workspace, "/api/metrics/realtime/cpu/", token, params=cpu_params)
+    memory_task = http_client.get(region, workspace, "/api/metrics/realtime/memory/", token, params=memory_params)
+    disk_task = http_client.get(region, workspace, "/api/metrics/realtime/disk-usage/", token, params=disk_params)
+    traffic_task = http_client.get(region, workspace, "/api/metrics/realtime/traffic/", token, params=traffic_params)
 
     # Wait for all metrics
     cpu_result, memory_result, disk_result, traffic_result = await asyncio.gather(
@@ -331,30 +339,44 @@ async def get_server_metrics_summary(
         return_exceptions=True
     )
 
-    # Helper function to extract summary from metric result
+    # Helper function to extract summary from metric result (from http_client directly)
     def extract_summary(result, metric_type):
-        if isinstance(result, dict) and result.get("status") == "success":
-            data = result.get("data", {})
-            # Return only summary info, not full data arrays
-            if isinstance(data, dict):
-                if "error" in data:
-                    # Extract actual error message from response if available
-                    if "response" in data:
-                        return {"available": False, "error": f"{data.get('message', 'Error')} - {data.get('response', '')}"}
-                    return {"available": False, "error": data.get("message", "Data unavailable")}
-                # Return metadata only, not the full data points
-                if "results" in data:
-                    return {
-                        "available": True,
-                        "data_points": len(data.get("results", [])),
-                        "note": f"Full {metric_type} data available via dedicated endpoint"
-                    }
-                # If no results but no error, might be empty data
-                return {"available": False, "error": "No data available"}
-            return {"available": False, "error": "Unexpected data format"}
-        else:
-            error_msg = str(result) if isinstance(result, Exception) else result.get("message", "Unknown error")
-            return {"available": False, "error": error_msg}
+        # Handle exceptions first
+        if isinstance(result, Exception):
+            return {"available": False, "error": str(result)}
+
+        # http_client returns data directly (not wrapped in success/status)
+        if isinstance(result, dict):
+            # Check for HTTP error
+            if "error" in result:
+                # Extract actual error message from response if available
+                if "response" in result:
+                    return {"available": False, "error": f"{result.get('message', 'Error')} - {result.get('response', '')}"}
+                return {"available": False, "error": result.get("message", "Data unavailable")}
+
+            # Return metadata only, not the full data points
+            if "results" in result:
+                return {
+                    "available": True,
+                    "data_points": len(result.get("results", [])),
+                    "note": f"Full {metric_type} data available via dedicated endpoint"
+                }
+
+            # If no results and no error, might be empty data
+            return {"available": False, "error": "No data available"}
+
+        # Handle list results (API may return empty list when no data)
+        if isinstance(result, list):
+            if len(result) > 0:
+                return {
+                    "available": True,
+                    "data_points": len(result),
+                    "note": f"Full {metric_type} data available via dedicated endpoint"
+                }
+            # Empty list means no metrics data available
+            return {"available": False, "error": "No metrics data available (empty response)"}
+
+        return {"available": False, "error": f"Unexpected result type: {type(result).__name__}"}
 
     # Prepare compact summary
     summary = {
