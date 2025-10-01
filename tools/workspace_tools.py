@@ -40,6 +40,14 @@ async def list_workspaces(region: str = "ap1") -> Dict[str, Any]:
                         "has_token": has_token,
                         "domain": f"{workspace_key}.{region_key}.alpacon.io"
                     })
+            else:
+                # If region_data is a string (token directly), it's a single workspace with region name
+                workspaces.append({
+                    "workspace": region_key,
+                    "region": region_key,
+                    "has_token": bool(region_data),
+                    "domain": f"{region_key}.{region_key}.alpacon.io"
+                })
 
     return success_response(
         data={"workspaces": workspaces, "region": region},
