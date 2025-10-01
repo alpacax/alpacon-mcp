@@ -4,12 +4,14 @@ from server import run
 from utils.logger import get_logger
 
 import tools.command_tools
-import tools.server_tools
-import tools.websh_tools
-import tools.webftp_tools
-import tools.system_tools
-import tools.workspace_tools
+import tools.events_tools
 import tools.iam_tools
+import tools.metrics_tools
+import tools.server_tools
+import tools.system_info_tools
+import tools.webftp_tools
+import tools.websh_tools
+import tools.workspace_tools
 
 logger = get_logger("main")
 

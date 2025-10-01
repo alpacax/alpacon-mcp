@@ -1,19 +1,13 @@
-"""Workspace management tools for Alpacon MCP server."""
+"""Workspace management tools for Alpacon MCP server - Refactored version."""
 
-import asyncio
 from typing import Dict, Any
-from server import mcp
 from utils.http_client import http_client
-from utils.token_manager import get_token_manager
-
-# Initialize token manager
-token_manager = get_token_manager()
+from utils.common import success_response, error_response, validate_token
+from utils.decorators import mcp_tool_handler
 
 
-@mcp.tool(description="Get list of available workspaces")
-async def list_workspaces(
-    region: str = "ap1"
-) -> Dict[str, Any]:
+@mcp_tool_handler(description="Get list of available workspaces")
+async def list_workspaces(region: str = "ap1") -> Dict[str, Any]:
     """Get list of available workspaces.
 
     Args:
@@ -22,215 +16,126 @@ async def list_workspaces(
     Returns:
         Workspaces list response
     """
-    try:
-        # Get all stored tokens to find available workspaces
-        all_tokens = token_manager.get_all_tokens()
+    from utils.token_manager import get_token_manager
+    token_manager = get_token_manager()
 
-        workspaces = []
-        for region_key, region_data in all_tokens.items():
-            if region_key == region:
-                for workspace_key, workspace_data in region_data.items():
-                    workspaces.append({
-                        "workspace": workspace_key,
-                        "region": region_key,
-                        "has_token": bool(workspace_data.get("token")),
-                        "domain": f"{workspace_key}.{region_key}.alpacon.io"
-                    })
+    # Get all stored tokens to find available workspaces
+    all_tokens = token_manager.get_all_tokens()
 
-        return {
-            "status": "success",
-            "data": {
-                "workspaces": workspaces,
-                "region": region
-            },
-            "region": region
-        }
+    workspaces = []
+    for region_key, region_data in all_tokens.items():
+        if region_key == region:
+            for workspace_key, workspace_data in region_data.items():
+                workspaces.append({
+                    "workspace": workspace_key,
+                    "region": region_key,
+                    "has_token": bool(workspace_data.get("token")),
+                    "domain": f"{workspace_key}.{region_key}.alpacon.io"
+                })
 
-    except Exception as e:
-        return {
-            "status": "error",
-            "message": f"Failed to get workspaces list: {str(e)}"
-        }
+    return success_response(
+        data={"workspaces": workspaces, "region": region},
+        region=region
+    )
 
 
-@mcp.tool(description="Get user settings")
+@mcp_tool_handler(description="Get user settings")
 async def get_user_settings(
     workspace: str,
-    region: str = "ap1"
+    region: str = "ap1",
+    **kwargs
 ) -> Dict[str, Any]:
     """Get user settings.
 
     Args:
-        region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
         workspace: Workspace name. Required parameter
+        region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
 
     Returns:
         User settings response
     """
-    try:
-        # Get stored token
-        token = token_manager.get_token(region, workspace)
-        if not token:
-            return {
-                "status": "error",
-                "message": f"No token found for {workspace}.{region}. Please set token first."
-            }
+    # Get token (injected by decorator)
+    token = kwargs.get('token')
 
-        # Make async call to get user settings
-        result = await http_client.get(
-                region=region,
-                workspace=workspace,
-                endpoint="/api/user/settings/",
-                token=token
-        )
+    # Make async call to get user settings
+    result = await http_client.get(
+        region=region,
+        workspace=workspace,
+        endpoint="/api/user/settings/",
+        token=token
+    )
 
-        return {
-            "status": "success",
-            "data": result,
-            "region": region,
-            "workspace": workspace
-        }
-
-    except Exception as e:
-        return {
-            "status": "error",
-            "message": f"Failed to get user settings: {str(e)}"
-        }
+    return success_response(
+        data=result,
+        workspace=workspace,
+        region=region
+    )
 
 
-@mcp.tool(description="Update user settings")
+@mcp_tool_handler(description="Update user settings")
 async def update_user_settings(
     settings: Dict[str, Any],
     workspace: str,
-    region: str = "ap1"
+    region: str = "ap1",
+    **kwargs
 ) -> Dict[str, Any]:
     """Update user settings.
 
     Args:
-        settings: Settings to update (dict format)
-        region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
+        settings: Settings data to update
         workspace: Workspace name. Required parameter
+        region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
 
     Returns:
-        User settings update response
+        Settings update response
     """
-    try:
-        # Get stored token
-        token = token_manager.get_token(region, workspace)
-        if not token:
-            return {
-                "status": "error",
-                "message": f"No token found for {workspace}.{region}. Please set token first."
-            }
+    # Get token (injected by decorator)
+    token = kwargs.get('token')
 
-        # Make async call to update user settings
-        result = await http_client.patch(
-                region=region,
-                workspace=workspace,
-                endpoint="/api/user/settings/",
-                token=token,
-                data=settings
-        )
-        return {
-            "status": "success",
-            "data": result,
-            "settings": settings,
-            "region": region,
-            "workspace": workspace
-        }
+    # Make async call to update settings
+    result = await http_client.put(
+        region=region,
+        workspace=workspace,
+        endpoint="/api/user/settings/",
+        token=token,
+        data=settings
+    )
 
-    except Exception as e:
-        return {
-            "status": "error",
-            "message": f"Failed to update user settings: {str(e)}"
-        }
+    return success_response(
+        data=result,
+        workspace=workspace,
+        region=region
+    )
 
 
-@mcp.tool(description="Get user profile information")
+@mcp_tool_handler(description="Get user profile information")
 async def get_user_profile(
     workspace: str,
-    region: str = "ap1"
+    region: str = "ap1",
+    **kwargs
 ) -> Dict[str, Any]:
     """Get user profile information.
 
     Args:
-        region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
         workspace: Workspace name. Required parameter
+        region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
 
     Returns:
         User profile response
     """
-    try:
-        # Get stored token
-        token = token_manager.get_token(region, workspace)
-        if not token:
-            return {
-                "status": "error",
-                "message": f"No token found for {workspace}.{region}. Please set token first."
-            }
+    # Get token (injected by decorator)
+    token = kwargs.get('token')
 
-        # Make async call to get user profile
-        result = await http_client.get(
-                region=region,
-                workspace=workspace,
-                endpoint="/api/user/profile/",
-                token=token
-        )
+    # Make async call to get user profile
+    result = await http_client.get(
+        region=region,
+        workspace=workspace,
+        endpoint="/api/user/profile/",
+        token=token
+    )
 
-        return {
-            "status": "success",
-            "data": result,
-            "region": region,
-            "workspace": workspace
-        }
-
-    except Exception as e:
-        return {
-            "status": "error",
-            "message": f"Failed to get user profile: {str(e)}"
-        }
-
-
-# Workspaces resource
-@mcp.resource(
-    uri="workspace://list/{region}",
-    name="Workspaces List",
-    description="Get list of available workspaces",
-    mime_type="application/json"
-)
-def workspaces_resource(region: str) -> Dict[str, Any]:
-    """Get workspaces as a resource.
-
-    Args:
-        region: Region (ap1, us1, eu1, etc.)
-
-    Returns:
-        Workspaces information
-    """
-    workspaces_data = workspace_list(region=region)
-    return {
-        "content": workspaces_data
-    }
-
-
-# User settings resource
-@mcp.resource(
-    uri="user://settings/{region}/{workspace}",
-    name="User Settings",
-    description="Get user settings",
-    mime_type="application/json"
-)
-async def user_settings_resource(region: str, workspace: str) -> Dict[str, Any]:
-    """Get user settings as a resource.
-
-    Args:
-        region: Region (ap1, us1, eu1, etc.)
-        workspace: Workspace name
-
-    Returns:
-        User settings information
-    """
-    settings_data = user_settings_get(region=region, workspace=workspace)
-    return {
-        "content": settings_data
-    }
+    return success_response(
+        data=result,
+        workspace=workspace,
+        region=region
+    )
