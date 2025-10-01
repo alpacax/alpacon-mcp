@@ -338,14 +338,20 @@ async def get_server_metrics_summary(
             # Return only summary info, not full data arrays
             if isinstance(data, dict):
                 if "error" in data:
-                    return {"error": data.get("message", "Data unavailable")}
+                    # Extract actual error message from response if available
+                    if "response" in data:
+                        return {"available": False, "error": f"{data.get('message', 'Error')} - {data.get('response', '')}"}
+                    return {"available": False, "error": data.get("message", "Data unavailable")}
                 # Return metadata only, not the full data points
-                return {
-                    "available": True,
-                    "data_points": len(data.get("results", [])) if "results" in data else 0,
-                    "note": f"Full {metric_type} data available via dedicated endpoint"
-                }
-            return {"error": "Unexpected data format"}
+                if "results" in data:
+                    return {
+                        "available": True,
+                        "data_points": len(data.get("results", [])),
+                        "note": f"Full {metric_type} data available via dedicated endpoint"
+                    }
+                # If no results but no error, might be empty data
+                return {"available": False, "error": "No data available"}
+            return {"available": False, "error": "Unexpected data format"}
         else:
             error_msg = str(result) if isinstance(result, Exception) else result.get("message", "Unknown error")
             return {"available": False, "error": error_msg}
