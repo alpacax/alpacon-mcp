@@ -8,6 +8,37 @@ from utils.common import success_response, error_response
 from utils.decorators import mcp_tool_handler
 
 
+def parse_cpu_metrics(results: list) -> Dict[str, Any]:
+    """Parse CPU usage metrics to extract meaningful statistics.
+
+    Args:
+        results: List of CPU usage data points
+
+    Returns:
+        Parsed statistics including average, min, max, current usage
+    """
+    if not results or len(results) == 0:
+        return {"available": False, "message": "No CPU data available"}
+
+    usage_values = [entry.get('usage', 0) for entry in results if 'usage' in entry]
+
+    if not usage_values:
+        return {"available": False, "message": "No usage values found"}
+
+    return {
+        "available": True,
+        "current_usage": usage_values[-1],
+        "average_usage": round(sum(usage_values) / len(usage_values), 2),
+        "min_usage": min(usage_values),
+        "max_usage": max(usage_values),
+        "data_points": len(usage_values),
+        "time_range": {
+            "start": results[0].get('timestamp') if results else None,
+            "end": results[-1].get('timestamp') if results else None
+        }
+    }
+
+
 @mcp_tool_handler(description="Get server CPU usage metrics")
 async def get_cpu_usage(
     server_id: str,
@@ -17,7 +48,7 @@ async def get_cpu_usage(
     region: str = "ap1",
     **kwargs
 ) -> Dict[str, Any]:
-    """Get CPU usage metrics for a server.
+    """Get CPU usage metrics for a server with parsed statistics.
 
     Args:
         server_id: Server ID to get metrics for
@@ -27,7 +58,7 @@ async def get_cpu_usage(
         region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
 
     Returns:
-        CPU usage metrics response
+        CPU usage metrics with parsed statistics (current, average, min, max)
     """
     token = kwargs.get('token')
 
@@ -47,13 +78,50 @@ async def get_cpu_usage(
         params=params
     )
 
+    # Parse metrics for better readability
+    parsed_data = {
+        "server_id": server_id,
+        "metric_type": "cpu_usage",
+        "statistics": parse_cpu_metrics(result.get('results', [])) if isinstance(result, dict) else parse_cpu_metrics(result if isinstance(result, list) else []),
+        "raw_data_available": True
+    }
+
     return success_response(
-        data=result,
-        server_id=server_id,
-        metric_type="cpu_usage",
+        data=parsed_data,
         region=region,
         workspace=workspace
     )
+
+
+def parse_memory_metrics(results: list) -> Dict[str, Any]:
+    """Parse memory usage metrics to extract meaningful statistics.
+
+    Args:
+        results: List of memory usage data points
+
+    Returns:
+        Parsed statistics including average, min, max, current usage
+    """
+    if not results or len(results) == 0:
+        return {"available": False, "message": "No memory data available"}
+
+    usage_values = [entry.get('usage', 0) for entry in results if 'usage' in entry]
+
+    if not usage_values:
+        return {"available": False, "message": "No usage values found"}
+
+    return {
+        "available": True,
+        "current_usage": usage_values[-1],
+        "average_usage": round(sum(usage_values) / len(usage_values), 2),
+        "min_usage": min(usage_values),
+        "max_usage": max(usage_values),
+        "data_points": len(usage_values),
+        "time_range": {
+            "start": results[0].get('timestamp') if results else None,
+            "end": results[-1].get('timestamp') if results else None
+        }
+    }
 
 
 @mcp_tool_handler(description="Get server memory usage metrics")
@@ -65,7 +133,7 @@ async def get_memory_usage(
     region: str = "ap1",
     **kwargs
 ) -> Dict[str, Any]:
-    """Get memory usage metrics for a server.
+    """Get memory usage metrics for a server with parsed statistics.
 
     Args:
         server_id: Server ID to get metrics for
@@ -75,7 +143,7 @@ async def get_memory_usage(
         region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
 
     Returns:
-        Memory usage metrics response
+        Memory usage metrics with parsed statistics (current, average, min, max)
     """
     token = kwargs.get('token')
 
@@ -95,13 +163,71 @@ async def get_memory_usage(
         params=params
     )
 
+    # Parse metrics for better readability
+    parsed_data = {
+        "server_id": server_id,
+        "metric_type": "memory_usage",
+        "statistics": parse_memory_metrics(result.get('results', [])) if isinstance(result, dict) else parse_memory_metrics(result if isinstance(result, list) else []),
+        "raw_data_available": True
+    }
+
     return success_response(
-        data=result,
-        server_id=server_id,
-        metric_type="memory_usage",
+        data=parsed_data,
         region=region,
         workspace=workspace
     )
+
+
+def parse_disk_metrics(results: list) -> Dict[str, Any]:
+    """Parse disk usage metrics to extract meaningful statistics.
+
+    Args:
+        results: List of disk usage data points
+
+    Returns:
+        Parsed statistics including average, min, max, current usage and space info
+    """
+    if not results or len(results) == 0:
+        return {"available": False, "message": "No disk data available"}
+
+    usage_values = [entry.get('usage', 0) for entry in results if 'usage' in entry]
+
+    if not usage_values:
+        return {"available": False, "message": "No usage values found"}
+
+    # Get space information from the latest entry
+    latest_entry = results[-1]
+    total_bytes = latest_entry.get('total', 0)
+    used_bytes = latest_entry.get('used', 0)
+    free_bytes = latest_entry.get('free', 0)
+
+    # Convert bytes to human-readable format
+    def bytes_to_human(bytes_value):
+        for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
+            if bytes_value < 1024.0:
+                return f"{bytes_value:.2f} {unit}"
+            bytes_value /= 1024.0
+        return f"{bytes_value:.2f} PB"
+
+    return {
+        "available": True,
+        "current_usage": usage_values[-1],
+        "average_usage": round(sum(usage_values) / len(usage_values), 2),
+        "min_usage": min(usage_values),
+        "max_usage": max(usage_values),
+        "space_info": {
+            "total": bytes_to_human(total_bytes),
+            "used": bytes_to_human(used_bytes),
+            "free": bytes_to_human(free_bytes),
+            "device": latest_entry.get('device'),
+            "mount_point": latest_entry.get('mount_point')
+        },
+        "data_points": len(usage_values),
+        "time_range": {
+            "start": results[0].get('timestamp') if results else None,
+            "end": results[-1].get('timestamp') if results else None
+        }
+    }
 
 
 @mcp_tool_handler(description="Get server disk usage metrics")
@@ -115,7 +241,7 @@ async def get_disk_usage(
     region: str = "ap1",
     **kwargs
 ) -> Dict[str, Any]:
-    """Get disk usage metrics for a server.
+    """Get disk usage metrics for a server with parsed statistics.
 
     Args:
         server_id: Server ID to get metrics for
@@ -127,7 +253,7 @@ async def get_disk_usage(
         region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
 
     Returns:
-        Disk usage metrics response
+        Disk usage metrics with parsed statistics (current, average, min, max, space info)
     """
     token = kwargs.get('token')
 
@@ -151,15 +277,82 @@ async def get_disk_usage(
         params=params
     )
 
+    # Parse metrics for better readability
+    parsed_data = {
+        "server_id": server_id,
+        "metric_type": "disk_usage",
+        "device": device,
+        "partition": partition,
+        "statistics": parse_disk_metrics(result.get('results', [])) if isinstance(result, dict) else parse_disk_metrics(result if isinstance(result, list) else []),
+        "raw_data_available": True
+    }
+
     return success_response(
-        data=result,
-        server_id=server_id,
-        metric_type="disk_usage",
-        device=device,
-        partition=partition,
+        data=parsed_data,
         region=region,
         workspace=workspace
     )
+
+
+def parse_network_metrics(results: list) -> Dict[str, Any]:
+    """Parse network traffic metrics to extract meaningful statistics.
+
+    Args:
+        results: List of network traffic data points
+
+    Returns:
+        Parsed statistics including average, peak input/output in bps and pps
+    """
+    if not results or len(results) == 0:
+        return {"available": False, "message": "No network data available"}
+
+    # Extract various metrics
+    peak_input_bps = [entry.get('peak_input_bps', 0) for entry in results]
+    peak_output_bps = [entry.get('peak_output_bps', 0) for entry in results]
+    avg_input_bps = [entry.get('avg_input_bps', 0) for entry in results]
+    avg_output_bps = [entry.get('avg_output_bps', 0) for entry in results]
+    peak_input_pps = [entry.get('peak_input_pps', 0) for entry in results]
+    peak_output_pps = [entry.get('peak_output_pps', 0) for entry in results]
+
+    # Convert bps to human-readable format
+    def bps_to_human(bps_value):
+        for unit in ['bps', 'Kbps', 'Mbps', 'Gbps']:
+            if bps_value < 1024.0:
+                return f"{bps_value:.2f} {unit}"
+            bps_value /= 1024.0
+        return f"{bps_value:.2f} Tbps"
+
+    latest_entry = results[-1]
+
+    return {
+        "available": True,
+        "interface": latest_entry.get('interface'),
+        "current": {
+            "peak_input_bps": bps_to_human(peak_input_bps[-1]) if peak_input_bps else "0 bps",
+            "peak_output_bps": bps_to_human(peak_output_bps[-1]) if peak_output_bps else "0 bps",
+            "avg_input_bps": bps_to_human(avg_input_bps[-1]) if avg_input_bps else "0 bps",
+            "avg_output_bps": bps_to_human(avg_output_bps[-1]) if avg_output_bps else "0 bps",
+            "peak_input_pps": f"{peak_input_pps[-1]:.2f} pps" if peak_input_pps else "0 pps",
+            "peak_output_pps": f"{peak_output_pps[-1]:.2f} pps" if peak_output_pps else "0 pps"
+        },
+        "averages": {
+            "peak_input_bps": bps_to_human(sum(peak_input_bps) / len(peak_input_bps)) if peak_input_bps else "0 bps",
+            "peak_output_bps": bps_to_human(sum(peak_output_bps) / len(peak_output_bps)) if peak_output_bps else "0 bps",
+            "avg_input_bps": bps_to_human(sum(avg_input_bps) / len(avg_input_bps)) if avg_input_bps else "0 bps",
+            "avg_output_bps": bps_to_human(sum(avg_output_bps) / len(avg_output_bps)) if avg_output_bps else "0 bps"
+        },
+        "peaks": {
+            "max_input_bps": bps_to_human(max(peak_input_bps)) if peak_input_bps else "0 bps",
+            "max_output_bps": bps_to_human(max(peak_output_bps)) if peak_output_bps else "0 bps",
+            "max_input_pps": f"{max(peak_input_pps):.2f} pps" if peak_input_pps else "0 pps",
+            "max_output_pps": f"{max(peak_output_pps):.2f} pps" if peak_output_pps else "0 pps"
+        },
+        "data_points": len(results),
+        "time_range": {
+            "start": results[0].get('timestamp') if results else None,
+            "end": results[-1].get('timestamp') if results else None
+        }
+    }
 
 
 @mcp_tool_handler(description="Get server network traffic metrics")
@@ -172,7 +365,7 @@ async def get_network_traffic(
     region: str = "ap1",
     **kwargs
 ) -> Dict[str, Any]:
-    """Get network traffic metrics for a server.
+    """Get network traffic metrics for a server with parsed statistics.
 
     Args:
         server_id: Server ID to get metrics for
@@ -183,7 +376,7 @@ async def get_network_traffic(
         region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
 
     Returns:
-        Network traffic metrics response
+        Network traffic metrics with parsed statistics (current, averages, peaks for bps/pps)
     """
     token = kwargs.get('token')
 
@@ -205,11 +398,17 @@ async def get_network_traffic(
         params=params
     )
 
+    # Parse metrics for better readability
+    parsed_data = {
+        "server_id": server_id,
+        "metric_type": "network_traffic",
+        "interface": interface,
+        "statistics": parse_network_metrics(result.get('results', [])) if isinstance(result, dict) else parse_network_metrics(result if isinstance(result, list) else []),
+        "raw_data_available": True
+    }
+
     return success_response(
-        data=result,
-        server_id=server_id,
-        metric_type="network_traffic",
-        interface=interface,
+        data=parsed_data,
         region=region,
         workspace=workspace
     )
