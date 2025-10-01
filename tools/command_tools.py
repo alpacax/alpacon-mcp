@@ -133,22 +133,41 @@ async def execute_command_sync(
 ) -> Dict[str, Any]:
     """Execute a command and wait for the result (synchronous execution)."""
     # First, execute the command
-    exec_result = await execute_command(
-        server_id=server_id,
-        command=command,
-        shell=shell,
-        username=username,
-        groupname=groupname,
-        env=env,
-        region=region,
-        workspace=workspace
-    )
+    try:
+        exec_result = await execute_command(
+            server_id=server_id,
+            command=command,
+            shell=shell,
+            username=username,
+            groupname=groupname,
+            env=env,
+            region=region,
+            workspace=workspace,
+            **kwargs  # Pass token through
+        )
+    except Exception as e:
+        return error_response(
+            f"Failed to execute command: {str(e)}",
+            workspace=workspace,
+            region=region
+        )
 
-    if exec_result["status"] != "success":
+    # Check if execution was successful
+    if exec_result.get("status") != "success":
         return exec_result
 
     # Handle case where data is a list (array) instead of object
     exec_data = exec_result.get("data", {})
+
+    # Check if exec_data contains an error (like ACL permission denied)
+    if isinstance(exec_data, dict) and "error" in exec_data:
+        return error_response(
+            f"Command execution failed: {exec_data.get('error', 'Unknown error')}",
+            workspace=workspace,
+            region=region,
+            details=exec_data
+        )
+
     if isinstance(exec_data, list):
         if len(exec_data) > 0:
             command_id = exec_data[0].get("id")
@@ -162,16 +181,17 @@ async def execute_command_sync(
         command_id = exec_data.get("id")
     else:
         return error_response(
-            "Unexpected command data format",
+            f"Unexpected command data format: {type(exec_data).__name__}",
             workspace=workspace,
             region=region
         )
 
     if not command_id:
         return error_response(
-            "Failed in execute_command_sync: 'id'",
+            "Command ID not found in response - possible permission issue or API error",
             workspace=workspace,
-            region=region
+            region=region,
+            details=exec_data
         )
 
     # Wait for command completion
