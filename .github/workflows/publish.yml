@@ -49,17 +49,3 @@ jobs:
     - name: Publish to PyPI
       uses: pypa/gh-action-pypi-publish@release/v1
       # No 'with' section needed - uses trusted publishing automatically!
-
-    - name: Update Release with PyPI link
-      uses: actions/github-script@v7
-      with:
-        script: |
-          const release = context.payload.release;
-          const body = release.body + `\n\n📦 **Published to PyPI**: https://pypi.org/project/alpacon-mcp/${release.tag_name}/`;
-
-          await github.rest.repos.updateRelease({
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            release_id: release.id,
-            body: body
-          });
