@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "alpacon-mcp"
-version = "0.2.0"
+version = "0.3.0"
 description = "AI-Powered Server Management - Connect Claude, Cursor, and other AI tools directly to your Alpacon infrastructure"
 readme = "README.md"
 license = { text = "MIT" }

@@ -5,6 +5,51 @@ All notable changes to the Alpacon MCP Server project will be documented in this
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2025-10-01
+
+### Changed
+- **BREAKING**: Refactored all MCP tools to use unified `@mcp_tool_handler` decorator pattern
+- Removed manual token management from tool implementations
+- Replaced manual error handling with automatic decorator-based handling
+- Updated all tools to use `success_response()` and `error_response()` helpers
+- Standardized token injection via `**kwargs` pattern across all tools
+
+### Improved
+- Reduced code duplication by ~60% per tool function
+- Centralized error handling and logging in decorator
+- Consistent response formatting across all MCP tools
+- Better maintainability and testability of tool implementations
+
+### Fixed
+- Enhanced error handling in `execute_command_sync` for ACL permission errors
+- Improved metric tools with human-readable formatting (GB/MB, Mbps/Kbps)
+- Added statistical summaries for metric data (current, average, min, max)
+- Fixed `get_server_metrics_summary` to return summary only (reduced from 75K to 2K tokens)
+
+### Removed
+- Removed non-existent IAM role and permission management endpoints
+  - `list_iam_roles`
+  - `assign_iam_user_role`
+  - `list_iam_permissions`
+  - `get_iam_user_permissions`
+- Removed `websh_command_execute` (HTTP POST endpoint does not exist on server)
+
+### Documentation
+- Updated CLAUDE.md with new decorator pattern examples
+- Updated CONTRIBUTING.md with unified tool creation guide
+- Added decorator benefits and technical details to documentation
+
+### Technical Details
+- All 22+ tool functions refactored across 8 tool modules:
+  - command_tools.py
+  - events_tools.py
+  - iam_tools.py
+  - metrics_tools.py
+  - system_info_tools.py
+  - webftp_tools.py
+  - server_tools.py
+  - workspace_tools.py
+
 ## [0.1.0] - 2024-09-25
 
 ### Added

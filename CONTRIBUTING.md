@@ -193,17 +193,16 @@ async def test_servers_list_success():
    ```python
    # tools/your_feature_tools.py
    from typing import Dict, Any, Optional
-   from server import mcp
    from utils.http_client import http_client
-   from utils.token_manager import TokenManager
+   from utils.common import success_response, error_response
+   from utils.decorators import mcp_tool_handler
 
-   token_manager = TokenManager()
-
-   @mcp.tool(description="Your tool description")
+   @mcp_tool_handler(description="Your tool description")
    async def your_tool_function(
        parameter: str,
        workspace: str,
-       region: str = "ap1"
+       region: str = "ap1",
+       **kwargs  # Receives token from decorator
    ) -> Dict[str, Any]:
        """Your tool documentation.
 
@@ -215,35 +214,25 @@ async def test_servers_list_success():
        Returns:
            Tool response
        """
-       try:
-           token = token_manager.get_token(region, workspace)
-           if not token:
-               return {
-                   "status": "error",
-                   "message": f"No token found for {workspace}.{region}"
-               }
+       token = kwargs.get('token')
 
-           result = await http_client.get(
-               region=region,
-               workspace=workspace,
-               endpoint="/api/your-endpoint/",
-               token=token,
-               params={"param": parameter}
-           )
+       result = await http_client.get(
+           region=region,
+           workspace=workspace,
+           endpoint="/api/your-endpoint/",
+           token=token,
+           params={"param": parameter}
+       )
 
-           return {
-               "status": "success",
-               "data": result,
-               "region": region,
-               "workspace": workspace
-           }
-
-       except Exception as e:
-           return {
-               "status": "error",
-               "message": f"Failed to execute tool: {str(e)}"
-           }
+       return success_response(
+           data=result,
+           parameter=parameter,
+           region=region,
+           workspace=workspace
+       )
    ```
+
+   **Note**: Error handling is automatically managed by the `@mcp_tool_handler` decorator. No need for manual try-except blocks.
 
 2. **Register Tool in Main Module**
    ```python
