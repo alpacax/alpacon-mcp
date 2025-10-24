@@ -334,28 +334,3 @@ async def execute_command_multi_server(
             region=region,
             workspace=workspace
         )
-
-
-@mcp_tool_handler(description="Get ACL-approved commands for Deploy Shell")
-async def get_deploy_shell_acl_commands(
-    workspace: str,
-    region: str = "ap1",
-    **kwargs
-) -> Dict[str, Any]:
-    """Get list of ACL-approved commands for Deploy Shell execution."""
-    token = kwargs.get('token')
-
-    # Get ACL commands from the security/command-acl endpoint
-    result = await http_client.get(
-        region=region,
-        workspace=workspace,
-        endpoint="/api/security/command-acl/",
-        token=token
-    )
-
-    return success_response(
-        acl_commands=result,
-        workspace=workspace,
-        region=region,
-        note="These are the commands approved for Deploy Shell execution via ACL"
-    )

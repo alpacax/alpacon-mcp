@@ -15,7 +15,7 @@ def parse_cpu_metrics(results: list) -> Dict[str, Any]:
         results: List of CPU usage data points
 
     Returns:
-        Parsed statistics including average, min, max, current usage
+        Parsed statistics including average, min, max, current usage with user-friendly format
     """
     if not results or len(results) == 0:
         return {"available": False, "message": "No CPU data available"}
@@ -25,16 +25,42 @@ def parse_cpu_metrics(results: list) -> Dict[str, Any]:
     if not usage_values:
         return {"available": False, "message": "No usage values found"}
 
+    current = usage_values[-1]
+    average = round(sum(usage_values) / len(usage_values), 2)
+    minimum = min(usage_values)
+    maximum = max(usage_values)
+
+    # Determine usage status
+    def get_status(usage):
+        if usage < 20:
+            return "idle"
+        elif usage < 50:
+            return "low"
+        elif usage < 70:
+            return "moderate"
+        elif usage < 90:
+            return "high"
+        else:
+            return "critical"
+
     return {
         "available": True,
-        "current_usage": usage_values[-1],
-        "average_usage": round(sum(usage_values) / len(usage_values), 2),
-        "min_usage": min(usage_values),
-        "max_usage": max(usage_values),
+        "current_usage_percent": f"{current:.2f}%",
+        "average_usage_percent": f"{average:.2f}%",
+        "min_usage_percent": f"{minimum:.2f}%",
+        "max_usage_percent": f"{maximum:.2f}%",
+        "status": get_status(current),
+        "health": "healthy" if current < 80 else "warning" if current < 95 else "critical",
         "data_points": len(usage_values),
         "time_range": {
             "start": results[0].get('timestamp') if results else None,
             "end": results[-1].get('timestamp') if results else None
+        },
+        "raw_values": {
+            "current": current,
+            "average": average,
+            "min": minimum,
+            "max": maximum
         }
     }
 
@@ -62,10 +88,13 @@ async def get_cpu_usage(
     """
     token = kwargs.get('token')
 
-    # Prepare query parameters
+    # Prepare query parameters with required start date
     params = {"server": server_id}
     if start_date:
         params["start"] = start_date
+    else:
+        # Default to last 24 hours if not specified
+        params["start"] = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
     if end_date:
         params["end"] = end_date
 
@@ -100,7 +129,7 @@ def parse_memory_metrics(results: list) -> Dict[str, Any]:
         results: List of memory usage data points
 
     Returns:
-        Parsed statistics including average, min, max, current usage
+        Parsed statistics including average, min, max, current usage with user-friendly format
     """
     if not results or len(results) == 0:
         return {"available": False, "message": "No memory data available"}
@@ -110,16 +139,42 @@ def parse_memory_metrics(results: list) -> Dict[str, Any]:
     if not usage_values:
         return {"available": False, "message": "No usage values found"}
 
+    current = usage_values[-1]
+    average = round(sum(usage_values) / len(usage_values), 2)
+    minimum = min(usage_values)
+    maximum = max(usage_values)
+
+    # Determine usage status
+    def get_status(usage):
+        if usage < 30:
+            return "idle"
+        elif usage < 60:
+            return "low"
+        elif usage < 80:
+            return "moderate"
+        elif usage < 95:
+            return "high"
+        else:
+            return "critical"
+
     return {
         "available": True,
-        "current_usage": usage_values[-1],
-        "average_usage": round(sum(usage_values) / len(usage_values), 2),
-        "min_usage": min(usage_values),
-        "max_usage": max(usage_values),
+        "current_usage_percent": f"{current:.2f}%",
+        "average_usage_percent": f"{average:.2f}%",
+        "min_usage_percent": f"{minimum:.2f}%",
+        "max_usage_percent": f"{maximum:.2f}%",
+        "status": get_status(current),
+        "health": "healthy" if current < 85 else "warning" if current < 95 else "critical",
         "data_points": len(usage_values),
         "time_range": {
             "start": results[0].get('timestamp') if results else None,
             "end": results[-1].get('timestamp') if results else None
+        },
+        "raw_values": {
+            "current": current,
+            "average": average,
+            "min": minimum,
+            "max": maximum
         }
     }
 
@@ -147,10 +202,13 @@ async def get_memory_usage(
     """
     token = kwargs.get('token')
 
-    # Prepare query parameters
+    # Prepare query parameters with required start date
     params = {"server": server_id}
     if start_date:
         params["start"] = start_date
+    else:
+        # Default to last 24 hours if not specified
+        params["start"] = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
     if end_date:
         params["end"] = end_date
 
@@ -243,10 +301,13 @@ async def get_disk_usage(
 ) -> Dict[str, Any]:
     """Get disk usage metrics for a server with parsed statistics.
 
+    Note: This endpoint requires either 'device' or 'partition' parameter.
+    If neither is provided, it will automatically fetch available devices first.
+
     Args:
         server_id: Server ID to get metrics for
         workspace: Workspace name. Required parameter
-        device: Optional device path (e.g., '/dev/sda1')
+        device: Optional device path (e.g., '/dev/sda1'). If not provided, will fetch first available device
         partition: Optional partition path (e.g., '/')
         start_date: Start date in ISO format (e.g., '2024-01-01T00:00:00Z')
         end_date: End date in ISO format (e.g., '2024-01-02T00:00:00Z')
@@ -257,7 +318,39 @@ async def get_disk_usage(
     """
     token = kwargs.get('token')
 
-    # Prepare query parameters
+    # If no device or partition provided, fetch available devices first
+    if not device and not partition:
+        try:
+            devices_result = await http_client.get(
+                region=region,
+                workspace=workspace,
+                endpoint="/api/metrics/realtime/disk-usage/device/",
+                token=token,
+                params={"server": server_id}
+            )
+
+            # Extract device list from response
+            available_devices = devices_result.get('devices', []) if isinstance(devices_result, dict) else []
+
+            if available_devices and len(available_devices) > 0:
+                # Use the first available device
+                device = available_devices[0]
+            else:
+                return error_response(
+                    message="No disk devices found for this server",
+                    server_id=server_id,
+                    region=region,
+                    workspace=workspace
+                )
+        except Exception as e:
+            return error_response(
+                message=f"Failed to fetch disk devices: {str(e)}",
+                server_id=server_id,
+                region=region,
+                workspace=workspace
+            )
+
+    # Prepare query parameters with required start date
     params = {"server": server_id}
     if device:
         params["device"] = device
@@ -265,6 +358,9 @@ async def get_disk_usage(
         params["partition"] = partition
     if start_date:
         params["start"] = start_date
+    else:
+        # Default to last 24 hours if not specified
+        params["start"] = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
     if end_date:
         params["end"] = end_date
 
@@ -355,7 +451,66 @@ def parse_network_metrics(results: list) -> Dict[str, Any]:
     }
 
 
-@mcp_tool_handler(description="Get server network traffic metrics")
+@mcp_tool_handler(description="Get disk I/O performance metrics for a server")
+async def get_disk_io(
+    server_id: str,
+    workspace: str,
+    device: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    region: str = "ap1",
+    **kwargs
+) -> Dict[str, Any]:
+    """Get disk I/O performance metrics for a server.
+
+    Returns disk read/write throughput metrics with peak and average values.
+
+    Args:
+        server_id: Server ID to get disk I/O metrics for
+        workspace: Workspace name. Required parameter
+        device: Optional disk device name (e.g., 'sda', 'nvme0n1')
+        start_date: Start date for metrics (ISO 8601 format). Defaults to last 24 hours
+        end_date: End date for metrics (ISO 8601 format)
+        region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
+
+    Returns:
+        Disk I/O metrics response with device, read/write rates, and timestamps
+    """
+    token = kwargs.get('token')
+
+    # Prepare query parameters with required start date
+    params = {"server": server_id}
+    if device:
+        params["device"] = device
+    if start_date:
+        params["start"] = start_date
+    else:
+        # Default to last 24 hours if not specified
+        params["start"] = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+    if end_date:
+        params["end"] = end_date
+
+    # Make async call to get disk I/O metrics
+    result = await http_client.get(
+        region=region,
+        workspace=workspace,
+        endpoint="/api/metrics/realtime/disk-io/",
+        token=token,
+        params=params
+    )
+
+    return success_response(
+        data=result,
+        server_id=server_id,
+        device=device,
+        start_date=start_date,
+        end_date=end_date,
+        region=region,
+        workspace=workspace
+    )
+
+
+@mcp_tool_handler(description="Get network traffic metrics for a server")
 async def get_network_traffic(
     server_id: str,
     workspace: str,
@@ -380,12 +535,15 @@ async def get_network_traffic(
     """
     token = kwargs.get('token')
 
-    # Prepare query parameters
+    # Prepare query parameters with required start date
     params = {"server": server_id}
     if interface:
         params["interface"] = interface
     if start_date:
         params["start"] = start_date
+    else:
+        # Default to last 24 hours if not specified
+        params["start"] = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
     if end_date:
         params["end"] = end_date
 
@@ -414,34 +572,105 @@ async def get_network_traffic(
     )
 
 
-@mcp_tool_handler(description="Get top performing servers by CPU usage")
-async def get_top_cpu_servers(
+@mcp_tool_handler(description="Get top performing servers by metrics (supports multiple metrics in one call)")
+async def get_top_servers(
     workspace: str,
+    metric_types: str = "",
     region: str = "ap1",
     **kwargs
 ) -> Dict[str, Any]:
-    """Get top 5 servers by CPU usage in the last 24 hours.
+    """Get top 5 servers by specified metric types in the last 24 hours.
+
+    Supports querying multiple metrics simultaneously for efficiency.
 
     Args:
         workspace: Workspace name. Required parameter
+        metric_types: Comma-separated metric types (e.g., "cpu,memory,disk_io,traffic").
+                     Leave empty to get all metrics. Valid values: cpu, memory, disk_io, traffic
         region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
 
     Returns:
-        Top CPU usage servers response
+        Top servers response with usage/performance statistics for requested metrics.
+        When multiple metrics requested, returns dict with each metric type as key.
+        When single metric requested, returns data directly with metric_type field.
+
+    Examples:
+        - metric_types="": Get all metrics (cpu, memory, disk_io, traffic)
+        - metric_types="cpu": Get CPU top servers only
+        - metric_types="cpu,memory": Get CPU and memory top servers
     """
     token = kwargs.get('token')
 
-    # Make async call to get top CPU servers
-    result = await http_client.get(
-        region=region,
-        workspace=workspace,
-        endpoint="/api/metrics/realtime/cpu/top/",
-        token=token
-    )
+    # Define available metrics and their endpoints
+    metric_endpoints = {
+        "cpu": "/api/metrics/realtime/cpu/top/",
+        "memory": "/api/metrics/realtime/memory/top/",
+        "disk_io": "/api/metrics/realtime/disk-io/top/",
+        "traffic": "/api/metrics/realtime/traffic/top/"
+    }
+
+    # Parse requested metric types
+    if metric_types.strip():
+        requested_metrics = [m.strip() for m in metric_types.split(",")]
+        # Validate all requested metrics
+        invalid_metrics = [m for m in requested_metrics if m not in metric_endpoints]
+        if invalid_metrics:
+            return error_response(
+                message=f"Invalid metric types: {', '.join(invalid_metrics)}. Valid values: {', '.join(metric_endpoints.keys())}",
+                region=region,
+                workspace=workspace
+            )
+    else:
+        # Empty string means all metrics
+        requested_metrics = list(metric_endpoints.keys())
+
+    # Create async tasks for all requested metrics
+    tasks = {}
+    for metric in requested_metrics:
+        tasks[metric] = http_client.get(
+            region=region,
+            workspace=workspace,
+            endpoint=metric_endpoints[metric],
+            token=token
+        )
+
+    # Execute all requests in parallel
+    results = await asyncio.gather(*tasks.values(), return_exceptions=True)
+
+    # Combine results - preserve original format for single metric
+    if len(requested_metrics) == 1:
+        # Single metric - return in original format for backward compatibility
+        metric = requested_metrics[0]
+        result = results[0]
+
+        if isinstance(result, Exception):
+            return error_response(
+                message=f"Failed to fetch {metric} metrics: {str(result)}",
+                region=region,
+                workspace=workspace
+            )
+
+        return success_response(
+            data=result,
+            metric_type=f"{metric}_top",
+            region=region,
+            workspace=workspace
+        )
+
+    # Multiple metrics - combine into dict
+    combined_data = {}
+    for metric, result in zip(tasks.keys(), results):
+        if isinstance(result, Exception):
+            combined_data[metric] = {
+                "error": str(result),
+                "available": False
+            }
+        else:
+            combined_data[metric] = result
 
     return success_response(
-        data=result,
-        metric_type="cpu_top",
+        data=combined_data,
+        metric_types=requested_metrics,
         region=region,
         workspace=workspace
     )
@@ -520,11 +749,69 @@ async def get_server_metrics_summary(
     start_date = start_time.isoformat()
     end_date = end_time.isoformat()
 
+    # First, get disk and network interface information to satisfy API requirements
+    # DiskUsage API requires: server + start + (device OR partition)
+    # Traffic API accepts: server + start + interface (optional, but may have no data without it)
+    disk_device = None
+    network_interface = None
+
+    try:
+        # Get partition information using /api/proc/partitions/
+        partitions_result = await http_client.get(
+            region=region,
+            workspace=workspace,
+            endpoint="/api/proc/partitions/",
+            token=token,
+            params={"server": server_id}
+        )
+
+        # http_client.get returns raw API response (paginated list format)
+        if isinstance(partitions_result, dict) and "results" in partitions_result:
+            partitions = partitions_result.get("results", [])
+            # Find the root partition (mounted at /)
+            for partition in partitions:
+                mount_points = partition.get("mount_points", [])
+                if "/" in mount_points:
+                    disk_device = partition.get("name")
+                    break
+    except Exception:
+        pass  # Disk metrics will show as unavailable
+
+    try:
+        # Get network interface information using /api/proc/interfaces/
+        interfaces_result = await http_client.get(
+            region=region,
+            workspace=workspace,
+            endpoint="/api/proc/interfaces/",
+            token=token,
+            params={"server": server_id}
+        )
+
+        # http_client.get returns raw API response (paginated list format)
+        if isinstance(interfaces_result, dict) and "results" in interfaces_result:
+            interfaces = interfaces_result.get("results", [])
+            # Find first non-loopback, active interface
+            for iface in interfaces:
+                if not iface.get("is_loopback", False) and iface.get("is_up", False):
+                    network_interface = iface.get("name")
+                    break
+    except Exception:
+        pass  # Network metrics will show as unavailable
+
     # Prepare query parameters
     cpu_params = {"server": server_id, "start": start_date, "end": end_date}
     memory_params = {"server": server_id, "start": start_date, "end": end_date}
     disk_params = {"server": server_id, "start": start_date, "end": end_date}
     traffic_params = {"server": server_id, "start": start_date, "end": end_date}
+
+    # Add device/interface to satisfy API requirements
+    # DiskUsage API: requires device OR partition (at least one optional field)
+    if disk_device:
+        disk_params["device"] = disk_device
+
+    # Traffic API: interface is optional, but include if available
+    if network_interface:
+        traffic_params["interface"] = network_interface
 
     # Get all metrics concurrently using http_client directly
     cpu_task = http_client.get(region, workspace, "/api/metrics/realtime/cpu/", token, params=cpu_params)
