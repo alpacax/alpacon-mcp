@@ -3,6 +3,7 @@ import argparse
 from server import run
 
 import tools.command_tools
+import tools.security_audit_tools
 import tools.server_tools
 import tools.websh_tools
 
