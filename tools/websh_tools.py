@@ -3,15 +3,215 @@
 import asyncio
 import json
 import websockets
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Tuple
 from server import mcp
 from utils.http_client import http_client
-from utils.common import success_response, error_response
+from utils.common import success_response, error_response, MCP_USER_AGENT
 from utils.decorators import mcp_tool_handler
 
 
 # WebSocket connection pool for persistent connections
-websocket_pool = {}  # {channel_id: {'websocket': connection, 'url': url, 'session_id': id}}
+# Format: {channel_id: {'websocket': connection, 'url': url, 'session_id': id}}
+websocket_pool = {}
+
+# Session pool for reusing sessions by server
+# Format: {f"{region}:{workspace}:{server_id}": session_info}
+session_pool = {}
+
+
+async def get_or_create_channel(
+    server_id: str,
+    workspace: str,
+    region: str = "ap1",
+    username: Optional[str] = None,
+    token: Optional[str] = None
+) -> Tuple[str, Dict[str, Any]]:
+    """Get existing channel or create new session+channel for a server.
+
+    This helper function maintains persistent WebSocket connections by:
+    1. Checking if we already have an active channel for this server
+    2. If not, creating a new session and connecting to its channel
+    3. Storing the connection for future reuse
+
+    Args:
+        server_id: Server ID
+        workspace: Workspace name
+        region: Region (default: ap1)
+        username: Optional username for session
+        token: API token
+
+    Returns:
+        Tuple of (channel_id, session_info)
+    """
+    pool_key = f"{region}:{workspace}:{server_id}"
+
+    # Step 1: Check if we have an existing session in memory
+    if pool_key in session_pool:
+        session_info = session_pool[pool_key]
+        channel_id = session_info.get('userchannel_id')
+
+        # Verify the channel is still connected
+        if channel_id in websocket_pool:
+            try:
+                websocket = websocket_pool[channel_id]['websocket']
+                await websocket.ping()
+                # Connection still alive, reuse it
+                return channel_id, session_info
+            except:
+                # Connection dead, clean up
+                if channel_id in websocket_pool:
+                    del websocket_pool[channel_id]
+                del session_pool[pool_key]
+
+    # Step 2: Check if there's an existing MCP session in Alpacon API
+    try:
+        sessions_response = await http_client.get(
+            region=region,
+            workspace=workspace,
+            endpoint="/api/websh/sessions/",
+            token=token,
+            params={"page_size": 50}  # Get recent sessions
+        )
+
+        # Find active MCP sessions for this server
+        for session in sessions_response.get('results', []):
+            # Check if: same server, MCP user-agent, not closed
+            if (session.get('server') == server_id and
+                session.get('closed_at') is None and
+                session.get('user_agent') and
+                'alpacon-mcp' in session.get('user_agent', '')):
+
+                # Try to reconnect to this session
+                try:
+                    session_id = session['id']
+                    # Get fresh session details to get WebSocket URL
+                    session_detail = await http_client.get(
+                        region=region,
+                        workspace=workspace,
+                        endpoint=f"/api/websh/sessions/{session_id}/",
+                        token=token
+                    )
+
+                    websocket_url = session_detail.get('websocket_url')
+                    channel_id = session_detail.get('userchannel_id')
+
+                    if websocket_url and channel_id:
+                        # Try to connect to existing session
+                        websocket = await websockets.connect(
+                            websocket_url,
+                            user_agent_header=MCP_USER_AGENT
+                        )
+
+                        # Test connection
+                        await websocket.ping()
+
+                        # Store in pools
+                        websocket_pool[channel_id] = {
+                            'websocket': websocket,
+                            'url': websocket_url,
+                            'session_id': session_id
+                        }
+                        session_pool[pool_key] = session_detail
+
+                        return channel_id, session_detail
+                except:
+                    # This session is not reusable, try next one
+                    continue
+    except:
+        # If fetching sessions fails, just proceed to create new one
+        pass
+
+    # Step 3: Create new session
+    session_data = {
+        "server": server_id,
+        "rows": 24,
+        "cols": 80
+    }
+    if username:
+        session_data["username"] = username
+
+    result = await http_client.post(
+        region=region,
+        workspace=workspace,
+        endpoint="/api/websh/sessions/",
+        token=token,
+        data=session_data
+    )
+
+    # Extract session info
+    channel_id = result['userchannel_id']
+    websocket_url = result['websocket_url']
+    session_id = result['id']
+
+    # Connect to WebSocket with custom User-Agent for identification
+    websocket = await websockets.connect(
+        websocket_url,
+        user_agent_header=MCP_USER_AGENT
+    )
+
+    # Store in pools
+    websocket_pool[channel_id] = {
+        'websocket': websocket,
+        'url': websocket_url,
+        'session_id': session_id
+    }
+
+    session_pool[pool_key] = result
+
+    return channel_id, result
+
+
+async def execute_command_via_channel(
+    channel_id: str,
+    command: str,
+    timeout: int = 10
+) -> str:
+    """Execute command using existing channel connection.
+
+    Args:
+        channel_id: Channel ID from get_or_create_channel
+        command: Command to execute
+        timeout: Timeout in seconds
+
+    Returns:
+        Command output as string
+    """
+    if channel_id not in websocket_pool:
+        raise ValueError(f"Channel {channel_id} not connected")
+
+    websocket = websocket_pool[channel_id]['websocket']
+
+    # Send command
+    await websocket.send(command + "\n")
+
+    # Collect output
+    output_lines = []
+    start_time = asyncio.get_event_loop().time()
+
+    while (asyncio.get_event_loop().time() - start_time) < timeout:
+        try:
+            message = await asyncio.wait_for(websocket.recv(), timeout=1.0)
+
+            if isinstance(message, bytes):
+                output_lines.append(message.decode('utf-8', errors='ignore'))
+            elif message.startswith('{"type":'):
+                try:
+                    data = json.loads(message)
+                    if data.get("type") == "output":
+                        output_lines.append(data.get("data", ""))
+                except json.JSONDecodeError:
+                    output_lines.append(message)
+            else:
+                output_lines.append(message)
+
+        except asyncio.TimeoutError:
+            break
+        except websockets.exceptions.ConnectionClosed:
+            # Remove dead connection
+            del websocket_pool[channel_id]
+            raise ConnectionError(f"WebSocket connection lost for channel {channel_id}")
+
+    return "".join(output_lines)
 
 
 @mcp_tool_handler(description="Create a new Websh session")
@@ -22,7 +222,10 @@ async def websh_session_create(
     region: str = "ap1",
     **kwargs
 ) -> Dict[str, Any]:
-    """Create a new Websh session.
+    """Create a new Websh session and establish WebSocket connection.
+
+    This function creates a session and immediately connects via WebSocket
+    to ensure user_agent is properly recorded in the UserChannel.
 
     Args:
         server_id: Server ID to create session on
@@ -31,7 +234,7 @@ async def websh_session_create(
         region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
 
     Returns:
-        Session creation response
+        Session creation response with WebSocket connection established
     """
     token = kwargs.get('token')
 
@@ -54,6 +257,36 @@ async def websh_session_create(
         token=token,
         data=session_data
     )
+
+    # Establish WebSocket connection to record user_agent
+    websocket_url = result.get('websocket_url')
+    channel_id = result.get('userchannel_id')
+
+    if websocket_url and channel_id:
+        try:
+            # Connect with MCP User-Agent header
+            websocket = await websockets.connect(
+                websocket_url,
+                user_agent_header=MCP_USER_AGENT
+            )
+
+            # Store in connection pool for reuse
+            websocket_pool[channel_id] = {
+                'websocket': websocket,
+                'url': websocket_url,
+                'session_id': result['id']
+            }
+
+            # Store in session pool
+            pool_key = f"{region}:{workspace}:{server_id}"
+            session_pool[pool_key] = result
+
+            result['websocket_connected'] = True
+            result['mcp_note'] = 'WebSocket connected with MCP user-agent'
+        except Exception as e:
+            # Connection failed but session was created
+            result['websocket_connected'] = False
+            result['websocket_error'] = str(e)
 
     return success_response(
         data=result,
@@ -500,6 +733,158 @@ async def websh_websocket_execute(
             "command": command,
             "websocket_url": websocket_url
         }
+
+
+@mcp_tool_handler(description="Execute command using persistent connection (recommended)")
+async def execute_command(
+    server_id: str,
+    command: str,
+    workspace: str,
+    username: Optional[str] = None,
+    region: str = "ap1",
+    timeout: int = 10,
+    **kwargs
+) -> Dict[str, Any]:
+    """Execute command on server using persistent WebSocket connection.
+
+    This is the recommended way to execute commands as it:
+    - Reuses existing sessions and WebSocket connections
+    - Reduces API calls by maintaining connection pool
+    - Automatically handles connection failures and retries
+
+    For multiple commands on the same server, this will reuse the same connection.
+
+    Args:
+        server_id: Server ID to execute command on
+        command: Command to execute
+        workspace: Workspace name. Required parameter
+        username: Optional username for the session
+        region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
+        timeout: Command timeout in seconds (default: 10)
+
+    Returns:
+        Command execution response with output
+    """
+    token = kwargs.get('token')
+
+    try:
+        # Get or create persistent channel
+        channel_id, session_info = await get_or_create_channel(
+            server_id=server_id,
+            workspace=workspace,
+            region=region,
+            username=username,
+            token=token
+        )
+
+        # Execute command
+        output = await execute_command_via_channel(
+            channel_id=channel_id,
+            command=command,
+            timeout=timeout
+        )
+
+        return success_response(
+            data={
+                "command": command,
+                "output": output,
+                "channel_id": channel_id,
+                "session_id": session_info['id'],
+                "reused_connection": True
+            },
+            server_id=server_id,
+            region=region,
+            workspace=workspace,
+            message="Command executed via persistent connection"
+        )
+
+    except Exception as e:
+        return error_response(
+            f"Command execution failed: {str(e)}",
+            server_id=server_id,
+            command=command
+        )
+
+
+@mcp_tool_handler(description="Execute multiple commands using persistent connection")
+async def execute_command_batch(
+    server_id: str,
+    commands: List[str],
+    workspace: str,
+    username: Optional[str] = None,
+    region: str = "ap1",
+    timeout: int = 30,
+    **kwargs
+) -> Dict[str, Any]:
+    """Execute multiple commands sequentially using persistent connection.
+
+    All commands will be executed on the same WebSocket connection,
+    making this very efficient for multiple operations.
+
+    Args:
+        server_id: Server ID to execute commands on
+        commands: List of commands to execute
+        workspace: Workspace name. Required parameter
+        username: Optional username for the session
+        region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
+        timeout: Total timeout in seconds (default: 30)
+
+    Returns:
+        Batch execution response with all results
+    """
+    token = kwargs.get('token')
+
+    try:
+        # Get or create persistent channel
+        channel_id, session_info = await get_or_create_channel(
+            server_id=server_id,
+            workspace=workspace,
+            region=region,
+            username=username,
+            token=token
+        )
+
+        # Execute all commands
+        results = []
+        for command in commands:
+            try:
+                output = await execute_command_via_channel(
+                    channel_id=channel_id,
+                    command=command,
+                    timeout=timeout // len(commands)  # Distribute timeout
+                )
+                results.append({
+                    "command": command,
+                    "output": output,
+                    "status": "success"
+                })
+            except Exception as e:
+                results.append({
+                    "command": command,
+                    "error": str(e),
+                    "status": "error"
+                })
+
+        return success_response(
+            data={
+                "results": results,
+                "total_commands": len(commands),
+                "channel_id": channel_id,
+                "session_id": session_info['id'],
+                "reused_connection": True
+            },
+            server_id=server_id,
+            region=region,
+            workspace=workspace,
+            message=f"Executed {len(commands)} commands via persistent connection"
+        )
+
+    except Exception as e:
+        return error_response(
+            f"Batch execution failed: {str(e)}",
+            server_id=server_id,
+            commands=commands
+        )
 
 
 @mcp.tool(description="Execute multiple commands in Websh session via WebSocket")

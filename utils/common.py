@@ -1,5 +1,6 @@
 """Common utilities for all MCP tools."""
 
+import importlib.metadata
 from typing import Dict, Any, Optional
 from utils.token_manager import get_token_manager
 from utils.logger import get_logger
@@ -7,6 +8,16 @@ from utils.logger import get_logger
 # Initialize shared instances
 token_manager = get_token_manager()
 logger = get_logger("common")
+
+# Get version from package metadata (pyproject.toml)
+try:
+    MCP_VERSION = importlib.metadata.version("alpacon-mcp")
+except importlib.metadata.PackageNotFoundError:
+    # Fallback for development environment
+    MCP_VERSION = "0.4.2-dev"
+
+# MCP User-Agent for identification
+MCP_USER_AGENT = f"alpacon-mcp/{MCP_VERSION} (MCP-Server; persistent-pool) Python/3.12 websockets/15.0.1"
 
 
 def validate_token(region: str, workspace: str) -> Optional[str]:

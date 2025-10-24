@@ -5,6 +5,54 @@ All notable changes to the Alpacon MCP Server project will be documented in this
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.3] - 2025-10-24
+
+### Improved
+- **Session Management**: Optimized Websh session creation by removing unnecessary 0.5s sleep
+  - Session reuse logic now properly identifies MCP sessions via user_agent filtering
+  - Faster session creation without compromising user_agent recording
+- **Version Management**: Implemented dynamic version reading from `pyproject.toml`
+  - Removed hardcoded version in `utils/common.py`
+  - Version now automatically synchronized via `importlib.metadata`
+  - Development fallback version for non-installed environments
+
+### Technical Details
+- `websh_session_create`: Removed `asyncio.sleep(0.5)` after WebSocket connection
+- `get_or_create_channel`: Already properly filters sessions by user_agent='alpacon-mcp'
+- `MCP_VERSION`: Now reads from package metadata instead of hardcoded value
+
+## [0.4.2] - 2025-10-24
+
+### Fixed
+- Removed missing `security_audit_tools` import that was causing import errors
+- Cleaned up unused imports and references to non-existent modules
+
+## [0.4.1] - 2025-10-24
+
+### Fixed
+- Added `__init__.py` to make alpacon-mcp a proper Python package
+- Fixed package structure for proper installation and distribution
+
+## [0.4.0] - 2025-10-24
+
+### Added
+- **Interactive Setup Wizard**: Simplified installation with guided configuration
+  - Region selection with defaults
+  - Workspace and API token input with validation
+  - Automatic token file creation
+  - Connection testing and verification
+  - Claude Desktop configuration guidance
+
+### Improved
+- **MCP Tools Consolidation**: Cleaned up and reorganized MCP tool structure
+  - Removed redundant tool definitions
+  - Improved tool naming consistency
+  - Better organization of tool modules
+
+### Changed
+- Streamlined installation process with `uvx alpacon-mcp setup` command
+- Enhanced user experience with interactive prompts and validation
+
 ## [0.3.1] - 2025-10-01
 
 ### Documentation
