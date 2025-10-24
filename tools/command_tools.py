@@ -7,8 +7,8 @@ from utils.common import success_response, error_response
 from utils.decorators import mcp_tool_handler
 
 
-@mcp_tool_handler(description="Execute a command on a server")
-async def execute_command(
+@mcp_tool_handler(description="Execute a command on a server (requires ACL permission)")
+async def execute_command_with_acl(
     server_id: str,
     command: str,
     workspace: str,
@@ -19,7 +19,7 @@ async def execute_command(
     region: str = "ap1",
     **kwargs
 ) -> Dict[str, Any]:
-    """Execute a command on a specified server."""
+    """Execute a command on a specified server using Command API (requires ACL permission)."""
     token = kwargs.get('token')
 
     # Prepare command data
@@ -118,7 +118,7 @@ async def list_commands(
     )
 
 
-@mcp_tool_handler(description="Execute a command and wait for result")
+@mcp_tool_handler(description="Execute a command and wait for result (requires ACL permission)")
 async def execute_command_sync(
     server_id: str,
     command: str,
@@ -131,10 +131,10 @@ async def execute_command_sync(
     region: str = "ap1",
     **kwargs
 ) -> Dict[str, Any]:
-    """Execute a command and wait for the result (synchronous execution)."""
+    """Execute a command and wait for the result using Command API (requires ACL permission)."""
     # First, execute the command
     try:
-        exec_result = await execute_command(
+        exec_result = await execute_command_with_acl(
             server_id=server_id,
             command=command,
             shell=shell,
@@ -233,7 +233,7 @@ async def execute_command_sync(
     }
 
 
-@mcp_tool_handler(description="Execute command on multiple servers simultaneously (Deploy Shell)")
+@mcp_tool_handler(description="Execute command on multiple servers simultaneously (requires ACL permission)")
 async def execute_command_multi_server(
     server_ids: List[str],
     command: str,
@@ -246,7 +246,7 @@ async def execute_command_multi_server(
     parallel: bool = True,
     **kwargs
 ) -> Dict[str, Any]:
-    """Execute a command on multiple servers using Deploy Shell."""
+    """Execute a command on multiple servers using Command API Deploy Shell (requires ACL permission)."""
     # Validate inputs
     if not server_ids:
         return error_response("server_ids cannot be empty")
@@ -255,7 +255,7 @@ async def execute_command_multi_server(
         # Execute commands in parallel on all servers
         tasks = []
         for server_id in server_ids:
-            task = execute_command(
+            task = execute_command_with_acl(
                 server_id=server_id,
                 command=command,
                 workspace=workspace,
@@ -263,7 +263,8 @@ async def execute_command_multi_server(
                 username=username,
                 groupname=groupname,
                 env=env,
-                region=region
+                region=region,
+                **kwargs
             )
             tasks.append(task)
 
@@ -307,7 +308,7 @@ async def execute_command_multi_server(
         failed_count = 0
 
         for server_id in server_ids:
-            result = await execute_command(
+            result = await execute_command_with_acl(
                 server_id=server_id,
                 command=command,
                 workspace=workspace,
@@ -315,7 +316,8 @@ async def execute_command_multi_server(
                 username=username,
                 groupname=groupname,
                 env=env,
-                region=region
+                region=region,
+                **kwargs
             )
 
             deploy_results[server_id] = result

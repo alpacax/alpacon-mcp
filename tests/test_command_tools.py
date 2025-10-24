@@ -33,7 +33,7 @@ class TestExecuteCommand:
     @pytest.mark.asyncio
     async def test_execute_command_success(self, mock_http_client, mock_token_manager):
         """Test successful command execution."""
-        from tools.command_tools import execute_command
+        from tools.command_tools import execute_command_with_acl
 
         # Mock successful response
         mock_http_client.post.return_value = {
@@ -43,7 +43,7 @@ class TestExecuteCommand:
             "status": "running"
         }
 
-        result = await execute_command(
+        result = await execute_command_with_acl(
             server_id="server-001",
             command="ls -la",
             workspace="testworkspace",
@@ -76,11 +76,11 @@ class TestExecuteCommand:
     @pytest.mark.asyncio
     async def test_execute_command_with_optional_params(self, mock_http_client, mock_token_manager):
         """Test command execution with optional parameters."""
-        from tools.command_tools import execute_command
+        from tools.command_tools import execute_command_with_acl
 
         mock_http_client.post.return_value = {"id": "cmd-123"}
 
-        result = await execute_command(
+        result = await execute_command_with_acl(
             server_id="server-001",
             command="echo hello",
             workspace="testworkspace",
@@ -105,12 +105,12 @@ class TestExecuteCommand:
     @pytest.mark.asyncio
     async def test_execute_command_no_token(self, mock_http_client, mock_token_manager):
         """Test command execution when no token is available."""
-        from tools.command_tools import execute_command
+        from tools.command_tools import execute_command_with_acl
 
         # Mock no token available
         mock_token_manager.get_token.return_value = None
 
-        result = await execute_command(
+        result = await execute_command_with_acl(
             server_id="server-001",
             command="ls -la",
             workspace="testworkspace"
@@ -123,12 +123,12 @@ class TestExecuteCommand:
     @pytest.mark.asyncio
     async def test_execute_command_http_error(self, mock_http_client, mock_token_manager):
         """Test command execution with HTTP error."""
-        from tools.command_tools import execute_command
+        from tools.command_tools import execute_command_with_acl
 
         # Mock HTTP client to raise exception
         mock_http_client.post.side_effect = Exception("HTTP 500 Internal Server Error")
 
-        result = await execute_command(
+        result = await execute_command_with_acl(
             server_id="server-001",
             command="ls -la",
             workspace="testworkspace"
@@ -304,7 +304,7 @@ class TestExecuteCommandSync:
     @pytest.mark.asyncio
     async def test_execute_command_sync_success(self, mock_http_client, mock_token_manager):
         """Test successful synchronous command execution."""
-        from tools.command_tools import execute_command_sync
+        from tools.command_tools import execute_command_with_acl_sync
 
         # Mock execute_command response
         with patch('tools.command_tools.execute_command') as mock_execute:
@@ -341,7 +341,7 @@ class TestExecuteCommandSync:
     @pytest.mark.asyncio
     async def test_execute_command_sync_with_array_response(self, mock_http_client, mock_token_manager):
         """Test synchronous command execution with array response."""
-        from tools.command_tools import execute_command_sync
+        from tools.command_tools import execute_command_with_acl_sync
 
         with patch('tools.command_tools.execute_command') as mock_execute:
             with patch('tools.command_tools.get_command_result') as mock_get_result:
@@ -371,7 +371,7 @@ class TestExecuteCommandSync:
     @pytest.mark.asyncio
     async def test_execute_command_sync_timeout(self, mock_http_client, mock_token_manager):
         """Test synchronous command execution timeout."""
-        from tools.command_tools import execute_command_sync
+        from tools.command_tools import execute_command_with_acl_sync
 
         with patch('tools.command_tools.execute_command') as mock_execute:
             with patch('tools.command_tools.get_command_result') as mock_get_result:
@@ -405,7 +405,7 @@ class TestExecuteCommandSync:
     @pytest.mark.asyncio
     async def test_execute_command_sync_execute_fails(self, mock_http_client, mock_token_manager):
         """Test synchronous command execution when initial execute fails."""
-        from tools.command_tools import execute_command_sync
+        from tools.command_tools import execute_command_with_acl_sync
 
         with patch('tools.command_tools.execute_command') as mock_execute:
             # Mock execution failure
@@ -426,7 +426,7 @@ class TestExecuteCommandSync:
     @pytest.mark.asyncio
     async def test_execute_command_sync_empty_data_array(self, mock_http_client, mock_token_manager):
         """Test synchronous command execution with empty data array."""
-        from tools.command_tools import execute_command_sync
+        from tools.command_tools import execute_command_with_acl_sync
 
         with patch('tools.command_tools.execute_command') as mock_execute:
             # Mock execute_command returning empty array
@@ -447,7 +447,7 @@ class TestExecuteCommandSync:
     @pytest.mark.asyncio
     async def test_execute_command_sync_exception(self, mock_http_client, mock_token_manager):
         """Test synchronous command execution with exception."""
-        from tools.command_tools import execute_command_sync
+        from tools.command_tools import execute_command_with_acl_sync
 
         with patch('tools.command_tools.execute_command') as mock_execute:
             # Mock exception during execution

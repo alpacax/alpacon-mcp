@@ -7,6 +7,7 @@ from urllib.parse import urljoin
 import httpx
 import time
 from utils.logger import get_logger
+from utils.common import MCP_USER_AGENT
 
 logger = get_logger("http_client")
 
@@ -149,7 +150,7 @@ class AlpaconHTTPClient:
         request_headers = {
             "Content-Type": "application/json",
             "Accept": "application/json",
-            "User-Agent": "alpacon-mcp/1.0"
+            "User-Agent": MCP_USER_AGENT
         }
 
         if token:
