@@ -17,7 +17,7 @@ class TokenManager:
 
         Args:
             config_file: Full path to config file. If None, uses ALPACON_CONFIG_FILE env var
-                        or defaults to config/token.json
+                        or defaults to global config (~/.alpacon-mcp/token.json)
         """
         if config_file:
             # Use specific config file path, expand ~ to home directory
@@ -25,7 +25,7 @@ class TokenManager:
             self.token_file = Path(expanded_path)
             logger.info(f"Using specified config file: {self.token_file}")
         else:
-            # Check environment variable first, then default
+            # Check environment variable first
             env_config_file = os.getenv("ALPACON_MCP_CONFIG_FILE")
             if env_config_file:
                 # Expand ~ to home directory
@@ -33,13 +33,25 @@ class TokenManager:
                 self.token_file = Path(expanded_path)
                 logger.info(f"Using config file from environment: {self.token_file}")
             else:
-                self.token_file = Path("config/token.json")
-                logger.info(f"Using default config file: {self.token_file}")
+                # Use global config by default, fall back to local
+                global_config = Path.home() / ".alpacon-mcp" / "token.json"
+                local_config = Path("config/token.json")
+
+                if global_config.exists():
+                    self.token_file = global_config
+                    logger.info(f"Using global config file: {self.token_file}")
+                elif local_config.exists():
+                    self.token_file = local_config
+                    logger.info(f"Using local config file: {self.token_file}")
+                else:
+                    # Default to global config location
+                    self.token_file = global_config
+                    logger.info(f"No config found, will use global location: {self.token_file}")
 
         self.config_dir = self.token_file.parent
 
         # Ensure config directory exists
-        self.config_dir.mkdir(exist_ok=True)
+        self.config_dir.mkdir(parents=True, exist_ok=True)
         logger.debug(f"Config directory created/verified: {self.config_dir}")
 
         self.tokens = self._load_tokens()

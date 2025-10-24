@@ -56,130 +56,128 @@ The Alpacon MCP Server transforms how you interact with your server infrastructu
 
 ## 🚀 Quick Start
 
-### 1. **Installation**
+### For First-Time Users (Recommended)
 
-#### **Option A: Using uvx (Recommended)**
+**Just run this command and follow the interactive setup:**
+
 ```bash
-# Install UV first (if not already installed)
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# Run directly without installation
-uvx alpacon-mcp --help
-
-# Run with configuration
-uvx alpacon-mcp --config-file /path/to/config.json
-```
-
-#### **Option B: Traditional Installation**
-```bash
-# Install from PyPI
-pip install alpacon-mcp
-
-# Or using UV
-uv tool install alpacon-mcp
-
-# Run the server
-alpacon-mcp
-```
-
-#### **Option C: Development Installation**
-```bash
-# Clone and setup for development
-git clone https://github.com/alpacax/alpacon-mcp.git
-cd alpacon-mcp
-uv venv && source .venv/bin/activate
-uv pip install -e .
-```
-
-### 2. **Get API Token from Alpacon**
-1. Visit your Alpacon workspace: `https://alpacon.io`
-   - Or if you have a specific workspace: `https://alpacon.io/workspace/`
-2. Log in to your account
-3. Click **"API Token"** in the left sidebar
-4. Create a new token or copy existing token
-5. **Configure Token Permissions (ACL)**:
-   - Click on the generated token to open details
-   - Configure Access Control List (ACL) settings
-   - **Important**: Command execution requires specific ACL permissions
-   - Set allowed commands, servers, and operations as needed
-6. Save the token securely
-
-### 3. **Configure Authentication**
-
-You need to create a token configuration file with your Alpacon API tokens. The server supports multiple workspaces.
-
-#### **Create Token Configuration File**
-
-**Step 1: Create the token file anywhere you prefer**
-```bash
-# Example: Create in your home directory
-mkdir -p ~/.config/alpacon
-nano ~/.config/alpacon/tokens.json
-```
-
-**Step 2: Add your tokens using this format**
-```json
-{
-  "ap1": {
-    "your-workspace-name": "your-api-token-from-alpacon-web-interface"
-  }
-}
-```
-
-**Real Example:**
-```json
-{
-  "ap1": {
-    "production": "alpat-ABC123xyz789...",
-    "staging": "alpat-DEF456uvw012...",
-    "development": "alpat-GHI789rst345..."
-  }
-}
-```
-
-**Step 3: Run with your token file**
-```bash
-# Method 1: Using environment variable (recommended)
-ALPACON_MCP_CONFIG_FILE=~/.config/alpacon/tokens.json uvx alpacon-mcp
-
-# Method 2: Using command line flag
-uvx alpacon-mcp --config-file ~/.config/alpacon/tokens.json
-```
-
-#### **Alternative: Environment Variables (For CLI/Testing)**
-Instead of a config file, you can use environment variables:
-```bash
-# Format: ALPACON_MCP_<REGION>_<WORKSPACE>_TOKEN (currently ap1 supported)
-export ALPACON_MCP_AP1_PRODUCTION_TOKEN="alpat-ABC123xyz789..."
-export ALPACON_MCP_AP1_STAGING_TOKEN="alpat-DEF456uvw012..."
-
-# Run with environment variables
 uvx alpacon-mcp
 ```
 
-### 4. **Connect to AI Client**
+That's it! The setup wizard will:
+1. ✅ Ask for your region (default: ap1)
+2. ✅ Ask for your workspace name
+3. ✅ Ask for your API token
+4. ✅ Save configuration automatically
+5. ✅ Test the connection
+6. ✅ Show you the Claude Desktop config to copy
 
-#### **Claude Desktop**
-Add this to your Claude Desktop configuration file:
-- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
-- **Windows**: `%APPDATA%/Claude/claude_desktop_config.json`
-- **Linux**: `~/.config/Claude/claude_desktop_config.json`
+**No manual file editing required!**
+
+### Get Your API Token
+
+Before running the setup, get your API token:
+
+1. Visit `https://alpacon.io`
+2. Log in to your account
+3. Click **"API Token"** in left sidebar
+4. Create new token or copy existing one
+5. **Configure ACL permissions** (important for command execution)
+6. Copy the token (starts with `alpat-...`)
+
+### Connect to Your MCP Client
+
+After setup completes, add the configuration to your MCP client:
 
 ```json
 {
   "mcpServers": {
     "alpacon": {
       "command": "uvx",
-      "args": ["alpacon-mcp"],
-      "env": {
-        "ALPACON_MCP_CONFIG_FILE": "~/.config/alpacon/tokens.json"
-      }
+      "args": ["alpacon-mcp"]
     }
   }
 }
 ```
 
-#### **Cursor IDE**
+**Client-specific locations:**
+- **Claude Desktop**:
+  - macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+  - Windows: `%APPDATA%\Claude\claude_desktop_config.json`
+- **Cursor**: `.cursor/mcp.json` in your project
+- **VS Code**: MCP extension settings
+
+**Restart or reconnect your MCP client** and you're ready! 🎉
+
+---
+
+## 📋 CLI Commands Reference
+
+```bash
+uvx alpacon-mcp                                # Start server (auto-setup if needed)
+uvx alpacon-mcp setup                          # Run setup wizard (shows token file path)
+uvx alpacon-mcp setup --local                  # Use project config instead of global
+uvx alpacon-mcp setup --token-file ~/my.json   # Use custom file location
+uvx alpacon-mcp test                           # Test your connection
+uvx alpacon-mcp list                           # Show configured workspaces
+uvx alpacon-mcp add                            # Add another workspace (shows path)
+```
+
+---
+
+## 🔧 Advanced Installation Options
+
+### Option A: Install UV (if not already installed)
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+### Option B: Manual Configuration
+
+If you prefer to manually configure tokens:
+
+**Global Configuration** (recommended):
+```bash
+mkdir -p ~/.alpacon-mcp
+echo '{
+  "ap1": {
+    "production": "alpat-ABC123xyz789...",
+    "staging": "alpat-DEF456uvw012..."
+  }
+}' > ~/.alpacon-mcp/token.json
+```
+
+**Project-Local Configuration**:
+```bash
+mkdir -p config
+echo '{
+  "ap1": {
+    "my-workspace": "alpat-ABC123xyz789..."
+  }
+}' > config/token.json
+```
+
+**Environment Variables**:
+```bash
+export ALPACON_MCP_AP1_PRODUCTION_TOKEN="alpat-ABC123xyz789..."
+uvx alpacon-mcp
+```
+
+### Option C: Development Installation
+```bash
+git clone https://github.com/alpacax/alpacon-mcp.git
+cd alpacon-mcp
+uv venv && source .venv/bin/activate
+uv install
+python main.py
+```
+
+---
+
+## 🔌 Connect to Other AI Tools
+
+### Cursor IDE
+
 Create `.cursor/mcp.json` in your project root:
 
 ```json
@@ -187,14 +185,31 @@ Create `.cursor/mcp.json` in your project root:
   "mcpServers": {
     "alpacon": {
       "command": "uvx",
-      "args": ["alpacon-mcp"],
-      "env": {
-        "ALPACON_MCP_CONFIG_FILE": "~/.config/alpacon/tokens.json"
-      }
+      "args": ["alpacon-mcp"]
     }
   }
 }
 ```
+
+### VS Code with MCP Extension
+
+Install the MCP extension and add to settings:
+
+```json
+{
+  "mcp.servers": {
+    "alpacon": {
+      "command": "uvx",
+      "args": ["alpacon-mcp"]
+    }
+  }
+}
+```
+
+**Note**: Token configuration is automatically discovered from:
+1. `~/.alpacon-mcp/token.json` (global - recommended)
+2. `./config/token.json` (project-local)
+3. Environment variables
 
 ## 💬 Usage Examples
 
