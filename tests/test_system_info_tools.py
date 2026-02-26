@@ -20,7 +20,7 @@ def mock_http_client():
 @pytest.fixture
 def mock_token_manager():
     """Mock token manager for testing."""
-    with patch('tools.system_info_tools.token_manager') as mock_manager:
+    with patch('utils.common.token_manager') as mock_manager:
         mock_manager.get_token.return_value = "test-token"
         yield mock_manager
 
@@ -97,7 +97,7 @@ class TestGetSystemInfo:
         )
 
         assert result["status"] == "error"
-        assert "Failed to get system info" in result["message"]
+        assert "Failed in get_system_info" in result["message"]
 
 
 class TestGetOsVersion:
@@ -788,7 +788,7 @@ class TestGetServerOverview:
             )
 
             assert result["status"] == "error"
-            assert "Failed to get server overview" in result["message"]
+            assert "Failed in get_server_overview" in result["message"]
             assert "Async processing failed" in result["message"]
 
 

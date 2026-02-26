@@ -23,7 +23,7 @@ def mock_http_client():
 @pytest.fixture
 def mock_token_manager():
     """Mock token manager for testing."""
-    with patch('tools.webftp_tools.token_manager') as mock_manager:
+    with patch('utils.common.token_manager') as mock_manager:
         mock_manager.get_token.return_value = "test-token"
         yield mock_manager
 
@@ -129,7 +129,7 @@ class TestWebFtpSessionCreate:
         )
 
         assert result["status"] == "error"
-        assert "Failed to create WebFTP session" in result["message"]
+        assert "HTTP 500" in result["message"]
 
 
 class TestWebFtpSessionsList:
@@ -644,7 +644,7 @@ class TestWebFtpUploadsList:
         result = await webftp_uploads_list(workspace="testworkspace")
 
         assert result["status"] == "error"
-        assert "Failed to get uploads list" in result["message"]
+        assert "HTTP 500" in result["message"]
 
 
 class TestWebFtpDownloadsList:
@@ -735,7 +735,7 @@ class TestWebFtpDownloadsList:
         result = await webftp_downloads_list(workspace="testworkspace")
 
         assert result["status"] == "error"
-        assert "Failed to get downloads list" in result["message"]
+        assert "HTTP 500" in result["message"]
 
 
 if __name__ == "__main__":

@@ -63,8 +63,7 @@ class AlpaconHTTPClient:
         """Generate cache key for request."""
         key_parts = [method, url]
         if params:
-            sorted_params = sorted(params.items())
-            key_parts.append(str(sorted_params))
+            key_parts.append(json.dumps(params, sort_keys=True))
         return "|".join(key_parts)
 
     def _is_cacheable(self, method: str, endpoint: str) -> bool:
