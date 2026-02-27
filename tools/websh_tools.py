@@ -28,17 +28,19 @@ _pool_lock = asyncio.Lock()
 _SESSION_TTL = 3600  # 1 hour
 
 
-async def _cleanup_stale_sessions() -> None:
-    """Remove session pool entries older than _SESSION_TTL.
+def _cleanup_stale_sessions() -> list:
+    """Remove stale session pool entries and return websockets to close.
 
     Must be called while holding _pool_lock.
+    Returns list of websocket objects that should be closed outside the lock.
     """
     now = time.monotonic()
     stale_keys = [
         key
         for key, info in session_pool.items()
-        if now - info.get('_created_at', now) > _SESSION_TTL
+        if now - info.get('_created_at', 0) > _SESSION_TTL
     ]
+    ws_to_close = []
     for key in stale_keys:
         info = session_pool.pop(key, None)
         if info:
@@ -46,10 +48,8 @@ async def _cleanup_stale_sessions() -> None:
             if channel_id and channel_id in websocket_pool:
                 ws_info = websocket_pool.pop(channel_id, None)
                 if ws_info:
-                    try:
-                        await ws_info['websocket'].close()
-                    except Exception:
-                        pass
+                    ws_to_close.append(ws_info['websocket'])
+    return ws_to_close
 
 
 async def get_or_create_channel(
@@ -66,7 +66,8 @@ async def get_or_create_channel(
     2. If not, creating a new session and connecting to its channel
     3. Storing the connection for future reuse
 
-    Thread-safe: all pool access is guarded by _pool_lock.
+    Thread-safe: pool access is guarded by _pool_lock.
+    Network I/O (HTTP calls, WebSocket connect/ping) runs outside the lock.
 
     Args:
         server_id: Server ID
@@ -80,120 +81,121 @@ async def get_or_create_channel(
     """
     pool_key = f'{region}:{workspace}:{server_id}'
 
-    async with _pool_lock:
-        # Opportunistic cleanup of stale sessions
-        await _cleanup_stale_sessions()
+    # Phase 1: Check pool for existing connection (lock for reads only)
+    cached_ws = None
+    cached_channel_id = None
+    cached_session_info = None
 
-        # Step 1: Check if we have an existing session in memory
+    async with _pool_lock:
+        stale_ws = _cleanup_stale_sessions()
+
         if pool_key in session_pool:
             session_info = session_pool[pool_key]
             channel_id = session_info.get('userchannel_id')
+            if channel_id and channel_id in websocket_pool:
+                cached_ws = websocket_pool[channel_id]['websocket']
+                cached_channel_id = channel_id
+                cached_session_info = session_info
 
-            # Verify the channel is still connected
-            if channel_id in websocket_pool:
-                try:
-                    websocket = websocket_pool[channel_id]['websocket']
-                    await websocket.ping()
-                    # Connection still alive, reuse it
-                    return channel_id, session_info
-                except Exception:
-                    # Connection dead, clean up
-                    websocket_pool.pop(channel_id, None)
-                    del session_pool[pool_key]
-
-        # Step 2: Check if there's an existing MCP session in Alpacon API
+    # Close stale websockets outside lock
+    for ws in stale_ws:
         try:
-            sessions_response = await http_client.get(
-                region=region,
-                workspace=workspace,
-                endpoint='/api/websh/sessions/',
-                token=token,
-                params={'page_size': 50},  # Get recent sessions
-            )
+            await ws.close()
+        except Exception:
+            pass
 
-            # Find active MCP sessions for this server
-            for session in sessions_response.get('results', []):
-                # Check if: same server, MCP user-agent, not closed
-                if (
-                    session.get('server') == server_id
-                    and session.get('closed_at') is None
-                    and session.get('user_agent')
-                    and 'alpacon-mcp' in session.get('user_agent', '')
-                ):
-                    # Try to reconnect to this session
-                    try:
-                        session_id = session['id']
-                        # Get fresh session details to get WebSocket URL
-                        session_detail = await http_client.get(
-                            region=region,
-                            workspace=workspace,
-                            endpoint=f'/api/websh/sessions/{session_id}/',
-                            token=token,
+    # Phase 2: Verify cached connection (outside lock)
+    if cached_ws is not None:
+        try:
+            await cached_ws.ping()
+            return cached_channel_id, cached_session_info
+        except Exception:
+            # Connection dead, clean up under lock
+            async with _pool_lock:
+                websocket_pool.pop(cached_channel_id, None)
+                session_pool.pop(pool_key, None)
+
+    # Phase 3: Check for existing MCP session in Alpacon API (outside lock)
+    try:
+        sessions_response = await http_client.get(
+            region=region,
+            workspace=workspace,
+            endpoint='/api/websh/sessions/',
+            token=token,
+            params={'page_size': 50},
+        )
+
+        for session in sessions_response.get('results', []):
+            if (
+                session.get('server') == server_id
+                and session.get('closed_at') is None
+                and session.get('user_agent')
+                and 'alpacon-mcp' in session.get('user_agent', '')
+            ):
+                try:
+                    session_id = session['id']
+                    session_detail = await http_client.get(
+                        region=region,
+                        workspace=workspace,
+                        endpoint=f'/api/websh/sessions/{session_id}/',
+                        token=token,
+                    )
+
+                    websocket_url = session_detail.get('websocket_url')
+                    channel_id = session_detail.get('userchannel_id')
+
+                    if websocket_url and channel_id:
+                        ws = await websockets.connect(
+                            websocket_url, user_agent_header=MCP_USER_AGENT
                         )
+                        await ws.ping()
 
-                        websocket_url = session_detail.get('websocket_url')
-                        channel_id = session_detail.get('userchannel_id')
-
-                        if websocket_url and channel_id:
-                            # Try to connect to existing session
-                            websocket = await websockets.connect(
-                                websocket_url, user_agent_header=MCP_USER_AGENT
-                            )
-
-                            # Test connection
-                            await websocket.ping()
-
-                            # Store in pools
+                        # Store in pools under lock
+                        async with _pool_lock:
                             websocket_pool[channel_id] = {
-                                'websocket': websocket,
+                                'websocket': ws,
                                 'url': websocket_url,
                                 'session_id': session_id,
                             }
                             session_detail['_created_at'] = time.monotonic()
                             session_pool[pool_key] = session_detail
 
-                            return channel_id, session_detail
-                    except Exception:  # noqa: S112
-                        # This session is not reusable, try next one
-                        continue
-        except Exception:
-            # If fetching sessions fails, just proceed to create new one
-            pass
+                        return channel_id, session_detail
+                except Exception:  # noqa: S112
+                    continue
+    except Exception:
+        pass
 
-        # Step 3: Create new session
-        session_data = {'server': server_id, 'rows': 24, 'cols': 80}
-        if username:
-            session_data['username'] = username
+    # Phase 4: Create new session (outside lock)
+    session_data = {'server': server_id, 'rows': 24, 'cols': 80}
+    if username:
+        session_data['username'] = username
 
-        result = await http_client.post(
-            region=region,
-            workspace=workspace,
-            endpoint='/api/websh/sessions/',
-            token=token,
-            data=session_data,
-        )
+    result = await http_client.post(
+        region=region,
+        workspace=workspace,
+        endpoint='/api/websh/sessions/',
+        token=token,
+        data=session_data,
+    )
 
-        # Extract session info
-        channel_id = result['userchannel_id']
-        websocket_url = result['websocket_url']
-        session_id = result['id']
+    channel_id = result['userchannel_id']
+    websocket_url = result['websocket_url']
+    session_id = result['id']
 
-        # Connect to WebSocket with custom User-Agent for identification
-        websocket = await websockets.connect(
-            websocket_url, user_agent_header=MCP_USER_AGENT
-        )
+    ws = await websockets.connect(websocket_url, user_agent_header=MCP_USER_AGENT)
 
-        # Store in pools
+    # Store in pools under lock
+    async with _pool_lock:
         websocket_pool[channel_id] = {
-            'websocket': websocket,
+            'websocket': ws,
             'url': websocket_url,
             'session_id': session_id,
         }
-
         result['_created_at'] = time.monotonic()
         session_pool[pool_key] = result
 
-        return channel_id, result
+    return channel_id, result
 
 
 async def execute_command_via_channel(
