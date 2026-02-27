@@ -5,7 +5,7 @@ Tests workspace management functionality including workspace listing.
 Note: User settings and profile endpoints have been removed from the server.
 """
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import patch, MagicMock
 
 
 @pytest.fixture

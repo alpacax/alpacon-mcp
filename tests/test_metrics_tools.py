@@ -5,8 +5,7 @@ Tests metrics and monitoring functionality including CPU, memory, disk,
 network traffic monitoring and server performance analytics.
 """
 import pytest
-from unittest.mock import AsyncMock, patch, call
-from datetime import datetime, timezone, timedelta
+from unittest.mock import AsyncMock, patch
 
 
 @pytest.fixture

@@ -6,7 +6,6 @@ result retrieval, command listing, and synchronous execution.
 """
 import pytest
 from unittest.mock import AsyncMock, patch
-import asyncio
 
 
 @pytest.fixture

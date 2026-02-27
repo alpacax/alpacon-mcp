@@ -8,7 +8,6 @@ command execution, WebSocket connections, and session termination.
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 import asyncio
-import json
 
 
 @pytest.fixture
@@ -558,7 +557,6 @@ class TestWebshChannelExecute:
         """Test channel execution with closed connection."""
         from tools.websh_tools import websh_channel_execute, websocket_pool
         import asyncio
-        import websockets
 
         # Setup mock pool with closed connection
         mock_ws = AsyncMock()

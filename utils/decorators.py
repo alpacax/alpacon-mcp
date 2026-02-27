@@ -1,9 +1,9 @@
 """Decorators for MCP tools to reduce boilerplate code."""
 
 from functools import wraps
-from typing import Callable, Dict, Any
+from typing import Callable
 import inspect
-from utils.common import validate_token, token_error_response, success_response, error_response
+from utils.common import validate_token, token_error_response, error_response
 from utils.logger import get_logger
 
 logger = get_logger("decorators")

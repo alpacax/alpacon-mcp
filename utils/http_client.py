@@ -244,7 +244,7 @@ class AlpaconHTTPClient:
                     logger.error(f"Client error, not retrying: {error_response}")
                     return error_response
 
-            except httpx.TimeoutException as e:
+            except httpx.TimeoutException:
                 # Timeout - retry
                 retry_count += 1
                 logger.warning(f"Request timeout, retrying ({retry_count}/{self.max_retries}) in {retry_delay}s")

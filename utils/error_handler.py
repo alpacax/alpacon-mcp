@@ -2,7 +2,7 @@
 
 import re
 import uuid
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional
 from utils.logger import get_logger
 
 logger = get_logger("error_handler")

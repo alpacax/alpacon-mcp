@@ -208,7 +208,7 @@ class TestListSystemUsers:
         assert result["status"] == "success"
         assert result["server_id"] == "server-001"
         assert result["username_filter"] == "ubuntu"
-        assert result["login_enabled_only"] == True
+        assert result["login_enabled_only"] is True
         assert result["region"] == "ap1"
         assert result["workspace"] == "testworkspace"
         assert result["data"]["count"] == 3
@@ -240,7 +240,7 @@ class TestListSystemUsers:
 
         assert result["status"] == "success"
         assert result["username_filter"] is None
-        assert result["login_enabled_only"] == False
+        assert result["login_enabled_only"] is False
 
         # Verify only server parameter was included
         call_args = mock_http_client.get.call_args
