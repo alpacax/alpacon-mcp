@@ -1,12 +1,13 @@
 """Workspace management tools for Alpacon MCP server."""
 
-from typing import Dict, Any
-from utils.common import success_response
+from typing import Any
+
 from server import mcp
+from utils.common import success_response
 
 
-@mcp.tool(description="Get list of available workspaces")
-async def list_workspaces(region: str = "ap1") -> Dict[str, Any]:
+@mcp.tool(description='Get list of available workspaces')
+async def list_workspaces(region: str = 'ap1') -> dict[str, Any]:
     """Get list of available workspaces.
 
     Args:
@@ -16,6 +17,7 @@ async def list_workspaces(region: str = "ap1") -> Dict[str, Any]:
         Workspaces list response
     """
     from utils.token_manager import get_token_manager
+
     token_manager = get_token_manager()
 
     # Get all stored tokens to find available workspaces
@@ -29,29 +31,32 @@ async def list_workspaces(region: str = "ap1") -> Dict[str, Any]:
                 for workspace_key, workspace_data in region_data.items():
                     # workspace_data can be either a dict or a string (token directly)
                     if isinstance(workspace_data, dict):
-                        has_token = bool(workspace_data.get("token"))
+                        has_token = bool(workspace_data.get('token'))
                     else:
                         # If workspace_data is a string, it's the token itself
                         has_token = bool(workspace_data)
 
-                    workspaces.append({
-                        "workspace": workspace_key,
-                        "region": region_key,
-                        "has_token": has_token,
-                        "domain": f"{workspace_key}.{region_key}.alpacon.io"
-                    })
+                    workspaces.append(
+                        {
+                            'workspace': workspace_key,
+                            'region': region_key,
+                            'has_token': has_token,
+                            'domain': f'{workspace_key}.{region_key}.alpacon.io',
+                        }
+                    )
             else:
                 # If region_data is a string (token directly), it's a single workspace with region name
-                workspaces.append({
-                    "workspace": region_key,
-                    "region": region_key,
-                    "has_token": bool(region_data),
-                    "domain": f"{region_key}.{region_key}.alpacon.io"
-                })
+                workspaces.append(
+                    {
+                        'workspace': region_key,
+                        'region': region_key,
+                        'has_token': bool(region_data),
+                        'domain': f'{region_key}.{region_key}.alpacon.io',
+                    }
+                )
 
     return success_response(
-        data={"workspaces": workspaces, "region": region},
-        region=region
+        data={'workspaces': workspaces, 'region': region}, region=region
     )
 
 

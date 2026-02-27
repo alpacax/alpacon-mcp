@@ -4,8 +4,10 @@ Unit tests for workspace_tools module.
 Tests workspace management functionality including workspace listing.
 Note: User settings and profile endpoints have been removed from the server.
 """
+
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock
 
 
 @pytest.fixture
@@ -17,18 +19,16 @@ def mock_token_manager():
     """
     mock_manager = MagicMock()
     mock_manager.get_all_tokens.return_value = {
-        "ap1": {
-            "production": {"token": "token1"},
-            "staging": {"token": "token2"},
-            "development": {"token": "token3"}
+        'ap1': {
+            'production': {'token': 'token1'},
+            'staging': {'token': 'token2'},
+            'development': {'token': 'token3'},
         },
-        "us1": {
-            "backup": {"token": "token4"},
-            "disaster-recovery": {"token": "token5"}
+        'us1': {
+            'backup': {'token': 'token4'},
+            'disaster-recovery': {'token': 'token5'},
         },
-        "eu1": {
-            "compliance": {"token": "token6"}
-        }
+        'eu1': {'compliance': {'token': 'token6'}},
     }
 
     with patch('utils.token_manager.get_token_manager', return_value=mock_manager):
@@ -43,29 +43,29 @@ class TestListWorkspaces:
         """Test successful workspace listing."""
         from tools.workspace_tools import list_workspaces
 
-        result = await list_workspaces(region="ap1")
+        result = await list_workspaces(region='ap1')
 
         # Verify response structure
-        assert result["status"] == "success"
-        assert result["region"] == "ap1"
-        assert "data" in result
-        assert "workspaces" in result["data"]
+        assert result['status'] == 'success'
+        assert result['region'] == 'ap1'
+        assert 'data' in result
+        assert 'workspaces' in result['data']
 
         # Verify workspace data
-        workspaces = result["data"]["workspaces"]
+        workspaces = result['data']['workspaces']
         assert len(workspaces) == 3  # production, staging, development
 
         # Check specific workspace details
-        workspace_names = [ws["workspace"] for ws in workspaces]
-        assert "production" in workspace_names
-        assert "staging" in workspace_names
-        assert "development" in workspace_names
+        workspace_names = [ws['workspace'] for ws in workspaces]
+        assert 'production' in workspace_names
+        assert 'staging' in workspace_names
+        assert 'development' in workspace_names
 
         # Verify workspace structure
-        production_ws = next(ws for ws in workspaces if ws["workspace"] == "production")
-        assert production_ws["region"] == "ap1"
-        assert production_ws["has_token"] is True
-        assert production_ws["domain"] == "production.ap1.alpacon.io"
+        production_ws = next(ws for ws in workspaces if ws['workspace'] == 'production')
+        assert production_ws['region'] == 'ap1'
+        assert production_ws['has_token'] is True
+        assert production_ws['domain'] == 'production.ap1.alpacon.io'
 
         # Verify token manager was called
         mock_token_manager.get_all_tokens.assert_called_once()
@@ -75,21 +75,21 @@ class TestListWorkspaces:
         """Test workspace listing for different region."""
         from tools.workspace_tools import list_workspaces
 
-        result = await list_workspaces(region="us1")
+        result = await list_workspaces(region='us1')
 
-        assert result["status"] == "success"
-        assert result["region"] == "us1"
+        assert result['status'] == 'success'
+        assert result['region'] == 'us1'
 
-        workspaces = result["data"]["workspaces"]
+        workspaces = result['data']['workspaces']
         assert len(workspaces) == 2  # backup, disaster-recovery
 
-        workspace_names = [ws["workspace"] for ws in workspaces]
-        assert "backup" in workspace_names
-        assert "disaster-recovery" in workspace_names
+        workspace_names = [ws['workspace'] for ws in workspaces]
+        assert 'backup' in workspace_names
+        assert 'disaster-recovery' in workspace_names
 
         # Verify domain format
-        backup_ws = next(ws for ws in workspaces if ws["workspace"] == "backup")
-        assert backup_ws["domain"] == "backup.us1.alpacon.io"
+        backup_ws = next(ws for ws in workspaces if ws['workspace'] == 'backup')
+        assert backup_ws['domain'] == 'backup.us1.alpacon.io'
 
     @pytest.mark.asyncio
     async def test_list_workspaces_empty_region(self, mock_token_manager):
@@ -98,14 +98,14 @@ class TestListWorkspaces:
 
         # Mock empty tokens for unknown region
         mock_token_manager.get_all_tokens.return_value = {
-            "ap1": {"production": {"token": "token1"}}
+            'ap1': {'production': {'token': 'token1'}}
         }
 
-        result = await list_workspaces(region="nonexistent")
+        result = await list_workspaces(region='nonexistent')
 
-        assert result["status"] == "success"
-        assert result["region"] == "nonexistent"
-        assert result["data"]["workspaces"] == []
+        assert result['status'] == 'success'
+        assert result['region'] == 'nonexistent'
+        assert result['data']['workspaces'] == []
 
     @pytest.mark.asyncio
     async def test_list_workspaces_workspace_without_token(self, mock_token_manager):
@@ -114,26 +114,28 @@ class TestListWorkspaces:
 
         # Mock tokens with empty token value
         mock_token_manager.get_all_tokens.return_value = {
-            "ap1": {
-                "production": {"token": "token1"},
-                "staging": {"token": ""},  # Empty token
-                "development": {}  # No token key
+            'ap1': {
+                'production': {'token': 'token1'},
+                'staging': {'token': ''},  # Empty token
+                'development': {},  # No token key
             }
         }
 
-        result = await list_workspaces(region="ap1")
+        result = await list_workspaces(region='ap1')
 
-        assert result["status"] == "success"
-        workspaces = result["data"]["workspaces"]
+        assert result['status'] == 'success'
+        workspaces = result['data']['workspaces']
 
         # Find workspaces and check token status
-        production_ws = next(ws for ws in workspaces if ws["workspace"] == "production")
-        staging_ws = next(ws for ws in workspaces if ws["workspace"] == "staging")
-        development_ws = next(ws for ws in workspaces if ws["workspace"] == "development")
+        production_ws = next(ws for ws in workspaces if ws['workspace'] == 'production')
+        staging_ws = next(ws for ws in workspaces if ws['workspace'] == 'staging')
+        development_ws = next(
+            ws for ws in workspaces if ws['workspace'] == 'development'
+        )
 
-        assert production_ws["has_token"] is True
-        assert staging_ws["has_token"] is False
-        assert development_ws["has_token"] is False
+        assert production_ws['has_token'] is True
+        assert staging_ws['has_token'] is False
+        assert development_ws['has_token'] is False
 
     @pytest.mark.asyncio
     async def test_list_workspaces_default_region(self, mock_token_manager):
@@ -142,12 +144,12 @@ class TestListWorkspaces:
 
         result = await list_workspaces()
 
-        assert result["status"] == "success"
-        assert result["region"] == "ap1"
+        assert result['status'] == 'success'
+        assert result['region'] == 'ap1'
 
-        workspaces = result["data"]["workspaces"]
+        workspaces = result['data']['workspaces']
         assert len(workspaces) == 3
 
 
-if __name__ == "__main__":
-    pytest.main([__file__, "-v"])
+if __name__ == '__main__':
+    pytest.main([__file__, '-v'])

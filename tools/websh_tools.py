@@ -2,13 +2,14 @@
 
 import asyncio
 import json
-import websockets
-from typing import Dict, Any, Optional, List, Tuple
-from server import mcp
-from utils.http_client import http_client
-from utils.common import success_response, error_response, MCP_USER_AGENT
-from utils.decorators import mcp_tool_handler
+from typing import Any
 
+import websockets
+
+from server import mcp
+from utils.common import MCP_USER_AGENT, error_response, success_response
+from utils.decorators import mcp_tool_handler
+from utils.http_client import http_client
 
 # WebSocket connection pool for persistent connections
 # Format: {channel_id: {'websocket': connection, 'url': url, 'session_id': id}}
@@ -22,10 +23,10 @@ session_pool = {}
 async def get_or_create_channel(
     server_id: str,
     workspace: str,
-    region: str = "ap1",
-    username: Optional[str] = None,
-    token: Optional[str] = None
-) -> Tuple[str, Dict[str, Any]]:
+    region: str = 'ap1',
+    username: str | None = None,
+    token: str | None = None,
+) -> tuple[str, dict[str, Any]]:
     """Get existing channel or create new session+channel for a server.
 
     This helper function maintains persistent WebSocket connections by:
@@ -43,7 +44,7 @@ async def get_or_create_channel(
     Returns:
         Tuple of (channel_id, session_info)
     """
-    pool_key = f"{region}:{workspace}:{server_id}"
+    pool_key = f'{region}:{workspace}:{server_id}'
 
     # Step 1: Check if we have an existing session in memory
     if pool_key in session_pool:
@@ -68,19 +69,20 @@ async def get_or_create_channel(
         sessions_response = await http_client.get(
             region=region,
             workspace=workspace,
-            endpoint="/api/websh/sessions/",
+            endpoint='/api/websh/sessions/',
             token=token,
-            params={"page_size": 50}  # Get recent sessions
+            params={'page_size': 50},  # Get recent sessions
         )
 
         # Find active MCP sessions for this server
         for session in sessions_response.get('results', []):
             # Check if: same server, MCP user-agent, not closed
-            if (session.get('server') == server_id and
-                session.get('closed_at') is None and
-                session.get('user_agent') and
-                'alpacon-mcp' in session.get('user_agent', '')):
-
+            if (
+                session.get('server') == server_id
+                and session.get('closed_at') is None
+                and session.get('user_agent')
+                and 'alpacon-mcp' in session.get('user_agent', '')
+            ):
                 # Try to reconnect to this session
                 try:
                     session_id = session['id']
@@ -88,8 +90,8 @@ async def get_or_create_channel(
                     session_detail = await http_client.get(
                         region=region,
                         workspace=workspace,
-                        endpoint=f"/api/websh/sessions/{session_id}/",
-                        token=token
+                        endpoint=f'/api/websh/sessions/{session_id}/',
+                        token=token,
                     )
 
                     websocket_url = session_detail.get('websocket_url')
@@ -98,8 +100,7 @@ async def get_or_create_channel(
                     if websocket_url and channel_id:
                         # Try to connect to existing session
                         websocket = await websockets.connect(
-                            websocket_url,
-                            user_agent_header=MCP_USER_AGENT
+                            websocket_url, user_agent_header=MCP_USER_AGENT
                         )
 
                         # Test connection
@@ -109,12 +110,12 @@ async def get_or_create_channel(
                         websocket_pool[channel_id] = {
                             'websocket': websocket,
                             'url': websocket_url,
-                            'session_id': session_id
+                            'session_id': session_id,
                         }
                         session_pool[pool_key] = session_detail
 
                         return channel_id, session_detail
-                except Exception:
+                except Exception:  # noqa: S112
                     # This session is not reusable, try next one
                     continue
     except Exception:
@@ -122,20 +123,16 @@ async def get_or_create_channel(
         pass
 
     # Step 3: Create new session
-    session_data = {
-        "server": server_id,
-        "rows": 24,
-        "cols": 80
-    }
+    session_data = {'server': server_id, 'rows': 24, 'cols': 80}
     if username:
-        session_data["username"] = username
+        session_data['username'] = username
 
     result = await http_client.post(
         region=region,
         workspace=workspace,
-        endpoint="/api/websh/sessions/",
+        endpoint='/api/websh/sessions/',
         token=token,
-        data=session_data
+        data=session_data,
     )
 
     # Extract session info
@@ -145,15 +142,14 @@ async def get_or_create_channel(
 
     # Connect to WebSocket with custom User-Agent for identification
     websocket = await websockets.connect(
-        websocket_url,
-        user_agent_header=MCP_USER_AGENT
+        websocket_url, user_agent_header=MCP_USER_AGENT
     )
 
     # Store in pools
     websocket_pool[channel_id] = {
         'websocket': websocket,
         'url': websocket_url,
-        'session_id': session_id
+        'session_id': session_id,
     }
 
     session_pool[pool_key] = result
@@ -162,9 +158,7 @@ async def get_or_create_channel(
 
 
 async def execute_command_via_channel(
-    channel_id: str,
-    command: str,
-    timeout: int = 10
+    channel_id: str, command: str, timeout: int = 10
 ) -> str:
     """Execute command using existing channel connection.
 
@@ -177,12 +171,12 @@ async def execute_command_via_channel(
         Command output as string
     """
     if channel_id not in websocket_pool:
-        raise ValueError(f"Channel {channel_id} not connected")
+        raise ValueError(f'Channel {channel_id} not connected')
 
     websocket = websocket_pool[channel_id]['websocket']
 
     # Send command
-    await websocket.send(command + "\n")
+    await websocket.send(command + '\n')
 
     # Collect output
     output_lines = []
@@ -197,31 +191,31 @@ async def execute_command_via_channel(
             elif message.startswith('{"type":'):
                 try:
                     data = json.loads(message)
-                    if data.get("type") == "output":
-                        output_lines.append(data.get("data", ""))
+                    if data.get('type') == 'output':
+                        output_lines.append(data.get('data', ''))
                 except json.JSONDecodeError:
                     output_lines.append(message)
             else:
                 output_lines.append(message)
 
-        except asyncio.TimeoutError:
+        except TimeoutError:
             break
         except websockets.exceptions.ConnectionClosed:
             # Remove dead connection
             del websocket_pool[channel_id]
-            raise ConnectionError(f"WebSocket connection lost for channel {channel_id}")
+            raise ConnectionError(f'WebSocket connection lost for channel {channel_id}')
 
-    return "".join(output_lines)
+    return ''.join(output_lines)
 
 
-@mcp_tool_handler(description="Create a new Websh session")
+@mcp_tool_handler(description='Create a new Websh session')
 async def websh_session_create(
     server_id: str,
     workspace: str,
-    username: Optional[str] = None,
-    region: str = "ap1",
-    **kwargs
-) -> Dict[str, Any]:
+    username: str | None = None,
+    region: str = 'ap1',
+    **kwargs,
+) -> dict[str, Any]:
     """Create a new Websh session and establish WebSocket connection.
 
     This function creates a session and immediately connects via WebSocket
@@ -240,22 +234,22 @@ async def websh_session_create(
 
     # Prepare session data with terminal size
     session_data = {
-        "server": server_id,
-        "rows": 24,     # Terminal height
-        "cols": 80      # Terminal width
+        'server': server_id,
+        'rows': 24,  # Terminal height
+        'cols': 80,  # Terminal width
     }
 
     # Only include username if it's provided
     if username:
-        session_data["username"] = username
+        session_data['username'] = username
 
     # Make async call to create session
     result = await http_client.post(
         region=region,
         workspace=workspace,
-        endpoint="/api/websh/sessions/",
+        endpoint='/api/websh/sessions/',
         token=token,
-        data=session_data
+        data=session_data,
     )
 
     # Establish WebSocket connection to record user_agent
@@ -266,19 +260,18 @@ async def websh_session_create(
         try:
             # Connect with MCP User-Agent header
             websocket = await websockets.connect(
-                websocket_url,
-                user_agent_header=MCP_USER_AGENT
+                websocket_url, user_agent_header=MCP_USER_AGENT
             )
 
             # Store in connection pool for reuse
             websocket_pool[channel_id] = {
                 'websocket': websocket,
                 'url': websocket_url,
-                'session_id': result['id']
+                'session_id': result['id'],
             }
 
             # Store in session pool
-            pool_key = f"{region}:{workspace}:{server_id}"
+            pool_key = f'{region}:{workspace}:{server_id}'
             session_pool[pool_key] = result
 
             result['websocket_connected'] = True
@@ -291,19 +284,16 @@ async def websh_session_create(
     return success_response(
         data=result,
         server_id=server_id,
-        username=username or "auto",
+        username=username or 'auto',
         region=region,
-        workspace=workspace
+        workspace=workspace,
     )
 
 
-@mcp_tool_handler(description="Get list of Websh sessions")
+@mcp_tool_handler(description='Get list of Websh sessions')
 async def websh_sessions_list(
-    workspace: str,
-    server_id: Optional[str] = None,
-    region: str = "ap1",
-    **kwargs
-) -> Dict[str, Any]:
+    workspace: str, server_id: str | None = None, region: str = 'ap1', **kwargs
+) -> dict[str, Any]:
     """Get list of Websh sessions.
 
     Args:
@@ -319,32 +309,26 @@ async def websh_sessions_list(
     # Prepare query parameters
     params = {}
     if server_id:
-        params["server"] = server_id
+        params['server'] = server_id
 
     # Make async call to get sessions
     result = await http_client.get(
         region=region,
         workspace=workspace,
-        endpoint="/api/websh/sessions/",
+        endpoint='/api/websh/sessions/',
         token=token,
-        params=params
+        params=params,
     )
 
     return success_response(
-        data=result,
-        server_id=server_id,
-        region=region,
-        workspace=workspace
+        data=result, server_id=server_id, region=region, workspace=workspace
     )
 
 
-@mcp_tool_handler(description="Create a new user channel for an existing Websh session")
+@mcp_tool_handler(description='Create a new user channel for an existing Websh session')
 async def websh_session_reconnect(
-    session_id: str,
-    workspace: str,
-    region: str = "ap1",
-    **kwargs
-) -> Dict[str, Any]:
+    session_id: str, workspace: str, region: str = 'ap1', **kwargs
+) -> dict[str, Any]:
     """Create a new user channel for an existing Websh session.
     This allows reconnecting to a session that has lost its user channel connection.
     Only works for sessions created by the current user.
@@ -364,26 +348,28 @@ async def websh_session_reconnect(
         await http_client.get(
             region=region,
             workspace=workspace,
-            endpoint=f"/api/websh/sessions/{session_id}/",
-            token=token
+            endpoint=f'/api/websh/sessions/{session_id}/',
+            token=token,
         )
     except Exception as e:
-        return error_response(f"Session {session_id} not found or not accessible: {str(e)}")
+        return error_response(
+            f'Session {session_id} not found or not accessible: {str(e)}'
+        )
 
     # Create new user channel for existing session using the correct API endpoint
     channel_data = {
-        "session": session_id,
-        "is_master": True,  # Set as master channel for reconnection
-        "read_only": False
+        'session': session_id,
+        'is_master': True,  # Set as master channel for reconnection
+        'read_only': False,
     }
 
     # Make async call to create new user channel
     result = await http_client.post(
         region=region,
         workspace=workspace,
-        endpoint="/api/websh/user-channels/",
+        endpoint='/api/websh/user-channels/',
         token=token,
-        data=channel_data
+        data=channel_data,
     )
 
     return success_response(
@@ -391,17 +377,14 @@ async def websh_session_reconnect(
         session_id=session_id,
         region=region,
         workspace=workspace,
-        message="New user channel created for existing session"
+        message='New user channel created for existing session',
     )
 
 
-@mcp_tool_handler(description="Terminate a Websh session")
+@mcp_tool_handler(description='Terminate a Websh session')
 async def websh_session_terminate(
-    session_id: str,
-    workspace: str,
-    region: str = "ap1",
-    **kwargs
-) -> Dict[str, Any]:
+    session_id: str, workspace: str, region: str = 'ap1', **kwargs
+) -> dict[str, Any]:
     """Terminate a Websh session.
 
     Args:
@@ -418,27 +401,22 @@ async def websh_session_terminate(
     result = await http_client.post(
         region=region,
         workspace=workspace,
-        endpoint=f"/api/websh/sessions/{session_id}/close/",
+        endpoint=f'/api/websh/sessions/{session_id}/close/',
         token=token,
-        data={}  # Empty data for POST request
+        data={},  # Empty data for POST request
     )
 
     return success_response(
-        data=result,
-        session_id=session_id,
-        region=region,
-        workspace=workspace
+        data=result, session_id=session_id, region=region, workspace=workspace
     )
 
 
 @mcp.tool(
-    description="Connect to Websh user channel and maintain persistent connection"
+    description='Connect to Websh user channel and maintain persistent connection'
 )
 async def websh_channel_connect(
-    channel_id: str,
-    websocket_url: str,
-    session_id: str
-) -> Dict[str, Any]:
+    channel_id: str, websocket_url: str, session_id: str
+) -> dict[str, Any]:
     """Connect to Websh user channel and store connection for reuse.
 
     Args:
@@ -453,9 +431,9 @@ async def websh_channel_connect(
         # Check if already connected
         if channel_id in websocket_pool:
             return {
-                "status": "already_connected",
-                "channel_id": channel_id,
-                "message": "Channel already has active WebSocket connection"
+                'status': 'already_connected',
+                'channel_id': channel_id,
+                'message': 'Channel already has active WebSocket connection',
             }
 
         # Connect to WebSocket
@@ -465,27 +443,27 @@ async def websh_channel_connect(
         websocket_pool[channel_id] = {
             'websocket': websocket,
             'url': websocket_url,
-            'session_id': session_id
+            'session_id': session_id,
         }
 
         return {
-            "status": "success",
-            "channel_id": channel_id,
-            "session_id": session_id,
-            "websocket_url": websocket_url,
-            "message": "WebSocket connection established and stored"
+            'status': 'success',
+            'channel_id': channel_id,
+            'session_id': session_id,
+            'websocket_url': websocket_url,
+            'message': 'WebSocket connection established and stored',
         }
 
     except Exception as e:
         return {
-            "status": "error",
-            "message": f"Failed to connect WebSocket: {str(e)}",
-            "channel_id": channel_id
+            'status': 'error',
+            'message': f'Failed to connect WebSocket: {str(e)}',
+            'channel_id': channel_id,
         }
 
 
-@mcp.tool(description="List active WebSocket channels")
-async def websh_channels_list() -> Dict[str, Any]:
+@mcp.tool(description='List active WebSocket channels')
+async def websh_channels_list() -> dict[str, Any]:
     """List all active WebSocket connections in the pool.
 
     Returns:
@@ -504,30 +482,27 @@ async def websh_channels_list() -> Dict[str, Any]:
             except Exception:
                 is_open = False
 
-            channels.append({
-                "channel_id": channel_id,
-                "session_id": info['session_id'],
-                "websocket_url": info['url'],
-                "is_connected": is_open
-            })
+            channels.append(
+                {
+                    'channel_id': channel_id,
+                    'session_id': info['session_id'],
+                    'websocket_url': info['url'],
+                    'is_connected': is_open,
+                }
+            )
 
         return {
-            "status": "success",
-            "active_channels": len(channels),
-            "channels": channels
+            'status': 'success',
+            'active_channels': len(channels),
+            'channels': channels,
         }
 
     except Exception as e:
-        return {
-            "status": "error",
-            "message": f"Failed to list channels: {str(e)}"
-        }
+        return {'status': 'error', 'message': f'Failed to list channels: {str(e)}'}
 
 
-@mcp.tool(description="Disconnect WebSocket channel")
-async def websh_channel_disconnect(
-    channel_id: str
-) -> Dict[str, Any]:
+@mcp.tool(description='Disconnect WebSocket channel')
+async def websh_channel_disconnect(channel_id: str) -> dict[str, Any]:
     """Disconnect and remove WebSocket connection from pool.
 
     Args:
@@ -539,9 +514,9 @@ async def websh_channel_disconnect(
     try:
         if channel_id not in websocket_pool:
             return {
-                "status": "not_found",
-                "channel_id": channel_id,
-                "message": "Channel not found in active connections"
+                'status': 'not_found',
+                'channel_id': channel_id,
+                'message': 'Channel not found in active connections',
             }
 
         # Get connection info
@@ -558,9 +533,9 @@ async def websh_channel_disconnect(
         del websocket_pool[channel_id]
 
         return {
-            "status": "success",
-            "channel_id": channel_id,
-            "message": "WebSocket connection closed and removed from pool"
+            'status': 'success',
+            'channel_id': channel_id,
+            'message': 'WebSocket connection closed and removed from pool',
         }
 
     except Exception as e:
@@ -569,18 +544,16 @@ async def websh_channel_disconnect(
             del websocket_pool[channel_id]
 
         return {
-            "status": "error",
-            "message": f"Error disconnecting channel: {str(e)}",
-            "channel_id": channel_id
+            'status': 'error',
+            'message': f'Error disconnecting channel: {str(e)}',
+            'channel_id': channel_id,
         }
 
 
-@mcp.tool(description="Execute command using persistent WebSocket connection")
+@mcp.tool(description='Execute command using persistent WebSocket connection')
 async def websh_channel_execute(
-    channel_id: str,
-    command: str,
-    timeout: int = 10
-) -> Dict[str, Any]:
+    channel_id: str, command: str, timeout: int = 10
+) -> dict[str, Any]:
     """Execute command using existing WebSocket connection from pool.
 
     Args:
@@ -595,9 +568,9 @@ async def websh_channel_execute(
         # Check if channel exists in pool
         if channel_id not in websocket_pool:
             return {
-                "status": "not_connected",
-                "channel_id": channel_id,
-                "message": "Channel not connected. Use websh_channel_connect first."
+                'status': 'not_connected',
+                'channel_id': channel_id,
+                'message': 'Channel not connected. Use websh_channel_connect first.',
             }
 
         info = websocket_pool[channel_id]
@@ -611,13 +584,13 @@ async def websh_channel_execute(
             # Remove dead connection
             del websocket_pool[channel_id]
             return {
-                "status": "connection_closed",
-                "channel_id": channel_id,
-                "message": "WebSocket connection was closed. Reconnect required."
+                'status': 'connection_closed',
+                'channel_id': channel_id,
+                'message': 'WebSocket connection was closed. Reconnect required.',
             }
 
         # Send command
-        await websocket.send(command + "\n")
+        await websocket.send(command + '\n')
 
         # Collect output
         output_lines = []
@@ -633,47 +606,45 @@ async def websh_channel_execute(
                 elif message.startswith('{"type":'):
                     try:
                         data = json.loads(message)
-                        if data.get("type") == "output":
-                            output_lines.append(data.get("data", ""))
+                        if data.get('type') == 'output':
+                            output_lines.append(data.get('data', ''))
                     except json.JSONDecodeError:
                         output_lines.append(message)
                 else:
                     output_lines.append(message)
 
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 break
             except websockets.exceptions.ConnectionClosed:
                 # Remove closed connection
                 del websocket_pool[channel_id]
                 return {
-                    "status": "connection_lost",
-                    "channel_id": channel_id,
-                    "message": "WebSocket connection lost during execution"
+                    'status': 'connection_lost',
+                    'channel_id': channel_id,
+                    'message': 'WebSocket connection lost during execution',
                 }
 
         return {
-            "status": "success",
-            "channel_id": channel_id,
-            "command": command,
-            "output": "".join(output_lines),
-            "session_id": info['session_id']
+            'status': 'success',
+            'channel_id': channel_id,
+            'command': command,
+            'output': ''.join(output_lines),
+            'session_id': info['session_id'],
         }
 
     except Exception as e:
         return {
-            "status": "error",
-            "message": f"Command execution failed: {str(e)}",
-            "channel_id": channel_id,
-            "command": command
+            'status': 'error',
+            'message': f'Command execution failed: {str(e)}',
+            'channel_id': channel_id,
+            'command': command,
         }
 
 
-@mcp.tool(description="Execute commands in Websh session via WebSocket")
+@mcp.tool(description='Execute commands in Websh session via WebSocket')
 async def websh_websocket_execute(
-    websocket_url: str,
-    command: str,
-    timeout: int = 10
-) -> Dict[str, Any]:
+    websocket_url: str, command: str, timeout: int = 10
+) -> dict[str, Any]:
     """Execute a command via WebSocket connection to Websh session.
 
     Args:
@@ -688,7 +659,7 @@ async def websh_websocket_execute(
         # Connect to WebSocket
         async with websockets.connect(websocket_url) as websocket:
             # Send command with newline (simulating terminal input)
-            await websocket.send(command + "\n")
+            await websocket.send(command + '\n')
 
             # Collect output for specified timeout
             output_lines = []
@@ -706,45 +677,47 @@ async def websh_websocket_execute(
                         # Parse JSON messages (Websh protocol)
                         try:
                             data = json.loads(message)
-                            if data.get("type") == "output":
-                                output_lines.append(data.get("data", ""))
+                            if data.get('type') == 'output':
+                                output_lines.append(data.get('data', ''))
                         except json.JSONDecodeError:
                             output_lines.append(message)
                     else:
                         output_lines.append(message)
 
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     # No more messages, command likely completed
                     break
                 except websockets.exceptions.ConnectionClosed:
                     break
 
             return {
-                "status": "success",
-                "command": command,
-                "output": "".join(output_lines),
-                "websocket_url": websocket_url
+                'status': 'success',
+                'command': command,
+                'output': ''.join(output_lines),
+                'websocket_url': websocket_url,
             }
 
     except Exception as e:
         return {
-            "status": "error",
-            "message": f"WebSocket execution failed: {str(e)}",
-            "command": command,
-            "websocket_url": websocket_url
+            'status': 'error',
+            'message': f'WebSocket execution failed: {str(e)}',
+            'command': command,
+            'websocket_url': websocket_url,
         }
 
 
-@mcp_tool_handler(description="Execute command using persistent connection (recommended)")
+@mcp_tool_handler(
+    description='Execute command using persistent connection (recommended)'
+)
 async def execute_command(
     server_id: str,
     command: str,
     workspace: str,
-    username: Optional[str] = None,
-    region: str = "ap1",
+    username: str | None = None,
+    region: str = 'ap1',
     timeout: int = 10,
-    **kwargs
-) -> Dict[str, Any]:
+    **kwargs,
+) -> dict[str, Any]:
     """Execute command on server using persistent WebSocket connection.
 
     This is the recommended way to execute commands as it:
@@ -774,48 +747,44 @@ async def execute_command(
             workspace=workspace,
             region=region,
             username=username,
-            token=token
+            token=token,
         )
 
         # Execute command
         output = await execute_command_via_channel(
-            channel_id=channel_id,
-            command=command,
-            timeout=timeout
+            channel_id=channel_id, command=command, timeout=timeout
         )
 
         return success_response(
             data={
-                "command": command,
-                "output": output,
-                "channel_id": channel_id,
-                "session_id": session_info['id'],
-                "reused_connection": True
+                'command': command,
+                'output': output,
+                'channel_id': channel_id,
+                'session_id': session_info['id'],
+                'reused_connection': True,
             },
             server_id=server_id,
             region=region,
             workspace=workspace,
-            message="Command executed via persistent connection"
+            message='Command executed via persistent connection',
         )
 
     except Exception as e:
         return error_response(
-            f"Command execution failed: {str(e)}",
-            server_id=server_id,
-            command=command
+            f'Command execution failed: {str(e)}', server_id=server_id, command=command
         )
 
 
-@mcp_tool_handler(description="Execute multiple commands using persistent connection")
+@mcp_tool_handler(description='Execute multiple commands using persistent connection')
 async def execute_command_batch(
     server_id: str,
-    commands: List[str],
+    commands: list[str],
     workspace: str,
-    username: Optional[str] = None,
-    region: str = "ap1",
+    username: str | None = None,
+    region: str = 'ap1',
     timeout: int = 30,
-    **kwargs
-) -> Dict[str, Any]:
+    **kwargs,
+) -> dict[str, Any]:
     """Execute multiple commands sequentially using persistent connection.
 
     All commands will be executed on the same WebSocket connection,
@@ -841,7 +810,7 @@ async def execute_command_batch(
             workspace=workspace,
             region=region,
             username=username,
-            token=token
+            token=token,
         )
 
         # Execute all commands
@@ -851,48 +820,38 @@ async def execute_command_batch(
                 output = await execute_command_via_channel(
                     channel_id=channel_id,
                     command=command,
-                    timeout=timeout // len(commands)  # Distribute timeout
+                    timeout=timeout // len(commands),  # Distribute timeout
                 )
-                results.append({
-                    "command": command,
-                    "output": output,
-                    "status": "success"
-                })
+                results.append(
+                    {'command': command, 'output': output, 'status': 'success'}
+                )
             except Exception as e:
-                results.append({
-                    "command": command,
-                    "error": str(e),
-                    "status": "error"
-                })
+                results.append({'command': command, 'error': str(e), 'status': 'error'})
 
         return success_response(
             data={
-                "results": results,
-                "total_commands": len(commands),
-                "channel_id": channel_id,
-                "session_id": session_info['id'],
-                "reused_connection": True
+                'results': results,
+                'total_commands': len(commands),
+                'channel_id': channel_id,
+                'session_id': session_info['id'],
+                'reused_connection': True,
             },
             server_id=server_id,
             region=region,
             workspace=workspace,
-            message=f"Executed {len(commands)} commands via persistent connection"
+            message=f'Executed {len(commands)} commands via persistent connection',
         )
 
     except Exception as e:
         return error_response(
-            f"Batch execution failed: {str(e)}",
-            server_id=server_id,
-            commands=commands
+            f'Batch execution failed: {str(e)}', server_id=server_id, commands=commands
         )
 
 
-@mcp.tool(description="Execute multiple commands in Websh session via WebSocket")
+@mcp.tool(description='Execute multiple commands in Websh session via WebSocket')
 async def websh_websocket_batch_execute(
-    websocket_url: str,
-    commands: List[str],
-    timeout: int = 30
-) -> Dict[str, Any]:
+    websocket_url: str, commands: list[str], timeout: int = 30
+) -> dict[str, Any]:
     """Execute multiple commands sequentially via WebSocket connection.
 
     Args:
@@ -909,65 +868,66 @@ async def websh_websocket_batch_execute(
         async with websockets.connect(websocket_url) as websocket:
             for command in commands:
                 # Send command
-                await websocket.send(command + "\n")
+                await websocket.send(command + '\n')
 
                 # Collect output for each command
                 output_lines = []
                 start_time = asyncio.get_event_loop().time()
 
-                while (asyncio.get_event_loop().time() - start_time) < 5:  # 5 sec per command
+                while (
+                    asyncio.get_event_loop().time() - start_time
+                ) < 5:  # 5 sec per command
                     try:
                         message = await asyncio.wait_for(websocket.recv(), timeout=1.0)
 
                         if isinstance(message, bytes):
-                            output_lines.append(message.decode('utf-8', errors='ignore'))
+                            output_lines.append(
+                                message.decode('utf-8', errors='ignore')
+                            )
                         elif message.startswith('{"type":'):
                             try:
                                 data = json.loads(message)
-                                if data.get("type") == "output":
-                                    output_lines.append(data.get("data", ""))
+                                if data.get('type') == 'output':
+                                    output_lines.append(data.get('data', ''))
                             except json.JSONDecodeError:
                                 output_lines.append(message)
                         else:
                             output_lines.append(message)
 
-                    except asyncio.TimeoutError:
+                    except TimeoutError:
                         break
                     except websockets.exceptions.ConnectionClosed:
                         break
 
-                results.append({
-                    "command": command,
-                    "output": "".join(output_lines)
-                })
+                results.append({'command': command, 'output': ''.join(output_lines)})
 
                 # Small delay between commands
                 await asyncio.sleep(0.5)
 
         return {
-            "status": "success",
-            "results": results,
-            "total_commands": len(commands),
-            "websocket_url": websocket_url
+            'status': 'success',
+            'results': results,
+            'total_commands': len(commands),
+            'websocket_url': websocket_url,
         }
 
     except Exception as e:
         return {
-            "status": "error",
-            "message": f"WebSocket batch execution failed: {str(e)}",
-            "commands": commands,
-            "websocket_url": websocket_url
+            'status': 'error',
+            'message': f'WebSocket batch execution failed: {str(e)}',
+            'commands': commands,
+            'websocket_url': websocket_url,
         }
 
 
 # Websh sessions resource
 @mcp.resource(
-    uri="websh://sessions/{region}/{workspace}",
-    name="Websh Sessions List",
-    description="Get list of Websh sessions",
-    mime_type="application/json",
+    uri='websh://sessions/{region}/{workspace}',
+    name='Websh Sessions List',
+    description='Get list of Websh sessions',
+    mime_type='application/json',
 )
-async def websh_sessions_resource(region: str, workspace: str) -> Dict[str, Any]:
+async def websh_sessions_resource(region: str, workspace: str) -> dict[str, Any]:
     """Get Websh sessions as a resource.
 
     Args:
@@ -978,6 +938,4 @@ async def websh_sessions_resource(region: str, workspace: str) -> Dict[str, Any]
         Websh sessions information
     """
     sessions_data = websh_sessions_list(region=region, workspace=workspace)
-    return {
-        "content": sessions_data
-    }
+    return {'content': sessions_data}

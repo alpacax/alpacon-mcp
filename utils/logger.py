@@ -1,8 +1,8 @@
 """Logging configuration for Alpacon MCP Server."""
 
 import logging
-import sys
 import os
+import sys
 from pathlib import Path
 
 
@@ -16,10 +16,10 @@ class AlpaconLogger:
     def _setup_logging(self):
         """Setup logging configuration."""
         # Get log level from environment variable
-        log_level = os.getenv("ALPACON_MCP_LOG_LEVEL", "INFO").upper()
+        log_level = os.getenv('ALPACON_MCP_LOG_LEVEL', 'INFO').upper()
 
         # Create logs directory if it doesn't exist
-        log_dir = Path("logs")
+        log_dir = Path('logs')
         log_dir.mkdir(exist_ok=True)
 
         # Configure root logger
@@ -29,8 +29,8 @@ class AlpaconLogger:
             datefmt='%Y-%m-%d %H:%M:%S',
             handlers=[
                 logging.StreamHandler(sys.stderr),  # Console output
-                logging.FileHandler(log_dir / "alpacon-mcp.log"),  # File output
-            ]
+                logging.FileHandler(log_dir / 'alpacon-mcp.log'),  # File output
+            ],
         )
 
     def get_logger(self, name: str) -> logging.Logger:
@@ -43,13 +43,12 @@ class AlpaconLogger:
             Configured logger instance
         """
         if name not in self._loggers:
-            logger = logging.getLogger(f"alpacon_mcp.{name}")
+            logger = logging.getLogger(f'alpacon_mcp.{name}')
 
             # Add context information
-            logger = logging.LoggerAdapter(logger, {
-                'component': name,
-                'pid': os.getpid()
-            })
+            logger = logging.LoggerAdapter(
+                logger, {'component': name, 'pid': os.getpid()}
+            )
 
             self._loggers[name] = logger
 
@@ -73,7 +72,7 @@ def get_logger(name: str) -> logging.Logger:
 
 
 # Pre-configured loggers for common modules
-server_logger = get_logger("server")
-http_logger = get_logger("http_client")
-token_logger = get_logger("token_manager")
-tools_logger = get_logger("tools")
+server_logger = get_logger('server')
+http_logger = get_logger('http_client')
+token_logger = get_logger('token_manager')
+tools_logger = get_logger('tools')

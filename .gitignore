@@ -16,8 +16,7 @@ wheels/
 .cursorrules
 .cursor
 
-# claude files (CLAUDE.md should be tracked, removing it from gitignore)
-CLAUDE.md
+# claude files
 PRD.md
 .claude
 
