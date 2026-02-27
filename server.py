@@ -28,6 +28,17 @@ def run(transport: str = "stdio", config_file: str = None):
     """
     logger.info(f"Starting MCP server with transport: {transport}")
 
+    # Import all tool modules to register MCP tools via decorators
+    import tools.command_tools  # noqa: F401
+    import tools.events_tools  # noqa: F401
+    import tools.iam_tools  # noqa: F401
+    import tools.metrics_tools  # noqa: F401
+    import tools.server_tools  # noqa: F401
+    import tools.system_info_tools  # noqa: F401
+    import tools.webftp_tools  # noqa: F401
+    import tools.websh_tools  # noqa: F401
+    import tools.workspace_tools  # noqa: F401
+
     # Set config file path as environment variable if provided
     if config_file:
         logger.info(f"Using config file: {config_file}")

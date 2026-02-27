@@ -409,7 +409,7 @@ async def webftp_sessions_resource(region: str, workspace: str) -> Dict[str, Any
     Returns:
         WebFTP sessions information
     """
-    sessions_data = webftp_sessions_list(region=region, workspace=workspace)
+    sessions_data = await webftp_sessions_list(region=region, workspace=workspace)
     return {"content": sessions_data}
 
 
@@ -433,7 +433,7 @@ async def webftp_downloads_resource(
     Returns:
         WebFTP downloads information
     """
-    downloads_data = webftp_downloads_list(
+    downloads_data = await webftp_downloads_list(
         session_id=session_id, region=region, workspace=workspace
     )
     return {"content": downloads_data}
