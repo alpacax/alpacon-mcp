@@ -51,12 +51,14 @@ class TestSystemInfoEdgeCases:
         }
 
         result = await get_system_info(
-            server_id='server-001', workspace='testworkspace', region='ap1'
+            server_id='550e8400-e29b-41d4-a716-446655440001',
+            workspace='testworkspace',
+            region='ap1',
         )
 
         # Verify response structure
         assert result['status'] == 'success'
-        assert result['server_id'] == 'server-001'
+        assert result['server_id'] == '550e8400-e29b-41d4-a716-446655440001'
         assert result['region'] == 'ap1'
         assert result['workspace'] == 'testworkspace'
         assert 'data' in result
@@ -68,7 +70,7 @@ class TestSystemInfoEdgeCases:
             workspace='testworkspace',
             endpoint='/api/proc/info/',
             token='test-token',
-            params={'server': 'server-001'},
+            params={'server': '550e8400-e29b-41d4-a716-446655440001'},
         )
 
     @pytest.mark.asyncio
@@ -79,7 +81,7 @@ class TestSystemInfoEdgeCases:
         mock_token_manager.get_token.return_value = None
 
         result = await get_system_info(
-            server_id='server-001', workspace='testworkspace'
+            server_id='550e8400-e29b-41d4-a716-446655440001', workspace='testworkspace'
         )
 
         assert result['status'] == 'error'
@@ -94,7 +96,7 @@ class TestSystemInfoEdgeCases:
         mock_http_client.get.side_effect = Exception('HTTP 500 Internal Server Error')
 
         result = await get_system_info(
-            server_id='server-001', workspace='testworkspace'
+            server_id='550e8400-e29b-41d4-a716-446655440001', workspace='testworkspace'
         )
 
         assert result['status'] == 'error'
@@ -111,7 +113,9 @@ class TestSystemInfoEdgeCases:
         mock_http_client.get.return_value = {'hostname': 'eu-server'}
 
         result = await get_system_info(
-            server_id='server-001', workspace='testworkspace', region='eu1'
+            server_id='550e8400-e29b-41d4-a716-446655440001',
+            workspace='testworkspace',
+            region='eu1',
         )
 
         assert result['status'] == 'success'
@@ -162,12 +166,14 @@ class TestListSystemUsersEdgeCases:
         }
 
         result = await list_system_users(
-            server_id='server-001', workspace='testworkspace', region='ap1'
+            server_id='550e8400-e29b-41d4-a716-446655440001',
+            workspace='testworkspace',
+            region='ap1',
         )
 
         # Verify response structure
         assert result['status'] == 'success'
-        assert result['server_id'] == 'server-001'
+        assert result['server_id'] == '550e8400-e29b-41d4-a716-446655440001'
         assert result['region'] == 'ap1'
         assert result['workspace'] == 'testworkspace'
         assert 'data' in result
@@ -179,7 +185,7 @@ class TestListSystemUsersEdgeCases:
             workspace='testworkspace',
             endpoint='/api/proc/users/',
             token='test-token',
-            params={'server': 'server-001'},
+            params={'server': '550e8400-e29b-41d4-a716-446655440001'},
         )
 
     @pytest.mark.asyncio
@@ -190,7 +196,7 @@ class TestListSystemUsersEdgeCases:
         mock_token_manager.get_token.return_value = None
 
         result = await list_system_users(
-            server_id='server-001', workspace='testworkspace'
+            server_id='550e8400-e29b-41d4-a716-446655440001', workspace='testworkspace'
         )
 
         assert result['status'] == 'error'
@@ -205,7 +211,7 @@ class TestListSystemUsersEdgeCases:
         mock_http_client.get.side_effect = Exception('HTTP 503 Service Unavailable')
 
         result = await list_system_users(
-            server_id='server-001', workspace='testworkspace'
+            server_id='550e8400-e29b-41d4-a716-446655440001', workspace='testworkspace'
         )
 
         assert result['status'] == 'error'
@@ -241,12 +247,14 @@ class TestListSystemPackagesEdgeCases:
         }
 
         result = await list_system_packages(
-            server_id='server-001', workspace='testworkspace', region='ap1'
+            server_id='550e8400-e29b-41d4-a716-446655440001',
+            workspace='testworkspace',
+            region='ap1',
         )
 
         # Verify response structure
         assert result['status'] == 'success'
-        assert result['server_id'] == 'server-001'
+        assert result['server_id'] == '550e8400-e29b-41d4-a716-446655440001'
         assert result['region'] == 'ap1'
         assert result['workspace'] == 'testworkspace'
         assert 'data' in result
@@ -260,7 +268,7 @@ class TestListSystemPackagesEdgeCases:
         mock_http_client.get.return_value = {'count': 0, 'results': []}
 
         result = await list_system_packages(
-            server_id='server-001', workspace='testworkspace'
+            server_id='550e8400-e29b-41d4-a716-446655440001', workspace='testworkspace'
         )
 
         assert result['status'] == 'success'
@@ -274,7 +282,7 @@ class TestListSystemPackagesEdgeCases:
         mock_token_manager.get_token.return_value = None
 
         result = await list_system_packages(
-            server_id='server-001', workspace='testworkspace'
+            server_id='550e8400-e29b-41d4-a716-446655440001', workspace='testworkspace'
         )
 
         assert result['status'] == 'error'
@@ -289,7 +297,7 @@ class TestListSystemPackagesEdgeCases:
         mock_http_client.get.side_effect = Exception('Connection timeout')
 
         result = await list_system_packages(
-            server_id='server-001', workspace='testworkspace'
+            server_id='550e8400-e29b-41d4-a716-446655440001', workspace='testworkspace'
         )
 
         assert result['status'] == 'error'
@@ -339,11 +347,13 @@ class TestGetDiskInfoEdgeCases:
         mock_http_client.get.side_effect = mock_get_side_effect
 
         result = await get_disk_info(
-            server_id='server-001', workspace='testworkspace', region='ap1'
+            server_id='550e8400-e29b-41d4-a716-446655440001',
+            workspace='testworkspace',
+            region='ap1',
         )
 
         assert result['status'] == 'success'
-        assert result['data']['server_id'] == 'server-001'
+        assert result['data']['server_id'] == '550e8400-e29b-41d4-a716-446655440001'
         assert result['data']['region'] == 'ap1'
         assert result['data']['workspace'] == 'testworkspace'
         assert 'disks' in result['data']
@@ -359,7 +369,9 @@ class TestGetDiskInfoEdgeCases:
 
         mock_token_manager.get_token.return_value = None
 
-        result = await get_disk_info(server_id='server-001', workspace='testworkspace')
+        result = await get_disk_info(
+            server_id='550e8400-e29b-41d4-a716-446655440001', workspace='testworkspace'
+        )
 
         assert result['status'] == 'error'
         assert 'No token found' in result['message']
@@ -372,7 +384,9 @@ class TestGetDiskInfoEdgeCases:
 
         mock_http_client.get.side_effect = Exception('Disk service unavailable')
 
-        result = await get_disk_info(server_id='server-001', workspace='testworkspace')
+        result = await get_disk_info(
+            server_id='550e8400-e29b-41d4-a716-446655440001', workspace='testworkspace'
+        )
 
         # get_disk_info uses asyncio.gather with return_exceptions=True
         # so it returns success with error info in the data
@@ -397,11 +411,13 @@ class TestCrossFunctionScenarios:
         # Test with different regions
         for func in [get_system_info, list_system_users]:
             result = await func(
-                server_id='eu-server-001', workspace='eu-workspace', region='eu1'
+                server_id='660e8400-e29b-41d4-a716-446655440001',
+                workspace='eu-workspace',
+                region='eu1',
             )
 
             assert result['status'] == 'success'
-            assert result['server_id'] == 'eu-server-001'
+            assert result['server_id'] == '660e8400-e29b-41d4-a716-446655440001'
             assert result['workspace'] == 'eu-workspace'
             assert result['region'] == 'eu1'
 
@@ -413,7 +429,7 @@ class TestCrossFunctionScenarios:
         mock_http_client.get.side_effect = Exception('HTTP 404 Server Not Found')
 
         result = await list_system_users(
-            server_id='nonexistent-server', workspace='testworkspace'
+            server_id='99999999-9999-9999-9999-999999999999', workspace='testworkspace'
         )
 
         assert result['status'] == 'error'

@@ -39,13 +39,13 @@ class TestExecuteCommand:
         # Mock successful response
         mock_http_client.post.return_value = {
             'id': 'cmd-123',
-            'server': 'server-001',
+            'server': '550e8400-e29b-41d4-a716-446655440001',
             'command': 'ls -la',
             'status': 'running',
         }
 
         result = await execute_command_with_acl(
-            server_id='server-001',
+            server_id='550e8400-e29b-41d4-a716-446655440001',
             command='ls -la',
             workspace='testworkspace',
             region='ap1',
@@ -53,7 +53,7 @@ class TestExecuteCommand:
 
         # Verify response structure
         assert result['status'] == 'success'
-        assert result['server_id'] == 'server-001'
+        assert result['server_id'] == '550e8400-e29b-41d4-a716-446655440001'
         assert result['command'] == 'ls -la'
         assert result['shell'] == 'internal'  # default value
         assert result['region'] == 'ap1'
@@ -67,7 +67,7 @@ class TestExecuteCommand:
             endpoint='/api/events/commands/',
             token='test-token',
             data={
-                'server': 'server-001',
+                'server': '550e8400-e29b-41d4-a716-446655440001',
                 'shell': 'internal',
                 'line': 'ls -la',
                 'groupname': 'alpacon',
@@ -84,7 +84,7 @@ class TestExecuteCommand:
         mock_http_client.post.return_value = {'id': 'cmd-123'}
 
         result = await execute_command_with_acl(
-            server_id='server-001',
+            server_id='550e8400-e29b-41d4-a716-446655440001',
             command='echo hello',
             workspace='testworkspace',
             shell='bash',
@@ -114,7 +114,9 @@ class TestExecuteCommand:
         mock_token_manager.get_token.return_value = None
 
         result = await execute_command_with_acl(
-            server_id='server-001', command='ls -la', workspace='testworkspace'
+            server_id='550e8400-e29b-41d4-a716-446655440001',
+            command='ls -la',
+            workspace='testworkspace',
         )
 
         assert result['status'] == 'error'
@@ -132,7 +134,9 @@ class TestExecuteCommand:
         mock_http_client.post.side_effect = Exception('HTTP 500 Internal Server Error')
 
         result = await execute_command_with_acl(
-            server_id='server-001', command='ls -la', workspace='testworkspace'
+            server_id='550e8400-e29b-41d4-a716-446655440001',
+            command='ls -la',
+            workspace='testworkspace',
         )
 
         assert result['status'] == 'error'
@@ -229,14 +233,14 @@ class TestListCommands:
                     'id': 'cmd-123',
                     'command': 'ls -la',
                     'status': 'completed',
-                    'server': 'server-001',
+                    'server': '550e8400-e29b-41d4-a716-446655440001',
                     'added_at': '2024-01-01T00:00:00Z',
                 },
                 {
                     'id': 'cmd-124',
                     'command': 'ps aux',
                     'status': 'running',
-                    'server': 'server-002',
+                    'server': '550e8400-e29b-41d4-a716-446655440002',
                     'added_at': '2024-01-01T00:01:00Z',
                 },
             ],
@@ -269,15 +273,19 @@ class TestListCommands:
         mock_http_client.get.return_value = {'count': 1, 'results': []}
 
         result = await list_commands(
-            workspace='testworkspace', server_id='server-001', limit=20
+            workspace='testworkspace',
+            server_id='550e8400-e29b-41d4-a716-446655440001',
+            limit=20,
         )
 
         assert result['status'] == 'success'
-        assert result['server_id'] == 'server-001'
+        assert result['server_id'] == '550e8400-e29b-41d4-a716-446655440001'
 
         # Verify server filter was applied
         call_args = mock_http_client.get.call_args
-        assert call_args[1]['params']['server'] == 'server-001'
+        assert (
+            call_args[1]['params']['server'] == '550e8400-e29b-41d4-a716-446655440001'
+        )
 
     @pytest.mark.asyncio
     async def test_list_commands_no_token(self, mock_http_client, mock_token_manager):
@@ -324,7 +332,7 @@ class TestExecuteCommandSync:
                 }
 
                 result = await execute_command_sync(
-                    server_id='server-001',
+                    server_id='550e8400-e29b-41d4-a716-446655440001',
                     command='echo test',
                     workspace='testworkspace',
                     timeout=10,
@@ -332,7 +340,7 @@ class TestExecuteCommandSync:
 
                 assert result['status'] == 'success'
                 assert result['command_id'] == 'cmd-123'
-                assert result['server_id'] == 'server-001'
+                assert result['server_id'] == '550e8400-e29b-41d4-a716-446655440001'
                 assert result['command'] == 'echo test'
 
     @pytest.mark.asyncio
@@ -356,7 +364,7 @@ class TestExecuteCommandSync:
                 }
 
                 result = await execute_command_sync(
-                    server_id='server-001',
+                    server_id='550e8400-e29b-41d4-a716-446655440001',
                     command='echo test',
                     workspace='testworkspace',
                 )
@@ -386,7 +394,7 @@ class TestExecuteCommandSync:
                 }
 
                 result = await execute_command_sync(
-                    server_id='server-001',
+                    server_id='550e8400-e29b-41d4-a716-446655440001',
                     command='sleep 100',
                     workspace='testworkspace',
                     timeout=1,  # Short timeout
@@ -411,7 +419,9 @@ class TestExecuteCommandSync:
             }
 
             result = await execute_command_sync(
-                server_id='nonexistent', command='echo test', workspace='testworkspace'
+                server_id='99999999-9999-9999-9999-999999999999',
+                command='echo test',
+                workspace='testworkspace',
             )
 
             assert result['status'] == 'error'
@@ -429,7 +439,9 @@ class TestExecuteCommandSync:
             mock_execute.return_value = {'status': 'success', 'data': []}
 
             result = await execute_command_sync(
-                server_id='server-001', command='echo test', workspace='testworkspace'
+                server_id='550e8400-e29b-41d4-a716-446655440001',
+                command='echo test',
+                workspace='testworkspace',
             )
 
             assert result['status'] == 'error'
@@ -447,7 +459,9 @@ class TestExecuteCommandSync:
             mock_execute.side_effect = Exception('Network error')
 
             result = await execute_command_sync(
-                server_id='server-001', command='echo test', workspace='testworkspace'
+                server_id='550e8400-e29b-41d4-a716-446655440001',
+                command='echo test',
+                workspace='testworkspace',
             )
 
             assert result['status'] == 'error'

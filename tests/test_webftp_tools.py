@@ -48,13 +48,13 @@ class TestWebFtpSessionCreate:
         # Mock successful response
         mock_http_client.post.return_value = {
             'id': 'session-123',
-            'server': 'server-001',
+            'server': '550e8400-e29b-41d4-a716-446655440001',
             'username': 'testuser',
             'created_at': '2024-01-01T00:00:00Z',
         }
 
         result = await webftp_session_create(
-            server_id='server-001',
+            server_id='550e8400-e29b-41d4-a716-446655440001',
             workspace='testworkspace',
             username='testuser',
             region='ap1',
@@ -62,7 +62,7 @@ class TestWebFtpSessionCreate:
 
         # Verify response structure
         assert result['status'] == 'success'
-        assert result['server_id'] == 'server-001'
+        assert result['server_id'] == '550e8400-e29b-41d4-a716-446655440001'
         assert result['username'] == 'testuser'
         assert result['region'] == 'ap1'
         assert result['workspace'] == 'testworkspace'
@@ -74,7 +74,10 @@ class TestWebFtpSessionCreate:
             workspace='testworkspace',
             endpoint='/api/webftp/sessions/',
             token='test-token',
-            data={'server': 'server-001', 'username': 'testuser'},
+            data={
+                'server': '550e8400-e29b-41d4-a716-446655440001',
+                'username': 'testuser',
+            },
         )
 
     @pytest.mark.asyncio
@@ -87,7 +90,9 @@ class TestWebFtpSessionCreate:
         mock_http_client.post.return_value = {'id': 'session-123'}
 
         result = await webftp_session_create(
-            server_id='server-001', workspace='testworkspace', region='ap1'
+            server_id='550e8400-e29b-41d4-a716-446655440001',
+            workspace='testworkspace',
+            region='ap1',
         )
 
         assert result['status'] == 'success'
@@ -105,7 +110,7 @@ class TestWebFtpSessionCreate:
         mock_token_manager.get_token.return_value = None
 
         result = await webftp_session_create(
-            server_id='server-001', workspace='testworkspace'
+            server_id='550e8400-e29b-41d4-a716-446655440001', workspace='testworkspace'
         )
 
         assert result['status'] == 'error'
@@ -122,7 +127,7 @@ class TestWebFtpSessionCreate:
         mock_http_client.post.side_effect = Exception('HTTP 500 Internal Server Error')
 
         result = await webftp_session_create(
-            server_id='server-001', workspace='testworkspace'
+            server_id='550e8400-e29b-41d4-a716-446655440001', workspace='testworkspace'
         )
 
         assert result['status'] == 'error'
@@ -143,13 +148,13 @@ class TestWebFtpSessionsList:
             'results': [
                 {
                     'id': 'session-123',
-                    'server': 'server-001',
+                    'server': '550e8400-e29b-41d4-a716-446655440001',
                     'username': 'testuser1',
                     'created_at': '2024-01-01T00:00:00Z',
                 },
                 {
                     'id': 'session-124',
-                    'server': 'server-002',
+                    'server': '550e8400-e29b-41d4-a716-446655440002',
                     'username': 'testuser2',
                     'created_at': '2024-01-01T00:01:00Z',
                 },
@@ -183,15 +188,19 @@ class TestWebFtpSessionsList:
         mock_http_client.get.return_value = {'count': 1, 'results': []}
 
         result = await webftp_sessions_list(
-            workspace='testworkspace', server_id='server-001', region='ap1'
+            workspace='testworkspace',
+            server_id='550e8400-e29b-41d4-a716-446655440001',
+            region='ap1',
         )
 
         assert result['status'] == 'success'
-        assert result['server_id'] == 'server-001'
+        assert result['server_id'] == '550e8400-e29b-41d4-a716-446655440001'
 
         # Verify server filter was applied
         call_args = mock_http_client.get.call_args
-        assert call_args[1]['params']['server'] == 'server-001'
+        assert (
+            call_args[1]['params']['server'] == '550e8400-e29b-41d4-a716-446655440001'
+        )
 
     @pytest.mark.asyncio
     async def test_sessions_list_no_token(self, mock_http_client, mock_token_manager):
@@ -244,7 +253,7 @@ class TestWebFtpUploadFile:
                 mock_http_client.get.return_value = {'status': 'processed'}
 
                 result = await webftp_upload_file(
-                    server_id='server-001',
+                    server_id='550e8400-e29b-41d4-a716-446655440001',
                     local_file_path='/local/test.txt',
                     remote_file_path='/remote/test.txt',
                     workspace='testworkspace',
@@ -254,7 +263,7 @@ class TestWebFtpUploadFile:
 
                 assert result['status'] == 'success'
                 assert 'uploaded successfully and processed' in result['message']
-                assert result['server_id'] == 'server-001'
+                assert result['server_id'] == '550e8400-e29b-41d4-a716-446655440001'
                 assert result['local_file_path'] == '/local/test.txt'
                 assert result['remote_file_path'] == '/remote/test.txt'
                 assert result['file_size'] == len(file_content)
@@ -292,7 +301,7 @@ class TestWebFtpUploadFile:
             }
 
             result = await webftp_upload_file(
-                server_id='server-001',
+                server_id='550e8400-e29b-41d4-a716-446655440001',
                 local_file_path='/local/test.txt',
                 remote_file_path='/remote/test.txt',
                 workspace='testworkspace',
@@ -300,7 +309,7 @@ class TestWebFtpUploadFile:
 
             assert result['status'] == 'success'
             assert 'direct upload' in result['message']
-            assert result['server_id'] == 'server-001'
+            assert result['server_id'] == '550e8400-e29b-41d4-a716-446655440001'
 
     @pytest.mark.asyncio
     async def test_upload_file_not_found(self, mock_http_client, mock_token_manager):
@@ -309,7 +318,7 @@ class TestWebFtpUploadFile:
 
         with patch('builtins.open', side_effect=FileNotFoundError('File not found')):
             result = await webftp_upload_file(
-                server_id='server-001',
+                server_id='550e8400-e29b-41d4-a716-446655440001',
                 local_file_path='/nonexistent/test.txt',
                 remote_file_path='/remote/test.txt',
                 workspace='testworkspace',
@@ -341,7 +350,7 @@ class TestWebFtpUploadFile:
             mock_httpx.put.return_value = mock_s3_response
 
             result = await webftp_upload_file(
-                server_id='server-001',
+                server_id='550e8400-e29b-41d4-a716-446655440001',
                 local_file_path='/local/test.txt',
                 remote_file_path='/remote/test.txt',
                 workspace='testworkspace',
@@ -361,7 +370,7 @@ class TestWebFtpUploadFile:
         # Need to mock file reading since it happens before token check
         with patch('builtins.open', mock_open(read_data=file_content)):
             result = await webftp_upload_file(
-                server_id='server-001',
+                server_id='550e8400-e29b-41d4-a716-446655440001',
                 local_file_path='/local/test.txt',
                 remote_file_path='/remote/test.txt',
                 workspace='testworkspace',
@@ -401,7 +410,7 @@ class TestWebFtpDownloadFile:
                     mock_client.get = AsyncMock(return_value=mock_s3_response)
 
                     result = await webftp_download_file(
-                        server_id='server-001',
+                        server_id='550e8400-e29b-41d4-a716-446655440001',
                         remote_file_path='/remote/test.txt',
                         local_file_path='/local/test.txt',
                         workspace='testworkspace',
@@ -411,7 +420,7 @@ class TestWebFtpDownloadFile:
 
                     assert result['status'] == 'success'
                     assert 'downloaded successfully' in result['message']
-                    assert result['server_id'] == 'server-001'
+                    assert result['server_id'] == '550e8400-e29b-41d4-a716-446655440001'
                     assert result['remote_file_path'] == '/remote/test.txt'
                     assert result['local_file_path'] == '/local/test.txt'
                     assert result['file_size'] == len(file_content)
@@ -445,7 +454,7 @@ class TestWebFtpDownloadFile:
                     mock_client.get = AsyncMock(return_value=mock_s3_response)
 
                     result = await webftp_download_file(
-                        server_id='server-001',
+                        server_id='550e8400-e29b-41d4-a716-446655440001',
                         remote_file_path='/remote/folder',
                         local_file_path='/local/folder.zip',
                         workspace='testworkspace',
@@ -471,7 +480,7 @@ class TestWebFtpDownloadFile:
         mock_http_client.post.return_value = {'id': 'download-123', 'name': 'test.txt'}
 
         result = await webftp_download_file(
-            server_id='server-001',
+            server_id='550e8400-e29b-41d4-a716-446655440001',
             remote_file_path='/remote/test.txt',
             local_file_path='/local/test.txt',
             workspace='testworkspace',
@@ -479,7 +488,7 @@ class TestWebFtpDownloadFile:
 
         assert result['status'] == 'success'
         assert 'Download request created' in result['message']
-        assert result['server_id'] == 'server-001'
+        assert result['server_id'] == '550e8400-e29b-41d4-a716-446655440001'
 
     @pytest.mark.asyncio
     async def test_download_file_s3_error(
@@ -500,7 +509,7 @@ class TestWebFtpDownloadFile:
         mock_httpx.get.return_value = mock_s3_response
 
         result = await webftp_download_file(
-            server_id='server-001',
+            server_id='550e8400-e29b-41d4-a716-446655440001',
             remote_file_path='/remote/test.txt',
             local_file_path='/local/test.txt',
             workspace='testworkspace',
@@ -531,7 +540,7 @@ class TestWebFtpDownloadFile:
                     mock_client.get = AsyncMock(return_value=mock_s3_response)
 
                     result = await webftp_download_file(
-                        server_id='server-001',
+                        server_id='550e8400-e29b-41d4-a716-446655440001',
                         remote_file_path='/remote/test.txt',
                         local_file_path='/local/test.txt',
                         workspace='testworkspace',
@@ -548,7 +557,7 @@ class TestWebFtpDownloadFile:
         mock_token_manager.get_token.return_value = None
 
         result = await webftp_download_file(
-            server_id='server-001',
+            server_id='550e8400-e29b-41d4-a716-446655440001',
             remote_file_path='/remote/test.txt',
             local_file_path='/local/test.txt',
             workspace='testworkspace',
@@ -573,13 +582,13 @@ class TestWebFtpUploadsList:
                 {
                     'id': 'upload-123',
                     'name': 'file1.txt',
-                    'server': 'server-001',
+                    'server': '550e8400-e29b-41d4-a716-446655440001',
                     'created_at': '2024-01-01T00:00:00Z',
                 },
                 {
                     'id': 'upload-124',
                     'name': 'file2.txt',
-                    'server': 'server-002',
+                    'server': '550e8400-e29b-41d4-a716-446655440002',
                     'created_at': '2024-01-01T00:01:00Z',
                 },
             ],
@@ -611,15 +620,17 @@ class TestWebFtpUploadsList:
         mock_http_client.get.return_value = {'count': 1, 'results': []}
 
         result = await webftp_uploads_list(
-            workspace='testworkspace', server_id='server-001'
+            workspace='testworkspace', server_id='550e8400-e29b-41d4-a716-446655440001'
         )
 
         assert result['status'] == 'success'
-        assert result['server_id'] == 'server-001'
+        assert result['server_id'] == '550e8400-e29b-41d4-a716-446655440001'
 
         # Verify server filter was applied
         call_args = mock_http_client.get.call_args
-        assert call_args[1]['params']['server'] == 'server-001'
+        assert (
+            call_args[1]['params']['server'] == '550e8400-e29b-41d4-a716-446655440001'
+        )
 
     @pytest.mark.asyncio
     async def test_uploads_list_no_token(self, mock_http_client, mock_token_manager):
@@ -662,13 +673,13 @@ class TestWebFtpDownloadsList:
                 {
                     'id': 'download-123',
                     'name': 'file1.txt',
-                    'server': 'server-001',
+                    'server': '550e8400-e29b-41d4-a716-446655440001',
                     'created_at': '2024-01-01T00:00:00Z',
                 },
                 {
                     'id': 'download-124',
                     'name': 'file2.txt',
-                    'server': 'server-002',
+                    'server': '550e8400-e29b-41d4-a716-446655440002',
                     'created_at': '2024-01-01T00:01:00Z',
                 },
             ],
@@ -700,15 +711,17 @@ class TestWebFtpDownloadsList:
         mock_http_client.get.return_value = {'count': 1, 'results': []}
 
         result = await webftp_downloads_list(
-            workspace='testworkspace', server_id='server-001'
+            workspace='testworkspace', server_id='550e8400-e29b-41d4-a716-446655440001'
         )
 
         assert result['status'] == 'success'
-        assert result['server_id'] == 'server-001'
+        assert result['server_id'] == '550e8400-e29b-41d4-a716-446655440001'
 
         # Verify server filter was applied
         call_args = mock_http_client.get.call_args
-        assert call_args[1]['params']['server'] == 'server-001'
+        assert (
+            call_args[1]['params']['server'] == '550e8400-e29b-41d4-a716-446655440001'
+        )
 
     @pytest.mark.asyncio
     async def test_downloads_list_no_token(self, mock_http_client, mock_token_manager):

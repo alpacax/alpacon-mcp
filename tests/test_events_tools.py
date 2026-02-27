@@ -43,7 +43,7 @@ class TestListEvents:
             'results': [
                 {
                     'id': 'event-123',
-                    'server': 'server-001',
+                    'server': '550e8400-e29b-41d4-a716-446655440001',
                     'reporter': 'system',
                     'record': 'service_started',
                     'description': 'Apache service started',
@@ -51,7 +51,7 @@ class TestListEvents:
                 },
                 {
                     'id': 'event-124',
-                    'server': 'server-001',
+                    'server': '550e8400-e29b-41d4-a716-446655440001',
                     'reporter': 'user',
                     'record': 'command_executed',
                     'description': 'ls -la executed',
@@ -59,7 +59,7 @@ class TestListEvents:
                 },
                 {
                     'id': 'event-125',
-                    'server': 'server-002',
+                    'server': '550e8400-e29b-41d4-a716-446655440002',
                     'reporter': 'system',
                     'record': 'disk_warning',
                     'description': 'Disk usage above 80%',
@@ -70,7 +70,7 @@ class TestListEvents:
 
         result = await list_events(
             workspace='testworkspace',
-            server_id='server-001',
+            server_id='550e8400-e29b-41d4-a716-446655440001',
             reporter='system',
             limit=25,
             region='ap1',
@@ -78,7 +78,7 @@ class TestListEvents:
 
         # Verify response structure
         assert result['status'] == 'success'
-        assert result['server_id'] == 'server-001'
+        assert result['server_id'] == '550e8400-e29b-41d4-a716-446655440001'
         assert result['reporter'] == 'system'
         assert result['limit'] == 25
         assert result['region'] == 'ap1'
@@ -95,7 +95,7 @@ class TestListEvents:
             params={
                 'page_size': 25,
                 'ordering': '-added_at',
-                'server': 'server-001',
+                'server': '550e8400-e29b-41d4-a716-446655440001',
                 'reporter': 'system',
             },
         )
@@ -158,7 +158,7 @@ class TestGetEvent:
         # Mock successful response
         mock_http_client.get.return_value = {
             'id': 'event-123',
-            'server': 'server-001',
+            'server': '550e8400-e29b-41d4-a716-446655440001',
             'server_name': 'web-server-1',
             'reporter': 'system',
             'record': 'service_started',
@@ -227,7 +227,7 @@ class TestSearchEvents:
             'results': [
                 {
                     'id': 'event-123',
-                    'server': 'server-001',
+                    'server': '550e8400-e29b-41d4-a716-446655440001',
                     'reporter': 'system',
                     'record': 'service_error',
                     'description': 'Apache service error: connection refused',
@@ -235,7 +235,7 @@ class TestSearchEvents:
                 },
                 {
                     'id': 'event-124',
-                    'server': 'server-002',
+                    'server': '550e8400-e29b-41d4-a716-446655440002',
                     'reporter': 'user',
                     'record': 'command_error',
                     'description': 'Command failed: apache2 restart',
@@ -247,7 +247,7 @@ class TestSearchEvents:
         result = await search_events(
             search_query='apache',
             workspace='testworkspace',
-            server_id='server-001',
+            server_id='550e8400-e29b-41d4-a716-446655440001',
             limit=10,
             region='ap1',
         )
@@ -255,7 +255,7 @@ class TestSearchEvents:
         # Verify response structure
         assert result['status'] == 'success'
         assert result['search_query'] == 'apache'
-        assert result['server_id'] == 'server-001'
+        assert result['server_id'] == '550e8400-e29b-41d4-a716-446655440001'
         assert result['limit'] == 10
         assert result['region'] == 'ap1'
         assert result['workspace'] == 'testworkspace'
@@ -272,7 +272,7 @@ class TestSearchEvents:
                 'search': 'apache',
                 'page_size': 10,
                 'ordering': '-added_at',
-                'server': 'server-001',
+                'server': '550e8400-e29b-41d4-a716-446655440001',
             },
         )
 

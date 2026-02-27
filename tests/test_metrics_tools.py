@@ -41,7 +41,7 @@ class TestGetCpuUsage:
         }
 
         result = await get_cpu_usage(
-            server_id='server-001',
+            server_id='550e8400-e29b-41d4-a716-446655440001',
             workspace='testworkspace',
             start_date='2024-01-01T00:00:00Z',
             end_date='2024-01-01T01:00:00Z',
@@ -56,7 +56,7 @@ class TestGetCpuUsage:
 
         # Verify parsed data structure
         data = result['data']
-        assert data['server_id'] == 'server-001'
+        assert data['server_id'] == '550e8400-e29b-41d4-a716-446655440001'
         assert data['metric_type'] == 'cpu_usage'
         assert 'statistics' in data
         assert data['raw_data_available'] is True
@@ -68,7 +68,7 @@ class TestGetCpuUsage:
             endpoint='/api/metrics/realtime/cpu/',
             token='test-token',
             params={
-                'server': 'server-001',
+                'server': '550e8400-e29b-41d4-a716-446655440001',
                 'start': '2024-01-01T00:00:00Z',
                 'end': '2024-01-01T01:00:00Z',
             },
@@ -81,14 +81,16 @@ class TestGetCpuUsage:
 
         mock_http_client.get.return_value = {'results': []}
 
-        result = await get_cpu_usage(server_id='server-001', workspace='testworkspace')
+        result = await get_cpu_usage(
+            server_id='550e8400-e29b-41d4-a716-446655440001', workspace='testworkspace'
+        )
 
         assert result['status'] == 'success'
 
         # Verify start parameter was auto-generated (default 24h)
         call_args = mock_http_client.get.call_args
         params = call_args[1]['params']
-        assert params['server'] == 'server-001'
+        assert params['server'] == '550e8400-e29b-41d4-a716-446655440001'
         assert 'start' in params  # Default start date is auto-generated
 
     @pytest.mark.asyncio
@@ -98,7 +100,9 @@ class TestGetCpuUsage:
 
         mock_token_manager.get_token.return_value = None
 
-        result = await get_cpu_usage(server_id='server-001', workspace='testworkspace')
+        result = await get_cpu_usage(
+            server_id='550e8400-e29b-41d4-a716-446655440001', workspace='testworkspace'
+        )
 
         assert result['status'] == 'error'
         assert 'No token found' in result['message']
@@ -111,7 +115,9 @@ class TestGetCpuUsage:
 
         mock_http_client.get.side_effect = Exception('HTTP 500 Internal Server Error')
 
-        result = await get_cpu_usage(server_id='server-001', workspace='testworkspace')
+        result = await get_cpu_usage(
+            server_id='550e8400-e29b-41d4-a716-446655440001', workspace='testworkspace'
+        )
 
         assert result['status'] == 'error'
         assert 'Failed in get_cpu_usage' in result['message']
@@ -131,7 +137,7 @@ class TestGetMemoryUsage:
         }
 
         result = await get_memory_usage(
-            server_id='server-001',
+            server_id='550e8400-e29b-41d4-a716-446655440001',
             workspace='testworkspace',
             start_date='2024-01-01T00:00:00Z',
             end_date='2024-01-01T01:00:00Z',
@@ -144,7 +150,7 @@ class TestGetMemoryUsage:
 
         # Verify parsed data
         data = result['data']
-        assert data['server_id'] == 'server-001'
+        assert data['server_id'] == '550e8400-e29b-41d4-a716-446655440001'
         assert data['metric_type'] == 'memory_usage'
         assert 'statistics' in data
 
@@ -155,7 +161,7 @@ class TestGetMemoryUsage:
             endpoint='/api/metrics/realtime/memory/',
             token='test-token',
             params={
-                'server': 'server-001',
+                'server': '550e8400-e29b-41d4-a716-446655440001',
                 'start': '2024-01-01T00:00:00Z',
                 'end': '2024-01-01T01:00:00Z',
             },
@@ -169,7 +175,7 @@ class TestGetMemoryUsage:
         mock_token_manager.get_token.return_value = None
 
         result = await get_memory_usage(
-            server_id='server-001', workspace='testworkspace'
+            server_id='550e8400-e29b-41d4-a716-446655440001', workspace='testworkspace'
         )
 
         assert result['status'] == 'error'
@@ -183,7 +189,7 @@ class TestGetMemoryUsage:
         mock_http_client.get.side_effect = Exception('Connection timeout')
 
         result = await get_memory_usage(
-            server_id='server-001', workspace='testworkspace'
+            server_id='550e8400-e29b-41d4-a716-446655440001', workspace='testworkspace'
         )
 
         assert result['status'] == 'error'
@@ -213,7 +219,7 @@ class TestGetDiskUsage:
         }
 
         result = await get_disk_usage(
-            server_id='server-001',
+            server_id='550e8400-e29b-41d4-a716-446655440001',
             workspace='testworkspace',
             device='/dev/sda1',
             partition='/',
@@ -228,7 +234,7 @@ class TestGetDiskUsage:
 
         # Verify parsed data
         data = result['data']
-        assert data['server_id'] == 'server-001'
+        assert data['server_id'] == '550e8400-e29b-41d4-a716-446655440001'
         assert data['metric_type'] == 'disk_usage'
         assert data['device'] == '/dev/sda1'
         assert data['partition'] == '/'
@@ -241,7 +247,7 @@ class TestGetDiskUsage:
             endpoint='/api/metrics/realtime/disk-usage/',
             token='test-token',
             params={
-                'server': 'server-001',
+                'server': '550e8400-e29b-41d4-a716-446655440001',
                 'device': '/dev/sda1',
                 'partition': '/',
                 'start': '2024-01-01T00:00:00Z',
@@ -264,7 +270,9 @@ class TestGetDiskUsage:
             },  # Disk metrics
         ]
 
-        result = await get_disk_usage(server_id='server-001', workspace='testworkspace')
+        result = await get_disk_usage(
+            server_id='550e8400-e29b-41d4-a716-446655440001', workspace='testworkspace'
+        )
 
         assert result['status'] == 'success'
 
@@ -278,7 +286,9 @@ class TestGetDiskUsage:
 
         mock_token_manager.get_token.return_value = None
 
-        result = await get_disk_usage(server_id='server-001', workspace='testworkspace')
+        result = await get_disk_usage(
+            server_id='550e8400-e29b-41d4-a716-446655440001', workspace='testworkspace'
+        )
 
         assert result['status'] == 'error'
         assert 'No token found' in result['message']
@@ -309,7 +319,7 @@ class TestGetNetworkTraffic:
         }
 
         result = await get_network_traffic(
-            server_id='server-001',
+            server_id='550e8400-e29b-41d4-a716-446655440001',
             workspace='testworkspace',
             interface='eth0',
             start_date='2024-01-01T00:00:00Z',
@@ -323,7 +333,7 @@ class TestGetNetworkTraffic:
 
         # Verify parsed data
         data = result['data']
-        assert data['server_id'] == 'server-001'
+        assert data['server_id'] == '550e8400-e29b-41d4-a716-446655440001'
         assert data['metric_type'] == 'network_traffic'
         assert data['interface'] == 'eth0'
         assert 'statistics' in data
@@ -335,7 +345,7 @@ class TestGetNetworkTraffic:
             endpoint='/api/metrics/realtime/traffic/',
             token='test-token',
             params={
-                'server': 'server-001',
+                'server': '550e8400-e29b-41d4-a716-446655440001',
                 'interface': 'eth0',
                 'start': '2024-01-01T00:00:00Z',
                 'end': '2024-01-01T01:00:00Z',
@@ -352,7 +362,7 @@ class TestGetNetworkTraffic:
         mock_http_client.get.return_value = {'results': []}
 
         result = await get_network_traffic(
-            server_id='server-001', workspace='testworkspace'
+            server_id='550e8400-e29b-41d4-a716-446655440001', workspace='testworkspace'
         )
 
         assert result['status'] == 'success'
@@ -360,7 +370,7 @@ class TestGetNetworkTraffic:
         # Verify interface parameter was not included but start was auto-generated
         call_args = mock_http_client.get.call_args
         params = call_args[1]['params']
-        assert params['server'] == 'server-001'
+        assert params['server'] == '550e8400-e29b-41d4-a716-446655440001'
         assert 'interface' not in params
         assert 'start' in params  # Default start date is auto-generated
 
@@ -372,7 +382,7 @@ class TestGetNetworkTraffic:
         mock_token_manager.get_token.return_value = None
 
         result = await get_network_traffic(
-            server_id='server-001', workspace='testworkspace'
+            server_id='550e8400-e29b-41d4-a716-446655440001', workspace='testworkspace'
         )
 
         assert result['status'] == 'error'
@@ -393,13 +403,13 @@ class TestGetTopServers:
         mock_http_client.get.return_value = {
             'data': [
                 {
-                    'server_id': 'server-001',
+                    'server_id': '550e8400-e29b-41d4-a716-446655440001',
                     'server_name': 'web-server-1',
                     'cpu_percent': 89.5,
                     'timestamp': '2024-01-01T00:00:00Z',
                 },
                 {
-                    'server_id': 'server-002',
+                    'server_id': '550e8400-e29b-41d4-a716-446655440002',
                     'server_name': 'api-server-1',
                     'cpu_percent': 72.3,
                     'timestamp': '2024-01-01T00:00:00Z',
@@ -511,7 +521,7 @@ class TestGetAlertRules:
                     'metric': 'cpu_percent',
                     'threshold': 80.0,
                     'comparison': 'gt',
-                    'server': 'server-001',
+                    'server': '550e8400-e29b-41d4-a716-446655440001',
                     'enabled': True,
                 },
                 {
@@ -520,18 +530,20 @@ class TestGetAlertRules:
                     'metric': 'disk_percent',
                     'threshold': 90.0,
                     'comparison': 'gt',
-                    'server': 'server-001',
+                    'server': '550e8400-e29b-41d4-a716-446655440001',
                     'enabled': True,
                 },
             ],
         }
 
         result = await get_alert_rules(
-            workspace='testworkspace', server_id='server-001', region='ap1'
+            workspace='testworkspace',
+            server_id='550e8400-e29b-41d4-a716-446655440001',
+            region='ap1',
         )
 
         assert result['status'] == 'success'
-        assert result['server_id'] == 'server-001'
+        assert result['server_id'] == '550e8400-e29b-41d4-a716-446655440001'
         assert result['region'] == 'ap1'
         assert result['workspace'] == 'testworkspace'
         assert result['data']['count'] == 3
@@ -542,7 +554,7 @@ class TestGetAlertRules:
             workspace='testworkspace',
             endpoint='/api/metrics/alert-rules/',
             token='test-token',
-            params={'server': 'server-001'},
+            params={'server': '550e8400-e29b-41d4-a716-446655440001'},
         )
 
     @pytest.mark.asyncio
@@ -590,11 +602,14 @@ class TestGetServerMetricsSummary:
         }
 
         result = await get_server_metrics_summary(
-            server_id='server-001', workspace='testworkspace', hours=24, region='ap1'
+            server_id='550e8400-e29b-41d4-a716-446655440001',
+            workspace='testworkspace',
+            hours=24,
+            region='ap1',
         )
 
         assert result['status'] == 'success'
-        assert result['data']['server_id'] == 'server-001'
+        assert result['data']['server_id'] == '550e8400-e29b-41d4-a716-446655440001'
         assert result['data']['time_range']['hours'] == 24
 
         # Verify all metric sections are present
@@ -614,7 +629,10 @@ class TestGetServerMetricsSummary:
         mock_http_client.get.return_value = {'results': [{'usage': 30.0}]}
 
         result = await get_server_metrics_summary(
-            server_id='server-001', workspace='testworkspace', hours=6, region='us1'
+            server_id='550e8400-e29b-41d4-a716-446655440001',
+            workspace='testworkspace',
+            hours=6,
+            region='us1',
         )
 
         assert result['status'] == 'success'
@@ -630,7 +648,7 @@ class TestGetServerMetricsSummary:
         mock_http_client.get.return_value = {'results': []}
 
         result = await get_server_metrics_summary(
-            server_id='server-001',
+            server_id='550e8400-e29b-41d4-a716-446655440001',
             workspace='testworkspace',
             hours=500,  # Exceeds max
         )
@@ -646,7 +664,7 @@ class TestGetServerMetricsSummary:
         mock_token_manager.get_token.return_value = None
 
         result = await get_server_metrics_summary(
-            server_id='server-001', workspace='testworkspace'
+            server_id='550e8400-e29b-41d4-a716-446655440001', workspace='testworkspace'
         )
 
         assert result['status'] == 'error'
@@ -662,7 +680,7 @@ class TestGetServerMetricsSummary:
         mock_http_client.get.side_effect = Exception('Service unavailable')
 
         result = await get_server_metrics_summary(
-            server_id='server-001', workspace='testworkspace'
+            server_id='550e8400-e29b-41d4-a716-446655440001', workspace='testworkspace'
         )
 
         # get_server_metrics_summary uses asyncio.gather with return_exceptions=True

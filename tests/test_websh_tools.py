@@ -79,12 +79,12 @@ class TestWebshSessionCreate:
         # Mock successful response (without websocket_url to avoid WebSocket connect)
         mock_http_client.post.return_value = {
             'id': 'session-123',
-            'server': 'server-001',
+            'server': '550e8400-e29b-41d4-a716-446655440001',
             'username': 'testuser',
         }
 
         result = await websh_session_create(
-            server_id='server-001',
+            server_id='550e8400-e29b-41d4-a716-446655440001',
             workspace='testworkspace',
             username='testuser',
             region='ap1',
@@ -92,7 +92,7 @@ class TestWebshSessionCreate:
 
         # Verify response structure
         assert result['status'] == 'success'
-        assert result['server_id'] == 'server-001'
+        assert result['server_id'] == '550e8400-e29b-41d4-a716-446655440001'
         assert result['username'] == 'testuser'
         assert result['region'] == 'ap1'
         assert result['workspace'] == 'testworkspace'
@@ -105,7 +105,7 @@ class TestWebshSessionCreate:
             endpoint='/api/websh/sessions/',
             token='test-token',
             data={
-                'server': 'server-001',
+                'server': '550e8400-e29b-41d4-a716-446655440001',
                 'rows': 24,
                 'cols': 80,
                 'username': 'testuser',
@@ -122,7 +122,7 @@ class TestWebshSessionCreate:
         mock_http_client.post.return_value = {'id': 'session-123'}
 
         result = await websh_session_create(
-            server_id='server-001', workspace='testworkspace'
+            server_id='550e8400-e29b-41d4-a716-446655440001', workspace='testworkspace'
         )
 
         assert result['status'] == 'success'
@@ -140,7 +140,7 @@ class TestWebshSessionCreate:
         mock_token_manager.get_token.return_value = None
 
         result = await websh_session_create(
-            server_id='server-001', workspace='testworkspace'
+            server_id='550e8400-e29b-41d4-a716-446655440001', workspace='testworkspace'
         )
 
         assert result['status'] == 'error'
@@ -157,7 +157,7 @@ class TestWebshSessionCreate:
         mock_http_client.post.side_effect = Exception('HTTP 500 Internal Server Error')
 
         result = await websh_session_create(
-            server_id='server-001', workspace='testworkspace'
+            server_id='550e8400-e29b-41d4-a716-446655440001', workspace='testworkspace'
         )
 
         assert result['status'] == 'error'
@@ -176,8 +176,16 @@ class TestWebshSessionsList:
         mock_http_client.get.return_value = {
             'count': 2,
             'results': [
-                {'id': 'session-123', 'server': 'server-001', 'status': 'active'},
-                {'id': 'session-124', 'server': 'server-002', 'status': 'idle'},
+                {
+                    'id': 'session-123',
+                    'server': '550e8400-e29b-41d4-a716-446655440001',
+                    'status': 'active',
+                },
+                {
+                    'id': 'session-124',
+                    'server': '550e8400-e29b-41d4-a716-446655440002',
+                    'status': 'idle',
+                },
             ],
         }
 
@@ -207,15 +215,17 @@ class TestWebshSessionsList:
         mock_http_client.get.return_value = {'count': 1, 'results': []}
 
         result = await websh_sessions_list(
-            workspace='testworkspace', server_id='server-001'
+            workspace='testworkspace', server_id='550e8400-e29b-41d4-a716-446655440001'
         )
 
         assert result['status'] == 'success'
-        assert result['server_id'] == 'server-001'
+        assert result['server_id'] == '550e8400-e29b-41d4-a716-446655440001'
 
         # Verify server filter was applied
         call_args = mock_http_client.get.call_args
-        assert call_args[1]['params']['server'] == 'server-001'
+        assert (
+            call_args[1]['params']['server'] == '550e8400-e29b-41d4-a716-446655440001'
+        )
 
 
 class TestWebshSessionReconnect:
@@ -231,7 +241,7 @@ class TestWebshSessionReconnect:
         # Mock session info response
         mock_http_client.get.return_value = {
             'id': 'session-123',
-            'server': 'server-001',
+            'server': '550e8400-e29b-41d4-a716-446655440001',
             'status': 'active',
         }
 

@@ -39,7 +39,7 @@ def mock_token_manager():
 def sample_server():
     """Sample server data for testing."""
     return {
-        'id': 'server-123',
+        'id': '550e8400-e29b-41d4-a716-446655440123',
         'name': 'web-server-01',
         'ip': '192.168.1.10',
         'status': 'running',
@@ -61,7 +61,7 @@ def sample_servers_list():
         'previous': None,
         'results': [
             {
-                'id': 'server-123',
+                'id': '550e8400-e29b-41d4-a716-446655440123',
                 'name': 'web-server-01',
                 'ip': '192.168.1.10',
                 'status': 'running',
@@ -69,7 +69,7 @@ def sample_servers_list():
                 'tags': ['web', 'production'],
             },
             {
-                'id': 'server-456',
+                'id': '550e8400-e29b-41d4-a716-446655440456',
                 'name': 'db-server-01',
                 'ip': '192.168.1.11',
                 'status': 'running',
@@ -176,18 +176,20 @@ class TestGetServer:
         """Test successful server details retrieval."""
         mock_http_client.get.return_value = {'count': 1, 'results': [sample_server]}
 
-        result = await get_server(server_id='server-123', workspace='testworkspace')
+        result = await get_server(
+            server_id='550e8400-e29b-41d4-a716-446655440123', workspace='testworkspace'
+        )
 
         assert result['status'] == 'success'
         assert result['data'] == sample_server
-        assert result['server_id'] == 'server-123'
+        assert result['server_id'] == '550e8400-e29b-41d4-a716-446655440123'
 
         mock_http_client.get.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
             endpoint='/api/servers/servers/',
             token='test-token',
-            params={'id': 'server-123'},
+            params={'id': '550e8400-e29b-41d4-a716-446655440123'},
         )
 
     @pytest.mark.asyncio
@@ -195,7 +197,9 @@ class TestGetServer:
         """Test server details with no token."""
         mock_token_manager.get_token.return_value = None
 
-        result = await get_server(server_id='server-123', workspace='testworkspace')
+        result = await get_server(
+            server_id='550e8400-e29b-41d4-a716-446655440123', workspace='testworkspace'
+        )
 
         assert result['status'] == 'error'
         assert 'No token found' in result['message']
@@ -206,7 +210,9 @@ class TestGetServer:
         """Test server details with non-existent server."""
         mock_http_client.get.return_value = {'count': 0, 'results': []}
 
-        result = await get_server(server_id='nonexistent', workspace='testworkspace')
+        result = await get_server(
+            server_id='99999999-9999-9999-9999-999999999999', workspace='testworkspace'
+        )
 
         assert result['status'] == 'error'
         assert 'Server not found' in result['message']
@@ -219,7 +225,9 @@ class TestGetServer:
         mock_http_client.get.return_value = {'count': 1, 'results': [sample_server]}
 
         result = await get_server(
-            server_id='server-123', workspace='testworkspace', region='eu1'
+            server_id='550e8400-e29b-41d4-a716-446655440123',
+            workspace='testworkspace',
+            region='eu1',
         )
 
         assert result['status'] == 'success'
@@ -228,7 +236,7 @@ class TestGetServer:
             workspace='testworkspace',
             endpoint='/api/servers/servers/',
             token='test-token',
-            params={'id': 'server-123'},
+            params={'id': '550e8400-e29b-41d4-a716-446655440123'},
         )
 
     @pytest.mark.asyncio
@@ -236,7 +244,9 @@ class TestGetServer:
         """Test server details with HTTP error."""
         mock_http_client.get.side_effect = Exception('HTTP 404: Server not found')
 
-        result = await get_server(server_id='nonexistent', workspace='testworkspace')
+        result = await get_server(
+            server_id='99999999-9999-9999-9999-999999999999', workspace='testworkspace'
+        )
 
         assert result['status'] == 'error'
         assert 'HTTP 404' in result['message']
@@ -253,7 +263,7 @@ class TestServerNotes:
         mock_http_client.get.return_value = sample_server_notes
 
         result = await list_server_notes(
-            server_id='server-123', workspace='testworkspace'
+            server_id='550e8400-e29b-41d4-a716-446655440123', workspace='testworkspace'
         )
 
         assert result['status'] == 'success'
@@ -263,7 +273,7 @@ class TestServerNotes:
         mock_http_client.get.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/servers/notes/?server=server-123',
+            endpoint='/api/servers/notes/?server=550e8400-e29b-41d4-a716-446655440123',
             token='test-token',
         )
 
@@ -275,7 +285,7 @@ class TestServerNotes:
         mock_token_manager.get_token.return_value = None
 
         result = await list_server_notes(
-            server_id='server-123', workspace='testworkspace'
+            server_id='550e8400-e29b-41d4-a716-446655440123', workspace='testworkspace'
         )
 
         assert result['status'] == 'error'
@@ -297,7 +307,7 @@ class TestServerNotes:
         mock_http_client.post.return_value = created_note
 
         result = await create_server_note(
-            server_id='server-123',
+            server_id='550e8400-e29b-41d4-a716-446655440123',
             title='New Note',
             content='This is a new note about the server',
             workspace='testworkspace',
@@ -305,10 +315,10 @@ class TestServerNotes:
 
         assert result['status'] == 'success'
         assert result['data'] == created_note
-        assert result['server_id'] == 'server-123'
+        assert result['server_id'] == '550e8400-e29b-41d4-a716-446655440123'
 
         expected_data = {
-            'server': 'server-123',
+            'server': '550e8400-e29b-41d4-a716-446655440123',
             'title': 'New Note',
             'content': 'This is a new note about the server',
         }
@@ -329,7 +339,7 @@ class TestServerNotes:
         mock_token_manager.get_token.return_value = None
 
         result = await create_server_note(
-            server_id='server-123',
+            server_id='550e8400-e29b-41d4-a716-446655440123',
             title='New Note',
             content='This is a new note about the server',
             workspace='testworkspace',
@@ -347,7 +357,7 @@ class TestServerNotes:
         mock_http_client.post.side_effect = Exception('HTTP 400: Title cannot be empty')
 
         result = await create_server_note(
-            server_id='server-123',
+            server_id='550e8400-e29b-41d4-a716-446655440123',
             title='',
             content='This is a new note about the server',
             workspace='testworkspace',
@@ -391,7 +401,7 @@ class TestParameterValidation:
         mock_http_client.post.return_value = created_note
 
         result = await create_server_note(
-            server_id='server-123',
+            server_id='550e8400-e29b-41d4-a716-446655440123',
             title='Long Note',
             content=long_content,
             workspace='testworkspace',
