@@ -63,8 +63,7 @@ class AlpaconHTTPClient:
         """Generate cache key for request."""
         key_parts = [method, url]
         if params:
-            sorted_params = sorted(params.items())
-            key_parts.append(str(sorted_params))
+            key_parts.append(json.dumps(params, sort_keys=True))
         return "|".join(key_parts)
 
     def _is_cacheable(self, method: str, endpoint: str) -> bool:
@@ -245,7 +244,7 @@ class AlpaconHTTPClient:
                     logger.error(f"Client error, not retrying: {error_response}")
                     return error_response
 
-            except httpx.TimeoutException as e:
+            except httpx.TimeoutException:
                 # Timeout - retry
                 retry_count += 1
                 logger.warning(f"Request timeout, retrying ({retry_count}/{self.max_retries}) in {retry_delay}s")

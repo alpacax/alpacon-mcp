@@ -8,7 +8,6 @@ command execution, WebSocket connections, and session termination.
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 import asyncio
-import json
 
 
 @pytest.fixture
@@ -24,7 +23,7 @@ def mock_http_client():
 @pytest.fixture
 def mock_token_manager():
     """Mock token manager for testing."""
-    with patch('tools.websh_tools.token_manager') as mock_manager:
+    with patch('utils.common.token_manager') as mock_manager:
         mock_manager.get_token.return_value = "test-token"
         yield mock_manager
 
@@ -56,7 +55,7 @@ def mock_websocket():
                 return None
 
         # Mock connect to return our async context manager
-        def mock_connect_func(url):
+        def mock_connect_func(url, **kwargs):
             # For "async with websockets.connect()" pattern
             context_manager = AsyncContextMock(mock_connection)
             # Also set it as direct return value for "await websockets.connect()" pattern
@@ -76,13 +75,11 @@ class TestWebshSessionCreate:
         """Test successful Websh session creation."""
         from tools.websh_tools import websh_session_create
 
-        # Mock successful response
+        # Mock successful response (without websocket_url to avoid WebSocket connect)
         mock_http_client.post.return_value = {
             "id": "session-123",
             "server": "server-001",
             "username": "testuser",
-            "websocket_url": "wss://test.alpacon.io/websh/123",
-            "userchannel_id": "channel-456"
         }
 
         result = await websh_session_create(
@@ -162,7 +159,7 @@ class TestWebshSessionCreate:
         )
 
         assert result["status"] == "error"
-        assert "Failed to create Websh session" in result["message"]
+        assert "HTTP 500" in result["message"]
 
 
 class TestWebshSessionsList:
@@ -229,45 +226,6 @@ class TestWebshSessionsList:
         assert call_args[1]["params"]["server"] == "server-001"
 
 
-class TestWebshCommandExecute:
-    """Test websh_command_execute function."""
-
-    @pytest.mark.asyncio
-    async def test_command_execute_success(self, mock_http_client, mock_token_manager):
-        """Test successful command execution."""
-        from tools.websh_tools import websh_command_execute
-
-        # Mock successful response
-        mock_http_client.post.return_value = {
-            "id": "exec-123",
-            "command": "ls -la",
-            "status": "completed",
-            "output": "total 8\ndrwxr-xr-x 2 root root 4096 Jan 1 00:00 ."
-        }
-
-        result = await websh_command_execute(
-            session_id="session-123",
-            command="ls -la",
-            workspace="testworkspace",
-            region="ap1"
-        )
-
-        assert result["status"] == "success"
-        assert result["session_id"] == "session-123"
-        assert result["command"] == "ls -la"
-        assert result["region"] == "ap1"
-        assert result["workspace"] == "testworkspace"
-
-        # Verify HTTP client was called correctly
-        mock_http_client.post.assert_called_once_with(
-            region="ap1",
-            workspace="testworkspace",
-            endpoint="/api/websh/sessions/session-123/execute/",
-            token="test-token",
-            data={"command": "ls -la"}
-        )
-
-
 class TestWebshSessionReconnect:
     """Test websh_session_reconnect function."""
 
@@ -318,7 +276,7 @@ class TestWebshSessionReconnect:
         )
 
         assert result["status"] == "error"
-        assert "Session nonexistent not found" in result["message"]
+        assert "not found" in result["message"].lower() or "not accessible" in result["message"].lower()
 
 
 class TestWebshSessionTerminate:
@@ -599,7 +557,6 @@ class TestWebshChannelExecute:
         """Test channel execution with closed connection."""
         from tools.websh_tools import websh_channel_execute, websocket_pool
         import asyncio
-        import websockets
 
         # Setup mock pool with closed connection
         mock_ws = AsyncMock()

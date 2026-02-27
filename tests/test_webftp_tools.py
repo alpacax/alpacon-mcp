@@ -6,8 +6,6 @@ file downloads, and file transfer history.
 """
 import pytest
 from unittest.mock import AsyncMock, patch, mock_open, MagicMock
-import os
-import tempfile
 
 
 @pytest.fixture
@@ -23,7 +21,7 @@ def mock_http_client():
 @pytest.fixture
 def mock_token_manager():
     """Mock token manager for testing."""
-    with patch('tools.webftp_tools.token_manager') as mock_manager:
+    with patch('utils.common.token_manager') as mock_manager:
         mock_manager.get_token.return_value = "test-token"
         yield mock_manager
 
@@ -129,7 +127,7 @@ class TestWebFtpSessionCreate:
         )
 
         assert result["status"] == "error"
-        assert "Failed to create WebFTP session" in result["message"]
+        assert "HTTP 500" in result["message"]
 
 
 class TestWebFtpSessionsList:
@@ -386,7 +384,8 @@ class TestWebFtpDownloadFile:
             "download_url": "https://s3.amazonaws.com/bucket/download-url"
         }
 
-        with patch('builtins.open', mock_open()) as mock_file:
+        m_open = mock_open()
+        with patch('builtins.open', m_open):
             with patch('os.makedirs'):
                 with patch('httpx.AsyncClient') as mock_httpx_class:
                     mock_client = AsyncMock()
@@ -417,8 +416,8 @@ class TestWebFtpDownloadFile:
                     assert result["resource_type"] == "file"
 
                     # Verify file was written
-                    mock_file.assert_called_once_with("/local/test.txt", "wb")
-                    mock_file().write.assert_called_once_with(file_content)
+                    m_open.assert_called_once_with("/local/test.txt", "wb")
+                    m_open().write.assert_called_once_with(file_content)
 
     @pytest.mark.asyncio
     async def test_download_folder_success(self, mock_http_client, mock_token_manager):
@@ -431,7 +430,7 @@ class TestWebFtpDownloadFile:
             "download_url": "https://s3.amazonaws.com/bucket/download-url"
         }
 
-        with patch('builtins.open', mock_open()) as mock_file:
+        with patch('builtins.open', mock_open()):
             with patch('os.makedirs'):
                 with patch('httpx.AsyncClient') as mock_httpx_class:
                     mock_client = AsyncMock()
@@ -644,7 +643,7 @@ class TestWebFtpUploadsList:
         result = await webftp_uploads_list(workspace="testworkspace")
 
         assert result["status"] == "error"
-        assert "Failed to get uploads list" in result["message"]
+        assert "HTTP 500" in result["message"]
 
 
 class TestWebFtpDownloadsList:
@@ -735,7 +734,7 @@ class TestWebFtpDownloadsList:
         result = await webftp_downloads_list(workspace="testworkspace")
 
         assert result["status"] == "error"
-        assert "Failed to get downloads list" in result["message"]
+        assert "HTTP 500" in result["message"]
 
 
 if __name__ == "__main__":

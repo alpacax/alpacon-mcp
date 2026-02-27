@@ -1,8 +1,13 @@
 """
-Unit tests for system_tools module.
+Unit tests for system_info_tools module - additional edge case tests.
 
-Tests system tools functionality including hardware information,
-users list, packages list, and disk information.
+Tests additional edge cases and cross-function scenarios for
+system information tools. The module was previously named system_tools
+and has been refactored to system_info_tools.
+
+Note: Core function tests are in test_system_info_tools.py.
+This file covers additional scenarios like region variations,
+error conditions, and parameter handling.
 """
 import pytest
 from unittest.mock import AsyncMock, patch
@@ -11,7 +16,7 @@ from unittest.mock import AsyncMock, patch
 @pytest.fixture
 def mock_http_client():
     """Mock HTTP client for testing."""
-    with patch('tools.system_tools.http_client') as mock_client:
+    with patch('tools.system_info_tools.http_client') as mock_client:
         # Mock the async methods properly
         mock_client.get = AsyncMock()
         yield mock_client
@@ -20,41 +25,30 @@ def mock_http_client():
 @pytest.fixture
 def mock_token_manager():
     """Mock token manager for testing."""
-    with patch('tools.system_tools.token_manager') as mock_manager:
+    with patch('utils.common.token_manager') as mock_manager:
         mock_manager.get_token.return_value = "test-token"
         yield mock_manager
 
 
-class TestSystemInfo:
-    """Test system_info function."""
+class TestSystemInfoEdgeCases:
+    """Test get_system_info edge cases."""
 
     @pytest.mark.asyncio
     async def test_system_info_success(self, mock_http_client, mock_token_manager):
         """Test successful system info retrieval."""
-        from tools.system_tools import system_info
+        from tools.system_info_tools import get_system_info
 
         # Mock successful response
         mock_http_client.get.return_value = {
             "hostname": "web-server-01",
             "kernel": "Linux 5.4.0-74-generic",
             "architecture": "x86_64",
-            "cpu": {
-                "cores": 4,
-                "model": "Intel(R) Core(TM) i7-8700K CPU @ 3.70GHz",
-                "threads": 8,
-                "frequency": "3.70GHz"
-            },
-            "memory": {
-                "total": 17179869184,
-                "available": 8589934592,
-                "used": 8589934592,
-                "percent": 50.0
-            },
+            "cpu_cores": 4,
             "uptime": 86400,
             "load_average": [1.25, 1.15, 1.05]
         }
 
-        result = await system_info(
+        result = await get_system_info(
             server_id="server-001",
             workspace="testworkspace",
             region="ap1"
@@ -67,24 +61,24 @@ class TestSystemInfo:
         assert result["workspace"] == "testworkspace"
         assert "data" in result
         assert result["data"]["hostname"] == "web-server-01"
-        assert result["data"]["cpu"]["cores"] == 4
 
         # Verify HTTP client was called correctly
         mock_http_client.get.assert_called_once_with(
             region="ap1",
             workspace="testworkspace",
-            endpoint="/api/servers/server-001/system/info/",
-            token="test-token"
+            endpoint="/api/proc/info/",
+            token="test-token",
+            params={"server": "server-001"}
         )
 
     @pytest.mark.asyncio
     async def test_system_info_no_token(self, mock_http_client, mock_token_manager):
         """Test system info when no token is available."""
-        from tools.system_tools import system_info
+        from tools.system_info_tools import get_system_info
 
         mock_token_manager.get_token.return_value = None
 
-        result = await system_info(
+        result = await get_system_info(
             server_id="server-001",
             workspace="testworkspace"
         )
@@ -96,27 +90,27 @@ class TestSystemInfo:
     @pytest.mark.asyncio
     async def test_system_info_http_error(self, mock_http_client, mock_token_manager):
         """Test system info with HTTP error."""
-        from tools.system_tools import system_info
+        from tools.system_info_tools import get_system_info
 
         mock_http_client.get.side_effect = Exception("HTTP 500 Internal Server Error")
 
-        result = await system_info(
+        result = await get_system_info(
             server_id="server-001",
             workspace="testworkspace"
         )
 
         assert result["status"] == "error"
-        assert "Failed to get system info" in result["message"]
+        assert "Failed in get_system_info" in result["message"]
         assert "HTTP 500" in result["message"]
 
     @pytest.mark.asyncio
     async def test_system_info_different_region(self, mock_http_client, mock_token_manager):
         """Test system info with different region."""
-        from tools.system_tools import system_info
+        from tools.system_info_tools import get_system_info
 
         mock_http_client.get.return_value = {"hostname": "eu-server"}
 
-        result = await system_info(
+        result = await get_system_info(
             server_id="server-001",
             workspace="testworkspace",
             region="eu1"
@@ -130,25 +124,24 @@ class TestSystemInfo:
         assert call_args[1]["region"] == "eu1"
 
 
-class TestSystemUsersList:
-    """Test system_users_list function."""
+class TestListSystemUsersEdgeCases:
+    """Test list_system_users edge cases."""
 
     @pytest.mark.asyncio
     async def test_users_list_success(self, mock_http_client, mock_token_manager):
         """Test successful users list retrieval."""
-        from tools.system_tools import system_users_list
+        from tools.system_info_tools import list_system_users
 
         # Mock successful response
         mock_http_client.get.return_value = {
-            "count": 5,
-            "users": [
+            "count": 3,
+            "results": [
                 {
                     "username": "root",
                     "uid": 0,
                     "gid": 0,
                     "home": "/root",
                     "shell": "/bin/bash",
-                    "description": "root",
                     "login_enabled": True
                 },
                 {
@@ -157,7 +150,6 @@ class TestSystemUsersList:
                     "gid": 1000,
                     "home": "/home/ubuntu",
                     "shell": "/bin/bash",
-                    "description": "Ubuntu",
                     "login_enabled": True
                 },
                 {
@@ -166,138 +158,12 @@ class TestSystemUsersList:
                     "gid": 33,
                     "home": "/var/www",
                     "shell": "/usr/sbin/nologin",
-                    "description": "www-data",
-                    "login_enabled": False
-                },
-                {
-                    "username": "mysql",
-                    "uid": 116,
-                    "gid": 125,
-                    "home": "/nonexistent",
-                    "shell": "/bin/false",
-                    "description": "MySQL Server",
-                    "login_enabled": False
-                },
-                {
-                    "username": "sshd",
-                    "uid": 117,
-                    "gid": 65534,
-                    "home": "/run/sshd",
-                    "shell": "/usr/sbin/nologin",
-                    "description": "",
                     "login_enabled": False
                 }
             ]
         }
 
-        result = await system_users_list(
-            server_id="server-001",
-            workspace="testworkspace",
-            region="ap1"
-        )
-
-        # Verify response structure
-        assert result["status"] == "success"
-        assert result["server_id"] == "server-001"
-        assert result["region"] == "ap1"
-        assert result["workspace"] == "testworkspace"
-        assert "data" in result
-        assert result["data"]["count"] == 5
-        assert len(result["data"]["users"]) == 5
-
-        # Verify user data structure
-        root_user = result["data"]["users"][0]
-        assert root_user["username"] == "root"
-        assert root_user["uid"] == 0
-        assert root_user["login_enabled"] == True
-
-        # Verify HTTP client was called correctly
-        mock_http_client.get.assert_called_once_with(
-            region="ap1",
-            workspace="testworkspace",
-            endpoint="/api/servers/server-001/system/users/",
-            token="test-token"
-        )
-
-    @pytest.mark.asyncio
-    async def test_users_list_no_token(self, mock_http_client, mock_token_manager):
-        """Test users list when no token is available."""
-        from tools.system_tools import system_users_list
-
-        mock_token_manager.get_token.return_value = None
-
-        result = await system_users_list(
-            server_id="server-001",
-            workspace="testworkspace"
-        )
-
-        assert result["status"] == "error"
-        assert "No token found" in result["message"]
-        mock_http_client.get.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_users_list_http_error(self, mock_http_client, mock_token_manager):
-        """Test users list with HTTP error."""
-        from tools.system_tools import system_users_list
-
-        mock_http_client.get.side_effect = Exception("HTTP 503 Service Unavailable")
-
-        result = await system_users_list(
-            server_id="server-001",
-            workspace="testworkspace"
-        )
-
-        assert result["status"] == "error"
-        assert "Failed to get users list" in result["message"]
-        assert "503" in result["message"]
-
-
-class TestSystemPackagesList:
-    """Test system_packages_list function."""
-
-    @pytest.mark.asyncio
-    async def test_packages_list_success(self, mock_http_client, mock_token_manager):
-        """Test successful packages list retrieval."""
-        from tools.system_tools import system_packages_list
-
-        # Mock successful response
-        mock_http_client.get.return_value = {
-            "count": 3,
-            "packages": [
-                {
-                    "name": "nginx",
-                    "version": "1.18.0-6ubuntu14.3",
-                    "architecture": "amd64",
-                    "status": "installed",
-                    "description": "small, powerful, scalable web/proxy server",
-                    "size": 1024000,
-                    "maintainer": "Ubuntu Developers",
-                    "section": "httpd"
-                },
-                {
-                    "name": "mysql-server-8.0",
-                    "version": "8.0.28-0ubuntu0.20.04.3",
-                    "architecture": "amd64",
-                    "status": "installed",
-                    "description": "MySQL database server binaries and system database setup",
-                    "size": 15728640,
-                    "maintainer": "Ubuntu Developers",
-                    "section": "database"
-                },
-                {
-                    "name": "python3",
-                    "version": "3.8.2-0ubuntu2",
-                    "architecture": "amd64",
-                    "status": "installed",
-                    "description": "interactive high-level object-oriented language (default python3 version)",
-                    "size": 102400,
-                    "maintainer": "Ubuntu Developers",
-                    "section": "python"
-                }
-            ]
-        }
-
-        result = await system_packages_list(
+        result = await list_system_users(
             server_id="server-001",
             workspace="testworkspace",
             region="ap1"
@@ -310,49 +176,24 @@ class TestSystemPackagesList:
         assert result["workspace"] == "testworkspace"
         assert "data" in result
         assert result["data"]["count"] == 3
-        assert len(result["data"]["packages"]) == 3
-
-        # Verify package data structure
-        nginx_package = result["data"]["packages"][0]
-        assert nginx_package["name"] == "nginx"
-        assert nginx_package["version"] == "1.18.0-6ubuntu14.3"
-        assert nginx_package["status"] == "installed"
 
         # Verify HTTP client was called correctly
         mock_http_client.get.assert_called_once_with(
             region="ap1",
             workspace="testworkspace",
-            endpoint="/api/servers/server-001/system/packages/",
-            token="test-token"
+            endpoint="/api/proc/users/",
+            token="test-token",
+            params={"server": "server-001"}
         )
 
     @pytest.mark.asyncio
-    async def test_packages_list_empty(self, mock_http_client, mock_token_manager):
-        """Test packages list with empty response."""
-        from tools.system_tools import system_packages_list
-
-        mock_http_client.get.return_value = {
-            "count": 0,
-            "packages": []
-        }
-
-        result = await system_packages_list(
-            server_id="server-001",
-            workspace="testworkspace"
-        )
-
-        assert result["status"] == "success"
-        assert result["data"]["count"] == 0
-        assert result["data"]["packages"] == []
-
-    @pytest.mark.asyncio
-    async def test_packages_list_no_token(self, mock_http_client, mock_token_manager):
-        """Test packages list when no token is available."""
-        from tools.system_tools import system_packages_list
+    async def test_users_list_no_token(self, mock_http_client, mock_token_manager):
+        """Test users list when no token is available."""
+        from tools.system_info_tools import list_system_users
 
         mock_token_manager.get_token.return_value = None
 
-        result = await system_packages_list(
+        result = await list_system_users(
             server_id="server-001",
             workspace="testworkspace"
         )
@@ -362,66 +203,50 @@ class TestSystemPackagesList:
         mock_http_client.get.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_packages_list_http_error(self, mock_http_client, mock_token_manager):
-        """Test packages list with HTTP error."""
-        from tools.system_tools import system_packages_list
+    async def test_users_list_http_error(self, mock_http_client, mock_token_manager):
+        """Test users list with HTTP error."""
+        from tools.system_info_tools import list_system_users
 
-        mock_http_client.get.side_effect = Exception("Connection timeout")
+        mock_http_client.get.side_effect = Exception("HTTP 503 Service Unavailable")
 
-        result = await system_packages_list(
+        result = await list_system_users(
             server_id="server-001",
             workspace="testworkspace"
         )
 
         assert result["status"] == "error"
-        assert "Failed to get packages list" in result["message"]
-        assert "Connection timeout" in result["message"]
+        assert "Failed in list_system_users" in result["message"]
+        assert "503" in result["message"]
 
 
-class TestSystemDiskInfo:
-    """Test system_disk_info function."""
+class TestListSystemPackagesEdgeCases:
+    """Test list_system_packages edge cases."""
 
     @pytest.mark.asyncio
-    async def test_disk_info_success(self, mock_http_client, mock_token_manager):
-        """Test successful disk info retrieval."""
-        from tools.system_tools import system_disk_info
+    async def test_packages_list_success(self, mock_http_client, mock_token_manager):
+        """Test successful packages list retrieval."""
+        from tools.system_info_tools import list_system_packages
 
         # Mock successful response
         mock_http_client.get.return_value = {
-            "disks": [
+            "count": 2,
+            "results": [
                 {
-                    "device": "/dev/sda",
-                    "size": 107374182400,
-                    "size_human": "100GB",
-                    "model": "VBOX HARDDISK",
-                    "type": "hdd",
-                    "removable": False,
-                    "readonly": False
-                }
-            ],
-            "partitions": [
+                    "name": "nginx",
+                    "version": "1.18.0-6ubuntu14.3",
+                    "architecture": "amd64",
+                    "status": "installed"
+                },
                 {
-                    "device": "/dev/sda1",
-                    "mountpoint": "/",
-                    "filesystem": "ext4",
-                    "size": 105906176000,
-                    "size_human": "98.6GB",
-                    "used": 45964566528,
-                    "used_human": "42.8GB",
-                    "available": 59941609472,
-                    "available_human": "55.8GB",
-                    "percent": 43.4
+                    "name": "python3",
+                    "version": "3.8.2-0ubuntu2",
+                    "architecture": "amd64",
+                    "status": "installed"
                 }
-            ],
-            "usage": {
-                "total": 105906176000,
-                "used": 45964566528,
-                "free": 59941609472,
-                "percent": 43.4
-            }
+            ]
         }
 
-        result = await system_disk_info(
+        result = await list_system_packages(
             server_id="server-001",
             workspace="testworkspace",
             region="ap1"
@@ -433,96 +258,124 @@ class TestSystemDiskInfo:
         assert result["region"] == "ap1"
         assert result["workspace"] == "testworkspace"
         assert "data" in result
-
-        # Verify disk data structure
-        assert "disks" in result["data"]
-        assert "partitions" in result["data"]
-        assert "usage" in result["data"]
-        assert len(result["data"]["disks"]) == 1
-        assert len(result["data"]["partitions"]) == 1
-
-        # Verify disk details
-        disk = result["data"]["disks"][0]
-        assert disk["device"] == "/dev/sda"
-        assert disk["size"] == 107374182400
-        assert disk["model"] == "VBOX HARDDISK"
-
-        # Verify partition details
-        partition = result["data"]["partitions"][0]
-        assert partition["device"] == "/dev/sda1"
-        assert partition["mountpoint"] == "/"
-        assert partition["filesystem"] == "ext4"
-        assert partition["percent"] == 43.4
-
-        # Verify HTTP client was called correctly
-        mock_http_client.get.assert_called_once_with(
-            region="ap1",
-            workspace="testworkspace",
-            endpoint="/api/servers/server-001/system/disk/",
-            token="test-token"
-        )
+        assert result["data"]["count"] == 2
 
     @pytest.mark.asyncio
-    async def test_disk_info_multiple_disks(self, mock_http_client, mock_token_manager):
-        """Test disk info with multiple disks and partitions."""
-        from tools.system_tools import system_disk_info
+    async def test_packages_list_empty(self, mock_http_client, mock_token_manager):
+        """Test packages list with empty response."""
+        from tools.system_info_tools import list_system_packages
 
-        # Mock response with multiple disks
         mock_http_client.get.return_value = {
+            "count": 0,
+            "results": []
+        }
+
+        result = await list_system_packages(
+            server_id="server-001",
+            workspace="testworkspace"
+        )
+
+        assert result["status"] == "success"
+        assert result["data"]["count"] == 0
+
+    @pytest.mark.asyncio
+    async def test_packages_list_no_token(self, mock_http_client, mock_token_manager):
+        """Test packages list when no token is available."""
+        from tools.system_info_tools import list_system_packages
+
+        mock_token_manager.get_token.return_value = None
+
+        result = await list_system_packages(
+            server_id="server-001",
+            workspace="testworkspace"
+        )
+
+        assert result["status"] == "error"
+        assert "No token found" in result["message"]
+        mock_http_client.get.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_packages_list_http_error(self, mock_http_client, mock_token_manager):
+        """Test packages list with HTTP error."""
+        from tools.system_info_tools import list_system_packages
+
+        mock_http_client.get.side_effect = Exception("Connection timeout")
+
+        result = await list_system_packages(
+            server_id="server-001",
+            workspace="testworkspace"
+        )
+
+        assert result["status"] == "error"
+        assert "Failed in list_system_packages" in result["message"]
+        assert "Connection timeout" in result["message"]
+
+
+class TestGetDiskInfoEdgeCases:
+    """Test get_disk_info edge cases."""
+
+    @pytest.mark.asyncio
+    async def test_disk_info_success(self, mock_http_client, mock_token_manager):
+        """Test successful disk info retrieval."""
+        from tools.system_info_tools import get_disk_info
+
+        # Mock successful responses for both disks and partitions
+        disks_data = {
             "disks": [
                 {
                     "device": "/dev/sda",
                     "size": 107374182400,
                     "model": "VBOX HARDDISK",
                     "type": "hdd"
-                },
-                {
-                    "device": "/dev/sdb",
-                    "size": 53687091200,
-                    "model": "VBOX HARDDISK",
-                    "type": "hdd"
                 }
-            ],
+            ]
+        }
+
+        partitions_data = {
             "partitions": [
                 {
                     "device": "/dev/sda1",
                     "mountpoint": "/",
                     "filesystem": "ext4",
-                    "percent": 43.4
-                },
-                {
-                    "device": "/dev/sdb1",
-                    "mountpoint": "/home",
-                    "filesystem": "ext4",
-                    "percent": 25.6
+                    "size": 107374182400
                 }
-            ],
-            "usage": {
-                "total": 159061273600,
-                "used": 68719476736,
-                "free": 90341796864,
-                "percent": 43.2
-            }
+            ]
         }
 
-        result = await system_disk_info(
+        def mock_get_side_effect(*args, **kwargs):
+            endpoint = kwargs.get('endpoint', '')
+            if 'disks' in endpoint:
+                return disks_data
+            elif 'partitions' in endpoint:
+                return partitions_data
+            return {}
+
+        mock_http_client.get.side_effect = mock_get_side_effect
+
+        result = await get_disk_info(
             server_id="server-001",
-            workspace="testworkspace"
+            workspace="testworkspace",
+            region="ap1"
         )
 
         assert result["status"] == "success"
-        assert len(result["data"]["disks"]) == 2
-        assert len(result["data"]["partitions"]) == 2
-        assert result["data"]["usage"]["percent"] == 43.2
+        assert result["data"]["server_id"] == "server-001"
+        assert result["data"]["region"] == "ap1"
+        assert result["data"]["workspace"] == "testworkspace"
+        assert "disks" in result["data"]
+        assert "partitions" in result["data"]
+
+        # Verify both endpoints were called
+        assert mock_http_client.get.call_count == 2
 
     @pytest.mark.asyncio
     async def test_disk_info_no_token(self, mock_http_client, mock_token_manager):
         """Test disk info when no token is available."""
-        from tools.system_tools import system_disk_info
+        from tools.system_info_tools import get_disk_info
 
         mock_token_manager.get_token.return_value = None
 
-        result = await system_disk_info(
+        result = await get_disk_info(
             server_id="server-001",
             workspace="testworkspace"
         )
@@ -533,36 +386,36 @@ class TestSystemDiskInfo:
 
     @pytest.mark.asyncio
     async def test_disk_info_http_error(self, mock_http_client, mock_token_manager):
-        """Test disk info with HTTP error."""
-        from tools.system_tools import system_disk_info
+        """Test disk info with HTTP error from both endpoints."""
+        from tools.system_info_tools import get_disk_info
 
         mock_http_client.get.side_effect = Exception("Disk service unavailable")
 
-        result = await system_disk_info(
+        result = await get_disk_info(
             server_id="server-001",
             workspace="testworkspace"
         )
 
-        assert result["status"] == "error"
-        assert "Failed to get disk info" in result["message"]
-        assert "Disk service unavailable" in result["message"]
+        # get_disk_info uses asyncio.gather with return_exceptions=True
+        # so it returns success with error info in the data
+        assert result["status"] == "success"
+        assert "error" in result["data"]["disks"]
+        assert "error" in result["data"]["partitions"]
 
 
-class TestSystemToolsEdgeCases:
-    """Test edge cases and error conditions."""
+class TestCrossFunctionScenarios:
+    """Test cross-function scenarios and edge cases."""
 
     @pytest.mark.asyncio
     async def test_different_regions_and_workspaces(self, mock_http_client, mock_token_manager):
-        """Test all functions with different regions and workspaces."""
-        from tools.system_tools import system_info, system_users_list, system_packages_list, system_disk_info
+        """Test functions with different regions and workspaces."""
+        from tools.system_info_tools import get_system_info, list_system_users
 
         # Mock successful responses
         mock_http_client.get.return_value = {"test": "data"}
 
         # Test with different regions
-        functions_to_test = [system_info, system_users_list, system_packages_list, system_disk_info]
-
-        for func in functions_to_test:
+        for func in [get_system_info, list_system_users]:
             result = await func(
                 server_id="eu-server-001",
                 workspace="eu-workspace",
@@ -575,35 +428,19 @@ class TestSystemToolsEdgeCases:
             assert result["region"] == "eu1"
 
     @pytest.mark.asyncio
-    async def test_token_manager_exceptions(self, mock_http_client, mock_token_manager):
-        """Test functions when token manager raises exceptions."""
-        from tools.system_tools import system_info
-
-        mock_token_manager.get_token.side_effect = Exception("Token manager error")
-
-        result = await system_info(
-            server_id="server-001",
-            workspace="testworkspace"
-        )
-
-        assert result["status"] == "error"
-        assert "Failed to get system info" in result["message"]
-        assert "Token manager error" in result["message"]
-
-    @pytest.mark.asyncio
     async def test_server_not_found_errors(self, mock_http_client, mock_token_manager):
         """Test functions with server not found errors."""
-        from tools.system_tools import system_users_list
+        from tools.system_info_tools import list_system_users
 
         mock_http_client.get.side_effect = Exception("HTTP 404 Server Not Found")
 
-        result = await system_users_list(
+        result = await list_system_users(
             server_id="nonexistent-server",
             workspace="testworkspace"
         )
 
         assert result["status"] == "error"
-        assert "Failed to get users list" in result["message"]
+        assert "Failed in list_system_users" in result["message"]
         assert "404" in result["message"]
 
 

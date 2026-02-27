@@ -1,28 +1,25 @@
 # main.py
 import argparse
-import sys
 from pathlib import Path
 
 from server import run
 from utils.logger import get_logger
-from utils.token_manager import TokenManager
 
-import tools.command_tools
-import tools.events_tools
-import tools.iam_tools
-import tools.metrics_tools
-import tools.server_tools
-import tools.system_info_tools
-import tools.webftp_tools
-import tools.websh_tools
-import tools.workspace_tools
+import tools.command_tools  # noqa: F401 - side-effect: registers MCP tools
+import tools.events_tools  # noqa: F401
+import tools.iam_tools  # noqa: F401
+import tools.metrics_tools  # noqa: F401
+import tools.server_tools  # noqa: F401
+import tools.system_info_tools  # noqa: F401
+import tools.webftp_tools  # noqa: F401
+import tools.websh_tools  # noqa: F401
+import tools.workspace_tools  # noqa: F401
 
 logger = get_logger("main")
 
 
 def check_token_exists() -> bool:
     """Check if any token configuration exists."""
-    tm = TokenManager()
     global_path = Path.home() / ".alpacon-mcp" / "token.json"
     local_path = Path("config") / "token.json"
     return global_path.exists() or local_path.exists()

@@ -57,7 +57,7 @@ async def get_or_create_channel(
                 await websocket.ping()
                 # Connection still alive, reuse it
                 return channel_id, session_info
-            except:
+            except Exception:
                 # Connection dead, clean up
                 if channel_id in websocket_pool:
                     del websocket_pool[channel_id]
@@ -114,10 +114,10 @@ async def get_or_create_channel(
                         session_pool[pool_key] = session_detail
 
                         return channel_id, session_detail
-                except:
+                except Exception:
                     # This session is not reusable, try next one
                     continue
-    except:
+    except Exception:
         # If fetching sessions fails, just proceed to create new one
         pass
 
@@ -361,7 +361,7 @@ async def websh_session_reconnect(
 
     # First, verify the session exists and belongs to current user
     try:
-        session_info = await http_client.get(
+        await http_client.get(
             region=region,
             workspace=workspace,
             endpoint=f"/api/websh/sessions/{session_id}/",
@@ -501,7 +501,7 @@ async def websh_channels_list() -> Dict[str, Any]:
                 # Quick ping test to verify connection
                 await websocket.ping()
                 is_open = True
-            except:
+            except Exception:
                 is_open = False
 
             channels.append({
@@ -551,7 +551,7 @@ async def websh_channel_disconnect(
         # Close WebSocket connection
         try:
             await websocket.close()
-        except:
+        except Exception:
             pass  # Connection might already be closed
 
         # Remove from pool

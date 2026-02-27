@@ -1,22 +1,18 @@
 """
 Unit tests for IAM tools module.
 
-Tests all IAM management functions including user, group, role, and permission management.
+Tests all IAM management functions including user and group management.
 """
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 from tools.iam_tools import (
-    iam_users_list,
-    iam_user_get,
-    iam_user_create,
-    iam_user_update,
-    iam_user_delete,
-    iam_user_permissions_get,
-    iam_user_assign_role,
-    iam_groups_list,
-    iam_group_create,
-    iam_roles_list,
-    iam_permissions_list
+    list_iam_users,
+    get_iam_user,
+    create_iam_user,
+    update_iam_user,
+    delete_iam_user,
+    list_iam_groups,
+    create_iam_group,
 )
 
 
@@ -24,7 +20,6 @@ from tools.iam_tools import (
 def mock_http_client():
     """Mock HTTP client for testing."""
     with patch('tools.iam_tools.http_client') as mock_client:
-        # Mock the async methods properly
         mock_client.get = AsyncMock()
         mock_client.post = AsyncMock()
         mock_client.patch = AsyncMock()
@@ -35,7 +30,7 @@ def mock_http_client():
 @pytest.fixture
 def mock_token_manager():
     """Mock token manager for testing."""
-    with patch('tools.iam_tools.token_manager') as mock_manager:
+    with patch('utils.common.token_manager') as mock_manager:
         mock_manager.get_token.return_value = "test-token"
         yield mock_manager
 
@@ -89,11 +84,11 @@ class TestIAMUsersManagement:
     """Test user management functions."""
 
     @pytest.mark.asyncio
-    async def test_iam_users_list_success(self, mock_http_client, mock_token_manager, sample_users_list):
+    async def test_list_iam_users_success(self, mock_http_client, mock_token_manager, sample_users_list):
         """Test successful users list retrieval."""
         mock_http_client.get.return_value = sample_users_list
 
-        result = await iam_users_list(
+        result = await list_iam_users(
             workspace="testworkspace",
             region="ap1",
             page=1,
@@ -113,22 +108,22 @@ class TestIAMUsersManagement:
         )
 
     @pytest.mark.asyncio
-    async def test_iam_users_list_no_token(self, mock_http_client, mock_token_manager):
+    async def test_list_iam_users_no_token(self, mock_http_client, mock_token_manager):
         """Test users list with no token."""
         mock_token_manager.get_token.return_value = None
 
-        result = await iam_users_list(workspace="testworkspace")
+        result = await list_iam_users(workspace="testworkspace")
 
         assert result["status"] == "error"
         assert "No token found" in result["message"]
         mock_http_client.get.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_iam_users_list_pagination(self, mock_http_client, mock_token_manager, sample_users_list):
+    async def test_list_iam_users_pagination(self, mock_http_client, mock_token_manager, sample_users_list):
         """Test users list with pagination."""
         mock_http_client.get.return_value = sample_users_list
 
-        result = await iam_users_list(
+        result = await list_iam_users(
             workspace="testworkspace",
             page=2,
             page_size=50
@@ -144,11 +139,11 @@ class TestIAMUsersManagement:
         )
 
     @pytest.mark.asyncio
-    async def test_iam_user_get_success(self, mock_http_client, mock_token_manager, sample_user):
+    async def test_get_iam_user_success(self, mock_http_client, mock_token_manager, sample_user):
         """Test successful user retrieval."""
         mock_http_client.get.return_value = sample_user
 
-        result = await iam_user_get(
+        result = await get_iam_user(
             user_id="user-123",
             workspace="testworkspace"
         )
@@ -164,11 +159,11 @@ class TestIAMUsersManagement:
         )
 
     @pytest.mark.asyncio
-    async def test_iam_user_create_success(self, mock_http_client, mock_token_manager, sample_user):
+    async def test_create_iam_user_success(self, mock_http_client, mock_token_manager, sample_user):
         """Test successful user creation."""
         mock_http_client.post.return_value = sample_user
 
-        result = await iam_user_create(
+        result = await create_iam_user(
             username="testuser",
             email="test@example.com",
             first_name="Test",
@@ -198,13 +193,13 @@ class TestIAMUsersManagement:
         )
 
     @pytest.mark.asyncio
-    async def test_iam_user_update_success(self, mock_http_client, mock_token_manager, sample_user):
+    async def test_update_iam_user_success(self, mock_http_client, mock_token_manager, sample_user):
         """Test successful user update."""
         updated_user = sample_user.copy()
         updated_user["first_name"] = "Updated"
         mock_http_client.patch.return_value = updated_user
 
-        result = await iam_user_update(
+        result = await update_iam_user(
             user_id="user-123",
             workspace="testworkspace",
             first_name="Updated",
@@ -228,11 +223,11 @@ class TestIAMUsersManagement:
         )
 
     @pytest.mark.asyncio
-    async def test_iam_user_delete_success(self, mock_http_client, mock_token_manager):
+    async def test_delete_iam_user_success(self, mock_http_client, mock_token_manager):
         """Test successful user deletion."""
         mock_http_client.delete.return_value = {"message": "User deleted successfully"}
 
-        result = await iam_user_delete(
+        result = await delete_iam_user(
             user_id="user-123",
             workspace="testworkspace"
         )
@@ -248,67 +243,12 @@ class TestIAMUsersManagement:
             token="test-token"
         )
 
-    @pytest.mark.asyncio
-    async def test_iam_user_permissions_get_success(self, mock_http_client, mock_token_manager):
-        """Test successful user permissions retrieval."""
-        permissions_data = {
-            "effective_permissions": [
-                {"name": "servers.view", "codename": "view_server"},
-                {"name": "users.create", "codename": "add_user"}
-            ],
-            "group_permissions": [
-                {"group": "admins", "permissions": ["servers.view", "users.create"]}
-            ]
-        }
-        mock_http_client.get.return_value = permissions_data
-
-        result = await iam_user_permissions_get(
-            user_id="user-123",
-            workspace="testworkspace"
-        )
-
-        assert result["status"] == "success"
-        assert result["data"] == permissions_data
-        assert len(result["data"]["effective_permissions"]) == 2
-
-        mock_http_client.get.assert_called_once_with(
-            region="ap1",
-            workspace="testworkspace",
-            endpoint="/api/iam/users/user-123/permissions/",
-            token="test-token"
-        )
-
-    @pytest.mark.asyncio
-    async def test_iam_user_assign_role_success(self, mock_http_client, mock_token_manager):
-        """Test successful user role assignment."""
-        role_data = {"message": "Role assigned successfully"}
-        mock_http_client.post.return_value = role_data
-
-        result = await iam_user_assign_role(
-            user_id="user-123",
-            role_id="role-456",
-            workspace="testworkspace"
-        )
-
-        assert result["status"] == "success"
-        assert result["data"]["message"] == "Role assigned successfully"
-        assert result["user_id"] == "user-123"
-        assert result["role_id"] == "role-456"
-
-        mock_http_client.post.assert_called_once_with(
-            region="ap1",
-            workspace="testworkspace",
-            endpoint="/api/iam/users/user-123/roles/",
-            token="test-token",
-            data={"role_id": "role-456"}
-        )
-
 
 class TestIAMGroupsManagement:
     """Test group management functions."""
 
     @pytest.mark.asyncio
-    async def test_iam_groups_list_success(self, mock_http_client, mock_token_manager):
+    async def test_list_iam_groups_success(self, mock_http_client, mock_token_manager):
         """Test successful groups list retrieval."""
         groups_data = {
             "count": 3,
@@ -320,7 +260,7 @@ class TestIAMGroupsManagement:
         }
         mock_http_client.get.return_value = groups_data
 
-        result = await iam_groups_list(workspace="testworkspace")
+        result = await list_iam_groups(workspace="testworkspace")
 
         assert result["status"] == "success"
         assert result["data"] == groups_data
@@ -335,7 +275,7 @@ class TestIAMGroupsManagement:
         )
 
     @pytest.mark.asyncio
-    async def test_iam_group_create_success(self, mock_http_client, mock_token_manager):
+    async def test_create_iam_group_success(self, mock_http_client, mock_token_manager):
         """Test successful group creation."""
         group_data = {
             "id": "group-123",
@@ -344,7 +284,7 @@ class TestIAMGroupsManagement:
         }
         mock_http_client.post.return_value = group_data
 
-        result = await iam_group_create(
+        result = await create_iam_group(
             name="developers",
             workspace="testworkspace",
             permissions=["servers.view", "code.deploy"]
@@ -367,64 +307,6 @@ class TestIAMGroupsManagement:
         )
 
 
-class TestIAMRolesAndPermissions:
-    """Test roles and permissions functions."""
-
-    @pytest.mark.asyncio
-    async def test_iam_roles_list_success(self, mock_http_client, mock_token_manager):
-        """Test successful roles list retrieval."""
-        roles_data = {
-            "count": 2,
-            "results": [
-                {"id": "role-1", "name": "admin", "permissions": ["*"]},
-                {"id": "role-2", "name": "viewer", "permissions": ["*.view"]}
-            ]
-        }
-        mock_http_client.get.return_value = roles_data
-
-        result = await iam_roles_list(workspace="testworkspace")
-
-        assert result["status"] == "success"
-        assert result["data"] == roles_data
-        assert len(result["data"]["results"]) == 2
-
-        mock_http_client.get.assert_called_once_with(
-            region="ap1",
-            workspace="testworkspace",
-            endpoint="/api/iam/roles/",
-            token="test-token",
-            params={}
-        )
-
-    @pytest.mark.asyncio
-    async def test_iam_permissions_list_success(self, mock_http_client, mock_token_manager):
-        """Test successful permissions list retrieval."""
-        permissions_data = {
-            "count": 10,
-            "results": [
-                {"name": "servers.view", "codename": "view_server"},
-                {"name": "servers.create", "codename": "add_server"},
-                {"name": "users.view", "codename": "view_user"},
-                {"name": "users.create", "codename": "add_user"}
-            ]
-        }
-        mock_http_client.get.return_value = permissions_data
-
-        result = await iam_permissions_list(workspace="testworkspace")
-
-        assert result["status"] == "success"
-        assert result["data"] == permissions_data
-        assert len(result["data"]["results"]) == 4
-
-        mock_http_client.get.assert_called_once_with(
-            region="ap1",
-            workspace="testworkspace",
-            endpoint="/api/iam/permissions/",
-            token="test-token",
-            params={}
-        )
-
-
 class TestErrorHandling:
     """Test error handling across IAM functions."""
 
@@ -433,7 +315,7 @@ class TestErrorHandling:
         """Test HTTP error handling."""
         mock_http_client.get.side_effect = Exception("HTTP 404: Not Found")
 
-        result = await iam_user_get(
+        result = await get_iam_user(
             user_id="nonexistent",
             workspace="testworkspace"
         )
@@ -446,7 +328,7 @@ class TestErrorHandling:
         """Test missing token error handling."""
         mock_token_manager.get_token.return_value = None
 
-        result = await iam_user_create(
+        result = await create_iam_user(
             username="test",
             email="test@example.com",
             workspace="testworkspace"
@@ -465,8 +347,7 @@ class TestParameterValidation:
         """Test pagination parameter handling."""
         mock_http_client.get.return_value = {"count": 0, "results": []}
 
-        # Test with page and page_size
-        await iam_users_list(
+        await list_iam_users(
             workspace="test",
             page=2,
             page_size=50
@@ -485,8 +366,7 @@ class TestParameterValidation:
         """Test functions with optional parameters."""
         mock_http_client.post.return_value = sample_user
 
-        # Test user creation with minimal required parameters
-        await iam_user_create(
+        await create_iam_user(
             username="test",
             email="test@example.com",
             workspace="test"
@@ -511,8 +391,7 @@ class TestParameterValidation:
         """Test with different regions."""
         mock_http_client.get.return_value = {"count": 0, "results": []}
 
-        # Test users list with different region
-        await iam_users_list(
+        await list_iam_users(
             workspace="test",
             region="us1"
         )

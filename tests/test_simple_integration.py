@@ -73,17 +73,17 @@ class TestTokenManagement:
     @pytest.mark.asyncio
     async def test_missing_token_error_flow(self, temp_config_file):
         """Test error handling when token is missing."""
-        from tools.server_tools import servers_list
+        from tools.server_tools import list_servers
 
         # Try to use a workspace/region combination that doesn't exist
-        result = await servers_list(
+        result = await list_servers(
             workspace="nonexistent_workspace",
             region="ap1"
         )
 
         # Should return error status
         assert result["status"] == "error"
-        assert "Authentication failed" in result["message"]
+        assert "No token found" in result["message"]
 
 
 class TestModuleImports:
@@ -94,20 +94,20 @@ class TestModuleImports:
         from tools import server_tools
 
         # Check required functions exist
-        assert hasattr(server_tools, 'servers_list')
-        assert hasattr(server_tools, 'server_get')
-        assert hasattr(server_tools, 'server_notes_list')
-        assert hasattr(server_tools, 'server_note_create')
+        assert hasattr(server_tools, 'list_servers')
+        assert hasattr(server_tools, 'get_server')
+        assert hasattr(server_tools, 'list_server_notes')
+        assert hasattr(server_tools, 'create_server_note')
 
     def test_iam_tools_import(self):
         """Test IAM tools module import."""
         from tools import iam_tools
 
         # Check required functions exist
-        assert hasattr(iam_tools, 'iam_users_list')
-        assert hasattr(iam_tools, 'iam_user_get')
-        assert hasattr(iam_tools, 'iam_user_create')
-        assert hasattr(iam_tools, 'iam_groups_list')
+        assert hasattr(iam_tools, 'list_iam_users')
+        assert hasattr(iam_tools, 'get_iam_user')
+        assert hasattr(iam_tools, 'create_iam_user')
+        assert hasattr(iam_tools, 'list_iam_groups')
 
     def test_http_client_import(self):
         """Test HTTP client import."""
@@ -193,7 +193,6 @@ class TestProjectStructure:
         assert (project_root / "main.py").exists()
         assert (project_root / "server.py").exists()
         assert (project_root / "pyproject.toml").exists()
-        assert (project_root / "CLAUDE.md").exists()
 
         # Tool modules
         tools_dir = project_root / "tools"

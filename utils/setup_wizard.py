@@ -10,7 +10,7 @@ import os
 import sys
 from getpass import getpass
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Optional
 
 from .token_manager import TokenManager
 
@@ -140,7 +140,7 @@ def run_setup_wizard(force_local: bool = False, custom_path: Optional[str] = Non
     # Save config
     try:
         save_config(config, config_path)
-        print(f"\n✅ Configuration saved!")
+        print("\n✅ Configuration saved!")
         print(f"   📁 Location: {config_path}")
     except Exception as e:
         print(f"\n❌ Error saving configuration: {e}")
@@ -274,8 +274,8 @@ def test_credentials() -> None:
         print("   Run 'uvx alpacon-mcp setup' to configure credentials")
         return
 
-    print(f"\n✅ Token found")
-    print(f"🔍 Testing API connection...")
+    print("\n✅ Token found")
+    print("🔍 Testing API connection...")
 
     if test_connection(region, workspace, token):
         print("✅ Connection successful!")
@@ -286,8 +286,6 @@ def test_credentials() -> None:
 
 def show_config_info() -> None:
     """Show configuration information and status."""
-    from .token_manager import TokenManager
-
     print("\n" + "="*60)
     print("ℹ️  Configuration Information")
     print("="*60)
@@ -307,7 +305,6 @@ def show_config_info() -> None:
     print(f"  Status: {'✅ Exists' if local_exists else '❌ Not found'}")
 
     # Load and display workspaces
-    tm = TokenManager()
     global_config = load_existing_config(global_config_path) if global_exists else {}
     local_config = load_existing_config(local_config_path) if local_exists else {}
 
@@ -346,10 +343,10 @@ def show_config_info() -> None:
     # Summary
     print("\n📊 Summary:")
     print(f"  Total workspaces: {total_workspaces}")
-    print(f"  Configuration priority:")
-    print(f"    1. Environment variables")
-    print(f"    2. Local config (./config/token.json)")
-    print(f"    3. Global config (~/.alpacon-mcp/token.json)")
+    print("  Configuration priority:")
+    print("    1. Environment variables")
+    print("    2. Local config (./config/token.json)")
+    print("    3. Global config (~/.alpacon-mcp/token.json)")
 
     print("\n" + "="*60)
 
