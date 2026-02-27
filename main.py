@@ -5,6 +5,15 @@ from pathlib import Path
 from server import run
 from utils.logger import get_logger
 
+import tools.command_tools  # noqa: F401 - side-effect: registers MCP tools
+import tools.events_tools  # noqa: F401
+import tools.iam_tools  # noqa: F401
+import tools.metrics_tools  # noqa: F401
+import tools.server_tools  # noqa: F401
+import tools.system_info_tools  # noqa: F401
+import tools.webftp_tools  # noqa: F401
+import tools.websh_tools  # noqa: F401
+import tools.workspace_tools  # noqa: F401
 
 logger = get_logger("main")
 
