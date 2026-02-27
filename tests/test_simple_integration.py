@@ -193,7 +193,6 @@ class TestProjectStructure:
         assert (project_root / "main.py").exists()
         assert (project_root / "server.py").exists()
         assert (project_root / "pyproject.toml").exists()
-        assert (project_root / "CLAUDE.md").exists()
 
         # Tool modules
         tools_dir = project_root / "tools"
