@@ -2,7 +2,7 @@
 
 import re
 import uuid
-from typing import Any, Optional
+from typing import Any
 
 from utils.logger import get_logger
 
@@ -104,7 +104,7 @@ def validate_file_path(file_path: str, allow_relative: bool = False) -> bool:
 
 
 def format_user_friendly_error(
-    error_code: str, context: Optional[dict[str, Any]] = None
+    error_code: str, context: dict[str, Any] | None = None
 ) -> dict[str, Any]:
     """Format technical errors into user-friendly messages.
 

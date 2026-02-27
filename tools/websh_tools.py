@@ -2,7 +2,7 @@
 
 import asyncio
 import json
-from typing import Any, Optional
+from typing import Any
 
 import websockets
 
@@ -24,8 +24,8 @@ async def get_or_create_channel(
     server_id: str,
     workspace: str,
     region: str = 'ap1',
-    username: Optional[str] = None,
-    token: Optional[str] = None,
+    username: str | None = None,
+    token: str | None = None,
 ) -> tuple[str, dict[str, Any]]:
     """Get existing channel or create new session+channel for a server.
 
@@ -212,7 +212,7 @@ async def execute_command_via_channel(
 async def websh_session_create(
     server_id: str,
     workspace: str,
-    username: Optional[str] = None,
+    username: str | None = None,
     region: str = 'ap1',
     **kwargs,
 ) -> dict[str, Any]:
@@ -292,7 +292,7 @@ async def websh_session_create(
 
 @mcp_tool_handler(description='Get list of Websh sessions')
 async def websh_sessions_list(
-    workspace: str, server_id: Optional[str] = None, region: str = 'ap1', **kwargs
+    workspace: str, server_id: str | None = None, region: str = 'ap1', **kwargs
 ) -> dict[str, Any]:
     """Get list of Websh sessions.
 
@@ -713,7 +713,7 @@ async def execute_command(
     server_id: str,
     command: str,
     workspace: str,
-    username: Optional[str] = None,
+    username: str | None = None,
     region: str = 'ap1',
     timeout: int = 10,
     **kwargs,
@@ -780,7 +780,7 @@ async def execute_command_batch(
     server_id: str,
     commands: list[str],
     workspace: str,
-    username: Optional[str] = None,
+    username: str | None = None,
     region: str = 'ap1',
     timeout: int = 30,
     **kwargs,

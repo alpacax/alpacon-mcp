@@ -1,7 +1,7 @@
 """Common utilities for all MCP tools."""
 
 import importlib.metadata
-from typing import Any, Optional
+from typing import Any
 
 from utils.logger import get_logger
 from utils.token_manager import get_token_manager
@@ -21,7 +21,7 @@ except importlib.metadata.PackageNotFoundError:
 MCP_USER_AGENT = f'alpacon-mcp/{MCP_VERSION} (MCP-Server; persistent-pool) Python/3.12 websockets/15.0.1'
 
 
-def validate_token(region: str, workspace: str) -> Optional[str]:
+def validate_token(region: str, workspace: str) -> str | None:
     """Validate and retrieve token for given region and workspace.
 
     Args:

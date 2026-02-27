@@ -3,7 +3,7 @@
 import json
 import os
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from utils.logger import get_logger
 
@@ -13,7 +13,7 @@ logger = get_logger('token_manager')
 class TokenManager:
     """Manages API tokens for different regions and workspaces."""
 
-    def __init__(self, config_file: Optional[str] = None):
+    def __init__(self, config_file: str | None = None):
         """Initialize token manager.
 
         Args:
@@ -125,7 +125,7 @@ class TokenManager:
             'workspace': workspace,
         }
 
-    def get_token(self, region: str, workspace: str) -> Optional[str]:
+    def get_token(self, region: str, workspace: str) -> str | None:
         """Get token for specific region and workspace.
 
         Args:

@@ -1,7 +1,7 @@
 """Command execution tools for Alpacon MCP server - Refactored version."""
 
 import asyncio
-from typing import Any, Optional
+from typing import Any
 
 from utils.common import error_response, success_response
 from utils.decorators import mcp_tool_handler
@@ -14,9 +14,9 @@ async def execute_command_with_acl(
     command: str,
     workspace: str,
     shell: str = 'internal',
-    username: Optional[str] = None,
+    username: str | None = None,
     groupname: str = 'alpacon',
-    env: Optional[dict[str, str]] = None,
+    env: dict[str, str] | None = None,
     region: str = 'ap1',
     **kwargs,
 ) -> dict[str, Any]:
@@ -79,7 +79,7 @@ async def get_command_result(
 @mcp_tool_handler(description='List recent commands executed on servers')
 async def list_commands(
     workspace: str,
-    server_id: Optional[str] = None,
+    server_id: str | None = None,
     limit: int = 20,
     region: str = 'ap1',
     **kwargs,
@@ -118,9 +118,9 @@ async def execute_command_sync(
     command: str,
     workspace: str,
     shell: str = 'bash',
-    username: Optional[str] = None,
+    username: str | None = None,
     groupname: str = 'alpacon',
-    env: Optional[dict[str, str]] = None,
+    env: dict[str, str] | None = None,
     timeout: int = 30,
     region: str = 'ap1',
     **kwargs,
@@ -154,7 +154,7 @@ async def execute_command_sync(
     # Check if exec_data contains an error (like ACL permission denied)
     if isinstance(exec_data, dict) and 'error' in exec_data:
         return error_response(
-            f"Command execution failed: {exec_data.get('error', 'Unknown error')}",
+            f'Command execution failed: {exec_data.get("error", "Unknown error")}',
             workspace=workspace,
             region=region,
             details=exec_data,
@@ -231,9 +231,9 @@ async def execute_command_multi_server(
     command: str,
     workspace: str,
     shell: str = 'internal',
-    username: Optional[str] = None,
+    username: str | None = None,
     groupname: str = 'alpacon',
-    env: Optional[dict[str, str]] = None,
+    env: dict[str, str] | None = None,
     region: str = 'ap1',
     parallel: bool = True,
     **kwargs,

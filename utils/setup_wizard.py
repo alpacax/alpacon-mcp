@@ -10,7 +10,6 @@ import os
 import sys
 from getpass import getpass
 from pathlib import Path
-from typing import Optional
 
 from .token_manager import TokenManager
 
@@ -87,9 +86,7 @@ def print_mcp_config() -> None:
     print('\n' + '=' * 60)
 
 
-def run_setup_wizard(
-    force_local: bool = False, custom_path: Optional[str] = None
-) -> None:
+def run_setup_wizard(force_local: bool = False, custom_path: str | None = None) -> None:
     """
     Run interactive setup wizard for Alpacon MCP Server.
 
@@ -306,10 +303,10 @@ def show_config_info() -> None:
 
     print('\n📁 Configuration Files:')
     print(f'\n  Global: {global_config_path}')
-    print(f"  Status: {'✅ Exists' if global_exists else '❌ Not found'}")
+    print(f'  Status: {"✅ Exists" if global_exists else "❌ Not found"}')
 
     print(f'\n  Local:  {local_config_path}')
-    print(f"  Status: {'✅ Exists' if local_exists else '❌ Not found'}")
+    print(f'  Status: {"✅ Exists" if local_exists else "❌ Not found"}')
 
     # Load and display workspaces
     global_config = load_existing_config(global_config_path) if global_exists else {}

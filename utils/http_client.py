@@ -3,7 +3,7 @@
 import asyncio
 import json
 import time
-from typing import Any, Optional
+from typing import Any
 from urllib.parse import urljoin
 
 import httpx
@@ -25,7 +25,7 @@ class AlpaconHTTPClient:
         self.max_retry_delay = 30.0
 
         # Connection pooling
-        self._client: Optional[httpx.AsyncClient] = None
+        self._client: httpx.AsyncClient | None = None
         self._client_lock = asyncio.Lock()
 
         # Simple TTL cache
@@ -63,9 +63,7 @@ class AlpaconHTTPClient:
                 await self._client.aclose()
                 logger.debug('Closed HTTP client')
 
-    def _get_cache_key(
-        self, method: str, url: str, params: Optional[dict] = None
-    ) -> str:
+    def _get_cache_key(self, method: str, url: str, params: dict | None = None) -> str:
         """Generate cache key for request."""
         key_parts = [method, url]
         if params:
@@ -90,7 +88,7 @@ class AlpaconHTTPClient:
 
         return any(endpoint.startswith(cacheable) for cacheable in cacheable_endpoints)
 
-    def _get_cached_response(self, cache_key: str) -> Optional[dict[str, Any]]:
+    def _get_cached_response(self, cache_key: str) -> dict[str, Any] | None:
         """Get cached response if still valid."""
         if cache_key not in self._cache:
             return None
@@ -105,7 +103,7 @@ class AlpaconHTTPClient:
         return self._cache[cache_key]
 
     def _set_cached_response(
-        self, cache_key: str, response: dict[str, Any], ttl: Optional[float] = None
+        self, cache_key: str, response: dict[str, Any], ttl: float | None = None
     ):
         """Cache response with TTL."""
         self._cache[cache_key] = response
@@ -130,11 +128,11 @@ class AlpaconHTTPClient:
         self,
         method: str,
         url: str,
-        token: Optional[str] = None,
-        headers: Optional[dict[str, str]] = None,
-        json_data: Optional[dict[str, Any]] = None,
-        params: Optional[dict[str, str]] = None,
-        timeout: Optional[float] = None,
+        token: str | None = None,
+        headers: dict[str, str] | None = None,
+        json_data: dict[str, Any] | None = None,
+        params: dict[str, str] | None = None,
+        timeout: float | None = None,
     ) -> dict[str, Any]:
         """Execute HTTP request with retry logic.
 
@@ -176,7 +174,7 @@ class AlpaconHTTPClient:
         # Log request details (without sensitive data)
         logger.info(f'HTTP {method} request to {url}')
         logger.debug(
-            f"Request headers: {dict((k, v if k != 'Authorization' else '[REDACTED]') for k, v in request_headers.items())}"
+            f'Request headers: {dict((k, v if k != "Authorization" else "[REDACTED]") for k, v in request_headers.items())}'
         )
         if params:
             logger.debug(f'Request params: {params}')
@@ -388,7 +386,7 @@ class AlpaconHTTPClient:
         workspace: str,
         endpoint: str,
         token: str,
-        params: Optional[dict[str, str]] = None,
+        params: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         """Execute GET request.
 
@@ -415,7 +413,7 @@ class AlpaconHTTPClient:
         workspace: str,
         endpoint: str,
         token: str,
-        data: Optional[dict[str, Any]] = None,
+        data: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Execute POST request.
 
@@ -442,7 +440,7 @@ class AlpaconHTTPClient:
         workspace: str,
         endpoint: str,
         token: str,
-        data: Optional[dict[str, Any]] = None,
+        data: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Execute PUT request.
 
@@ -469,7 +467,7 @@ class AlpaconHTTPClient:
         workspace: str,
         endpoint: str,
         token: str,
-        data: Optional[dict[str, Any]] = None,
+        data: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Execute PATCH request.
 

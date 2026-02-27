@@ -1,7 +1,7 @@
 """System information tools for Alpacon MCP server."""
 
 import asyncio
-from typing import Any, Optional
+from typing import Any
 
 from utils.common import success_response
 from utils.decorators import mcp_tool_handler
@@ -72,7 +72,7 @@ async def get_os_version(
 async def list_system_users(
     server_id: str,
     workspace: str,
-    username_filter: Optional[str] = None,
+    username_filter: str | None = None,
     login_enabled_only: bool = False,
     region: str = 'ap1',
     **kwargs,
@@ -121,7 +121,7 @@ async def list_system_users(
 async def list_system_groups(
     server_id: str,
     workspace: str,
-    groupname_filter: Optional[str] = None,
+    groupname_filter: str | None = None,
     region: str = 'ap1',
     **kwargs,
 ) -> dict[str, Any]:
@@ -165,8 +165,8 @@ async def list_system_groups(
 async def list_system_packages(
     server_id: str,
     workspace: str,
-    package_name: Optional[str] = None,
-    architecture: Optional[str] = None,
+    package_name: str | None = None,
+    architecture: str | None = None,
     limit: int = 100,
     region: str = 'ap1',
     **kwargs,

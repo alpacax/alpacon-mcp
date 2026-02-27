@@ -1,6 +1,6 @@
 """IAM (Identity and Access Management) tools for Alpacon MCP server."""
 
-from typing import Any, Optional
+from typing import Any
 
 from server import mcp
 from utils.common import error_response, success_response
@@ -16,8 +16,8 @@ from utils.http_client import http_client
 async def list_iam_users(
     workspace: str,
     region: str = 'ap1',
-    page: Optional[int] = None,
-    page_size: Optional[int] = None,
+    page: int | None = None,
+    page_size: int | None = None,
     **kwargs,
 ) -> dict[str, Any]:
     """List all IAM users in workspace.
@@ -86,10 +86,10 @@ async def create_iam_user(
     username: str,
     email: str,
     workspace: str,
-    first_name: Optional[str] = None,
-    last_name: Optional[str] = None,
+    first_name: str | None = None,
+    last_name: str | None = None,
     is_active: bool = True,
-    groups: Optional[list[str]] = None,
+    groups: list[str] | None = None,
     region: str = 'ap1',
     **kwargs,
 ) -> dict[str, Any]:
@@ -138,11 +138,11 @@ async def create_iam_user(
 async def update_iam_user(
     user_id: str,
     workspace: str,
-    email: Optional[str] = None,
-    first_name: Optional[str] = None,
-    last_name: Optional[str] = None,
-    is_active: Optional[bool] = None,
-    groups: Optional[list[str]] = None,
+    email: str | None = None,
+    first_name: str | None = None,
+    last_name: str | None = None,
+    is_active: bool | None = None,
+    groups: list[str] | None = None,
     region: str = 'ap1',
     **kwargs,
 ) -> dict[str, Any]:
@@ -231,8 +231,8 @@ async def delete_iam_user(
 async def list_iam_groups(
     workspace: str,
     region: str = 'ap1',
-    page: Optional[int] = None,
-    page_size: Optional[int] = None,
+    page: int | None = None,
+    page_size: int | None = None,
     **kwargs,
 ) -> dict[str, Any]:
     """List all IAM groups in workspace.
@@ -271,8 +271,8 @@ async def list_iam_groups(
 async def create_iam_group(
     name: str,
     workspace: str,
-    description: Optional[str] = None,
-    permissions: Optional[list[str]] = None,
+    description: str | None = None,
+    permissions: list[str] | None = None,
     region: str = 'ap1',
     **kwargs,
 ) -> dict[str, Any]:

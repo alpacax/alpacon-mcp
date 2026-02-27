@@ -2,7 +2,7 @@
 
 import asyncio
 from datetime import UTC, datetime, timedelta
-from typing import Any, Optional
+from typing import Any
 
 from utils.common import error_response, success_response
 from utils.decorators import mcp_tool_handler
@@ -74,8 +74,8 @@ def parse_cpu_metrics(results: list) -> dict[str, Any]:
 async def get_cpu_usage(
     server_id: str,
     workspace: str,
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
     region: str = 'ap1',
     **kwargs,
 ) -> dict[str, Any]:
@@ -190,8 +190,8 @@ def parse_memory_metrics(results: list) -> dict[str, Any]:
 async def get_memory_usage(
     server_id: str,
     workspace: str,
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
     region: str = 'ap1',
     **kwargs,
 ) -> dict[str, Any]:
@@ -297,10 +297,10 @@ def parse_disk_metrics(results: list) -> dict[str, Any]:
 async def get_disk_usage(
     server_id: str,
     workspace: str,
-    device: Optional[str] = None,
-    partition: Optional[str] = None,
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
+    device: str | None = None,
+    partition: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
     region: str = 'ap1',
     **kwargs,
 ) -> dict[str, Any]:
@@ -490,9 +490,9 @@ def parse_network_metrics(results: list) -> dict[str, Any]:
 async def get_disk_io(
     server_id: str,
     workspace: str,
-    device: Optional[str] = None,
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
+    device: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
     region: str = 'ap1',
     **kwargs,
 ) -> dict[str, Any]:
@@ -549,9 +549,9 @@ async def get_disk_io(
 async def get_network_traffic(
     server_id: str,
     workspace: str,
-    interface: Optional[str] = None,
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
+    interface: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
     region: str = 'ap1',
     **kwargs,
 ) -> dict[str, Any]:
@@ -648,7 +648,7 @@ async def get_top_servers(
         invalid_metrics = [m for m in requested_metrics if m not in metric_endpoints]
         if invalid_metrics:
             return error_response(
-                message=f"Invalid metric types: {', '.join(invalid_metrics)}. Valid values: {', '.join(metric_endpoints.keys())}",
+                message=f'Invalid metric types: {", ".join(invalid_metrics)}. Valid values: {", ".join(metric_endpoints.keys())}',
                 region=region,
                 workspace=workspace,
             )
@@ -704,7 +704,7 @@ async def get_top_servers(
 
 @mcp_tool_handler(description='Get alert rules')
 async def get_alert_rules(
-    workspace: str, server_id: Optional[str] = None, region: str = 'ap1', **kwargs
+    workspace: str, server_id: str | None = None, region: str = 'ap1', **kwargs
 ) -> dict[str, Any]:
     """Get alert rules for servers.
 
@@ -870,7 +870,7 @@ async def get_server_metrics_summary(
                 if 'response' in result:
                     return {
                         'available': False,
-                        'error': f"{result.get('message', 'Error')} - {result.get('response', '')}",
+                        'error': f'{result.get("message", "Error")} - {result.get("response", "")}',
                     }
                 return {
                     'available': False,

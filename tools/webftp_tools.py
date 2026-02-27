@@ -1,7 +1,7 @@
 """WebFTP (Web FTP) management tools for Alpacon MCP server."""
 
 import os
-from typing import Any, Optional
+from typing import Any
 
 from server import mcp
 from utils.common import error_response, success_response
@@ -14,7 +14,7 @@ from utils.http_client import http_client
 async def webftp_session_create(
     server_id: str,
     workspace: str,
-    username: Optional[str] = None,
+    username: str | None = None,
     region: str = 'ap1',
     **kwargs,
 ) -> dict[str, Any]:
@@ -58,7 +58,7 @@ async def webftp_session_create(
 
 @mcp_tool_handler(description='Get list of WebFTP sessions')
 async def webftp_sessions_list(
-    workspace: str, server_id: Optional[str] = None, region: str = 'ap1', **kwargs
+    workspace: str, server_id: str | None = None, region: str = 'ap1', **kwargs
 ) -> dict[str, Any]:
     """Get list of WebFTP sessions.
 
@@ -97,7 +97,7 @@ async def webftp_upload_file(
     local_file_path: str,
     remote_file_path: str,
     workspace: str,
-    username: Optional[str] = None,
+    username: str | None = None,
     region: str = 'ap1',
     allow_overwrite: bool = True,
     **kwargs,
@@ -183,7 +183,7 @@ async def webftp_upload_file(
         upload_trigger = await http_client.get(
             region=region,
             workspace=workspace,
-            endpoint=f"/api/webftp/uploads/{result['id']}/upload/",
+            endpoint=f'/api/webftp/uploads/{result["id"]}/upload/',
             token=token,
         )
 
@@ -220,7 +220,7 @@ async def webftp_download_file(
     local_file_path: str,
     workspace: str,
     resource_type: str = 'file',
-    username: Optional[str] = None,
+    username: str | None = None,
     region: str = 'ap1',
     **kwargs,
 ) -> dict[str, Any]:
@@ -325,7 +325,7 @@ async def webftp_download_file(
 
 @mcp_tool_handler(description='List uploaded files (upload history)')
 async def webftp_uploads_list(
-    workspace: str, server_id: Optional[str] = None, region: str = 'ap1', **kwargs
+    workspace: str, server_id: str | None = None, region: str = 'ap1', **kwargs
 ) -> dict[str, Any]:
     """List uploaded files (upload history).
 
@@ -360,7 +360,7 @@ async def webftp_uploads_list(
 
 @mcp_tool_handler(description='List download requests (download history)')
 async def webftp_downloads_list(
-    workspace: str, server_id: Optional[str] = None, region: str = 'ap1', **kwargs
+    workspace: str, server_id: str | None = None, region: str = 'ap1', **kwargs
 ) -> dict[str, Any]:
     """List download requests (download history).
 
