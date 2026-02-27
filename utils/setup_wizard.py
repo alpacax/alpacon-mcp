@@ -10,7 +10,7 @@ import os
 import sys
 from getpass import getpass
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Optional
 
 from .token_manager import TokenManager
 
@@ -33,7 +33,7 @@ def load_existing_config(config_path: Path) -> Dict[str, Dict[str, str]]:
     """Load existing configuration if it exists."""
     if config_path.exists():
         try:
-            with open(config_path, 'r') as f:
+            with open(config_path, "r") as f:
                 return json.load(f)
         except json.JSONDecodeError:
             return {}
@@ -42,7 +42,7 @@ def load_existing_config(config_path: Path) -> Dict[str, Dict[str, str]]:
 
 def save_config(config: Dict[str, Dict[str, str]], config_path: Path) -> None:
     """Save configuration to file."""
-    with open(config_path, 'w') as f:
+    with open(config_path, "w") as f:
         json.dump(config, f, indent=2)
 
 
@@ -58,7 +58,7 @@ def test_connection(region: str, workspace: str, token: str) -> bool:
                 region=region,
                 workspace=workspace,
                 endpoint="/api/servers/servers/",
-                token=token
+                token=token,
             )
             # Check if result contains error
             return result is not None and "error" not in result
@@ -70,25 +70,25 @@ def test_connection(region: str, workspace: str, token: str) -> bool:
 
 def print_mcp_config() -> None:
     """Print MCP server configuration."""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("📋 MCP Server Configuration")
-    print("="*60)
+    print("=" * 60)
     print("\nAdd this to your MCP client configuration:")
 
     print("\n```json")
-    print(json.dumps({
-        "mcpServers": {
-            "alpacon": {
-                "command": "uvx",
-                "args": ["alpacon-mcp"]
-            }
-        }
-    }, indent=2))
+    print(
+        json.dumps(
+            {"mcpServers": {"alpacon": {"command": "uvx", "args": ["alpacon-mcp"]}}},
+            indent=2,
+        )
+    )
     print("```")
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
 
 
-def run_setup_wizard(force_local: bool = False, custom_path: Optional[str] = None) -> None:
+def run_setup_wizard(
+    force_local: bool = False, custom_path: Optional[str] = None
+) -> None:
     """
     Run interactive setup wizard for Alpacon MCP Server.
 
@@ -96,9 +96,9 @@ def run_setup_wizard(force_local: bool = False, custom_path: Optional[str] = Non
         force_local: If True, save to local config instead of global
         custom_path: Custom path to token.json file (overrides force_local)
     """
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("🚀 Welcome to Alpacon MCP Server Setup!")
-    print("="*60)
+    print("=" * 60)
     print("\nThis wizard will help you configure your Alpacon credentials.")
     print("You can get your API token from: https://alpacon.io\n")
 
@@ -117,7 +117,7 @@ def run_setup_wizard(force_local: bool = False, custom_path: Optional[str] = Non
     config = load_existing_config(config_path)
 
     # Get region
-    print("\n" + "-"*60)
+    print("\n" + "-" * 60)
     region = input("Enter region (default: ap1): ").strip() or "ap1"
 
     # Get workspace
@@ -140,7 +140,7 @@ def run_setup_wizard(force_local: bool = False, custom_path: Optional[str] = Non
     # Save config
     try:
         save_config(config, config_path)
-        print(f"\n✅ Configuration saved!")
+        print("\n✅ Configuration saved!")
         print(f"   📁 Location: {config_path}")
     except Exception as e:
         print(f"\n❌ Error saving configuration: {e}")
@@ -169,11 +169,13 @@ def list_workspaces() -> None:
     global_config_path = get_global_config_path()
     global_config = load_existing_config(global_config_path)
     local_config_path = get_local_config_path()
-    local_config = load_existing_config(local_config_path) if local_config_path.exists() else {}
+    local_config = (
+        load_existing_config(local_config_path) if local_config_path.exists() else {}
+    )
 
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("📋 Configured Workspaces")
-    print("="*60)
+    print("=" * 60)
 
     if global_config:
         print("\n🌍 Global Configuration:")
@@ -193,14 +195,14 @@ def list_workspaces() -> None:
     else:
         print("\n📁 Local: (none)")
 
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
 
 
 def add_workspace() -> None:
     """Add a new workspace to existing configuration."""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("➕ Add Workspace")
-    print("="*60)
+    print("=" * 60)
 
     # Choose config location
     print("\nWhere should this workspace be saved?")
@@ -222,8 +224,12 @@ def add_workspace() -> None:
 
     # Check if workspace already exists
     if region in config and workspace in config[region]:
-        overwrite = input(f"⚠️  Workspace '{workspace}' already exists. Overwrite? (y/N): ").strip().lower()
-        if overwrite != 'y':
+        overwrite = (
+            input(f"⚠️  Workspace '{workspace}' already exists. Overwrite? (y/N): ")
+            .strip()
+            .lower()
+        )
+        if overwrite != "y":
             print("❌ Cancelled")
             return
 
@@ -254,9 +260,9 @@ def add_workspace() -> None:
 
 def test_credentials() -> None:
     """Test configured credentials."""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("🔍 Testing Credentials")
-    print("="*60)
+    print("=" * 60)
 
     region = input("\nEnter region (default: ap1): ").strip() or "ap1"
     workspace = input("Enter workspace name: ").strip()
@@ -274,8 +280,8 @@ def test_credentials() -> None:
         print("   Run 'uvx alpacon-mcp setup' to configure credentials")
         return
 
-    print(f"\n✅ Token found")
-    print(f"🔍 Testing API connection...")
+    print("\n✅ Token found")
+    print("🔍 Testing API connection...")
 
     if test_connection(region, workspace, token):
         print("✅ Connection successful!")
@@ -288,9 +294,9 @@ def show_config_info() -> None:
     """Show configuration information and status."""
     from .token_manager import TokenManager
 
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("ℹ️  Configuration Information")
-    print("="*60)
+    print("=" * 60)
 
     # Check configuration files
     global_config_path = get_global_config_path()
@@ -333,10 +339,10 @@ def show_config_info() -> None:
 
     # Environment variables
     print("\n🔐 Environment Variables:")
-    env_vars = [key for key in os.environ.keys() if key.startswith('ALPACON_MCP_')]
+    env_vars = [key for key in os.environ.keys() if key.startswith("ALPACON_MCP_")]
     if env_vars:
         for var in env_vars:
-            if 'TOKEN' in var:
+            if "TOKEN" in var:
                 print(f"  ✅ {var}: configured")
             else:
                 print(f"  ℹ️  {var}: {os.environ[var]}")
@@ -346,12 +352,14 @@ def show_config_info() -> None:
     # Summary
     print("\n📊 Summary:")
     print(f"  Total workspaces: {total_workspaces}")
-    print(f"  Configuration priority:")
-    print(f"    1. Environment variables")
-    print(f"    2. Local config (./config/token.json)")
-    print(f"    3. Global config (~/.alpacon-mcp/token.json)")
+    print("  Configuration priority:")
+    print("    1. Environment variables")
+    print("    2. Local config (./config/token.json)")
+    print("    3. Global config (~/.alpacon-mcp/token.json)")
 
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
 
     if total_workspaces == 0:
-        print("\n💡 No workspaces configured. Run 'uvx alpacon-mcp setup' to get started.")
+        print(
+            "\n💡 No workspaces configured. Run 'uvx alpacon-mcp setup' to get started."
+        )

@@ -46,7 +46,9 @@ class TokenManager:
                 else:
                     # Default to global config location
                     self.token_file = global_config
-                    logger.info(f"No config found, will use global location: {self.token_file}")
+                    logger.info(
+                        f"No config found, will use global location: {self.token_file}"
+                    )
 
         self.config_dir = self.token_file.parent
 
@@ -64,16 +66,20 @@ class TokenManager:
         """
         if self.token_file.exists():
             try:
-                with open(self.token_file, 'r') as f:
+                with open(self.token_file, "r") as f:
                     tokens = json.load(f)
-                logger.info(f"Loaded tokens from {self.token_file}: {len(tokens)} regions")
+                logger.info(
+                    f"Loaded tokens from {self.token_file}: {len(tokens)} regions"
+                )
                 return tokens
             except json.JSONDecodeError as e:
                 logger.error(f"JSON decode error in {self.token_file}: {e}")
             except IOError as e:
                 logger.error(f"IO error reading {self.token_file}: {e}")
 
-        logger.warning(f"No valid token file found at {self.token_file}, starting with empty tokens")
+        logger.warning(
+            f"No valid token file found at {self.token_file}, starting with empty tokens"
+        )
         return {}
 
     def _save_tokens_to_file(self, tokens: Dict[str, Any], file_path: Path) -> None:
@@ -85,7 +91,7 @@ class TokenManager:
         """
         # Ensure directory exists
         file_path.parent.mkdir(exist_ok=True)
-        with open(file_path, 'w') as f:
+        with open(file_path, "w") as f:
             json.dump(tokens, f, indent=2)
 
     def _save_tokens(self) -> None:
@@ -115,7 +121,7 @@ class TokenManager:
             "status": "success",
             "message": f"Token saved for {workspace}.{region}",
             "region": region,
-            "workspace": workspace
+            "workspace": workspace,
         }
 
     def get_token(self, region: str, workspace: str) -> Optional[str]:
@@ -134,7 +140,9 @@ class TokenManager:
         env_var_name = f"ALPACON_MCP_{region.upper()}_{workspace.upper()}_TOKEN"
         env_token = os.getenv(env_var_name)
         if env_token:
-            logger.info(f"Found token for {workspace}.{region} from environment variable")
+            logger.info(
+                f"Found token for {workspace}.{region} from environment variable"
+            )
             return env_token
 
         # Fall back to config file
@@ -174,12 +182,12 @@ class TokenManager:
 
             return {
                 "status": "success",
-                "message": f"Token removed for {workspace}.{region}"
+                "message": f"Token removed for {workspace}.{region}",
             }
 
         return {
             "status": "error",
-            "message": f"No token found for {workspace}.{region}"
+            "message": f"No token found for {workspace}.{region}",
         }
 
     def get_auth_status(self) -> Dict[str, Any]:
@@ -192,18 +200,20 @@ class TokenManager:
 
         regions = []
         for region, workspaces in self.tokens.items():
-            regions.append({
-                "region": region,
-                "workspaces": list(workspaces.keys()),
-                "count": len(workspaces)
-            })
+            regions.append(
+                {
+                    "region": region,
+                    "workspaces": list(workspaces.keys()),
+                    "count": len(workspaces),
+                }
+            )
 
         return {
             "authenticated": total_tokens > 0,
             "total_tokens": total_tokens,
             "regions": regions,
             "config_dir": str(self.config_dir),
-            "token_file": str(self.token_file)
+            "token_file": str(self.token_file),
         }
 
     def get_config_info(self) -> Dict[str, Any]:
@@ -216,12 +226,13 @@ class TokenManager:
             "config_dir": str(self.config_dir),
             "token_file": str(self.token_file),
             "token_file_exists": self.token_file.exists(),
-            "env_config_file": os.getenv("ALPACON_CONFIG_FILE")
+            "env_config_file": os.getenv("ALPACON_CONFIG_FILE"),
         }
 
 
 # Global token manager instance
 _global_token_manager = None
+
 
 def get_token_manager() -> TokenManager:
     """Get the global token manager instance.

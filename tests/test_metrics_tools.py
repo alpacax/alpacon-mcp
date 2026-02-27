@@ -4,15 +4,15 @@ Unit tests for metrics_tools module.
 Tests metrics and monitoring functionality including CPU, memory, disk,
 network traffic monitoring and server performance analytics.
 """
+
 import pytest
 from unittest.mock import AsyncMock, patch
-from datetime import datetime, timezone, timedelta
 
 
 @pytest.fixture
 def mock_http_client():
     """Mock HTTP client for testing."""
-    with patch('tools.metrics_tools.http_client') as mock_client:
+    with patch("tools.metrics_tools.http_client") as mock_client:
         # Mock the async methods properly
         mock_client.get = AsyncMock()
         yield mock_client
@@ -21,7 +21,7 @@ def mock_http_client():
 @pytest.fixture
 def mock_token_manager():
     """Mock token manager for testing."""
-    with patch('tools.metrics_tools.token_manager') as mock_manager:
+    with patch("tools.metrics_tools.token_manager") as mock_manager:
         mock_manager.get_token.return_value = "test-token"
         yield mock_manager
 
@@ -40,11 +40,11 @@ class TestGetCpuUsage:
                 {
                     "timestamp": "2024-01-01T00:00:00Z",
                     "cpu_percent": 25.5,
-                    "load_average": [1.2, 1.1, 1.0]
+                    "load_average": [1.2, 1.1, 1.0],
                 }
             ],
             "server": "server-001",
-            "metric": "cpu_usage"
+            "metric": "cpu_usage",
         }
 
         result = await get_cpu_usage(
@@ -52,7 +52,7 @@ class TestGetCpuUsage:
             workspace="testworkspace",
             start_date="2024-01-01T00:00:00Z",
             end_date="2024-01-01T01:00:00Z",
-            region="ap1"
+            region="ap1",
         )
 
         # Verify response structure
@@ -72,8 +72,8 @@ class TestGetCpuUsage:
             params={
                 "server": "server-001",
                 "start": "2024-01-01T00:00:00Z",
-                "end": "2024-01-01T01:00:00Z"
-            }
+                "end": "2024-01-01T01:00:00Z",
+            },
         )
 
     @pytest.mark.asyncio
@@ -83,10 +83,7 @@ class TestGetCpuUsage:
 
         mock_http_client.get.return_value = {"data": []}
 
-        result = await get_cpu_usage(
-            server_id="server-001",
-            workspace="testworkspace"
-        )
+        result = await get_cpu_usage(server_id="server-001", workspace="testworkspace")
 
         assert result["status"] == "success"
 
@@ -101,10 +98,7 @@ class TestGetCpuUsage:
 
         mock_token_manager.get_token.return_value = None
 
-        result = await get_cpu_usage(
-            server_id="server-001",
-            workspace="testworkspace"
-        )
+        result = await get_cpu_usage(server_id="server-001", workspace="testworkspace")
 
         assert result["status"] == "error"
         assert "No token found" in result["message"]
@@ -117,10 +111,7 @@ class TestGetCpuUsage:
 
         mock_http_client.get.side_effect = Exception("HTTP 500 Internal Server Error")
 
-        result = await get_cpu_usage(
-            server_id="server-001",
-            workspace="testworkspace"
-        )
+        result = await get_cpu_usage(server_id="server-001", workspace="testworkspace")
 
         assert result["status"] == "error"
         assert "Failed to get CPU usage" in result["message"]
@@ -142,11 +133,11 @@ class TestGetMemoryUsage:
                     "memory_percent": 65.2,
                     "memory_total": 8589934592,
                     "memory_used": 5599194112,
-                    "memory_free": 2990740480
+                    "memory_free": 2990740480,
                 }
             ],
             "server": "server-001",
-            "metric": "memory_usage"
+            "metric": "memory_usage",
         }
 
         result = await get_memory_usage(
@@ -154,7 +145,7 @@ class TestGetMemoryUsage:
             workspace="testworkspace",
             start_date="2024-01-01T00:00:00Z",
             end_date="2024-01-01T01:00:00Z",
-            region="ap1"
+            region="ap1",
         )
 
         assert result["status"] == "success"
@@ -172,8 +163,8 @@ class TestGetMemoryUsage:
             params={
                 "server": "server-001",
                 "start": "2024-01-01T00:00:00Z",
-                "end": "2024-01-01T01:00:00Z"
-            }
+                "end": "2024-01-01T01:00:00Z",
+            },
         )
 
     @pytest.mark.asyncio
@@ -184,8 +175,7 @@ class TestGetMemoryUsage:
         mock_token_manager.get_token.return_value = None
 
         result = await get_memory_usage(
-            server_id="server-001",
-            workspace="testworkspace"
+            server_id="server-001", workspace="testworkspace"
         )
 
         assert result["status"] == "error"
@@ -199,8 +189,7 @@ class TestGetMemoryUsage:
         mock_http_client.get.side_effect = Exception("Connection timeout")
 
         result = await get_memory_usage(
-            server_id="server-001",
-            workspace="testworkspace"
+            server_id="server-001", workspace="testworkspace"
         )
 
         assert result["status"] == "error"
@@ -225,11 +214,11 @@ class TestGetDiskUsage:
                     "disk_percent": 42.8,
                     "disk_total": 107374182400,
                     "disk_used": 45964566528,
-                    "disk_free": 61409615872
+                    "disk_free": 61409615872,
                 }
             ],
             "server": "server-001",
-            "metric": "disk_usage"
+            "metric": "disk_usage",
         }
 
         result = await get_disk_usage(
@@ -239,7 +228,7 @@ class TestGetDiskUsage:
             partition="/",
             start_date="2024-01-01T00:00:00Z",
             end_date="2024-01-01T01:00:00Z",
-            region="ap1"
+            region="ap1",
         )
 
         assert result["status"] == "success"
@@ -261,21 +250,20 @@ class TestGetDiskUsage:
                 "device": "/dev/sda1",
                 "partition": "/",
                 "start": "2024-01-01T00:00:00Z",
-                "end": "2024-01-01T01:00:00Z"
-            }
+                "end": "2024-01-01T01:00:00Z",
+            },
         )
 
     @pytest.mark.asyncio
-    async def test_disk_usage_minimal_params(self, mock_http_client, mock_token_manager):
+    async def test_disk_usage_minimal_params(
+        self, mock_http_client, mock_token_manager
+    ):
         """Test disk usage with minimal parameters."""
         from tools.metrics_tools import get_disk_usage
 
         mock_http_client.get.return_value = {"data": []}
 
-        result = await get_disk_usage(
-            server_id="server-001",
-            workspace="testworkspace"
-        )
+        result = await get_disk_usage(server_id="server-001", workspace="testworkspace")
 
         assert result["status"] == "success"
         assert result["device"] is None
@@ -292,10 +280,7 @@ class TestGetDiskUsage:
 
         mock_token_manager.get_token.return_value = None
 
-        result = await get_disk_usage(
-            server_id="server-001",
-            workspace="testworkspace"
-        )
+        result = await get_disk_usage(server_id="server-001", workspace="testworkspace")
 
         assert result["status"] == "error"
         assert "No token found" in result["message"]
@@ -318,11 +303,11 @@ class TestGetNetworkTraffic:
                     "bytes_sent": 1073741824,
                     "bytes_recv": 2147483648,
                     "packets_sent": 1000000,
-                    "packets_recv": 1500000
+                    "packets_recv": 1500000,
                 }
             ],
             "server": "server-001",
-            "metric": "network_traffic"
+            "metric": "network_traffic",
         }
 
         result = await get_network_traffic(
@@ -331,7 +316,7 @@ class TestGetNetworkTraffic:
             interface="eth0",
             start_date="2024-01-01T00:00:00Z",
             end_date="2024-01-01T01:00:00Z",
-            region="ap1"
+            region="ap1",
         )
 
         assert result["status"] == "success"
@@ -351,20 +336,21 @@ class TestGetNetworkTraffic:
                 "server": "server-001",
                 "interface": "eth0",
                 "start": "2024-01-01T00:00:00Z",
-                "end": "2024-01-01T01:00:00Z"
-            }
+                "end": "2024-01-01T01:00:00Z",
+            },
         )
 
     @pytest.mark.asyncio
-    async def test_network_traffic_without_interface(self, mock_http_client, mock_token_manager):
+    async def test_network_traffic_without_interface(
+        self, mock_http_client, mock_token_manager
+    ):
         """Test network traffic without interface parameter."""
         from tools.metrics_tools import get_network_traffic
 
         mock_http_client.get.return_value = {"data": []}
 
         result = await get_network_traffic(
-            server_id="server-001",
-            workspace="testworkspace"
+            server_id="server-001", workspace="testworkspace"
         )
 
         assert result["status"] == "success"
@@ -382,8 +368,7 @@ class TestGetNetworkTraffic:
         mock_token_manager.get_token.return_value = None
 
         result = await get_network_traffic(
-            server_id="server-001",
-            workspace="testworkspace"
+            server_id="server-001", workspace="testworkspace"
         )
 
         assert result["status"] == "error"
@@ -405,23 +390,20 @@ class TestGetCpuTopServers:
                     "server_id": "server-001",
                     "server_name": "web-server-1",
                     "cpu_percent": 89.5,
-                    "timestamp": "2024-01-01T00:00:00Z"
+                    "timestamp": "2024-01-01T00:00:00Z",
                 },
                 {
                     "server_id": "server-002",
                     "server_name": "api-server-1",
                     "cpu_percent": 72.3,
-                    "timestamp": "2024-01-01T00:00:00Z"
-                }
+                    "timestamp": "2024-01-01T00:00:00Z",
+                },
             ],
             "total_servers": 15,
-            "time_range": "24h"
+            "time_range": "24h",
         }
 
-        result = await get_cpu_top_servers(
-            workspace="testworkspace",
-            region="ap1"
-        )
+        result = await get_cpu_top_servers(workspace="testworkspace", region="ap1")
 
         assert result["status"] == "success"
         assert result["metric_type"] == "cpu_top"
@@ -434,7 +416,7 @@ class TestGetCpuTopServers:
             region="ap1",
             workspace="testworkspace",
             endpoint="/api/metrics/realtime/cpu/top/",
-            token="test-token"
+            token="test-token",
         )
 
     @pytest.mark.asyncio
@@ -450,7 +432,9 @@ class TestGetCpuTopServers:
         assert "No token found" in result["message"]
 
     @pytest.mark.asyncio
-    async def test_cpu_top_servers_http_error(self, mock_http_client, mock_token_manager):
+    async def test_cpu_top_servers_http_error(
+        self, mock_http_client, mock_token_manager
+    ):
         """Test top CPU servers with HTTP error."""
         from tools.metrics_tools import get_cpu_top_servers
 
@@ -481,7 +465,7 @@ class TestGetAlertRules:
                     "threshold": 80.0,
                     "comparison": "gt",
                     "server": "server-001",
-                    "enabled": True
+                    "enabled": True,
                 },
                 {
                     "id": "rule-002",
@@ -490,15 +474,13 @@ class TestGetAlertRules:
                     "threshold": 90.0,
                     "comparison": "gt",
                     "server": "server-001",
-                    "enabled": True
-                }
-            ]
+                    "enabled": True,
+                },
+            ],
         }
 
         result = await get_alert_rules(
-            workspace="testworkspace",
-            server_id="server-001",
-            region="ap1"
+            workspace="testworkspace", server_id="server-001", region="ap1"
         )
 
         assert result["status"] == "success"
@@ -513,7 +495,7 @@ class TestGetAlertRules:
             workspace="testworkspace",
             endpoint="/api/metrics/alert-rules/",
             token="test-token",
-            params={"server": "server-001"}
+            params={"server": "server-001"},
         )
 
     @pytest.mark.asyncio
@@ -559,11 +541,12 @@ class TestGetServerMetricsSummary:
         disk_data = {"disk_percent": 42.8, "disk_used": 45964566528}
         network_data = {"bytes_sent": 1073741824, "bytes_recv": 2147483648}
 
-        with patch('tools.metrics_tools.get_cpu_usage') as mock_cpu, \
-             patch('tools.metrics_tools.get_memory_usage') as mock_memory, \
-             patch('tools.metrics_tools.get_disk_usage') as mock_disk, \
-             patch('tools.metrics_tools.get_network_traffic') as mock_network:
-
+        with (
+            patch("tools.metrics_tools.get_cpu_usage") as mock_cpu,
+            patch("tools.metrics_tools.get_memory_usage") as mock_memory,
+            patch("tools.metrics_tools.get_disk_usage") as mock_disk,
+            patch("tools.metrics_tools.get_network_traffic") as mock_network,
+        ):
             # Mock successful responses for all metrics
             mock_cpu.return_value = {"status": "success", "data": cpu_data}
             mock_memory.return_value = {"status": "success", "data": memory_data}
@@ -574,7 +557,7 @@ class TestGetServerMetricsSummary:
                 server_id="server-001",
                 workspace="testworkspace",
                 hours=24,
-                region="ap1"
+                region="ap1",
             )
 
             assert result["status"] == "success"
@@ -601,25 +584,32 @@ class TestGetServerMetricsSummary:
             mock_network.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_metrics_summary_partial_failure(self, mock_http_client, mock_token_manager):
+    async def test_metrics_summary_partial_failure(
+        self, mock_http_client, mock_token_manager
+    ):
         """Test metrics summary with some metrics failing."""
         from tools.metrics_tools import get_server_metrics_summary
 
-        with patch('tools.metrics_tools.get_cpu_usage') as mock_cpu, \
-             patch('tools.metrics_tools.get_memory_usage') as mock_memory, \
-             patch('tools.metrics_tools.get_disk_usage') as mock_disk, \
-             patch('tools.metrics_tools.get_network_traffic') as mock_network:
-
+        with (
+            patch("tools.metrics_tools.get_cpu_usage") as mock_cpu,
+            patch("tools.metrics_tools.get_memory_usage") as mock_memory,
+            patch("tools.metrics_tools.get_disk_usage") as mock_disk,
+            patch("tools.metrics_tools.get_network_traffic") as mock_network,
+        ):
             # Mock mixed success/failure responses
             mock_cpu.return_value = {"status": "success", "data": {"cpu_percent": 45.2}}
-            mock_memory.return_value = {"status": "error", "message": "Connection timeout"}
-            mock_disk.return_value = {"status": "success", "data": {"disk_percent": 42.8}}
+            mock_memory.return_value = {
+                "status": "error",
+                "message": "Connection timeout",
+            }
+            mock_disk.return_value = {
+                "status": "success",
+                "data": {"disk_percent": 42.8},
+            }
             mock_network.side_effect = Exception("Network error")
 
             result = await get_server_metrics_summary(
-                server_id="server-001",
-                workspace="testworkspace",
-                hours=12
+                server_id="server-001", workspace="testworkspace", hours=12
             )
 
             assert result["status"] == "success"
@@ -638,18 +628,19 @@ class TestGetServerMetricsSummary:
             assert "Network error" in metrics["network"]["error"]
 
     @pytest.mark.asyncio
-    async def test_metrics_summary_exception(self, mock_http_client, mock_token_manager):
+    async def test_metrics_summary_exception(
+        self, mock_http_client, mock_token_manager
+    ):
         """Test metrics summary with general exception."""
         from tools.metrics_tools import get_server_metrics_summary
 
         # Mock datetime.datetime.now to raise an exception
         # Since datetime is imported locally in the function, we patch the module-level import
-        with patch('datetime.datetime') as mock_datetime_class:
+        with patch("datetime.datetime") as mock_datetime_class:
             mock_datetime_class.now.side_effect = Exception("Time service unavailable")
 
             result = await get_server_metrics_summary(
-                server_id="server-001",
-                workspace="testworkspace"
+                server_id="server-001", workspace="testworkspace"
             )
 
             assert result["status"] == "error"
@@ -657,15 +648,18 @@ class TestGetServerMetricsSummary:
             assert "Time service unavailable" in result["message"]
 
     @pytest.mark.asyncio
-    async def test_metrics_summary_custom_hours(self, mock_http_client, mock_token_manager):
+    async def test_metrics_summary_custom_hours(
+        self, mock_http_client, mock_token_manager
+    ):
         """Test metrics summary with custom hours parameter."""
         from tools.metrics_tools import get_server_metrics_summary
 
-        with patch('tools.metrics_tools.get_cpu_usage') as mock_cpu, \
-             patch('tools.metrics_tools.get_memory_usage') as mock_memory, \
-             patch('tools.metrics_tools.get_disk_usage') as mock_disk, \
-             patch('tools.metrics_tools.get_network_traffic') as mock_network:
-
+        with (
+            patch("tools.metrics_tools.get_cpu_usage") as mock_cpu,
+            patch("tools.metrics_tools.get_memory_usage") as mock_memory,
+            patch("tools.metrics_tools.get_disk_usage") as mock_disk,
+            patch("tools.metrics_tools.get_network_traffic") as mock_network,
+        ):
             # Mock successful responses
             mock_cpu.return_value = {"status": "success", "data": {}}
             mock_memory.return_value = {"status": "success", "data": {}}
@@ -673,10 +667,7 @@ class TestGetServerMetricsSummary:
             mock_network.return_value = {"status": "success", "data": {}}
 
             result = await get_server_metrics_summary(
-                server_id="server-001",
-                workspace="testworkspace",
-                hours=6,
-                region="us1"
+                server_id="server-001", workspace="testworkspace", hours=6, region="us1"
             )
 
             assert result["status"] == "success"

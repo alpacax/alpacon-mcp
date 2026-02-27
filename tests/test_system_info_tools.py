@@ -4,6 +4,7 @@ Unit tests for system_info_tools module.
 Tests system information functionality including system details,
 OS version, users, groups, packages, network interfaces, and disk information.
 """
+
 import pytest
 from unittest.mock import AsyncMock, patch
 
@@ -11,7 +12,7 @@ from unittest.mock import AsyncMock, patch
 @pytest.fixture
 def mock_http_client():
     """Mock HTTP client for testing."""
-    with patch('tools.system_info_tools.http_client') as mock_client:
+    with patch("tools.system_info_tools.http_client") as mock_client:
         # Mock the async methods properly
         mock_client.get = AsyncMock()
         yield mock_client
@@ -20,7 +21,7 @@ def mock_http_client():
 @pytest.fixture
 def mock_token_manager():
     """Mock token manager for testing."""
-    with patch('tools.system_info_tools.token_manager') as mock_manager:
+    with patch("tools.system_info_tools.token_manager") as mock_manager:
         mock_manager.get_token.return_value = "test-token"
         yield mock_manager
 
@@ -42,13 +43,11 @@ class TestGetSystemInfo:
             "cpu_model": "Intel(R) Core(TM) i5-8250U CPU @ 1.60GHz",
             "total_memory": 8589934592,
             "uptime": 123456,
-            "load_average": [0.5, 0.7, 0.8]
+            "load_average": [0.5, 0.7, 0.8],
         }
 
         result = await get_system_info(
-            server_id="server-001",
-            workspace="testworkspace",
-            region="ap1"
+            server_id="server-001", workspace="testworkspace", region="ap1"
         )
 
         # Verify response structure
@@ -65,7 +64,7 @@ class TestGetSystemInfo:
             workspace="testworkspace",
             endpoint="/api/proc/info/",
             token="test-token",
-            params={"server": "server-001"}
+            params={"server": "server-001"},
         )
 
     @pytest.mark.asyncio
@@ -76,8 +75,7 @@ class TestGetSystemInfo:
         mock_token_manager.get_token.return_value = None
 
         result = await get_system_info(
-            server_id="server-001",
-            workspace="testworkspace"
+            server_id="server-001", workspace="testworkspace"
         )
 
         assert result["status"] == "error"
@@ -92,8 +90,7 @@ class TestGetSystemInfo:
         mock_http_client.get.side_effect = Exception("HTTP 500 Internal Server Error")
 
         result = await get_system_info(
-            server_id="server-001",
-            workspace="testworkspace"
+            server_id="server-001", workspace="testworkspace"
         )
 
         assert result["status"] == "error"
@@ -117,13 +114,11 @@ class TestGetOsVersion:
             "id_like": "debian",
             "version_id": "20.04",
             "version_codename": "focal",
-            "description": "Ubuntu 20.04.2 LTS"
+            "description": "Ubuntu 20.04.2 LTS",
         }
 
         result = await get_os_version(
-            server_id="server-001",
-            workspace="testworkspace",
-            region="ap1"
+            server_id="server-001", workspace="testworkspace", region="ap1"
         )
 
         assert result["status"] == "success"
@@ -139,7 +134,7 @@ class TestGetOsVersion:
             workspace="testworkspace",
             endpoint="/api/proc/os/",
             token="test-token",
-            params={"server": "server-001"}
+            params={"server": "server-001"},
         )
 
     @pytest.mark.asyncio
@@ -149,10 +144,7 @@ class TestGetOsVersion:
 
         mock_token_manager.get_token.return_value = None
 
-        result = await get_os_version(
-            server_id="server-001",
-            workspace="testworkspace"
-        )
+        result = await get_os_version(server_id="server-001", workspace="testworkspace")
 
         assert result["status"] == "error"
         assert "No token found" in result["message"]
@@ -176,7 +168,7 @@ class TestListSystemUsers:
                     "gid": 0,
                     "home": "/root",
                     "shell": "/bin/bash",
-                    "login_enabled": True
+                    "login_enabled": True,
                 },
                 {
                     "username": "ubuntu",
@@ -184,7 +176,7 @@ class TestListSystemUsers:
                     "gid": 1000,
                     "home": "/home/ubuntu",
                     "shell": "/bin/bash",
-                    "login_enabled": True
+                    "login_enabled": True,
                 },
                 {
                     "username": "www-data",
@@ -192,9 +184,9 @@ class TestListSystemUsers:
                     "gid": 33,
                     "home": "/var/www",
                     "shell": "/usr/sbin/nologin",
-                    "login_enabled": False
-                }
-            ]
+                    "login_enabled": False,
+                },
+            ],
         }
 
         result = await list_system_users(
@@ -202,7 +194,7 @@ class TestListSystemUsers:
             workspace="testworkspace",
             username_filter="ubuntu",
             login_enabled_only=True,
-            region="ap1"
+            region="ap1",
         )
 
         assert result["status"] == "success"
@@ -222,20 +214,21 @@ class TestListSystemUsers:
             params={
                 "server": "server-001",
                 "search": "ubuntu",
-                "login_enabled": "true"
-            }
+                "login_enabled": "true",
+            },
         )
 
     @pytest.mark.asyncio
-    async def test_list_users_minimal_params(self, mock_http_client, mock_token_manager):
+    async def test_list_users_minimal_params(
+        self, mock_http_client, mock_token_manager
+    ):
         """Test users listing with minimal parameters."""
         from tools.system_info_tools import list_system_users
 
         mock_http_client.get.return_value = {"count": 10, "results": []}
 
         result = await list_system_users(
-            server_id="server-001",
-            workspace="testworkspace"
+            server_id="server-001", workspace="testworkspace"
         )
 
         assert result["status"] == "success"
@@ -254,8 +247,7 @@ class TestListSystemUsers:
         mock_token_manager.get_token.return_value = None
 
         result = await list_system_users(
-            server_id="server-001",
-            workspace="testworkspace"
+            server_id="server-001", workspace="testworkspace"
         )
 
         assert result["status"] == "error"
@@ -274,34 +266,18 @@ class TestListSystemGroups:
         mock_http_client.get.return_value = {
             "count": 4,
             "results": [
-                {
-                    "groupname": "root",
-                    "gid": 0,
-                    "members": ["root"]
-                },
-                {
-                    "groupname": "sudo",
-                    "gid": 27,
-                    "members": ["ubuntu"]
-                },
-                {
-                    "groupname": "docker",
-                    "gid": 999,
-                    "members": ["ubuntu", "user1"]
-                },
-                {
-                    "groupname": "www-data",
-                    "gid": 33,
-                    "members": []
-                }
-            ]
+                {"groupname": "root", "gid": 0, "members": ["root"]},
+                {"groupname": "sudo", "gid": 27, "members": ["ubuntu"]},
+                {"groupname": "docker", "gid": 999, "members": ["ubuntu", "user1"]},
+                {"groupname": "www-data", "gid": 33, "members": []},
+            ],
         }
 
         result = await list_system_groups(
             server_id="server-001",
             workspace="testworkspace",
             groupname_filter="docker",
-            region="ap1"
+            region="ap1",
         )
 
         assert result["status"] == "success"
@@ -317,10 +293,7 @@ class TestListSystemGroups:
             workspace="testworkspace",
             endpoint="/api/proc/groups/",
             token="test-token",
-            params={
-                "server": "server-001",
-                "search": "docker"
-            }
+            params={"server": "server-001", "search": "docker"},
         )
 
     @pytest.mark.asyncio
@@ -331,8 +304,7 @@ class TestListSystemGroups:
         mock_http_client.get.return_value = {"count": 0, "results": []}
 
         result = await list_system_groups(
-            server_id="server-001",
-            workspace="testworkspace"
+            server_id="server-001", workspace="testworkspace"
         )
 
         assert result["status"] == "success"
@@ -350,8 +322,7 @@ class TestListSystemGroups:
         mock_token_manager.get_token.return_value = None
 
         result = await list_system_groups(
-            server_id="server-001",
-            workspace="testworkspace"
+            server_id="server-001", workspace="testworkspace"
         )
 
         assert result["status"] == "error"
@@ -375,16 +346,16 @@ class TestListSystemPackages:
                     "version": "1.18.0-6ubuntu14.3",
                     "architecture": "amd64",
                     "status": "installed",
-                    "description": "small, powerful, scalable web/proxy server"
+                    "description": "small, powerful, scalable web/proxy server",
                 },
                 {
                     "name": "nginx-common",
                     "version": "1.18.0-6ubuntu14.3",
                     "architecture": "all",
                     "status": "installed",
-                    "description": "small, powerful, scalable web/proxy server - common files"
-                }
-            ]
+                    "description": "small, powerful, scalable web/proxy server - common files",
+                },
+            ],
         }
 
         result = await list_system_packages(
@@ -393,7 +364,7 @@ class TestListSystemPackages:
             package_name="nginx",
             architecture="amd64",
             limit=50,
-            region="ap1"
+            region="ap1",
         )
 
         assert result["status"] == "success"
@@ -415,20 +386,21 @@ class TestListSystemPackages:
                 "server": "server-001",
                 "page_size": 50,
                 "search": "nginx",
-                "arch": "amd64"
-            }
+                "arch": "amd64",
+            },
         )
 
     @pytest.mark.asyncio
-    async def test_list_packages_minimal_params(self, mock_http_client, mock_token_manager):
+    async def test_list_packages_minimal_params(
+        self, mock_http_client, mock_token_manager
+    ):
         """Test packages listing with minimal parameters."""
         from tools.system_info_tools import list_system_packages
 
         mock_http_client.get.return_value = {"count": 500, "results": []}
 
         result = await list_system_packages(
-            server_id="server-001",
-            workspace="testworkspace"
+            server_id="server-001", workspace="testworkspace"
         )
 
         assert result["status"] == "success"
@@ -438,10 +410,7 @@ class TestListSystemPackages:
 
         # Verify correct parameters were sent
         call_args = mock_http_client.get.call_args
-        expected_params = {
-            "server": "server-001",
-            "page_size": 100
-        }
+        expected_params = {"server": "server-001", "page_size": 100}
         assert call_args[1]["params"] == expected_params
 
     @pytest.mark.asyncio
@@ -452,8 +421,7 @@ class TestListSystemPackages:
         mock_token_manager.get_token.return_value = None
 
         result = await list_system_packages(
-            server_id="server-001",
-            workspace="testworkspace"
+            server_id="server-001", workspace="testworkspace"
         )
 
         assert result["status"] == "error"
@@ -464,7 +432,9 @@ class TestGetNetworkInterfaces:
     """Test get_network_interfaces function."""
 
     @pytest.mark.asyncio
-    async def test_network_interfaces_success(self, mock_http_client, mock_token_manager):
+    async def test_network_interfaces_success(
+        self, mock_http_client, mock_token_manager
+    ):
         """Test successful network interfaces retrieval."""
         from tools.system_info_tools import get_network_interfaces
 
@@ -476,7 +446,7 @@ class TestGetNetworkInterfaces:
                     "type": "loopback",
                     "state": "up",
                     "mtu": 65536,
-                    "addresses": ["127.0.0.1/8", "::1/128"]
+                    "addresses": ["127.0.0.1/8", "::1/128"],
                 },
                 {
                     "name": "eth0",
@@ -484,15 +454,13 @@ class TestGetNetworkInterfaces:
                     "state": "up",
                     "mtu": 1500,
                     "addresses": ["192.168.1.100/24", "fe80::a00:27ff:fe4e:66a1/64"],
-                    "mac": "08:00:27:4e:66:a1"
-                }
+                    "mac": "08:00:27:4e:66:a1",
+                },
             ]
         }
 
         result = await get_network_interfaces(
-            server_id="server-001",
-            workspace="testworkspace",
-            region="ap1"
+            server_id="server-001", workspace="testworkspace", region="ap1"
         )
 
         assert result["status"] == "success"
@@ -508,19 +476,20 @@ class TestGetNetworkInterfaces:
             workspace="testworkspace",
             endpoint="/api/proc/interfaces/",
             token="test-token",
-            params={"server": "server-001"}
+            params={"server": "server-001"},
         )
 
     @pytest.mark.asyncio
-    async def test_network_interfaces_no_token(self, mock_http_client, mock_token_manager):
+    async def test_network_interfaces_no_token(
+        self, mock_http_client, mock_token_manager
+    ):
         """Test network interfaces when no token is available."""
         from tools.system_info_tools import get_network_interfaces
 
         mock_token_manager.get_token.return_value = None
 
         result = await get_network_interfaces(
-            server_id="server-001",
-            workspace="testworkspace"
+            server_id="server-001", workspace="testworkspace"
         )
 
         assert result["status"] == "error"
@@ -542,7 +511,7 @@ class TestGetDiskInfo:
                     "device": "/dev/sda",
                     "size": 107374182400,
                     "model": "VBOX HARDDISK",
-                    "type": "hdd"
+                    "type": "hdd",
                 }
             ]
         }
@@ -555,25 +524,23 @@ class TestGetDiskInfo:
                     "filesystem": "ext4",
                     "size": 107374182400,
                     "used": 45964566528,
-                    "available": 61409615872
+                    "available": 61409615872,
                 }
             ]
         }
 
         def mock_get_side_effect(*args, **kwargs):
-            endpoint = kwargs.get('endpoint', '')
-            if 'disks' in endpoint:
+            endpoint = kwargs.get("endpoint", "")
+            if "disks" in endpoint:
                 return disks_data
-            elif 'partitions' in endpoint:
+            elif "partitions" in endpoint:
                 return partitions_data
             return {}
 
         mock_http_client.get.side_effect = mock_get_side_effect
 
         result = await get_disk_info(
-            server_id="server-001",
-            workspace="testworkspace",
-            region="ap1"
+            server_id="server-001", workspace="testworkspace", region="ap1"
         )
 
         assert result["status"] == "success"
@@ -589,7 +556,9 @@ class TestGetDiskInfo:
         assert mock_http_client.get.call_count == 2
 
     @pytest.mark.asyncio
-    async def test_disk_info_partial_failure(self, mock_http_client, mock_token_manager):
+    async def test_disk_info_partial_failure(
+        self, mock_http_client, mock_token_manager
+    ):
         """Test disk info with partial failure."""
         from tools.system_info_tools import get_disk_info
 
@@ -597,19 +566,16 @@ class TestGetDiskInfo:
         partitions_error = Exception("Partitions service unavailable")
 
         def mock_get_side_effect(*args, **kwargs):
-            endpoint = kwargs.get('endpoint', '')
-            if 'disks' in endpoint:
+            endpoint = kwargs.get("endpoint", "")
+            if "disks" in endpoint:
                 return disks_data
-            elif 'partitions' in endpoint:
+            elif "partitions" in endpoint:
                 raise partitions_error
             return {}
 
         mock_http_client.get.side_effect = mock_get_side_effect
 
-        result = await get_disk_info(
-            server_id="server-001",
-            workspace="testworkspace"
-        )
+        result = await get_disk_info(server_id="server-001", workspace="testworkspace")
 
         assert result["status"] == "success"
         assert result["data"]["disks"] == disks_data
@@ -623,10 +589,7 @@ class TestGetDiskInfo:
 
         mock_token_manager.get_token.return_value = None
 
-        result = await get_disk_info(
-            server_id="server-001",
-            workspace="testworkspace"
-        )
+        result = await get_disk_info(server_id="server-001", workspace="testworkspace")
 
         assert result["status"] == "error"
         assert "No token found" in result["message"]
@@ -646,13 +609,11 @@ class TestGetSystemTime:
             "timezone": "UTC",
             "uptime": 3600,
             "boot_time": "2024-01-01T11:00:00Z",
-            "uptime_human": "1 hour, 0 minutes"
+            "uptime_human": "1 hour, 0 minutes",
         }
 
         result = await get_system_time(
-            server_id="server-001",
-            workspace="testworkspace",
-            region="ap1"
+            server_id="server-001", workspace="testworkspace", region="ap1"
         )
 
         assert result["status"] == "success"
@@ -668,7 +629,7 @@ class TestGetSystemTime:
             workspace="testworkspace",
             endpoint="/api/proc/time/",
             token="test-token",
-            params={"server": "server-001"}
+            params={"server": "server-001"},
         )
 
     @pytest.mark.asyncio
@@ -679,8 +640,7 @@ class TestGetSystemTime:
         mock_token_manager.get_token.return_value = None
 
         result = await get_system_time(
-            server_id="server-001",
-            workspace="testworkspace"
+            server_id="server-001", workspace="testworkspace"
         )
 
         assert result["status"] == "error"
@@ -696,23 +656,31 @@ class TestGetServerOverview:
         from tools.system_info_tools import get_server_overview
 
         # Mock successful responses for all individual functions
-        with patch('tools.system_info_tools.get_system_info') as mock_sys_info, \
-             patch('tools.system_info_tools.get_os_version') as mock_os_version, \
-             patch('tools.system_info_tools.get_system_time') as mock_sys_time, \
-             patch('tools.system_info_tools.get_network_interfaces') as mock_network, \
-             patch('tools.system_info_tools.get_disk_info') as mock_disk:
-
+        with (
+            patch("tools.system_info_tools.get_system_info") as mock_sys_info,
+            patch("tools.system_info_tools.get_os_version") as mock_os_version,
+            patch("tools.system_info_tools.get_system_time") as mock_sys_time,
+            patch("tools.system_info_tools.get_network_interfaces") as mock_network,
+            patch("tools.system_info_tools.get_disk_info") as mock_disk,
+        ):
             # Mock successful responses
-            mock_sys_info.return_value = {"status": "success", "data": {"hostname": "web-server"}}
-            mock_os_version.return_value = {"status": "success", "data": {"name": "Ubuntu"}}
+            mock_sys_info.return_value = {
+                "status": "success",
+                "data": {"hostname": "web-server"},
+            }
+            mock_os_version.return_value = {
+                "status": "success",
+                "data": {"name": "Ubuntu"},
+            }
             mock_sys_time.return_value = {"status": "success", "data": {"uptime": 3600}}
-            mock_network.return_value = {"status": "success", "data": {"interfaces": []}}
+            mock_network.return_value = {
+                "status": "success",
+                "data": {"interfaces": []},
+            }
             mock_disk.return_value = {"status": "success", "data": {"disks": []}}
 
             result = await get_server_overview(
-                server_id="server-001",
-                workspace="testworkspace",
-                region="ap1"
+                server_id="server-001", workspace="testworkspace", region="ap1"
             )
 
             assert result["status"] == "success"
@@ -739,26 +707,37 @@ class TestGetServerOverview:
             mock_disk.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_server_overview_partial_failure(self, mock_http_client, mock_token_manager):
+    async def test_server_overview_partial_failure(
+        self, mock_http_client, mock_token_manager
+    ):
         """Test server overview with some functions failing."""
         from tools.system_info_tools import get_server_overview
 
-        with patch('tools.system_info_tools.get_system_info') as mock_sys_info, \
-             patch('tools.system_info_tools.get_os_version') as mock_os_version, \
-             patch('tools.system_info_tools.get_system_time') as mock_sys_time, \
-             patch('tools.system_info_tools.get_network_interfaces') as mock_network, \
-             patch('tools.system_info_tools.get_disk_info') as mock_disk:
-
+        with (
+            patch("tools.system_info_tools.get_system_info") as mock_sys_info,
+            patch("tools.system_info_tools.get_os_version") as mock_os_version,
+            patch("tools.system_info_tools.get_system_time") as mock_sys_time,
+            patch("tools.system_info_tools.get_network_interfaces") as mock_network,
+            patch("tools.system_info_tools.get_disk_info") as mock_disk,
+        ):
             # Mock mixed success/failure responses
-            mock_sys_info.return_value = {"status": "success", "data": {"hostname": "web-server"}}
-            mock_os_version.return_value = {"status": "error", "message": "OS service unavailable"}
+            mock_sys_info.return_value = {
+                "status": "success",
+                "data": {"hostname": "web-server"},
+            }
+            mock_os_version.return_value = {
+                "status": "error",
+                "message": "OS service unavailable",
+            }
             mock_sys_time.side_effect = Exception("Time service error")
-            mock_network.return_value = {"status": "success", "data": {"interfaces": []}}
+            mock_network.return_value = {
+                "status": "success",
+                "data": {"interfaces": []},
+            }
             mock_disk.return_value = {"status": "success", "data": {"disks": []}}
 
             result = await get_server_overview(
-                server_id="server-001",
-                workspace="testworkspace"
+                server_id="server-001", workspace="testworkspace"
             )
 
             assert result["status"] == "success"
@@ -774,17 +753,18 @@ class TestGetServerOverview:
             assert "Time service error" in result["data"]["system_time"]["error"]
 
     @pytest.mark.asyncio
-    async def test_server_overview_exception(self, mock_http_client, mock_token_manager):
+    async def test_server_overview_exception(
+        self, mock_http_client, mock_token_manager
+    ):
         """Test server overview with general exception."""
         from tools.system_info_tools import get_server_overview
 
-        with patch('asyncio.gather') as mock_gather:
+        with patch("asyncio.gather") as mock_gather:
             # Mock asyncio.gather to raise an exception
             mock_gather.side_effect = Exception("Async processing failed")
 
             result = await get_server_overview(
-                server_id="server-001",
-                workspace="testworkspace"
+                server_id="server-001", workspace="testworkspace"
             )
 
             assert result["status"] == "error"

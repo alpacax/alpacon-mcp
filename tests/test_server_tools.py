@@ -3,20 +3,21 @@ Unit tests for server tools module.
 
 Tests all server management functions including server listing, details, and notes management.
 """
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 from tools.server_tools import (
     servers_list,
     server_get,
     server_notes_list,
-    server_note_create
+    server_note_create,
 )
 
 
 @pytest.fixture
 def mock_http_client():
     """Mock HTTP client for testing."""
-    with patch('tools.server_tools.http_client') as mock_client:
+    with patch("tools.server_tools.http_client") as mock_client:
         # Mock the async methods properly
         mock_client.get = AsyncMock()
         mock_client.post = AsyncMock()
@@ -28,7 +29,7 @@ def mock_http_client():
 @pytest.fixture
 def mock_token_manager():
     """Mock token manager for testing."""
-    with patch('tools.server_tools.token_manager') as mock_manager:
+    with patch("tools.server_tools.token_manager") as mock_manager:
         mock_manager.get_token.return_value = "test-token"
         yield mock_manager
 
@@ -46,7 +47,7 @@ def sample_server():
         "memory": 4096,
         "storage": 50,
         "created_at": "2024-01-01T00:00:00Z",
-        "tags": ["web", "production"]
+        "tags": ["web", "production"],
     }
 
 
@@ -64,7 +65,7 @@ def sample_servers_list():
                 "ip": "192.168.1.10",
                 "status": "running",
                 "os": "Ubuntu 20.04",
-                "tags": ["web", "production"]
+                "tags": ["web", "production"],
             },
             {
                 "id": "server-456",
@@ -72,9 +73,9 @@ def sample_servers_list():
                 "ip": "192.168.1.11",
                 "status": "running",
                 "os": "Ubuntu 20.04",
-                "tags": ["database", "production"]
-            }
-        ]
+                "tags": ["database", "production"],
+            },
+        ],
     }
 
 
@@ -89,16 +90,16 @@ def sample_server_notes():
                 "title": "Maintenance Schedule",
                 "content": "Weekly maintenance on Sundays 2 AM UTC",
                 "created_at": "2024-01-01T00:00:00Z",
-                "updated_at": "2024-01-01T00:00:00Z"
+                "updated_at": "2024-01-01T00:00:00Z",
             },
             {
                 "id": "note-456",
                 "title": "SSL Certificate",
                 "content": "SSL certificate expires on 2024-12-31",
                 "created_at": "2024-01-02T00:00:00Z",
-                "updated_at": "2024-01-02T00:00:00Z"
-            }
-        ]
+                "updated_at": "2024-01-02T00:00:00Z",
+            },
+        ],
     }
 
 
@@ -106,14 +107,13 @@ class TestServersList:
     """Test servers list functionality."""
 
     @pytest.mark.asyncio
-    async def test_servers_list_success(self, mock_http_client, mock_token_manager, sample_servers_list):
+    async def test_servers_list_success(
+        self, mock_http_client, mock_token_manager, sample_servers_list
+    ):
         """Test successful servers list retrieval."""
         mock_http_client.get.return_value = sample_servers_list
 
-        result = await servers_list(
-            workspace="testworkspace",
-            region="ap1"
-        )
+        result = await servers_list(workspace="testworkspace", region="ap1")
 
         assert result["status"] == "success"
         assert result["data"] == sample_servers_list
@@ -123,7 +123,7 @@ class TestServersList:
             region="ap1",
             workspace="testworkspace",
             endpoint="/api/servers/servers/",
-            token="test-token"
+            token="test-token",
         )
 
     @pytest.mark.asyncio
@@ -138,21 +138,20 @@ class TestServersList:
         mock_http_client.get.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_servers_list_different_region(self, mock_http_client, mock_token_manager, sample_servers_list):
+    async def test_servers_list_different_region(
+        self, mock_http_client, mock_token_manager, sample_servers_list
+    ):
         """Test servers list with different region."""
         mock_http_client.get.return_value = sample_servers_list
 
-        result = await servers_list(
-            workspace="testworkspace",
-            region="us1"
-        )
+        result = await servers_list(workspace="testworkspace", region="us1")
 
         assert result["status"] == "success"
         mock_http_client.get.assert_called_once_with(
             region="us1",
             workspace="testworkspace",
             endpoint="/api/servers/servers/",
-            token="test-token"
+            token="test-token",
         )
 
     @pytest.mark.asyncio
@@ -170,14 +169,13 @@ class TestServerGet:
     """Test server details functionality."""
 
     @pytest.mark.asyncio
-    async def test_server_get_success(self, mock_http_client, mock_token_manager, sample_server):
+    async def test_server_get_success(
+        self, mock_http_client, mock_token_manager, sample_server
+    ):
         """Test successful server details retrieval."""
         mock_http_client.get.return_value = sample_server
 
-        result = await server_get(
-            server_id="server-123",
-            workspace="testworkspace"
-        )
+        result = await server_get(server_id="server-123", workspace="testworkspace")
 
         assert result["status"] == "success"
         assert result["data"] == sample_server
@@ -187,7 +185,7 @@ class TestServerGet:
             region="ap1",
             workspace="testworkspace",
             endpoint="/api/servers/server-123/",
-            token="test-token"
+            token="test-token",
         )
 
     @pytest.mark.asyncio
@@ -195,10 +193,7 @@ class TestServerGet:
         """Test server details with no token."""
         mock_token_manager.get_token.return_value = None
 
-        result = await server_get(
-            server_id="server-123",
-            workspace="testworkspace"
-        )
+        result = await server_get(server_id="server-123", workspace="testworkspace")
 
         assert result["status"] == "error"
         assert "No token found" in result["message"]
@@ -209,23 +204,20 @@ class TestServerGet:
         """Test server details with non-existent server."""
         mock_http_client.get.side_effect = Exception("HTTP 404: Server not found")
 
-        result = await server_get(
-            server_id="nonexistent",
-            workspace="testworkspace"
-        )
+        result = await server_get(server_id="nonexistent", workspace="testworkspace")
 
         assert result["status"] == "error"
         assert "HTTP 404" in result["message"]
 
     @pytest.mark.asyncio
-    async def test_server_get_different_region(self, mock_http_client, mock_token_manager, sample_server):
+    async def test_server_get_different_region(
+        self, mock_http_client, mock_token_manager, sample_server
+    ):
         """Test server details with different region."""
         mock_http_client.get.return_value = sample_server
 
         result = await server_get(
-            server_id="server-123",
-            workspace="testworkspace",
-            region="eu1"
+            server_id="server-123", workspace="testworkspace", region="eu1"
         )
 
         assert result["status"] == "success"
@@ -233,7 +225,7 @@ class TestServerGet:
             region="eu1",
             workspace="testworkspace",
             endpoint="/api/servers/server-123/",
-            token="test-token"
+            token="test-token",
         )
 
 
@@ -241,13 +233,14 @@ class TestServerNotes:
     """Test server notes functionality."""
 
     @pytest.mark.asyncio
-    async def test_server_notes_list_success(self, mock_http_client, mock_token_manager, sample_server_notes):
+    async def test_server_notes_list_success(
+        self, mock_http_client, mock_token_manager, sample_server_notes
+    ):
         """Test successful server notes list retrieval."""
         mock_http_client.get.return_value = sample_server_notes
 
         result = await server_notes_list(
-            server_id="server-123",
-            workspace="testworkspace"
+            server_id="server-123", workspace="testworkspace"
         )
 
         assert result["status"] == "success"
@@ -258,17 +251,18 @@ class TestServerNotes:
             region="ap1",
             workspace="testworkspace",
             endpoint="/api/servers/server-123/notes/",
-            token="test-token"
+            token="test-token",
         )
 
     @pytest.mark.asyncio
-    async def test_server_notes_list_no_token(self, mock_http_client, mock_token_manager):
+    async def test_server_notes_list_no_token(
+        self, mock_http_client, mock_token_manager
+    ):
         """Test server notes list with no token."""
         mock_token_manager.get_token.return_value = None
 
         result = await server_notes_list(
-            server_id="server-123",
-            workspace="testworkspace"
+            server_id="server-123", workspace="testworkspace"
         )
 
         assert result["status"] == "error"
@@ -276,14 +270,16 @@ class TestServerNotes:
         mock_http_client.get.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_server_note_create_success(self, mock_http_client, mock_token_manager):
+    async def test_server_note_create_success(
+        self, mock_http_client, mock_token_manager
+    ):
         """Test successful server note creation."""
         created_note = {
             "id": "note-789",
             "title": "New Note",
             "content": "This is a new note about the server",
             "created_at": "2024-01-03T00:00:00Z",
-            "updated_at": "2024-01-03T00:00:00Z"
+            "updated_at": "2024-01-03T00:00:00Z",
         }
         mock_http_client.post.return_value = created_note
 
@@ -291,7 +287,7 @@ class TestServerNotes:
             server_id="server-123",
             title="New Note",
             content="This is a new note about the server",
-            workspace="testworkspace"
+            workspace="testworkspace",
         )
 
         assert result["status"] == "success"
@@ -300,7 +296,7 @@ class TestServerNotes:
 
         expected_data = {
             "title": "New Note",
-            "content": "This is a new note about the server"
+            "content": "This is a new note about the server",
         }
 
         mock_http_client.post.assert_called_once_with(
@@ -308,11 +304,13 @@ class TestServerNotes:
             workspace="testworkspace",
             endpoint="/api/servers/server-123/notes/",
             token="test-token",
-            data=expected_data
+            data=expected_data,
         )
 
     @pytest.mark.asyncio
-    async def test_server_note_create_no_token(self, mock_http_client, mock_token_manager):
+    async def test_server_note_create_no_token(
+        self, mock_http_client, mock_token_manager
+    ):
         """Test server note creation with no token."""
         mock_token_manager.get_token.return_value = None
 
@@ -320,7 +318,7 @@ class TestServerNotes:
             server_id="server-123",
             title="New Note",
             content="This is a new note about the server",
-            workspace="testworkspace"
+            workspace="testworkspace",
         )
 
         assert result["status"] == "error"
@@ -328,7 +326,9 @@ class TestServerNotes:
         mock_http_client.post.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_server_note_create_validation_error(self, mock_http_client, mock_token_manager):
+    async def test_server_note_create_validation_error(
+        self, mock_http_client, mock_token_manager
+    ):
         """Test server note creation with validation error."""
         mock_http_client.post.side_effect = Exception("HTTP 400: Title cannot be empty")
 
@@ -336,7 +336,7 @@ class TestServerNotes:
             server_id="server-123",
             title="",
             content="This is a new note about the server",
-            workspace="testworkspace"
+            workspace="testworkspace",
         )
 
         assert result["status"] == "error"
@@ -349,10 +349,7 @@ class TestParameterValidation:
     @pytest.mark.asyncio
     async def test_empty_server_id(self, mock_http_client, mock_token_manager):
         """Test with empty server ID."""
-        result = await server_get(
-            server_id="",
-            workspace="testworkspace"
-        )
+        result = await server_get(server_id="", workspace="testworkspace")
 
         # The function should still make the API call with empty server_id
         # and let the API handle the validation
@@ -360,25 +357,24 @@ class TestParameterValidation:
             region="ap1",
             workspace="testworkspace",
             endpoint="/api/servers//",
-            token="test-token"
+            token="test-token",
         )
 
     @pytest.mark.asyncio
-    async def test_special_characters_in_workspace(self, mock_http_client, mock_token_manager, sample_servers_list):
+    async def test_special_characters_in_workspace(
+        self, mock_http_client, mock_token_manager, sample_servers_list
+    ):
         """Test with special characters in workspace name."""
         mock_http_client.get.return_value = sample_servers_list
 
-        result = await servers_list(
-            workspace="test-workspace_123",
-            region="ap1"
-        )
+        result = await servers_list(workspace="test-workspace_123", region="ap1")
 
         assert result["status"] == "success"
         mock_http_client.get.assert_called_once_with(
             region="ap1",
             workspace="test-workspace_123",
             endpoint="/api/servers/servers/",
-            token="test-token"
+            token="test-token",
         )
 
     @pytest.mark.asyncio
@@ -390,7 +386,7 @@ class TestParameterValidation:
             "title": "Long Note",
             "content": long_content,
             "created_at": "2024-01-03T00:00:00Z",
-            "updated_at": "2024-01-03T00:00:00Z"
+            "updated_at": "2024-01-03T00:00:00Z",
         }
         mock_http_client.post.return_value = created_note
 
@@ -398,7 +394,7 @@ class TestParameterValidation:
             server_id="server-123",
             title="Long Note",
             content=long_content,
-            workspace="testworkspace"
+            workspace="testworkspace",
         )
 
         assert result["status"] == "success"
@@ -409,16 +405,15 @@ class TestRegionHandling:
     """Test region parameter handling."""
 
     @pytest.mark.asyncio
-    async def test_all_supported_regions(self, mock_http_client, mock_token_manager, sample_servers_list):
+    async def test_all_supported_regions(
+        self, mock_http_client, mock_token_manager, sample_servers_list
+    ):
         """Test with all supported regions."""
         mock_http_client.get.return_value = sample_servers_list
         regions = ["ap1", "us1", "eu1", "dev"]
 
         for region in regions:
-            result = await servers_list(
-                workspace="testworkspace",
-                region=region
-            )
+            result = await servers_list(workspace="testworkspace", region=region)
 
             assert result["status"] == "success"
 
@@ -430,7 +425,7 @@ class TestRegionHandling:
             region="dev",
             workspace="testworkspace",
             endpoint="/api/servers/servers/",
-            token="test-token"
+            token="test-token",
         )
 
 

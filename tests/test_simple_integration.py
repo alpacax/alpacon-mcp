@@ -3,6 +3,7 @@ Simple integration tests for Alpacon MCP Server.
 
 Tests basic integration and configuration loading without complex mocking.
 """
+
 import pytest
 import json
 import os
@@ -14,30 +15,26 @@ from pathlib import Path
 def temp_config_file():
     """Create a temporary token configuration file for testing."""
     config_data = {
-        "ap1": {
-            "testworkspace": "test-token-ap1"
-        },
-        "us1": {
-            "testworkspace": "test-token-us1"
-        }
+        "ap1": {"testworkspace": "test-token-ap1"},
+        "us1": {"testworkspace": "test-token-us1"},
     }
 
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
         json.dump(config_data, f)
         temp_file = f.name
 
     # Set environment variable to use this config file
-    original_env = os.environ.get('ALPACON_MCP_CONFIG_FILE')
-    os.environ['ALPACON_MCP_CONFIG_FILE'] = temp_file
+    original_env = os.environ.get("ALPACON_MCP_CONFIG_FILE")
+    os.environ["ALPACON_MCP_CONFIG_FILE"] = temp_file
 
     yield temp_file
 
     # Cleanup
     os.unlink(temp_file)
     if original_env is not None:
-        os.environ['ALPACON_MCP_CONFIG_FILE'] = original_env
+        os.environ["ALPACON_MCP_CONFIG_FILE"] = original_env
     else:
-        os.environ.pop('ALPACON_MCP_CONFIG_FILE', None)
+        os.environ.pop("ALPACON_MCP_CONFIG_FILE", None)
 
 
 class TestTokenManagement:
@@ -76,10 +73,7 @@ class TestTokenManagement:
         from tools.server_tools import servers_list
 
         # Try to use a workspace/region combination that doesn't exist
-        result = await servers_list(
-            workspace="nonexistent_workspace",
-            region="ap1"
-        )
+        result = await servers_list(workspace="nonexistent_workspace", region="ap1")
 
         # Should return error status
         assert result["status"] == "error"
@@ -94,38 +88,38 @@ class TestModuleImports:
         from tools import server_tools
 
         # Check required functions exist
-        assert hasattr(server_tools, 'servers_list')
-        assert hasattr(server_tools, 'server_get')
-        assert hasattr(server_tools, 'server_notes_list')
-        assert hasattr(server_tools, 'server_note_create')
+        assert hasattr(server_tools, "servers_list")
+        assert hasattr(server_tools, "server_get")
+        assert hasattr(server_tools, "server_notes_list")
+        assert hasattr(server_tools, "server_note_create")
 
     def test_iam_tools_import(self):
         """Test IAM tools module import."""
         from tools import iam_tools
 
         # Check required functions exist
-        assert hasattr(iam_tools, 'iam_users_list')
-        assert hasattr(iam_tools, 'iam_user_get')
-        assert hasattr(iam_tools, 'iam_user_create')
-        assert hasattr(iam_tools, 'iam_groups_list')
+        assert hasattr(iam_tools, "iam_users_list")
+        assert hasattr(iam_tools, "iam_user_get")
+        assert hasattr(iam_tools, "iam_user_create")
+        assert hasattr(iam_tools, "iam_groups_list")
 
     def test_http_client_import(self):
         """Test HTTP client import."""
         from utils import http_client
 
         # Check client object exists
-        assert hasattr(http_client, 'http_client')
-        assert hasattr(http_client.http_client, 'get')
-        assert hasattr(http_client.http_client, 'post')
-        assert hasattr(http_client.http_client, 'patch')
-        assert hasattr(http_client.http_client, 'delete')
+        assert hasattr(http_client, "http_client")
+        assert hasattr(http_client.http_client, "get")
+        assert hasattr(http_client.http_client, "post")
+        assert hasattr(http_client.http_client, "patch")
+        assert hasattr(http_client.http_client, "delete")
 
     def test_logger_import(self):
         """Test logger utility import."""
         from utils import logger
 
         # Check logger function exists
-        assert hasattr(logger, 'get_logger')
+        assert hasattr(logger, "get_logger")
 
         # Test logger creation
         test_logger = logger.get_logger("test")
@@ -174,9 +168,9 @@ class TestUtilityFunctions:
         tm = TokenManager()
 
         # Check required methods exist
-        assert hasattr(tm, 'get_token')
-        assert hasattr(tm, 'set_token')
-        assert hasattr(tm, 'remove_token')
+        assert hasattr(tm, "get_token")
+        assert hasattr(tm, "set_token")
+        assert hasattr(tm, "remove_token")
 
         # Test basic functionality without file operations
         assert tm.get_token("nonexistent", "workspace") is None

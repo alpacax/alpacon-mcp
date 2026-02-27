@@ -6,7 +6,9 @@ logger = get_logger("server")
 
 # This is the shared MCP server instance
 host = os.getenv("ALPACON_MCP_HOST", "127.0.0.1")  # Default to localhost for security
-port = int(os.getenv("ALPACON_MCP_PORT", "8237"))  # Default port 8237 (MCAR - MCP Alpacon Remote)
+port = int(
+    os.getenv("ALPACON_MCP_PORT", "8237")
+)  # Default port 8237 (MCAR - MCP Alpacon Remote)
 
 logger.info(f"Initializing FastMCP server - host: {host}, port: {port}")
 

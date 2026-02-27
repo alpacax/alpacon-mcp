@@ -4,6 +4,7 @@ Unit tests for workspace_tools module.
 Tests workspace management functionality including workspace listing,
 user settings management, and user profile operations.
 """
+
 import pytest
 from unittest.mock import AsyncMock, patch
 
@@ -11,7 +12,7 @@ from unittest.mock import AsyncMock, patch
 @pytest.fixture
 def mock_http_client():
     """Mock HTTP client for testing."""
-    with patch('tools.workspace_tools.http_client') as mock_client:
+    with patch("tools.workspace_tools.http_client") as mock_client:
         # Mock the async methods properly
         mock_client.get = AsyncMock()
         mock_client.patch = AsyncMock()
@@ -21,21 +22,19 @@ def mock_http_client():
 @pytest.fixture
 def mock_token_manager():
     """Mock token manager for testing."""
-    with patch('tools.workspace_tools.token_manager') as mock_manager:
+    with patch("tools.workspace_tools.token_manager") as mock_manager:
         mock_manager.get_token.return_value = "test-token"
         mock_manager.get_all_tokens.return_value = {
             "ap1": {
                 "production": {"token": "token1"},
                 "staging": {"token": "token2"},
-                "development": {"token": "token3"}
+                "development": {"token": "token3"},
             },
             "us1": {
                 "backup": {"token": "token4"},
-                "disaster-recovery": {"token": "token5"}
+                "disaster-recovery": {"token": "token5"},
             },
-            "eu1": {
-                "compliance": {"token": "token6"}
-            }
+            "eu1": {"compliance": {"token": "token6"}},
         }
         yield mock_manager
 
@@ -76,7 +75,9 @@ class TestWorkspaceList:
         mock_token_manager.get_all_tokens.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_workspace_list_different_region(self, mock_http_client, mock_token_manager):
+    async def test_workspace_list_different_region(
+        self, mock_http_client, mock_token_manager
+    ):
         """Test workspace listing for different region."""
         from tools.workspace_tools import workspace_list
 
@@ -97,7 +98,9 @@ class TestWorkspaceList:
         assert backup_ws["domain"] == "backup.us1.alpacon.io"
 
     @pytest.mark.asyncio
-    async def test_workspace_list_empty_region(self, mock_http_client, mock_token_manager):
+    async def test_workspace_list_empty_region(
+        self, mock_http_client, mock_token_manager
+    ):
         """Test workspace listing for region with no workspaces."""
         from tools.workspace_tools import workspace_list
 
@@ -113,7 +116,9 @@ class TestWorkspaceList:
         assert result["data"]["workspaces"] == []
 
     @pytest.mark.asyncio
-    async def test_workspace_list_token_manager_error(self, mock_http_client, mock_token_manager):
+    async def test_workspace_list_token_manager_error(
+        self, mock_http_client, mock_token_manager
+    ):
         """Test workspace listing when token manager fails."""
         from tools.workspace_tools import workspace_list
 
@@ -126,7 +131,9 @@ class TestWorkspaceList:
         assert "Token manager error" in result["message"]
 
     @pytest.mark.asyncio
-    async def test_workspace_list_workspace_without_token(self, mock_http_client, mock_token_manager):
+    async def test_workspace_list_workspace_without_token(
+        self, mock_http_client, mock_token_manager
+    ):
         """Test workspace listing with workspace that has no token."""
         from tools.workspace_tools import workspace_list
 
@@ -135,7 +142,7 @@ class TestWorkspaceList:
             "ap1": {
                 "production": {"token": "token1"},
                 "staging": {"token": ""},  # Empty token
-                "development": {}  # No token key
+                "development": {},  # No token key
             }
         }
 
@@ -147,7 +154,9 @@ class TestWorkspaceList:
         # Find workspaces and check token status
         production_ws = next(ws for ws in workspaces if ws["workspace"] == "production")
         staging_ws = next(ws for ws in workspaces if ws["workspace"] == "staging")
-        development_ws = next(ws for ws in workspaces if ws["workspace"] == "development")
+        development_ws = next(
+            ws for ws in workspaces if ws["workspace"] == "development"
+        )
 
         assert production_ws["has_token"] == True
         assert staging_ws["has_token"] == False
@@ -158,7 +167,9 @@ class TestUserSettingsGet:
     """Test user_settings_get function."""
 
     @pytest.mark.asyncio
-    async def test_user_settings_get_success(self, mock_http_client, mock_token_manager):
+    async def test_user_settings_get_success(
+        self, mock_http_client, mock_token_manager
+    ):
         """Test successful user settings retrieval."""
         from tools.workspace_tools import user_settings_get
 
@@ -167,22 +178,15 @@ class TestUserSettingsGet:
             "theme": "dark",
             "language": "en",
             "timezone": "UTC",
-            "notifications": {
-                "email": True,
-                "sms": False,
-                "push": True
-            },
+            "notifications": {"email": True, "sms": False, "push": True},
             "preferences": {
                 "default_region": "ap1",
                 "dashboard_layout": "grid",
-                "items_per_page": 25
-            }
+                "items_per_page": 25,
+            },
         }
 
-        result = await user_settings_get(
-            workspace="testworkspace",
-            region="ap1"
-        )
+        result = await user_settings_get(workspace="testworkspace", region="ap1")
 
         # Verify response structure
         assert result["status"] == "success"
@@ -197,52 +201,49 @@ class TestUserSettingsGet:
             region="ap1",
             workspace="testworkspace",
             endpoint="/api/user/settings/",
-            token="test-token"
+            token="test-token",
         )
 
     @pytest.mark.asyncio
-    async def test_user_settings_get_no_token(self, mock_http_client, mock_token_manager):
+    async def test_user_settings_get_no_token(
+        self, mock_http_client, mock_token_manager
+    ):
         """Test user settings get when no token is available."""
         from tools.workspace_tools import user_settings_get
 
         mock_token_manager.get_token.return_value = None
 
-        result = await user_settings_get(
-            workspace="testworkspace",
-            region="ap1"
-        )
+        result = await user_settings_get(workspace="testworkspace", region="ap1")
 
         assert result["status"] == "error"
         assert "No token found" in result["message"]
         mock_http_client.get.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_user_settings_get_http_error(self, mock_http_client, mock_token_manager):
+    async def test_user_settings_get_http_error(
+        self, mock_http_client, mock_token_manager
+    ):
         """Test user settings get with HTTP error."""
         from tools.workspace_tools import user_settings_get
 
         mock_http_client.get.side_effect = Exception("HTTP 403 Forbidden")
 
-        result = await user_settings_get(
-            workspace="testworkspace",
-            region="ap1"
-        )
+        result = await user_settings_get(workspace="testworkspace", region="ap1")
 
         assert result["status"] == "error"
         assert "Failed to get user settings" in result["message"]
         assert "403" in result["message"]
 
     @pytest.mark.asyncio
-    async def test_user_settings_get_different_region(self, mock_http_client, mock_token_manager):
+    async def test_user_settings_get_different_region(
+        self, mock_http_client, mock_token_manager
+    ):
         """Test user settings get with different region."""
         from tools.workspace_tools import user_settings_get
 
         mock_http_client.get.return_value = {"theme": "light"}
 
-        result = await user_settings_get(
-            workspace="eu-workspace",
-            region="eu1"
-        )
+        result = await user_settings_get(workspace="eu-workspace", region="eu1")
 
         assert result["status"] == "success"
         assert result["region"] == "eu1"
@@ -258,7 +259,9 @@ class TestUserSettingsUpdate:
     """Test user_settings_update function."""
 
     @pytest.mark.asyncio
-    async def test_user_settings_update_success(self, mock_http_client, mock_token_manager):
+    async def test_user_settings_update_success(
+        self, mock_http_client, mock_token_manager
+    ):
         """Test successful user settings update."""
         from tools.workspace_tools import user_settings_update
 
@@ -267,19 +270,17 @@ class TestUserSettingsUpdate:
             "theme": "light",
             "language": "es",
             "timezone": "Europe/Madrid",
-            "updated_at": "2024-01-01T12:00:00Z"
+            "updated_at": "2024-01-01T12:00:00Z",
         }
 
         settings_to_update = {
             "theme": "light",
             "language": "es",
-            "timezone": "Europe/Madrid"
+            "timezone": "Europe/Madrid",
         }
 
         result = await user_settings_update(
-            settings=settings_to_update,
-            workspace="testworkspace",
-            region="ap1"
+            settings=settings_to_update, workspace="testworkspace", region="ap1"
         )
 
         # Verify response structure
@@ -297,26 +298,26 @@ class TestUserSettingsUpdate:
             workspace="testworkspace",
             endpoint="/api/user/settings/",
             token="test-token",
-            data=settings_to_update
+            data=settings_to_update,
         )
 
     @pytest.mark.asyncio
-    async def test_user_settings_update_partial(self, mock_http_client, mock_token_manager):
+    async def test_user_settings_update_partial(
+        self, mock_http_client, mock_token_manager
+    ):
         """Test partial user settings update."""
         from tools.workspace_tools import user_settings_update
 
         mock_http_client.patch.return_value = {
             "theme": "dark",
-            "updated_at": "2024-01-01T12:00:00Z"
+            "updated_at": "2024-01-01T12:00:00Z",
         }
 
         # Update only theme
         settings_to_update = {"theme": "dark"}
 
         result = await user_settings_update(
-            settings=settings_to_update,
-            workspace="testworkspace",
-            region="ap1"
+            settings=settings_to_update, workspace="testworkspace", region="ap1"
         )
 
         assert result["status"] == "success"
@@ -328,7 +329,9 @@ class TestUserSettingsUpdate:
         assert call_args[1]["data"] == {"theme": "dark"}
 
     @pytest.mark.asyncio
-    async def test_user_settings_update_complex_data(self, mock_http_client, mock_token_manager):
+    async def test_user_settings_update_complex_data(
+        self, mock_http_client, mock_token_manager
+    ):
         """Test user settings update with complex nested data."""
         from tools.workspace_tools import user_settings_update
 
@@ -339,21 +342,16 @@ class TestUserSettingsUpdate:
                 "email": False,
                 "sms": True,
                 "push": True,
-                "channels": ["alerts", "reports"]
+                "channels": ["alerts", "reports"],
             },
             "preferences": {
-                "dashboard": {
-                    "layout": "list",
-                    "refresh_interval": 30
-                },
-                "filters": ["status:active", "region:ap1"]
-            }
+                "dashboard": {"layout": "list", "refresh_interval": 30},
+                "filters": ["status:active", "region:ap1"],
+            },
         }
 
         result = await user_settings_update(
-            settings=complex_settings,
-            workspace="testworkspace",
-            region="ap1"
+            settings=complex_settings, workspace="testworkspace", region="ap1"
         )
 
         assert result["status"] == "success"
@@ -364,16 +362,16 @@ class TestUserSettingsUpdate:
         assert call_args[1]["data"] == complex_settings
 
     @pytest.mark.asyncio
-    async def test_user_settings_update_no_token(self, mock_http_client, mock_token_manager):
+    async def test_user_settings_update_no_token(
+        self, mock_http_client, mock_token_manager
+    ):
         """Test user settings update when no token is available."""
         from tools.workspace_tools import user_settings_update
 
         mock_token_manager.get_token.return_value = None
 
         result = await user_settings_update(
-            settings={"theme": "dark"},
-            workspace="testworkspace",
-            region="ap1"
+            settings={"theme": "dark"}, workspace="testworkspace", region="ap1"
         )
 
         assert result["status"] == "error"
@@ -381,7 +379,9 @@ class TestUserSettingsUpdate:
         mock_http_client.patch.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_user_settings_update_http_error(self, mock_http_client, mock_token_manager):
+    async def test_user_settings_update_http_error(
+        self, mock_http_client, mock_token_manager
+    ):
         """Test user settings update with HTTP error."""
         from tools.workspace_tools import user_settings_update
 
@@ -390,7 +390,7 @@ class TestUserSettingsUpdate:
         result = await user_settings_update(
             settings={"invalid_key": "invalid_value"},
             workspace="testworkspace",
-            region="ap1"
+            region="ap1",
         )
 
         assert result["status"] == "error"
@@ -398,16 +398,16 @@ class TestUserSettingsUpdate:
         assert "400" in result["message"]
 
     @pytest.mark.asyncio
-    async def test_user_settings_update_empty_settings(self, mock_http_client, mock_token_manager):
+    async def test_user_settings_update_empty_settings(
+        self, mock_http_client, mock_token_manager
+    ):
         """Test user settings update with empty settings."""
         from tools.workspace_tools import user_settings_update
 
         mock_http_client.patch.return_value = {"status": "no changes"}
 
         result = await user_settings_update(
-            settings={},
-            workspace="testworkspace",
-            region="ap1"
+            settings={}, workspace="testworkspace", region="ap1"
         )
 
         assert result["status"] == "success"
@@ -440,21 +440,18 @@ class TestUserProfileGet:
             "permissions": [
                 "can_view_servers",
                 "can_execute_commands",
-                "can_manage_files"
+                "can_manage_files",
             ],
             "workspace_role": "admin",
             "quota": {
                 "storage": 10737418240,  # 10GB
                 "used_storage": 1073741824,  # 1GB
                 "max_servers": 50,
-                "current_servers": 12
-            }
+                "current_servers": 12,
+            },
         }
 
-        result = await user_profile_get(
-            workspace="testworkspace",
-            region="ap1"
-        )
+        result = await user_profile_get(workspace="testworkspace", region="ap1")
 
         # Verify response structure
         assert result["status"] == "success"
@@ -478,11 +475,13 @@ class TestUserProfileGet:
             region="ap1",
             workspace="testworkspace",
             endpoint="/api/user/profile/",
-            token="test-token"
+            token="test-token",
         )
 
     @pytest.mark.asyncio
-    async def test_user_profile_get_minimal_data(self, mock_http_client, mock_token_manager):
+    async def test_user_profile_get_minimal_data(
+        self, mock_http_client, mock_token_manager
+    ):
         """Test user profile get with minimal profile data."""
         from tools.workspace_tools import user_profile_get
 
@@ -492,13 +491,10 @@ class TestUserProfileGet:
             "username": "limiteduser",
             "email": "limited@example.com",
             "is_active": True,
-            "workspace_role": "viewer"
+            "workspace_role": "viewer",
         }
 
-        result = await user_profile_get(
-            workspace="testworkspace",
-            region="ap1"
-        )
+        result = await user_profile_get(workspace="testworkspace", region="ap1")
 
         assert result["status"] == "success"
         profile = result["data"]
@@ -507,52 +503,49 @@ class TestUserProfileGet:
         assert profile["workspace_role"] == "viewer"
 
     @pytest.mark.asyncio
-    async def test_user_profile_get_no_token(self, mock_http_client, mock_token_manager):
+    async def test_user_profile_get_no_token(
+        self, mock_http_client, mock_token_manager
+    ):
         """Test user profile get when no token is available."""
         from tools.workspace_tools import user_profile_get
 
         mock_token_manager.get_token.return_value = None
 
-        result = await user_profile_get(
-            workspace="testworkspace",
-            region="ap1"
-        )
+        result = await user_profile_get(workspace="testworkspace", region="ap1")
 
         assert result["status"] == "error"
         assert "No token found" in result["message"]
         mock_http_client.get.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_user_profile_get_http_error(self, mock_http_client, mock_token_manager):
+    async def test_user_profile_get_http_error(
+        self, mock_http_client, mock_token_manager
+    ):
         """Test user profile get with HTTP error."""
         from tools.workspace_tools import user_profile_get
 
         mock_http_client.get.side_effect = Exception("HTTP 401 Unauthorized")
 
-        result = await user_profile_get(
-            workspace="testworkspace",
-            region="ap1"
-        )
+        result = await user_profile_get(workspace="testworkspace", region="ap1")
 
         assert result["status"] == "error"
         assert "Failed to get user profile" in result["message"]
         assert "401" in result["message"]
 
     @pytest.mark.asyncio
-    async def test_user_profile_get_different_region(self, mock_http_client, mock_token_manager):
+    async def test_user_profile_get_different_region(
+        self, mock_http_client, mock_token_manager
+    ):
         """Test user profile get with different region."""
         from tools.workspace_tools import user_profile_get
 
         mock_http_client.get.return_value = {
             "id": 54321,
             "username": "eurouser",
-            "workspace_role": "operator"
+            "workspace_role": "operator",
         }
 
-        result = await user_profile_get(
-            workspace="eu-workspace",
-            region="eu1"
-        )
+        result = await user_profile_get(workspace="eu-workspace", region="eu1")
 
         assert result["status"] == "success"
         assert result["region"] == "eu1"
@@ -568,9 +561,15 @@ class TestWorkspaceToolsEdgeCases:
     """Test edge cases and error conditions."""
 
     @pytest.mark.asyncio
-    async def test_all_functions_with_different_regions(self, mock_http_client, mock_token_manager):
+    async def test_all_functions_with_different_regions(
+        self, mock_http_client, mock_token_manager
+    ):
         """Test all functions with various regions and workspaces."""
-        from tools.workspace_tools import user_settings_get, user_settings_update, user_profile_get
+        from tools.workspace_tools import (
+            user_settings_get,
+            user_settings_update,
+            user_profile_get,
+        )
 
         # Mock successful responses
         mock_http_client.get.return_value = {"test": "data"}
@@ -579,15 +578,11 @@ class TestWorkspaceToolsEdgeCases:
         functions_to_test = [
             (user_settings_get, {}),
             (user_settings_update, {"settings": {"theme": "dark"}}),
-            (user_profile_get, {})
+            (user_profile_get, {}),
         ]
 
         for func, extra_args in functions_to_test:
-            result = await func(
-                workspace="us-workspace",
-                region="us1",
-                **extra_args
-            )
+            result = await func(workspace="us-workspace", region="us1", **extra_args)
 
             assert result["status"] == "success"
             assert result["workspace"] == "us-workspace"
@@ -601,10 +596,10 @@ class TestWorkspaceToolsEdgeCases:
 
         # Mock different responses for each call
         def get_side_effect(*args, **kwargs):
-            endpoint = kwargs.get('endpoint', '')
-            if 'settings' in endpoint:
+            endpoint = kwargs.get("endpoint", "")
+            if "settings" in endpoint:
                 return {"theme": "dark"}
-            elif 'profile' in endpoint:
+            elif "profile" in endpoint:
                 return {"username": "testuser"}
             return {}
 
@@ -614,7 +609,7 @@ class TestWorkspaceToolsEdgeCases:
         results = await asyncio.gather(
             user_settings_get(workspace="testworkspace", region="ap1"),
             user_profile_get(workspace="testworkspace", region="ap1"),
-            return_exceptions=True
+            return_exceptions=True,
         )
 
         # Verify both operations succeeded
@@ -624,24 +619,26 @@ class TestWorkspaceToolsEdgeCases:
         assert results[1]["data"]["username"] == "testuser"
 
     @pytest.mark.asyncio
-    async def test_token_manager_exceptions_in_all_functions(self, mock_http_client, mock_token_manager):
+    async def test_token_manager_exceptions_in_all_functions(
+        self, mock_http_client, mock_token_manager
+    ):
         """Test all functions when token manager raises exceptions."""
-        from tools.workspace_tools import user_settings_get, user_settings_update, user_profile_get
+        from tools.workspace_tools import (
+            user_settings_get,
+            user_settings_update,
+            user_profile_get,
+        )
 
         mock_token_manager.get_token.side_effect = Exception("Token service down")
 
         functions_to_test = [
             (user_settings_get, {}),
             (user_settings_update, {"settings": {"theme": "dark"}}),
-            (user_profile_get, {})
+            (user_profile_get, {}),
         ]
 
         for func, extra_args in functions_to_test:
-            result = await func(
-                workspace="testworkspace",
-                region="ap1",
-                **extra_args
-            )
+            result = await func(workspace="testworkspace", region="ap1", **extra_args)
 
             assert result["status"] == "error"
             assert "Token service down" in result["message"]

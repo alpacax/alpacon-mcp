@@ -4,6 +4,7 @@ Unit tests for HTTP client utility.
 Tests the HTTP client functionality including GET, POST, PATCH, DELETE operations
 and error handling.
 """
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
@@ -13,7 +14,7 @@ from utils.http_client import http_client
 @pytest.fixture
 def mock_httpx_client():
     """Mock httpx AsyncClient for testing."""
-    with patch('utils.http_client.httpx.AsyncClient') as mock_client_class:
+    with patch("utils.http_client.httpx.AsyncClient") as mock_client_class:
         # Disable connection pooling for all tests
         http_client._disable_pooling = True
 
@@ -33,8 +34,9 @@ def mock_httpx_client():
         yield mock_client
 
         # Clean up after tests
-        if hasattr(http_client, '_disable_pooling'):
-            delattr(http_client, '_disable_pooling')
+        if hasattr(http_client, "_disable_pooling"):
+            delattr(http_client, "_disable_pooling")
+
 
 def create_mock_response(status_code=200, json_data=None, text_data="", headers=None):
     """Create a properly configured mock response."""
@@ -54,7 +56,9 @@ def create_mock_response(status_code=200, json_data=None, text_data="", headers=
 
     # Mock raise_for_status to raise HTTPStatusError for error codes
     if status_code >= 400:
-        error = httpx.HTTPStatusError("HTTP Error", request=MagicMock(), response=mock_response)
+        error = httpx.HTTPStatusError(
+            "HTTP Error", request=MagicMock(), response=mock_response
+        )
         mock_response.raise_for_status.side_effect = error
     else:
         mock_response.raise_for_status.return_value = None
@@ -69,8 +73,7 @@ class TestHTTPClientGet:
     async def test_get_success(self, mock_httpx_client):
         """Test successful GET request."""
         mock_response = create_mock_response(
-            status_code=200,
-            json_data={"result": "success"}
+            status_code=200, json_data={"result": "success"}
         )
         mock_httpx_client.request.return_value = mock_response
 
@@ -78,7 +81,7 @@ class TestHTTPClientGet:
             region="ap1",
             workspace="testworkspace",
             endpoint="/api/test/",
-            token="test-token"
+            token="test-token",
         )
 
         assert result == {"result": "success"}
@@ -86,10 +89,7 @@ class TestHTTPClientGet:
     @pytest.mark.asyncio
     async def test_get_with_params(self, mock_httpx_client):
         """Test GET request with query parameters."""
-        mock_response = create_mock_response(
-            status_code=200,
-            json_data={"results": []}
-        )
+        mock_response = create_mock_response(status_code=200, json_data={"results": []})
         mock_httpx_client.request.return_value = mock_response
 
         params = {"page": 1, "page_size": 20}
@@ -98,7 +98,7 @@ class TestHTTPClientGet:
             workspace="testworkspace",
             endpoint="/api/test/",
             token="test-token",
-            params=params
+            params=params,
         )
 
         assert result == {"results": []}
@@ -113,7 +113,7 @@ class TestHTTPClientGet:
             region="ap1",
             workspace="testworkspace",
             endpoint="/api/notfound/",
-            token="test-token"
+            token="test-token",
         )
 
         assert result["error"] == "HTTP Error"
@@ -129,7 +129,7 @@ class TestHTTPClientGet:
             region="ap1",
             workspace="testworkspace",
             endpoint="/api/error/",
-            token="test-token"
+            token="test-token",
         )
 
         assert result["error"] == "Max retries exceeded"
@@ -144,8 +144,7 @@ class TestHTTPClientPost:
     async def test_post_success(self, mock_httpx_client):
         """Test successful POST request."""
         mock_response = create_mock_response(
-            status_code=201,
-            json_data={"id": 123, "created": True}
+            status_code=201, json_data={"id": 123, "created": True}
         )
         mock_httpx_client.request.return_value = mock_response
 
@@ -154,7 +153,7 @@ class TestHTTPClientPost:
             workspace="testworkspace",
             endpoint="/api/create/",
             token="test-token",
-            data={"name": "test"}
+            data={"name": "test"},
         )
 
         assert result == {"id": 123, "created": True}
@@ -170,7 +169,7 @@ class TestHTTPClientPost:
             workspace="testworkspace",
             endpoint="/api/create/",
             token="test-token",
-            data={"invalid": "data"}
+            data={"invalid": "data"},
         )
 
         assert result["error"] == "HTTP Error"
@@ -184,8 +183,7 @@ class TestHTTPClientPatch:
     async def test_patch_success(self, mock_httpx_client):
         """Test successful PATCH request."""
         mock_response = create_mock_response(
-            status_code=200,
-            json_data={"updated": True}
+            status_code=200, json_data={"updated": True}
         )
         mock_httpx_client.request.return_value = mock_response
 
@@ -194,7 +192,7 @@ class TestHTTPClientPatch:
             workspace="testworkspace",
             endpoint="/api/update/123/",
             token="test-token",
-            data={"name": "updated"}
+            data={"name": "updated"},
         )
 
         assert result == {"updated": True}
@@ -213,7 +211,7 @@ class TestHTTPClientDelete:
             region="ap1",
             workspace="testworkspace",
             endpoint="/api/delete/123/",
-            token="test-token"
+            token="test-token",
         )
 
         assert result == {"status": "success", "status_code": 204}
@@ -222,8 +220,7 @@ class TestHTTPClientDelete:
     async def test_delete_with_response(self, mock_httpx_client):
         """Test DELETE request with response body."""
         mock_response = create_mock_response(
-            status_code=200,
-            json_data={"deleted": True, "id": 123}
+            status_code=200, json_data={"deleted": True, "id": 123}
         )
         mock_httpx_client.request.return_value = mock_response
 
@@ -231,7 +228,7 @@ class TestHTTPClientDelete:
             region="ap1",
             workspace="testworkspace",
             endpoint="/api/delete/123/",
-            token="test-token"
+            token="test-token",
         )
 
         assert result == {"deleted": True, "id": 123}
@@ -244,8 +241,7 @@ class TestURLConstruction:
     async def test_url_construction_all_regions(self, mock_httpx_client):
         """Test URL construction for all supported regions."""
         mock_response = create_mock_response(
-            status_code=200,
-            json_data={"region": "test"}
+            status_code=200, json_data={"region": "test"}
         )
         mock_httpx_client.request.return_value = mock_response
 
@@ -255,7 +251,7 @@ class TestURLConstruction:
                 region=region,
                 workspace="testworkspace",
                 endpoint="/api/test/",
-                token="test-token"
+                token="test-token",
             )
 
         # Verify URLs were constructed correctly
@@ -263,7 +259,7 @@ class TestURLConstruction:
         expected_urls = [
             "https://testworkspace.ap1.alpacon.io/api/test/",
             "https://testworkspace.us1.alpacon.io/api/test/",
-            "https://testworkspace.eu1.alpacon.io/api/test/"
+            "https://testworkspace.eu1.alpacon.io/api/test/",
         ]
         for i, expected_url in enumerate(expected_urls):
             assert calls[i][1]["url"] == expected_url
@@ -275,13 +271,15 @@ class TestErrorHandling:
     @pytest.mark.asyncio
     async def test_network_timeout(self, mock_httpx_client):
         """Test network timeout handling."""
-        mock_httpx_client.request.side_effect = httpx.TimeoutException("Request timeout")
+        mock_httpx_client.request.side_effect = httpx.TimeoutException(
+            "Request timeout"
+        )
 
         result = await http_client.get(
             region="ap1",
             workspace="testworkspace",
             endpoint="/api/test/",
-            token="test-token"
+            token="test-token",
         )
 
         assert result["error"] == "Timeout"
@@ -295,7 +293,7 @@ class TestErrorHandling:
             region="ap1",
             workspace="testworkspace",
             endpoint="/api/test/",
-            token="test-token"
+            token="test-token",
         )
 
         assert result["error"] == "Request Error"
@@ -318,7 +316,7 @@ class TestErrorHandling:
             region="ap1",
             workspace="testworkspace",
             endpoint="/api/test/",
-            token="test-token"
+            token="test-token",
         )
 
         assert result["error"] == "Unexpected Error"

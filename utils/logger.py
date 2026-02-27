@@ -25,12 +25,12 @@ class AlpaconLogger:
         # Configure root logger
         logging.basicConfig(
             level=getattr(logging, log_level, logging.INFO),
-            format='%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S',
+            format="%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
             handlers=[
                 logging.StreamHandler(sys.stderr),  # Console output
                 logging.FileHandler(log_dir / "alpacon-mcp.log"),  # File output
-            ]
+            ],
         )
 
     def get_logger(self, name: str) -> logging.Logger:
@@ -46,10 +46,9 @@ class AlpaconLogger:
             logger = logging.getLogger(f"alpacon_mcp.{name}")
 
             # Add context information
-            logger = logging.LoggerAdapter(logger, {
-                'component': name,
-                'pid': os.getpid()
-            })
+            logger = logging.LoggerAdapter(
+                logger, {"component": name, "pid": os.getpid()}
+            )
 
             self._loggers[name] = logger
 

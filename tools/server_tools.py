@@ -18,14 +18,14 @@ async def list_servers(workspace: str, region: str = "ap1", **kwargs) -> Dict[st
         Server list response
     """
     # Get token (injected by decorator)
-    token = kwargs.get('token')
+    token = kwargs.get("token")
 
     # Make async call to servers endpoint
     result = await http_client.get(
         region=region,
         workspace=workspace,
         endpoint="/api/servers/servers/",
-        token=token
+        token=token,
     )
 
     # Check if result is an error response from http_client
@@ -33,22 +33,15 @@ async def list_servers(workspace: str, region: str = "ap1", **kwargs) -> Dict[st
         return error_response(
             result.get("message", "Failed to get servers list"),
             region=region,
-            workspace=workspace
+            workspace=workspace,
         )
 
-    return success_response(
-        data=result,
-        region=region,
-        workspace=workspace
-    )
+    return success_response(data=result, region=region, workspace=workspace)
 
 
 @mcp_tool_handler(description="Get detailed information of a specific server")
 async def get_server(
-    server_id: str,
-    workspace: str,
-    region: str = "ap1",
-    **kwargs
+    server_id: str, workspace: str, region: str = "ap1", **kwargs
 ) -> Dict[str, Any]:
     """Get detailed information about a specific server.
 
@@ -61,7 +54,7 @@ async def get_server(
         Server details response
     """
     # Get token (injected by decorator)
-    token = kwargs.get('token')
+    token = kwargs.get("token")
 
     # Make async call to server detail endpoint
     # Use servers/servers/ endpoint with ID filter instead of direct ID endpoint
@@ -70,7 +63,7 @@ async def get_server(
         workspace=workspace,
         endpoint="/api/servers/servers/",
         token=token,
-        params={"id": server_id}
+        params={"id": server_id},
     )
 
     # Check if result is an error response from http_client
@@ -79,7 +72,7 @@ async def get_server(
             result.get("message", "Failed to get server details"),
             server_id=server_id,
             region=region,
-            workspace=workspace
+            workspace=workspace,
         )
 
     # Extract the first result from the list if results exist
@@ -87,26 +80,17 @@ async def get_server(
         server_data = result["results"][0]
     else:
         return error_response(
-            "Server not found",
-            server_id=server_id,
-            region=region,
-            workspace=workspace
+            "Server not found", server_id=server_id, region=region, workspace=workspace
         )
 
     return success_response(
-        data=server_data,
-        server_id=server_id,
-        region=region,
-        workspace=workspace
+        data=server_data, server_id=server_id, region=region, workspace=workspace
     )
 
 
 @mcp_tool_handler(description="Get list of server notes")
 async def list_server_notes(
-    server_id: str,
-    workspace: str,
-    region: str = "ap1",
-    **kwargs
+    server_id: str, workspace: str, region: str = "ap1", **kwargs
 ) -> Dict[str, Any]:
     """Get list of notes for a specific server.
 
@@ -119,21 +103,18 @@ async def list_server_notes(
         Server notes list response
     """
     # Get token (injected by decorator)
-    token = kwargs.get('token')
+    token = kwargs.get("token")
 
     # Make async call to server notes endpoint with server filter
     result = await http_client.get(
         region=region,
         workspace=workspace,
         endpoint=f"/api/servers/notes/?server={server_id}",
-        token=token
+        token=token,
     )
 
     return success_response(
-        data=result,
-        server_id=server_id,
-        region=region,
-        workspace=workspace
+        data=result, server_id=server_id, region=region, workspace=workspace
     )
 
 
@@ -144,7 +125,7 @@ async def create_server_note(
     content: str,
     workspace: str,
     region: str = "ap1",
-    **kwargs
+    **kwargs,
 ) -> Dict[str, Any]:
     """Create a new note for a specific server.
 
@@ -159,14 +140,10 @@ async def create_server_note(
         Note creation response
     """
     # Get token (injected by decorator)
-    token = kwargs.get('token')
+    token = kwargs.get("token")
 
     # Prepare note data with server field
-    note_data = {
-        "server": server_id,
-        "title": title,
-        "content": content
-    }
+    note_data = {"server": server_id, "title": title, "content": content}
 
     # Make async call to create note
     result = await http_client.post(
@@ -174,7 +151,7 @@ async def create_server_note(
         workspace=workspace,
         endpoint="/api/servers/notes/",
         token=token,
-        data=note_data
+        data=note_data,
     )
 
     return success_response(
@@ -182,5 +159,5 @@ async def create_server_note(
         server_id=server_id,
         note_title=title,
         region=region,
-        workspace=workspace
+        workspace=workspace,
     )

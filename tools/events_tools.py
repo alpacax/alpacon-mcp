@@ -13,61 +13,52 @@ async def list_events(
     reporter: Optional[str] = None,
     limit: int = 50,
     region: str = "ap1",
-    **kwargs
+    **kwargs,
 ) -> Dict[str, Any]:
     """List events from servers."""
-    token = kwargs.get('token')
-    
-    params = {
-        "page_size": limit,
-        "ordering": "-added_at"
-    }
-    
+    token = kwargs.get("token")
+
+    params = {"page_size": limit, "ordering": "-added_at"}
+
     if server_id:
         params["server"] = server_id
     if reporter:
         params["reporter"] = reporter
-    
+
     result = await http_client.get(
         region=region,
         workspace=workspace,
         endpoint="/api/events/events/",
         token=token,
-        params=params
+        params=params,
     )
-    
+
     return success_response(
         data=result,
         server_id=server_id,
         reporter=reporter,
         limit=limit,
         region=region,
-        workspace=workspace
+        workspace=workspace,
     )
 
 
 @mcp_tool_handler(description="Get event details by ID")
 async def get_event(
-    event_id: str,
-    workspace: str,
-    region: str = "ap1",
-    **kwargs
+    event_id: str, workspace: str, region: str = "ap1", **kwargs
 ) -> Dict[str, Any]:
     """Get detailed information about a specific event."""
-    token = kwargs.get('token')
-    
+    token = kwargs.get("token")
+
     result = await http_client.get(
         region=region,
         workspace=workspace,
         endpoint=f"/api/events/events/{event_id}/",
-        token=token
+        token=token,
     )
-    
+
     return success_response(
-        data=result,
-        event_id=event_id,
-        region=region,
-        workspace=workspace
+        data=result, event_id=event_id, region=region, workspace=workspace
     )
 
 
@@ -78,33 +69,29 @@ async def search_events(
     server_id: Optional[str] = None,
     limit: int = 20,
     region: str = "ap1",
-    **kwargs
+    **kwargs,
 ) -> Dict[str, Any]:
     """Search events by server name, reporter, record, or description."""
-    token = kwargs.get('token')
-    
-    params = {
-        "search": search_query,
-        "page_size": limit,
-        "ordering": "-added_at"
-    }
-    
+    token = kwargs.get("token")
+
+    params = {"search": search_query, "page_size": limit, "ordering": "-added_at"}
+
     if server_id:
         params["server"] = server_id
-    
+
     result = await http_client.get(
         region=region,
         workspace=workspace,
         endpoint="/api/events/events/",
         token=token,
-        params=params
+        params=params,
     )
-    
+
     return success_response(
         data=result,
         search_query=search_query,
         server_id=server_id,
         limit=limit,
         region=region,
-        workspace=workspace
+        workspace=workspace,
     )

@@ -4,6 +4,7 @@ Unit tests for events_tools module.
 Tests event management functionality including event listing,
 event retrieval, command acknowledgment, and event search.
 """
+
 import pytest
 from unittest.mock import AsyncMock, patch
 
@@ -11,7 +12,7 @@ from unittest.mock import AsyncMock, patch
 @pytest.fixture
 def mock_http_client():
     """Mock HTTP client for testing."""
-    with patch('tools.events_tools.http_client') as mock_client:
+    with patch("tools.events_tools.http_client") as mock_client:
         # Mock the async methods properly
         mock_client.get = AsyncMock()
         mock_client.post = AsyncMock()
@@ -22,7 +23,7 @@ def mock_http_client():
 @pytest.fixture
 def mock_token_manager():
     """Mock token manager for testing."""
-    with patch('tools.events_tools.token_manager') as mock_manager:
+    with patch("tools.events_tools.token_manager") as mock_manager:
         mock_manager.get_token.return_value = "test-token"
         yield mock_manager
 
@@ -45,7 +46,7 @@ class TestListEvents:
                     "reporter": "system",
                     "record": "service_started",
                     "description": "Apache service started",
-                    "added_at": "2024-01-01T00:00:00Z"
+                    "added_at": "2024-01-01T00:00:00Z",
                 },
                 {
                     "id": "event-124",
@@ -53,7 +54,7 @@ class TestListEvents:
                     "reporter": "user",
                     "record": "command_executed",
                     "description": "ls -la executed",
-                    "added_at": "2024-01-01T00:01:00Z"
+                    "added_at": "2024-01-01T00:01:00Z",
                 },
                 {
                     "id": "event-125",
@@ -61,9 +62,9 @@ class TestListEvents:
                     "reporter": "system",
                     "record": "disk_warning",
                     "description": "Disk usage above 80%",
-                    "added_at": "2024-01-01T00:02:00Z"
-                }
-            ]
+                    "added_at": "2024-01-01T00:02:00Z",
+                },
+            ],
         }
 
         result = await list_events(
@@ -71,7 +72,7 @@ class TestListEvents:
             server_id="server-001",
             reporter="system",
             limit=25,
-            region="ap1"
+            region="ap1",
         )
 
         # Verify response structure
@@ -94,12 +95,14 @@ class TestListEvents:
                 "page_size": 25,
                 "ordering": "-added_at",
                 "server": "server-001",
-                "reporter": "system"
-            }
+                "reporter": "system",
+            },
         )
 
     @pytest.mark.asyncio
-    async def test_list_events_minimal_params(self, mock_http_client, mock_token_manager):
+    async def test_list_events_minimal_params(
+        self, mock_http_client, mock_token_manager
+    ):
         """Test events listing with minimal parameters."""
         from tools.events_tools import list_events
 
@@ -114,10 +117,7 @@ class TestListEvents:
 
         # Verify only required parameters were included
         call_args = mock_http_client.get.call_args
-        expected_params = {
-            "page_size": 50,
-            "ordering": "-added_at"
-        }
+        expected_params = {"page_size": 50, "ordering": "-added_at"}
         assert call_args[1]["params"] == expected_params
 
     @pytest.mark.asyncio
@@ -164,17 +164,11 @@ class TestGetEvent:
             "record": "service_started",
             "description": "Apache service started successfully",
             "added_at": "2024-01-01T00:00:00Z",
-            "details": {
-                "service": "apache2",
-                "pid": 1234,
-                "status": "active"
-            }
+            "details": {"service": "apache2", "pid": 1234, "status": "active"},
         }
 
         result = await get_event(
-            event_id="event-123",
-            workspace="testworkspace",
-            region="ap1"
+            event_id="event-123", workspace="testworkspace", region="ap1"
         )
 
         # Verify response structure
@@ -190,7 +184,7 @@ class TestGetEvent:
             region="ap1",
             workspace="testworkspace",
             endpoint="/api/events/events/event-123/",
-            token="test-token"
+            token="test-token",
         )
 
     @pytest.mark.asyncio
@@ -200,10 +194,7 @@ class TestGetEvent:
 
         mock_token_manager.get_token.return_value = None
 
-        result = await get_event(
-            event_id="event-123",
-            workspace="testworkspace"
-        )
+        result = await get_event(event_id="event-123", workspace="testworkspace")
 
         assert result["status"] == "error"
         assert "No token found" in result["message"]
@@ -216,10 +207,7 @@ class TestGetEvent:
 
         mock_http_client.get.side_effect = Exception("HTTP 404 Not Found")
 
-        result = await get_event(
-            event_id="nonexistent",
-            workspace="testworkspace"
-        )
+        result = await get_event(event_id="nonexistent", workspace="testworkspace")
 
         assert result["status"] == "error"
         assert "Failed to get event" in result["message"]
@@ -230,7 +218,9 @@ class TestAcknowledgeCommand:
     """Test acknowledge_command function."""
 
     @pytest.mark.asyncio
-    async def test_acknowledge_command_success(self, mock_http_client, mock_token_manager):
+    async def test_acknowledge_command_success(
+        self, mock_http_client, mock_token_manager
+    ):
         """Test successful command acknowledgment."""
         from tools.events_tools import acknowledge_command
 
@@ -238,7 +228,7 @@ class TestAcknowledgeCommand:
         mock_http_client.post.return_value = {
             "id": "cmd-123",
             "status": "acknowledged",
-            "acknowledged_at": "2024-01-01T00:00:00Z"
+            "acknowledged_at": "2024-01-01T00:00:00Z",
         }
 
         result = await acknowledge_command(
@@ -246,7 +236,7 @@ class TestAcknowledgeCommand:
             workspace="testworkspace",
             success=True,
             result="Command received and started",
-            region="ap1"
+            region="ap1",
         )
 
         # Verify response structure
@@ -262,22 +252,20 @@ class TestAcknowledgeCommand:
             workspace="testworkspace",
             endpoint="/api/events/commands/cmd-123/ack/",
             token="test-token",
-            data={
-                "success": True,
-                "result": "Command received and started"
-            }
+            data={"success": True, "result": "Command received and started"},
         )
 
     @pytest.mark.asyncio
-    async def test_acknowledge_command_minimal(self, mock_http_client, mock_token_manager):
+    async def test_acknowledge_command_minimal(
+        self, mock_http_client, mock_token_manager
+    ):
         """Test command acknowledgment with minimal parameters."""
         from tools.events_tools import acknowledge_command
 
         mock_http_client.post.return_value = {"status": "acknowledged"}
 
         result = await acknowledge_command(
-            command_id="cmd-123",
-            workspace="testworkspace"
+            command_id="cmd-123", workspace="testworkspace"
         )
 
         assert result["status"] == "success"
@@ -287,7 +275,9 @@ class TestAcknowledgeCommand:
         assert call_args[1]["data"] == {"success": True}
 
     @pytest.mark.asyncio
-    async def test_acknowledge_command_failure(self, mock_http_client, mock_token_manager):
+    async def test_acknowledge_command_failure(
+        self, mock_http_client, mock_token_manager
+    ):
         """Test command acknowledgment with failure status."""
         from tools.events_tools import acknowledge_command
 
@@ -297,7 +287,7 @@ class TestAcknowledgeCommand:
             command_id="cmd-123",
             workspace="testworkspace",
             success=False,
-            result="Command execution failed"
+            result="Command execution failed",
         )
 
         assert result["status"] == "success"
@@ -308,15 +298,16 @@ class TestAcknowledgeCommand:
         assert call_args[1]["data"]["result"] == "Command execution failed"
 
     @pytest.mark.asyncio
-    async def test_acknowledge_command_no_token(self, mock_http_client, mock_token_manager):
+    async def test_acknowledge_command_no_token(
+        self, mock_http_client, mock_token_manager
+    ):
         """Test command acknowledgment when no token is available."""
         from tools.events_tools import acknowledge_command
 
         mock_token_manager.get_token.return_value = None
 
         result = await acknowledge_command(
-            command_id="cmd-123",
-            workspace="testworkspace"
+            command_id="cmd-123", workspace="testworkspace"
         )
 
         assert result["status"] == "error"
@@ -337,7 +328,7 @@ class TestFinishCommand:
             "id": "cmd-123",
             "status": "finished",
             "finished_at": "2024-01-01T00:00:05Z",
-            "elapsed_time": 5.2
+            "elapsed_time": 5.2,
         }
 
         result = await finish_command(
@@ -346,7 +337,7 @@ class TestFinishCommand:
             success=True,
             result="Command completed successfully",
             elapsed_time=5.2,
-            region="ap1"
+            region="ap1",
         )
 
         # Verify response structure
@@ -365,8 +356,8 @@ class TestFinishCommand:
             data={
                 "success": True,
                 "result": "Command completed successfully",
-                "elapsed_time": 5.2
-            }
+                "elapsed_time": 5.2,
+            },
         )
 
     @pytest.mark.asyncio
@@ -376,10 +367,7 @@ class TestFinishCommand:
 
         mock_http_client.post.return_value = {"status": "finished"}
 
-        result = await finish_command(
-            command_id="cmd-123",
-            workspace="testworkspace"
-        )
+        result = await finish_command(command_id="cmd-123", workspace="testworkspace")
 
         assert result["status"] == "success"
 
@@ -388,16 +376,16 @@ class TestFinishCommand:
         assert call_args[1]["data"] == {"success": True}
 
     @pytest.mark.asyncio
-    async def test_finish_command_with_zero_elapsed_time(self, mock_http_client, mock_token_manager):
+    async def test_finish_command_with_zero_elapsed_time(
+        self, mock_http_client, mock_token_manager
+    ):
         """Test command finish with zero elapsed time."""
         from tools.events_tools import finish_command
 
         mock_http_client.post.return_value = {"status": "finished"}
 
         result = await finish_command(
-            command_id="cmd-123",
-            workspace="testworkspace",
-            elapsed_time=0.0
+            command_id="cmd-123", workspace="testworkspace", elapsed_time=0.0
         )
 
         assert result["status"] == "success"
@@ -413,10 +401,7 @@ class TestFinishCommand:
 
         mock_token_manager.get_token.return_value = None
 
-        result = await finish_command(
-            command_id="cmd-123",
-            workspace="testworkspace"
-        )
+        result = await finish_command(command_id="cmd-123", workspace="testworkspace")
 
         assert result["status"] == "error"
         assert "No token found" in result["message"]
@@ -426,7 +411,9 @@ class TestGetCommandStatus:
     """Test get_command_status function."""
 
     @pytest.mark.asyncio
-    async def test_get_command_status_success(self, mock_http_client, mock_token_manager):
+    async def test_get_command_status_success(
+        self, mock_http_client, mock_token_manager
+    ):
         """Test successful command status retrieval."""
         from tools.events_tools import get_command_status
 
@@ -441,13 +428,11 @@ class TestGetCommandStatus:
             "finished_at": "2024-01-01T00:00:05Z",
             "elapsed_time": 5.2,
             "result": "total 8\ndrwxr-xr-x 2 root root 4096 Jan 1 00:00 .",
-            "exit_code": 0
+            "exit_code": 0,
         }
 
         result = await get_command_status(
-            command_id="cmd-123",
-            workspace="testworkspace",
-            region="ap1"
+            command_id="cmd-123", workspace="testworkspace", region="ap1"
         )
 
         # Verify response structure
@@ -463,34 +448,36 @@ class TestGetCommandStatus:
             region="ap1",
             workspace="testworkspace",
             endpoint="/api/events/commands/cmd-123/",
-            token="test-token"
+            token="test-token",
         )
 
     @pytest.mark.asyncio
-    async def test_get_command_status_no_token(self, mock_http_client, mock_token_manager):
+    async def test_get_command_status_no_token(
+        self, mock_http_client, mock_token_manager
+    ):
         """Test command status when no token is available."""
         from tools.events_tools import get_command_status
 
         mock_token_manager.get_token.return_value = None
 
         result = await get_command_status(
-            command_id="cmd-123",
-            workspace="testworkspace"
+            command_id="cmd-123", workspace="testworkspace"
         )
 
         assert result["status"] == "error"
         assert "No token found" in result["message"]
 
     @pytest.mark.asyncio
-    async def test_get_command_status_not_found(self, mock_http_client, mock_token_manager):
+    async def test_get_command_status_not_found(
+        self, mock_http_client, mock_token_manager
+    ):
         """Test command status when command doesn't exist."""
         from tools.events_tools import get_command_status
 
         mock_http_client.get.side_effect = Exception("HTTP 404 Not Found")
 
         result = await get_command_status(
-            command_id="nonexistent",
-            workspace="testworkspace"
+            command_id="nonexistent", workspace="testworkspace"
         )
 
         assert result["status"] == "error"
@@ -511,9 +498,7 @@ class TestDeleteCommand:
         }
 
         result = await delete_command(
-            command_id="cmd-123",
-            workspace="testworkspace",
-            region="ap1"
+            command_id="cmd-123", workspace="testworkspace", region="ap1"
         )
 
         # Verify response structure
@@ -528,7 +513,7 @@ class TestDeleteCommand:
             region="ap1",
             workspace="testworkspace",
             endpoint="/api/events/commands/cmd-123/",
-            token="test-token"
+            token="test-token",
         )
 
     @pytest.mark.asyncio
@@ -538,10 +523,7 @@ class TestDeleteCommand:
 
         mock_token_manager.get_token.return_value = None
 
-        result = await delete_command(
-            command_id="cmd-123",
-            workspace="testworkspace"
-        )
+        result = await delete_command(command_id="cmd-123", workspace="testworkspace")
 
         assert result["status"] == "error"
         assert "No token found" in result["message"]
@@ -555,8 +537,7 @@ class TestDeleteCommand:
         mock_http_client.delete.side_effect = Exception("HTTP 404 Not Found")
 
         result = await delete_command(
-            command_id="nonexistent",
-            workspace="testworkspace"
+            command_id="nonexistent", workspace="testworkspace"
         )
 
         assert result["status"] == "error"
@@ -581,7 +562,7 @@ class TestSearchEvents:
                     "reporter": "system",
                     "record": "service_error",
                     "description": "Apache service error: connection refused",
-                    "added_at": "2024-01-01T00:00:00Z"
+                    "added_at": "2024-01-01T00:00:00Z",
                 },
                 {
                     "id": "event-124",
@@ -589,9 +570,9 @@ class TestSearchEvents:
                     "reporter": "user",
                     "record": "command_error",
                     "description": "Command failed: apache2 restart",
-                    "added_at": "2024-01-01T00:01:00Z"
-                }
-            ]
+                    "added_at": "2024-01-01T00:01:00Z",
+                },
+            ],
         }
 
         result = await search_events(
@@ -599,7 +580,7 @@ class TestSearchEvents:
             workspace="testworkspace",
             server_id="server-001",
             limit=10,
-            region="ap1"
+            region="ap1",
         )
 
         # Verify response structure
@@ -622,21 +603,20 @@ class TestSearchEvents:
                 "search": "apache",
                 "page_size": 10,
                 "ordering": "-added_at",
-                "server": "server-001"
-            }
+                "server": "server-001",
+            },
         )
 
     @pytest.mark.asyncio
-    async def test_search_events_minimal_params(self, mock_http_client, mock_token_manager):
+    async def test_search_events_minimal_params(
+        self, mock_http_client, mock_token_manager
+    ):
         """Test event search with minimal parameters."""
         from tools.events_tools import search_events
 
         mock_http_client.get.return_value = {"count": 0, "results": []}
 
-        result = await search_events(
-            search_query="error",
-            workspace="testworkspace"
-        )
+        result = await search_events(search_query="error", workspace="testworkspace")
 
         assert result["status"] == "success"
         assert result["search_query"] == "error"
@@ -645,11 +625,7 @@ class TestSearchEvents:
 
         # Verify correct parameters were sent
         call_args = mock_http_client.get.call_args
-        expected_params = {
-            "search": "error",
-            "page_size": 20,
-            "ordering": "-added_at"
-        }
+        expected_params = {"search": "error", "page_size": 20, "ordering": "-added_at"}
         assert call_args[1]["params"] == expected_params
 
     @pytest.mark.asyncio
@@ -660,8 +636,7 @@ class TestSearchEvents:
         mock_http_client.get.return_value = {"count": 0, "results": []}
 
         result = await search_events(
-            search_query="nonexistent",
-            workspace="testworkspace"
+            search_query="nonexistent", workspace="testworkspace"
         )
 
         assert result["status"] == "success"
@@ -675,10 +650,7 @@ class TestSearchEvents:
 
         mock_token_manager.get_token.return_value = None
 
-        result = await search_events(
-            search_query="test",
-            workspace="testworkspace"
-        )
+        result = await search_events(search_query="test", workspace="testworkspace")
 
         assert result["status"] == "error"
         assert "No token found" in result["message"]
@@ -690,10 +662,7 @@ class TestSearchEvents:
 
         mock_http_client.get.side_effect = Exception("Search service unavailable")
 
-        result = await search_events(
-            search_query="test",
-            workspace="testworkspace"
-        )
+        result = await search_events(search_query="test", workspace="testworkspace")
 
         assert result["status"] == "error"
         assert "Failed to search events" in result["message"]

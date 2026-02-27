@@ -1,7 +1,6 @@
 """HTTP client for Alpacon API interactions."""
 
 import asyncio
-import json
 from typing import Dict, Any, Optional, List
 from urllib.parse import urljoin
 import httpx
@@ -31,12 +30,14 @@ class AlpaconHTTPClient:
         self._cache_ttl: Dict[str, float] = {}
         self.default_cache_ttl = 300  # 5 minutes
 
-        logger.info(f"AlpaconHTTPClient initialized - timeout: {self.base_timeout.read}s, max_retries: {self.max_retries}, caching enabled")
+        logger.info(
+            f"AlpaconHTTPClient initialized - timeout: {self.base_timeout.read}s, max_retries: {self.max_retries}, caching enabled"
+        )
 
     async def _get_client(self) -> httpx.AsyncClient:
         """Get or create shared async client for connection pooling."""
         # For testing compatibility, check if client pooling is disabled
-        if hasattr(self, '_disable_pooling') and self._disable_pooling:
+        if hasattr(self, "_disable_pooling") and self._disable_pooling:
             return httpx.AsyncClient(timeout=self.base_timeout)
 
         async with self._client_lock:
@@ -46,8 +47,8 @@ class AlpaconHTTPClient:
                     limits=httpx.Limits(
                         max_keepalive_connections=20,
                         max_connections=100,
-                        keepalive_expiry=30.0
-                    )
+                        keepalive_expiry=30.0,
+                    ),
                 )
                 logger.debug("Created new HTTP client with connection pooling")
             return self._client
@@ -59,7 +60,9 @@ class AlpaconHTTPClient:
                 await self._client.aclose()
                 logger.debug("Closed HTTP client")
 
-    def _get_cache_key(self, method: str, url: str, params: Optional[Dict] = None) -> str:
+    def _get_cache_key(
+        self, method: str, url: str, params: Optional[Dict] = None
+    ) -> str:
         """Generate cache key for request."""
         key_parts = [method, url]
         if params:
@@ -80,7 +83,7 @@ class AlpaconHTTPClient:
             "/api/system/packages/",
             "/api/iam/users/",
             "/api/iam/groups/",
-            "/api/iam/roles/"
+            "/api/iam/roles/",
         ]
 
         return any(endpoint.startswith(cacheable) for cacheable in cacheable_endpoints)
@@ -99,7 +102,9 @@ class AlpaconHTTPClient:
         logger.debug(f"Cache hit for key: {cache_key}")
         return self._cache[cache_key]
 
-    def _set_cached_response(self, cache_key: str, response: Dict[str, Any], ttl: Optional[float] = None):
+    def _set_cached_response(
+        self, cache_key: str, response: Dict[str, Any], ttl: Optional[float] = None
+    ):
         """Cache response with TTL."""
         self._cache[cache_key] = response
         self._cache_ttl[cache_key] = time.time() + (ttl or self.default_cache_ttl)
@@ -127,7 +132,7 @@ class AlpaconHTTPClient:
         headers: Optional[Dict[str, str]] = None,
         json_data: Optional[Dict[str, Any]] = None,
         params: Optional[Dict[str, str]] = None,
-        timeout: Optional[float] = None
+        timeout: Optional[float] = None,
     ) -> Dict[str, Any]:
         """Execute HTTP request with retry logic.
 
@@ -150,7 +155,7 @@ class AlpaconHTTPClient:
         request_headers = {
             "Content-Type": "application/json",
             "Accept": "application/json",
-            "User-Agent": MCP_USER_AGENT
+            "User-Agent": MCP_USER_AGENT,
         }
 
         if token:
@@ -168,7 +173,9 @@ class AlpaconHTTPClient:
 
         # Log request details (without sensitive data)
         logger.info(f"HTTP {method} request to {url}")
-        logger.debug(f"Request headers: {dict((k, v if k != 'Authorization' else '[REDACTED]') for k, v in request_headers.items())}")
+        logger.debug(
+            f"Request headers: {dict((k, v if k != 'Authorization' else '[REDACTED]') for k, v in request_headers.items())}"
+        )
         if params:
             logger.debug(f"Request params: {params}")
         if json_data:
@@ -191,14 +198,16 @@ class AlpaconHTTPClient:
                     headers=request_headers,
                     json=json_data,
                     params=params,
-                    timeout=request_timeout
+                    timeout=request_timeout,
                 )
 
                 # Check for success
                 response.raise_for_status()
 
                 # Log successful response
-                logger.info(f"HTTP {method} success - Status: {response.status_code}, Content-Length: {len(response.content)}")
+                logger.info(
+                    f"HTTP {method} success - Status: {response.status_code}, Content-Length: {len(response.content)}"
+                )
                 logger.debug(f"Response headers: {dict(response.headers)}")
 
                 # Return JSON response
@@ -223,13 +232,17 @@ class AlpaconHTTPClient:
 
             except httpx.HTTPStatusError as e:
                 # Handle HTTP errors (4xx, 5xx)
-                logger.error(f"HTTP {method} error - Status: {e.response.status_code}, URL: {url}")
+                logger.error(
+                    f"HTTP {method} error - Status: {e.response.status_code}, URL: {url}"
+                )
                 logger.error(f"Response body: {e.response.text}")
 
                 if e.response.status_code >= 500:
                     # Server error - retry
                     retry_count += 1
-                    logger.warning(f"Server error, retrying ({retry_count}/{self.max_retries}) in {retry_delay}s")
+                    logger.warning(
+                        f"Server error, retrying ({retry_count}/{self.max_retries}) in {retry_delay}s"
+                    )
                     if retry_count < self.max_retries:
                         await asyncio.sleep(retry_delay)
                         retry_delay = min(retry_delay * 2, self.max_retry_delay)
@@ -240,15 +253,17 @@ class AlpaconHTTPClient:
                         "error": "HTTP Error",
                         "status_code": e.response.status_code,
                         "message": str(e),
-                        "response": e.response.text
+                        "response": e.response.text,
                     }
                     logger.error(f"Client error, not retrying: {error_response}")
                     return error_response
 
-            except httpx.TimeoutException as e:
+            except httpx.TimeoutException:
                 # Timeout - retry
                 retry_count += 1
-                logger.warning(f"Request timeout, retrying ({retry_count}/{self.max_retries}) in {retry_delay}s")
+                logger.warning(
+                    f"Request timeout, retrying ({retry_count}/{self.max_retries}) in {retry_delay}s"
+                )
                 if retry_count < self.max_retries:
                     await asyncio.sleep(retry_delay)
                     retry_delay = min(retry_delay * 2, self.max_retry_delay)
@@ -256,7 +271,7 @@ class AlpaconHTTPClient:
                 else:
                     error_response = {
                         "error": "Timeout",
-                        "message": f"Request timed out after {self.max_retries} retries"
+                        "message": f"Request timed out after {self.max_retries} retries",
                     }
                     logger.error(f"Request timeout after all retries: {error_response}")
                     return error_response
@@ -264,37 +279,35 @@ class AlpaconHTTPClient:
             except httpx.RequestError as e:
                 # Network error - retry
                 retry_count += 1
-                logger.warning(f"Network error: {e}, retrying ({retry_count}/{self.max_retries}) in {retry_delay}s")
+                logger.warning(
+                    f"Network error: {e}, retrying ({retry_count}/{self.max_retries}) in {retry_delay}s"
+                )
                 if retry_count < self.max_retries:
                     await asyncio.sleep(retry_delay)
                     retry_delay = min(retry_delay * 2, self.max_retry_delay)
                     continue
                 else:
-                    error_response = {
-                        "error": "Request Error",
-                        "message": str(e)
-                    }
+                    error_response = {"error": "Request Error", "message": str(e)}
                     logger.error(f"Network error after all retries: {error_response}")
                     return error_response
 
             except Exception as e:
                 # Unexpected error - don't retry
-                error_response = {
-                    "error": "Unexpected Error",
-                    "message": str(e)
-                }
+                error_response = {"error": "Unexpected Error", "message": str(e)}
                 logger.error(f"Unexpected error: {error_response}", exc_info=True)
                 return error_response
 
         # Should not reach here, but just in case
         error_response = {
             "error": "Max retries exceeded",
-            "message": f"Failed after {self.max_retries} attempts"
+            "message": f"Failed after {self.max_retries} attempts",
         }
         logger.error(f"Unexpected fallback - max retries exceeded: {error_response}")
         return error_response
 
-    async def batch_request(self, requests: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    async def batch_request(
+        self, requests: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
         """Execute multiple requests in parallel.
 
         Args:
@@ -324,7 +337,7 @@ class AlpaconHTTPClient:
                     workspace=req["workspace"],
                     endpoint=req["endpoint"],
                     token=req["token"],
-                    params=req.get("params")
+                    params=req.get("params"),
                 )
             elif req["method"].upper() == "POST":
                 task = self.post(
@@ -332,7 +345,7 @@ class AlpaconHTTPClient:
                     workspace=req["workspace"],
                     endpoint=req["endpoint"],
                     token=req["token"],
-                    data=req.get("data")
+                    data=req.get("data"),
                 )
             else:
                 # For other methods, use the generic request method
@@ -343,7 +356,7 @@ class AlpaconHTTPClient:
                     url=full_url,
                     token=req["token"],
                     json_data=req.get("data"),
-                    params=req.get("params")
+                    params=req.get("params"),
                 )
             tasks.append(task)
 
@@ -354,11 +367,13 @@ class AlpaconHTTPClient:
         processed_results = []
         for i, result in enumerate(results):
             if isinstance(result, Exception):
-                processed_results.append({
-                    "error": "Request Exception",
-                    "message": str(result),
-                    "request_index": i
-                })
+                processed_results.append(
+                    {
+                        "error": "Request Exception",
+                        "message": str(result),
+                        "request_index": i,
+                    }
+                )
             else:
                 processed_results.append(result)
 
@@ -371,7 +386,7 @@ class AlpaconHTTPClient:
         workspace: str,
         endpoint: str,
         token: str,
-        params: Optional[Dict[str, str]] = None
+        params: Optional[Dict[str, str]] = None,
     ) -> Dict[str, Any]:
         """Execute GET request.
 
@@ -389,10 +404,7 @@ class AlpaconHTTPClient:
         full_url = urljoin(base_url, endpoint)
 
         return await self.request(
-            method="GET",
-            url=full_url,
-            token=token,
-            params=params
+            method="GET", url=full_url, token=token, params=params
         )
 
     async def post(
@@ -401,7 +413,7 @@ class AlpaconHTTPClient:
         workspace: str,
         endpoint: str,
         token: str,
-        data: Optional[Dict[str, Any]] = None
+        data: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Execute POST request.
 
@@ -419,10 +431,7 @@ class AlpaconHTTPClient:
         full_url = urljoin(base_url, endpoint)
 
         return await self.request(
-            method="POST",
-            url=full_url,
-            token=token,
-            json_data=data
+            method="POST", url=full_url, token=token, json_data=data
         )
 
     async def put(
@@ -431,7 +440,7 @@ class AlpaconHTTPClient:
         workspace: str,
         endpoint: str,
         token: str,
-        data: Optional[Dict[str, Any]] = None
+        data: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Execute PUT request.
 
@@ -449,10 +458,7 @@ class AlpaconHTTPClient:
         full_url = urljoin(base_url, endpoint)
 
         return await self.request(
-            method="PUT",
-            url=full_url,
-            token=token,
-            json_data=data
+            method="PUT", url=full_url, token=token, json_data=data
         )
 
     async def patch(
@@ -461,7 +467,7 @@ class AlpaconHTTPClient:
         workspace: str,
         endpoint: str,
         token: str,
-        data: Optional[Dict[str, Any]] = None
+        data: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Execute PATCH request.
 
@@ -479,18 +485,11 @@ class AlpaconHTTPClient:
         full_url = urljoin(base_url, endpoint)
 
         return await self.request(
-            method="PATCH",
-            url=full_url,
-            token=token,
-            json_data=data
+            method="PATCH", url=full_url, token=token, json_data=data
         )
 
     async def delete(
-        self,
-        region: str,
-        workspace: str,
-        endpoint: str,
-        token: str
+        self, region: str, workspace: str, endpoint: str, token: str
     ) -> Dict[str, Any]:
         """Execute DELETE request.
 
@@ -506,11 +505,7 @@ class AlpaconHTTPClient:
         base_url = self.get_base_url(region, workspace)
         full_url = urljoin(base_url, endpoint)
 
-        return await self.request(
-            method="DELETE",
-            url=full_url,
-            token=token
-        )
+        return await self.request(method="DELETE", url=full_url, token=token)
 
     async def __aenter__(self):
         """Async context manager entry."""
@@ -522,13 +517,14 @@ class AlpaconHTTPClient:
 
     def __del__(self):
         """Cleanup on deletion."""
-        if hasattr(self, '_client') and self._client and not self._client.is_closed:
+        if hasattr(self, "_client") and self._client and not self._client.is_closed:
             # Note: This is not ideal as __del__ cannot be async
             # Better to use async context manager or explicit cleanup
             import warnings
+
             warnings.warn(
                 "AlpaconHTTPClient not properly closed. Use async context manager or call _close_client()",
-                ResourceWarning
+                ResourceWarning,
             )
 
 

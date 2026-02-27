@@ -1,9 +1,19 @@
 """Decorators for MCP tools to reduce boilerplate code."""
 
 from functools import wraps
-from typing import Callable, Dict, Any
+from typing import Callable
 import inspect
-from utils.common import validate_token, token_error_response, success_response, error_response
+from utils.common import (
+    validate_token,
+    token_error_response,
+    error_response,
+)
+from utils.error_handler import (
+    validate_region_format,
+    validate_workspace_format,
+    validate_server_id_format,
+    format_validation_error,
+)
 from utils.logger import get_logger
 
 logger = get_logger("decorators")
@@ -24,10 +34,11 @@ def with_token_validation(func: Callable) -> Callable:
     Returns:
         Decorated async function with modified signature (removes _token parameter)
     """
+
     @wraps(func)
     async def wrapper(*args, **kwargs):
         # Remove _token from kwargs if present (MCP doesn't allow _ prefix)
-        kwargs.pop('_token', None)
+        kwargs.pop("_token", None)
 
         # Get function signature
         sig = inspect.signature(func)
@@ -36,11 +47,38 @@ def with_token_validation(func: Callable) -> Callable:
         arguments = bound_args.arguments
 
         # Extract region and workspace
-        region = arguments.get('region', 'ap1')
-        workspace = arguments.get('workspace')
+        region = arguments.get("region", "ap1")
+        workspace = arguments.get("workspace")
 
+        # Validate region format
+        if not validate_region_format(region):
+            return format_validation_error("region", region)
+
+        # Validate workspace is present
         if not workspace:
             return error_response("workspace parameter is required")
+
+        # Validate workspace format
+        if not validate_workspace_format(workspace):
+            return format_validation_error("workspace", workspace)
+
+        # Validate server_id format if present
+        server_id = arguments.get("server_id")
+        if server_id is not None and not validate_server_id_format(server_id):
+            return format_validation_error("server_id", server_id)
+
+        # Validate server_ids list if present
+        server_ids = arguments.get("server_ids")
+        if server_ids is not None:
+            invalid_ids = [
+                sid for sid in server_ids if not validate_server_id_format(sid)
+            ]
+            if invalid_ids:
+                return format_validation_error(
+                    "server_ids",
+                    invalid_ids,
+                    "Each server ID must be in UUID format. (e.g., 550e8400-e29b-41d4-a716-446655440000)",
+                )
 
         # Validate token
         token = validate_token(region, workspace)
@@ -48,14 +86,14 @@ def with_token_validation(func: Callable) -> Callable:
             return token_error_response(region, workspace)
 
         # Add token to kwargs for the function
-        kwargs['token'] = token
+        kwargs["token"] = token
 
         # Call the original function
         return await func(*args, **kwargs)
 
     # Remove _token parameter from the wrapper signature
     original_sig = inspect.signature(func)
-    new_params = [p for p in original_sig.parameters.values() if p.name != '_token']
+    new_params = [p for p in original_sig.parameters.values() if p.name != "_token"]
     wrapper.__signature__ = original_sig.replace(parameters=new_params)
 
     return wrapper
@@ -75,6 +113,7 @@ def with_error_handling(func: Callable) -> Callable:
     Returns:
         Decorated async function
     """
+
     @wraps(func)
     async def wrapper(*args, **kwargs):
         # Extract function name for logging
@@ -92,20 +131,17 @@ def with_error_handling(func: Callable) -> Callable:
             bound_args.apply_defaults()
             arguments = bound_args.arguments
 
-            workspace = arguments.get('workspace', 'unknown')
-            region = arguments.get('region', 'unknown')
+            workspace = arguments.get("workspace", "unknown")
+            region = arguments.get("region", "unknown")
 
             # Log the error with context
             logger.error(
-                f"{func_name} failed for {workspace}.{region}: {e}",
-                exc_info=True
+                f"{func_name} failed for {workspace}.{region}: {e}", exc_info=True
             )
 
             # Return standardized error response
             return error_response(
-                f"Failed in {func_name}: {str(e)}",
-                workspace=workspace,
-                region=region
+                f"Failed in {func_name}: {str(e)}", workspace=workspace, region=region
             )
 
     return wrapper
@@ -125,6 +161,7 @@ def with_logging(func: Callable) -> Callable:
     Returns:
         Decorated async function
     """
+
     @wraps(func)
     async def wrapper(*args, **kwargs):
         func_name = func.__name__
@@ -137,8 +174,9 @@ def with_logging(func: Callable) -> Callable:
 
         # Create log-safe arguments (exclude sensitive data)
         log_args = {
-            k: v for k, v in arguments.items()
-            if k not in ['_token', 'password', 'secret', 'key']
+            k: v
+            for k, v in arguments.items()
+            if k not in ["_token", "password", "secret", "key"]
         }
 
         # Log function entry
@@ -148,7 +186,7 @@ def with_logging(func: Callable) -> Callable:
         result = await func(*args, **kwargs)
 
         # Log completion if successful
-        if isinstance(result, dict) and result.get('status') == 'success':
+        if isinstance(result, dict) and result.get("status") == "success":
             logger.info(f"{func_name} completed successfully")
 
         return result
@@ -171,6 +209,7 @@ def mcp_tool_handler(description: str):
     Returns:
         Decorator function
     """
+
     def decorator(func: Callable) -> Callable:
         # Apply decorators in order (innermost first)
         func = with_error_handling(func)
@@ -179,6 +218,7 @@ def mcp_tool_handler(description: str):
 
         # Register with MCP
         from server import mcp
+
         return mcp.tool(description=description)(func)
 
     return decorator

@@ -11,13 +11,14 @@ from server import mcp
 # USER MANAGEMENT TOOLS
 # ===============================
 
+
 @mcp_tool_handler(description="List all IAM users in workspace")
 async def list_iam_users(
     workspace: str,
     region: str = "ap1",
     page: Optional[int] = None,
     page_size: Optional[int] = None,
-    **kwargs
+    **kwargs,
 ) -> Dict[str, Any]:
     """List all IAM users in workspace.
 
@@ -30,7 +31,7 @@ async def list_iam_users(
     Returns:
         IAM users list response
     """
-    token = kwargs.get('token')
+    token = kwargs.get("token")
 
     # Prepare query parameters
     params = {}
@@ -45,22 +46,15 @@ async def list_iam_users(
         workspace=workspace,
         endpoint="/api/iam/users/",
         token=token,
-        params=params
+        params=params,
     )
 
-    return success_response(
-        data=result,
-        region=region,
-        workspace=workspace
-    )
+    return success_response(data=result, region=region, workspace=workspace)
 
 
 @mcp_tool_handler(description="Get detailed information about a specific IAM user")
 async def get_iam_user(
-    user_id: str,
-    workspace: str,
-    region: str = "ap1",
-    **kwargs
+    user_id: str, workspace: str, region: str = "ap1", **kwargs
 ) -> Dict[str, Any]:
     """Get detailed information about a specific IAM user.
 
@@ -72,21 +66,18 @@ async def get_iam_user(
     Returns:
         IAM user details response
     """
-    token = kwargs.get('token')
+    token = kwargs.get("token")
 
     # Make async call to specific IAM user endpoint
     result = await http_client.get(
         region=region,
         workspace=workspace,
         endpoint=f"/api/iam/users/{user_id}/",
-        token=token
+        token=token,
     )
 
     return success_response(
-        data=result,
-        user_id=user_id,
-        region=region,
-        workspace=workspace
+        data=result, user_id=user_id, region=region, workspace=workspace
     )
 
 
@@ -100,7 +91,7 @@ async def create_iam_user(
     is_active: bool = True,
     groups: Optional[List[str]] = None,
     region: str = "ap1",
-    **kwargs
+    **kwargs,
 ) -> Dict[str, Any]:
     """Create a new IAM user.
 
@@ -117,14 +108,10 @@ async def create_iam_user(
     Returns:
         User creation response
     """
-    token = kwargs.get('token')
+    token = kwargs.get("token")
 
     # Prepare user data
-    user_data = {
-        "username": username,
-        "email": email,
-        "is_active": is_active
-    }
+    user_data = {"username": username, "email": email, "is_active": is_active}
 
     if first_name:
         user_data["first_name"] = first_name
@@ -139,14 +126,11 @@ async def create_iam_user(
         workspace=workspace,
         endpoint="/api/iam/users/",
         token=token,
-        data=user_data
+        data=user_data,
     )
 
     return success_response(
-        data=result,
-        username=username,
-        region=region,
-        workspace=workspace
+        data=result, username=username, region=region, workspace=workspace
     )
 
 
@@ -160,7 +144,7 @@ async def update_iam_user(
     is_active: Optional[bool] = None,
     groups: Optional[List[str]] = None,
     region: str = "ap1",
-    **kwargs
+    **kwargs,
 ) -> Dict[str, Any]:
     """Update an existing IAM user.
 
@@ -177,7 +161,7 @@ async def update_iam_user(
     Returns:
         User update response
     """
-    token = kwargs.get('token')
+    token = kwargs.get("token")
 
     # Prepare update data (only include provided fields)
     update_data = {}
@@ -201,23 +185,17 @@ async def update_iam_user(
         workspace=workspace,
         endpoint=f"/api/iam/users/{user_id}/",
         token=token,
-        data=update_data
+        data=update_data,
     )
 
     return success_response(
-        data=result,
-        user_id=user_id,
-        region=region,
-        workspace=workspace
+        data=result, user_id=user_id, region=region, workspace=workspace
     )
 
 
 @mcp_tool_handler(description="Delete an IAM user")
 async def delete_iam_user(
-    user_id: str,
-    workspace: str,
-    region: str = "ap1",
-    **kwargs
+    user_id: str, workspace: str, region: str = "ap1", **kwargs
 ) -> Dict[str, Any]:
     """Delete an IAM user.
 
@@ -229,21 +207,18 @@ async def delete_iam_user(
     Returns:
         User deletion response
     """
-    token = kwargs.get('token')
+    token = kwargs.get("token")
 
     # Make async call to delete IAM user
     result = await http_client.delete(
         region=region,
         workspace=workspace,
         endpoint=f"/api/iam/users/{user_id}/",
-        token=token
+        token=token,
     )
 
     return success_response(
-        data=result,
-        user_id=user_id,
-        region=region,
-        workspace=workspace
+        data=result, user_id=user_id, region=region, workspace=workspace
     )
 
 
@@ -251,13 +226,14 @@ async def delete_iam_user(
 # GROUP MANAGEMENT TOOLS
 # ===============================
 
+
 @mcp_tool_handler(description="List all IAM groups in workspace")
 async def list_iam_groups(
     workspace: str,
     region: str = "ap1",
     page: Optional[int] = None,
     page_size: Optional[int] = None,
-    **kwargs
+    **kwargs,
 ) -> Dict[str, Any]:
     """List all IAM groups in workspace.
 
@@ -270,7 +246,7 @@ async def list_iam_groups(
     Returns:
         IAM groups list response
     """
-    token = kwargs.get('token')
+    token = kwargs.get("token")
 
     # Prepare query parameters
     params = {}
@@ -285,14 +261,10 @@ async def list_iam_groups(
         workspace=workspace,
         endpoint="/api/iam/groups/",
         token=token,
-        params=params
+        params=params,
     )
 
-    return success_response(
-        data=result,
-        region=region,
-        workspace=workspace
-    )
+    return success_response(data=result, region=region, workspace=workspace)
 
 
 @mcp_tool_handler(description="Create a new IAM group")
@@ -302,7 +274,7 @@ async def create_iam_group(
     description: Optional[str] = None,
     permissions: Optional[List[str]] = None,
     region: str = "ap1",
-    **kwargs
+    **kwargs,
 ) -> Dict[str, Any]:
     """Create a new IAM group.
 
@@ -316,12 +288,10 @@ async def create_iam_group(
     Returns:
         Group creation response
     """
-    token = kwargs.get('token')
+    token = kwargs.get("token")
 
     # Prepare group data
-    group_data = {
-        "name": name
-    }
+    group_data = {"name": name}
 
     if description:
         group_data["description"] = description
@@ -334,14 +304,11 @@ async def create_iam_group(
         workspace=workspace,
         endpoint="/api/iam/groups/",
         token=token,
-        data=group_data
+        data=group_data,
     )
 
     return success_response(
-        data=result,
-        group_name=name,
-        region=region,
-        workspace=workspace
+        data=result, group_name=name, region=region, workspace=workspace
     )
 
 
@@ -357,11 +324,12 @@ async def create_iam_group(
 # RESOURCE MANAGEMENT
 # ===============================
 
+
 @mcp.resource(
     uri="iam://users/{region}/{workspace}",
     name="IAM Users List",
     description="Get list of IAM users",
-    mime_type="application/json"
+    mime_type="application/json",
 )
 async def iam_users_resource(region: str, workspace: str) -> Dict[str, Any]:
     """Get IAM users as a resource.
@@ -374,16 +342,14 @@ async def iam_users_resource(region: str, workspace: str) -> Dict[str, Any]:
         IAM users information
     """
     users_data = await list_iam_users(region=region, workspace=workspace)
-    return {
-        "content": users_data
-    }
+    return {"content": users_data}
 
 
 @mcp.resource(
     uri="iam://groups/{region}/{workspace}",
     name="IAM Groups List",
     description="Get list of IAM groups",
-    mime_type="application/json"
+    mime_type="application/json",
 )
 async def iam_groups_resource(region: str, workspace: str) -> Dict[str, Any]:
     """Get IAM groups as a resource.
@@ -396,9 +362,7 @@ async def iam_groups_resource(region: str, workspace: str) -> Dict[str, Any]:
         IAM groups information
     """
     groups_data = await list_iam_groups(region=region, workspace=workspace)
-    return {
-        "content": groups_data
-    }
+    return {"content": groups_data}
 
 
 # NOTE: IAM roles resource removed - endpoint not implemented in server

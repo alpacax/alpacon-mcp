@@ -46,10 +46,7 @@ def error_response(message: str, **kwargs) -> Dict[str, Any]:
     Returns:
         Standardized error response dict
     """
-    response = {
-        "status": "error",
-        "message": message
-    }
+    response = {"status": "error", "message": message}
     response.update(kwargs)
     return response
 
@@ -64,9 +61,7 @@ def success_response(data: Any = None, **kwargs) -> Dict[str, Any]:
     Returns:
         Standardized success response dict
     """
-    response = {
-        "status": "success"
-    }
+    response = {"status": "success"}
     if data is not None:
         response["data"] = data
     response.update(kwargs)
@@ -86,7 +81,7 @@ def token_error_response(region: str, workspace: str) -> Dict[str, Any]:
     return error_response(
         f"No token found for {workspace}.{region}. Please set token first.",
         region=region,
-        workspace=workspace
+        workspace=workspace,
     )
 
 
@@ -97,7 +92,7 @@ async def handle_api_call(
     workspace: str,
     endpoint: str,
     token: str,
-    **kwargs
+    **kwargs,
 ) -> Dict[str, Any]:
     """Handle API calls with consistent error handling.
 
@@ -119,11 +114,7 @@ async def handle_api_call(
 
         # Make the API call
         result = await api_method(
-            region=region,
-            workspace=workspace,
-            endpoint=endpoint,
-            token=token,
-            **kwargs
+            region=region, workspace=workspace, endpoint=endpoint, token=token, **kwargs
         )
 
         # Check for HTTP client errors
@@ -131,7 +122,7 @@ async def handle_api_call(
             return error_response(
                 result.get("message", str(result.get("error", "Unknown error"))),
                 region=region,
-                workspace=workspace
+                workspace=workspace,
             )
 
         return result

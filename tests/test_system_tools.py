@@ -4,6 +4,7 @@ Unit tests for system_tools module.
 Tests system tools functionality including hardware information,
 users list, packages list, and disk information.
 """
+
 import pytest
 from unittest.mock import AsyncMock, patch
 
@@ -11,7 +12,7 @@ from unittest.mock import AsyncMock, patch
 @pytest.fixture
 def mock_http_client():
     """Mock HTTP client for testing."""
-    with patch('tools.system_tools.http_client') as mock_client:
+    with patch("tools.system_tools.http_client") as mock_client:
         # Mock the async methods properly
         mock_client.get = AsyncMock()
         yield mock_client
@@ -20,7 +21,7 @@ def mock_http_client():
 @pytest.fixture
 def mock_token_manager():
     """Mock token manager for testing."""
-    with patch('tools.system_tools.token_manager') as mock_manager:
+    with patch("tools.system_tools.token_manager") as mock_manager:
         mock_manager.get_token.return_value = "test-token"
         yield mock_manager
 
@@ -42,22 +43,20 @@ class TestSystemInfo:
                 "cores": 4,
                 "model": "Intel(R) Core(TM) i7-8700K CPU @ 3.70GHz",
                 "threads": 8,
-                "frequency": "3.70GHz"
+                "frequency": "3.70GHz",
             },
             "memory": {
                 "total": 17179869184,
                 "available": 8589934592,
                 "used": 8589934592,
-                "percent": 50.0
+                "percent": 50.0,
             },
             "uptime": 86400,
-            "load_average": [1.25, 1.15, 1.05]
+            "load_average": [1.25, 1.15, 1.05],
         }
 
         result = await system_info(
-            server_id="server-001",
-            workspace="testworkspace",
-            region="ap1"
+            server_id="server-001", workspace="testworkspace", region="ap1"
         )
 
         # Verify response structure
@@ -74,7 +73,7 @@ class TestSystemInfo:
             region="ap1",
             workspace="testworkspace",
             endpoint="/api/servers/server-001/system/info/",
-            token="test-token"
+            token="test-token",
         )
 
     @pytest.mark.asyncio
@@ -84,10 +83,7 @@ class TestSystemInfo:
 
         mock_token_manager.get_token.return_value = None
 
-        result = await system_info(
-            server_id="server-001",
-            workspace="testworkspace"
-        )
+        result = await system_info(server_id="server-001", workspace="testworkspace")
 
         assert result["status"] == "error"
         assert "No token found" in result["message"]
@@ -100,26 +96,23 @@ class TestSystemInfo:
 
         mock_http_client.get.side_effect = Exception("HTTP 500 Internal Server Error")
 
-        result = await system_info(
-            server_id="server-001",
-            workspace="testworkspace"
-        )
+        result = await system_info(server_id="server-001", workspace="testworkspace")
 
         assert result["status"] == "error"
         assert "Failed to get system info" in result["message"]
         assert "HTTP 500" in result["message"]
 
     @pytest.mark.asyncio
-    async def test_system_info_different_region(self, mock_http_client, mock_token_manager):
+    async def test_system_info_different_region(
+        self, mock_http_client, mock_token_manager
+    ):
         """Test system info with different region."""
         from tools.system_tools import system_info
 
         mock_http_client.get.return_value = {"hostname": "eu-server"}
 
         result = await system_info(
-            server_id="server-001",
-            workspace="testworkspace",
-            region="eu1"
+            server_id="server-001", workspace="testworkspace", region="eu1"
         )
 
         assert result["status"] == "success"
@@ -149,7 +142,7 @@ class TestSystemUsersList:
                     "home": "/root",
                     "shell": "/bin/bash",
                     "description": "root",
-                    "login_enabled": True
+                    "login_enabled": True,
                 },
                 {
                     "username": "ubuntu",
@@ -158,7 +151,7 @@ class TestSystemUsersList:
                     "home": "/home/ubuntu",
                     "shell": "/bin/bash",
                     "description": "Ubuntu",
-                    "login_enabled": True
+                    "login_enabled": True,
                 },
                 {
                     "username": "www-data",
@@ -167,7 +160,7 @@ class TestSystemUsersList:
                     "home": "/var/www",
                     "shell": "/usr/sbin/nologin",
                     "description": "www-data",
-                    "login_enabled": False
+                    "login_enabled": False,
                 },
                 {
                     "username": "mysql",
@@ -176,7 +169,7 @@ class TestSystemUsersList:
                     "home": "/nonexistent",
                     "shell": "/bin/false",
                     "description": "MySQL Server",
-                    "login_enabled": False
+                    "login_enabled": False,
                 },
                 {
                     "username": "sshd",
@@ -185,15 +178,13 @@ class TestSystemUsersList:
                     "home": "/run/sshd",
                     "shell": "/usr/sbin/nologin",
                     "description": "",
-                    "login_enabled": False
-                }
-            ]
+                    "login_enabled": False,
+                },
+            ],
         }
 
         result = await system_users_list(
-            server_id="server-001",
-            workspace="testworkspace",
-            region="ap1"
+            server_id="server-001", workspace="testworkspace", region="ap1"
         )
 
         # Verify response structure
@@ -216,7 +207,7 @@ class TestSystemUsersList:
             region="ap1",
             workspace="testworkspace",
             endpoint="/api/servers/server-001/system/users/",
-            token="test-token"
+            token="test-token",
         )
 
     @pytest.mark.asyncio
@@ -227,8 +218,7 @@ class TestSystemUsersList:
         mock_token_manager.get_token.return_value = None
 
         result = await system_users_list(
-            server_id="server-001",
-            workspace="testworkspace"
+            server_id="server-001", workspace="testworkspace"
         )
 
         assert result["status"] == "error"
@@ -243,8 +233,7 @@ class TestSystemUsersList:
         mock_http_client.get.side_effect = Exception("HTTP 503 Service Unavailable")
 
         result = await system_users_list(
-            server_id="server-001",
-            workspace="testworkspace"
+            server_id="server-001", workspace="testworkspace"
         )
 
         assert result["status"] == "error"
@@ -272,7 +261,7 @@ class TestSystemPackagesList:
                     "description": "small, powerful, scalable web/proxy server",
                     "size": 1024000,
                     "maintainer": "Ubuntu Developers",
-                    "section": "httpd"
+                    "section": "httpd",
                 },
                 {
                     "name": "mysql-server-8.0",
@@ -282,7 +271,7 @@ class TestSystemPackagesList:
                     "description": "MySQL database server binaries and system database setup",
                     "size": 15728640,
                     "maintainer": "Ubuntu Developers",
-                    "section": "database"
+                    "section": "database",
                 },
                 {
                     "name": "python3",
@@ -292,15 +281,13 @@ class TestSystemPackagesList:
                     "description": "interactive high-level object-oriented language (default python3 version)",
                     "size": 102400,
                     "maintainer": "Ubuntu Developers",
-                    "section": "python"
-                }
-            ]
+                    "section": "python",
+                },
+            ],
         }
 
         result = await system_packages_list(
-            server_id="server-001",
-            workspace="testworkspace",
-            region="ap1"
+            server_id="server-001", workspace="testworkspace", region="ap1"
         )
 
         # Verify response structure
@@ -323,7 +310,7 @@ class TestSystemPackagesList:
             region="ap1",
             workspace="testworkspace",
             endpoint="/api/servers/server-001/system/packages/",
-            token="test-token"
+            token="test-token",
         )
 
     @pytest.mark.asyncio
@@ -331,14 +318,10 @@ class TestSystemPackagesList:
         """Test packages list with empty response."""
         from tools.system_tools import system_packages_list
 
-        mock_http_client.get.return_value = {
-            "count": 0,
-            "packages": []
-        }
+        mock_http_client.get.return_value = {"count": 0, "packages": []}
 
         result = await system_packages_list(
-            server_id="server-001",
-            workspace="testworkspace"
+            server_id="server-001", workspace="testworkspace"
         )
 
         assert result["status"] == "success"
@@ -353,8 +336,7 @@ class TestSystemPackagesList:
         mock_token_manager.get_token.return_value = None
 
         result = await system_packages_list(
-            server_id="server-001",
-            workspace="testworkspace"
+            server_id="server-001", workspace="testworkspace"
         )
 
         assert result["status"] == "error"
@@ -369,8 +351,7 @@ class TestSystemPackagesList:
         mock_http_client.get.side_effect = Exception("Connection timeout")
 
         result = await system_packages_list(
-            server_id="server-001",
-            workspace="testworkspace"
+            server_id="server-001", workspace="testworkspace"
         )
 
         assert result["status"] == "error"
@@ -396,7 +377,7 @@ class TestSystemDiskInfo:
                     "model": "VBOX HARDDISK",
                     "type": "hdd",
                     "removable": False,
-                    "readonly": False
+                    "readonly": False,
                 }
             ],
             "partitions": [
@@ -410,21 +391,19 @@ class TestSystemDiskInfo:
                     "used_human": "42.8GB",
                     "available": 59941609472,
                     "available_human": "55.8GB",
-                    "percent": 43.4
+                    "percent": 43.4,
                 }
             ],
             "usage": {
                 "total": 105906176000,
                 "used": 45964566528,
                 "free": 59941609472,
-                "percent": 43.4
-            }
+                "percent": 43.4,
+            },
         }
 
         result = await system_disk_info(
-            server_id="server-001",
-            workspace="testworkspace",
-            region="ap1"
+            server_id="server-001", workspace="testworkspace", region="ap1"
         )
 
         # Verify response structure
@@ -459,7 +438,7 @@ class TestSystemDiskInfo:
             region="ap1",
             workspace="testworkspace",
             endpoint="/api/servers/server-001/system/disk/",
-            token="test-token"
+            token="test-token",
         )
 
     @pytest.mark.asyncio
@@ -474,40 +453,39 @@ class TestSystemDiskInfo:
                     "device": "/dev/sda",
                     "size": 107374182400,
                     "model": "VBOX HARDDISK",
-                    "type": "hdd"
+                    "type": "hdd",
                 },
                 {
                     "device": "/dev/sdb",
                     "size": 53687091200,
                     "model": "VBOX HARDDISK",
-                    "type": "hdd"
-                }
+                    "type": "hdd",
+                },
             ],
             "partitions": [
                 {
                     "device": "/dev/sda1",
                     "mountpoint": "/",
                     "filesystem": "ext4",
-                    "percent": 43.4
+                    "percent": 43.4,
                 },
                 {
                     "device": "/dev/sdb1",
                     "mountpoint": "/home",
                     "filesystem": "ext4",
-                    "percent": 25.6
-                }
+                    "percent": 25.6,
+                },
             ],
             "usage": {
                 "total": 159061273600,
                 "used": 68719476736,
                 "free": 90341796864,
-                "percent": 43.2
-            }
+                "percent": 43.2,
+            },
         }
 
         result = await system_disk_info(
-            server_id="server-001",
-            workspace="testworkspace"
+            server_id="server-001", workspace="testworkspace"
         )
 
         assert result["status"] == "success"
@@ -523,8 +501,7 @@ class TestSystemDiskInfo:
         mock_token_manager.get_token.return_value = None
 
         result = await system_disk_info(
-            server_id="server-001",
-            workspace="testworkspace"
+            server_id="server-001", workspace="testworkspace"
         )
 
         assert result["status"] == "error"
@@ -539,8 +516,7 @@ class TestSystemDiskInfo:
         mock_http_client.get.side_effect = Exception("Disk service unavailable")
 
         result = await system_disk_info(
-            server_id="server-001",
-            workspace="testworkspace"
+            server_id="server-001", workspace="testworkspace"
         )
 
         assert result["status"] == "error"
@@ -552,21 +528,31 @@ class TestSystemToolsEdgeCases:
     """Test edge cases and error conditions."""
 
     @pytest.mark.asyncio
-    async def test_different_regions_and_workspaces(self, mock_http_client, mock_token_manager):
+    async def test_different_regions_and_workspaces(
+        self, mock_http_client, mock_token_manager
+    ):
         """Test all functions with different regions and workspaces."""
-        from tools.system_tools import system_info, system_users_list, system_packages_list, system_disk_info
+        from tools.system_tools import (
+            system_info,
+            system_users_list,
+            system_packages_list,
+            system_disk_info,
+        )
 
         # Mock successful responses
         mock_http_client.get.return_value = {"test": "data"}
 
         # Test with different regions
-        functions_to_test = [system_info, system_users_list, system_packages_list, system_disk_info]
+        functions_to_test = [
+            system_info,
+            system_users_list,
+            system_packages_list,
+            system_disk_info,
+        ]
 
         for func in functions_to_test:
             result = await func(
-                server_id="eu-server-001",
-                workspace="eu-workspace",
-                region="eu1"
+                server_id="eu-server-001", workspace="eu-workspace", region="eu1"
             )
 
             assert result["status"] == "success"
@@ -581,10 +567,7 @@ class TestSystemToolsEdgeCases:
 
         mock_token_manager.get_token.side_effect = Exception("Token manager error")
 
-        result = await system_info(
-            server_id="server-001",
-            workspace="testworkspace"
-        )
+        result = await system_info(server_id="server-001", workspace="testworkspace")
 
         assert result["status"] == "error"
         assert "Failed to get system info" in result["message"]
@@ -598,8 +581,7 @@ class TestSystemToolsEdgeCases:
         mock_http_client.get.side_effect = Exception("HTTP 404 Server Not Found")
 
         result = await system_users_list(
-            server_id="nonexistent-server",
-            workspace="testworkspace"
+            server_id="nonexistent-server", workspace="testworkspace"
         )
 
         assert result["status"] == "error"

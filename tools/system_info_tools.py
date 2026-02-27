@@ -3,16 +3,13 @@
 from typing import Dict, Any, Optional
 import asyncio
 from utils.http_client import http_client
-from utils.common import success_response, error_response
+from utils.common import success_response
 from utils.decorators import mcp_tool_handler
 
 
 @mcp_tool_handler(description="Get system information for a server")
 async def get_system_info(
-    server_id: str,
-    workspace: str,
-    region: str = "ap1",
-    **kwargs
+    server_id: str, workspace: str, region: str = "ap1", **kwargs
 ) -> Dict[str, Any]:
     """Get detailed system information for a server.
 
@@ -24,7 +21,7 @@ async def get_system_info(
     Returns:
         System information response
     """
-    token = kwargs.get('token')
+    token = kwargs.get("token")
 
     # Make async call to get system info
     result = await http_client.get(
@@ -32,23 +29,17 @@ async def get_system_info(
         workspace=workspace,
         endpoint="/api/proc/info/",
         token=token,
-        params={"server": server_id}
+        params={"server": server_id},
     )
 
     return success_response(
-        data=result,
-        server_id=server_id,
-        region=region,
-        workspace=workspace
+        data=result, server_id=server_id, region=region, workspace=workspace
     )
 
 
 @mcp_tool_handler(description="Get OS version information for a server")
 async def get_os_version(
-    server_id: str,
-    workspace: str,
-    region: str = "ap1",
-    **kwargs
+    server_id: str, workspace: str, region: str = "ap1", **kwargs
 ) -> Dict[str, Any]:
     """Get operating system version information for a server.
 
@@ -60,7 +51,7 @@ async def get_os_version(
     Returns:
         OS version information response
     """
-    token = kwargs.get('token')
+    token = kwargs.get("token")
 
     # Make async call to get OS version
     result = await http_client.get(
@@ -68,14 +59,11 @@ async def get_os_version(
         workspace=workspace,
         endpoint="/api/proc/os/",
         token=token,
-        params={"server": server_id}
+        params={"server": server_id},
     )
 
     return success_response(
-        data=result,
-        server_id=server_id,
-        region=region,
-        workspace=workspace
+        data=result, server_id=server_id, region=region, workspace=workspace
     )
 
 
@@ -86,7 +74,7 @@ async def list_system_users(
     username_filter: Optional[str] = None,
     login_enabled_only: bool = False,
     region: str = "ap1",
-    **kwargs
+    **kwargs,
 ) -> Dict[str, Any]:
     """List system users on a server.
 
@@ -100,7 +88,7 @@ async def list_system_users(
     Returns:
         System users list response
     """
-    token = kwargs.get('token')
+    token = kwargs.get("token")
 
     # Prepare query parameters
     params = {"server": server_id}
@@ -115,7 +103,7 @@ async def list_system_users(
         workspace=workspace,
         endpoint="/api/proc/users/",
         token=token,
-        params=params
+        params=params,
     )
 
     return success_response(
@@ -124,7 +112,7 @@ async def list_system_users(
         username_filter=username_filter,
         login_enabled_only=login_enabled_only,
         region=region,
-        workspace=workspace
+        workspace=workspace,
     )
 
 
@@ -134,7 +122,7 @@ async def list_system_groups(
     workspace: str,
     groupname_filter: Optional[str] = None,
     region: str = "ap1",
-    **kwargs
+    **kwargs,
 ) -> Dict[str, Any]:
     """List system groups on a server.
 
@@ -147,7 +135,7 @@ async def list_system_groups(
     Returns:
         System groups list response
     """
-    token = kwargs.get('token')
+    token = kwargs.get("token")
 
     # Prepare query parameters
     params = {"server": server_id}
@@ -160,7 +148,7 @@ async def list_system_groups(
         workspace=workspace,
         endpoint="/api/proc/groups/",
         token=token,
-        params=params
+        params=params,
     )
 
     return success_response(
@@ -168,7 +156,7 @@ async def list_system_groups(
         server_id=server_id,
         groupname_filter=groupname_filter,
         region=region,
-        workspace=workspace
+        workspace=workspace,
     )
 
 
@@ -180,7 +168,7 @@ async def list_system_packages(
     architecture: Optional[str] = None,
     limit: int = 100,
     region: str = "ap1",
-    **kwargs
+    **kwargs,
 ) -> Dict[str, Any]:
     """List installed system packages on a server.
 
@@ -195,13 +183,10 @@ async def list_system_packages(
     Returns:
         System packages list response
     """
-    token = kwargs.get('token')
+    token = kwargs.get("token")
 
     # Prepare query parameters
-    params = {
-        "server": server_id,
-        "page_size": limit
-    }
+    params = {"server": server_id, "page_size": limit}
     if package_name:
         params["search"] = package_name
     if architecture:
@@ -213,7 +198,7 @@ async def list_system_packages(
         workspace=workspace,
         endpoint="/api/proc/packages/",
         token=token,
-        params=params
+        params=params,
     )
 
     return success_response(
@@ -223,16 +208,13 @@ async def list_system_packages(
         architecture=architecture,
         limit=limit,
         region=region,
-        workspace=workspace
+        workspace=workspace,
     )
 
 
 @mcp_tool_handler(description="Get network interfaces information")
 async def get_network_interfaces(
-    server_id: str,
-    workspace: str,
-    region: str = "ap1",
-    **kwargs
+    server_id: str, workspace: str, region: str = "ap1", **kwargs
 ) -> Dict[str, Any]:
     """Get network interfaces information for a server.
 
@@ -244,7 +226,7 @@ async def get_network_interfaces(
     Returns:
         Network interfaces information response
     """
-    token = kwargs.get('token')
+    token = kwargs.get("token")
 
     # Make async call to get network interfaces
     result = await http_client.get(
@@ -252,23 +234,17 @@ async def get_network_interfaces(
         workspace=workspace,
         endpoint="/api/proc/interfaces/",
         token=token,
-        params={"server": server_id}
+        params={"server": server_id},
     )
 
     return success_response(
-        data=result,
-        server_id=server_id,
-        region=region,
-        workspace=workspace
+        data=result, server_id=server_id, region=region, workspace=workspace
     )
 
 
 @mcp_tool_handler(description="Get disk and partition information")
 async def get_disk_info(
-    server_id: str,
-    workspace: str,
-    region: str = "ap1",
-    **kwargs
+    server_id: str, workspace: str, region: str = "ap1", **kwargs
 ) -> Dict[str, Any]:
     """Get disk and partition information for a server.
 
@@ -280,7 +256,7 @@ async def get_disk_info(
     Returns:
         Disk and partition information response
     """
-    token = kwargs.get('token')
+    token = kwargs.get("token")
 
     # Get both disks and partitions concurrently
     disks_task = http_client.get(
@@ -288,7 +264,7 @@ async def get_disk_info(
         workspace=workspace,
         endpoint="/api/proc/disks/",
         token=token,
-        params={"server": server_id}
+        params={"server": server_id},
     )
 
     partitions_task = http_client.get(
@@ -296,22 +272,25 @@ async def get_disk_info(
         workspace=workspace,
         endpoint="/api/proc/partitions/",
         token=token,
-        params={"server": server_id}
+        params={"server": server_id},
     )
 
     # Wait for both requests
     disks_result, partitions_result = await asyncio.gather(
-        disks_task, partitions_task,
-        return_exceptions=True
+        disks_task, partitions_task, return_exceptions=True
     )
 
     # Prepare response
     disk_info = {
         "server_id": server_id,
-        "disks": disks_result if not isinstance(disks_result, Exception) else {"error": str(disks_result)},
-        "partitions": partitions_result if not isinstance(partitions_result, Exception) else {"error": str(partitions_result)},
+        "disks": disks_result
+        if not isinstance(disks_result, Exception)
+        else {"error": str(disks_result)},
+        "partitions": partitions_result
+        if not isinstance(partitions_result, Exception)
+        else {"error": str(partitions_result)},
         "region": region,
-        "workspace": workspace
+        "workspace": workspace,
     }
 
     return success_response(data=disk_info)
@@ -319,10 +298,7 @@ async def get_disk_info(
 
 @mcp_tool_handler(description="Get system time information")
 async def get_system_time(
-    server_id: str,
-    workspace: str,
-    region: str = "ap1",
-    **kwargs
+    server_id: str, workspace: str, region: str = "ap1", **kwargs
 ) -> Dict[str, Any]:
     """Get system time and uptime information for a server.
 
@@ -334,7 +310,7 @@ async def get_system_time(
     Returns:
         System time information response
     """
-    token = kwargs.get('token')
+    token = kwargs.get("token")
 
     # Make async call to get system time
     result = await http_client.get(
@@ -342,23 +318,17 @@ async def get_system_time(
         workspace=workspace,
         endpoint="/api/proc/time/",
         token=token,
-        params={"server": server_id}
+        params={"server": server_id},
     )
 
     return success_response(
-        data=result,
-        server_id=server_id,
-        region=region,
-        workspace=workspace
+        data=result, server_id=server_id, region=region, workspace=workspace
     )
 
 
 @mcp_tool_handler(description="Get comprehensive server overview")
 async def get_server_overview(
-    server_id: str,
-    workspace: str,
-    region: str = "ap1",
-    **kwargs
+    server_id: str, workspace: str, region: str = "ap1", **kwargs
 ) -> Dict[str, Any]:
     """Get comprehensive overview of server system information.
 
@@ -376,7 +346,7 @@ async def get_server_overview(
         get_os_version(server_id, workspace, region, **kwargs),
         get_system_time(server_id, workspace, region, **kwargs),
         get_network_interfaces(server_id, workspace, region, **kwargs),
-        get_disk_info(server_id, workspace, region, **kwargs)
+        get_disk_info(server_id, workspace, region, **kwargs),
     ]
 
     # Wait for all requests
@@ -391,11 +361,17 @@ async def get_server_overview(
         "os_version": {},
         "system_time": {},
         "network_interfaces": {},
-        "disk_info": {}
+        "disk_info": {},
     }
 
     # Process results
-    task_keys = ["system_info", "os_version", "system_time", "network_interfaces", "disk_info"]
+    task_keys = [
+        "system_info",
+        "os_version",
+        "system_time",
+        "network_interfaces",
+        "disk_info",
+    ]
 
     for i, result in enumerate(results):
         key = task_keys[i]
@@ -403,7 +379,9 @@ async def get_server_overview(
             overview[key] = result["data"]
         else:
             overview[key] = {
-                "error": str(result) if isinstance(result, Exception) else result.get("message", "Unknown error")
+                "error": str(result)
+                if isinstance(result, Exception)
+                else result.get("message", "Unknown error")
             }
 
     return success_response(data=overview)
