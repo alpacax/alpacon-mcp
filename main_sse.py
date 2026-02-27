@@ -1,16 +1,16 @@
 # main_sse.py
 import argparse
+
 from server import run
 
-
 # Entry point to run the server with SSE
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Alpacon MCP Server (SSE mode)")
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Alpacon MCP Server (SSE mode)')
     parser.add_argument(
-        "--config-file",
+        '--config-file',
         type=str,
-        help="Path to token configuration file (overrides default config discovery)",
+        help='Path to token configuration file (overrides default config discovery)',
     )
 
     args = parser.parse_args()
-    run("sse", config_file=args.config_file)
+    run('sse', config_file=args.config_file)

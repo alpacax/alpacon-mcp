@@ -4,24 +4,21 @@ from pathlib import Path
 
 from server import run
 from utils.logger import get_logger
-from utils.token_manager import TokenManager
 
-
-logger = get_logger("main")
+logger = get_logger('main')
 
 
 def check_token_exists() -> bool:
     """Check if any token configuration exists."""
-    tm = TokenManager()
-    global_path = Path.home() / ".alpacon-mcp" / "token.json"
-    local_path = Path("config") / "token.json"
+    global_path = Path.home() / '.alpacon-mcp' / 'token.json'
+    local_path = Path('config') / 'token.json'
     return global_path.exists() or local_path.exists()
 
 
 def main():
     """Main entry point for the CLI."""
     parser = argparse.ArgumentParser(
-        description="Alpacon MCP Server - AI-powered server management",
+        description='Alpacon MCP Server - AI-powered server management',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Commands:
@@ -41,82 +38,82 @@ Examples:
         """,
     )
     parser.add_argument(
-        "command",
-        nargs="?",
-        choices=["setup", "test", "list", "add"],
-        help="Command to execute",
+        'command',
+        nargs='?',
+        choices=['setup', 'test', 'list', 'add'],
+        help='Command to execute',
     )
     parser.add_argument(
-        "--config-file",
+        '--config-file',
         type=str,
-        help="Path to token configuration file (overrides default config discovery)",
+        help='Path to token configuration file (overrides default config discovery)',
     )
     parser.add_argument(
-        "--local",
-        action="store_true",
-        help="Use local config (./config/token.json) instead of global (~/.alpacon-mcp/token.json)",
+        '--local',
+        action='store_true',
+        help='Use local config (./config/token.json) instead of global (~/.alpacon-mcp/token.json)',
     )
     parser.add_argument(
-        "--token-file",
+        '--token-file',
         type=str,
-        help="Custom path to token.json file (overrides --local and default locations)",
+        help='Custom path to token.json file (overrides --local and default locations)',
     )
 
     args = parser.parse_args()
 
     # Handle commands
-    if args.command == "setup":
+    if args.command == 'setup':
         from utils.setup_wizard import run_setup_wizard
 
         run_setup_wizard(force_local=args.local, custom_path=args.token_file)
         return
 
-    if args.command == "test":
+    if args.command == 'test':
         from utils.setup_wizard import test_credentials
 
         test_credentials()
         return
 
-    if args.command == "list":
+    if args.command == 'list':
         from utils.setup_wizard import list_workspaces
 
         list_workspaces()
         return
 
-    if args.command == "add":
+    if args.command == 'add':
         from utils.setup_wizard import add_workspace
 
         add_workspace()
         return
 
     # No command provided - start MCP server
-    logger.info("Starting Alpacon MCP Server")
+    logger.info('Starting Alpacon MCP Server')
 
     # Check if tokens are configured
     if not check_token_exists() and not args.config_file and not args.token_file:
-        print("\n" + "=" * 60)
-        print("⚠️  No API tokens configured")
-        print("=" * 60)
-        print("\nRunning setup wizard...\n")
+        print('\n' + '=' * 60)
+        print('⚠️  No API tokens configured')
+        print('=' * 60)
+        print('\nRunning setup wizard...\n')
 
         from utils.setup_wizard import run_setup_wizard
 
         run_setup_wizard(force_local=args.local, custom_path=args.token_file)
 
-        print("\n✨ Setup complete!")
-        print("Restart Claude Desktop and the MCP server will start automatically.")
+        print('\n✨ Setup complete!')
+        print('Restart Claude Desktop and the MCP server will start automatically.')
         return
 
-    logger.info(f"Configuration: config_file={args.config_file}")
+    logger.info(f'Configuration: config_file={args.config_file}')
 
     try:
-        run("stdio", config_file=args.config_file)
+        run('stdio', config_file=args.config_file)
     except Exception as e:
-        logger.error(f"Failed to start MCP server: {e}", exc_info=True)
+        logger.error(f'Failed to start MCP server: {e}', exc_info=True)
         raise
 
 
 # Entry point to run the server
-if __name__ == "__main__":
-    logger.info("Alpacon MCP Server entry point called")
+if __name__ == '__main__':
+    logger.info('Alpacon MCP Server entry point called')
     main()

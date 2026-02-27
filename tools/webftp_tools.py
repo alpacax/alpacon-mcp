@@ -1,22 +1,23 @@
 """WebFTP (Web FTP) management tools for Alpacon MCP server."""
 
 import os
-from typing import Dict, Any, Optional
+from typing import Any, Optional
+
 from server import mcp
-from utils.http_client import http_client
-from utils.common import success_response, error_response
+from utils.common import error_response, success_response
 from utils.decorators import mcp_tool_handler
-from utils.error_handler import validate_file_path, format_validation_error
+from utils.error_handler import format_validation_error, validate_file_path
+from utils.http_client import http_client
 
 
-@mcp_tool_handler(description="Create a new WebFTP session")
+@mcp_tool_handler(description='Create a new WebFTP session')
 async def webftp_session_create(
     server_id: str,
     workspace: str,
     username: Optional[str] = None,
-    region: str = "ap1",
+    region: str = 'ap1',
     **kwargs,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Create a new WebFTP session.
 
     Args:
@@ -28,20 +29,20 @@ async def webftp_session_create(
     Returns:
         FTP session creation response
     """
-    token = kwargs.get("token")
+    token = kwargs.get('token')
 
     # Prepare FTP session data
-    session_data = {"server": server_id}
+    session_data = {'server': server_id}
 
     # Only include username if provided
     if username:
-        session_data["username"] = username
+        session_data['username'] = username
 
     # Make async call to create FTP session
     result = await http_client.post(
         region=region,
         workspace=workspace,
-        endpoint="/api/webftp/sessions/",
+        endpoint='/api/webftp/sessions/',
         token=token,
         data=session_data,
     )
@@ -55,10 +56,10 @@ async def webftp_session_create(
     )
 
 
-@mcp_tool_handler(description="Get list of WebFTP sessions")
+@mcp_tool_handler(description='Get list of WebFTP sessions')
 async def webftp_sessions_list(
-    workspace: str, server_id: Optional[str] = None, region: str = "ap1", **kwargs
-) -> Dict[str, Any]:
+    workspace: str, server_id: Optional[str] = None, region: str = 'ap1', **kwargs
+) -> dict[str, Any]:
     """Get list of WebFTP sessions.
 
     Args:
@@ -69,18 +70,18 @@ async def webftp_sessions_list(
     Returns:
         FTP sessions list response
     """
-    token = kwargs.get("token")
+    token = kwargs.get('token')
 
     # Prepare query parameters
     params = {}
     if server_id:
-        params["server"] = server_id
+        params['server'] = server_id
 
     # Make async call to get FTP sessions
     result = await http_client.get(
         region=region,
         workspace=workspace,
-        endpoint="/api/webftp/sessions/",
+        endpoint='/api/webftp/sessions/',
         token=token,
         params=params,
     )
@@ -90,17 +91,17 @@ async def webftp_sessions_list(
     )
 
 
-@mcp_tool_handler(description="Upload a file using WebFTP uploads API (S3-based)")
+@mcp_tool_handler(description='Upload a file using WebFTP uploads API (S3-based)')
 async def webftp_upload_file(
     server_id: str,
     local_file_path: str,
     remote_file_path: str,
     workspace: str,
     username: Optional[str] = None,
-    region: str = "ap1",
+    region: str = 'ap1',
     allow_overwrite: bool = True,
     **kwargs,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Upload a file using WebFTP uploads API with S3 presigned URLs.
 
     This creates an UploadedFile object which generates presigned S3 URLs for upload.
@@ -123,59 +124,59 @@ async def webftp_upload_file(
     Returns:
         File upload response with presigned URLs
     """
-    token = kwargs.get("token")
+    token = kwargs.get('token')
 
     # Validate file paths
     if not validate_file_path(local_file_path):
-        return format_validation_error("local_file_path", local_file_path)
+        return format_validation_error('local_file_path', local_file_path)
     if not validate_file_path(remote_file_path):
-        return format_validation_error("remote_file_path", remote_file_path)
+        return format_validation_error('remote_file_path', remote_file_path)
 
     # Step 1: Read local file
     try:
-        with open(local_file_path, "rb") as f:
+        with open(local_file_path, 'rb') as f:
             file_content = f.read()
     except FileNotFoundError:
-        return error_response(f"Local file not found: {local_file_path}")
+        return error_response(f'Local file not found: {local_file_path}')
     except Exception as e:
-        return error_response(f"Failed to read local file: {str(e)}")
+        return error_response(f'Failed to read local file: {str(e)}')
 
     # Step 2: Prepare upload data for UploadedFileCreateSerializer
     upload_data = {
-        "server": server_id,
-        "name": os.path.basename(remote_file_path),
-        "path": remote_file_path,
-        "allow_overwrite": allow_overwrite,
+        'server': server_id,
+        'name': os.path.basename(remote_file_path),
+        'path': remote_file_path,
+        'allow_overwrite': allow_overwrite,
     }
 
     # Only include username if provided
     if username:
-        upload_data["username"] = username
+        upload_data['username'] = username
 
     # Step 3: Create UploadedFile object (this generates presigned URLs when USE_S3=True)
     result = await http_client.post(
         region=region,
         workspace=workspace,
-        endpoint="/api/webftp/uploads/",
+        endpoint='/api/webftp/uploads/',
         token=token,
         data=upload_data,
     )
 
     # Step 4: Upload file content to S3 using presigned URL
-    if "upload_url" in result and result["upload_url"]:
+    if 'upload_url' in result and result['upload_url']:
         import httpx
 
         async with httpx.AsyncClient() as client:
             upload_response = await client.put(
-                result["upload_url"],
+                result['upload_url'],
                 content=file_content,
-                headers={"Content-Type": "application/octet-stream"},
+                headers={'Content-Type': 'application/octet-stream'},
             )
 
             if upload_response.status_code not in [200, 201]:
                 return error_response(
-                    f"Failed to upload to S3: {upload_response.status_code} - {upload_response.text}",
-                    upload_url=result["upload_url"],
+                    f'Failed to upload to S3: {upload_response.status_code} - {upload_response.text}',
+                    upload_url=result['upload_url'],
                 )
 
         # Step 5: Trigger server to process the uploaded file
@@ -187,22 +188,22 @@ async def webftp_upload_file(
         )
 
         return success_response(
-            message="File uploaded successfully and processed by server",
+            message='File uploaded successfully and processed by server',
             data=result,
             upload_trigger=upload_trigger,
             server_id=server_id,
             local_file_path=local_file_path,
             remote_file_path=remote_file_path,
             file_size=len(file_content),
-            upload_url=result.get("upload_url"),
-            download_url=result.get("download_url"),
+            upload_url=result.get('upload_url'),
+            download_url=result.get('download_url'),
             region=region,
             workspace=workspace,
         )
     else:
         # Fallback to direct upload (when USE_S3=False)
         return success_response(
-            message="File uploaded successfully (direct upload)",
+            message='File uploaded successfully (direct upload)',
             data=result,
             server_id=server_id,
             local_file_path=local_file_path,
@@ -212,17 +213,17 @@ async def webftp_upload_file(
         )
 
 
-@mcp_tool_handler(description="Download a file or folder using WebFTP downloads API")
+@mcp_tool_handler(description='Download a file or folder using WebFTP downloads API')
 async def webftp_download_file(
     server_id: str,
     remote_file_path: str,
     local_file_path: str,
     workspace: str,
-    resource_type: str = "file",
+    resource_type: str = 'file',
     username: Optional[str] = None,
-    region: str = "ap1",
+    region: str = 'ap1',
     **kwargs,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Download a file or folder using WebFTP downloads API.
 
     This creates a DownloadedFile object which generates presigned S3 URLs for download,
@@ -241,50 +242,50 @@ async def webftp_download_file(
     Returns:
         Download response with file saved locally
     """
-    token = kwargs.get("token")
+    token = kwargs.get('token')
 
     # Validate file paths
     if not validate_file_path(remote_file_path):
-        return format_validation_error("remote_file_path", remote_file_path)
+        return format_validation_error('remote_file_path', remote_file_path)
     if not validate_file_path(local_file_path):
-        return format_validation_error("local_file_path", local_file_path)
+        return format_validation_error('local_file_path', local_file_path)
 
     # Step 1: Prepare download data for DownloadedFileCreateSerializer
     file_name = os.path.basename(remote_file_path)
-    if resource_type == "folder":
-        file_name += ".zip"
+    if resource_type == 'folder':
+        file_name += '.zip'
 
     download_data = {
-        "server": server_id,
-        "path": remote_file_path,
-        "name": file_name,
-        "resource_type": resource_type,
+        'server': server_id,
+        'path': remote_file_path,
+        'name': file_name,
+        'resource_type': resource_type,
     }
 
     # Only include username if provided
     if username:
-        download_data["username"] = username
+        download_data['username'] = username
 
     # Step 2: Create DownloadedFile object (this generates presigned URLs when USE_S3=True)
     result = await http_client.post(
         region=region,
         workspace=workspace,
-        endpoint="/api/webftp/downloads/",
+        endpoint='/api/webftp/downloads/',
         token=token,
         data=download_data,
     )
 
     # Step 3: Download file content from S3 using presigned URL
-    if "download_url" in result and result["download_url"]:
+    if 'download_url' in result and result['download_url']:
         import httpx
 
         async with httpx.AsyncClient() as client:
-            download_response = await client.get(result["download_url"])
+            download_response = await client.get(result['download_url'])
 
             if download_response.status_code != 200:
                 return error_response(
-                    f"Failed to download from S3: {download_response.status_code} - {download_response.text}",
-                    download_url=result["download_url"],
+                    f'Failed to download from S3: {download_response.status_code} - {download_response.text}',
+                    download_url=result['download_url'],
                 )
 
             # Step 4: Save file content to local path
@@ -292,27 +293,27 @@ async def webftp_download_file(
                 # Create directory if it doesn't exist
                 os.makedirs(os.path.dirname(local_file_path), exist_ok=True)
 
-                with open(local_file_path, "wb") as f:
+                with open(local_file_path, 'wb') as f:
                     f.write(download_response.content)
             except Exception as e:
-                return error_response(f"Failed to save file locally: {str(e)}")
+                return error_response(f'Failed to save file locally: {str(e)}')
 
         return success_response(
-            message=f"File downloaded successfully from {resource_type}: {remote_file_path}",
+            message=f'File downloaded successfully from {resource_type}: {remote_file_path}',
             data=result,
             server_id=server_id,
             remote_file_path=remote_file_path,
             local_file_path=local_file_path,
             resource_type=resource_type,
             file_size=len(download_response.content),
-            download_url=result.get("download_url"),
+            download_url=result.get('download_url'),
             region=region,
             workspace=workspace,
         )
     else:
         # Fallback for direct download (when USE_S3=False)
         return success_response(
-            message=f"Download request created for {resource_type}: {remote_file_path}",
+            message=f'Download request created for {resource_type}: {remote_file_path}',
             data=result,
             server_id=server_id,
             remote_file_path=remote_file_path,
@@ -322,10 +323,10 @@ async def webftp_download_file(
         )
 
 
-@mcp_tool_handler(description="List uploaded files (upload history)")
+@mcp_tool_handler(description='List uploaded files (upload history)')
 async def webftp_uploads_list(
-    workspace: str, server_id: Optional[str] = None, region: str = "ap1", **kwargs
-) -> Dict[str, Any]:
+    workspace: str, server_id: Optional[str] = None, region: str = 'ap1', **kwargs
+) -> dict[str, Any]:
     """List uploaded files (upload history).
 
     Args:
@@ -336,18 +337,18 @@ async def webftp_uploads_list(
     Returns:
         Uploads list response
     """
-    token = kwargs.get("token")
+    token = kwargs.get('token')
 
     # Prepare query parameters
     params = {}
     if server_id:
-        params["server"] = server_id
+        params['server'] = server_id
 
     # Make async call to get uploads list
     result = await http_client.get(
         region=region,
         workspace=workspace,
-        endpoint="/api/webftp/uploads/",
+        endpoint='/api/webftp/uploads/',
         token=token,
         params=params,
     )
@@ -357,10 +358,10 @@ async def webftp_uploads_list(
     )
 
 
-@mcp_tool_handler(description="List download requests (download history)")
+@mcp_tool_handler(description='List download requests (download history)')
 async def webftp_downloads_list(
-    workspace: str, server_id: Optional[str] = None, region: str = "ap1", **kwargs
-) -> Dict[str, Any]:
+    workspace: str, server_id: Optional[str] = None, region: str = 'ap1', **kwargs
+) -> dict[str, Any]:
     """List download requests (download history).
 
     Args:
@@ -371,18 +372,18 @@ async def webftp_downloads_list(
     Returns:
         Downloads list response
     """
-    token = kwargs.get("token")
+    token = kwargs.get('token')
 
     # Prepare query parameters
     params = {}
     if server_id:
-        params["server"] = server_id
+        params['server'] = server_id
 
     # Make async call to get downloads list
     result = await http_client.get(
         region=region,
         workspace=workspace,
-        endpoint="/api/webftp/downloads/",
+        endpoint='/api/webftp/downloads/',
         token=token,
         params=params,
     )
@@ -394,12 +395,12 @@ async def webftp_downloads_list(
 
 # WebFTP sessions resource
 @mcp.resource(
-    uri="webftp://sessions/{region}/{workspace}",
-    name="WebFTP Sessions List",
-    description="Get list of WebFTP sessions",
-    mime_type="application/json",
+    uri='webftp://sessions/{region}/{workspace}',
+    name='WebFTP Sessions List',
+    description='Get list of WebFTP sessions',
+    mime_type='application/json',
 )
-async def webftp_sessions_resource(region: str, workspace: str) -> Dict[str, Any]:
+async def webftp_sessions_resource(region: str, workspace: str) -> dict[str, Any]:
     """Get WebFTP sessions as a resource.
 
     Args:
@@ -410,19 +411,19 @@ async def webftp_sessions_resource(region: str, workspace: str) -> Dict[str, Any
         WebFTP sessions information
     """
     sessions_data = await webftp_sessions_list(region=region, workspace=workspace)
-    return {"content": sessions_data}
+    return {'content': sessions_data}
 
 
 # WebFTP downloads resource
 @mcp.resource(
-    uri="webftp://downloads/{session_id}/{region}/{workspace}",
-    name="WebFTP Downloads List",
-    description="Get list of downloadable files from WebFTP session",
-    mime_type="application/json",
+    uri='webftp://downloads/{session_id}/{region}/{workspace}',
+    name='WebFTP Downloads List',
+    description='Get list of downloadable files from WebFTP session',
+    mime_type='application/json',
 )
 async def webftp_downloads_resource(
     session_id: str, region: str, workspace: str
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Get WebFTP downloads as a resource.
 
     Args:
@@ -436,4 +437,4 @@ async def webftp_downloads_resource(
     downloads_data = await webftp_downloads_list(
         session_id=session_id, region=region, workspace=workspace
     )
-    return {"content": downloads_data}
+    return {'content': downloads_data}

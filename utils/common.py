@@ -1,23 +1,24 @@
 """Common utilities for all MCP tools."""
 
 import importlib.metadata
-from typing import Dict, Any, Optional
-from utils.token_manager import get_token_manager
+from typing import Any, Optional
+
 from utils.logger import get_logger
+from utils.token_manager import get_token_manager
 
 # Initialize shared instances
 token_manager = get_token_manager()
-logger = get_logger("common")
+logger = get_logger('common')
 
 # Get version from package metadata (pyproject.toml)
 try:
-    MCP_VERSION = importlib.metadata.version("alpacon-mcp")
+    MCP_VERSION = importlib.metadata.version('alpacon-mcp')
 except importlib.metadata.PackageNotFoundError:
     # Fallback for development environment
-    MCP_VERSION = "0.4.2-dev"
+    MCP_VERSION = '0.4.2-dev'
 
 # MCP User-Agent for identification
-MCP_USER_AGENT = f"alpacon-mcp/{MCP_VERSION} (MCP-Server; persistent-pool) Python/3.12 websockets/15.0.1"
+MCP_USER_AGENT = f'alpacon-mcp/{MCP_VERSION} (MCP-Server; persistent-pool) Python/3.12 websockets/15.0.1'
 
 
 def validate_token(region: str, workspace: str) -> Optional[str]:
@@ -32,11 +33,11 @@ def validate_token(region: str, workspace: str) -> Optional[str]:
     """
     token = token_manager.get_token(region, workspace)
     if not token:
-        logger.error(f"No token found for {workspace}.{region}")
+        logger.error(f'No token found for {workspace}.{region}')
     return token
 
 
-def error_response(message: str, **kwargs) -> Dict[str, Any]:
+def error_response(message: str, **kwargs) -> dict[str, Any]:
     """Create standardized error response.
 
     Args:
@@ -46,12 +47,12 @@ def error_response(message: str, **kwargs) -> Dict[str, Any]:
     Returns:
         Standardized error response dict
     """
-    response = {"status": "error", "message": message}
+    response = {'status': 'error', 'message': message}
     response.update(kwargs)
     return response
 
 
-def success_response(data: Any = None, **kwargs) -> Dict[str, Any]:
+def success_response(data: Any = None, **kwargs) -> dict[str, Any]:
     """Create standardized success response.
 
     Args:
@@ -61,14 +62,14 @@ def success_response(data: Any = None, **kwargs) -> Dict[str, Any]:
     Returns:
         Standardized success response dict
     """
-    response = {"status": "success"}
+    response = {'status': 'success'}
     if data is not None:
-        response["data"] = data
+        response['data'] = data
     response.update(kwargs)
     return response
 
 
-def token_error_response(region: str, workspace: str) -> Dict[str, Any]:
+def token_error_response(region: str, workspace: str) -> dict[str, Any]:
     """Create standardized token error response.
 
     Args:
@@ -79,7 +80,7 @@ def token_error_response(region: str, workspace: str) -> Dict[str, Any]:
         Token error response
     """
     return error_response(
-        f"No token found for {workspace}.{region}. Please set token first.",
+        f'No token found for {workspace}.{region}. Please set token first.',
         region=region,
         workspace=workspace,
     )
@@ -93,7 +94,7 @@ async def handle_api_call(
     endpoint: str,
     token: str,
     **kwargs,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Handle API calls with consistent error handling.
 
     Args:
@@ -118,9 +119,9 @@ async def handle_api_call(
         )
 
         # Check for HTTP client errors
-        if isinstance(result, dict) and "error" in result:
+        if isinstance(result, dict) and 'error' in result:
             return error_response(
-                result.get("message", str(result.get("error", "Unknown error"))),
+                result.get('message', str(result.get('error', 'Unknown error'))),
                 region=region,
                 workspace=workspace,
             )
@@ -128,5 +129,5 @@ async def handle_api_call(
         return result
 
     except Exception as e:
-        logger.error(f"API call failed: {e}", exc_info=True)
+        logger.error(f'API call failed: {e}', exc_info=True)
         raise

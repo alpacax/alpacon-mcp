@@ -73,4 +73,56 @@ packages = ["."]
 dev = [
     "pytest>=8.4.2",
     "pytest-asyncio>=1.2.0",
+    "pytest-cov>=6.0.0",
 ]
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+exclude = [
+    ".git",
+    ".venv",
+    "__pycache__",
+    "node_modules",
+]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "C90", # mccabe complexity
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "S",   # flake8-bandit (security)
+    "N",   # pep8-naming
+]
+
+ignore = [
+    "E501",  # line too long (formatter handles this)
+    "E722",  # Bare except
+    "C901",  # Function is too complex
+    "N806",  # Variable in function should be lowercase
+    "B904",  # Within except, raise with from
+    "S113",  # Request without timeout
+    "S105",  # Possible hardcoded password (false positives in tests)
+    "S110",  # try-except-pass detected
+    "UP007", # Use X | Y for type annotations (prefer Optional for compatibility)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"*/test*.py" = ["S101", "S106", "S108", "S311", "S604"]
+"__init__.py" = ["N999"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.ruff.lint.isort]
+known-first-party = ["tools", "utils", "server"]
+
+[tool.ruff.format]
+quote-style = "single"
+indent-style = "space"
+line-ending = "auto"
