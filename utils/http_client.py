@@ -1,6 +1,7 @@
 """HTTP client for Alpacon API interactions."""
 
 import asyncio
+import json
 import time
 from typing import Any, Optional
 from urllib.parse import urljoin
@@ -526,6 +527,7 @@ class AlpaconHTTPClient:
             warnings.warn(
                 'AlpaconHTTPClient not properly closed. Use async context manager or call _close_client()',
                 ResourceWarning,
+                stacklevel=2,
             )
 
 

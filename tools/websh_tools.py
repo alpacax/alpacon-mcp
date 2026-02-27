@@ -115,7 +115,7 @@ async def get_or_create_channel(
                         session_pool[pool_key] = session_detail
 
                         return channel_id, session_detail
-                except Exception:
+                except Exception:  # noqa: S112
                     # This session is not reusable, try next one
                     continue
     except Exception:
