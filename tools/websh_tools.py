@@ -489,18 +489,26 @@ async def websh_channel_connect(
         async with _pool_lock:
             # Double-check: another coroutine may have connected while we awaited
             if channel_id in websocket_pool:
-                await websocket.close()
-                return {
-                    'status': 'already_connected',
-                    'channel_id': channel_id,
-                    'message': 'Channel already has active WebSocket connection',
+                ws_to_close = websocket
+            else:
+                ws_to_close = None
+                # Store in pool
+                websocket_pool[channel_id] = {
+                    'websocket': websocket,
+                    'url': websocket_url,
+                    'session_id': session_id,
                 }
 
-            # Store in pool
-            websocket_pool[channel_id] = {
-                'websocket': websocket,
-                'url': websocket_url,
-                'session_id': session_id,
+        # Close duplicate connection outside lock
+        if ws_to_close is not None:
+            try:
+                await ws_to_close.close()
+            except Exception:
+                pass
+            return {
+                'status': 'already_connected',
+                'channel_id': channel_id,
+                'message': 'Channel already has active WebSocket connection',
             }
 
         return {
