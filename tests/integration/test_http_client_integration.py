@@ -196,13 +196,13 @@ class TestCacheBehavior:
         # Override get_base_url to return empty string so the URL becomes
         # just the endpoint path, which matches _is_cacheable prefixes
         with patch.object(http_client, 'get_base_url', return_value='https://t.test'):
-            result1 = await http_client.get(
+            await http_client.get(
                 region='ap1',
                 workspace='test',
                 endpoint='/api/servers/servers/',
                 token='test-token',
             )
-            result2 = await http_client.get(
+            await http_client.get(
                 region='ap1',
                 workspace='test',
                 endpoint='/api/servers/servers/',
