@@ -9,7 +9,7 @@ from utils.logger import get_logger
 logger = get_logger('health')
 
 # Track server start time
-_start_time = time.time()
+_start_time = time.monotonic()
 
 
 async def get_health_info() -> dict[str, Any]:
@@ -55,7 +55,7 @@ async def get_health_info() -> dict[str, Any]:
     health_info = {
         'status': 'ok',
         'version': MCP_VERSION,
-        'uptime_seconds': round(time.time() - _start_time, 2),
+        'uptime_seconds': round(time.monotonic() - _start_time, 2),
         'transport': os.getenv('ALPACON_MCP_TRANSPORT', 'unknown'),
         'token_config': token_config,
         'http_client': {

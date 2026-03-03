@@ -34,7 +34,14 @@ async def health_endpoint(request):
     from utils.health import get_health_info
 
     health = await get_health_info()
-    return JSONResponse(health)
+    return JSONResponse(
+        health,
+        headers={
+            'Cache-Control': 'no-store',
+            'Pragma': 'no-cache',
+            'Expires': '0',
+        },
+    )
 
 
 def run(transport: str = 'stdio', config_file: str = None):
