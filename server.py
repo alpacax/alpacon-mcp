@@ -21,6 +21,22 @@ mcp = FastMCP(
 )
 
 
+@mcp.custom_route('/health', methods=['GET'])
+async def health_endpoint(request):
+    """HTTP health check endpoint for container orchestration.
+
+    Bypasses auth - suitable for unauthenticated health probes
+    (e.g., Kubernetes liveness/readiness checks).
+    Available on SSE and streamable-http transports only.
+    """
+    from starlette.responses import JSONResponse
+
+    from utils.health import get_health_info
+
+    health = await get_health_info()
+    return JSONResponse(health)
+
+
 def run(transport: str = 'stdio', config_file: str = None):
     """Run MCP server with optional config file path.
 
@@ -30,9 +46,13 @@ def run(transport: str = 'stdio', config_file: str = None):
     """
     logger.info(f'Starting MCP server with transport: {transport}')
 
+    # Set transport type for health check reporting
+    os.environ['ALPACON_MCP_TRANSPORT'] = transport
+
     # Import all tool modules to register MCP tools via decorators
     import tools.command_tools  # noqa: F401
     import tools.events_tools  # noqa: F401
+    import tools.health_tools  # noqa: F401
     import tools.iam_tools  # noqa: F401
     import tools.metrics_tools  # noqa: F401
     import tools.server_tools  # noqa: F401
