@@ -12,6 +12,18 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _clear_pools():
+    """Reset global pools before each test to prevent cross-test contamination."""
+    from tools.websh_tools import session_pool, websocket_pool
+
+    websocket_pool.clear()
+    session_pool.clear()
+    yield
+    websocket_pool.clear()
+    session_pool.clear()
+
+
 class TestCleanupAllConnections:
     """Test WebSocket connection cleanup during shutdown."""
 

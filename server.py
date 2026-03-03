@@ -10,8 +10,6 @@ from utils.logger import get_logger
 
 logger = get_logger('server')
 
-_original_sigterm_handler = None
-
 
 @asynccontextmanager
 async def app_lifespan(app: FastMCP) -> AsyncIterator[None]:
@@ -20,12 +18,14 @@ async def app_lifespan(app: FastMCP) -> AsyncIterator[None]:
     On startup: install SIGTERM handler (Unix only).
     On shutdown: close all WebSocket connections and HTTP client.
     """
-    global _original_sigterm_handler
+    original_handler = None
+    handler_installed = False
 
     # Install SIGTERM handler on Unix to reuse anyio's KeyboardInterrupt shutdown path
     if sys.platform != 'win32':
         try:
-            _original_sigterm_handler = signal.signal(signal.SIGTERM, _sigterm_handler)
+            original_handler = signal.signal(signal.SIGTERM, _sigterm_handler)
+            handler_installed = True
             logger.info('SIGTERM handler installed')
         except Exception as e:
             logger.warning(f'Could not install SIGTERM handler: {e}')
@@ -49,8 +49,11 @@ async def app_lifespan(app: FastMCP) -> AsyncIterator[None]:
         except Exception as e:
             logger.error(f'Error during HTTP client cleanup: {e}')
 
-        if _original_sigterm_handler is not None:
-            signal.signal(signal.SIGTERM, _original_sigterm_handler)
+        if handler_installed:
+            try:
+                signal.signal(signal.SIGTERM, original_handler)
+            except Exception as e:
+                logger.warning(f'Could not restore SIGTERM handler: {e}')
 
         logger.info('Graceful shutdown complete')
 
