@@ -115,7 +115,7 @@ class TestErrorHandlingDecorator:
     async def test_http_exception_caught_by_error_handler(
         self, patched_http_client, mock_token_for_integration
     ):
-        """Exception raised inside the tool function is caught by with_error_handling."""
+        """ConnectError from http_client is returned as error dict, which the tool converts to error_response."""
 
         def handler(request: httpx.Request) -> httpx.Response:
             raise httpx.ConnectError('Connection refused')

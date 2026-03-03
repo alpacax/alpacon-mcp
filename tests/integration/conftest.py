@@ -44,6 +44,11 @@ def patched_http_client(make_mock_transport):
 
         def set_handler(self, handler):
             """Set the mock transport handler for HTTP requests."""
+            # Stop any existing patches before starting a new one
+            for p in self._patches:
+                p.stop()
+            self._patches.clear()
+
             transport = make_mock_transport(handler)
             mock_client = httpx.AsyncClient(transport=transport)
 

@@ -182,8 +182,8 @@ class TestCacheBehavior:
     to produce URLs that match the cache prefix.
     """
 
-    async def test_cache_hit_for_cacheable_get(self, patched_http_client):
-        """Cacheable GET returns cached result on second call via get() method."""
+    async def test_cache_miss_due_to_full_url_mismatch(self, patched_http_client):
+        """Full URLs do not match path-prefix cache keys, so no caching occurs."""
         call_count = 0
 
         def handler(request: httpx.Request) -> httpx.Response:
@@ -221,19 +221,19 @@ class TestCacheBehavior:
         cache_key = http_client._get_cache_key('GET', '/api/servers/servers/')
         test_data = {'count': 1, 'results': []}
 
-        # Verify cache is empty
-        assert http_client._get_cached_response(cache_key) is None
+        try:
+            # Verify cache is empty
+            assert http_client._get_cached_response(cache_key) is None
 
-        # Set cache
-        http_client._set_cached_response(cache_key, test_data)
+            # Set cache
+            http_client._set_cached_response(cache_key, test_data)
 
-        # Verify cache hit
-        cached = http_client._get_cached_response(cache_key)
-        assert cached == test_data
-
-        # Clean up
-        http_client._cache.clear()
-        http_client._cache_ttl.clear()
+            # Verify cache hit
+            cached = http_client._get_cached_response(cache_key)
+            assert cached == test_data
+        finally:
+            http_client._cache.clear()
+            http_client._cache_ttl.clear()
 
     async def test_cache_miss_for_non_cacheable_endpoint(self, patched_http_client):
         """Non-cacheable endpoint always hits the handler."""
@@ -260,21 +260,21 @@ class TestCacheBehavior:
         cache_key = http_client._get_cache_key('GET', '/api/servers/servers/')
         test_data = {'count': 1, 'results': []}
 
-        # Set cache with data
-        http_client._set_cached_response(cache_key, test_data, ttl=0.1)
+        try:
+            # Set cache with data
+            http_client._set_cached_response(cache_key, test_data, ttl=0.1)
 
-        # Verify cache hit before expiry
-        assert http_client._get_cached_response(cache_key) == test_data
+            # Verify cache hit before expiry
+            assert http_client._get_cached_response(cache_key) == test_data
 
-        # Manually expire the cache
-        http_client._cache_ttl[cache_key] = time.time() - 1
+            # Manually expire the cache
+            http_client._cache_ttl[cache_key] = time.time() - 1
 
-        # Verify cache miss after expiry
-        assert http_client._get_cached_response(cache_key) is None
-
-        # Clean up
-        http_client._cache.clear()
-        http_client._cache_ttl.clear()
+            # Verify cache miss after expiry
+            assert http_client._get_cached_response(cache_key) is None
+        finally:
+            http_client._cache.clear()
+            http_client._cache_ttl.clear()
 
     async def test_post_never_cached(self, patched_http_client):
         """POST requests are never cached."""
@@ -303,18 +303,18 @@ class TestCacheBehavior:
         key1 = http_client._get_cache_key('GET', '/api/servers/servers/', {'page': '1'})
         key2 = http_client._get_cache_key('GET', '/api/servers/servers/', {'page': '2'})
 
-        assert key1 != key2, 'Different params should produce different cache keys'
+        try:
+            assert key1 != key2, 'Different params should produce different cache keys'
 
-        # Verify they store independently
-        http_client._set_cached_response(key1, {'page': 1})
-        http_client._set_cached_response(key2, {'page': 2})
+            # Verify they store independently
+            http_client._set_cached_response(key1, {'page': 1})
+            http_client._set_cached_response(key2, {'page': 2})
 
-        assert http_client._get_cached_response(key1) == {'page': 1}
-        assert http_client._get_cached_response(key2) == {'page': 2}
-
-        # Clean up
-        http_client._cache.clear()
-        http_client._cache_ttl.clear()
+            assert http_client._get_cached_response(key1) == {'page': 1}
+            assert http_client._get_cached_response(key2) == {'page': 2}
+        finally:
+            http_client._cache.clear()
+            http_client._cache_ttl.clear()
 
     async def test_is_cacheable_logic(self):
         """_is_cacheable correctly identifies cacheable endpoints."""

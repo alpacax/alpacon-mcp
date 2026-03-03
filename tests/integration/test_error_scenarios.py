@@ -4,9 +4,12 @@ Tests error handling through the full request path: timeout after retries,
 malformed JSON, empty body, connection errors, and various HTTP status codes.
 """
 
+from unittest.mock import patch as mock_patch
+
 import httpx
 import pytest
 
+from tools.server_tools import list_servers
 from utils.http_client import http_client
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
@@ -182,9 +185,6 @@ class TestHTTPStatusErrorHandling:
 
     async def test_tool_level_http_error_handling(self, patched_http_client, no_sleep):
         """Tool function correctly interprets http_client error dict."""
-        from unittest.mock import patch as mock_patch
-
-        from tools.server_tools import list_servers
 
         def handler(request: httpx.Request) -> httpx.Response:
             return httpx.Response(404, json={'detail': 'Not found'})
