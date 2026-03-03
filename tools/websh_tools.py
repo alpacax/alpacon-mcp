@@ -150,15 +150,16 @@ async def get_or_create_channel(
                         )
                         await ws.ping()
 
-                        # Store in pools under lock
+                        # Store in pools under lock (copy to avoid leaking metadata)
                         async with _pool_lock:
                             websocket_pool[channel_id] = {
                                 'websocket': ws,
                                 'url': websocket_url,
                                 'session_id': session_id,
                             }
-                            session_detail['_created_at'] = time.monotonic()
-                            session_pool[pool_key] = session_detail
+                            pool_entry = dict(session_detail)
+                            pool_entry['_created_at'] = time.monotonic()
+                            session_pool[pool_key] = pool_entry
 
                         return channel_id, session_detail
                 except Exception:  # noqa: S112
@@ -185,15 +186,16 @@ async def get_or_create_channel(
 
     ws = await websockets.connect(websocket_url, user_agent_header=MCP_USER_AGENT)
 
-    # Store in pools under lock
+    # Store in pools under lock (copy to avoid leaking metadata)
     async with _pool_lock:
         websocket_pool[channel_id] = {
             'websocket': ws,
             'url': websocket_url,
             'session_id': session_id,
         }
-        result['_created_at'] = time.monotonic()
-        session_pool[pool_key] = result
+        pool_entry = dict(result)
+        pool_entry['_created_at'] = time.monotonic()
+        session_pool[pool_key] = pool_entry
 
     return channel_id, result
 
@@ -308,7 +310,7 @@ async def websh_session_create(
                 websocket_url, user_agent_header=MCP_USER_AGENT
             )
 
-            # Store in pools under lock
+            # Store in pools under lock (copy to avoid leaking metadata)
             async with _pool_lock:
                 websocket_pool[channel_id] = {
                     'websocket': websocket,
@@ -317,8 +319,9 @@ async def websh_session_create(
                 }
 
                 pool_key = f'{region}:{workspace}:{server_id}'
-                result['_created_at'] = time.monotonic()
-                session_pool[pool_key] = result
+                pool_entry = dict(result)
+                pool_entry['_created_at'] = time.monotonic()
+                session_pool[pool_key] = pool_entry
 
             result['websocket_connected'] = True
             result['mcp_note'] = 'WebSocket connected with MCP user-agent'
