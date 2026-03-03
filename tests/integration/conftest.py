@@ -41,7 +41,6 @@ def patched_http_client(make_mock_transport):
     class _Patcher:
         def __init__(self):
             self._patches = []
-            self._clients = []
 
         def set_handler(self, handler):
             """Set the mock transport handler for HTTP requests."""
@@ -52,7 +51,6 @@ def patched_http_client(make_mock_transport):
 
             transport = make_mock_transport(handler)
             mock_client = httpx.AsyncClient(transport=transport)
-            self._clients.append(mock_client)
 
             async def _get_client():
                 return mock_client
@@ -65,14 +63,6 @@ def patched_http_client(make_mock_transport):
         def cleanup(self):
             for p in self._patches:
                 p.stop()
-            for c in self._clients:
-                try:
-                    import asyncio
-
-                    asyncio.get_event_loop().run_until_complete(c.aclose())
-                except Exception:
-                    pass
-            self._clients.clear()
 
     patcher = _Patcher()
     yield patcher
