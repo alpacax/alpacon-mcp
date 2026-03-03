@@ -66,8 +66,8 @@ class AlpaconHTTPClient:
             if self._client and not self._client.is_closed:
                 await self._client.aclose()
                 logger.debug('Closed HTTP client')
-        self._cache.clear()
-        self._cache_ttl.clear()
+            self._cache.clear()
+            self._cache_ttl.clear()
         logger.info('HTTP client closed and caches cleared')
 
     async def _close_client(self):

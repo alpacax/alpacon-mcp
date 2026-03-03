@@ -1,4 +1,3 @@
-import asyncio
 import os
 import signal
 import sys
@@ -11,6 +10,8 @@ from utils.logger import get_logger
 
 logger = get_logger('server')
 
+_original_sigterm_handler = None
+
 
 @asynccontextmanager
 async def app_lifespan(app: FastMCP) -> AsyncIterator[None]:
@@ -19,11 +20,12 @@ async def app_lifespan(app: FastMCP) -> AsyncIterator[None]:
     On startup: install SIGTERM handler (Unix only).
     On shutdown: close all WebSocket connections and HTTP client.
     """
+    global _original_sigterm_handler
+
     # Install SIGTERM handler on Unix to reuse anyio's KeyboardInterrupt shutdown path
     if sys.platform != 'win32':
         try:
-            loop = asyncio.get_running_loop()
-            loop.add_signal_handler(signal.SIGTERM, _raise_keyboard_interrupt)
+            _original_sigterm_handler = signal.signal(signal.SIGTERM, _sigterm_handler)
             logger.info('SIGTERM handler installed')
         except Exception as e:
             logger.warning(f'Could not install SIGTERM handler: {e}')
@@ -37,13 +39,24 @@ async def app_lifespan(app: FastMCP) -> AsyncIterator[None]:
         from tools.websh_tools import cleanup_all_connections
         from utils.http_client import http_client
 
-        await cleanup_all_connections()
-        await http_client.close()
+        try:
+            await cleanup_all_connections()
+        except Exception as e:
+            logger.error(f'Error during WebSocket cleanup: {e}')
+
+        try:
+            await http_client.close()
+        except Exception as e:
+            logger.error(f'Error during HTTP client cleanup: {e}')
+
+        if _original_sigterm_handler is not None:
+            signal.signal(signal.SIGTERM, _original_sigterm_handler)
+
         logger.info('Graceful shutdown complete')
 
 
-def _raise_keyboard_interrupt():
-    """Raise KeyboardInterrupt to trigger anyio's shutdown path."""
+def _sigterm_handler(signum, frame):
+    """Handle SIGTERM by raising KeyboardInterrupt for anyio's shutdown path."""
     raise KeyboardInterrupt
 
 

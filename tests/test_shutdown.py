@@ -6,6 +6,7 @@ and the app_lifespan teardown sequence.
 """
 
 import asyncio
+import signal
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -251,7 +252,7 @@ class TestAppLifespan:
         """Test that SIGTERM handler is installed on non-Windows platforms."""
         import sys
 
-        from server import app_lifespan
+        from server import _sigterm_handler, app_lifespan
 
         mock_app = MagicMock()
 
@@ -265,10 +266,29 @@ class TestAppLifespan:
             mock_http.close = AsyncMock()
 
             async with app_lifespan(mock_app):
-                loop = asyncio.get_running_loop()
-                # Verify a handler is installed (it won't be the default)
-                # We check that it doesn't raise when removing
-                try:
-                    loop.remove_signal_handler(14)  # SIGTERM = 14 on macOS
-                except (OSError, ValueError):
-                    pass  # Handler may have already been cleaned up
+                # Verify our handler is installed for SIGTERM
+                current_handler = signal.getsignal(signal.SIGTERM)
+                assert current_handler is _sigterm_handler
+
+    @pytest.mark.asyncio
+    async def test_teardown_continues_after_ws_cleanup_error(self):
+        """Test that HTTP client cleanup runs even if WebSocket cleanup fails."""
+        from server import app_lifespan
+
+        mock_app = MagicMock()
+
+        with (
+            patch(
+                'tools.websh_tools.cleanup_all_connections',
+                new_callable=AsyncMock,
+                side_effect=RuntimeError('ws cleanup failed'),
+            ),
+            patch('utils.http_client.http_client') as mock_http,
+        ):
+            mock_http.close = AsyncMock()
+
+            async with app_lifespan(mock_app):
+                pass
+
+            # HTTP client close should still be called despite WS cleanup failure
+            mock_http.close.assert_awaited_once()
