@@ -193,8 +193,8 @@ class TestCacheBehavior:
 
         patched_http_client.set_handler(handler)
 
-        # Override get_base_url to return empty string so the URL becomes
-        # just the endpoint path, which matches _is_cacheable prefixes
+        # Override get_base_url so the full URL becomes 'https://t.test/api/servers/servers/'
+        # which still does not start with '/api/servers/servers/', confirming no cache hit
         with patch.object(http_client, 'get_base_url', return_value='https://t.test'):
             await http_client.get(
                 region='ap1',

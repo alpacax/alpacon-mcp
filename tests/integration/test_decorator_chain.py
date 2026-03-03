@@ -5,11 +5,12 @@ Uses MockTransport at the httpx transport layer so the real HTTP client code run
 """
 
 import logging
+from unittest.mock import patch
 
 import httpx
 import pytest
 
-from tools.server_tools import list_servers
+from tools.server_tools import get_server, list_servers
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
@@ -86,8 +87,6 @@ class TestTokenValidation:
         self, patched_http_client, mock_token_for_integration
     ):
         """Invalid server_id format returns validation error."""
-        from tools.server_tools import get_server
-
         result = await get_server(
             server_id='not-a-uuid', workspace='testworkspace', region='ap1'
         )
@@ -98,8 +97,6 @@ class TestTokenValidation:
 
     async def test_missing_token_returns_token_error(self, patched_http_client):
         """Missing token (no token_manager configured) returns token error."""
-        from unittest.mock import patch
-
         with patch('utils.common.token_manager') as mock_tm:
             mock_tm.get_token.return_value = None
 
