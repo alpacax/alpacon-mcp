@@ -100,18 +100,21 @@ class AlpaconHTTPClient:
         return any(endpoint.startswith(cacheable) for cacheable in cacheable_endpoints)
 
     def _get_cached_response(self, cache_key: str) -> dict[str, Any] | None:
-        """Get cached response if still valid."""
-        if cache_key not in self._cache:
-            return None
+        """Get cached response if still valid.
 
+        Uses .get() for resilient reads to avoid KeyError if close()
+        clears the cache concurrently.
+        """
         if time.time() > self._cache_ttl.get(cache_key, 0):
-            # Cache expired
+            # Cache expired or missing
             self._cache.pop(cache_key, None)
             self._cache_ttl.pop(cache_key, None)
             return None
 
-        logger.debug(f'Cache hit for key: {cache_key}')
-        return self._cache[cache_key]
+        result = self._cache.get(cache_key)
+        if result is not None:
+            logger.debug(f'Cache hit for key: {cache_key}')
+        return result
 
     def _set_cached_response(
         self, cache_key: str, response: dict[str, Any], ttl: float | None = None
