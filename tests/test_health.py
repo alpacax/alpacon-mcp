@@ -26,9 +26,8 @@ def mock_token_manager():
 def mock_http_client():
     """Mock HTTP client with pool state."""
     mock_client = MagicMock()
-    mock_client._client = MagicMock()
-    mock_client._client.is_closed = False
-    mock_client._cache = {'key1': {}, 'key2': {}}
+    mock_client.pool_active = True
+    mock_client.cache_size = 2
     return mock_client
 
 
@@ -128,8 +127,8 @@ class TestGetHealthInfo:
     async def test_http_client_no_pool(self, mock_token_manager):
         """HTTP client reports pool_active=False when no client exists."""
         mock_client = MagicMock()
-        mock_client._client = None
-        mock_client._cache = {}
+        mock_client.pool_active = False
+        mock_client.cache_size = 0
 
         with (
             patch(

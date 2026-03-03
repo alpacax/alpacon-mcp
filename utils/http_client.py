@@ -63,6 +63,16 @@ class AlpaconHTTPClient:
                 await self._client.aclose()
                 logger.debug('Closed HTTP client')
 
+    @property
+    def pool_active(self) -> bool:
+        """Whether the HTTP connection pool has an active client."""
+        return self._client is not None and not self._client.is_closed
+
+    @property
+    def cache_size(self) -> int:
+        """Number of entries in the response cache."""
+        return len(self._cache)
+
     def _get_cache_key(self, method: str, url: str, params: dict | None = None) -> str:
         """Generate cache key for request."""
         key_parts = [method, url]

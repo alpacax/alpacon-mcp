@@ -3,6 +3,7 @@
 from typing import Any
 
 from server import mcp
+from utils.common import success_response
 
 
 @mcp.tool(description='Check MCP server health status')
@@ -21,7 +22,4 @@ async def health_check() -> dict[str, Any]:
     from utils.health import get_health_info
 
     health = await get_health_info()
-    return {
-        'status': 'success',
-        'data': health,
-    }
+    return success_response(data=health)

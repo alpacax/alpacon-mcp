@@ -49,6 +49,14 @@ def run(transport: str = 'stdio', config_file: str = None):
     # Set transport type for health check reporting
     os.environ['ALPACON_MCP_TRANSPORT'] = transport
 
+    # Set config file path as environment variable if provided (before tool imports
+    # so that tools that read config at import time see the correct path)
+    if config_file:
+        logger.info(f'Using config file: {config_file}')
+        os.environ['ALPACON_MCP_CONFIG_FILE'] = config_file
+    else:
+        logger.info('No config file specified, using default config discovery')
+
     # Import all tool modules to register MCP tools via decorators
     import tools.command_tools  # noqa: F401
     import tools.events_tools  # noqa: F401
@@ -60,13 +68,6 @@ def run(transport: str = 'stdio', config_file: str = None):
     import tools.webftp_tools  # noqa: F401
     import tools.websh_tools  # noqa: F401
     import tools.workspace_tools  # noqa: F401
-
-    # Set config file path as environment variable if provided
-    if config_file:
-        logger.info(f'Using config file: {config_file}')
-        os.environ['ALPACON_MCP_CONFIG_FILE'] = config_file
-    else:
-        logger.info('No config file specified, using default config discovery')
 
     try:
         logger.info('Starting FastMCP server...')

@@ -35,10 +35,8 @@ async def get_health_info() -> dict[str, Any]:
     }
 
     # HTTP client pool status
-    http_pool_active = (
-        http_client._client is not None and not http_client._client.is_closed
-    )
-    http_cache_size = len(http_client._cache)
+    http_pool_active = http_client.pool_active
+    http_cache_size = http_client.cache_size
 
     # WebSocket pool status (deferred import to avoid circular imports)
     try:
@@ -54,7 +52,7 @@ async def get_health_info() -> dict[str, Any]:
             'active_sessions': 0,
         }
 
-    return {
+    health_info = {
         'status': 'ok',
         'version': MCP_VERSION,
         'uptime_seconds': round(time.time() - _start_time, 2),
@@ -66,3 +64,7 @@ async def get_health_info() -> dict[str, Any]:
         },
         'websocket_pool': ws_info,
     }
+    logger.debug(
+        f'Health check: status={health_info["status"]}, uptime={health_info["uptime_seconds"]}s'
+    )
+    return health_info
