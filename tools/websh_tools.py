@@ -11,6 +11,9 @@ from server import mcp
 from utils.common import MCP_USER_AGENT, error_response, success_response
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
+from utils.logger import get_logger
+
+logger = get_logger('websh_tools')
 
 # WebSocket connection pool for persistent connections
 # Format: {channel_id: {'websocket': connection, 'url': url, 'session_id': id}}
@@ -50,6 +53,30 @@ def _cleanup_stale_sessions() -> list:
                 if ws_info:
                     ws_to_close.append(ws_info['websocket'])
     return ws_to_close
+
+
+async def cleanup_all_connections():
+    """Close all WebSocket connections and clear connection pools.
+
+    Called during graceful shutdown to ensure all resources are released.
+    Each websocket.close() is wrapped with a timeout to prevent hanging.
+    """
+    logger.info(
+        f'Cleaning up WebSocket connections: {len(websocket_pool)} channels, '
+        f'{len(session_pool)} sessions'
+    )
+
+    for channel_id, info in list(websocket_pool.items()):
+        try:
+            ws = info['websocket']
+            await asyncio.wait_for(ws.close(), timeout=5)
+            logger.debug(f'Closed WebSocket for channel {channel_id}')
+        except Exception as e:
+            logger.warning(f'Error closing WebSocket for channel {channel_id}: {e}')
+
+    websocket_pool.clear()
+    session_pool.clear()
+    logger.info('All WebSocket connections cleaned up')
 
 
 async def get_or_create_channel(

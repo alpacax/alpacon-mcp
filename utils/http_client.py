@@ -56,12 +56,23 @@ class AlpaconHTTPClient:
                 logger.debug('Created new HTTP client with connection pooling')
             return self._client
 
-    async def _close_client(self):
-        """Close the shared client."""
+    async def close(self):
+        """Close the HTTP client and clear caches.
+
+        This is the primary public method for cleanup. Safe to call
+        multiple times (idempotent).
+        """
         async with self._client_lock:
             if self._client and not self._client.is_closed:
                 await self._client.aclose()
                 logger.debug('Closed HTTP client')
+            self._cache.clear()
+            self._cache_ttl.clear()
+        logger.info('HTTP client closed and caches cleared')
+
+    async def _close_client(self):
+        """Close the shared client. Alias for close() for backward compatibility."""
+        await self.close()
 
     def _get_cache_key(self, method: str, url: str, params: dict | None = None) -> str:
         """Generate cache key for request."""
@@ -89,18 +100,21 @@ class AlpaconHTTPClient:
         return any(endpoint.startswith(cacheable) for cacheable in cacheable_endpoints)
 
     def _get_cached_response(self, cache_key: str) -> dict[str, Any] | None:
-        """Get cached response if still valid."""
-        if cache_key not in self._cache:
-            return None
+        """Get cached response if still valid.
 
+        Uses .get() for resilient reads to avoid KeyError if close()
+        clears the cache concurrently.
+        """
         if time.time() > self._cache_ttl.get(cache_key, 0):
-            # Cache expired
+            # Cache expired or missing
             self._cache.pop(cache_key, None)
             self._cache_ttl.pop(cache_key, None)
             return None
 
-        logger.debug(f'Cache hit for key: {cache_key}')
-        return self._cache[cache_key]
+        result = self._cache.get(cache_key)
+        if result is not None:
+            logger.debug(f'Cache hit for key: {cache_key}')
+        return result
 
     def _set_cached_response(
         self, cache_key: str, response: dict[str, Any], ttl: float | None = None
@@ -515,18 +529,7 @@ class AlpaconHTTPClient:
         """Async context manager exit - close client."""
         await self._close_client()
 
-    def __del__(self):
-        """Cleanup on deletion."""
-        if hasattr(self, '_client') and self._client and not self._client.is_closed:
-            # Note: This is not ideal as __del__ cannot be async
-            # Better to use async context manager or explicit cleanup
-            import warnings
-
-            warnings.warn(
-                'AlpaconHTTPClient not properly closed. Use async context manager or call _close_client()',
-                ResourceWarning,
-                stacklevel=2,
-            )
+    # __del__ removed: lifespan handles cleanup via close()
 
 
 # Singleton instance
