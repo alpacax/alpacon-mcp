@@ -79,6 +79,29 @@ mcp = FastMCP(
 )
 
 
+@mcp.custom_route('/health', methods=['GET'])
+async def health_endpoint(request):
+    """HTTP health check endpoint for container orchestration.
+
+    Bypasses auth - suitable for unauthenticated health probes
+    (e.g., Kubernetes liveness/readiness checks).
+    Available on SSE and streamable-http transports only.
+    """
+    from starlette.responses import JSONResponse
+
+    from utils.health import get_health_info
+
+    health = await get_health_info()
+    return JSONResponse(
+        health,
+        headers={
+            'Cache-Control': 'no-store',
+            'Pragma': 'no-cache',
+            'Expires': '0',
+        },
+    )
+
+
 def run(transport: str = 'stdio', config_file: str = None):
     """Run MCP server with optional config file path.
 
@@ -88,9 +111,21 @@ def run(transport: str = 'stdio', config_file: str = None):
     """
     logger.info(f'Starting MCP server with transport: {transport}')
 
+    # Set transport type for health check reporting
+    os.environ['ALPACON_MCP_TRANSPORT'] = transport
+
+    # Set config file path as environment variable if provided (before tool imports
+    # so that tools that read config at import time see the correct path)
+    if config_file:
+        logger.info(f'Using config file: {config_file}')
+        os.environ['ALPACON_MCP_CONFIG_FILE'] = config_file
+    else:
+        logger.info('No config file specified, using default config discovery')
+
     # Import all tool modules to register MCP tools via decorators
     import tools.command_tools  # noqa: F401
     import tools.events_tools  # noqa: F401
+    import tools.health_tools  # noqa: F401
     import tools.iam_tools  # noqa: F401
     import tools.metrics_tools  # noqa: F401
     import tools.server_tools  # noqa: F401
@@ -98,13 +133,6 @@ def run(transport: str = 'stdio', config_file: str = None):
     import tools.webftp_tools  # noqa: F401
     import tools.websh_tools  # noqa: F401
     import tools.workspace_tools  # noqa: F401
-
-    # Set config file path as environment variable if provided
-    if config_file:
-        logger.info(f'Using config file: {config_file}')
-        os.environ['ALPACON_MCP_CONFIG_FILE'] = config_file
-    else:
-        logger.info('No config file specified, using default config discovery')
 
     try:
         logger.info('Starting FastMCP server...')
