@@ -181,6 +181,14 @@ def run(transport: str = 'stdio', config_file: str = None):
 
     # Register OAuth proxy routes if auth is enabled
     if os.getenv('ALPACON_MCP_AUTH_ENABLED', '').lower() == 'true':
+        # Validate OAuth config at startup to fail fast on misconfiguration
+        auth0_client_id = os.getenv('AUTH0_CLIENT_ID', '')
+        if not auth0_client_id:
+            raise RuntimeError(
+                'AUTH0_CLIENT_ID environment variable is required when '
+                'ALPACON_MCP_AUTH_ENABLED=true.'
+            )
+
         from utils.oauth import register_oauth_routes
 
         register_oauth_routes(mcp)

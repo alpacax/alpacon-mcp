@@ -25,18 +25,25 @@ logger = get_logger('main_http')
 
 def main():
     """Main entry point for HTTP transport mode."""
-    # Validate required Auth0 configuration
-    auth0_domain = os.getenv('AUTH0_DOMAIN', '')
-    if not auth0_domain:
+    # Validate required Auth0 configuration (fail fast on missing env vars)
+    missing = []
+    for var in ['AUTH0_DOMAIN', 'AUTH0_CLIENT_ID']:
+        if not os.getenv(var, ''):
+            missing.append(var)
+
+    if missing:
         print(
-            '\nError: AUTH0_DOMAIN environment variable is required for HTTP transport.'
+            f'\nError: Required environment variable(s) not set: {", ".join(missing)}'
         )
         print('\nRequired environment variables:')
         print('  AUTH0_DOMAIN        - Auth0 tenant domain')
         print('  AUTH0_CLIENT_ID     - Auth0 application client ID')
-        print('  AUTH0_CLIENT_SECRET - Auth0 application client secret')
+        print('\nOptional environment variables:')
         print(
             '  AUTH0_AUDIENCE      - Auth0 API audience (default: https://alpacon.io/access/)'
+        )
+        print(
+            '  AUTH0_CLIENT_SECRET - Auth0 client secret (only for confidential clients)'
         )
         sys.exit(1)
 

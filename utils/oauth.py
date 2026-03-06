@@ -115,9 +115,8 @@ def register_oauth_routes(mcp_server):
         # Forward all query parameters to Auth0
         params = dict(request.query_params)
 
-        # Set client_id if not provided by the MCP client
-        if 'client_id' not in params:
-            params['client_id'] = config['client_id']
+        # Enforce configured client_id — prevent open proxy for arbitrary clients
+        params['client_id'] = config['client_id']
 
         # Set audience for Alpacon API access
         if 'audience' not in params:
@@ -135,8 +134,10 @@ def register_oauth_routes(mcp_server):
     async def oauth_token(request):
         """Proxy token exchange to Auth0.
 
-        Forwards the token request to Auth0's /oauth/token endpoint,
-        injecting client credentials if not provided.
+        Forwards the token request to Auth0's /oauth/token endpoint.
+        Only injects the configured client_id when not provided by the
+        client. Never injects client_secret, so it is safe for use
+        with public PKCE clients.
         """
         from starlette.responses import JSONResponse
 
@@ -157,6 +158,15 @@ def register_oauth_routes(mcp_server):
             except json.JSONDecodeError:
                 return JSONResponse(
                     {'error': 'invalid_request', 'error_description': 'Invalid JSON'},
+                    status_code=400,
+                )
+
+            if not isinstance(params, dict):
+                return JSONResponse(
+                    {
+                        'error': 'invalid_request',
+                        'error_description': 'Request body must be a JSON object',
+                    },
                     status_code=400,
                 )
         else:
@@ -181,11 +191,23 @@ def register_oauth_routes(mcp_server):
                 status_code=400,
             )
 
-        # Inject client_id only (public client with PKCE).
-        # client_secret is NOT injected to avoid exposing confidential
-        # credentials through this unauthenticated proxy endpoint.
-        if 'client_id' not in params:
-            params['client_id'] = config['client_id']
+        # Enforce configured client_id to prevent this endpoint from
+        # acting as a generic token proxy for arbitrary Auth0 clients.
+        configured_client_id = config['client_id']
+        provided_client_id = params.get('client_id')
+        if provided_client_id and provided_client_id != configured_client_id:
+            logger.warning(
+                'Rejected /oauth/token request with mismatched client_id: %s',
+                provided_client_id,
+            )
+            return JSONResponse(
+                {
+                    'error': 'invalid_client',
+                    'error_description': 'client_id is not allowed for this endpoint',
+                },
+                status_code=400,
+            )
+        params['client_id'] = configured_client_id
 
         # Forward to Auth0
         auth0_token_url = f'{config["auth0_base_url"]}/oauth/token'
