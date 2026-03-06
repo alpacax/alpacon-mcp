@@ -30,11 +30,9 @@ def _ws_connect_kwargs(token: str | None = None) -> dict[str, Any]:
         Dict of extra kwargs to pass to websockets.connect()
     """
     kwargs: dict[str, Any] = {'user_agent_header': MCP_USER_AGENT}
-    if token:
-        parts = token.split('.')
-        if len(parts) == 3 and all(parts):
-            # JWT format (header.payload.signature) — pass as Bearer header
-            kwargs['additional_headers'] = {'Authorization': f'Bearer {token}'}
+    if token and http_client._is_jwt(token):
+        # JWT format (header.payload.signature) — pass as Bearer header
+        kwargs['additional_headers'] = {'Authorization': f'Bearer {token}'}
     return kwargs
 
 

@@ -21,7 +21,6 @@ def _get_oauth_config() -> dict[str, str]:
     """Get OAuth configuration from environment variables."""
     domain = os.getenv('AUTH0_DOMAIN', '')
     client_id = os.getenv('AUTH0_CLIENT_ID', '')
-    client_secret = os.getenv('AUTH0_CLIENT_SECRET', '')
     audience = os.getenv('AUTH0_AUDIENCE', 'https://alpacon.io/access/')
 
     if not domain:
@@ -32,7 +31,6 @@ def _get_oauth_config() -> dict[str, str]:
     return {
         'domain': domain,
         'client_id': client_id,
-        'client_secret': client_secret,
         'audience': audience,
         'auth0_base_url': f'https://{domain}',
     }
@@ -90,7 +88,9 @@ def register_oauth_routes(mcp_server):
             metadata,
             headers={
                 'Cache-Control': 'public, max-age=3600',
-                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Origin': os.getenv(
+                    'ALPACON_MCP_RESOURCE_URL', request.url.netloc
+                ),
             },
         )
 

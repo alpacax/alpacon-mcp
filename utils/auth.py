@@ -1,5 +1,6 @@
 """Auth0 JWT verification for remote MCP server mode."""
 
+import asyncio
 import os
 import time
 from typing import Any
@@ -16,6 +17,15 @@ logger = get_logger('auth')
 _jwks_cache: dict[str, Any] = {}
 _jwks_cache_expiry: float = 0
 _JWKS_CACHE_TTL = 3600  # 1 hour
+_jwks_lock: asyncio.Lock | None = None
+
+
+def _get_jwks_lock() -> asyncio.Lock:
+    """Get or create the JWKS cache lock (lazy init for event loop safety)."""
+    global _jwks_lock
+    if _jwks_lock is None:
+        _jwks_lock = asyncio.Lock()
+    return _jwks_lock
 
 
 def _get_auth0_config() -> dict[str, str]:
@@ -37,22 +47,32 @@ def _get_auth0_config() -> dict[str, str]:
 
 
 async def _fetch_jwks(jwks_url: str) -> dict[str, Any]:
-    """Fetch JWKS from Auth0 endpoint with caching."""
+    """Fetch JWKS from Auth0 endpoint with caching.
+
+    Uses an async lock to prevent concurrent fetches from racing
+    on the module-level cache.
+    """
     global _jwks_cache, _jwks_cache_expiry
 
     now = time.time()
     if _jwks_cache and now < _jwks_cache_expiry:
         return _jwks_cache
 
-    logger.info(f'Fetching JWKS from {jwks_url}')
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        response = await client.get(jwks_url)
-        response.raise_for_status()
-        _jwks_cache = response.json()
-        _jwks_cache_expiry = now + _JWKS_CACHE_TTL
+    async with _get_jwks_lock():
+        # Double-check after acquiring lock (another coroutine may have refreshed)
+        now = time.time()
+        if _jwks_cache and now < _jwks_cache_expiry:
+            return _jwks_cache
 
-    logger.info(f'JWKS fetched: {len(_jwks_cache.get("keys", []))} keys')
-    return _jwks_cache
+        logger.info(f'Fetching JWKS from {jwks_url}')
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(jwks_url)
+            response.raise_for_status()
+            _jwks_cache = response.json()
+            _jwks_cache_expiry = now + _JWKS_CACHE_TTL
+
+        logger.info(f'JWKS fetched: {len(_jwks_cache.get("keys", []))} keys')
+        return _jwks_cache
 
 
 def _get_signing_key(jwks: dict[str, Any], token: str) -> Any | None:
