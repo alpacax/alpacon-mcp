@@ -108,6 +108,16 @@ def _create_mcp_server() -> FastMCP:
 
         issuer_url_str = f'https://{auth0_domain}/'
 
+        # Validate resource_url before passing to AnyHttpUrl
+        if not resource_url or not resource_url.startswith('https://'):
+            message = (
+                'ALPACON_MCP_RESOURCE_URL must be a valid HTTPS URL '
+                "(e.g., 'https://mcp.alpacon.io'). "
+                f'Got: {resource_url!r}'
+            )
+            logger.error(message)
+            raise RuntimeError(message)
+
         auth_settings = AuthSettings(
             issuer_url=AnyHttpUrl(issuer_url_str),
             resource_server_url=AnyHttpUrl(resource_url),

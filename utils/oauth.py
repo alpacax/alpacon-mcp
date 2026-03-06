@@ -173,7 +173,18 @@ def register_oauth_routes(mcp_server):
             # application/x-www-form-urlencoded (standard OAuth)
             from urllib.parse import parse_qs
 
-            parsed = parse_qs(body.decode('utf-8'))
+            try:
+                decoded_body = body.decode('utf-8')
+            except UnicodeDecodeError:
+                return JSONResponse(
+                    {
+                        'error': 'invalid_request',
+                        'error_description': 'Request body must be UTF-8 encoded',
+                    },
+                    status_code=400,
+                )
+
+            parsed = parse_qs(decoded_body)
             params = {k: v[0] for k, v in parsed.items()}
 
         # Restrict allowed grant types to prevent credential abuse
