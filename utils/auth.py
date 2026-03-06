@@ -141,6 +141,9 @@ def extract_workspaces(claims: dict[str, Any], namespace: str) -> list[dict[str,
     Returns:
         List of workspace dicts with schema_name, auth0_id, region
     """
+    # Ensure namespace ends with '/' to build correct claim key
+    if namespace and not namespace.endswith('/'):
+        namespace = namespace + '/'
     claim_key = f'{namespace}workspaces'
     workspaces = claims.get(claim_key, [])
     if not isinstance(workspaces, list):

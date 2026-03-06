@@ -36,6 +36,24 @@ def _ws_connect_kwargs(token: str | None = None) -> dict[str, Any]:
     return kwargs
 
 
+def _ws_kwargs_from_auth_context() -> dict[str, Any]:
+    """Build WebSocket connect kwargs using JWT from FastMCP auth context.
+
+    Attempts to extract a JWT from the MCP auth context (HTTP transport mode)
+    and returns appropriate websockets.connect() kwargs. Falls back to default
+    kwargs when running in stdio/SSE mode or when auth context is unavailable.
+    """
+    try:
+        from mcp.server.auth.middleware.auth_context import get_access_token
+
+        access_token = get_access_token()
+        if access_token:
+            return _ws_connect_kwargs(access_token.token)
+    except ImportError:
+        pass
+    return _ws_connect_kwargs()
+
+
 # WebSocket connection pool for persistent connections
 # Format: {channel_id: {'websocket': connection, 'url': url, 'session_id': id}}
 websocket_pool: dict[str, dict[str, Any]] = {}
@@ -535,16 +553,7 @@ async def websh_channel_connect(
                 }
 
         # Connect to WebSocket (outside lock - network I/O)
-        # Try to get JWT from auth context for HTTP transport mode
-        ws_kwargs = _ws_connect_kwargs()
-        try:
-            from mcp.server.auth.middleware.auth_context import get_access_token
-
-            access_token = get_access_token()
-            if access_token:
-                ws_kwargs = _ws_connect_kwargs(access_token.token)
-        except ImportError:
-            pass
+        ws_kwargs = _ws_kwargs_from_auth_context()
         websocket = await websockets.connect(websocket_url, **ws_kwargs)
 
         async with _pool_lock:
@@ -785,15 +794,7 @@ async def websh_websocket_execute(
     """
     try:
         # Connect to WebSocket with JWT auth if available
-        ws_kwargs = _ws_connect_kwargs()
-        try:
-            from mcp.server.auth.middleware.auth_context import get_access_token
-
-            access_token = get_access_token()
-            if access_token:
-                ws_kwargs = _ws_connect_kwargs(access_token.token)
-        except ImportError:
-            pass
+        ws_kwargs = _ws_kwargs_from_auth_context()
         async with websockets.connect(websocket_url, **ws_kwargs) as websocket:
             # Send command with newline (simulating terminal input)
             await websocket.send(command + '\n')
@@ -1003,15 +1004,7 @@ async def websh_websocket_batch_execute(
         results = []
 
         # Get JWT auth headers if available
-        ws_kwargs = _ws_connect_kwargs()
-        try:
-            from mcp.server.auth.middleware.auth_context import get_access_token
-
-            access_token = get_access_token()
-            if access_token:
-                ws_kwargs = _ws_connect_kwargs(access_token.token)
-        except ImportError:
-            pass
+        ws_kwargs = _ws_kwargs_from_auth_context()
         async with websockets.connect(websocket_url, **ws_kwargs) as websocket:
             for command in commands:
                 # Send command
