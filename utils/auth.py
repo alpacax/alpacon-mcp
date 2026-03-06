@@ -55,7 +55,7 @@ async def _fetch_jwks(jwks_url: str) -> dict[str, Any]:
     return _jwks_cache
 
 
-def _get_signing_key(jwks: dict[str, Any], token: str) -> jwt.algorithms.RSAAlgorithm:
+def _get_signing_key(jwks: dict[str, Any], token: str) -> Any | None:
     """Extract the signing key from JWKS matching the token's kid."""
     try:
         unverified_header = jwt.get_unverified_header(token)
@@ -70,7 +70,9 @@ def _get_signing_key(jwks: dict[str, Any], token: str) -> jwt.algorithms.RSAAlgo
 
     for key in jwks.get('keys', []):
         if key.get('kid') == kid:
-            return jwt.algorithms.RSAAlgorithm.from_jwk(key)
+            import json
+
+            return jwt.algorithms.RSAAlgorithm.from_jwk(json.dumps(key))
 
     logger.error(f'No matching key found for kid: {kid}')
     return None

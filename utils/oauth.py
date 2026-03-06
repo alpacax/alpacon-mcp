@@ -180,8 +180,19 @@ def register_oauth_routes(mcp_server):
                     headers={'Content-Type': 'application/x-www-form-urlencoded'},
                 )
 
+            try:
+                response_data = response.json()
+            except Exception:
+                logger.warning(
+                    f'Auth0 returned non-JSON response: {response.status_code}'
+                )
+                response_data = {
+                    'error': 'server_error',
+                    'error_description': 'Auth0 returned unexpected response format',
+                }
+
             return JSONResponse(
-                response.json(),
+                response_data,
                 status_code=response.status_code,
                 headers={
                     'Cache-Control': 'no-store',
@@ -203,19 +214,29 @@ def register_oauth_routes(mcp_server):
         """Handle Auth0 callback after authorization.
 
         This endpoint receives the authorization code from Auth0
-        and redirects back to the MCP client's redirect_uri.
+        and redirects back to the MCP client's redirect_uri with
+        the authorization code and state as query parameters.
         """
+        from urllib.parse import urlencode
 
-        from starlette.responses import JSONResponse
+        from starlette.responses import JSONResponse, RedirectResponse
 
         # Extract callback parameters
         code = request.query_params.get('code')
         state = request.query_params.get('state')
         error = request.query_params.get('error')
         error_description = request.query_params.get('error_description')
+        redirect_uri = request.query_params.get('redirect_uri')
 
         if error:
             logger.warning(f'Auth0 callback error: {error} - {error_description}')
+            if redirect_uri:
+                params = {'error': error, 'error_description': error_description or ''}
+                if state:
+                    params['state'] = state
+                return RedirectResponse(
+                    url=f'{redirect_uri}?{urlencode(params)}', status_code=302
+                )
             return JSONResponse(
                 {'error': error, 'error_description': error_description},
                 status_code=400,
@@ -230,15 +251,21 @@ def register_oauth_routes(mcp_server):
                 status_code=400,
             )
 
-        # The MCP client's redirect_uri should be in the state or
-        # stored during the authorize step. For now, return the code
-        # as a JSON response that the client can process.
         logger.info('Auth0 callback received authorization code')
 
+        # Redirect back to the MCP client's redirect_uri if provided
+        if redirect_uri:
+            params = {'code': code}
+            if state:
+                params['state'] = state
+            return RedirectResponse(
+                url=f'{redirect_uri}?{urlencode(params)}', status_code=302
+            )
+
+        # Fallback: return JSON if no redirect_uri
         result = {'code': code}
         if state:
             result['state'] = state
-
         return JSONResponse(result)
 
     logger.info('OAuth proxy routes registered')

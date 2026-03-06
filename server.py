@@ -90,8 +90,26 @@ def _create_mcp_server() -> FastMCP:
         auth0_domain = os.getenv('AUTH0_DOMAIN', '')
         resource_url = os.getenv('ALPACON_MCP_RESOURCE_URL', 'https://mcp.alpacon.io')
 
+        if not auth0_domain or not auth0_domain.strip():
+            message = (
+                'AUTH0_DOMAIN environment variable must be set when '
+                'ALPACON_MCP_AUTH_ENABLED=true.'
+            )
+            logger.error(message)
+            raise RuntimeError(message)
+
+        if '://' in auth0_domain or '/' in auth0_domain:
+            message = (
+                'AUTH0_DOMAIN must be a bare domain such as '
+                "'example.us.auth0.com', without scheme or path."
+            )
+            logger.error(message)
+            raise RuntimeError(message)
+
+        issuer_url_str = f'https://{auth0_domain}/'
+
         auth_settings = AuthSettings(
-            issuer_url=AnyHttpUrl(f'https://{auth0_domain}/'),
+            issuer_url=AnyHttpUrl(issuer_url_str),
             resource_server_url=AnyHttpUrl(resource_url),
         )
         token_verifier = Auth0TokenVerifier()
@@ -141,13 +159,12 @@ async def health_endpoint(request):
     )
 
 
-def run(transport: str = 'stdio', config_file: str = None, enable_auth: bool = False):
+def run(transport: str = 'stdio', config_file: str = None):
     """Run MCP server with optional config file path.
 
     Args:
         transport: Transport type ('stdio', 'sse', or 'streamable-http')
         config_file: Path to token config file (optional)
-        enable_auth: Enable JWT authentication (for HTTP transport)
     """
     logger.info(f'Starting MCP server with transport: {transport}')
 

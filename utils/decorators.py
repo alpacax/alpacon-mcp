@@ -13,10 +13,6 @@ from utils.error_handler import (
 )
 from utils.logger import get_logger
 
-# Lazy imports for auth module to avoid circular imports and
-# keep stdio/SSE mode working without Auth0 config
-_auth_module = None
-
 logger = get_logger('decorators')
 
 
@@ -45,7 +41,15 @@ def _validate_jwt_workspace(jwt_token: str, region: str, workspace: str) -> bool
         from utils.auth import extract_workspaces, match_workspace
 
         # Decode without verification — already verified by FastMCP middleware
-        claims = pyjwt.decode(jwt_token, options={'verify_signature': False})
+        claims = pyjwt.decode(
+            jwt_token,
+            options={
+                'verify_signature': False,
+                'verify_aud': False,
+                'verify_iss': False,
+                'verify_exp': False,
+            },
+        )
 
         import os
 
