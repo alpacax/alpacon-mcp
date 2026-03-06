@@ -12,13 +12,18 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from starlette.testclient import TestClient
 
+# Test configuration constants
+TEST_AUTH0_DOMAIN = 'test.us.auth0.com'
+TEST_CLIENT_ID = 'test-client-id'
+TEST_RESOURCE_URL = 'https://mcp.test.alpacon.io'
+
 # Environment variables needed for OAuth config
 OAUTH_ENV = {
-    'AUTH0_DOMAIN': 'test.us.auth0.com',
-    'AUTH0_CLIENT_ID': 'test-client-id',
+    'AUTH0_DOMAIN': TEST_AUTH0_DOMAIN,
+    'AUTH0_CLIENT_ID': TEST_CLIENT_ID,
     'AUTH0_AUDIENCE': 'https://alpacon.io/access/',
     'ALPACON_MCP_AUTH_ENABLED': 'true',
-    'ALPACON_MCP_RESOURCE_URL': 'https://mcp.alpacon.io',
+    'ALPACON_MCP_RESOURCE_URL': TEST_RESOURCE_URL,
 }
 
 
@@ -75,19 +80,17 @@ class TestOAuthMetadata:
         assert response.status_code == 200
         data = response.json()
 
-        assert data['issuer'] == 'https://test.us.auth0.com/'
-        assert (
-            data['authorization_endpoint'] == 'https://mcp.alpacon.io/oauth/authorize'
-        )
-        assert data['token_endpoint'] == 'https://mcp.alpacon.io/oauth/token'
-        assert data['jwks_uri'] == 'https://test.us.auth0.com/.well-known/jwks.json'
+        assert data['issuer'] == f'https://{TEST_AUTH0_DOMAIN}/'
+        assert data['authorization_endpoint'] == f'{TEST_RESOURCE_URL}/oauth/authorize'
+        assert data['token_endpoint'] == f'{TEST_RESOURCE_URL}/oauth/token'
+        assert data['jwks_uri'] == f'https://{TEST_AUTH0_DOMAIN}/.well-known/jwks.json'
         assert 'code' in data['response_types_supported']
         assert 'S256' in data['code_challenge_methods_supported']
 
     def test_metadata_uses_configured_resource_url(self, oauth_app):
         response = oauth_app.get('/.well-known/oauth-authorization-server')
         data = response.json()
-        assert data['token_endpoint'].startswith('https://mcp.alpacon.io')
+        assert data['token_endpoint'].startswith(TEST_RESOURCE_URL)
 
     def test_metadata_cache_control(self, oauth_app):
         response = oauth_app.get('/.well-known/oauth-authorization-server')
@@ -108,7 +111,7 @@ class TestOAuthAuthorize:
         )
         assert response.status_code == 302
         location = response.headers['location']
-        assert location.startswith('https://test.us.auth0.com/authorize')
+        assert location.startswith(f'https://{TEST_AUTH0_DOMAIN}/authorize')
 
     def test_authorize_enforces_configured_client_id(self, oauth_app):
         """Even if a different client_id is provided, configured one is used."""
@@ -118,7 +121,7 @@ class TestOAuthAuthorize:
             follow_redirects=False,
         )
         location = response.headers['location']
-        assert 'client_id=test-client-id' in location
+        assert f'client_id={TEST_CLIENT_ID}' in location
         assert 'attacker-client-id' not in location
 
     def test_authorize_sets_default_response_type(self, oauth_app):
@@ -189,7 +192,7 @@ class TestOAuthToken:
             )
         assert response.status_code == 200
         call_kwargs = mock_client.post.call_args
-        assert call_kwargs.kwargs['data']['client_id'] == 'test-client-id'
+        assert call_kwargs.kwargs['data']['client_id'] == TEST_CLIENT_ID
 
     def test_token_rejects_invalid_json(self, oauth_app):
         response = oauth_app.post(
