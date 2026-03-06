@@ -13,7 +13,48 @@ from utils.error_handler import (
 )
 from utils.logger import get_logger
 
+# Lazy imports for auth module to avoid circular imports and
+# keep stdio/SSE mode working without Auth0 config
+_auth_module = None
+
 logger = get_logger('decorators')
+
+
+def _get_jwt_token() -> str | None:
+    """Get JWT token from FastMCP auth context if available.
+
+    Returns the raw JWT string when running in HTTP transport mode
+    with JWT authentication. Returns None in stdio/SSE mode.
+    """
+    try:
+        from mcp.server.auth.middleware.auth_context import get_access_token
+
+        access_token = get_access_token()
+        if access_token is not None:
+            return access_token.token
+    except ImportError:
+        pass
+    return None
+
+
+def _validate_jwt_workspace(jwt_token: str, region: str, workspace: str) -> bool:
+    """Validate that the JWT authorizes access to the given workspace/region."""
+    try:
+        import jwt as pyjwt
+
+        from utils.auth import extract_workspaces, match_workspace
+
+        # Decode without verification — already verified by FastMCP middleware
+        claims = pyjwt.decode(jwt_token, options={'verify_signature': False})
+
+        import os
+
+        namespace = os.getenv('AUTH0_NAMESPACE', 'https://alpacon.io/')
+        workspaces = extract_workspaces(claims, namespace)
+        return match_workspace(workspaces, region, workspace)
+    except Exception as e:
+        logger.error(f'JWT workspace validation failed: {e}')
+        return False
 
 
 def with_token_validation(func: Callable) -> Callable:
@@ -77,13 +118,24 @@ def with_token_validation(func: Callable) -> Callable:
                     'Each server ID must be in UUID format. (e.g., 550e8400-e29b-41d4-a716-446655440000)',
                 )
 
-        # Validate token
-        token = validate_token(region, workspace)
-        if not token:
-            return token_error_response(region, workspace)
-
-        # Add token to kwargs for the function
-        kwargs['token'] = token
+        # Try JWT auth first (HTTP transport mode)
+        jwt_token = _get_jwt_token()
+        if jwt_token is not None:
+            # JWT mode — validate workspace access from JWT claims
+            if not _validate_jwt_workspace(jwt_token, region, workspace):
+                return error_response(
+                    f'Workspace {workspace}.{region} not authorized by JWT',
+                    region=region,
+                    workspace=workspace,
+                )
+            # Pass JWT through for downstream API calls
+            kwargs['token'] = jwt_token
+        else:
+            # stdio/SSE mode — use token.json lookup
+            token = validate_token(region, workspace)
+            if not token:
+                return token_error_response(region, workspace)
+            kwargs['token'] = token
 
         # Call the original function
         return await func(*args, **kwargs)

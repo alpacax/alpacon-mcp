@@ -71,12 +71,51 @@ port = int(
 
 logger.info(f'Initializing FastMCP server - host: {host}, port: {port}')
 
-mcp = FastMCP(
-    'alpacon',
-    host=host,
-    port=port,
-    lifespan=app_lifespan,
-)
+
+def _create_mcp_server() -> FastMCP:
+    """Create FastMCP server instance with optional JWT auth.
+
+    When ALPACON_MCP_AUTH_ENABLED=true (set by main_http.py before import),
+    creates the server with Auth0 JWT authentication for HTTP transport.
+    Otherwise creates a standard server for stdio/SSE transport.
+    """
+    auth_enabled = os.getenv('ALPACON_MCP_AUTH_ENABLED', '').lower() == 'true'
+
+    if auth_enabled:
+        from mcp.server.auth.settings import AuthSettings
+        from pydantic import AnyHttpUrl
+
+        from utils.auth import Auth0TokenVerifier
+
+        auth0_domain = os.getenv('AUTH0_DOMAIN', '')
+        resource_url = os.getenv('ALPACON_MCP_RESOURCE_URL', 'https://mcp.alpacon.io')
+
+        auth_settings = AuthSettings(
+            issuer_url=AnyHttpUrl(f'https://{auth0_domain}/'),
+            resource_server_url=AnyHttpUrl(resource_url),
+        )
+        token_verifier = Auth0TokenVerifier()
+
+        logger.info(f'Creating FastMCP server with JWT auth - domain: {auth0_domain}')
+        return FastMCP(
+            'alpacon',
+            host=host,
+            port=port,
+            auth=auth_settings,
+            token_verifier=token_verifier,
+            lifespan=app_lifespan,
+        )
+    else:
+        logger.info('Creating FastMCP server without auth (stdio/SSE mode)')
+        return FastMCP(
+            'alpacon',
+            host=host,
+            port=port,
+            lifespan=app_lifespan,
+        )
+
+
+mcp = _create_mcp_server()
 
 
 @mcp.custom_route('/health', methods=['GET'])
@@ -102,12 +141,13 @@ async def health_endpoint(request):
     )
 
 
-def run(transport: str = 'stdio', config_file: str = None):
+def run(transport: str = 'stdio', config_file: str = None, enable_auth: bool = False):
     """Run MCP server with optional config file path.
 
     Args:
-        transport: Transport type ('stdio' or 'sse')
+        transport: Transport type ('stdio', 'sse', or 'streamable-http')
         config_file: Path to token config file (optional)
+        enable_auth: Enable JWT authentication (for HTTP transport)
     """
     logger.info(f'Starting MCP server with transport: {transport}')
 
@@ -121,6 +161,12 @@ def run(transport: str = 'stdio', config_file: str = None):
         os.environ['ALPACON_MCP_CONFIG_FILE'] = config_file
     else:
         logger.info('No config file specified, using default config discovery')
+
+    # Register OAuth proxy routes if auth is enabled
+    if os.getenv('ALPACON_MCP_AUTH_ENABLED', '').lower() == 'true':
+        from utils.oauth import register_oauth_routes
+
+        register_oauth_routes(mcp)
 
     # Import all tool modules to register MCP tools via decorators
     import tools.command_tools  # noqa: F401
