@@ -1,0 +1,307 @@
+"""OAuth 2.0 proxy endpoints for Auth0 integration.
+
+These endpoints allow MCP clients (e.g. claude.ai) to perform
+OAuth authorization code flow through this MCP server, which
+proxies requests to Auth0.
+
+All routes are registered via FastMCP's custom_route decorator,
+which bypasses MCP authentication — appropriate for OAuth flow endpoints.
+"""
+
+import os
+
+import httpx
+
+from utils.logger import get_logger
+
+logger = get_logger('oauth')
+
+
+def _get_oauth_config() -> dict[str, str]:
+    """Get OAuth configuration from environment variables."""
+    domain = os.getenv('AUTH0_DOMAIN', '')
+    client_id = os.getenv('AUTH0_CLIENT_ID', '')
+    audience = os.getenv('AUTH0_AUDIENCE', 'https://alpacon.io/access/')
+
+    if not domain:
+        raise ValueError('AUTH0_DOMAIN environment variable is required')
+    if not client_id:
+        raise ValueError('AUTH0_CLIENT_ID environment variable is required')
+
+    return {
+        'domain': domain,
+        'client_id': client_id,
+        'audience': audience,
+        'auth0_base_url': f'https://{domain}',
+    }
+
+
+def register_oauth_routes(mcp_server):
+    """Register OAuth proxy routes on the FastMCP server.
+
+    Args:
+        mcp_server: FastMCP server instance
+    """
+
+    @mcp_server.custom_route('/.well-known/oauth-authorization-server', methods=['GET'])
+    async def oauth_metadata(request):
+        """OAuth 2.0 Authorization Server Metadata (RFC 8414).
+
+        Returns metadata that points to Auth0 as the authorization server,
+        with token and authorization endpoints proxied through this server.
+        """
+        from starlette.responses import JSONResponse
+
+        try:
+            config = _get_oauth_config()
+        except ValueError as e:
+            return JSONResponse({'error': str(e)}, status_code=500)
+
+        # Build server base URL from trusted config or request URL.
+        # Prefer an explicit environment variable to avoid relying on
+        # potentially spoofable forwarding headers.
+        configured_base_url = os.getenv('ALPACON_MCP_RESOURCE_URL')
+        if configured_base_url:
+            server_url = configured_base_url.rstrip('/')
+        else:
+            server_url = f'{request.url.scheme}://{request.url.netloc}'
+
+        metadata = {
+            'issuer': f'{config["auth0_base_url"]}/',
+            'authorization_endpoint': f'{server_url}/oauth/authorize',
+            'token_endpoint': f'{server_url}/oauth/token',
+            'jwks_uri': f'{config["auth0_base_url"]}/.well-known/jwks.json',
+            'response_types_supported': ['code'],
+            'grant_types_supported': [
+                'authorization_code',
+                'refresh_token',
+            ],
+            'token_endpoint_auth_methods_supported': [
+                'client_secret_post',
+                'none',
+            ],
+            'scopes_supported': ['openid', 'profile', 'email', 'offline_access'],
+            'code_challenge_methods_supported': ['S256'],
+        }
+
+        return JSONResponse(
+            metadata,
+            headers={
+                'Cache-Control': 'public, max-age=3600',
+                'Access-Control-Allow-Origin': os.getenv(
+                    'ALPACON_MCP_RESOURCE_URL', request.url.netloc
+                ),
+            },
+        )
+
+    @mcp_server.custom_route('/oauth/authorize', methods=['GET'])
+    async def oauth_authorize(request):
+        """Redirect to Auth0's authorization endpoint.
+
+        Proxies the OAuth authorize request to Auth0, adding the
+        configured client_id and audience.
+        """
+        from urllib.parse import urlencode
+
+        from starlette.responses import RedirectResponse
+
+        try:
+            config = _get_oauth_config()
+        except ValueError as e:
+            from starlette.responses import JSONResponse
+
+            return JSONResponse({'error': str(e)}, status_code=500)
+
+        # Forward all query parameters to Auth0
+        params = dict(request.query_params)
+
+        # Enforce configured client_id — prevent open proxy for arbitrary clients
+        params['client_id'] = config['client_id']
+
+        # Set audience for Alpacon API access
+        if 'audience' not in params:
+            params['audience'] = config['audience']
+
+        # Ensure response_type is set
+        if 'response_type' not in params:
+            params['response_type'] = 'code'
+
+        auth0_url = f'{config["auth0_base_url"]}/authorize?{urlencode(params)}'
+        logger.info('Redirecting to Auth0 authorize endpoint')
+        return RedirectResponse(url=auth0_url, status_code=302)
+
+    @mcp_server.custom_route('/oauth/token', methods=['POST'])
+    async def oauth_token(request):
+        """Proxy token exchange to Auth0.
+
+        Forwards the token request to Auth0's /oauth/token endpoint.
+        Only injects the configured client_id when not provided by the
+        client. Never injects client_secret, so it is safe for use
+        with public PKCE clients.
+        """
+        from starlette.responses import JSONResponse
+
+        try:
+            config = _get_oauth_config()
+        except ValueError as e:
+            return JSONResponse({'error': str(e)}, status_code=500)
+
+        # Parse request body
+        body = await request.body()
+        content_type = request.headers.get('content-type', '')
+
+        if 'application/json' in content_type:
+            import json
+
+            try:
+                params = json.loads(body)
+            except json.JSONDecodeError:
+                return JSONResponse(
+                    {'error': 'invalid_request', 'error_description': 'Invalid JSON'},
+                    status_code=400,
+                )
+
+            if not isinstance(params, dict):
+                return JSONResponse(
+                    {
+                        'error': 'invalid_request',
+                        'error_description': 'Request body must be a JSON object',
+                    },
+                    status_code=400,
+                )
+        else:
+            # application/x-www-form-urlencoded (standard OAuth)
+            from urllib.parse import parse_qs
+
+            try:
+                decoded_body = body.decode('utf-8')
+            except UnicodeDecodeError:
+                return JSONResponse(
+                    {
+                        'error': 'invalid_request',
+                        'error_description': 'Request body must be UTF-8 encoded',
+                    },
+                    status_code=400,
+                )
+
+            parsed = parse_qs(decoded_body)
+            params = {k: v[0] for k, v in parsed.items()}
+
+        # Restrict allowed grant types to prevent credential abuse
+        allowed_grant_types = {'authorization_code', 'refresh_token'}
+        grant_type = params.get('grant_type', '')
+        if grant_type and grant_type not in allowed_grant_types:
+            return JSONResponse(
+                {
+                    'error': 'unsupported_grant_type',
+                    'error_description': (
+                        f'Grant type "{grant_type}" is not supported. '
+                        f'Allowed: {", ".join(sorted(allowed_grant_types))}'
+                    ),
+                },
+                status_code=400,
+            )
+
+        # Enforce configured client_id to prevent this endpoint from
+        # acting as a generic token proxy for arbitrary Auth0 clients.
+        configured_client_id = config['client_id']
+        provided_client_id = params.get('client_id')
+        if provided_client_id and provided_client_id != configured_client_id:
+            logger.warning(
+                'Rejected /oauth/token request with mismatched client_id: %s',
+                provided_client_id,
+            )
+            return JSONResponse(
+                {
+                    'error': 'invalid_client',
+                    'error_description': 'client_id is not allowed for this endpoint',
+                },
+                status_code=400,
+            )
+        params['client_id'] = configured_client_id
+
+        # Forward to Auth0
+        auth0_token_url = f'{config["auth0_base_url"]}/oauth/token'
+        logger.info('Proxying token request to Auth0')
+
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(
+                    auth0_token_url,
+                    data=params,
+                    headers={'Content-Type': 'application/x-www-form-urlencoded'},
+                )
+
+            try:
+                response_data = response.json()
+            except Exception:
+                logger.warning(
+                    f'Auth0 returned non-JSON response: {response.status_code}'
+                )
+                response_data = {
+                    'error': 'server_error',
+                    'error_description': 'Auth0 returned unexpected response format',
+                }
+
+            return JSONResponse(
+                response_data,
+                status_code=response.status_code,
+                headers={
+                    'Cache-Control': 'no-store',
+                    'Pragma': 'no-cache',
+                },
+            )
+        except httpx.HTTPError as e:
+            logger.error(f'Auth0 token request failed: {e}')
+            return JSONResponse(
+                {
+                    'error': 'server_error',
+                    'error_description': 'Failed to communicate with Auth0',
+                },
+                status_code=502,
+            )
+
+    @mcp_server.custom_route('/oauth/callback', methods=['GET'])
+    async def oauth_callback(request):
+        """Handle Auth0 callback after authorization.
+
+        This endpoint receives the authorization code from Auth0
+        and returns it as JSON for the MCP client to process.
+        """
+        from starlette.responses import JSONResponse
+
+        # Extract callback parameters
+        code = request.query_params.get('code')
+        state = request.query_params.get('state')
+        error = request.query_params.get('error')
+        error_description = request.query_params.get('error_description')
+
+        if error:
+            logger.warning(f'Auth0 callback error: {error} - {error_description}')
+            return JSONResponse(
+                {'error': error, 'error_description': error_description},
+                status_code=400,
+            )
+
+        if not code:
+            return JSONResponse(
+                {
+                    'error': 'invalid_request',
+                    'error_description': 'Missing authorization code',
+                },
+                status_code=400,
+            )
+
+        logger.info('Auth0 callback received authorization code')
+
+        # Return the authorization code as JSON.
+        # The MCP client handles the redirect_uri flow directly with Auth0
+        # during /oauth/authorize — the callback only needs to surface the code.
+        # We intentionally do NOT redirect to a user-supplied redirect_uri here
+        # to prevent open redirect vulnerabilities.
+        result = {'code': code}
+        if state:
+            result['state'] = state
+        return JSONResponse(result)
+
+    logger.info('OAuth proxy routes registered')

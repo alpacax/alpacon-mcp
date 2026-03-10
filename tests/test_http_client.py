@@ -322,3 +322,58 @@ class TestErrorHandling:
         )
 
         assert result['error'] == 'Unexpected Error'
+
+
+class TestHTTPClientJWTAuth:
+    """Test JWT vs API token authentication header selection."""
+
+    @pytest.mark.asyncio
+    async def test_jwt_token_uses_bearer_header(self, mock_httpx_client):
+        """Test that JWT-like tokens use Bearer authorization header."""
+        mock_response = create_mock_response(
+            status_code=200, json_data={'result': 'success'}
+        )
+        mock_httpx_client.request.return_value = mock_response
+
+        # JWT tokens have 3 dot-separated parts (header.payload.signature)
+        jwt_token = 'eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJ0ZXN0In0.signature'
+
+        await http_client.get(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/test/',
+            token=jwt_token,
+        )
+
+        call_kwargs = mock_httpx_client.request.call_args
+        assert call_kwargs.kwargs['headers']['Authorization'] == f'Bearer {jwt_token}'
+
+    @pytest.mark.asyncio
+    async def test_api_token_uses_token_header(self, mock_httpx_client):
+        """Test that API tokens use token= authorization header."""
+        mock_response = create_mock_response(
+            status_code=200, json_data={'result': 'success'}
+        )
+        mock_httpx_client.request.return_value = mock_response
+
+        api_token = 'alpacon-api-token-abc123'
+
+        await http_client.get(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/test/',
+            token=api_token,
+        )
+
+        call_kwargs = mock_httpx_client.request.call_args
+        assert call_kwargs.kwargs['headers']['Authorization'] == f'token={api_token}'
+
+    def test_is_jwt_detection(self):
+        """Test JWT format detection logic."""
+        from utils.http_client import AlpaconHTTPClient
+
+        assert AlpaconHTTPClient._is_jwt('a.b.c') is True
+        assert AlpaconHTTPClient._is_jwt('eyJ.eyJ.sig') is True
+        assert AlpaconHTTPClient._is_jwt('simple-token') is False
+        assert AlpaconHTTPClient._is_jwt('two.parts') is False
+        assert AlpaconHTTPClient._is_jwt('a..c') is False

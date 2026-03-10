@@ -15,6 +15,45 @@ from utils.logger import get_logger
 
 logger = get_logger('websh_tools')
 
+
+def _ws_connect_kwargs(token: str | None = None) -> dict[str, Any]:
+    """Build kwargs for websockets.connect() with optional JWT auth header.
+
+    When running in HTTP transport mode with JWT authentication,
+    passes the JWT as a Bearer token header for WebSocket auth.
+    In stdio/SSE mode, no extra headers are added (token is in URL path).
+
+    Args:
+        token: The auth token (JWT or API token). If JWT, adds Bearer header.
+
+    Returns:
+        Dict of extra kwargs to pass to websockets.connect()
+    """
+    kwargs: dict[str, Any] = {'user_agent_header': MCP_USER_AGENT}
+    if token and http_client._is_jwt(token):
+        # JWT format (header.payload.signature) — pass as Bearer header
+        kwargs['additional_headers'] = {'Authorization': f'Bearer {token}'}
+    return kwargs
+
+
+def _ws_kwargs_from_auth_context() -> dict[str, Any]:
+    """Build WebSocket connect kwargs using JWT from FastMCP auth context.
+
+    Attempts to extract a JWT from the MCP auth context (HTTP transport mode)
+    and returns appropriate websockets.connect() kwargs. Falls back to default
+    kwargs when running in stdio/SSE mode or when auth context is unavailable.
+    """
+    try:
+        from mcp.server.auth.middleware.auth_context import get_access_token
+
+        access_token = get_access_token()
+        if access_token:
+            return _ws_connect_kwargs(access_token.token)
+    except ImportError:
+        pass
+    return _ws_connect_kwargs()
+
+
 # WebSocket connection pool for persistent connections
 # Format: {channel_id: {'websocket': connection, 'url': url, 'session_id': id}}
 websocket_pool: dict[str, dict[str, Any]] = {}
@@ -173,7 +212,7 @@ async def get_or_create_channel(
 
                     if websocket_url and channel_id:
                         ws = await websockets.connect(
-                            websocket_url, user_agent_header=MCP_USER_AGENT
+                            websocket_url, **_ws_connect_kwargs(token)
                         )
                         await ws.ping()
 
@@ -211,7 +250,7 @@ async def get_or_create_channel(
     websocket_url = result['websocket_url']
     session_id = result['id']
 
-    ws = await websockets.connect(websocket_url, user_agent_header=MCP_USER_AGENT)
+    ws = await websockets.connect(websocket_url, **_ws_connect_kwargs(token))
 
     # Store in pools under lock (copy to avoid leaking metadata)
     async with _pool_lock:
@@ -332,9 +371,9 @@ async def websh_session_create(
 
     if websocket_url and channel_id:
         try:
-            # Connect with MCP User-Agent header
+            # Connect with MCP User-Agent header (and JWT if available)
             websocket = await websockets.connect(
-                websocket_url, user_agent_header=MCP_USER_AGENT
+                websocket_url, **_ws_connect_kwargs(token)
             )
 
             # Store in pools under lock (copy to avoid leaking metadata)
@@ -514,7 +553,8 @@ async def websh_channel_connect(
                 }
 
         # Connect to WebSocket (outside lock - network I/O)
-        websocket = await websockets.connect(websocket_url)
+        ws_kwargs = _ws_kwargs_from_auth_context()
+        websocket = await websockets.connect(websocket_url, **ws_kwargs)
 
         async with _pool_lock:
             # Double-check: another coroutine may have connected while we awaited
@@ -753,8 +793,9 @@ async def websh_websocket_execute(
         Command execution result
     """
     try:
-        # Connect to WebSocket
-        async with websockets.connect(websocket_url) as websocket:
+        # Connect to WebSocket with JWT auth if available
+        ws_kwargs = _ws_kwargs_from_auth_context()
+        async with websockets.connect(websocket_url, **ws_kwargs) as websocket:
             # Send command with newline (simulating terminal input)
             await websocket.send(command + '\n')
 
@@ -962,7 +1003,9 @@ async def websh_websocket_batch_execute(
     try:
         results = []
 
-        async with websockets.connect(websocket_url) as websocket:
+        # Get JWT auth headers if available
+        ws_kwargs = _ws_kwargs_from_auth_context()
+        async with websockets.connect(websocket_url, **ws_kwargs) as websocket:
             for command in commands:
                 # Send command
                 await websocket.send(command + '\n')

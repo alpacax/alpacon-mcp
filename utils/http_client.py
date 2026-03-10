@@ -134,6 +134,12 @@ class AlpaconHTTPClient:
         self._cache_ttl[cache_key] = time.time() + (ttl or self.default_cache_ttl)
         logger.debug(f'Cached response for key: {cache_key}')
 
+    @staticmethod
+    def _is_jwt(token: str) -> bool:
+        """Check if a token is a JWT (header.payload.signature format)."""
+        parts = token.split('.')
+        return len(parts) == 3 and all(parts)
+
     def get_base_url(self, region: str, workspace: str) -> str:
         """Get base URL for API calls.
 
@@ -183,7 +189,10 @@ class AlpaconHTTPClient:
         }
 
         if token:
-            request_headers['Authorization'] = f'token={token}'
+            if self._is_jwt(token):
+                request_headers['Authorization'] = f'Bearer {token}'
+            else:
+                request_headers['Authorization'] = f'token={token}'
 
         if headers:
             request_headers.update(headers)
