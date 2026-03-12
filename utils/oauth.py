@@ -429,7 +429,7 @@ def register_oauth_routes(mcp_server):
             # Flatten single-value lists from parse_qs
             merged = {k: v[0] if len(v) == 1 else v for k, v in existing_params.items()}
             merged.update(extra_params)
-            new_query = urlencode(merged)
+            new_query = urlencode(merged, doseq=True)
             return urlunparse(parsed._replace(query=new_query))
 
         def _is_localhost_url(url: str) -> bool:
