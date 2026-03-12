@@ -453,6 +453,9 @@ def register_oauth_routes(mcp_server):
                 original_state = state_data.get('state', '')
             except (json.JSONDecodeError, UnicodeDecodeError, base64.binascii.Error) as e:
                 logger.warning(f'Failed to decode composite state: {e}')
+                # Fall back to treating the raw state as the original opaque state
+                # so it can be echoed back to the client per OAuth spec.
+                original_state = composite_state
 
         # Defense-in-depth: re-validate redirect_uri from state is a localhost URL.
         # The authorize endpoint already validates this, but an attacker could craft

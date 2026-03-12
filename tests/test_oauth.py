@@ -475,14 +475,15 @@ class TestOAuthCallback:
         assert response.json()['error'] == 'access_denied'
 
     def test_callback_handles_invalid_state_gracefully(self, oauth_app):
-        """Invalid composite state should not crash — falls back to JSON."""
+        """Invalid composite state should not crash — echoes raw state back."""
         response = oauth_app.get(
             '/oauth/callback',
-            params={'code': 'auth-code', 'state': 'not-base64-json'},
+            params={'code': 'auth-code', 'state': 'opaque-state-value'},
         )
         assert response.status_code == 200
         data = response.json()
         assert data['code'] == 'auth-code'
+        assert data['state'] == 'opaque-state-value'
 
     def test_callback_does_not_redirect_to_non_localhost_uri(self, oauth_app):
         """Callback must not redirect to a non-localhost redirect_uri from state."""
