@@ -184,8 +184,10 @@ class TestOAuthAuthorize:
             },
         )
         assert response.status_code == 400
-        assert response.json()['error'] == 'invalid_request'
-        assert 'localhost' in response.json()['error_description']
+        data = response.json()
+        assert data['error'] == 'invalid_request'
+        assert 'localhost' in data['error_description']
+        assert 'http' in data['error_description']
 
     def test_authorize_allows_127_0_0_1_redirect_uri(self, oauth_app):
         response = oauth_app.get(
@@ -479,5 +481,18 @@ class TestOAuthCallback:
             params={'code': 'auth-code', 'state': 'not-base64-json'},
         )
         assert response.status_code == 200
+        data = response.json()
+        assert data['code'] == 'auth-code'
+
+    def test_callback_does_not_redirect_to_non_localhost_uri(self, oauth_app):
+        """Callback must not redirect to a non-localhost redirect_uri from state."""
+        composite = _make_composite_state('https://evil.com/cb', 'xyz')
+        response = oauth_app.get(
+            '/oauth/callback',
+            params={'code': 'auth-code', 'state': composite},
+        )
+        # Should fall back to JSON instead of redirecting to evil.com
+        assert response.status_code == 200
+        assert 'location' not in response.headers
         data = response.json()
         assert data['code'] == 'auth-code'

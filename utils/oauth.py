@@ -146,13 +146,16 @@ def register_oauth_routes(mcp_server):
             from urllib.parse import urlparse
 
             parsed = urlparse(client_redirect_uri)
-            if parsed.hostname not in ('localhost', '127.0.0.1', '[::1]'):
+            allowed_hosts = ('localhost', '127.0.0.1', '::1')
+            if parsed.scheme not in ('http', 'https') or parsed.hostname not in allowed_hosts:
                 from starlette.responses import JSONResponse
 
                 return JSONResponse(
                     {
                         'error': 'invalid_request',
-                        'error_description': ('redirect_uri must be a localhost URL'),
+                        'error_description': (
+                            'redirect_uri must be a localhost URL using http/https'
+                        ),
                     },
                     status_code=400,
                 )
@@ -415,9 +418,25 @@ def register_oauth_routes(mcp_server):
         and redirects the user back to the MCP client's original
         redirect_uri with the code and state.
         """
-        from urllib.parse import urlencode
+        from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
         from starlette.responses import JSONResponse, RedirectResponse
+
+        def _build_redirect_url(base_url: str, extra_params: dict) -> str:
+            """Safely merge query params into a URL, preserving existing params."""
+            parsed = urlparse(base_url)
+            existing_params = parse_qs(parsed.query, keep_blank_values=True)
+            # Flatten single-value lists from parse_qs
+            merged = {k: v[0] if len(v) == 1 else v for k, v in existing_params.items()}
+            merged.update(extra_params)
+            new_query = urlencode(merged)
+            return urlunparse(parsed._replace(query=new_query))
+
+        def _is_localhost_url(url: str) -> bool:
+            """Validate that a URL points to a localhost address."""
+            parsed = urlparse(url)
+            allowed_hosts = ('localhost', '127.0.0.1', '::1')
+            return parsed.scheme in ('http', 'https') and parsed.hostname in allowed_hosts
 
         # Extract callback parameters
         code = request.query_params.get('code')
@@ -438,6 +457,16 @@ def register_oauth_routes(mcp_server):
             except (json.JSONDecodeError, UnicodeDecodeError, Exception) as e:
                 logger.warning(f'Failed to decode composite state: {e}')
 
+        # Defense-in-depth: re-validate redirect_uri from state is a localhost URL.
+        # The authorize endpoint already validates this, but an attacker could craft
+        # a composite state directly and hit Auth0 with our callback URL.
+        if client_redirect_uri and not _is_localhost_url(client_redirect_uri):
+            logger.warning(
+                f'Callback rejected non-localhost redirect_uri from state: '
+                f'{client_redirect_uri}'
+            )
+            client_redirect_uri = ''
+
         if error:
             logger.warning(f'Auth0 callback error: {error} - {error_description}')
             if client_redirect_uri:
@@ -445,7 +474,8 @@ def register_oauth_routes(mcp_server):
                 if original_state:
                     params['state'] = original_state
                 return RedirectResponse(
-                    url=f'{client_redirect_uri}?{urlencode(params)}', status_code=302
+                    url=_build_redirect_url(client_redirect_uri, params),
+                    status_code=302,
                 )
             return JSONResponse(
                 {'error': error, 'error_description': error_description},
@@ -469,7 +499,8 @@ def register_oauth_routes(mcp_server):
             if original_state:
                 params['state'] = original_state
             return RedirectResponse(
-                url=f'{client_redirect_uri}?{urlencode(params)}', status_code=302
+                url=_build_redirect_url(client_redirect_uri, params),
+                status_code=302,
             )
 
         # Fallback: return as JSON if no client redirect_uri was found
