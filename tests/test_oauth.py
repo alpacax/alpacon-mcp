@@ -6,6 +6,7 @@ including security constraints (grant_type allowlist, client_id enforcement,
 error handling).
 """
 
+import base64
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -106,13 +107,52 @@ class TestOAuthAuthorize:
             '/oauth/authorize',
             params={
                 'response_type': 'code',
-                'redirect_uri': 'https://example.com/callback',
+                'redirect_uri': 'http://localhost:52048/callback',
             },
             follow_redirects=False,
         )
         assert response.status_code == 302
         location = response.headers['location']
         assert location.startswith(f'https://{TEST_AUTH0_DOMAIN}/authorize')
+
+    def test_authorize_overrides_redirect_uri_to_server_callback(self, oauth_app):
+        """redirect_uri sent to Auth0 should be the MCP server's own callback."""
+        from urllib.parse import parse_qs, urlparse
+
+        response = oauth_app.get(
+            '/oauth/authorize',
+            params={
+                'response_type': 'code',
+                'redirect_uri': 'http://localhost:52048/callback',
+            },
+            follow_redirects=False,
+        )
+        location = response.headers['location']
+        parsed = urlparse(location)
+        params = parse_qs(parsed.query)
+        assert params['redirect_uri'] == [f'{TEST_RESOURCE_URL}/oauth/callback']
+
+    def test_authorize_stores_client_redirect_uri_in_state(self, oauth_app):
+        """Client's original redirect_uri should be encoded in the state param."""
+        from urllib.parse import parse_qs, urlparse
+
+        client_uri = 'http://localhost:52048/callback'
+        response = oauth_app.get(
+            '/oauth/authorize',
+            params={
+                'response_type': 'code',
+                'redirect_uri': client_uri,
+                'state': 'original-state',
+            },
+            follow_redirects=False,
+        )
+        location = response.headers['location']
+        parsed = urlparse(location)
+        params = parse_qs(parsed.query)
+        composite_state = params['state'][0]
+        state_data = json.loads(base64.urlsafe_b64decode(composite_state))
+        assert state_data['redirect_uri'] == client_uri
+        assert state_data['state'] == 'original-state'
 
     def test_authorize_enforces_configured_client_id(self, oauth_app):
         """Even if a different client_id is provided, configured one is used."""
@@ -128,11 +168,35 @@ class TestOAuthAuthorize:
     def test_authorize_sets_default_response_type(self, oauth_app):
         response = oauth_app.get(
             '/oauth/authorize',
-            params={'redirect_uri': 'https://example.com/callback'},
+            params={'redirect_uri': 'http://localhost:3000/callback'},
             follow_redirects=False,
         )
         location = response.headers['location']
         assert 'response_type=code' in location
+
+    def test_authorize_rejects_non_localhost_redirect_uri(self, oauth_app):
+        """Non-localhost redirect_uris should be rejected to prevent open redirect."""
+        response = oauth_app.get(
+            '/oauth/authorize',
+            params={
+                'response_type': 'code',
+                'redirect_uri': 'https://evil.com/callback',
+            },
+        )
+        assert response.status_code == 400
+        assert response.json()['error'] == 'invalid_request'
+        assert 'localhost' in response.json()['error_description']
+
+    def test_authorize_allows_127_0_0_1_redirect_uri(self, oauth_app):
+        response = oauth_app.get(
+            '/oauth/authorize',
+            params={
+                'response_type': 'code',
+                'redirect_uri': 'http://127.0.0.1:8080/callback',
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == 302
 
 
 class TestOAuthToken:
@@ -194,6 +258,38 @@ class TestOAuthToken:
         assert response.status_code == 200
         call_kwargs = mock_client.post.call_args
         assert call_kwargs.kwargs['data']['client_id'] == TEST_CLIENT_ID
+
+    def test_token_overrides_redirect_uri_for_auth_code(self, oauth_app):
+        """Token exchange should use server's callback URL, not client's."""
+        mock_client = _mock_auth0_response()
+        with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
+            response = oauth_app.post(
+                '/oauth/token',
+                data={
+                    'grant_type': 'authorization_code',
+                    'code': 'test-code',
+                    'redirect_uri': 'http://localhost:52048/callback',
+                },
+            )
+        assert response.status_code == 200
+        call_kwargs = mock_client.post.call_args
+        assert call_kwargs.kwargs['data']['redirect_uri'] == (
+            f'{TEST_RESOURCE_URL}/oauth/callback'
+        )
+
+    def test_token_sets_redirect_uri_even_if_client_omits_it(self, oauth_app):
+        """Auth0 requires redirect_uri in token exchange when used in authorize."""
+        mock_client = _mock_auth0_response()
+        with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
+            response = oauth_app.post(
+                '/oauth/token',
+                data={'grant_type': 'authorization_code', 'code': 'test-code'},
+            )
+        assert response.status_code == 200
+        call_kwargs = mock_client.post.call_args
+        assert call_kwargs.kwargs['data']['redirect_uri'] == (
+            f'{TEST_RESOURCE_URL}/oauth/callback'
+        )
 
     def test_token_rejects_invalid_json(self, oauth_app):
         response = oauth_app.post(
@@ -310,12 +406,35 @@ class TestOAuthRegister:
         assert response.json()['error'] == 'invalid_client_metadata'
 
 
+def _make_composite_state(redirect_uri='', state=''):
+    """Helper to create composite state as the authorize endpoint does."""
+    state_data = json.dumps({'redirect_uri': redirect_uri, 'state': state})
+    return base64.urlsafe_b64encode(state_data.encode()).decode()
+
+
 class TestOAuthCallback:
     """Tests for /oauth/callback endpoint."""
 
-    def test_callback_returns_code(self, oauth_app):
+    def test_callback_redirects_to_client(self, oauth_app):
+        """Callback should redirect to the client's original redirect_uri."""
+        composite = _make_composite_state('http://localhost:52048/callback', 'xyz')
         response = oauth_app.get(
-            '/oauth/callback', params={'code': 'auth-code', 'state': 'xyz'}
+            '/oauth/callback',
+            params={'code': 'auth-code', 'state': composite},
+            follow_redirects=False,
+        )
+        assert response.status_code == 302
+        location = response.headers['location']
+        assert location.startswith('http://localhost:52048/callback')
+        assert 'code=auth-code' in location
+        assert 'state=xyz' in location
+
+    def test_callback_returns_json_without_redirect_uri(self, oauth_app):
+        """Without a client redirect_uri in state, return JSON as fallback."""
+        composite = _make_composite_state('', 'xyz')
+        response = oauth_app.get(
+            '/oauth/callback',
+            params={'code': 'auth-code', 'state': composite},
         )
         assert response.status_code == 200
         data = response.json()
@@ -327,7 +446,25 @@ class TestOAuthCallback:
         assert response.status_code == 400
         assert response.json()['error'] == 'invalid_request'
 
-    def test_callback_error_from_auth0(self, oauth_app):
+    def test_callback_error_redirects_to_client(self, oauth_app):
+        """Auth0 errors should be forwarded to the client's redirect_uri."""
+        composite = _make_composite_state('http://localhost:52048/callback', 'xyz')
+        response = oauth_app.get(
+            '/oauth/callback',
+            params={
+                'error': 'access_denied',
+                'error_description': 'User denied',
+                'state': composite,
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == 302
+        location = response.headers['location']
+        assert 'error=access_denied' in location
+        assert 'state=xyz' in location
+
+    def test_callback_error_returns_json_without_redirect_uri(self, oauth_app):
+        """Auth0 errors without client redirect_uri fall back to JSON."""
         response = oauth_app.get(
             '/oauth/callback',
             params={'error': 'access_denied', 'error_description': 'User denied'},
@@ -335,14 +472,12 @@ class TestOAuthCallback:
         assert response.status_code == 400
         assert response.json()['error'] == 'access_denied'
 
-    def test_callback_does_not_redirect(self, oauth_app):
-        """Callback returns JSON, not a redirect -- prevents open redirect."""
+    def test_callback_handles_invalid_state_gracefully(self, oauth_app):
+        """Invalid composite state should not crash — falls back to JSON."""
         response = oauth_app.get(
             '/oauth/callback',
-            params={
-                'code': 'auth-code',
-                'redirect_uri': 'https://evil.com',
-            },
+            params={'code': 'auth-code', 'state': 'not-base64-json'},
         )
         assert response.status_code == 200
-        assert 'location' not in response.headers
+        data = response.json()
+        assert data['code'] == 'auth-code'
