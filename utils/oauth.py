@@ -19,6 +19,9 @@ from utils.logger import get_logger
 logger = get_logger('oauth')
 
 
+_ALLOWED_LOOPBACK_HOSTS = ('localhost', '127.0.0.1', '::1')
+
+
 def _get_server_url(request) -> str:
     """Build the MCP server's base URL from config or request.
 
@@ -29,6 +32,26 @@ def _get_server_url(request) -> str:
     if configured_base_url:
         return configured_base_url.rstrip('/')
     return f'{request.url.scheme}://{request.url.netloc}'
+
+
+def _is_localhost_url(url: str) -> bool:
+    """Validate that a URL points to a localhost address using http/https."""
+    from urllib.parse import urlparse
+
+    parsed = urlparse(url)
+    return parsed.scheme in ('http', 'https') and parsed.hostname in _ALLOWED_LOOPBACK_HOSTS
+
+
+def _build_redirect_url(base_url: str, extra_params: dict) -> str:
+    """Safely merge query params into a URL, preserving existing params."""
+    from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
+
+    parsed = urlparse(base_url)
+    existing_params = parse_qs(parsed.query, keep_blank_values=True)
+    merged = {k: v[0] if len(v) == 1 else v for k, v in existing_params.items()}
+    merged.update(extra_params)
+    new_query = urlencode(merged, doseq=True)
+    return urlunparse(parsed._replace(query=new_query))
 
 
 def _get_oauth_config() -> dict[str, str]:
@@ -143,23 +166,18 @@ def register_oauth_routes(mcp_server):
         # Only allow localhost redirect_uris (MCP clients run local HTTP servers)
         # to prevent open redirect attacks that could leak authorization codes.
         client_redirect_uri = params.get('redirect_uri', '')
-        if client_redirect_uri:
-            from urllib.parse import urlparse
+        if client_redirect_uri and not _is_localhost_url(client_redirect_uri):
+            from starlette.responses import JSONResponse
 
-            parsed = urlparse(client_redirect_uri)
-            allowed_hosts = ('localhost', '127.0.0.1', '::1')
-            if parsed.scheme not in ('http', 'https') or parsed.hostname not in allowed_hosts:
-                from starlette.responses import JSONResponse
-
-                return JSONResponse(
-                    {
-                        'error': 'invalid_request',
-                        'error_description': (
-                            'redirect_uri must be a localhost URL using http/https'
-                        ),
-                    },
-                    status_code=400,
-                )
+            return JSONResponse(
+                {
+                    'error': 'invalid_request',
+                    'error_description': (
+                        'redirect_uri must be a localhost URL using http/https'
+                    ),
+                },
+                status_code=400,
+            )
 
         original_state = params.get('state', '')
 
@@ -415,25 +433,7 @@ def register_oauth_routes(mcp_server):
         and redirects the user back to the MCP client's original
         redirect_uri with the code and state.
         """
-        from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
-
         from starlette.responses import JSONResponse, RedirectResponse
-
-        def _build_redirect_url(base_url: str, extra_params: dict) -> str:
-            """Safely merge query params into a URL, preserving existing params."""
-            parsed = urlparse(base_url)
-            existing_params = parse_qs(parsed.query, keep_blank_values=True)
-            # Flatten single-value lists from parse_qs
-            merged = {k: v[0] if len(v) == 1 else v for k, v in existing_params.items()}
-            merged.update(extra_params)
-            new_query = urlencode(merged, doseq=True)
-            return urlunparse(parsed._replace(query=new_query))
-
-        def _is_localhost_url(url: str) -> bool:
-            """Validate that a URL points to a localhost address."""
-            parsed = urlparse(url)
-            allowed_hosts = ('localhost', '127.0.0.1', '::1')
-            return parsed.scheme in ('http', 'https') and parsed.hostname in allowed_hosts
 
         # Extract callback parameters
         code = request.query_params.get('code')
