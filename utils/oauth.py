@@ -19,6 +19,18 @@ from utils.logger import get_logger
 logger = get_logger('oauth')
 
 
+def _get_server_url(request) -> str:
+    """Build the MCP server's base URL from config or request.
+
+    Prefers ALPACON_MCP_RESOURCE_URL env var to avoid relying on
+    potentially spoofable forwarding headers.
+    """
+    configured_base_url = os.getenv('ALPACON_MCP_RESOURCE_URL')
+    if configured_base_url:
+        return configured_base_url.rstrip('/')
+    return f'{request.url.scheme}://{request.url.netloc}'
+
+
 def _get_oauth_config() -> dict[str, str]:
     """Get OAuth configuration from environment variables."""
     domain = os.getenv('AUTH0_DOMAIN', '')
@@ -59,14 +71,7 @@ def register_oauth_routes(mcp_server):
         except ValueError as e:
             return JSONResponse({'error': str(e)}, status_code=500)
 
-        # Build server base URL from trusted config or request URL.
-        # Prefer an explicit environment variable to avoid relying on
-        # potentially spoofable forwarding headers.
-        configured_base_url = os.getenv('ALPACON_MCP_RESOURCE_URL')
-        if configured_base_url:
-            server_url = configured_base_url.rstrip('/')
-        else:
-            server_url = f'{request.url.scheme}://{request.url.netloc}'
+        server_url = _get_server_url(request)
 
         metadata = {
             'issuer': f'{server_url}/',
@@ -132,11 +137,7 @@ def register_oauth_routes(mcp_server):
         # Build MCP server's own callback URL as redirect_uri for Auth0.
         # Store the client's original redirect_uri in the state so we can
         # forward the authorization code back to the client after Auth0 callback.
-        configured_base_url = os.getenv('ALPACON_MCP_RESOURCE_URL')
-        if configured_base_url:
-            server_url = configured_base_url.rstrip('/')
-        else:
-            server_url = f'{request.url.scheme}://{request.url.netloc}'
+        server_url = _get_server_url(request)
 
         # Save client's original redirect_uri to relay the code later.
         # Only allow localhost redirect_uris (MCP clients run local HTTP servers)
@@ -272,11 +273,7 @@ def register_oauth_routes(mcp_server):
         # Always set it for authorization_code grants since /authorize always
         # sends redirect_uri to Auth0.
         if params.get('grant_type') == 'authorization_code':
-            configured_base_url = os.getenv('ALPACON_MCP_RESOURCE_URL')
-            if configured_base_url:
-                server_url = configured_base_url.rstrip('/')
-            else:
-                server_url = f'{request.url.scheme}://{request.url.netloc}'
+            server_url = _get_server_url(request)
             params['redirect_uri'] = f'{server_url}/oauth/callback'
 
         # Forward to Auth0
@@ -454,7 +451,7 @@ def register_oauth_routes(mcp_server):
                 )
                 client_redirect_uri = state_data.get('redirect_uri', '')
                 original_state = state_data.get('state', '')
-            except (json.JSONDecodeError, UnicodeDecodeError, Exception) as e:
+            except (json.JSONDecodeError, UnicodeDecodeError, base64.binascii.Error) as e:
                 logger.warning(f'Failed to decode composite state: {e}')
 
         # Defense-in-depth: re-validate redirect_uri from state is a localhost URL.
