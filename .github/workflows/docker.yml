@@ -67,7 +67,7 @@ jobs:
           workflow: image-tag-update-pr.yaml
           repo: alpacax/alpacon-gitops
           token: ${{ secrets.DEPLOY_ACTIONS_TRIGGER_TOKEN }}
-          inputs: '{"image_tag": "${{ github.event.workflow_run.head_sha }}", "service": "alpacon-mcp", "environment": "dev"}'
+          inputs: '{"tag": "${{ github.event.workflow_run.head_sha }}", "service": "alpacon-mcp", "env": "dev", "job": "update_image_tag"}'
 
   deploy-prod:
     needs: build-and-push
@@ -81,4 +81,4 @@ jobs:
           workflow: image-tag-update-pr.yaml
           repo: alpacax/alpacon-gitops
           token: ${{ secrets.DEPLOY_ACTIONS_TRIGGER_TOKEN }}
-          inputs: '{"image_tag": "${{ github.ref_name }}", "service": "alpacon-mcp", "environment": "prod"}'
+          inputs: '{"tag": "${{ github.ref_name }}", "service": "alpacon-mcp", "env": "prod", "job": "update_image_tag"}'
