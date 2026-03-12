@@ -270,14 +270,19 @@ def register_oauth_routes(mcp_server):
         plans, so this endpoint returns the server's pre-configured client_id
         to satisfy the MCP SDK's registration requirement.
         """
-        import time
-
         from starlette.responses import JSONResponse
 
         try:
             config = _get_oauth_config()
         except ValueError as e:
-            return JSONResponse({'error': str(e)}, status_code=500)
+            logger.error(f'OAuth config error in /oauth/register: {e}')
+            return JSONResponse(
+                {
+                    'error': 'server_error',
+                    'error_description': 'OAuth configuration is incomplete',
+                },
+                status_code=500,
+            )
 
         # Parse and validate client metadata from request body (RFC 7591)
         body = await request.body()
@@ -328,7 +333,6 @@ def register_oauth_routes(mcp_server):
         # Return pre-configured client_id with metadata echoed back
         response_data = {
             'client_id': config['client_id'],
-            'client_id_issued_at': int(time.time()),
             'token_endpoint_auth_method': 'none',
         }
 

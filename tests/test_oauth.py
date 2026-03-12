@@ -240,8 +240,8 @@ class TestOAuthRegister:
         assert response.status_code == 201
         data = response.json()
         assert data['client_id'] == TEST_CLIENT_ID
-        assert 'client_id_issued_at' in data
         assert data['token_endpoint_auth_method'] == 'none'
+        assert 'client_id_issued_at' not in data
 
     def test_register_echoes_redirect_uris(self, oauth_app):
         uris = ['http://localhost:3000/callback']
