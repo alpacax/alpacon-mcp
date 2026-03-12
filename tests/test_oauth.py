@@ -83,6 +83,7 @@ class TestOAuthMetadata:
         assert data['issuer'] == f'https://{TEST_AUTH0_DOMAIN}/'
         assert data['authorization_endpoint'] == f'{TEST_RESOURCE_URL}/oauth/authorize'
         assert data['token_endpoint'] == f'{TEST_RESOURCE_URL}/oauth/token'
+        assert data['registration_endpoint'] == f'{TEST_RESOURCE_URL}/oauth/register'
         assert data['jwks_uri'] == f'https://{TEST_AUTH0_DOMAIN}/.well-known/jwks.json'
         assert 'code' in data['response_types_supported']
         assert 'S256' in data['code_challenge_methods_supported']
@@ -222,6 +223,89 @@ class TestOAuthToken:
         data = response.json()
         assert data['error'] == 'invalid_request'
         assert 'UTF-8' in data['error_description']
+
+
+class TestOAuthRegister:
+    """Tests for /oauth/register endpoint (RFC 7591 Dynamic Client Registration)."""
+
+    def test_register_returns_configured_client_id(self, oauth_app):
+        response = oauth_app.post(
+            '/oauth/register',
+            content=json.dumps({
+                'client_name': 'test-client',
+                'redirect_uris': ['http://localhost:3000/callback'],
+            }).encode(),
+            headers={'content-type': 'application/json'},
+        )
+        assert response.status_code == 201
+        data = response.json()
+        assert data['client_id'] == TEST_CLIENT_ID
+        assert 'client_id_issued_at' in data
+        assert data['token_endpoint_auth_method'] == 'none'
+
+    def test_register_echoes_redirect_uris(self, oauth_app):
+        uris = ['http://localhost:3000/callback']
+        response = oauth_app.post(
+            '/oauth/register',
+            content=json.dumps({'redirect_uris': uris}).encode(),
+            headers={'content-type': 'application/json'},
+        )
+        assert response.status_code == 201
+        assert response.json()['redirect_uris'] == uris
+
+    def test_register_echoes_client_name(self, oauth_app):
+        response = oauth_app.post(
+            '/oauth/register',
+            content=json.dumps({'client_name': 'my-app'}).encode(),
+            headers={'content-type': 'application/json'},
+        )
+        assert response.status_code == 201
+        assert response.json()['client_name'] == 'my-app'
+
+    def test_register_no_store_cache_control(self, oauth_app):
+        response = oauth_app.post(
+            '/oauth/register',
+            content=json.dumps({}).encode(),
+            headers={'content-type': 'application/json'},
+        )
+        assert response.status_code == 201
+        assert 'no-store' in response.headers.get('cache-control', '')
+
+    def test_register_rejects_non_json_content_type(self, oauth_app):
+        response = oauth_app.post(
+            '/oauth/register',
+            data='client_name=test',
+            headers={'content-type': 'application/x-www-form-urlencoded'},
+        )
+        assert response.status_code == 400
+        assert response.json()['error'] == 'invalid_request'
+
+    def test_register_rejects_empty_body(self, oauth_app):
+        response = oauth_app.post(
+            '/oauth/register',
+            content=b'',
+            headers={'content-type': 'application/json'},
+        )
+        assert response.status_code == 400
+        assert response.json()['error'] == 'invalid_client_metadata'
+
+    def test_register_rejects_invalid_json(self, oauth_app):
+        response = oauth_app.post(
+            '/oauth/register',
+            content=b'not valid json',
+            headers={'content-type': 'application/json'},
+        )
+        assert response.status_code == 400
+        assert response.json()['error'] == 'invalid_client_metadata'
+
+    def test_register_rejects_non_object_json(self, oauth_app):
+        response = oauth_app.post(
+            '/oauth/register',
+            content=json.dumps(['not', 'an', 'object']).encode(),
+            headers={'content-type': 'application/json'},
+        )
+        assert response.status_code == 400
+        assert response.json()['error'] == 'invalid_client_metadata'
 
 
 class TestOAuthCallback:

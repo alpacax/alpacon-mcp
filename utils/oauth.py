@@ -279,21 +279,51 @@ def register_oauth_routes(mcp_server):
         except ValueError as e:
             return JSONResponse({'error': str(e)}, status_code=500)
 
-        # Parse client metadata from request body
+        # Parse and validate client metadata from request body (RFC 7591)
         body = await request.body()
         content_type = request.headers.get('content-type', '')
 
-        client_metadata = {}
-        if body:
-            import json
+        if 'application/json' not in content_type:
+            return JSONResponse(
+                {
+                    'error': 'invalid_request',
+                    'error_description': 'Content-Type must be application/json',
+                },
+                status_code=400,
+            )
 
-            try:
-                if 'application/json' in content_type:
-                    client_metadata = json.loads(body)
-                    if not isinstance(client_metadata, dict):
-                        client_metadata = {}
-            except (json.JSONDecodeError, UnicodeDecodeError):
-                client_metadata = {}
+        if not body:
+            return JSONResponse(
+                {
+                    'error': 'invalid_client_metadata',
+                    'error_description': (
+                        'Request body must be a JSON object with client metadata'
+                    ),
+                },
+                status_code=400,
+            )
+
+        import json
+
+        try:
+            client_metadata = json.loads(body)
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return JSONResponse(
+                {
+                    'error': 'invalid_client_metadata',
+                    'error_description': 'Request body must be valid JSON',
+                },
+                status_code=400,
+            )
+
+        if not isinstance(client_metadata, dict):
+            return JSONResponse(
+                {
+                    'error': 'invalid_client_metadata',
+                    'error_description': 'Client metadata must be a JSON object',
+                },
+                status_code=400,
+            )
 
         # Return pre-configured client_id with metadata echoed back
         response_data = {
