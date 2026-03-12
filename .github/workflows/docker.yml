@@ -65,7 +65,7 @@ jobs:
         uses: benc-uk/workflow-dispatch@v1
         with:
           workflow: image-tag-update-pr.yaml
-          repo: alpacax/iac-aws
+          repo: alpacax/alpacon-gitops
           token: ${{ secrets.DEPLOY_ACTIONS_TRIGGER_TOKEN }}
           inputs: '{"image_tag": "${{ github.event.workflow_run.head_sha }}", "service": "alpacon-mcp", "environment": "dev"}'
 
@@ -79,6 +79,6 @@ jobs:
         uses: benc-uk/workflow-dispatch@v1
         with:
           workflow: image-tag-update-pr.yaml
-          repo: alpacax/iac-aws
+          repo: alpacax/alpacon-gitops
           token: ${{ secrets.DEPLOY_ACTIONS_TRIGGER_TOKEN }}
           inputs: '{"image_tag": "${{ github.ref_name }}", "service": "alpacon-mcp", "environment": "prod"}'
