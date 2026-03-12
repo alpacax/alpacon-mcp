@@ -38,7 +38,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ vars.DOCKER_IMAGE }}
+          images: ${{ github.event_name == 'workflow_run' && format('{0}-dev', vars.DOCKER_IMAGE) || vars.DOCKER_IMAGE }}
           tags: |
             type=raw,value=${{ github.event.workflow_run.head_sha }},enable=${{ github.event_name == 'workflow_run' }}
             type=ref,event=tag,enable=${{ github.event_name == 'push' }}
