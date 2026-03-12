@@ -8,6 +8,8 @@ All routes are registered via FastMCP's custom_route decorator,
 which bypasses MCP authentication — appropriate for OAuth flow endpoints.
 """
 
+import base64
+import json
 import os
 
 import httpx
@@ -15,6 +17,41 @@ import httpx
 from utils.logger import get_logger
 
 logger = get_logger('oauth')
+
+
+_ALLOWED_LOOPBACK_HOSTS = ('localhost', '127.0.0.1', '::1')
+
+
+def _get_server_url(request) -> str:
+    """Build the MCP server's base URL from config or request.
+
+    Prefers ALPACON_MCP_RESOURCE_URL env var to avoid relying on
+    potentially spoofable forwarding headers.
+    """
+    configured_base_url = os.getenv('ALPACON_MCP_RESOURCE_URL')
+    if configured_base_url:
+        return configured_base_url.rstrip('/')
+    return f'{request.url.scheme}://{request.url.netloc}'
+
+
+def _is_localhost_url(url: str) -> bool:
+    """Validate that a URL points to a localhost address using http/https."""
+    from urllib.parse import urlparse
+
+    parsed = urlparse(url)
+    return parsed.scheme in ('http', 'https') and parsed.hostname in _ALLOWED_LOOPBACK_HOSTS
+
+
+def _build_redirect_url(base_url: str, extra_params: dict) -> str:
+    """Safely merge query params into a URL, preserving existing params."""
+    from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
+
+    parsed = urlparse(base_url)
+    existing_params = parse_qs(parsed.query, keep_blank_values=True)
+    merged = {k: v[0] if len(v) == 1 else v for k, v in existing_params.items()}
+    merged.update(extra_params)
+    new_query = urlencode(merged, doseq=True)
+    return urlunparse(parsed._replace(query=new_query))
 
 
 def _get_oauth_config() -> dict[str, str]:
@@ -58,14 +95,7 @@ def register_oauth_routes(mcp_server):
         except ValueError as e:
             return JSONResponse({'error': str(e)}, status_code=500)
 
-        # Build server base URL from trusted config or request URL.
-        # Prefer an explicit environment variable to avoid relying on
-        # potentially spoofable forwarding headers.
-        configured_base_url = os.getenv('ALPACON_MCP_RESOURCE_URL')
-        if configured_base_url:
-            server_url = configured_base_url.rstrip('/')
-        else:
-            server_url = f'{request.url.scheme}://{request.url.netloc}'
+        server_url = _get_server_url(request)
 
         metadata = {
             'issuer': f'{server_url}/',
@@ -128,6 +158,43 @@ def register_oauth_routes(mcp_server):
         if 'response_type' not in params:
             params['response_type'] = 'code'
 
+        # Build MCP server's own callback URL as redirect_uri for Auth0.
+        # Store the client's original redirect_uri in the state so we can
+        # forward the authorization code back to the client after Auth0 callback.
+        server_url = _get_server_url(request)
+
+        # Save client's original redirect_uri to relay the code later.
+        # Only allow localhost redirect_uris (MCP clients run local HTTP servers)
+        # to prevent open redirect attacks that could leak authorization codes.
+        client_redirect_uri = params.get('redirect_uri', '')
+        if client_redirect_uri and not _is_localhost_url(client_redirect_uri):
+            from starlette.responses import JSONResponse
+
+            return JSONResponse(
+                {
+                    'error': 'invalid_request',
+                    'error_description': (
+                        'redirect_uri must be a localhost URL using http/https'
+                    ),
+                },
+                status_code=400,
+            )
+
+        original_state = params.get('state', '')
+
+        # Encode client redirect_uri and original state into a composite state
+        state_data = json.dumps(
+            {
+                'redirect_uri': client_redirect_uri,
+                'state': original_state,
+            }
+        )
+        composite_state = base64.urlsafe_b64encode(state_data.encode()).decode()
+
+        # Override redirect_uri to point to this server's callback
+        params['redirect_uri'] = f'{server_url}/oauth/callback'
+        params['state'] = composite_state
+
         auth0_url = f'{config["auth0_base_url"]}/authorize?{urlencode(params)}'
         logger.info('Redirecting to Auth0 authorize endpoint')
         return RedirectResponse(url=auth0_url, status_code=302)
@@ -153,8 +220,6 @@ def register_oauth_routes(mcp_server):
         content_type = request.headers.get('content-type', '')
 
         if 'application/json' in content_type:
-            import json
-
             try:
                 params = json.loads(body)
             except json.JSONDecodeError:
@@ -221,6 +286,14 @@ def register_oauth_routes(mcp_server):
                 status_code=400,
             )
         params['client_id'] = configured_client_id
+
+        # Override redirect_uri to match what was sent to Auth0 during /authorize.
+        # Auth0 requires the redirect_uri in token exchange to match exactly.
+        # Always set it for authorization_code grants since /authorize always
+        # sends redirect_uri to Auth0.
+        if params.get('grant_type') == 'authorization_code':
+            server_url = _get_server_url(request)
+            params['redirect_uri'] = f'{server_url}/oauth/callback'
 
         # Forward to Auth0
         auth0_token_url = f'{config["auth0_base_url"]}/oauth/token'
@@ -309,8 +382,6 @@ def register_oauth_routes(mcp_server):
                 status_code=400,
             )
 
-        import json
-
         try:
             client_metadata = json.loads(body)
         except (json.JSONDecodeError, UnicodeDecodeError):
@@ -360,18 +431,53 @@ def register_oauth_routes(mcp_server):
         """Handle Auth0 callback after authorization.
 
         This endpoint receives the authorization code from Auth0
-        and returns it as JSON for the MCP client to process.
+        and redirects the user back to the MCP client's original
+        redirect_uri with the code and state.
         """
-        from starlette.responses import JSONResponse
+        from starlette.responses import JSONResponse, RedirectResponse
 
         # Extract callback parameters
         code = request.query_params.get('code')
-        state = request.query_params.get('state')
+        composite_state = request.query_params.get('state')
         error = request.query_params.get('error')
         error_description = request.query_params.get('error_description')
 
+        # Decode the composite state to get client's redirect_uri and original state
+        client_redirect_uri = ''
+        original_state = ''
+        if composite_state:
+            try:
+                state_data = json.loads(
+                    base64.urlsafe_b64decode(composite_state.encode()).decode()
+                )
+                client_redirect_uri = state_data.get('redirect_uri', '')
+                original_state = state_data.get('state', '')
+            except (json.JSONDecodeError, UnicodeDecodeError, base64.binascii.Error) as e:
+                logger.warning(f'Failed to decode composite state: {e}')
+                # Fall back to treating the raw state as the original opaque state
+                # so it can be echoed back to the client per OAuth spec.
+                original_state = composite_state
+
+        # Defense-in-depth: re-validate redirect_uri from state is a localhost URL.
+        # The authorize endpoint already validates this, but an attacker could craft
+        # a composite state directly and hit Auth0 with our callback URL.
+        if client_redirect_uri and not _is_localhost_url(client_redirect_uri):
+            logger.warning(
+                f'Callback rejected non-localhost redirect_uri from state: '
+                f'{client_redirect_uri}'
+            )
+            client_redirect_uri = ''
+
         if error:
             logger.warning(f'Auth0 callback error: {error} - {error_description}')
+            if client_redirect_uri:
+                params = {'error': error, 'error_description': error_description or ''}
+                if original_state:
+                    params['state'] = original_state
+                return RedirectResponse(
+                    url=_build_redirect_url(client_redirect_uri, params),
+                    status_code=302,
+                )
             return JSONResponse(
                 {'error': error, 'error_description': error_description},
                 status_code=400,
@@ -388,14 +494,20 @@ def register_oauth_routes(mcp_server):
 
         logger.info('Auth0 callback received authorization code')
 
-        # Return the authorization code as JSON.
-        # The MCP client handles the redirect_uri flow directly with Auth0
-        # during /oauth/authorize — the callback only needs to surface the code.
-        # We intentionally do NOT redirect to a user-supplied redirect_uri here
-        # to prevent open redirect vulnerabilities.
+        # Redirect back to the MCP client's original redirect_uri with the code
+        if client_redirect_uri:
+            params = {'code': code}
+            if original_state:
+                params['state'] = original_state
+            return RedirectResponse(
+                url=_build_redirect_url(client_redirect_uri, params),
+                status_code=302,
+            )
+
+        # Fallback: return as JSON if no client redirect_uri was found
         result = {'code': code}
-        if state:
-            result['state'] = state
+        if original_state:
+            result['state'] = original_state
         return JSONResponse(result)
 
     logger.info('OAuth proxy routes registered')
