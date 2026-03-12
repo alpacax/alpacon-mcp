@@ -129,8 +129,12 @@ def _create_mcp_server() -> FastMCP:
         # Registration on non-Enterprise plans.
         # JWT token verification still validates against Auth0's issuer
         # independently via Auth0TokenVerifier.
+        # Ensure issuer_url has a trailing slash to match the issuer value
+        # in /.well-known/oauth-authorization-server metadata (RFC 8414
+        # requires exact string match for issuer identifiers).
+        issuer_url = resource_url.rstrip('/') + '/'
         auth_settings = AuthSettings(
-            issuer_url=AnyHttpUrl(resource_url),
+            issuer_url=AnyHttpUrl(issuer_url),
             resource_server_url=AnyHttpUrl(resource_url),
         )
         token_verifier = Auth0TokenVerifier()

@@ -47,8 +47,9 @@ def register_oauth_routes(mcp_server):
     async def oauth_metadata(request):
         """OAuth 2.0 Authorization Server Metadata (RFC 8414).
 
-        Returns metadata that points to Auth0 as the authorization server,
-        with token and authorization endpoints proxied through this server.
+        Returns metadata advertising this MCP server as the OAuth
+        authorization server. The authorize, token, and register
+        endpoints proxy to Auth0; only jwks_uri points to Auth0 directly.
         """
         from starlette.responses import JSONResponse
 
