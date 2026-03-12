@@ -70,6 +70,7 @@ def register_oauth_routes(mcp_server):
             'issuer': f'{config["auth0_base_url"]}/',
             'authorization_endpoint': f'{server_url}/oauth/authorize',
             'token_endpoint': f'{server_url}/oauth/token',
+            'registration_endpoint': f'{server_url}/oauth/register',
             'jwks_uri': f'{config["auth0_base_url"]}/.well-known/jwks.json',
             'response_types_supported': ['code'],
             'grant_types_supported': [
@@ -260,6 +261,98 @@ def register_oauth_routes(mcp_server):
                 },
                 status_code=502,
             )
+
+    @mcp_server.custom_route('/oauth/register', methods=['POST'])
+    async def oauth_register(request):
+        """Dynamic Client Registration endpoint (RFC 7591).
+
+        Auth0 does not support Dynamic Client Registration on non-Enterprise
+        plans, so this endpoint returns the server's pre-configured client_id
+        to satisfy the MCP SDK's registration requirement.
+        """
+        from starlette.responses import JSONResponse
+
+        try:
+            config = _get_oauth_config()
+        except ValueError as e:
+            logger.error(f'OAuth config error in /oauth/register: {e}')
+            return JSONResponse(
+                {
+                    'error': 'server_error',
+                    'error_description': 'OAuth configuration is incomplete',
+                },
+                status_code=500,
+            )
+
+        # Parse and validate client metadata from request body (RFC 7591)
+        body = await request.body()
+        content_type = request.headers.get('content-type', '')
+
+        if 'application/json' not in content_type:
+            return JSONResponse(
+                {
+                    'error': 'invalid_request',
+                    'error_description': 'Content-Type must be application/json',
+                },
+                status_code=400,
+            )
+
+        if not body:
+            return JSONResponse(
+                {
+                    'error': 'invalid_client_metadata',
+                    'error_description': (
+                        'Request body must be a JSON object with client metadata'
+                    ),
+                },
+                status_code=400,
+            )
+
+        import json
+
+        try:
+            client_metadata = json.loads(body)
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return JSONResponse(
+                {
+                    'error': 'invalid_client_metadata',
+                    'error_description': 'Request body must be valid JSON',
+                },
+                status_code=400,
+            )
+
+        if not isinstance(client_metadata, dict):
+            return JSONResponse(
+                {
+                    'error': 'invalid_client_metadata',
+                    'error_description': 'Client metadata must be a JSON object',
+                },
+                status_code=400,
+            )
+
+        # Return pre-configured client_id with metadata echoed back
+        response_data = {
+            'client_id': config['client_id'],
+            'token_endpoint_auth_method': 'none',
+        }
+
+        # Echo back redirect_uris if provided
+        if 'redirect_uris' in client_metadata:
+            response_data['redirect_uris'] = client_metadata['redirect_uris']
+
+        # Echo back client_name if provided
+        if 'client_name' in client_metadata:
+            response_data['client_name'] = client_metadata['client_name']
+
+        logger.info('Dynamic client registration: returning pre-configured client_id')
+
+        return JSONResponse(
+            response_data,
+            status_code=201,
+            headers={
+                'Cache-Control': 'no-store',
+            },
+        )
 
     @mcp_server.custom_route('/oauth/callback', methods=['GET'])
     async def oauth_callback(request):
