@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  actions: write
 
 jobs:
   build-and-push:
@@ -32,7 +33,7 @@ jobs:
           images: ${{ vars.DOCKER_IMAGE }}
           tags: |
             type=sha,format=long,prefix=,enable=${{ github.ref == 'refs/heads/main' }}
-            type=semver,pattern={{version}},enable=${{ startsWith(github.ref, 'refs/tags/') }}
+            type=ref,event=tag,enable=${{ startsWith(github.ref, 'refs/tags/') }}
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/') }}
 
       - name: Build and push
