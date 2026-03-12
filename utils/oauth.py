@@ -67,7 +67,7 @@ def register_oauth_routes(mcp_server):
             server_url = f'{request.url.scheme}://{request.url.netloc}'
 
         metadata = {
-            'issuer': f'{config["auth0_base_url"]}/',
+            'issuer': f'{server_url}/',
             'authorization_endpoint': f'{server_url}/oauth/authorize',
             'token_endpoint': f'{server_url}/oauth/token',
             'registration_endpoint': f'{server_url}/oauth/register',

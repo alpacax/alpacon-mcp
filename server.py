@@ -106,8 +106,6 @@ def _create_mcp_server() -> FastMCP:
             logger.error(message)
             raise RuntimeError(message)
 
-        issuer_url_str = f'https://{auth0_domain}/'
-
         # Validate resource_url with proper URL parsing before passing to AnyHttpUrl
         from urllib.parse import urlparse
 
@@ -125,8 +123,14 @@ def _create_mcp_server() -> FastMCP:
             f'{parsed_url.scheme}://{parsed_url.netloc}{parsed_url.path}'.rstrip('/')
         )
 
+        # Use the MCP server's own URL as issuer_url so that clients discover
+        # our OAuth proxy endpoints (authorize, token, register) instead of
+        # going directly to Auth0 — which doesn't support Dynamic Client
+        # Registration on non-Enterprise plans.
+        # JWT token verification still validates against Auth0's issuer
+        # independently via Auth0TokenVerifier.
         auth_settings = AuthSettings(
-            issuer_url=AnyHttpUrl(issuer_url_str),
+            issuer_url=AnyHttpUrl(resource_url),
             resource_server_url=AnyHttpUrl(resource_url),
         )
         token_verifier = Auth0TokenVerifier()

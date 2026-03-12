@@ -80,7 +80,7 @@ class TestOAuthMetadata:
         assert response.status_code == 200
         data = response.json()
 
-        assert data['issuer'] == f'https://{TEST_AUTH0_DOMAIN}/'
+        assert data['issuer'] == f'{TEST_RESOURCE_URL}/'
         assert data['authorization_endpoint'] == f'{TEST_RESOURCE_URL}/oauth/authorize'
         assert data['token_endpoint'] == f'{TEST_RESOURCE_URL}/oauth/token'
         assert data['registration_endpoint'] == f'{TEST_RESOURCE_URL}/oauth/register'
@@ -231,10 +231,12 @@ class TestOAuthRegister:
     def test_register_returns_configured_client_id(self, oauth_app):
         response = oauth_app.post(
             '/oauth/register',
-            content=json.dumps({
-                'client_name': 'test-client',
-                'redirect_uris': ['http://localhost:3000/callback'],
-            }).encode(),
+            content=json.dumps(
+                {
+                    'client_name': 'test-client',
+                    'redirect_uris': ['http://localhost:3000/callback'],
+                }
+            ).encode(),
             headers={'content-type': 'application/json'},
         )
         assert response.status_code == 201
