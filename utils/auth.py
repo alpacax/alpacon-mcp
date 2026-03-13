@@ -32,7 +32,7 @@ def _get_auth0_config() -> dict[str, str]:
     """Get Auth0 configuration from environment variables."""
     domain = os.getenv('AUTH0_DOMAIN', '')
     audience = os.getenv('AUTH0_AUDIENCE', 'https://alpacon.io/access/')
-    namespace = os.getenv('AUTH0_NAMESPACE', 'https://alpacon.io/')
+    namespace = 'https://alpacon.io/'
 
     if not domain:
         raise ValueError('AUTH0_DOMAIN environment variable is required')

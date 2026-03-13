@@ -117,6 +117,7 @@ class TestRegionAutoDetection:
     @patch('utils.decorators._validate_jwt_workspace', return_value=True)
     @patch('utils.decorators._get_jwt_token')
     @patch('utils.decorators._resolve_region_from_jwt', return_value='dev')
+    @patch.dict('os.environ', {'ALPACON_MCP_AUTH_ENABLED': 'true'})
     async def test_jwt_mode_resolves_region(
         self, mock_resolve, mock_jwt, mock_validate
     ):

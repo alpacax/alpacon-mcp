@@ -14,7 +14,6 @@ import pytest
 AUTH_ENV = {
     'AUTH0_DOMAIN': 'test.us.auth0.com',
     'AUTH0_AUDIENCE': 'https://alpacon.io/access/',
-    'AUTH0_NAMESPACE': 'https://alpacon.io/',
 }
 
 
