@@ -276,7 +276,7 @@ class TestOAuthToken:
         assert call_kwargs.kwargs['data']['client_secret'] == TEST_CLIENT_SECRET
 
     def test_token_fails_without_client_secret(self):
-        """All OAuth endpoints should return 500 when AUTH0_CLIENT_SECRET is missing."""
+        """Token endpoint should return 500 when AUTH0_CLIENT_SECRET is missing."""
         from starlette.applications import Starlette
         from starlette.routing import Route
 
