@@ -16,12 +16,14 @@ from starlette.testclient import TestClient
 # Test configuration constants
 TEST_AUTH0_DOMAIN = 'test.us.auth0.com'
 TEST_CLIENT_ID = 'test-client-id'
+TEST_CLIENT_SECRET = 'test-client-secret'
 TEST_RESOURCE_URL = 'https://mcp.test.alpacon.io'
 
 # Environment variables needed for OAuth config
 OAUTH_ENV = {
     'AUTH0_DOMAIN': TEST_AUTH0_DOMAIN,
     'AUTH0_CLIENT_ID': TEST_CLIENT_ID,
+    'AUTH0_CLIENT_SECRET': TEST_CLIENT_SECRET,
     'AUTH0_AUDIENCE': 'https://alpacon.io/access/',
     'ALPACON_MCP_AUTH_ENABLED': 'true',
     'ALPACON_MCP_RESOURCE_URL': TEST_RESOURCE_URL,
