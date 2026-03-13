@@ -690,6 +690,8 @@ async def get_top_servers(
     combined_data = {}
     for metric, result in zip(tasks.keys(), results, strict=False):
         if isinstance(result, BaseException):
+            if not isinstance(result, Exception):
+                raise result  # Re-raise CancelledError, KeyboardInterrupt, etc.
             combined_data[metric] = {'error': str(result), 'available': False}
         else:
             combined_data[metric] = result

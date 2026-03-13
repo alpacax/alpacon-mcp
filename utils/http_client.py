@@ -161,7 +161,7 @@ class AlpaconHTTPClient:
         token: str | None = None,
         headers: dict[str, str] | None = None,
         json_data: dict[str, Any] | None = None,
-        params: dict[str, str] | None = None,
+        params: dict[str, Any] | None = None,
         timeout: float | None = None,
     ) -> dict[str, Any]:
         """Execute HTTP request with retry logic.
@@ -399,7 +399,7 @@ class AlpaconHTTPClient:
         # Convert exceptions to error dictionaries
         processed_results: list[dict[str, Any]] = []
         for i, result in enumerate(results):
-            if isinstance(result, BaseException):
+            if isinstance(result, Exception):
                 processed_results.append(
                     {
                         'error': 'Request Exception',
@@ -407,6 +407,8 @@ class AlpaconHTTPClient:
                         'request_index': i,
                     }
                 )
+            elif isinstance(result, BaseException):
+                raise result  # Re-raise CancelledError, KeyboardInterrupt, etc.
             else:
                 processed_results.append(result)
 

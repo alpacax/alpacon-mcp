@@ -59,7 +59,7 @@ async def list_workspaces(region: str = '') -> dict[str, Any]:
     lists workspaces across all configured regions.
 
     In server (HTTP/JWT) mode, decodes the JWT token to extract workspace information.
-    The region parameter is ignored in this mode.
+    If region is provided, it filters results to that region only.
 
     Args:
         region: Region filter (e.g., ap1, us1, eu1, dev). Empty string means all regions.

@@ -286,10 +286,10 @@ async def get_disk_info(
     disk_info = {
         'server_id': server_id,
         'disks': disks_result
-        if not isinstance(disks_result, BaseException)
+        if not isinstance(disks_result, Exception)
         else {'error': str(disks_result)},
         'partitions': partitions_result
-        if not isinstance(partitions_result, BaseException)
+        if not isinstance(partitions_result, Exception)
         else {'error': str(partitions_result)},
         'region': region,
         'workspace': workspace,

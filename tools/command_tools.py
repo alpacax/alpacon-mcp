@@ -271,6 +271,8 @@ async def execute_command_multi_server(
         for i, result in enumerate(results):
             server_id = server_ids[i]
             if isinstance(result, BaseException):
+                if not isinstance(result, Exception):
+                    raise result  # Re-raise CancelledError, KeyboardInterrupt, etc.
                 deploy_results[server_id] = {
                     'status': 'error',
                     'message': f'Exception occurred: {str(result)}',
