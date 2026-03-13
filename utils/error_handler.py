@@ -175,7 +175,7 @@ def format_user_friendly_error(
     elif error_code == '404' and context.get('workspace'):
         error_info['message'] = f"Workspace '{context['workspace']}' not found."
 
-    result = {
+    result: dict[str, Any] = {
         'status': 'error',
         'error_code': error_code,
         'message': error_info['message'],
@@ -190,7 +190,7 @@ def format_user_friendly_error(
 
 
 def format_validation_error(
-    field: str, value: Any, expected_format: str = None
+    field: str, value: Any, expected_format: str | None = None
 ) -> dict[str, Any]:
     """Format validation error with helpful message.
 

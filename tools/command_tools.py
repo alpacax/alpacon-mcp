@@ -17,14 +17,14 @@ async def execute_command_with_acl(
     username: str | None = None,
     groupname: str = 'alpacon',
     env: dict[str, str] | None = None,
-    region: str = 'ap1',
+    region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
     """Execute a command on a specified server using Command API (requires ACL permission)."""
     token = kwargs.get('token')
 
     # Prepare command data
-    command_data = {
+    command_data: dict[str, Any] = {
         'server': server_id,
         'shell': shell,
         'line': command,
@@ -59,7 +59,7 @@ async def execute_command_with_acl(
 
 @mcp_tool_handler(description='Get command execution result by command ID')
 async def get_command_result(
-    command_id: str, workspace: str, region: str = 'ap1', **kwargs
+    command_id: str, workspace: str, region: str = '', **kwargs
 ) -> dict[str, Any]:
     """Get the result of a previously executed command."""
     token = kwargs.get('token')
@@ -81,7 +81,7 @@ async def list_commands(
     workspace: str,
     server_id: str | None = None,
     limit: int = 20,
-    region: str = 'ap1',
+    region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
     """List recent commands executed on servers."""
@@ -122,7 +122,7 @@ async def execute_command_sync(
     groupname: str = 'alpacon',
     env: dict[str, str] | None = None,
     timeout: int = 30,
-    region: str = 'ap1',
+    region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
     """Execute a command and wait for the result using Command API (requires ACL permission)."""
@@ -234,7 +234,7 @@ async def execute_command_multi_server(
     username: str | None = None,
     groupname: str = 'alpacon',
     env: dict[str, str] | None = None,
-    region: str = 'ap1',
+    region: str = '',
     parallel: bool = True,
     **kwargs,
 ) -> dict[str, Any]:
@@ -270,7 +270,7 @@ async def execute_command_multi_server(
 
         for i, result in enumerate(results):
             server_id = server_ids[i]
-            if isinstance(result, Exception):
+            if isinstance(result, BaseException):
                 deploy_results[server_id] = {
                     'status': 'error',
                     'message': f'Exception occurred: {str(result)}',

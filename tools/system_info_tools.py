@@ -10,7 +10,7 @@ from utils.http_client import http_client
 
 @mcp_tool_handler(description='Get system information for a server')
 async def get_system_info(
-    server_id: str, workspace: str, region: str = 'ap1', **kwargs
+    server_id: str, workspace: str, region: str = '', **kwargs
 ) -> dict[str, Any]:
     """Get detailed system information for a server.
 
@@ -40,7 +40,7 @@ async def get_system_info(
 
 @mcp_tool_handler(description='Get OS version information for a server')
 async def get_os_version(
-    server_id: str, workspace: str, region: str = 'ap1', **kwargs
+    server_id: str, workspace: str, region: str = '', **kwargs
 ) -> dict[str, Any]:
     """Get operating system version information for a server.
 
@@ -74,7 +74,7 @@ async def list_system_users(
     workspace: str,
     username_filter: str | None = None,
     login_enabled_only: bool = False,
-    region: str = 'ap1',
+    region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
     """List system users on a server.
@@ -122,7 +122,7 @@ async def list_system_groups(
     server_id: str,
     workspace: str,
     groupname_filter: str | None = None,
-    region: str = 'ap1',
+    region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
     """List system groups on a server.
@@ -168,7 +168,7 @@ async def list_system_packages(
     package_name: str | None = None,
     architecture: str | None = None,
     limit: int = 100,
-    region: str = 'ap1',
+    region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
     """List installed system packages on a server.
@@ -215,7 +215,7 @@ async def list_system_packages(
 
 @mcp_tool_handler(description='Get network interfaces information')
 async def get_network_interfaces(
-    server_id: str, workspace: str, region: str = 'ap1', **kwargs
+    server_id: str, workspace: str, region: str = '', **kwargs
 ) -> dict[str, Any]:
     """Get network interfaces information for a server.
 
@@ -245,7 +245,7 @@ async def get_network_interfaces(
 
 @mcp_tool_handler(description='Get disk and partition information')
 async def get_disk_info(
-    server_id: str, workspace: str, region: str = 'ap1', **kwargs
+    server_id: str, workspace: str, region: str = '', **kwargs
 ) -> dict[str, Any]:
     """Get disk and partition information for a server.
 
@@ -277,18 +277,19 @@ async def get_disk_info(
     )
 
     # Wait for both requests
-    disks_result, partitions_result = await asyncio.gather(
+    gather_results = await asyncio.gather(
         disks_task, partitions_task, return_exceptions=True
     )
+    disks_result, partitions_result = gather_results
 
     # Prepare response
     disk_info = {
         'server_id': server_id,
         'disks': disks_result
-        if not isinstance(disks_result, Exception)
+        if not isinstance(disks_result, BaseException)
         else {'error': str(disks_result)},
         'partitions': partitions_result
-        if not isinstance(partitions_result, Exception)
+        if not isinstance(partitions_result, BaseException)
         else {'error': str(partitions_result)},
         'region': region,
         'workspace': workspace,
@@ -299,7 +300,7 @@ async def get_disk_info(
 
 @mcp_tool_handler(description='Get system time information')
 async def get_system_time(
-    server_id: str, workspace: str, region: str = 'ap1', **kwargs
+    server_id: str, workspace: str, region: str = '', **kwargs
 ) -> dict[str, Any]:
     """Get system time and uptime information for a server.
 
@@ -329,7 +330,7 @@ async def get_system_time(
 
 @mcp_tool_handler(description='Get comprehensive server overview')
 async def get_server_overview(
-    server_id: str, workspace: str, region: str = 'ap1', **kwargs
+    server_id: str, workspace: str, region: str = '', **kwargs
 ) -> dict[str, Any]:
     """Get comprehensive overview of server system information.
 
@@ -381,8 +382,8 @@ async def get_server_overview(
         else:
             overview[key] = {
                 'error': str(result)
-                if isinstance(result, Exception)
-                else result.get('message', 'Unknown error')
+                if isinstance(result, BaseException)
+                else result.get('message', 'Unknown error')  # type: ignore[union-attr]
             }
 
     return success_response(data=overview)

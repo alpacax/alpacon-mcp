@@ -46,7 +46,7 @@ class AlpaconLogger:
             logger = logging.getLogger(f'alpacon_mcp.{name}')
 
             # Add context information
-            logger = logging.LoggerAdapter(
+            logger = logging.LoggerAdapter(  # type: ignore[assignment]
                 logger, {'component': name, 'pid': os.getpid()}
             )
 

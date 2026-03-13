@@ -15,7 +15,7 @@ async def webftp_session_create(
     server_id: str,
     workspace: str,
     username: str | None = None,
-    region: str = 'ap1',
+    region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
     """Create a new WebFTP session.
@@ -58,7 +58,7 @@ async def webftp_session_create(
 
 @mcp_tool_handler(description='Get list of WebFTP sessions')
 async def webftp_sessions_list(
-    workspace: str, server_id: str | None = None, region: str = 'ap1', **kwargs
+    workspace: str, server_id: str | None = None, region: str = '', **kwargs
 ) -> dict[str, Any]:
     """Get list of WebFTP sessions.
 
@@ -98,7 +98,7 @@ async def webftp_upload_file(
     remote_file_path: str,
     workspace: str,
     username: str | None = None,
-    region: str = 'ap1',
+    region: str = '',
     allow_overwrite: bool = True,
     **kwargs,
 ) -> dict[str, Any]:
@@ -221,7 +221,7 @@ async def webftp_download_file(
     workspace: str,
     resource_type: str = 'file',
     username: str | None = None,
-    region: str = 'ap1',
+    region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
     """Download a file or folder using WebFTP downloads API.
@@ -325,7 +325,7 @@ async def webftp_download_file(
 
 @mcp_tool_handler(description='List uploaded files (upload history)')
 async def webftp_uploads_list(
-    workspace: str, server_id: str | None = None, region: str = 'ap1', **kwargs
+    workspace: str, server_id: str | None = None, region: str = '', **kwargs
 ) -> dict[str, Any]:
     """List uploaded files (upload history).
 
@@ -360,7 +360,7 @@ async def webftp_uploads_list(
 
 @mcp_tool_handler(description='List download requests (download history)')
 async def webftp_downloads_list(
-    workspace: str, server_id: str | None = None, region: str = 'ap1', **kwargs
+    workspace: str, server_id: str | None = None, region: str = '', **kwargs
 ) -> dict[str, Any]:
     """List download requests (download history).
 

@@ -15,7 +15,7 @@ from utils.http_client import http_client
 @mcp_tool_handler(description='List all IAM users in workspace')
 async def list_iam_users(
     workspace: str,
-    region: str = 'ap1',
+    region: str = '',
     page: int | None = None,
     page_size: int | None = None,
     **kwargs,
@@ -54,7 +54,7 @@ async def list_iam_users(
 
 @mcp_tool_handler(description='Get detailed information about a specific IAM user')
 async def get_iam_user(
-    user_id: str, workspace: str, region: str = 'ap1', **kwargs
+    user_id: str, workspace: str, region: str = '', **kwargs
 ) -> dict[str, Any]:
     """Get detailed information about a specific IAM user.
 
@@ -90,7 +90,7 @@ async def create_iam_user(
     last_name: str | None = None,
     is_active: bool = True,
     groups: list[str] | None = None,
-    region: str = 'ap1',
+    region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
     """Create a new IAM user.
@@ -143,7 +143,7 @@ async def update_iam_user(
     last_name: str | None = None,
     is_active: bool | None = None,
     groups: list[str] | None = None,
-    region: str = 'ap1',
+    region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
     """Update an existing IAM user.
@@ -164,7 +164,7 @@ async def update_iam_user(
     token = kwargs.get('token')
 
     # Prepare update data (only include provided fields)
-    update_data = {}
+    update_data: dict[str, Any] = {}
     if email is not None:
         update_data['email'] = email
     if first_name is not None:
@@ -195,7 +195,7 @@ async def update_iam_user(
 
 @mcp_tool_handler(description='Delete an IAM user')
 async def delete_iam_user(
-    user_id: str, workspace: str, region: str = 'ap1', **kwargs
+    user_id: str, workspace: str, region: str = '', **kwargs
 ) -> dict[str, Any]:
     """Delete an IAM user.
 
@@ -230,7 +230,7 @@ async def delete_iam_user(
 @mcp_tool_handler(description='List all IAM groups in workspace')
 async def list_iam_groups(
     workspace: str,
-    region: str = 'ap1',
+    region: str = '',
     page: int | None = None,
     page_size: int | None = None,
     **kwargs,
@@ -273,7 +273,7 @@ async def create_iam_group(
     workspace: str,
     description: str | None = None,
     permissions: list[str] | None = None,
-    region: str = 'ap1',
+    region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
     """Create a new IAM group.
@@ -291,7 +291,7 @@ async def create_iam_group(
     token = kwargs.get('token')
 
     # Prepare group data
-    group_data = {'name': name}
+    group_data: dict[str, Any] = {'name': name}
 
     if description:
         group_data['description'] = description

@@ -76,7 +76,7 @@ async def get_cpu_usage(
     workspace: str,
     start_date: str | None = None,
     end_date: str | None = None,
-    region: str = 'ap1',
+    region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
     """Get CPU usage metrics for a server with parsed statistics.
@@ -192,7 +192,7 @@ async def get_memory_usage(
     workspace: str,
     start_date: str | None = None,
     end_date: str | None = None,
-    region: str = 'ap1',
+    region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
     """Get memory usage metrics for a server with parsed statistics.
@@ -301,7 +301,7 @@ async def get_disk_usage(
     partition: str | None = None,
     start_date: str | None = None,
     end_date: str | None = None,
-    region: str = 'ap1',
+    region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
     """Get disk usage metrics for a server with parsed statistics.
@@ -493,7 +493,7 @@ async def get_disk_io(
     device: str | None = None,
     start_date: str | None = None,
     end_date: str | None = None,
-    region: str = 'ap1',
+    region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
     """Get disk I/O performance metrics for a server.
@@ -552,7 +552,7 @@ async def get_network_traffic(
     interface: str | None = None,
     start_date: str | None = None,
     end_date: str | None = None,
-    region: str = 'ap1',
+    region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
     """Get network traffic metrics for a server with parsed statistics.
@@ -609,7 +609,7 @@ async def get_network_traffic(
     description='Get top performing servers by metrics (supports multiple metrics in one call)'
 )
 async def get_top_servers(
-    workspace: str, metric_types: str = '', region: str = 'ap1', **kwargs
+    workspace: str, metric_types: str = '', region: str = '', **kwargs
 ) -> dict[str, Any]:
     """Get top 5 servers by specified metric types in the last 24 hours.
 
@@ -689,7 +689,7 @@ async def get_top_servers(
     # Multiple metrics - combine into dict
     combined_data = {}
     for metric, result in zip(tasks.keys(), results, strict=False):
-        if isinstance(result, Exception):
+        if isinstance(result, BaseException):
             combined_data[metric] = {'error': str(result), 'available': False}
         else:
             combined_data[metric] = result
@@ -704,7 +704,7 @@ async def get_top_servers(
 
 @mcp_tool_handler(description='Get alert rules')
 async def get_alert_rules(
-    workspace: str, server_id: str | None = None, region: str = 'ap1', **kwargs
+    workspace: str, server_id: str | None = None, region: str = '', **kwargs
 ) -> dict[str, Any]:
     """Get alert rules for servers.
 
@@ -739,7 +739,7 @@ async def get_alert_rules(
 
 @mcp_tool_handler(description='Get server metrics summary')
 async def get_server_metrics_summary(
-    server_id: str, workspace: str, hours: int = 24, region: str = 'ap1', **kwargs
+    server_id: str, workspace: str, hours: int = 24, region: str = '', **kwargs
 ) -> dict[str, Any]:
     """Get comprehensive metrics summary for a server.
 
@@ -852,9 +852,10 @@ async def get_server_metrics_summary(
     )
 
     # Wait for all metrics
-    cpu_result, memory_result, disk_result, traffic_result = await asyncio.gather(
+    gather_results = await asyncio.gather(
         cpu_task, memory_task, disk_task, traffic_task, return_exceptions=True
     )
+    cpu_result, memory_result, disk_result, traffic_result = gather_results
 
     # Helper function to extract summary from metric result (from http_client directly)
     def extract_summary(result, metric_type):

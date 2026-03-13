@@ -19,7 +19,7 @@ def _make_decorated_func(extra_params=None):
     extra_params = extra_params or []
 
     # Dynamically build the function signature string
-    param_parts = ['workspace: str', "region: str = 'ap1'"]
+    param_parts = ['workspace: str', "region: str = ''"]
     for p in extra_params:
         if p == 'server_ids':
             param_parts.append(f'{p}: list = None')
@@ -50,11 +50,15 @@ class TestRegionValidation:
         assert result['field'] == 'region'
 
     @pytest.mark.asyncio
-    async def test_empty_region_rejected(self):
+    async def test_empty_region_triggers_auto_detection(self):
+        """Empty region triggers auto-detection from token.json or JWT instead of rejection."""
         func = _make_decorated_func()
         result = await func(workspace='demo', region='')
+        # Empty region no longer causes a validation error on the 'region' field.
+        # Instead, it triggers auto-detection which either resolves a region
+        # or returns an error about missing tokens/regions.
         assert result['status'] == 'error'
-        assert result['field'] == 'region'
+        assert 'field' not in result or result.get('field') != 'region'
 
     @pytest.mark.asyncio
     @patch('utils.decorators.validate_token', return_value='fake-token')
@@ -312,11 +316,12 @@ class TestValidationOrder:
     """Verify that validation fires in the correct order."""
 
     @pytest.mark.asyncio
-    async def test_region_checked_before_workspace(self):
-        """Both region and workspace are invalid; region error should come first."""
+    async def test_workspace_checked_before_region(self):
+        """Both region and workspace are invalid; workspace error comes first
+        because workspace is needed for region auto-detection."""
         func = _make_decorated_func()
         result = await func(workspace='bad workspace!', region='zzz')
-        assert result['field'] == 'region'
+        assert result['field'] == 'workspace'
 
     @pytest.mark.asyncio
     async def test_workspace_checked_before_server_id(self):

@@ -6,57 +6,113 @@ from server import mcp
 from utils.common import success_response
 
 
-@mcp.tool(description='Get list of available workspaces')
-async def list_workspaces(region: str = 'ap1') -> dict[str, Any]:
-    """Get list of available workspaces.
+def _collect_workspaces_from_tokens(
+    all_tokens: dict[str, Any],
+    target_region: str = '',
+) -> list[dict[str, Any]]:
+    """Collect workspace info from token.json data.
 
     Args:
-        region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
+        all_tokens: Token data from TokenManager
+        target_region: If provided, filter to this region only. Empty means all regions.
+
+    Returns:
+        List of workspace info dicts
+    """
+    workspaces = []
+    for region_key, region_data in all_tokens.items():
+        if target_region and region_key != target_region:
+            continue
+
+        if isinstance(region_data, dict):
+            for workspace_key, workspace_data in region_data.items():
+                if isinstance(workspace_data, dict):
+                    has_token = bool(workspace_data.get('token'))
+                else:
+                    has_token = bool(workspace_data)
+
+                workspaces.append(
+                    {
+                        'workspace': workspace_key,
+                        'region': region_key,
+                        'has_token': has_token,
+                        'domain': f'{workspace_key}.{region_key}.alpacon.io',
+                    }
+                )
+        else:
+            workspaces.append(
+                {
+                    'workspace': region_key,
+                    'region': region_key,
+                    'has_token': bool(region_data),
+                    'domain': f'{region_key}.{region_key}.alpacon.io',
+                }
+            )
+    return workspaces
+
+
+@mcp.tool(description='Get list of available workspaces')
+async def list_workspaces(region: str = '') -> dict[str, Any]:
+    """Get list of available workspaces.
+
+    In local (stdio/SSE) mode, reads from token.json. If region is not specified,
+    lists workspaces across all configured regions.
+
+    In server (HTTP/JWT) mode, decodes the JWT token to extract workspace information.
+    The region parameter is ignored in this mode.
+
+    Args:
+        region: Region filter (e.g., ap1, us1, eu1, dev). Empty string means all regions.
 
     Returns:
         Workspaces list response
     """
+    from utils.decorators import _get_jwt_token, _get_jwt_workspaces
+
+    # Check if running in JWT mode (HTTP transport)
+    jwt_token = _get_jwt_token()
+
+    if jwt_token is not None:
+        # Server mode: extract workspaces from JWT claims
+        jwt_workspaces = _get_jwt_workspaces(jwt_token)
+        workspaces = []
+        for ws in jwt_workspaces:
+            ws_name = ws.get('schema_name', '')
+            ws_region = ws.get('region', '')
+            if region and ws_region != region:
+                continue
+            workspaces.append(
+                {
+                    'workspace': ws_name,
+                    'region': ws_region,
+                    'auth0_id': ws.get('auth0_id', ''),
+                    'domain': f'{ws_name}.{ws_region}.alpacon.io',
+                }
+            )
+
+        return success_response(
+            data={
+                'workspaces': workspaces,
+                'source': 'jwt',
+                'region': region or 'all',
+            },
+            region=region or 'all',
+        )
+
+    # Local mode: read from token.json
     from utils.token_manager import get_token_manager
 
     token_manager = get_token_manager()
-
-    # Get all stored tokens to find available workspaces
     all_tokens = token_manager.get_all_tokens()
-
-    workspaces = []
-    for region_key, region_data in all_tokens.items():
-        if region_key == region:
-            # region_data can be either a dict or a string (token directly)
-            if isinstance(region_data, dict):
-                for workspace_key, workspace_data in region_data.items():
-                    # workspace_data can be either a dict or a string (token directly)
-                    if isinstance(workspace_data, dict):
-                        has_token = bool(workspace_data.get('token'))
-                    else:
-                        # If workspace_data is a string, it's the token itself
-                        has_token = bool(workspace_data)
-
-                    workspaces.append(
-                        {
-                            'workspace': workspace_key,
-                            'region': region_key,
-                            'has_token': has_token,
-                            'domain': f'{workspace_key}.{region_key}.alpacon.io',
-                        }
-                    )
-            else:
-                # If region_data is a string (token directly), it's a single workspace with region name
-                workspaces.append(
-                    {
-                        'workspace': region_key,
-                        'region': region_key,
-                        'has_token': bool(region_data),
-                        'domain': f'{region_key}.{region_key}.alpacon.io',
-                    }
-                )
+    workspaces = _collect_workspaces_from_tokens(all_tokens, target_region=region)
 
     return success_response(
-        data={'workspaces': workspaces, 'region': region}, region=region
+        data={
+            'workspaces': workspaces,
+            'source': 'token_file',
+            'region': region or 'all',
+        },
+        region=region or 'all',
     )
 
 

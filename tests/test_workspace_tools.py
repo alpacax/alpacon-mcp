@@ -31,7 +31,10 @@ def mock_token_manager():
         'eu1': {'compliance': {'token': 'token6'}},
     }
 
-    with patch('utils.token_manager.get_token_manager', return_value=mock_manager):
+    with (
+        patch('utils.token_manager.get_token_manager', return_value=mock_manager),
+        patch('utils.decorators._get_jwt_token', return_value=None),
+    ):
         yield mock_manager
 
 
@@ -48,7 +51,7 @@ class TestListWorkspaces:
         # Verify response structure
         assert result['status'] == 'success'
         assert result['region'] == 'ap1'
-        assert 'data' in result
+        assert result['data']['source'] == 'token_file'
         assert 'workspaces' in result['data']
 
         # Verify workspace data
@@ -139,16 +142,18 @@ class TestListWorkspaces:
 
     @pytest.mark.asyncio
     async def test_list_workspaces_default_region(self, mock_token_manager):
-        """Test workspace listing with default region (ap1)."""
+        """Test workspace listing without region returns all regions."""
         from tools.workspace_tools import list_workspaces
 
         result = await list_workspaces()
 
         assert result['status'] == 'success'
-        assert result['region'] == 'ap1'
+        assert result['region'] == 'all'
+        assert result['data']['source'] == 'token_file'
 
         workspaces = result['data']['workspaces']
-        assert len(workspaces) == 3
+        # Should include all workspaces from all regions (3 + 2 + 1 = 6)
+        assert len(workspaces) == 6
 
 
 if __name__ == '__main__':
