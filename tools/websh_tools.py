@@ -342,7 +342,7 @@ async def websh_session_create(
         server_id: Server ID to create session on
         workspace: Workspace name. Required parameter
         username: Optional username for the session (if not provided, uses authenticated user's name)
-        region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
+        region: Region (ap1, us1, eu1, dev, etc.). Auto-detected if not provided
 
     Returns:
         Session creation response with WebSocket connection established
@@ -418,7 +418,7 @@ async def websh_sessions_list(
     Args:
         workspace: Workspace name. Required parameter
         server_id: Optional server ID to filter sessions
-        region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
+        region: Region (ap1, us1, eu1, dev, etc.). Auto-detected if not provided
 
     Returns:
         Sessions list response
@@ -455,7 +455,7 @@ async def websh_session_reconnect(
     Args:
         session_id: Existing Websh session ID to reconnect to
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
+        region: Region (ap1, us1, eu1, dev, etc.). Auto-detected if not provided
 
     Returns:
         Reconnection response with new WebSocket URL and user channel
@@ -509,7 +509,7 @@ async def websh_session_terminate(
     Args:
         session_id: Websh session ID to terminate
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
+        region: Region (ap1, us1, eu1, dev, etc.). Auto-detected if not provided
 
     Returns:
         Session termination response
@@ -874,7 +874,7 @@ async def execute_command(
         command: Command to execute
         workspace: Workspace name. Required parameter
         username: Optional username for the session
-        region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
+        region: Region (ap1, us1, eu1, dev, etc.). Auto-detected if not provided
         timeout: Command timeout in seconds (default: 10)
 
     Returns:
@@ -937,7 +937,7 @@ async def execute_command_batch(
         commands: List of commands to execute
         workspace: Workspace name. Required parameter
         username: Optional username for the session
-        region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
+        region: Region (ap1, us1, eu1, dev, etc.). Auto-detected if not provided
         timeout: Total timeout in seconds (default: 30)
 
     Returns:

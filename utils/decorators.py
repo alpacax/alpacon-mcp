@@ -201,7 +201,9 @@ def with_token_validation(func: Callable) -> Callable:
             if err_msg:
                 return error_response(err_msg)
             region = resolved_region
-            # Update kwargs so downstream functions receive the resolved region
+            # Update bound arguments to avoid passing region twice
+            # (handles both positional and keyword cases)
+            bound_args.arguments['region'] = region
             kwargs['region'] = region
 
         # Validate region format

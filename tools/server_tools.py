@@ -13,7 +13,7 @@ async def list_servers(workspace: str, region: str = '', **kwargs) -> dict[str, 
 
     Args:
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
+        region: Region (ap1, us1, eu1, dev, etc.). Auto-detected if not provided
 
     Returns:
         Server list response
@@ -49,7 +49,7 @@ async def get_server(
     Args:
         server_id: Server ID
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
+        region: Region (ap1, us1, eu1, dev, etc.). Auto-detected if not provided
 
     Returns:
         Server details response
@@ -98,7 +98,7 @@ async def list_server_notes(
     Args:
         server_id: Server ID
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
+        region: Region (ap1, us1, eu1, dev, etc.). Auto-detected if not provided
 
     Returns:
         Server notes list response
@@ -135,7 +135,7 @@ async def create_server_note(
         title: Note title
         content: Note content
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
+        region: Region (ap1, us1, eu1, dev, etc.). Auto-detected if not provided
 
     Returns:
         Note creation response
