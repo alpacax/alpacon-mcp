@@ -263,6 +263,56 @@ class TestOAuthToken:
         call_kwargs = mock_client.post.call_args
         assert call_kwargs.kwargs['data']['client_id'] == TEST_CLIENT_ID
 
+    def test_token_injects_configured_client_secret(self, oauth_app):
+        """Token proxy should inject client_secret for Auth0 RWA token exchange."""
+        mock_client = _mock_auth0_response()
+        with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
+            response = oauth_app.post(
+                '/oauth/token',
+                data={'grant_type': 'authorization_code', 'code': 'test-code'},
+            )
+        assert response.status_code == 200
+        call_kwargs = mock_client.post.call_args
+        assert call_kwargs.kwargs['data']['client_secret'] == TEST_CLIENT_SECRET
+
+    def test_token_fails_without_client_secret(self):
+        """All OAuth endpoints should return 500 when AUTH0_CLIENT_SECRET is missing."""
+        from starlette.applications import Starlette
+        from starlette.routing import Route
+
+        routes = []
+
+        class MockMCPServer:
+            def custom_route(self, path, methods=None):
+                def decorator(func):
+                    routes.append(Route(path, func, methods=methods))
+                    return func
+
+                return decorator
+
+        env_without_secret = {
+            'AUTH0_DOMAIN': TEST_AUTH0_DOMAIN,
+            'AUTH0_CLIENT_ID': TEST_CLIENT_ID,
+            'AUTH0_AUDIENCE': 'https://alpacon.io/access/',
+            'ALPACON_MCP_AUTH_ENABLED': 'true',
+            'ALPACON_MCP_RESOURCE_URL': TEST_RESOURCE_URL,
+        }
+
+        mock_server = MockMCPServer()
+        with patch.dict('os.environ', env_without_secret, clear=False):
+            # Unset AUTH0_CLIENT_SECRET if present
+            with patch.dict('os.environ', {'AUTH0_CLIENT_SECRET': ''}, clear=False):
+                from utils.oauth import register_oauth_routes
+
+                register_oauth_routes(mock_server)
+                app = Starlette(routes=routes)
+                client = TestClient(app, raise_server_exceptions=False)
+                response = client.post(
+                    '/oauth/token',
+                    data={'grant_type': 'authorization_code', 'code': 'test-code'},
+                )
+        assert response.status_code == 500
+
     def test_token_overrides_redirect_uri_for_auth_code(self, oauth_app):
         """Token exchange should use server's callback URL, not client's."""
         mock_client = _mock_auth0_response()
