@@ -128,3 +128,9 @@ known-first-party = ["tools", "utils", "server"]
 quote-style = "single"
 indent-style = "space"
 line-ending = "auto"
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+namespace_packages = true
+explicit_package_bases = true

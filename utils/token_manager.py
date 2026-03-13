@@ -162,6 +162,43 @@ class TokenManager:
         """
         return self.tokens
 
+    def get_available_regions(self) -> list[str]:
+        """Get list of regions that have configured tokens.
+
+        Returns:
+            List of region names (e.g., ['ap1'], ['dev'], ['ap1', 'us1'])
+        """
+        return list(self.tokens.keys())
+
+    def get_default_region(self) -> str | None:
+        """Get default region if only one region is configured.
+
+        Returns:
+            Region name if exactly one region exists, None otherwise
+        """
+        regions = self.get_available_regions()
+        if len(regions) == 1:
+            return regions[0]
+        return None
+
+    def find_region_for_workspace(self, workspace: str) -> str | None:
+        """Find which region contains the given workspace.
+
+        Args:
+            workspace: Workspace name to look up
+
+        Returns:
+            Region name if found in exactly one region, None otherwise
+        """
+        matching_regions = [
+            region
+            for region, workspaces in self.tokens.items()
+            if isinstance(workspaces, dict) and workspace in workspaces
+        ]
+        if len(matching_regions) == 1:
+            return matching_regions[0]
+        return None
+
     def remove_token(self, region: str, workspace: str) -> dict[str, str]:
         """Remove token for specific region and workspace.
 

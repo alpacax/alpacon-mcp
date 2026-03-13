@@ -19,7 +19,7 @@ def _make_decorated_func(extra_params=None):
     extra_params = extra_params or []
 
     # Dynamically build the function signature string
-    param_parts = ['workspace: str', "region: str = 'ap1'"]
+    param_parts = ['workspace: str', "region: str = ''"]
     for p in extra_params:
         if p == 'server_ids':
             param_parts.append(f'{p}: list = None')
@@ -50,11 +50,15 @@ class TestRegionValidation:
         assert result['field'] == 'region'
 
     @pytest.mark.asyncio
-    async def test_empty_region_rejected(self):
+    async def test_empty_region_triggers_auto_detection(self):
+        """Empty region triggers auto-detection from token.json or JWT instead of rejection."""
         func = _make_decorated_func()
         result = await func(workspace='demo', region='')
+        # Empty region no longer causes a validation error on the 'region' field.
+        # Instead, it triggers auto-detection which either resolves a region
+        # or returns an error about missing tokens/regions.
         assert result['status'] == 'error'
-        assert result['field'] == 'region'
+        assert 'field' not in result or result.get('field') != 'region'
 
     @pytest.mark.asyncio
     @patch('utils.decorators.validate_token', return_value='fake-token')
@@ -70,6 +74,74 @@ class TestRegionValidation:
         for region in ('ap1', 'us1', 'eu1', 'dev'):
             result = await func(workspace='demo', region=region)
             assert result['status'] == 'success', f"Region '{region}' should be valid"
+
+
+# ---------------------------------------------------------------------------
+# Region auto-detection success paths
+# ---------------------------------------------------------------------------
+
+
+class TestRegionAutoDetection:
+    """Tests that region auto-detection resolves correctly from token.json and JWT."""
+
+    @pytest.mark.asyncio
+    @patch('utils.decorators.validate_token', return_value='fake-token')
+    @patch('utils.decorators._get_jwt_token', return_value=None)
+    @patch('utils.token_manager.get_token_manager')
+    async def test_single_region_auto_detected(self, mock_tm, mock_jwt, mock_token):
+        """When token.json has exactly one region and workspace not found, falls back to default."""
+        mock_manager = mock_tm.return_value
+        mock_manager.find_region_for_workspace.return_value = None
+        mock_manager.get_default_region.return_value = 'dev'
+
+        func = _make_decorated_func()
+        result = await func(workspace='demo', region='')
+        assert result['status'] == 'success'
+
+    @pytest.mark.asyncio
+    @patch('utils.decorators.validate_token', return_value='fake-token')
+    @patch('utils.decorators._get_jwt_token', return_value=None)
+    @patch('utils.token_manager.get_token_manager')
+    async def test_workspace_lookup_resolves_region(
+        self, mock_tm, mock_jwt, mock_token
+    ):
+        """When workspace exists in exactly one region, auto-detection finds it."""
+        mock_manager = mock_tm.return_value
+        mock_manager.find_region_for_workspace.return_value = 'ap1'
+
+        func = _make_decorated_func()
+        result = await func(workspace='demo', region='')
+        assert result['status'] == 'success'
+
+    @pytest.mark.asyncio
+    @patch('utils.decorators._validate_jwt_workspace', return_value=True)
+    @patch('utils.decorators._get_jwt_token')
+    @patch('utils.decorators._resolve_region_from_jwt', return_value='dev')
+    async def test_jwt_mode_resolves_region(
+        self, mock_resolve, mock_jwt, mock_validate
+    ):
+        """In JWT mode, region is resolved from JWT claims."""
+        mock_jwt.return_value = 'header.payload.signature'
+
+        func = _make_decorated_func()
+        result = await func(workspace='demo', region='')
+        assert result['status'] == 'success'
+
+    @pytest.mark.asyncio
+    @patch('utils.decorators._get_jwt_token', return_value=None)
+    @patch('utils.token_manager.get_token_manager')
+    async def test_ambiguous_region_returns_error(self, mock_tm, mock_jwt):
+        """When workspace exists in multiple regions and no default, auto-detection fails."""
+        mock_manager = mock_tm.return_value
+        mock_manager.find_region_for_workspace.return_value = None
+        mock_manager.get_default_region.return_value = None
+        mock_manager.get_available_regions.return_value = ['ap1', 'dev']
+
+        func = _make_decorated_func()
+        result = await func(workspace='demo', region='')
+        assert result['status'] == 'error'
+        # Should not be a 'region' field validation error, but a resolution error
+        assert result.get('field') != 'region'
 
 
 # ---------------------------------------------------------------------------
@@ -312,11 +384,12 @@ class TestValidationOrder:
     """Verify that validation fires in the correct order."""
 
     @pytest.mark.asyncio
-    async def test_region_checked_before_workspace(self):
-        """Both region and workspace are invalid; region error should come first."""
+    async def test_workspace_checked_before_region(self):
+        """Both region and workspace are invalid; workspace error comes first
+        because workspace is needed for region auto-detection."""
         func = _make_decorated_func()
         result = await func(workspace='bad workspace!', region='zzz')
-        assert result['field'] == 'region'
+        assert result['field'] == 'workspace'
 
     @pytest.mark.asyncio
     async def test_workspace_checked_before_server_id(self):

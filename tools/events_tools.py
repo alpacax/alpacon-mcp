@@ -13,7 +13,7 @@ async def list_events(
     server_id: str | None = None,
     reporter: str | None = None,
     limit: int = 50,
-    region: str = 'ap1',
+    region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
     """List events from servers."""
@@ -46,7 +46,7 @@ async def list_events(
 
 @mcp_tool_handler(description='Get event details by ID')
 async def get_event(
-    event_id: str, workspace: str, region: str = 'ap1', **kwargs
+    event_id: str, workspace: str, region: str = '', **kwargs
 ) -> dict[str, Any]:
     """Get detailed information about a specific event."""
     token = kwargs.get('token')
@@ -69,7 +69,7 @@ async def search_events(
     workspace: str,
     server_id: str | None = None,
     limit: int = 20,
-    region: str = 'ap1',
+    region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
     """Search events by server name, reporter, record, or description."""

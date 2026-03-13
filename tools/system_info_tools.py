@@ -10,14 +10,14 @@ from utils.http_client import http_client
 
 @mcp_tool_handler(description='Get system information for a server')
 async def get_system_info(
-    server_id: str, workspace: str, region: str = 'ap1', **kwargs
+    server_id: str, workspace: str, region: str = '', **kwargs
 ) -> dict[str, Any]:
     """Get detailed system information for a server.
 
     Args:
         server_id: Server ID to get system info for
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
         System information response
@@ -40,14 +40,14 @@ async def get_system_info(
 
 @mcp_tool_handler(description='Get OS version information for a server')
 async def get_os_version(
-    server_id: str, workspace: str, region: str = 'ap1', **kwargs
+    server_id: str, workspace: str, region: str = '', **kwargs
 ) -> dict[str, Any]:
     """Get operating system version information for a server.
 
     Args:
         server_id: Server ID to get OS info for
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
         OS version information response
@@ -74,7 +74,7 @@ async def list_system_users(
     workspace: str,
     username_filter: str | None = None,
     login_enabled_only: bool = False,
-    region: str = 'ap1',
+    region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
     """List system users on a server.
@@ -84,7 +84,7 @@ async def list_system_users(
         workspace: Workspace name. Required parameter
         username_filter: Optional username to search for
         login_enabled_only: Only return users that can login. Defaults to False
-        region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
         System users list response
@@ -122,7 +122,7 @@ async def list_system_groups(
     server_id: str,
     workspace: str,
     groupname_filter: str | None = None,
-    region: str = 'ap1',
+    region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
     """List system groups on a server.
@@ -131,7 +131,7 @@ async def list_system_groups(
         server_id: Server ID to get groups from
         workspace: Workspace name. Required parameter
         groupname_filter: Optional group name to search for
-        region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
         System groups list response
@@ -168,7 +168,7 @@ async def list_system_packages(
     package_name: str | None = None,
     architecture: str | None = None,
     limit: int = 100,
-    region: str = 'ap1',
+    region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
     """List installed system packages on a server.
@@ -179,7 +179,7 @@ async def list_system_packages(
         package_name: Optional package name to search for
         architecture: Optional architecture filter (e.g., 'x86_64', 'aarch64')
         limit: Maximum number of packages to return. Defaults to 100
-        region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
         System packages list response
@@ -215,14 +215,14 @@ async def list_system_packages(
 
 @mcp_tool_handler(description='Get network interfaces information')
 async def get_network_interfaces(
-    server_id: str, workspace: str, region: str = 'ap1', **kwargs
+    server_id: str, workspace: str, region: str = '', **kwargs
 ) -> dict[str, Any]:
     """Get network interfaces information for a server.
 
     Args:
         server_id: Server ID to get network interfaces for
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
         Network interfaces information response
@@ -245,14 +245,14 @@ async def get_network_interfaces(
 
 @mcp_tool_handler(description='Get disk and partition information')
 async def get_disk_info(
-    server_id: str, workspace: str, region: str = 'ap1', **kwargs
+    server_id: str, workspace: str, region: str = '', **kwargs
 ) -> dict[str, Any]:
     """Get disk and partition information for a server.
 
     Args:
         server_id: Server ID to get disk info for
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
         Disk and partition information response
@@ -277,9 +277,15 @@ async def get_disk_info(
     )
 
     # Wait for both requests
-    disks_result, partitions_result = await asyncio.gather(
+    gather_results = await asyncio.gather(
         disks_task, partitions_task, return_exceptions=True
     )
+    disks_result, partitions_result = gather_results
+
+    # Re-raise BaseExceptions that are not regular Exceptions (e.g. CancelledError)
+    for r in gather_results:
+        if isinstance(r, BaseException) and not isinstance(r, Exception):
+            raise r
 
     # Prepare response
     disk_info = {
@@ -299,14 +305,14 @@ async def get_disk_info(
 
 @mcp_tool_handler(description='Get system time information')
 async def get_system_time(
-    server_id: str, workspace: str, region: str = 'ap1', **kwargs
+    server_id: str, workspace: str, region: str = '', **kwargs
 ) -> dict[str, Any]:
     """Get system time and uptime information for a server.
 
     Args:
         server_id: Server ID to get time info for
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
         System time information response
@@ -329,14 +335,14 @@ async def get_system_time(
 
 @mcp_tool_handler(description='Get comprehensive server overview')
 async def get_server_overview(
-    server_id: str, workspace: str, region: str = 'ap1', **kwargs
+    server_id: str, workspace: str, region: str = '', **kwargs
 ) -> dict[str, Any]:
     """Get comprehensive overview of server system information.
 
     Args:
         server_id: Server ID to get overview for
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
         Comprehensive server overview
@@ -374,6 +380,11 @@ async def get_server_overview(
         'disk_info',
     ]
 
+    # Re-raise BaseExceptions that are not regular Exceptions (e.g. CancelledError)
+    for result in results:
+        if isinstance(result, BaseException) and not isinstance(result, Exception):
+            raise result
+
     for i, result in enumerate(results):
         key = task_keys[i]
         if isinstance(result, dict) and result.get('status') == 'success':
@@ -382,7 +393,7 @@ async def get_server_overview(
             overview[key] = {
                 'error': str(result)
                 if isinstance(result, Exception)
-                else result.get('message', 'Unknown error')
+                else result.get('message', 'Unknown error')  # type: ignore[union-attr]
             }
 
     return success_response(data=overview)

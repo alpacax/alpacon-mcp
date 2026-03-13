@@ -80,6 +80,9 @@ def mock_token_for_integration():
     All decorated tool functions use validate_token() from utils.common,
     which delegates to token_manager.get_token(). This fixture makes
     that call return 'integration-test-token'.
+
+    Note: utils.token_manager.get_token_manager is already patched by the
+    autouse fixture in tests/conftest.py for region auto-detection.
     """
     with patch('utils.common.token_manager') as mock_tm:
         mock_tm.get_token.return_value = 'integration-test-token'

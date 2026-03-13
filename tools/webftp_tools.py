@@ -15,7 +15,7 @@ async def webftp_session_create(
     server_id: str,
     workspace: str,
     username: str | None = None,
-    region: str = 'ap1',
+    region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
     """Create a new WebFTP session.
@@ -24,7 +24,7 @@ async def webftp_session_create(
         server_id: Server ID to create FTP session on
         workspace: Workspace name. Required parameter
         username: Optional username for the FTP session (uses authenticated user if not provided)
-        region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
         FTP session creation response
@@ -58,14 +58,14 @@ async def webftp_session_create(
 
 @mcp_tool_handler(description='Get list of WebFTP sessions')
 async def webftp_sessions_list(
-    workspace: str, server_id: str | None = None, region: str = 'ap1', **kwargs
+    workspace: str, server_id: str | None = None, region: str = '', **kwargs
 ) -> dict[str, Any]:
     """Get list of WebFTP sessions.
 
     Args:
         workspace: Workspace name. Required parameter
         server_id: Optional server ID to filter sessions
-        region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
         FTP sessions list response
@@ -98,7 +98,7 @@ async def webftp_upload_file(
     remote_file_path: str,
     workspace: str,
     username: str | None = None,
-    region: str = 'ap1',
+    region: str = '',
     allow_overwrite: bool = True,
     **kwargs,
 ) -> dict[str, Any]:
@@ -118,7 +118,7 @@ async def webftp_upload_file(
         remote_file_path: Remote path where the file should be uploaded on the server (e.g., "/home/user/file.txt")
         workspace: Workspace name. Required parameter
         username: Optional username for the upload (uses authenticated user if not provided)
-        region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
         allow_overwrite: Allow overwriting existing files (default: True)
 
     Returns:
@@ -221,7 +221,7 @@ async def webftp_download_file(
     workspace: str,
     resource_type: str = 'file',
     username: str | None = None,
-    region: str = 'ap1',
+    region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
     """Download a file or folder using WebFTP downloads API.
@@ -237,7 +237,7 @@ async def webftp_download_file(
         workspace: Workspace name. Required parameter
         resource_type: Type of resource - "file" or "folder" (default: "file")
         username: Optional username for the download (uses authenticated user if not provided)
-        region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
         Download response with file saved locally
@@ -325,14 +325,14 @@ async def webftp_download_file(
 
 @mcp_tool_handler(description='List uploaded files (upload history)')
 async def webftp_uploads_list(
-    workspace: str, server_id: str | None = None, region: str = 'ap1', **kwargs
+    workspace: str, server_id: str | None = None, region: str = '', **kwargs
 ) -> dict[str, Any]:
     """List uploaded files (upload history).
 
     Args:
         workspace: Workspace name. Required parameter
         server_id: Optional server ID to filter uploads
-        region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
         Uploads list response
@@ -360,14 +360,14 @@ async def webftp_uploads_list(
 
 @mcp_tool_handler(description='List download requests (download history)')
 async def webftp_downloads_list(
-    workspace: str, server_id: str | None = None, region: str = 'ap1', **kwargs
+    workspace: str, server_id: str | None = None, region: str = '', **kwargs
 ) -> dict[str, Any]:
     """List download requests (download history).
 
     Args:
         workspace: Workspace name. Required parameter
         server_id: Optional server ID to filter downloads
-        region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
         Downloads list response

@@ -161,7 +161,7 @@ class AlpaconHTTPClient:
         token: str | None = None,
         headers: dict[str, str] | None = None,
         json_data: dict[str, Any] | None = None,
-        params: dict[str, str] | None = None,
+        params: dict[str, Any] | None = None,
         timeout: float | None = None,
     ) -> dict[str, Any]:
         """Execute HTTP request with retry logic.
@@ -397,7 +397,7 @@ class AlpaconHTTPClient:
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         # Convert exceptions to error dictionaries
-        processed_results = []
+        processed_results: list[dict[str, Any]] = []
         for i, result in enumerate(results):
             if isinstance(result, Exception):
                 processed_results.append(
@@ -407,6 +407,8 @@ class AlpaconHTTPClient:
                         'request_index': i,
                     }
                 )
+            elif isinstance(result, BaseException):
+                raise result  # Re-raise CancelledError, KeyboardInterrupt, etc.
             else:
                 processed_results.append(result)
 
@@ -418,8 +420,8 @@ class AlpaconHTTPClient:
         region: str,
         workspace: str,
         endpoint: str,
-        token: str,
-        params: dict[str, str] | None = None,
+        token: str | None = None,
+        params: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Execute GET request.
 
@@ -445,7 +447,7 @@ class AlpaconHTTPClient:
         region: str,
         workspace: str,
         endpoint: str,
-        token: str,
+        token: str | None = None,
         data: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Execute POST request.
@@ -472,7 +474,7 @@ class AlpaconHTTPClient:
         region: str,
         workspace: str,
         endpoint: str,
-        token: str,
+        token: str | None = None,
         data: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Execute PUT request.
@@ -499,7 +501,7 @@ class AlpaconHTTPClient:
         region: str,
         workspace: str,
         endpoint: str,
-        token: str,
+        token: str | None = None,
         data: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Execute PATCH request.
@@ -522,7 +524,7 @@ class AlpaconHTTPClient:
         )
 
     async def delete(
-        self, region: str, workspace: str, endpoint: str, token: str
+        self, region: str, workspace: str, endpoint: str, token: str | None = None
     ) -> dict[str, Any]:
         """Execute DELETE request.
 

@@ -8,12 +8,12 @@ from utils.http_client import http_client
 
 
 @mcp_tool_handler(description='Get list of servers')
-async def list_servers(workspace: str, region: str = 'ap1', **kwargs) -> dict[str, Any]:
+async def list_servers(workspace: str, region: str = '', **kwargs) -> dict[str, Any]:
     """Get list of servers.
 
     Args:
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
         Server list response
@@ -42,14 +42,14 @@ async def list_servers(workspace: str, region: str = 'ap1', **kwargs) -> dict[st
 
 @mcp_tool_handler(description='Get detailed information of a specific server')
 async def get_server(
-    server_id: str, workspace: str, region: str = 'ap1', **kwargs
+    server_id: str, workspace: str, region: str = '', **kwargs
 ) -> dict[str, Any]:
     """Get detailed information about a specific server.
 
     Args:
         server_id: Server ID
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
         Server details response
@@ -91,14 +91,14 @@ async def get_server(
 
 @mcp_tool_handler(description='Get list of server notes')
 async def list_server_notes(
-    server_id: str, workspace: str, region: str = 'ap1', **kwargs
+    server_id: str, workspace: str, region: str = '', **kwargs
 ) -> dict[str, Any]:
     """Get list of notes for a specific server.
 
     Args:
         server_id: Server ID
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
         Server notes list response
@@ -125,7 +125,7 @@ async def create_server_note(
     title: str,
     content: str,
     workspace: str,
-    region: str = 'ap1',
+    region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
     """Create a new note for a specific server.
@@ -135,7 +135,7 @@ async def create_server_note(
         title: Note title
         content: Note content
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
         Note creation response

@@ -200,7 +200,7 @@ async def tool_function(
 
 The `with_token_validation` decorator (`utils/decorators.py`) validates inputs **before** token lookup:
 
-1. **Region format** - Must be one of: `ap1`, `us1`, `eu1`, `dev`
+1. **Region format** - Must be one of: `ap1`, `us1`, `eu1`
 2. **Workspace format** - Alphanumeric with hyphens/underscores, 1-63 characters
 3. **Server ID format** - Must be valid UUID (when present)
 4. **Server IDs list** - Each element must be valid UUID (when present)
@@ -500,7 +500,7 @@ uvx alpacon-mcp list
 uvx alpacon-mcp add-workspace
 ```
 
-**Supported Regions**: `ap1` (Asia Pacific), `us1` (US), `eu1` (Europe), `dev` (Development)
+**Supported Regions**: `ap1` (Asia Pacific), `us1` (US), `eu1` (Europe)
 
 ### Testing MCP Integration
 ```bash

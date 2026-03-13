@@ -15,7 +15,7 @@ from utils.http_client import http_client
 @mcp_tool_handler(description='List all IAM users in workspace')
 async def list_iam_users(
     workspace: str,
-    region: str = 'ap1',
+    region: str = '',
     page: int | None = None,
     page_size: int | None = None,
     **kwargs,
@@ -24,7 +24,7 @@ async def list_iam_users(
 
     Args:
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
         page: Page number for pagination (optional)
         page_size: Number of users per page (optional)
 
@@ -54,14 +54,14 @@ async def list_iam_users(
 
 @mcp_tool_handler(description='Get detailed information about a specific IAM user')
 async def get_iam_user(
-    user_id: str, workspace: str, region: str = 'ap1', **kwargs
+    user_id: str, workspace: str, region: str = '', **kwargs
 ) -> dict[str, Any]:
     """Get detailed information about a specific IAM user.
 
     Args:
         user_id: IAM user ID
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
         IAM user details response
@@ -90,7 +90,7 @@ async def create_iam_user(
     last_name: str | None = None,
     is_active: bool = True,
     groups: list[str] | None = None,
-    region: str = 'ap1',
+    region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
     """Create a new IAM user.
@@ -103,7 +103,7 @@ async def create_iam_user(
         last_name: Last name (optional)
         is_active: Whether user is active (default: True)
         groups: List of group IDs to assign to user (optional)
-        region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
         User creation response
@@ -143,7 +143,7 @@ async def update_iam_user(
     last_name: str | None = None,
     is_active: bool | None = None,
     groups: list[str] | None = None,
-    region: str = 'ap1',
+    region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
     """Update an existing IAM user.
@@ -156,7 +156,7 @@ async def update_iam_user(
         last_name: New last name (optional)
         is_active: New active status (optional)
         groups: New list of group IDs (optional)
-        region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
         User update response
@@ -164,7 +164,7 @@ async def update_iam_user(
     token = kwargs.get('token')
 
     # Prepare update data (only include provided fields)
-    update_data = {}
+    update_data: dict[str, Any] = {}
     if email is not None:
         update_data['email'] = email
     if first_name is not None:
@@ -195,14 +195,14 @@ async def update_iam_user(
 
 @mcp_tool_handler(description='Delete an IAM user')
 async def delete_iam_user(
-    user_id: str, workspace: str, region: str = 'ap1', **kwargs
+    user_id: str, workspace: str, region: str = '', **kwargs
 ) -> dict[str, Any]:
     """Delete an IAM user.
 
     Args:
         user_id: IAM user ID to delete
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
         User deletion response
@@ -230,7 +230,7 @@ async def delete_iam_user(
 @mcp_tool_handler(description='List all IAM groups in workspace')
 async def list_iam_groups(
     workspace: str,
-    region: str = 'ap1',
+    region: str = '',
     page: int | None = None,
     page_size: int | None = None,
     **kwargs,
@@ -239,7 +239,7 @@ async def list_iam_groups(
 
     Args:
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
         page: Page number for pagination (optional)
         page_size: Number of groups per page (optional)
 
@@ -273,7 +273,7 @@ async def create_iam_group(
     workspace: str,
     description: str | None = None,
     permissions: list[str] | None = None,
-    region: str = 'ap1',
+    region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
     """Create a new IAM group.
@@ -283,7 +283,7 @@ async def create_iam_group(
         workspace: Workspace name. Required parameter
         description: Description of the group (optional)
         permissions: List of permission IDs to assign to group (optional)
-        region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
         Group creation response
@@ -291,7 +291,7 @@ async def create_iam_group(
     token = kwargs.get('token')
 
     # Prepare group data
-    group_data = {'name': name}
+    group_data: dict[str, Any] = {'name': name}
 
     if description:
         group_data['description'] = description

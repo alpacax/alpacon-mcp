@@ -33,15 +33,12 @@ def _get_jwt_token() -> str | None:
     return None
 
 
-def _validate_jwt_workspace(jwt_token: str, region: str, workspace: str) -> bool:
-    """Validate that the JWT authorizes access to the given workspace/region."""
+def _decode_jwt_claims(jwt_token: str) -> dict | None:
+    """Decode JWT claims without verification (already verified by middleware)."""
     try:
         import jwt as pyjwt
 
-        from utils.auth import extract_workspaces, match_workspace
-
-        # Decode without verification — already verified by FastMCP middleware
-        claims = pyjwt.decode(
+        return pyjwt.decode(
             jwt_token,
             options={
                 'verify_signature': False,
@@ -50,15 +47,112 @@ def _validate_jwt_workspace(jwt_token: str, region: str, workspace: str) -> bool
                 'verify_exp': False,
             },
         )
+    except Exception as e:
+        logger.error(f'JWT decode failed: {e}')
+        return None
 
-        import os
 
-        namespace = os.getenv('AUTH0_NAMESPACE', 'https://alpacon.io/')
-        workspaces = extract_workspaces(claims, namespace)
+def _get_jwt_workspaces(jwt_token: str) -> list[dict[str, str]]:
+    """Extract workspace list from JWT claims."""
+    import os
+
+    from utils.auth import extract_workspaces
+
+    claims = _decode_jwt_claims(jwt_token)
+    if not claims:
+        return []
+
+    namespace = os.getenv('AUTH0_NAMESPACE', 'https://alpacon.io/')
+    return extract_workspaces(claims, namespace)
+
+
+def _validate_jwt_workspace(jwt_token: str, region: str, workspace: str) -> bool:
+    """Validate that the JWT authorizes access to the given workspace/region."""
+    try:
+        from utils.auth import match_workspace
+
+        workspaces = _get_jwt_workspaces(jwt_token)
         return match_workspace(workspaces, region, workspace)
     except Exception as e:
         logger.error(f'JWT workspace validation failed: {e}')
         return False
+
+
+def _resolve_region_from_jwt(
+    jwt_token: str, workspace: str | None = None
+) -> str | None:
+    """Resolve region from JWT claims.
+
+    If workspace is given, find its region. Otherwise, return region if only one exists.
+    """
+    workspaces = _get_jwt_workspaces(jwt_token)
+    if not workspaces:
+        return None
+
+    if workspace:
+        matching = [
+            ws.get('region') for ws in workspaces if ws.get('schema_name') == workspace
+        ]
+        if len(matching) == 1:
+            return matching[0]
+        return None
+
+    regions = list({ws.get('region') for ws in workspaces if ws.get('region')})
+    if len(regions) == 1:
+        return regions[0]
+    return None
+
+
+def _resolve_region(
+    jwt_token: str | None, workspace: str | None
+) -> tuple[str | None, str | None]:
+    """Resolve region when not explicitly provided.
+
+    Returns:
+        (resolved_region, error_message) - one of them will be None
+    """
+    if jwt_token:
+        # JWT mode: resolve from token claims
+        region = _resolve_region_from_jwt(jwt_token, workspace)
+        if region:
+            return region, None
+
+        # Could not auto-detect, list available regions
+        ws_list = _get_jwt_workspaces(jwt_token)
+        available_regions = sorted(
+            {ws.get('region') or '?' for ws in ws_list if isinstance(ws, dict)}
+        )
+        if available_regions:
+            return None, (
+                f'Multiple regions available in token: {", ".join(available_regions)}. '
+                f'Please specify a region parameter.'
+            )
+        return None, 'No regions found in JWT token.'
+
+    # Local mode: resolve from token.json
+    from utils.token_manager import get_token_manager
+
+    tm = get_token_manager()
+
+    # Try to find region by workspace name
+    if workspace:
+        region = tm.find_region_for_workspace(workspace)
+        if region:
+            return region, None
+
+    # Fall back to default region (works when only one region configured)
+    default_region = tm.get_default_region()
+    if default_region:
+        return default_region, None
+
+    # Multiple regions, need user to specify
+    available_regions = tm.get_available_regions()
+    if available_regions:
+        return None, (
+            f'Multiple regions available: {", ".join(sorted(available_regions))}. '
+            f'Please specify a region parameter.'
+        )
+    return None, 'No regions configured. Please run setup first.'
 
 
 def with_token_validation(func: Callable) -> Callable:
@@ -89,12 +183,8 @@ def with_token_validation(func: Callable) -> Callable:
         arguments = bound_args.arguments
 
         # Extract region and workspace
-        region = arguments.get('region', 'ap1')
+        region = arguments.get('region', '')
         workspace = arguments.get('workspace')
-
-        # Validate region format
-        if not validate_region_format(region):
-            return format_validation_error('region', region)
 
         # Validate workspace is present
         if not workspace:
@@ -103,6 +193,22 @@ def with_token_validation(func: Callable) -> Callable:
         # Validate workspace format
         if not validate_workspace_format(workspace):
             return format_validation_error('workspace', workspace)
+
+        # Try JWT auth first (HTTP transport mode)
+        jwt_token = _get_jwt_token()
+
+        # Auto-detect region if not provided
+        if not region:
+            resolved_region, err_msg = _resolve_region(jwt_token, workspace)
+            if err_msg:
+                return error_response(err_msg)
+            region = resolved_region
+            # Update bound arguments so the resolved region is used
+            bound_args.arguments['region'] = region
+
+        # Validate region format
+        if not validate_region_format(region):
+            return format_validation_error('region', region)
 
         # Validate server_id format if present
         server_id = arguments.get('server_id')
@@ -122,8 +228,9 @@ def with_token_validation(func: Callable) -> Callable:
                     'Each server ID must be in UUID format. (e.g., 550e8400-e29b-41d4-a716-446655440000)',
                 )
 
-        # Try JWT auth first (HTTP transport mode)
-        jwt_token = _get_jwt_token()
+        # Get the **kwargs dict from bound arguments to inject token
+        extra_kwargs = bound_args.arguments.get('kwargs', {})
+
         if jwt_token is not None:
             # JWT mode — validate workspace access from JWT claims
             if not _validate_jwt_workspace(jwt_token, region, workspace):
@@ -133,21 +240,24 @@ def with_token_validation(func: Callable) -> Callable:
                     workspace=workspace,
                 )
             # Pass JWT through for downstream API calls
-            kwargs['token'] = jwt_token
+            extra_kwargs['token'] = jwt_token
         else:
             # stdio/SSE mode — use token.json lookup
             token = validate_token(region, workspace)
             if not token:
                 return token_error_response(region, workspace)
-            kwargs['token'] = token
+            extra_kwargs['token'] = token
 
-        # Call the original function
-        return await func(*args, **kwargs)
+        bound_args.arguments['kwargs'] = extra_kwargs
+
+        # Call the original function using bound_args to handle
+        # both positional and keyword region correctly
+        return await func(*bound_args.args, **bound_args.kwargs)
 
     # Remove _token parameter from the wrapper signature
     original_sig = inspect.signature(func)
     new_params = [p for p in original_sig.parameters.values() if p.name != '_token']
-    wrapper.__signature__ = original_sig.replace(parameters=new_params)
+    wrapper.__signature__ = original_sig.replace(parameters=new_params)  # type: ignore[attr-defined]
 
     return wrapper
 

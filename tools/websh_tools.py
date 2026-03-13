@@ -121,7 +121,7 @@ async def cleanup_all_connections():
 async def get_or_create_channel(
     server_id: str,
     workspace: str,
-    region: str = 'ap1',
+    region: str = '',
     username: str | None = None,
     token: str | None = None,
 ) -> tuple[str, dict[str, Any]]:
@@ -138,7 +138,7 @@ async def get_or_create_channel(
     Args:
         server_id: Server ID
         workspace: Workspace name
-        region: Region (default: ap1)
+        region: Region (auto-detected from token if not specified)
         username: Optional username for session
         token: API token
 
@@ -171,7 +171,11 @@ async def get_or_create_channel(
             pass
 
     # Phase 2: Verify cached connection (outside lock)
-    if cached_ws is not None:
+    if (
+        cached_ws is not None
+        and cached_channel_id is not None
+        and cached_session_info is not None
+    ):
         try:
             await cached_ws.ping()
             return cached_channel_id, cached_session_info
@@ -326,7 +330,7 @@ async def websh_session_create(
     server_id: str,
     workspace: str,
     username: str | None = None,
-    region: str = 'ap1',
+    region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
     """Create a new Websh session and establish WebSocket connection.
@@ -338,7 +342,7 @@ async def websh_session_create(
         server_id: Server ID to create session on
         workspace: Workspace name. Required parameter
         username: Optional username for the session (if not provided, uses authenticated user's name)
-        region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
         Session creation response with WebSocket connection established
@@ -407,14 +411,14 @@ async def websh_session_create(
 
 @mcp_tool_handler(description='Get list of Websh sessions')
 async def websh_sessions_list(
-    workspace: str, server_id: str | None = None, region: str = 'ap1', **kwargs
+    workspace: str, server_id: str | None = None, region: str = '', **kwargs
 ) -> dict[str, Any]:
     """Get list of Websh sessions.
 
     Args:
         workspace: Workspace name. Required parameter
         server_id: Optional server ID to filter sessions
-        region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
         Sessions list response
@@ -442,7 +446,7 @@ async def websh_sessions_list(
 
 @mcp_tool_handler(description='Create a new user channel for an existing Websh session')
 async def websh_session_reconnect(
-    session_id: str, workspace: str, region: str = 'ap1', **kwargs
+    session_id: str, workspace: str, region: str = '', **kwargs
 ) -> dict[str, Any]:
     """Create a new user channel for an existing Websh session.
     This allows reconnecting to a session that has lost its user channel connection.
@@ -451,7 +455,7 @@ async def websh_session_reconnect(
     Args:
         session_id: Existing Websh session ID to reconnect to
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
         Reconnection response with new WebSocket URL and user channel
@@ -498,14 +502,14 @@ async def websh_session_reconnect(
 
 @mcp_tool_handler(description='Terminate a Websh session')
 async def websh_session_terminate(
-    session_id: str, workspace: str, region: str = 'ap1', **kwargs
+    session_id: str, workspace: str, region: str = '', **kwargs
 ) -> dict[str, Any]:
     """Terminate a Websh session.
 
     Args:
         session_id: Websh session ID to terminate
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
         Session termination response
@@ -852,7 +856,7 @@ async def execute_command(
     command: str,
     workspace: str,
     username: str | None = None,
-    region: str = 'ap1',
+    region: str = '',
     timeout: int = 10,
     **kwargs,
 ) -> dict[str, Any]:
@@ -870,7 +874,7 @@ async def execute_command(
         command: Command to execute
         workspace: Workspace name. Required parameter
         username: Optional username for the session
-        region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
         timeout: Command timeout in seconds (default: 10)
 
     Returns:
@@ -919,7 +923,7 @@ async def execute_command_batch(
     commands: list[str],
     workspace: str,
     username: str | None = None,
-    region: str = 'ap1',
+    region: str = '',
     timeout: int = 30,
     **kwargs,
 ) -> dict[str, Any]:
@@ -933,7 +937,7 @@ async def execute_command_batch(
         commands: List of commands to execute
         workspace: Workspace name. Required parameter
         username: Optional username for the session
-        region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
         timeout: Total timeout in seconds (default: 30)
 
     Returns:

@@ -76,7 +76,7 @@ async def get_cpu_usage(
     workspace: str,
     start_date: str | None = None,
     end_date: str | None = None,
-    region: str = 'ap1',
+    region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
     """Get CPU usage metrics for a server with parsed statistics.
@@ -86,7 +86,7 @@ async def get_cpu_usage(
         workspace: Workspace name. Required parameter
         start_date: Start date in ISO format (e.g., '2024-01-01T00:00:00Z')
         end_date: End date in ISO format (e.g., '2024-01-02T00:00:00Z')
-        region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
         CPU usage metrics with parsed statistics (current, average, min, max)
@@ -192,7 +192,7 @@ async def get_memory_usage(
     workspace: str,
     start_date: str | None = None,
     end_date: str | None = None,
-    region: str = 'ap1',
+    region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
     """Get memory usage metrics for a server with parsed statistics.
@@ -202,7 +202,7 @@ async def get_memory_usage(
         workspace: Workspace name. Required parameter
         start_date: Start date in ISO format (e.g., '2024-01-01T00:00:00Z')
         end_date: End date in ISO format (e.g., '2024-01-02T00:00:00Z')
-        region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
         Memory usage metrics with parsed statistics (current, average, min, max)
@@ -301,7 +301,7 @@ async def get_disk_usage(
     partition: str | None = None,
     start_date: str | None = None,
     end_date: str | None = None,
-    region: str = 'ap1',
+    region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
     """Get disk usage metrics for a server with parsed statistics.
@@ -316,7 +316,7 @@ async def get_disk_usage(
         partition: Optional partition path (e.g., '/')
         start_date: Start date in ISO format (e.g., '2024-01-01T00:00:00Z')
         end_date: End date in ISO format (e.g., '2024-01-02T00:00:00Z')
-        region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
         Disk usage metrics with parsed statistics (current, average, min, max, space info)
@@ -493,7 +493,7 @@ async def get_disk_io(
     device: str | None = None,
     start_date: str | None = None,
     end_date: str | None = None,
-    region: str = 'ap1',
+    region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
     """Get disk I/O performance metrics for a server.
@@ -506,7 +506,7 @@ async def get_disk_io(
         device: Optional disk device name (e.g., 'sda', 'nvme0n1')
         start_date: Start date for metrics (ISO 8601 format). Defaults to last 24 hours
         end_date: End date for metrics (ISO 8601 format)
-        region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
         Disk I/O metrics response with device, read/write rates, and timestamps
@@ -552,7 +552,7 @@ async def get_network_traffic(
     interface: str | None = None,
     start_date: str | None = None,
     end_date: str | None = None,
-    region: str = 'ap1',
+    region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
     """Get network traffic metrics for a server with parsed statistics.
@@ -563,7 +563,7 @@ async def get_network_traffic(
         interface: Optional network interface (e.g., 'eth0')
         start_date: Start date in ISO format (e.g., '2024-01-01T00:00:00Z')
         end_date: End date in ISO format (e.g., '2024-01-02T00:00:00Z')
-        region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
         Network traffic metrics with parsed statistics (current, averages, peaks for bps/pps)
@@ -609,7 +609,7 @@ async def get_network_traffic(
     description='Get top performing servers by metrics (supports multiple metrics in one call)'
 )
 async def get_top_servers(
-    workspace: str, metric_types: str = '', region: str = 'ap1', **kwargs
+    workspace: str, metric_types: str = '', region: str = '', **kwargs
 ) -> dict[str, Any]:
     """Get top 5 servers by specified metric types in the last 24 hours.
 
@@ -619,7 +619,7 @@ async def get_top_servers(
         workspace: Workspace name. Required parameter
         metric_types: Comma-separated metric types (e.g., "cpu,memory,disk_io,traffic").
                      Leave empty to get all metrics. Valid values: cpu, memory, disk_io, traffic
-        region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
         Top servers response with usage/performance statistics for requested metrics.
@@ -689,7 +689,9 @@ async def get_top_servers(
     # Multiple metrics - combine into dict
     combined_data = {}
     for metric, result in zip(tasks.keys(), results, strict=False):
-        if isinstance(result, Exception):
+        if isinstance(result, BaseException):
+            if not isinstance(result, Exception):
+                raise result  # Re-raise CancelledError, KeyboardInterrupt, etc.
             combined_data[metric] = {'error': str(result), 'available': False}
         else:
             combined_data[metric] = result
@@ -704,14 +706,14 @@ async def get_top_servers(
 
 @mcp_tool_handler(description='Get alert rules')
 async def get_alert_rules(
-    workspace: str, server_id: str | None = None, region: str = 'ap1', **kwargs
+    workspace: str, server_id: str | None = None, region: str = '', **kwargs
 ) -> dict[str, Any]:
     """Get alert rules for servers.
 
     Args:
         workspace: Workspace name. Required parameter
         server_id: Optional server ID to filter rules
-        region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
         Alert rules response
@@ -739,7 +741,7 @@ async def get_alert_rules(
 
 @mcp_tool_handler(description='Get server metrics summary')
 async def get_server_metrics_summary(
-    server_id: str, workspace: str, hours: int = 24, region: str = 'ap1', **kwargs
+    server_id: str, workspace: str, hours: int = 24, region: str = '', **kwargs
 ) -> dict[str, Any]:
     """Get comprehensive metrics summary for a server.
 
@@ -747,7 +749,7 @@ async def get_server_metrics_summary(
         server_id: Server ID to get metrics for
         workspace: Workspace name. Required parameter
         hours: Number of hours back to get metrics (default: 24, max: 168)
-        region: Region (ap1, us1, eu1, etc.). Defaults to 'ap1'
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
         Comprehensive server metrics summary (limited size response)
@@ -852,9 +854,16 @@ async def get_server_metrics_summary(
     )
 
     # Wait for all metrics
-    cpu_result, memory_result, disk_result, traffic_result = await asyncio.gather(
+    gather_results = await asyncio.gather(
         cpu_task, memory_task, disk_task, traffic_task, return_exceptions=True
     )
+
+    # Re-raise BaseExceptions that are not regular Exceptions (e.g. CancelledError)
+    for r in gather_results:
+        if isinstance(r, BaseException) and not isinstance(r, Exception):
+            raise r
+
+    cpu_result, memory_result, disk_result, traffic_result = gather_results
 
     # Helper function to extract summary from metric result (from http_client directly)
     def extract_summary(result, metric_type):

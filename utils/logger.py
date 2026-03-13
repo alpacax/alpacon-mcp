@@ -10,7 +10,7 @@ class AlpaconLogger:
     """Centralized logging configuration for Alpacon MCP Server."""
 
     def __init__(self):
-        self._loggers = {}
+        self._loggers: dict[str, logging.LoggerAdapter] = {}
         self._setup_logging()
 
     def _setup_logging(self):
@@ -33,24 +33,21 @@ class AlpaconLogger:
             ],
         )
 
-    def get_logger(self, name: str) -> logging.Logger:
+    def get_logger(self, name: str) -> logging.LoggerAdapter:
         """Get logger for specific module.
 
         Args:
             name: Logger name (usually module name)
 
         Returns:
-            Configured logger instance
+            Configured logger adapter instance
         """
         if name not in self._loggers:
-            logger = logging.getLogger(f'alpacon_mcp.{name}')
-
-            # Add context information
-            logger = logging.LoggerAdapter(
-                logger, {'component': name, 'pid': os.getpid()}
+            base_logger = logging.getLogger(f'alpacon_mcp.{name}')
+            adapter = logging.LoggerAdapter(
+                base_logger, {'component': name, 'pid': os.getpid()}
             )
-
-            self._loggers[name] = logger
+            self._loggers[name] = adapter
 
         return self._loggers[name]
 
@@ -59,14 +56,14 @@ class AlpaconLogger:
 logger_manager = AlpaconLogger()
 
 
-def get_logger(name: str) -> logging.Logger:
+def get_logger(name: str) -> logging.LoggerAdapter:
     """Get logger for module.
 
     Args:
         name: Module name
 
     Returns:
-        Configured logger instance
+        Configured logger adapter instance
     """
     return logger_manager.get_logger(name)
 

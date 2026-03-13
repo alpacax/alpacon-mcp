@@ -184,7 +184,7 @@ async def health_endpoint(request):
     )
 
 
-def run(transport: str = 'stdio', config_file: str = None):
+def run(transport: str = 'stdio', config_file: str | None = None):
     """Run MCP server with optional config file path.
 
     Args:
