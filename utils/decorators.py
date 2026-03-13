@@ -203,14 +203,18 @@ def with_token_validation(func: Callable) -> Callable:
 
         auth_enabled = _is_auth_enabled()
 
+        # Retrieve JWT token once upfront in streamable-http mode
+        jwt_token = None
+        if auth_enabled:
+            jwt_token = _get_jwt_token()
+            if not jwt_token:
+                return error_response(
+                    'Authentication required. No JWT token found in request context.'
+                )
+
         # Auto-detect region if not provided
         if not region:
             if auth_enabled:
-                jwt_token = _get_jwt_token()
-                if not jwt_token:
-                    return error_response(
-                        'Authentication required. No JWT token found in request context.'
-                    )
                 resolved_region, err_msg = _resolve_region_jwt(jwt_token, workspace)
             else:
                 resolved_region, err_msg = _resolve_region_local(workspace)
@@ -247,11 +251,6 @@ def with_token_validation(func: Callable) -> Callable:
 
         if auth_enabled:
             # Streamable-HTTP mode — JWT auth only
-            jwt_token = _get_jwt_token()
-            if not jwt_token:
-                return error_response(
-                    'Authentication required. No JWT token found in request context.'
-                )
             if not _validate_jwt_workspace(jwt_token, region, workspace):
                 return error_response(
                     f'Workspace {workspace}.{region} not authorized by JWT',
