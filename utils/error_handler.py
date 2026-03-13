@@ -48,8 +48,8 @@ def validate_region_format(region: str) -> bool:
     if not region or not isinstance(region, str):
         return False
 
-    # Known regions: ap1, us1, eu1
-    valid_regions = {'ap1', 'us1', 'eu1'}
+    # Production regions: ap1, us1, eu1 (dev is also valid but internal-only)
+    valid_regions = {'ap1', 'us1', 'eu1', 'dev'}
     return region in valid_regions
 
 

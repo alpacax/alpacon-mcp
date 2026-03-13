@@ -71,7 +71,7 @@ class TestRegionValidation:
     @patch('utils.decorators.validate_token', return_value='fake-token')
     async def test_all_valid_regions_pass(self, mock_token):
         func = _make_decorated_func()
-        for region in ('ap1', 'us1', 'eu1'):
+        for region in ('ap1', 'us1', 'eu1', 'dev'):
             result = await func(workspace='demo', region=region)
             assert result['status'] == 'success', f"Region '{region}' should be valid"
 
@@ -92,7 +92,7 @@ class TestRegionAutoDetection:
         """When token.json has exactly one region and workspace not found, falls back to default."""
         mock_manager = mock_tm.return_value
         mock_manager.find_region_for_workspace.return_value = None
-        mock_manager.get_default_region.return_value = 'us1'
+        mock_manager.get_default_region.return_value = 'dev'
 
         func = _make_decorated_func()
         result = await func(workspace='demo', region='')
@@ -116,7 +116,7 @@ class TestRegionAutoDetection:
     @pytest.mark.asyncio
     @patch('utils.decorators._validate_jwt_workspace', return_value=True)
     @patch('utils.decorators._get_jwt_token')
-    @patch('utils.decorators._resolve_region_from_jwt', return_value='us1')
+    @patch('utils.decorators._resolve_region_from_jwt', return_value='dev')
     async def test_jwt_mode_resolves_region(
         self, mock_resolve, mock_jwt, mock_validate
     ):
@@ -135,7 +135,7 @@ class TestRegionAutoDetection:
         mock_manager = mock_tm.return_value
         mock_manager.find_region_for_workspace.return_value = None
         mock_manager.get_default_region.return_value = None
-        mock_manager.get_available_regions.return_value = ['ap1', 'us1']
+        mock_manager.get_available_regions.return_value = ['ap1', 'dev']
 
         func = _make_decorated_func()
         result = await func(workspace='demo', region='')
