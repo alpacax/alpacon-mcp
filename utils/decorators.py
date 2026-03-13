@@ -1,6 +1,7 @@
 """Decorators for MCP tools to reduce boilerplate code."""
 
 import inspect
+import os
 from collections.abc import Callable
 from functools import wraps
 
@@ -14,6 +15,15 @@ from utils.error_handler import (
 from utils.logger import get_logger
 
 logger = get_logger('decorators')
+
+
+def _is_auth_enabled() -> bool:
+    """Check if OAuth2 authentication mode is enabled (streamable-http transport).
+
+    Returns True when running in streamable-http mode with Auth0 JWT auth.
+    Returns False when running in stdio/SSE mode with token.json.
+    """
+    return os.getenv('ALPACON_MCP_AUTH_ENABLED') == 'true'
 
 
 def _get_jwt_token() -> str | None:
@@ -54,16 +64,13 @@ def _decode_jwt_claims(jwt_token: str) -> dict | None:
 
 def _get_jwt_workspaces(jwt_token: str) -> list[dict[str, str]]:
     """Extract workspace list from JWT claims."""
-    import os
-
     from utils.auth import extract_workspaces
 
     claims = _decode_jwt_claims(jwt_token)
     if not claims:
         return []
 
-    namespace = os.getenv('AUTH0_NAMESPACE', 'https://alpacon.io/')
-    return extract_workspaces(claims, namespace)
+    return extract_workspaces(claims, 'https://alpacon.io/')
 
 
 def _validate_jwt_workspace(jwt_token: str, region: str, workspace: str) -> bool:
@@ -103,49 +110,49 @@ def _resolve_region_from_jwt(
     return None
 
 
-def _resolve_region(
-    jwt_token: str | None, workspace: str | None
+def _resolve_region_jwt(
+    jwt_token: str, workspace: str | None
 ) -> tuple[str | None, str | None]:
-    """Resolve region when not explicitly provided.
+    """Resolve region from JWT claims.
 
     Returns:
         (resolved_region, error_message) - one of them will be None
     """
-    if jwt_token:
-        # JWT mode: resolve from token claims
-        region = _resolve_region_from_jwt(jwt_token, workspace)
-        if region:
-            return region, None
+    region = _resolve_region_from_jwt(jwt_token, workspace)
+    if region:
+        return region, None
 
-        # Could not auto-detect, list available regions
-        ws_list = _get_jwt_workspaces(jwt_token)
-        available_regions = sorted(
-            {ws.get('region') or '?' for ws in ws_list if isinstance(ws, dict)}
+    ws_list = _get_jwt_workspaces(jwt_token)
+    available_regions = sorted(
+        {ws.get('region') or '?' for ws in ws_list if isinstance(ws, dict)}
+    )
+    if available_regions:
+        return None, (
+            f'Multiple regions available in token: {", ".join(available_regions)}. '
+            f'Please specify a region parameter.'
         )
-        if available_regions:
-            return None, (
-                f'Multiple regions available in token: {", ".join(available_regions)}. '
-                f'Please specify a region parameter.'
-            )
-        return None, 'No regions found in JWT token.'
+    return None, 'No regions found in JWT token.'
 
-    # Local mode: resolve from token.json
+
+def _resolve_region_local(workspace: str | None) -> tuple[str | None, str | None]:
+    """Resolve region from token.json configuration.
+
+    Returns:
+        (resolved_region, error_message) - one of them will be None
+    """
     from utils.token_manager import get_token_manager
 
     tm = get_token_manager()
 
-    # Try to find region by workspace name
     if workspace:
         region = tm.find_region_for_workspace(workspace)
         if region:
             return region, None
 
-    # Fall back to default region (works when only one region configured)
     default_region = tm.get_default_region()
     if default_region:
         return default_region, None
 
-    # Multiple regions, need user to specify
     available_regions = tm.get_available_regions()
     if available_regions:
         return None, (
@@ -158,11 +165,11 @@ def _resolve_region(
 def with_token_validation(func: Callable) -> Callable:
     """Decorator to add automatic token validation to MCP tools.
 
-    This decorator:
-    1. Extracts region and workspace from function arguments
-    2. Validates the token exists
-    3. Returns error response if token is missing
-    4. Adds token to kwargs if valid
+    Transport mode is determined by ALPACON_MCP_AUTH_ENABLED env var:
+    - 'true' (streamable-http): Uses JWT from auth context only.
+      Never falls back to token.json.
+    - unset/other (stdio): Uses token.json only.
+      Never tries JWT auth context.
 
     Args:
         func: The async function to decorate
@@ -194,16 +201,27 @@ def with_token_validation(func: Callable) -> Callable:
         if not validate_workspace_format(workspace):
             return format_validation_error('workspace', workspace)
 
-        # Try JWT auth first (HTTP transport mode)
-        jwt_token = _get_jwt_token()
+        auth_enabled = _is_auth_enabled()
+
+        # Retrieve JWT token once upfront in streamable-http mode
+        jwt_token = None
+        if auth_enabled:
+            jwt_token = _get_jwt_token()
+            if not jwt_token:
+                return error_response(
+                    'Authentication required. No JWT token found in request context.'
+                )
 
         # Auto-detect region if not provided
         if not region:
-            resolved_region, err_msg = _resolve_region(jwt_token, workspace)
+            if auth_enabled:
+                resolved_region, err_msg = _resolve_region_jwt(jwt_token, workspace)
+            else:
+                resolved_region, err_msg = _resolve_region_local(workspace)
+
             if err_msg:
                 return error_response(err_msg)
             region = resolved_region
-            # Update bound arguments so the resolved region is used
             bound_args.arguments['region'] = region
 
         # Validate region format
@@ -231,18 +249,17 @@ def with_token_validation(func: Callable) -> Callable:
         # Get the **kwargs dict from bound arguments to inject token
         extra_kwargs = bound_args.arguments.get('kwargs', {})
 
-        if jwt_token is not None:
-            # JWT mode — validate workspace access from JWT claims
+        if auth_enabled:
+            # Streamable-HTTP mode — JWT auth only
             if not _validate_jwt_workspace(jwt_token, region, workspace):
                 return error_response(
                     f'Workspace {workspace}.{region} not authorized by JWT',
                     region=region,
                     workspace=workspace,
                 )
-            # Pass JWT through for downstream API calls
             extra_kwargs['token'] = jwt_token
         else:
-            # stdio/SSE mode — use token.json lookup
+            # stdio mode — token.json only
             token = validate_token(region, workspace)
             if not token:
                 return token_error_response(region, workspace)
@@ -362,7 +379,7 @@ def mcp_tool_handler(description: str):
 
     This decorator combines:
     1. MCP tool registration
-    2. Token validation
+    2. Token validation (JWT for streamable-http, token.json for stdio)
     3. Error handling
     4. Logging
 

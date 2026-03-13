@@ -209,6 +209,51 @@ class TestOAuthAuthorize:
         )
         assert response.status_code == 302
 
+    def test_authorize_adds_offline_access_when_missing(self, oauth_app):
+        """offline_access scope is added automatically for refresh token support."""
+        response = oauth_app.get(
+            '/oauth/authorize',
+            params={
+                'response_type': 'code',
+                'redirect_uri': 'http://localhost:8080/callback',
+                'scope': 'openid profile',
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == 302
+        location = response.headers['location']
+        assert 'offline_access' in location
+
+    def test_authorize_preserves_existing_offline_access(self, oauth_app):
+        """offline_access scope is not duplicated when already present."""
+        response = oauth_app.get(
+            '/oauth/authorize',
+            params={
+                'response_type': 'code',
+                'redirect_uri': 'http://localhost:8080/callback',
+                'scope': 'openid offline_access',
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == 302
+        location = response.headers['location']
+        # Should appear exactly once
+        assert location.count('offline_access') == 1
+
+    def test_authorize_adds_offline_access_when_no_scope(self, oauth_app):
+        """offline_access scope is added even when no scope parameter is provided."""
+        response = oauth_app.get(
+            '/oauth/authorize',
+            params={
+                'response_type': 'code',
+                'redirect_uri': 'http://localhost:8080/callback',
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == 302
+        location = response.headers['location']
+        assert 'offline_access' in location
+
 
 class TestOAuthToken:
     """Tests for /oauth/token endpoint."""
