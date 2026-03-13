@@ -39,7 +39,10 @@ def _is_localhost_url(url: str) -> bool:
     from urllib.parse import urlparse
 
     parsed = urlparse(url)
-    return parsed.scheme in ('http', 'https') and parsed.hostname in _ALLOWED_LOOPBACK_HOSTS
+    return (
+        parsed.scheme in ('http', 'https')
+        and parsed.hostname in _ALLOWED_LOOPBACK_HOSTS
+    )
 
 
 def _build_redirect_url(base_url: str, extra_params: dict) -> str:
@@ -58,16 +61,20 @@ def _get_oauth_config() -> dict[str, str]:
     """Get OAuth configuration from environment variables."""
     domain = os.getenv('AUTH0_DOMAIN', '')
     client_id = os.getenv('AUTH0_CLIENT_ID', '')
+    client_secret = os.getenv('AUTH0_CLIENT_SECRET', '')
     audience = os.getenv('AUTH0_AUDIENCE', 'https://alpacon.io/access/')
 
     if not domain:
         raise ValueError('AUTH0_DOMAIN environment variable is required')
     if not client_id:
         raise ValueError('AUTH0_CLIENT_ID environment variable is required')
+    if not client_secret:
+        raise ValueError('AUTH0_CLIENT_SECRET environment variable is required')
 
     return {
         'domain': domain,
         'client_id': client_id,
+        'client_secret': client_secret,
         'audience': audience,
         'auth0_base_url': f'https://{domain}',
     }
@@ -109,7 +116,6 @@ def register_oauth_routes(mcp_server):
                 'refresh_token',
             ],
             'token_endpoint_auth_methods_supported': [
-                'client_secret_post',
                 'none',
             ],
             'scopes_supported': ['openid', 'profile', 'email', 'offline_access'],
@@ -204,9 +210,8 @@ def register_oauth_routes(mcp_server):
         """Proxy token exchange to Auth0.
 
         Forwards the token request to Auth0's /oauth/token endpoint.
-        Only injects the configured client_id when not provided by the
-        client. Never injects client_secret, so it is safe for use
-        with public PKCE clients.
+        Injects the configured client_id and client_secret for
+        Auth0 token exchange (confidential client / RWA).
         """
         from starlette.responses import JSONResponse
 
@@ -286,6 +291,7 @@ def register_oauth_routes(mcp_server):
                 status_code=400,
             )
         params['client_id'] = configured_client_id
+        params['client_secret'] = config['client_secret']
 
         # Override redirect_uri to match what was sent to Auth0 during /authorize.
         # Auth0 requires the redirect_uri in token exchange to match exactly.
@@ -452,7 +458,11 @@ def register_oauth_routes(mcp_server):
                 )
                 client_redirect_uri = state_data.get('redirect_uri', '')
                 original_state = state_data.get('state', '')
-            except (json.JSONDecodeError, UnicodeDecodeError, base64.binascii.Error) as e:
+            except (
+                json.JSONDecodeError,
+                UnicodeDecodeError,
+                base64.binascii.Error,
+            ) as e:
                 logger.warning(f'Failed to decode composite state: {e}')
                 # Fall back to treating the raw state as the original opaque state
                 # so it can be echoed back to the client per OAuth spec.

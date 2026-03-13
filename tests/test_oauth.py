@@ -16,12 +16,14 @@ from starlette.testclient import TestClient
 # Test configuration constants
 TEST_AUTH0_DOMAIN = 'test.us.auth0.com'
 TEST_CLIENT_ID = 'test-client-id'
+TEST_CLIENT_SECRET = 'test-client-secret'
 TEST_RESOURCE_URL = 'https://mcp.test.alpacon.io'
 
 # Environment variables needed for OAuth config
 OAUTH_ENV = {
     'AUTH0_DOMAIN': TEST_AUTH0_DOMAIN,
     'AUTH0_CLIENT_ID': TEST_CLIENT_ID,
+    'AUTH0_CLIENT_SECRET': TEST_CLIENT_SECRET,
     'AUTH0_AUDIENCE': 'https://alpacon.io/access/',
     'ALPACON_MCP_AUTH_ENABLED': 'true',
     'ALPACON_MCP_RESOURCE_URL': TEST_RESOURCE_URL,
@@ -88,6 +90,13 @@ class TestOAuthMetadata:
         assert data['jwks_uri'] == f'https://{TEST_AUTH0_DOMAIN}/.well-known/jwks.json'
         assert 'code' in data['response_types_supported']
         assert 'S256' in data['code_challenge_methods_supported']
+
+    def test_metadata_advertises_none_auth_method(self, oauth_app):
+        """Metadata should advertise 'none' since clients don't send client_secret."""
+        response = oauth_app.get('/.well-known/oauth-authorization-server')
+        assert response.status_code == 200
+        data = response.json()
+        assert data['token_endpoint_auth_methods_supported'] == ['none']
 
     def test_metadata_uses_configured_resource_url(self, oauth_app):
         response = oauth_app.get('/.well-known/oauth-authorization-server')
@@ -260,6 +269,58 @@ class TestOAuthToken:
         assert response.status_code == 200
         call_kwargs = mock_client.post.call_args
         assert call_kwargs.kwargs['data']['client_id'] == TEST_CLIENT_ID
+
+    def test_token_injects_configured_client_secret(self, oauth_app):
+        """Token proxy should inject client_secret for Auth0 RWA token exchange."""
+        mock_client = _mock_auth0_response()
+        with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
+            response = oauth_app.post(
+                '/oauth/token',
+                data={'grant_type': 'authorization_code', 'code': 'test-code'},
+            )
+        assert response.status_code == 200
+        call_kwargs = mock_client.post.call_args
+        assert call_kwargs.kwargs['data']['client_secret'] == TEST_CLIENT_SECRET
+
+    def test_token_fails_without_client_secret(self):
+        """Token endpoint should return 500 when AUTH0_CLIENT_SECRET is missing."""
+        from starlette.applications import Starlette
+        from starlette.routing import Route
+
+        routes = []
+
+        class MockMCPServer:
+            def custom_route(self, path, methods=None):
+                def decorator(func):
+                    routes.append(Route(path, func, methods=methods))
+                    return func
+
+                return decorator
+
+        env_without_secret = {
+            'AUTH0_DOMAIN': TEST_AUTH0_DOMAIN,
+            'AUTH0_CLIENT_ID': TEST_CLIENT_ID,
+            'AUTH0_AUDIENCE': 'https://alpacon.io/access/',
+            'ALPACON_MCP_AUTH_ENABLED': 'true',
+            'ALPACON_MCP_RESOURCE_URL': TEST_RESOURCE_URL,
+        }
+
+        mock_server = MockMCPServer()
+        with patch.dict('os.environ', env_without_secret, clear=False):
+            # Unset AUTH0_CLIENT_SECRET if present
+            with patch.dict('os.environ', {'AUTH0_CLIENT_SECRET': ''}, clear=False):
+                from utils.oauth import register_oauth_routes
+
+                register_oauth_routes(mock_server)
+                app = Starlette(routes=routes)
+                client = TestClient(app, raise_server_exceptions=False)
+                response = client.post(
+                    '/oauth/token',
+                    data={'grant_type': 'authorization_code', 'code': 'test-code'},
+                )
+        assert response.status_code == 500
+        data = response.json()
+        assert 'AUTH0_CLIENT_SECRET' in data.get('error', '')
 
     def test_token_overrides_redirect_uri_for_auth_code(self, oauth_app):
         """Token exchange should use server's callback URL, not client's."""
