@@ -119,7 +119,9 @@ def _resolve_region(
 
         # Could not auto-detect, list available regions
         ws_list = _get_jwt_workspaces(jwt_token)
-        available_regions = sorted({ws.get('region', '?') for ws in ws_list})
+        available_regions = sorted(
+            {ws.get('region') or '?' for ws in ws_list if isinstance(ws, dict)}
+        )
         if available_regions:
             return None, (
                 f'Multiple regions available in token: {", ".join(available_regions)}. '
