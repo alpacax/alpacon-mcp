@@ -282,6 +282,11 @@ async def get_disk_info(
     )
     disks_result, partitions_result = gather_results
 
+    # Re-raise BaseExceptions that are not regular Exceptions (e.g. CancelledError)
+    for r in gather_results:
+        if isinstance(r, BaseException) and not isinstance(r, Exception):
+            raise r
+
     # Prepare response
     disk_info = {
         'server_id': server_id,
@@ -375,6 +380,11 @@ async def get_server_overview(
         'disk_info',
     ]
 
+    # Re-raise BaseExceptions that are not regular Exceptions (e.g. CancelledError)
+    for result in results:
+        if isinstance(result, BaseException) and not isinstance(result, Exception):
+            raise result
+
     for i, result in enumerate(results):
         key = task_keys[i]
         if isinstance(result, dict) and result.get('status') == 'success':
@@ -382,7 +392,7 @@ async def get_server_overview(
         else:
             overview[key] = {
                 'error': str(result)
-                if isinstance(result, BaseException)
+                if isinstance(result, Exception)
                 else result.get('message', 'Unknown error')  # type: ignore[union-attr]
             }
 
