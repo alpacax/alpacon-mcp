@@ -24,7 +24,7 @@ async def webftp_session_create(
         server_id: Server ID to create FTP session on
         workspace: Workspace name. Required parameter
         username: Optional username for the FTP session (uses authenticated user if not provided)
-        region: Region (ap1, us1, eu1, dev, etc.). Auto-detected if not provided
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
         FTP session creation response
@@ -65,7 +65,7 @@ async def webftp_sessions_list(
     Args:
         workspace: Workspace name. Required parameter
         server_id: Optional server ID to filter sessions
-        region: Region (ap1, us1, eu1, dev, etc.). Auto-detected if not provided
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
         FTP sessions list response
@@ -118,7 +118,7 @@ async def webftp_upload_file(
         remote_file_path: Remote path where the file should be uploaded on the server (e.g., "/home/user/file.txt")
         workspace: Workspace name. Required parameter
         username: Optional username for the upload (uses authenticated user if not provided)
-        region: Region (ap1, us1, eu1, dev, etc.). Auto-detected if not provided
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
         allow_overwrite: Allow overwriting existing files (default: True)
 
     Returns:
@@ -237,7 +237,7 @@ async def webftp_download_file(
         workspace: Workspace name. Required parameter
         resource_type: Type of resource - "file" or "folder" (default: "file")
         username: Optional username for the download (uses authenticated user if not provided)
-        region: Region (ap1, us1, eu1, dev, etc.). Auto-detected if not provided
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
         Download response with file saved locally
@@ -332,7 +332,7 @@ async def webftp_uploads_list(
     Args:
         workspace: Workspace name. Required parameter
         server_id: Optional server ID to filter uploads
-        region: Region (ap1, us1, eu1, dev, etc.). Auto-detected if not provided
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
         Uploads list response
@@ -367,7 +367,7 @@ async def webftp_downloads_list(
     Args:
         workspace: Workspace name. Required parameter
         server_id: Optional server ID to filter downloads
-        region: Region (ap1, us1, eu1, dev, etc.). Auto-detected if not provided
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
         Downloads list response

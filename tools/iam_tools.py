@@ -24,7 +24,7 @@ async def list_iam_users(
 
     Args:
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1, dev, etc.). Auto-detected if not provided
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
         page: Page number for pagination (optional)
         page_size: Number of users per page (optional)
 
@@ -61,7 +61,7 @@ async def get_iam_user(
     Args:
         user_id: IAM user ID
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1, dev, etc.). Auto-detected if not provided
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
         IAM user details response
@@ -103,7 +103,7 @@ async def create_iam_user(
         last_name: Last name (optional)
         is_active: Whether user is active (default: True)
         groups: List of group IDs to assign to user (optional)
-        region: Region (ap1, us1, eu1, dev, etc.). Auto-detected if not provided
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
         User creation response
@@ -156,7 +156,7 @@ async def update_iam_user(
         last_name: New last name (optional)
         is_active: New active status (optional)
         groups: New list of group IDs (optional)
-        region: Region (ap1, us1, eu1, dev, etc.). Auto-detected if not provided
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
         User update response
@@ -202,7 +202,7 @@ async def delete_iam_user(
     Args:
         user_id: IAM user ID to delete
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1, dev, etc.). Auto-detected if not provided
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
         User deletion response
@@ -239,7 +239,7 @@ async def list_iam_groups(
 
     Args:
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1, dev, etc.). Auto-detected if not provided
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
         page: Page number for pagination (optional)
         page_size: Number of groups per page (optional)
 
@@ -283,7 +283,7 @@ async def create_iam_group(
         workspace: Workspace name. Required parameter
         description: Description of the group (optional)
         permissions: List of permission IDs to assign to group (optional)
-        region: Region (ap1, us1, eu1, dev, etc.). Auto-detected if not provided
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
         Group creation response

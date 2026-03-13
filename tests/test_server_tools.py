@@ -420,7 +420,7 @@ class TestRegionHandling:
     ):
         """Test with all supported regions."""
         mock_http_client.get.return_value = sample_servers_list
-        regions = ['ap1', 'us1', 'eu1', 'dev']
+        regions = ['ap1', 'us1', 'eu1']
 
         for region in regions:
             result = await list_servers(workspace='testworkspace', region=region)
@@ -430,7 +430,7 @@ class TestRegionHandling:
         assert mock_http_client.get.call_count == len(regions)
 
         mock_http_client.get.assert_called_with(
-            region='dev',
+            region='eu1',
             workspace='testworkspace',
             endpoint='/api/servers/servers/',
             token='test-token',

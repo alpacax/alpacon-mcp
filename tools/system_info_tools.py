@@ -17,7 +17,7 @@ async def get_system_info(
     Args:
         server_id: Server ID to get system info for
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1, dev, etc.). Auto-detected if not provided
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
         System information response
@@ -47,7 +47,7 @@ async def get_os_version(
     Args:
         server_id: Server ID to get OS info for
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1, dev, etc.). Auto-detected if not provided
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
         OS version information response
@@ -84,7 +84,7 @@ async def list_system_users(
         workspace: Workspace name. Required parameter
         username_filter: Optional username to search for
         login_enabled_only: Only return users that can login. Defaults to False
-        region: Region (ap1, us1, eu1, dev, etc.). Auto-detected if not provided
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
         System users list response
@@ -131,7 +131,7 @@ async def list_system_groups(
         server_id: Server ID to get groups from
         workspace: Workspace name. Required parameter
         groupname_filter: Optional group name to search for
-        region: Region (ap1, us1, eu1, dev, etc.). Auto-detected if not provided
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
         System groups list response
@@ -179,7 +179,7 @@ async def list_system_packages(
         package_name: Optional package name to search for
         architecture: Optional architecture filter (e.g., 'x86_64', 'aarch64')
         limit: Maximum number of packages to return. Defaults to 100
-        region: Region (ap1, us1, eu1, dev, etc.). Auto-detected if not provided
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
         System packages list response
@@ -222,7 +222,7 @@ async def get_network_interfaces(
     Args:
         server_id: Server ID to get network interfaces for
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1, dev, etc.). Auto-detected if not provided
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
         Network interfaces information response
@@ -252,7 +252,7 @@ async def get_disk_info(
     Args:
         server_id: Server ID to get disk info for
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1, dev, etc.). Auto-detected if not provided
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
         Disk and partition information response
@@ -312,7 +312,7 @@ async def get_system_time(
     Args:
         server_id: Server ID to get time info for
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1, dev, etc.). Auto-detected if not provided
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
         System time information response
@@ -342,7 +342,7 @@ async def get_server_overview(
     Args:
         server_id: Server ID to get overview for
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1, dev, etc.). Auto-detected if not provided
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
         Comprehensive server overview

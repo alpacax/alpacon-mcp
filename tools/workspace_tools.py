@@ -62,7 +62,7 @@ async def list_workspaces(region: str = '') -> dict[str, Any]:
     If region is provided, it filters results to that region only.
 
     Args:
-        region: Region filter (e.g., ap1, us1, eu1, dev). Empty string means all regions.
+        region: Region filter (e.g., ap1, us1, eu1). Empty string means all regions.
 
     Returns:
         Workspaces list response
