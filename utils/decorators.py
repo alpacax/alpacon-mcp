@@ -203,10 +203,8 @@ def with_token_validation(func: Callable) -> Callable:
             if err_msg:
                 return error_response(err_msg)
             region = resolved_region
-            # Update bound arguments to avoid passing region twice
-            # (handles both positional and keyword cases)
+            # Update bound arguments so the resolved region is used
             bound_args.arguments['region'] = region
-            kwargs['region'] = region
 
         # Validate region format
         if not validate_region_format(region):
@@ -230,6 +228,9 @@ def with_token_validation(func: Callable) -> Callable:
                     'Each server ID must be in UUID format. (e.g., 550e8400-e29b-41d4-a716-446655440000)',
                 )
 
+        # Get the **kwargs dict from bound arguments to inject token
+        extra_kwargs = bound_args.arguments.get('kwargs', {})
+
         if jwt_token is not None:
             # JWT mode — validate workspace access from JWT claims
             if not _validate_jwt_workspace(jwt_token, region, workspace):
@@ -239,16 +240,19 @@ def with_token_validation(func: Callable) -> Callable:
                     workspace=workspace,
                 )
             # Pass JWT through for downstream API calls
-            kwargs['token'] = jwt_token
+            extra_kwargs['token'] = jwt_token
         else:
             # stdio/SSE mode — use token.json lookup
             token = validate_token(region, workspace)
             if not token:
                 return token_error_response(region, workspace)
-            kwargs['token'] = token
+            extra_kwargs['token'] = token
 
-        # Call the original function
-        return await func(*args, **kwargs)
+        bound_args.arguments['kwargs'] = extra_kwargs
+
+        # Call the original function using bound_args to handle
+        # both positional and keyword region correctly
+        return await func(*bound_args.args, **bound_args.kwargs)
 
     # Remove _token parameter from the wrapper signature
     original_sig = inspect.signature(func)

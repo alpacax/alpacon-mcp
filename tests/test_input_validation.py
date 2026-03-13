@@ -89,9 +89,10 @@ class TestRegionAutoDetection:
     @patch('utils.decorators._get_jwt_token', return_value=None)
     @patch('utils.token_manager.get_token_manager')
     async def test_single_region_auto_detected(self, mock_tm, mock_jwt, mock_token):
-        """When token.json has exactly one region, auto-detection picks it."""
+        """When token.json has exactly one region and workspace not found, falls back to default."""
         mock_manager = mock_tm.return_value
-        mock_manager.find_region_for_workspace.return_value = 'dev'
+        mock_manager.find_region_for_workspace.return_value = None
+        mock_manager.get_default_region.return_value = 'dev'
 
         func = _make_decorated_func()
         result = await func(workspace='demo', region='')
