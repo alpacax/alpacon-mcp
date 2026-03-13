@@ -91,6 +91,13 @@ class TestOAuthMetadata:
         assert 'code' in data['response_types_supported']
         assert 'S256' in data['code_challenge_methods_supported']
 
+    def test_metadata_advertises_none_auth_method(self, oauth_app):
+        """Metadata should advertise 'none' since clients don't send client_secret."""
+        response = oauth_app.get('/.well-known/oauth-authorization-server')
+        assert response.status_code == 200
+        data = response.json()
+        assert data['token_endpoint_auth_methods_supported'] == ['none']
+
     def test_metadata_uses_configured_resource_url(self, oauth_app):
         response = oauth_app.get('/.well-known/oauth-authorization-server')
         data = response.json()
@@ -312,6 +319,8 @@ class TestOAuthToken:
                     data={'grant_type': 'authorization_code', 'code': 'test-code'},
                 )
         assert response.status_code == 500
+        data = response.json()
+        assert 'AUTH0_CLIENT_SECRET' in data.get('error', '')
 
     def test_token_overrides_redirect_uri_for_auth_code(self, oauth_app):
         """Token exchange should use server's callback URL, not client's."""
