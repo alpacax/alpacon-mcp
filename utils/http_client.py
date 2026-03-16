@@ -161,8 +161,8 @@ class AlpaconHTTPClient:
             if isinstance(body, dict) and body.get('code') == 'auth_mfa_required':
                 mfa_required = True
                 source = body.get('source', '')
-        except Exception:
-            pass
+        except Exception as parse_exc:
+            logger.debug('Failed to parse 401 response body as JSON: %s', parse_exc)
 
         # Signal middleware in remote (streamable-http) mode only
         if os.getenv('ALPACON_MCP_AUTH_ENABLED', '').lower() == 'true':
