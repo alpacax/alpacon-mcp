@@ -176,11 +176,9 @@ def _install_upstream_auth_middleware():
     """
     from utils.auth_error_middleware import UpstreamAuthErrorMiddleware
 
-    resource_url = os.getenv('ALPACON_MCP_RESOURCE_URL', '')
+    resource_url = os.getenv('ALPACON_MCP_RESOURCE_URL', 'https://mcp.alpacon.io')
     resource_metadata_url = (
         f'{resource_url.rstrip("/")}/.well-known/oauth-protected-resource'
-        if resource_url
-        else ''
     )
 
     async def patched_run():
