@@ -32,9 +32,10 @@ def mock_http_client():
 
 
 @pytest.fixture
-def patched_health(mock_token_manager, mock_http_client):
-    """Patch dependencies used by get_health_info via deferred imports."""
+def patched_health_local(mock_token_manager, mock_http_client):
+    """Patch dependencies for local (stdio) mode health checks."""
     with (
+        patch.dict('os.environ', {'ALPACON_MCP_AUTH_ENABLED': ''}, clear=False),
         patch(
             'utils.token_manager.get_token_manager',
             return_value=mock_token_manager,
@@ -44,11 +45,21 @@ def patched_health(mock_token_manager, mock_http_client):
         yield
 
 
-class TestGetHealthInfo:
-    """Tests for get_health_info utility function."""
+@pytest.fixture
+def patched_health_remote(mock_http_client):
+    """Patch dependencies for remote (streamable-http) mode health checks."""
+    with (
+        patch.dict('os.environ', {'ALPACON_MCP_AUTH_ENABLED': 'true'}, clear=False),
+        patch('utils.http_client.http_client', mock_http_client),
+    ):
+        yield
+
+
+class TestGetHealthInfoLocal:
+    """Tests for get_health_info in local (stdio/SSE) mode."""
 
     @pytest.mark.asyncio
-    async def test_returns_required_fields(self, patched_health):
+    async def test_returns_required_fields(self, patched_health_local):
         """Health info must contain all required top-level keys."""
         from utils.health import get_health_info
 
@@ -59,14 +70,14 @@ class TestGetHealthInfo:
             'version',
             'uptime_seconds',
             'transport',
-            'token_config',
+            'auth',
             'http_client',
             'websocket_pool',
         }
         assert required_keys.issubset(result.keys())
 
     @pytest.mark.asyncio
-    async def test_status_is_ok(self, patched_health):
+    async def test_status_is_ok(self, patched_health_local):
         """Status field must always be 'ok'."""
         from utils.health import get_health_info
 
@@ -75,7 +86,7 @@ class TestGetHealthInfo:
         assert result['status'] == 'ok'
 
     @pytest.mark.asyncio
-    async def test_version_matches_mcp_version(self, patched_health):
+    async def test_version_matches_mcp_version(self, patched_health_local):
         """Version must match the MCP_VERSION constant."""
         from utils.common import MCP_VERSION
         from utils.health import get_health_info
@@ -85,7 +96,7 @@ class TestGetHealthInfo:
         assert result['version'] == MCP_VERSION
 
     @pytest.mark.asyncio
-    async def test_uptime_is_positive(self, patched_health):
+    async def test_uptime_is_positive(self, patched_health_local):
         """Uptime must be a positive number."""
         from utils.health import get_health_info
 
@@ -95,25 +106,25 @@ class TestGetHealthInfo:
         assert result['uptime_seconds'] >= 0
 
     @pytest.mark.asyncio
-    async def test_no_secrets_in_token_config(self, patched_health):
-        """Token config must not expose sensitive information."""
+    async def test_local_auth_info(self, patched_health_local):
+        """Local mode auth must report token_file info without secrets."""
         from utils.health import get_health_info
 
         result = await get_health_info()
 
-        token_config = result['token_config']
+        auth = result['auth']
+        assert auth['mode'] == 'token_file'
+        assert auth['authenticated'] is True
+        assert auth['total_tokens'] == 3
+        assert auth['regions_configured'] == 2
 
         # Must not contain paths or workspace names
-        assert 'config_dir' not in token_config
-        assert 'token_file' not in token_config
-        assert 'regions' not in token_config  # regions contain workspace names
-
-        # Must only contain safe fields
-        allowed_keys = {'authenticated', 'total_tokens', 'regions_configured'}
-        assert set(token_config.keys()) == allowed_keys
+        assert 'config_dir' not in auth
+        assert 'token_file' not in auth
+        assert 'regions' not in auth
 
     @pytest.mark.asyncio
-    async def test_http_client_info(self, patched_health):
+    async def test_http_client_info(self, patched_health_local):
         """HTTP client section must report pool_active and cache_size."""
         from utils.health import get_health_info
 
@@ -131,6 +142,7 @@ class TestGetHealthInfo:
         mock_client.cache_size = 0
 
         with (
+            patch.dict('os.environ', {'ALPACON_MCP_AUTH_ENABLED': ''}, clear=False),
             patch(
                 'utils.token_manager.get_token_manager',
                 return_value=mock_token_manager,
@@ -145,7 +157,7 @@ class TestGetHealthInfo:
         assert result['http_client']['cache_size'] == 0
 
     @pytest.mark.asyncio
-    async def test_websocket_pool_info(self, patched_health):
+    async def test_websocket_pool_info(self, patched_health_local):
         """WebSocket pool section must report channel and session counts."""
         with (
             patch(
@@ -166,11 +178,45 @@ class TestGetHealthInfo:
         assert ws_info['active_sessions'] == 1
 
 
-class TestHealthCheckTool:
-    """Tests for the health_check MCP tool."""
+class TestGetHealthInfoRemote:
+    """Tests for get_health_info in remote (streamable-http) mode."""
 
     @pytest.mark.asyncio
-    async def test_health_check_tool_returns_success(self, patched_health):
+    async def test_remote_auth_info(self, patched_health_remote):
+        """Remote mode auth must report JWT mode without token.json info."""
+        from utils.health import get_health_info
+
+        result = await get_health_info()
+
+        auth = result['auth']
+        assert auth['mode'] == 'jwt'
+        assert auth['authenticated'] is True
+
+        # Must NOT contain token_file-specific fields
+        assert 'total_tokens' not in auth
+        assert 'regions_configured' not in auth
+
+    @pytest.mark.asyncio
+    async def test_remote_does_not_touch_token_manager(self, patched_health_remote):
+        """Remote mode must not import or call token_manager."""
+        with patch(
+            'utils.token_manager.get_token_manager',
+            side_effect=AssertionError(
+                'token_manager should not be called in remote mode'
+            ),
+        ):
+            from utils.health import get_health_info
+
+            result = await get_health_info()
+
+        assert result['auth']['mode'] == 'jwt'
+
+
+class TestHealthCheckTool:
+    """Tests for the health_check MCP tool (local mode only)."""
+
+    @pytest.mark.asyncio
+    async def test_health_check_tool_returns_success(self, patched_health_local):
         """health_check tool must wrap health info in success response."""
         from tools.health_tools import health_check
 
@@ -182,7 +228,7 @@ class TestHealthCheckTool:
         assert 'version' in result['data']
 
     @pytest.mark.asyncio
-    async def test_health_check_tool_no_params_required(self, patched_health):
+    async def test_health_check_tool_no_params_required(self, patched_health_local):
         """health_check tool must work with zero arguments."""
         from tools.health_tools import health_check
 

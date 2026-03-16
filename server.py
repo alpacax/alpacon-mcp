@@ -161,27 +161,33 @@ def _create_mcp_server() -> FastMCP:
 mcp = _create_mcp_server()
 
 
-@mcp.custom_route('/health', methods=['GET'])
-async def health_endpoint(request):
-    """HTTP health check endpoint for container orchestration.
+def _is_remote_mode() -> bool:
+    """Check if running in remote (streamable-http) mode with JWT auth."""
+    return os.getenv('ALPACON_MCP_AUTH_ENABLED', '').lower() == 'true'
 
-    Bypasses auth - suitable for unauthenticated health probes
-    (e.g., Kubernetes liveness/readiness checks).
-    Available on SSE and streamable-http transports only.
+
+def _register_http_health_endpoint():
+    """Register HTTP /health endpoint for remote (streamable-http) mode.
+
+    Only called in remote mode. Bypasses auth for unauthenticated
+    health probes (e.g., Kubernetes liveness/readiness checks).
     """
-    from starlette.responses import JSONResponse
 
-    from utils.health import get_health_info
+    @mcp.custom_route('/health', methods=['GET'])
+    async def health_endpoint(request):
+        from starlette.responses import JSONResponse
 
-    health = await get_health_info()
-    return JSONResponse(
-        health,
-        headers={
-            'Cache-Control': 'no-store',
-            'Pragma': 'no-cache',
-            'Expires': '0',
-        },
-    )
+        from utils.health import get_health_info
+
+        health = await get_health_info()
+        return JSONResponse(
+            health,
+            headers={
+                'Cache-Control': 'no-store',
+                'Pragma': 'no-cache',
+                'Expires': '0',
+            },
+        )
 
 
 def run(transport: str = 'stdio', config_file: str | None = None):
@@ -204,9 +210,10 @@ def run(transport: str = 'stdio', config_file: str | None = None):
     else:
         logger.info('No config file specified, using default config discovery')
 
-    # Register OAuth proxy routes if auth is enabled
-    if os.getenv('ALPACON_MCP_AUTH_ENABLED', '').lower() == 'true':
-        # Validate OAuth config at startup to fail fast on misconfiguration
+    remote_mode = _is_remote_mode()
+
+    if remote_mode:
+        # Remote (streamable-http) mode: register OAuth routes and HTTP health endpoint
         auth0_client_id = os.getenv('AUTH0_CLIENT_ID', '')
         if not auth0_client_id:
             raise RuntimeError(
@@ -217,11 +224,17 @@ def run(transport: str = 'stdio', config_file: str | None = None):
         from utils.oauth import register_oauth_routes
 
         register_oauth_routes(mcp)
+        _register_http_health_endpoint()
+        logger.info('Remote mode: OAuth routes and HTTP /health endpoint registered')
+    else:
+        # Local (stdio/SSE) mode: register health_check MCP tool
+        import tools.health_tools  # noqa: F401
+
+        logger.info('Local mode: health_check MCP tool registered')
 
     # Import all tool modules to register MCP tools via decorators
     import tools.command_tools  # noqa: F401
     import tools.events_tools  # noqa: F401
-    import tools.health_tools  # noqa: F401
     import tools.iam_tools  # noqa: F401
     import tools.metrics_tools  # noqa: F401
     import tools.server_tools  # noqa: F401

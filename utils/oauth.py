@@ -309,7 +309,11 @@ def register_oauth_routes(mcp_server):
 
         # Forward to Auth0
         auth0_token_url = f'{config["auth0_base_url"]}/oauth/token'
-        logger.info('Proxying token request to Auth0')
+        logger.info(
+            'Proxying token request to Auth0 - grant_type: %s, has_refresh_token: %s',
+            grant_type,
+            'refresh_token' in params,
+        )
 
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
@@ -329,6 +333,29 @@ def register_oauth_routes(mcp_server):
                     'error': 'server_error',
                     'error_description': 'Auth0 returned unexpected response format',
                 }
+
+            # Log token response details for debugging refresh issues
+            if response.status_code == 200:
+                has_access = 'access_token' in response_data
+                has_refresh = 'refresh_token' in response_data
+                expires_in = response_data.get('expires_in')
+                logger.info(
+                    'Auth0 token response - grant_type: %s, '
+                    'has_access_token: %s, has_refresh_token: %s, '
+                    'expires_in: %s',
+                    grant_type,
+                    has_access,
+                    has_refresh,
+                    expires_in,
+                )
+            else:
+                logger.warning(
+                    'Auth0 token request failed - grant_type: %s, '
+                    'status: %s, error: %s',
+                    grant_type,
+                    response.status_code,
+                    response_data.get('error', 'unknown'),
+                )
 
             return JSONResponse(
                 response_data,
@@ -526,4 +553,38 @@ def register_oauth_routes(mcp_server):
             result['state'] = original_state
         return JSONResponse(result)
 
-    logger.info('OAuth proxy routes registered')
+    @mcp_server.custom_route('/token', methods=['POST'])
+    async def oauth_token_fallback(request):
+        """Fallback token endpoint at /token.
+
+        MCP SDK clients fall back to /token (instead of /oauth/token) when
+        oauth_metadata is not cached — e.g. after a client restart that
+        still has a stored refresh_token but lost the server metadata.
+        Delegating to the canonical handler avoids a silent 404.
+        """
+        logger.info('/token fallback hit — delegating to /oauth/token handler')
+        return await oauth_token(request)
+
+    @mcp_server.custom_route('/authorize', methods=['GET'])
+    async def oauth_authorize_fallback(request):
+        """Fallback authorize endpoint at /authorize.
+
+        MCP SDK clients fall back to /authorize when oauth_metadata
+        is not cached.
+        """
+        logger.info('/authorize fallback hit — delegating to /oauth/authorize handler')
+        return await oauth_authorize(request)
+
+    @mcp_server.custom_route('/register', methods=['POST'])
+    async def oauth_register_fallback(request):
+        """Fallback register endpoint at /register.
+
+        MCP SDK clients fall back to /register when oauth_metadata
+        is not cached.
+        """
+        logger.info('/register fallback hit — delegating to /oauth/register handler')
+        return await oauth_register(request)
+
+    logger.info(
+        'OAuth proxy routes registered (including /token, /authorize, /register fallbacks)'
+    )
