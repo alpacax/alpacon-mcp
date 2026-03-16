@@ -327,15 +327,15 @@ class TestOAuthAuthorize:
         )
         assert response.status_code == 302
         location = response.headers['location']
-        # acr_values should be added to force MFA in Auth0
-        assert 'acr_values' in location
-        assert 'schemas.openid.net' in location
-        # 'mfa' pseudo-scope should be removed from the scope parameter
-        # Parse the scope from the redirect URL
+        # Parse redirect URL to validate parameters precisely
         from urllib.parse import parse_qs, urlparse
 
         parsed = urlparse(location)
         params = parse_qs(parsed.query)
+        # acr_values should contain the exact MFA ACR value
+        acr_values = params.get('acr_values', [''])[0]
+        assert acr_values == 'http://schemas.openid.net/psp/mfa'
+        # 'mfa' pseudo-scope should be removed from the scope parameter
         scope_value = params.get('scope', [''])[0]
         assert 'mfa' not in scope_value.split()
         assert 'openid' in scope_value
