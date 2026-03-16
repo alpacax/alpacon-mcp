@@ -183,8 +183,8 @@ class TestOAuthAuthorize:
         location = response.headers['location']
         assert 'response_type=code' in location
 
-    def test_authorize_rejects_non_localhost_redirect_uri(self, oauth_app):
-        """Non-localhost redirect_uris should be rejected to prevent open redirect."""
+    def test_authorize_rejects_untrusted_redirect_uri(self, oauth_app):
+        """Untrusted redirect_uris should be rejected to prevent open redirect."""
         response = oauth_app.get(
             '/oauth/authorize',
             params={
@@ -195,8 +195,57 @@ class TestOAuthAuthorize:
         assert response.status_code == 400
         data = response.json()
         assert data['error'] == 'invalid_request'
-        assert 'localhost' in data['error_description']
-        assert 'http' in data['error_description']
+        assert 'trusted' in data['error_description']
+
+    def test_authorize_allows_claude_ai_redirect_uri(self, oauth_app):
+        """Claude web redirect_uri should be allowed as a trusted domain."""
+        response = oauth_app.get(
+            '/oauth/authorize',
+            params={
+                'response_type': 'code',
+                'redirect_uri': 'https://claude.ai/api/mcp/auth_callback',
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == 302
+
+    def test_authorize_allows_chatgpt_redirect_uri(self, oauth_app):
+        """ChatGPT redirect_uri should be allowed as a trusted domain."""
+        response = oauth_app.get(
+            '/oauth/authorize',
+            params={
+                'response_type': 'code',
+                'redirect_uri': 'https://chatgpt.com/connector_platform_oauth_redirect',
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == 302
+
+    def test_authorize_allows_custom_redirect_domains(self, oauth_app):
+        """Custom ALLOWED_REDIRECT_DOMAINS env var should override defaults."""
+        with patch.dict(
+            'os.environ', {'ALLOWED_REDIRECT_DOMAINS': 'custom.example.com'}
+        ):
+            # Custom domain should be allowed
+            response = oauth_app.get(
+                '/oauth/authorize',
+                params={
+                    'response_type': 'code',
+                    'redirect_uri': 'https://custom.example.com/callback',
+                },
+                follow_redirects=False,
+            )
+            assert response.status_code == 302
+
+            # Default domains should no longer be allowed when overridden
+            response = oauth_app.get(
+                '/oauth/authorize',
+                params={
+                    'response_type': 'code',
+                    'redirect_uri': 'https://claude.ai/api/mcp/auth_callback',
+                },
+            )
+            assert response.status_code == 400
 
     def test_authorize_allows_127_0_0_1_redirect_uri(self, oauth_app):
         response = oauth_app.get(
@@ -591,8 +640,8 @@ class TestOAuthCallback:
         assert data['code'] == 'auth-code'
         assert data['state'] == 'opaque-state-value'
 
-    def test_callback_does_not_redirect_to_non_localhost_uri(self, oauth_app):
-        """Callback must not redirect to a non-localhost redirect_uri from state."""
+    def test_callback_does_not_redirect_to_untrusted_uri(self, oauth_app):
+        """Callback must not redirect to an untrusted redirect_uri from state."""
         composite = _make_composite_state('https://evil.com/cb', 'xyz')
         response = oauth_app.get(
             '/oauth/callback',
@@ -603,3 +652,18 @@ class TestOAuthCallback:
         assert 'location' not in response.headers
         data = response.json()
         assert data['code'] == 'auth-code'
+
+    def test_callback_redirects_to_trusted_domain(self, oauth_app):
+        """Callback should redirect to trusted domains like claude.ai."""
+        composite = _make_composite_state(
+            'https://claude.ai/api/mcp/auth_callback', 'xyz'
+        )
+        response = oauth_app.get(
+            '/oauth/callback',
+            params={'code': 'auth-code', 'state': composite},
+            follow_redirects=False,
+        )
+        assert response.status_code == 302
+        location = response.headers['location']
+        assert location.startswith('https://claude.ai/api/mcp/auth_callback')
+        assert 'code=auth-code' in location
