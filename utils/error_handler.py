@@ -1,5 +1,6 @@
 """Enhanced error handling utilities for Alpacon MCP server."""
 
+import contextvars
 import re
 import uuid
 from typing import Any
@@ -7,6 +8,14 @@ from typing import Any
 from utils.logger import get_logger
 
 logger = get_logger('error_handler')
+
+# Context variable for signaling upstream API 401 to the ASGI middleware.
+# Set by http_client when the Alpacon API returns 401 in remote mode.
+# The middleware reads this to replace HTTP 200 with HTTP 401, triggering
+# the MCP client's automatic OAuth re-authentication flow.
+upstream_auth_error_flag: contextvars.ContextVar[dict | None] = contextvars.ContextVar(
+    'upstream_auth_error', default=None
+)
 
 
 class ValidationError(Exception):

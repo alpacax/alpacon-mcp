@@ -205,7 +205,19 @@ def register_oauth_routes(mcp_server):
         # Without this, the MCP client cannot refresh expired access tokens.
         scope = params.get('scope', '')
         if 'offline_access' not in scope:
-            params['scope'] = f'{scope} offline_access'.strip()
+            scope = f'{scope} offline_access'.strip()
+
+        # Detect MFA pseudo-scope from re-auth flow.
+        # When the ASGI middleware returns 401 with scope="... mfa",
+        # the MCP client includes 'mfa' in the authorize request scope.
+        # Convert it to Auth0's acr_values to force MFA verification.
+        scope_parts = scope.split()
+        if 'mfa' in scope_parts:
+            params['acr_values'] = 'http://schemas.openid.net/psp/mfa'
+            scope = ' '.join(s for s in scope_parts if s != 'mfa')
+            logger.info('MFA scope detected, adding acr_values to force MFA in Auth0')
+
+        params['scope'] = scope
 
         # Build MCP server's own callback URL as redirect_uri for Auth0.
         # Store the client's original redirect_uri in the state so we can

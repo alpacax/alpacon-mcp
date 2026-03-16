@@ -147,6 +147,7 @@ def _create_mcp_server() -> FastMCP:
             auth=auth_settings,
             token_verifier=token_verifier,
             lifespan=app_lifespan,
+            json_response=True,
         )
     else:
         logger.info('Creating FastMCP server without auth (stdio/SSE mode)')
@@ -164,6 +165,44 @@ mcp = _create_mcp_server()
 def _is_remote_mode() -> bool:
     """Check if running in remote (streamable-http) mode with JWT auth."""
     return os.getenv('ALPACON_MCP_AUTH_ENABLED', '').lower() == 'true'
+
+
+def _install_upstream_auth_middleware():
+    """Override run_streamable_http_async to wrap app with auth error middleware.
+
+    When the Alpacon API returns 401 (e.g., MFA timeout), the middleware
+    replaces the HTTP 200 JSON-RPC response with HTTP 401, triggering
+    the MCP client's automatic OAuth re-authentication flow.
+    """
+    from utils.auth_error_middleware import UpstreamAuthErrorMiddleware
+
+    resource_url = os.getenv('ALPACON_MCP_RESOURCE_URL', '')
+    resource_metadata_url = (
+        f'{resource_url.rstrip("/")}/.well-known/oauth-protected-resource'
+        if resource_url
+        else ''
+    )
+
+    async def patched_run():
+        import uvicorn
+
+        starlette_app = mcp.streamable_http_app()
+        wrapped_app = UpstreamAuthErrorMiddleware(
+            starlette_app,
+            resource_metadata_url=resource_metadata_url,
+        )
+
+        config = uvicorn.Config(
+            wrapped_app,
+            host=host,
+            port=port,
+            log_level='info',
+        )
+        server = uvicorn.Server(config)
+        await server.serve()
+
+    mcp.run_streamable_http_async = patched_run
+    logger.info('Upstream auth error middleware installed for remote mode')
 
 
 def _register_http_health_endpoint():
@@ -247,6 +286,11 @@ def run(transport: str = 'stdio', config_file: str | None = None):
     import tools.webftp_tools  # noqa: F401
     import tools.websh_tools  # noqa: F401
     import tools.workspace_tools  # noqa: F401
+
+    # In remote mode, wrap the Starlette app with upstream auth error
+    # middleware to propagate Alpacon API 401 as MCP transport 401.
+    if remote_mode:
+        _install_upstream_auth_middleware()
 
     try:
         logger.info('Starting FastMCP server...')

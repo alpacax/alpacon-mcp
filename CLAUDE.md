@@ -125,7 +125,8 @@ This MCP server provides a **pure HTTP API bridge** to Alpacon's infrastructure 
 - `http_client.py` - Async HTTP client for Alpacon API
 - `token_manager.py` - Secure token storage and management
 - `decorators.py` - MCP tool decorators (token validation, input validation, error handling, logging)
-- `error_handler.py` - Input validators, validation error formatting, circuit breaker
+- `error_handler.py` - Input validators, validation error formatting, circuit breaker, upstream auth flag
+- `auth_error_middleware.py` - ASGI middleware for upstream 401 → MCP transport 401 propagation (MFA re-auth)
 - `common.py` - Shared helpers (token validation, response formatting)
 - `logger.py` - Logging configuration
 - `setup_wizard.py` - Interactive setup wizard for first-time configuration
@@ -154,6 +155,20 @@ This MCP server provides a **pure HTTP API bridge** to Alpacon's infrastructure 
   }
 }
 ```
+
+**MFA Re-authentication Flow** (remote/streamable-http mode only):
+
+When the Alpacon API returns 401 (e.g., MFA timeout with `code: "auth_mfa_required"`), the system automatically triggers OAuth re-authentication:
+
+1. `http_client` detects 401, sets `upstream_auth_error_flag` contextvars flag
+2. `UpstreamAuthErrorMiddleware` replaces HTTP 200 with HTTP 401 + `WWW-Authenticate` header
+3. MCP client's OAuth handler triggers browser-based re-auth via Auth0
+4. For MFA-required 401s, the `mfa` pseudo-scope is included in `WWW-Authenticate`
+5. `/oauth/authorize` proxy converts `mfa` scope to Auth0 `acr_values` to force MFA
+6. After MFA completion, new token (with fresh `completed_mfa_methods` timestamp) is issued
+7. MCP client automatically retries the original tool call with the new token
+
+A 60-second cooldown prevents infinite re-auth loops when 401s are not fixable by re-authentication.
 
 ### Tool Registration Pattern
 

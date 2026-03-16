@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import os
 import time
 from typing import Any
 from urllib.parse import urljoin
@@ -139,6 +140,57 @@ class AlpaconHTTPClient:
         """Check if a token is a JWT (header.payload.signature format)."""
         parts = token.split('.')
         return len(parts) == 3 and all(parts)
+
+    @staticmethod
+    def _handle_upstream_401(exc: httpx.HTTPStatusError) -> dict[str, Any]:
+        """Handle upstream API 401 responses.
+
+        Detects MFA-required errors from the Alpacon API response body
+        and signals the ASGI middleware (via contextvars) to return HTTP 401,
+        triggering the MCP client's OAuth re-authentication flow.
+
+        In stdio/SSE mode (auth not enabled), only returns an error dict
+        without signaling the middleware.
+        """
+        response_text = exc.response.text
+        mfa_required = False
+        source = ''
+
+        try:
+            body = exc.response.json()
+            if isinstance(body, dict) and body.get('code') == 'auth_mfa_required':
+                mfa_required = True
+                source = body.get('source', '')
+        except Exception:
+            pass
+
+        # Signal middleware in remote (streamable-http) mode only
+        if os.getenv('ALPACON_MCP_AUTH_ENABLED', '').lower() == 'true':
+            from utils.error_handler import upstream_auth_error_flag
+
+            upstream_auth_error_flag.set(
+                {
+                    'mfa_required': mfa_required,
+                    'source': source,
+                }
+            )
+            logger.warning(
+                'Upstream 401 detected (mfa_required=%s, source=%s), '
+                'signaling middleware for re-auth',
+                mfa_required,
+                source,
+            )
+
+        error_msg = 'MFA verification required' if mfa_required else str(exc)
+        error_response = {
+            'error': 'MFA Required' if mfa_required else 'HTTP Error',
+            'status_code': 401,
+            'message': error_msg,
+            'mfa_required': mfa_required,
+            'response': response_text,
+        }
+        logger.error(f'Upstream 401, not retrying: {error_response}')
+        return error_response
 
     def get_base_url(self, region: str, workspace: str) -> str:
         """Get base URL for API calls.
@@ -282,6 +334,9 @@ class AlpaconHTTPClient:
                         continue
                 else:
                     # Client error - don't retry
+                    if e.response.status_code == 401:
+                        return self._handle_upstream_401(e)
+
                     error_response = {
                         'error': 'HTTP Error',
                         'status_code': e.response.status_code,
