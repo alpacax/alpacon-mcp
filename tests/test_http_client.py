@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from utils.http_client import http_client
+from utils.http_client import AlpaconHTTPClient, http_client
 
 
 @pytest.fixture
@@ -377,3 +377,77 @@ class TestHTTPClientJWTAuth:
         assert AlpaconHTTPClient._is_jwt('simple-token') is False
         assert AlpaconHTTPClient._is_jwt('two.parts') is False
         assert AlpaconHTTPClient._is_jwt('a..c') is False
+
+
+class TestHandleUpstream401:
+    """Test _handle_upstream_401 MFA detection and flag signaling."""
+
+    def _make_401_exc(self, json_body=None, text=''):
+        """Create a mock HTTPStatusError with 401 response."""
+        mock_response = MagicMock()
+        mock_response.status_code = 401
+        mock_response.text = text or str(json_body)
+        if json_body is not None:
+            mock_response.json.return_value = json_body
+        else:
+            mock_response.json.side_effect = Exception('No JSON')
+        exc = httpx.HTTPStatusError(
+            'HTTP 401',
+            request=MagicMock(),
+            response=mock_response,
+        )
+        return exc
+
+    def test_mfa_required_detection(self):
+        """Detects auth_mfa_required code from response body."""
+        exc = self._make_401_exc({'code': 'auth_mfa_required', 'source': 'websh'})
+        result = AlpaconHTTPClient._handle_upstream_401(exc)
+        assert result['mfa_required'] is True
+        assert result['status_code'] == 401
+        assert result['error'] == 'MFA Required'
+
+    def test_non_mfa_401(self):
+        """Regular 401 without MFA code."""
+        exc = self._make_401_exc({'detail': 'Unauthorized'})
+        result = AlpaconHTTPClient._handle_upstream_401(exc)
+        assert result['mfa_required'] is False
+        assert result['error'] == 'HTTP Error'
+
+    def test_non_json_body(self):
+        """Handles non-JSON 401 response gracefully."""
+        exc = self._make_401_exc(json_body=None, text='Unauthorized')
+        result = AlpaconHTTPClient._handle_upstream_401(exc)
+        assert result['mfa_required'] is False
+        assert result['status_code'] == 401
+
+    def test_no_response_body_in_result(self):
+        """Error dict should NOT contain raw response body (PII protection)."""
+        exc = self._make_401_exc({'code': 'auth_mfa_required', 'source': 'websh'})
+        result = AlpaconHTTPClient._handle_upstream_401(exc)
+        assert 'response' not in result
+
+    @patch.dict('os.environ', {'ALPACON_MCP_AUTH_ENABLED': 'true'})
+    def test_sets_flag_in_remote_mode(self):
+        """Sets upstream_auth_error_flag when auth is enabled."""
+        from utils.error_handler import upstream_auth_error_flag
+
+        upstream_auth_error_flag.set(None)
+        exc = self._make_401_exc({'code': 'auth_mfa_required', 'source': 'websh'})
+        AlpaconHTTPClient._handle_upstream_401(exc)
+
+        flag = upstream_auth_error_flag.get()
+        assert flag is not None
+        assert flag['mfa_required'] is True
+        assert flag['source'] == 'websh'
+
+    @patch.dict('os.environ', {'ALPACON_MCP_AUTH_ENABLED': 'false'})
+    def test_no_flag_in_stdio_mode(self):
+        """Does NOT set flag when auth is disabled (stdio mode)."""
+        from utils.error_handler import upstream_auth_error_flag
+
+        upstream_auth_error_flag.set(None)
+        exc = self._make_401_exc({'code': 'auth_mfa_required', 'source': 'websh'})
+        AlpaconHTTPClient._handle_upstream_401(exc)
+
+        flag = upstream_auth_error_flag.get()
+        assert flag is None

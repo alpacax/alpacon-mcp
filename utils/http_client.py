@@ -322,7 +322,9 @@ class AlpaconHTTPClient:
                 logger.error(
                     f'HTTP {method} error - Status: {e.response.status_code}, URL: {url}'
                 )
-                logger.error(f'Response body: {e.response.text}')
+                # Omit response body for 401 to avoid leaking auth error details/PII
+                if e.response.status_code != 401:
+                    logger.error(f'Response body: {e.response.text}')
 
                 if e.response.status_code >= 500:
                     # Server error - retry

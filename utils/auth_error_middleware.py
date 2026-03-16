@@ -39,8 +39,19 @@ class UpstreamAuthErrorMiddleware:
         self.app = app
         self.resource_metadata_url = resource_metadata_url
         self._cooldown_seconds = cooldown_seconds
-        # Per-client cooldown: hash(authorization) -> last 401 time
+        # Per-client cooldown: hash(authorization) -> last 401 time.
+        # Pruned on each request to prevent unbounded growth.
         self._client_cooldowns: dict[str, float] = {}
+
+    def _prune_expired_cooldowns(self, now: float) -> None:
+        """Remove cooldown entries that have expired."""
+        expired = [
+            key
+            for key, ts in self._client_cooldowns.items()
+            if (now - ts) > self._cooldown_seconds
+        ]
+        for key in expired:
+            del self._client_cooldowns[key]
 
     @staticmethod
     def _get_client_key(scope: Scope) -> str:
@@ -74,6 +85,7 @@ class UpstreamAuthErrorMiddleware:
         # Check if tool signaled upstream auth error
         error_info = upstream_auth_error_flag.get()
         now = time.monotonic()
+        self._prune_expired_cooldowns(now)
 
         if error_info:
             client_key = self._get_client_key(scope)
