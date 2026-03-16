@@ -198,16 +198,27 @@ class TestGetHealthInfoRemote:
 
     @pytest.mark.asyncio
     async def test_remote_does_not_touch_token_manager(self, patched_health_remote):
-        """Remote mode must not import or call token_manager."""
-        with patch(
-            'utils.token_manager.get_token_manager',
-            side_effect=AssertionError(
-                'token_manager should not be called in remote mode'
+        """Remote mode must not import or call token_manager.
+
+        Patches at both utils.token_manager and utils.health level to
+        ensure no token_manager access regardless of module caching.
+        """
+        sentinel = AssertionError('token_manager should not be called in remote mode')
+        with (
+            patch('utils.token_manager.get_token_manager', side_effect=sentinel),
+            patch.dict(
+                'sys.modules', {'utils.common': MagicMock(MCP_VERSION='0.0.0-test')}
             ),
         ):
-            from utils.health import get_health_info
+            import importlib
+            import sys
 
-            result = await get_health_info()
+            # Force fresh import of utils.health to avoid cached module paths
+            sys.modules.pop('utils.health', None)
+            import utils.health
+
+            importlib.reload(utils.health)
+            result = await utils.health.get_health_info()
 
         assert result['auth']['mode'] == 'jwt'
 

@@ -48,8 +48,14 @@ async def get_health_info() -> dict[str, Any]:
     Returns:
         Health status dictionary
     """
-    from utils.common import MCP_VERSION
+    import importlib.metadata
+
     from utils.http_client import http_client
+
+    try:
+        MCP_VERSION = importlib.metadata.version('alpacon-mcp')
+    except importlib.metadata.PackageNotFoundError:
+        MCP_VERSION = '0.4.2-dev'
 
     # Auth config — mode-appropriate info only
     auth_info = _get_auth_info_remote() if _is_remote_mode() else _get_auth_info_local()
