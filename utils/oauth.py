@@ -21,6 +21,14 @@ logger = get_logger('oauth')
 
 _ALLOWED_LOOPBACK_HOSTS = ('localhost', '127.0.0.1', '::1')
 
+# Default trusted redirect domains for cloud-based MCP clients (e.g. Claude web, ChatGPT).
+# Override via ALLOWED_REDIRECT_DOMAINS env var (comma-separated).
+_DEFAULT_REDIRECT_DOMAINS = (
+    'claude.ai',
+    'chatgpt.com',
+    'chat.openai.com',
+)
+
 
 def _get_server_url(request) -> str:
     """Build the MCP server's base URL from config or request.
@@ -34,15 +42,44 @@ def _get_server_url(request) -> str:
     return f'{request.url.scheme}://{request.url.netloc}'
 
 
-def _is_localhost_url(url: str) -> bool:
-    """Validate that a URL points to a localhost address using http/https."""
+def _get_allowed_redirect_domains() -> tuple[str, ...]:
+    """Return the set of allowed non-localhost redirect domains.
+
+    Reads from ALLOWED_REDIRECT_DOMAINS env var (comma-separated).
+    Falls back to _DEFAULT_REDIRECT_DOMAINS if not set.
+    """
+    env_domains = os.getenv('ALLOWED_REDIRECT_DOMAINS', '').strip()
+    if env_domains:
+        return tuple(d.strip().lower() for d in env_domains.split(',') if d.strip())
+    return _DEFAULT_REDIRECT_DOMAINS
+
+
+def _is_allowed_redirect_url(url: str) -> bool:
+    """Validate that a redirect URL is allowed.
+
+    Allows localhost URLs (http/https) and trusted redirect domains (https only).
+    Non-loopback domains must use https to prevent authorization code leakage
+    over plaintext connections.
+    """
     from urllib.parse import urlparse
 
     parsed = urlparse(url)
-    return (
-        parsed.scheme in ('http', 'https')
-        and parsed.hostname in _ALLOWED_LOOPBACK_HOSTS
-    )
+    if parsed.scheme not in ('http', 'https'):
+        return False
+
+    hostname = parsed.hostname or ''
+
+    # Allow localhost with http or https (for local development)
+    if hostname in _ALLOWED_LOOPBACK_HOSTS:
+        return True
+
+    # Trusted domains must use https to prevent code leakage via plaintext
+    if parsed.scheme != 'https':
+        return False
+
+    # Allow trusted redirect domains (exact match)
+    allowed_domains = _get_allowed_redirect_domains()
+    return hostname in allowed_domains
 
 
 def _build_redirect_url(base_url: str, extra_params: dict) -> str:
@@ -176,17 +213,17 @@ def register_oauth_routes(mcp_server):
         server_url = _get_server_url(request)
 
         # Save client's original redirect_uri to relay the code later.
-        # Only allow localhost redirect_uris (MCP clients run local HTTP servers)
-        # to prevent open redirect attacks that could leak authorization codes.
+        # Allow localhost and trusted cloud MCP client domains to prevent
+        # open redirect attacks while supporting Claude web, ChatGPT, etc.
         client_redirect_uri = params.get('redirect_uri', '')
-        if client_redirect_uri and not _is_localhost_url(client_redirect_uri):
+        if client_redirect_uri and not _is_allowed_redirect_url(client_redirect_uri):
             from starlette.responses import JSONResponse
 
             return JSONResponse(
                 {
                     'error': 'invalid_request',
                     'error_description': (
-                        'redirect_uri must be a localhost URL using http/https'
+                        'redirect_uri must be a localhost URL or a trusted domain'
                     ),
                 },
                 status_code=400,
@@ -474,12 +511,12 @@ def register_oauth_routes(mcp_server):
                 # so it can be echoed back to the client per OAuth spec.
                 original_state = composite_state
 
-        # Defense-in-depth: re-validate redirect_uri from state is a localhost URL.
+        # Defense-in-depth: re-validate redirect_uri from state is allowed.
         # The authorize endpoint already validates this, but an attacker could craft
         # a composite state directly and hit Auth0 with our callback URL.
-        if client_redirect_uri and not _is_localhost_url(client_redirect_uri):
+        if client_redirect_uri and not _is_allowed_redirect_url(client_redirect_uri):
             logger.warning(
-                f'Callback rejected non-localhost redirect_uri from state: '
+                f'Callback rejected untrusted redirect_uri from state: '
                 f'{client_redirect_uri}'
             )
             client_redirect_uri = ''
