@@ -152,7 +152,6 @@ class AlpaconHTTPClient:
         In stdio/SSE mode (auth not enabled), only returns an error dict
         without signaling the middleware.
         """
-        response_text = exc.response.text
         mfa_required = False
         source = ''
 
@@ -187,9 +186,12 @@ class AlpaconHTTPClient:
             'status_code': 401,
             'message': error_msg,
             'mfa_required': mfa_required,
-            'response': response_text,
         }
-        logger.error(f'Upstream 401, not retrying: {error_response}')
+        logger.error(
+            'Upstream 401 (mfa_required=%s, source=%s), not retrying',
+            mfa_required,
+            source,
+        )
         return error_response
 
     def get_base_url(self, region: str, workspace: str) -> str:

@@ -8,6 +8,7 @@ triggering the MCP client's automatic OAuth re-authentication flow.
 Only active in remote (streamable-http) mode where OAuth is enabled.
 """
 
+import hashlib
 import json
 import time
 
@@ -22,9 +23,11 @@ logger = get_logger('auth_error_middleware')
 class UpstreamAuthErrorMiddleware:
     """Replace HTTP 200 with 401 when upstream API requires re-authentication.
 
-    Uses a cooldown timer to prevent infinite re-auth loops: after emitting
-    a 401, subsequent upstream auth errors within the cooldown period are
-    passed through as normal tool error responses.
+    Uses a per-client cooldown timer to prevent infinite re-auth loops:
+    after emitting a 401 for a given client, subsequent upstream auth errors
+    from that client within the cooldown period are passed through as normal
+    tool error responses. Cooldown is tracked per client (by hashed
+    Authorization header) so one client's re-auth does not suppress another's.
     """
 
     def __init__(
@@ -35,8 +38,22 @@ class UpstreamAuthErrorMiddleware:
     ):
         self.app = app
         self.resource_metadata_url = resource_metadata_url
-        self._last_401_time: float = 0
         self._cooldown_seconds = cooldown_seconds
+        # Per-client cooldown: hash(authorization) -> last 401 time
+        self._client_cooldowns: dict[str, float] = {}
+
+    @staticmethod
+    def _get_client_key(scope: Scope) -> str:
+        """Derive a client key from the Authorization header.
+
+        Uses a SHA-256 hash prefix to avoid storing raw tokens in memory.
+        Falls back to a fixed key if no Authorization header is present.
+        """
+        headers = dict(scope.get('headers', []))
+        auth_header = headers.get(b'authorization', b'')
+        if auth_header:
+            return hashlib.sha256(auth_header).hexdigest()[:16]
+        return '_anonymous'
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope['type'] != 'http':
@@ -57,29 +74,34 @@ class UpstreamAuthErrorMiddleware:
         # Check if tool signaled upstream auth error
         error_info = upstream_auth_error_flag.get()
         now = time.monotonic()
-        cooldown_active = (now - self._last_401_time) <= self._cooldown_seconds
 
-        if error_info and not cooldown_active:
-            self._last_401_time = now
-            mfa_required = error_info.get('mfa_required', False)
-            source = error_info.get('source', '')
-            logger.info(
-                'Upstream 401 detected (mfa_required=%s, source=%s), '
-                'returning HTTP 401 to trigger re-auth',
-                mfa_required,
-                source,
-            )
-            await self._send_401(send, mfa_required=mfa_required)
-        else:
-            if error_info and cooldown_active:
-                remaining = self._cooldown_seconds - (now - self._last_401_time)
+        if error_info:
+            client_key = self._get_client_key(scope)
+            last_401 = self._client_cooldowns.get(client_key, 0)
+            cooldown_active = (now - last_401) <= self._cooldown_seconds
+
+            if not cooldown_active:
+                self._client_cooldowns[client_key] = now
+                mfa_required = error_info.get('mfa_required', False)
+                source = error_info.get('source', '')
                 logger.info(
-                    'Upstream 401 detected but cooldown active '
-                    '(%.0fs remaining), passing through as tool error',
-                    remaining,
+                    'Upstream 401 detected (mfa_required=%s, source=%s), '
+                    'returning HTTP 401 to trigger re-auth',
+                    mfa_required,
+                    source,
                 )
-            for msg in buffered:
-                await send(msg)
+                await self._send_401(send, mfa_required=mfa_required)
+                return
+
+            remaining = self._cooldown_seconds - (now - last_401)
+            logger.info(
+                'Upstream 401 detected but cooldown active '
+                '(%.0fs remaining), passing through as tool error',
+                remaining,
+            )
+
+        for msg in buffered:
+            await send(msg)
 
     async def _send_401(self, send: Send, *, mfa_required: bool = False) -> None:
         """Send HTTP 401 with WWW-Authenticate header.

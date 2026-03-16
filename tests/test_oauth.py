@@ -314,6 +314,47 @@ class TestOAuthAuthorize:
         location = response.headers['location']
         assert 'offline_access' in location
 
+    def test_authorize_converts_mfa_scope_to_acr_values(self, oauth_app):
+        """When 'mfa' pseudo-scope is present, it is converted to acr_values."""
+        response = oauth_app.get(
+            '/oauth/authorize',
+            params={
+                'response_type': 'code',
+                'scope': 'openid profile email offline_access mfa',
+                'redirect_uri': 'http://localhost:8080/callback',
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == 302
+        location = response.headers['location']
+        # acr_values should be added to force MFA in Auth0
+        assert 'acr_values' in location
+        assert 'schemas.openid.net' in location
+        # 'mfa' pseudo-scope should be removed from the scope parameter
+        # Parse the scope from the redirect URL
+        from urllib.parse import parse_qs, urlparse
+
+        parsed = urlparse(location)
+        params = parse_qs(parsed.query)
+        scope_value = params.get('scope', [''])[0]
+        assert 'mfa' not in scope_value.split()
+        assert 'openid' in scope_value
+
+    def test_authorize_without_mfa_scope_no_acr_values(self, oauth_app):
+        """When 'mfa' is not in scope, no acr_values are added."""
+        response = oauth_app.get(
+            '/oauth/authorize',
+            params={
+                'response_type': 'code',
+                'scope': 'openid profile email offline_access',
+                'redirect_uri': 'http://localhost:8080/callback',
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == 302
+        location = response.headers['location']
+        assert 'acr_values' not in location
+
 
 class TestOAuthToken:
     """Tests for /oauth/token endpoint."""
