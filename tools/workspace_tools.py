@@ -67,12 +67,17 @@ async def list_workspaces(region: str = '') -> dict[str, Any]:
     Returns:
         Workspaces list response
     """
-    from utils.decorators import _get_jwt_token, _get_jwt_workspaces
+    from utils.decorators import _get_jwt_token, _get_jwt_workspaces, _is_auth_enabled
 
-    # Check if running in JWT mode (HTTP transport)
-    jwt_token = _get_jwt_token()
+    # Use explicit transport mode check, not JWT presence
+    if _is_auth_enabled():
+        jwt_token = _get_jwt_token()
+        if not jwt_token:
+            from utils.common import error_response
 
-    if jwt_token is not None:
+            return error_response(
+                'Authentication required. No JWT token found in request context.'
+            )
         # Server mode: extract workspaces from JWT claims
         jwt_workspaces = _get_jwt_workspaces(jwt_token)
         workspaces = []

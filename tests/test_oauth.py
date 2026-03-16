@@ -574,6 +574,55 @@ class TestOAuthRegister:
         assert response.json()['error'] == 'invalid_client_metadata'
 
 
+class TestOAuthFallbackRoutes:
+    """Tests for fallback routes (/token, /authorize, /register)."""
+
+    def test_token_fallback_delegates_to_canonical(self, oauth_app):
+        """POST /token should behave identically to POST /oauth/token."""
+        mock_client = _mock_auth0_response()
+        with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
+            response = oauth_app.post(
+                '/token',
+                data={'grant_type': 'authorization_code', 'code': 'test-code'},
+            )
+        assert response.status_code == 200
+        data = response.json()
+        assert 'access_token' in data
+
+    def test_token_fallback_rejects_unsupported_grant(self, oauth_app):
+        """POST /token should enforce the same grant_type allowlist."""
+        response = oauth_app.post(
+            '/token',
+            data={'grant_type': 'client_credentials'},
+        )
+        assert response.status_code == 400
+        assert response.json()['error'] == 'unsupported_grant_type'
+
+    def test_authorize_fallback_redirects_to_auth0(self, oauth_app):
+        """GET /authorize should redirect to Auth0 like /oauth/authorize."""
+        response = oauth_app.get(
+            '/authorize',
+            params={
+                'response_type': 'code',
+                'redirect_uri': 'http://localhost:52048/callback',
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == 302
+        location = response.headers['location']
+        assert location.startswith(f'https://{TEST_AUTH0_DOMAIN}/authorize')
+
+    def test_register_fallback_returns_client_id(self, oauth_app):
+        """POST /register should return the configured client_id."""
+        response = oauth_app.post(
+            '/register',
+            content=json.dumps({'client_name': 'test'}).encode(),
+            headers={'content-type': 'application/json'},
+        )
+        assert response.status_code == 201
+        assert response.json()['client_id'] == TEST_CLIENT_ID
+
+
 def _make_composite_state(redirect_uri='', state=''):
     """Helper to create composite state as the authorize endpoint does."""
     state_data = json.dumps({'redirect_uri': redirect_uri, 'state': state})
