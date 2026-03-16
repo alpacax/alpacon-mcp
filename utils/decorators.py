@@ -23,7 +23,7 @@ def _is_auth_enabled() -> bool:
     Returns True when running in streamable-http mode with Auth0 JWT auth.
     Returns False when running in stdio/SSE mode with token.json.
     """
-    return os.getenv('ALPACON_MCP_AUTH_ENABLED') == 'true'
+    return os.getenv('ALPACON_MCP_AUTH_ENABLED', '').lower() == 'true'
 
 
 def _get_jwt_token() -> str | None:

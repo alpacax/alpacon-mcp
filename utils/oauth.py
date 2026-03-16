@@ -335,26 +335,35 @@ def register_oauth_routes(mcp_server):
                 }
 
             # Log token response details for debugging refresh issues
-            if response.status_code == 200:
-                has_access = 'access_token' in response_data
-                has_refresh = 'refresh_token' in response_data
-                expires_in = response_data.get('expires_in')
-                logger.info(
-                    'Auth0 token response - grant_type: %s, '
-                    'has_access_token: %s, has_refresh_token: %s, '
-                    'expires_in: %s',
-                    grant_type,
-                    has_access,
-                    has_refresh,
-                    expires_in,
-                )
+            if isinstance(response_data, dict):
+                if response.status_code == 200:
+                    has_access = 'access_token' in response_data
+                    has_refresh = 'refresh_token' in response_data
+                    expires_in = response_data.get('expires_in')
+                    logger.info(
+                        'Auth0 token response - grant_type: %s, '
+                        'has_access_token: %s, has_refresh_token: %s, '
+                        'expires_in: %s',
+                        grant_type,
+                        has_access,
+                        has_refresh,
+                        expires_in,
+                    )
+                else:
+                    logger.warning(
+                        'Auth0 token request failed - grant_type: %s, '
+                        'status: %s, error: %s',
+                        grant_type,
+                        response.status_code,
+                        response_data.get('error', 'unknown'),
+                    )
             else:
                 logger.warning(
-                    'Auth0 token request failed - grant_type: %s, '
-                    'status: %s, error: %s',
+                    'Auth0 token response is not a dict - grant_type: %s, '
+                    'status: %s, type: %s',
                     grant_type,
                     response.status_code,
-                    response_data.get('error', 'unknown'),
+                    type(response_data).__name__,
                 )
 
             return JSONResponse(

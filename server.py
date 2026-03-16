@@ -213,7 +213,7 @@ def run(transport: str = 'stdio', config_file: str | None = None):
     remote_mode = _is_remote_mode()
 
     if remote_mode:
-        # Remote (streamable-http) mode: register OAuth routes and HTTP health endpoint
+        # Remote (streamable-http) mode: register OAuth routes
         auth0_client_id = os.getenv('AUTH0_CLIENT_ID', '')
         if not auth0_client_id:
             raise RuntimeError(
@@ -224,9 +224,14 @@ def run(transport: str = 'stdio', config_file: str | None = None):
         from utils.oauth import register_oauth_routes
 
         register_oauth_routes(mcp)
+        logger.info('Remote mode: OAuth routes registered')
+
+    if transport in ('sse', 'streamable-http'):
+        # HTTP transports: register HTTP /health endpoint (bypasses auth)
         _register_http_health_endpoint()
-        logger.info('Remote mode: OAuth routes and HTTP /health endpoint registered')
-    else:
+        logger.info('HTTP /health endpoint registered for transport: %s', transport)
+
+    if not remote_mode:
         # Local (stdio/SSE) mode: register health_check MCP tool
         import tools.health_tools  # noqa: F401
 
