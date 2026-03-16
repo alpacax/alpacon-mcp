@@ -340,7 +340,7 @@ def register_oauth_routes(mcp_server):
                     has_access = 'access_token' in response_data
                     has_refresh = 'refresh_token' in response_data
                     expires_in = response_data.get('expires_in')
-                    logger.info(
+                    logger.debug(
                         'Auth0 token response - grant_type: %s, '
                         'has_access_token: %s, has_refresh_token: %s, '
                         'expires_in: %s',

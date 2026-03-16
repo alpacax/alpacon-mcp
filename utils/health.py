@@ -21,7 +21,7 @@ def _get_auth_info_remote() -> dict[str, Any]:
     """Get auth info for remote (JWT) mode."""
     return {
         'mode': 'jwt',
-        'authenticated': True,
+        'auth_required': True,
     }
 
 

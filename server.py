@@ -167,10 +167,10 @@ def _is_remote_mode() -> bool:
 
 
 def _register_http_health_endpoint():
-    """Register HTTP /health endpoint for remote (streamable-http) mode.
+    """Register HTTP /health endpoint for HTTP transports (SSE, streamable-http).
 
-    Only called in remote mode. Bypasses auth for unauthenticated
-    health probes (e.g., Kubernetes liveness/readiness checks).
+    Bypasses auth for unauthenticated health probes
+    (e.g., Kubernetes liveness/readiness checks, docker-compose).
     """
 
     @mcp.custom_route('/health', methods=['GET'])

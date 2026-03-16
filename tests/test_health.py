@@ -190,7 +190,7 @@ class TestGetHealthInfoRemote:
 
         auth = result['auth']
         assert auth['mode'] == 'jwt'
-        assert auth['authenticated'] is True
+        assert auth['auth_required'] is True
 
         # Must NOT contain token_file-specific fields
         assert 'total_tokens' not in auth
