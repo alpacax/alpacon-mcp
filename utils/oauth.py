@@ -57,7 +57,9 @@ def _get_allowed_redirect_domains() -> tuple[str, ...]:
 def _is_allowed_redirect_url(url: str) -> bool:
     """Validate that a redirect URL is allowed.
 
-    Allows localhost URLs and URLs from trusted redirect domains.
+    Allows localhost URLs (http/https) and trusted redirect domains (https only).
+    Non-loopback domains must use https to prevent authorization code leakage
+    over plaintext connections.
     """
     from urllib.parse import urlparse
 
@@ -67,9 +69,13 @@ def _is_allowed_redirect_url(url: str) -> bool:
 
     hostname = parsed.hostname or ''
 
-    # Always allow localhost
+    # Allow localhost with http or https (for local development)
     if hostname in _ALLOWED_LOOPBACK_HOSTS:
         return True
+
+    # Trusted domains must use https to prevent code leakage via plaintext
+    if parsed.scheme != 'https':
+        return False
 
     # Allow trusted redirect domains (exact match)
     allowed_domains = _get_allowed_redirect_domains()

@@ -247,6 +247,17 @@ class TestOAuthAuthorize:
             )
             assert response.status_code == 400
 
+    def test_authorize_rejects_http_trusted_domain(self, oauth_app):
+        """Trusted domains must use https to prevent code leakage over plaintext."""
+        response = oauth_app.get(
+            '/oauth/authorize',
+            params={
+                'response_type': 'code',
+                'redirect_uri': 'http://claude.ai/api/mcp/auth_callback',
+            },
+        )
+        assert response.status_code == 400
+
     def test_authorize_allows_127_0_0_1_redirect_uri(self, oauth_app):
         response = oauth_app.get(
             '/oauth/authorize',
