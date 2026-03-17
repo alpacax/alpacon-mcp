@@ -116,6 +116,7 @@ async def test_no_flag_passes_through():
     sent = await _run(mw)
     status, _, body = await _collect_response(sent)
     assert status == 200
+    assert 'ok' in body
 
 
 @pytest.mark.asyncio
