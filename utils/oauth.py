@@ -213,7 +213,12 @@ def register_oauth_routes(mcp_server):
         # Convert it to Auth0's acr_values to force MFA verification.
         scope_parts = scope.split()
         if 'mfa' in scope_parts:
-            params['acr_values'] = 'http://schemas.openid.net/psp/mfa'
+            mfa_acr = 'http://schemas.openid.net/psp/mfa'
+            existing = params.get('acr_values', '')
+            if mfa_acr not in existing:
+                params['acr_values'] = (
+                    f'{existing} {mfa_acr}'.strip() if existing else mfa_acr
+                )
             scope = ' '.join(s for s in scope_parts if s != 'mfa')
             logger.info('MFA scope detected, adding acr_values to force MFA in Auth0')
 
