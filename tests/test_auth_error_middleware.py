@@ -125,10 +125,23 @@ async def test_flag_triggers_401():
         flag_value={'mfa_required': False, 'source': ''},
         resource_metadata_url='https://example.com/.well-known/oauth-protected-resource',
     )
+
+    # Debug: verify the flag_provider is wired correctly
+    assert isinstance(mw._flag, _FakeFlag), f'Expected _FakeFlag, got {type(mw._flag)}'
+    assert mw._flag.get() == {'mfa_required': False, 'source': ''}, (
+        f'Flag.get()={mw._flag.get()!r}'
+    )
+
     sent = await _run(mw)
     status, headers, body = await _collect_response(sent)
 
-    assert status == 401
+    # Debug: check flag state after middleware ran
+    post_flag = mw._flag.get()
+    print(
+        f'DEBUG: status={status}, post_flag={post_flag!r}, sent_count={len(sent)}, flag_type={type(mw._flag).__name__}'
+    )
+
+    assert status == 401, f'Expected 401, got {status}. flag={post_flag!r}, sent={sent}'
     assert 'www-authenticate' in headers
     assert 'invalid_token' in headers['www-authenticate']
     assert (
