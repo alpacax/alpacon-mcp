@@ -88,6 +88,16 @@ class UpstreamAuthErrorMiddleware:
 
         # Check if tool signaled upstream auth error
         error_info = self._flag.get()
+        # TEMP DEBUG: remove after CI diagnosis
+        import sys
+
+        print(
+            f'MIDDLEWARE_DEBUG: flag_type={type(self._flag).__name__}, '
+            f'flag_module={type(self._flag).__module__}, '
+            f'error_info={error_info!r}, '
+            f'flag_id={id(self._flag)}',
+            file=sys.stderr,
+        )
         now = time.monotonic()
         self._prune_expired_cooldowns(now)
 
