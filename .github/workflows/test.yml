@@ -15,6 +15,9 @@ jobs:
       matrix:
         python-version: ["3.12", "3.13", "3.14"]
 
+    env:
+      UV_PYTHON: python${{ matrix.python-version }}
+
     steps:
     - uses: actions/checkout@v4
 
@@ -28,22 +31,26 @@ jobs:
       uses: astral-sh/setup-uv@v3
 
     - name: Create virtual environment
-      run: uv venv --python python${{ matrix.python-version }}
+      run: uv venv
 
     - name: Install dependencies
       run: |
         uv pip install -e .[dev]
-        uv pip install pytest-cov ruff mypy
+        uv pip install pytest-cov
 
     - name: Lint with ruff
-      run: .venv/bin/ruff check .
+      run: |
+        uv pip install ruff
+        uv run ruff check .
 
     - name: Type check with mypy
-      run: .venv/bin/mypy --ignore-missing-imports --no-strict-optional .
+      run: |
+        uv pip install mypy
+        uv run mypy --ignore-missing-imports --no-strict-optional .
       continue-on-error: true
 
     - name: Test with pytest
       run: |
-        .venv/bin/pytest tests/ -v --tb=short --cov=. --cov-report=term-missing --cov-fail-under=60
+        uv run pytest tests/ -v --tb=short --cov=. --cov-report=term-missing --cov-fail-under=60
       env:
         PYTHONPATH: .
