@@ -28,7 +28,7 @@ jobs:
       uses: astral-sh/setup-uv@v3
 
     - name: Create virtual environment
-      run: uv venv
+      run: uv venv --python python${{ matrix.python-version }}
 
     - name: Install dependencies
       run: |
