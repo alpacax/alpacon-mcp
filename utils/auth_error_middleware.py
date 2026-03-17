@@ -35,10 +35,14 @@ class UpstreamAuthErrorMiddleware:
         app: ASGIApp,
         resource_metadata_url: str = '',
         cooldown_seconds: float = 60,
+        flag_provider=None,
     ):
         self.app = app
         self.resource_metadata_url = resource_metadata_url
         self._cooldown_seconds = cooldown_seconds
+        # Allow injecting a custom flag provider for testing.
+        # Defaults to the module-level contextvars flag.
+        self._flag = flag_provider or upstream_auth_error_flag
         # Per-client cooldown: hash(authorization) -> last 401 time.
         # Pruned on each request to prevent unbounded growth.
         self._client_cooldowns: dict[str, float] = {}
@@ -72,7 +76,7 @@ class UpstreamAuthErrorMiddleware:
             return
 
         # Reset flag for this request
-        upstream_auth_error_flag.set(None)
+        self._flag.set(None)
 
         # Buffer the response so we can replace it if needed
         buffered: list[dict] = []
@@ -83,7 +87,7 @@ class UpstreamAuthErrorMiddleware:
         await self.app(scope, receive, buffer_send)
 
         # Check if tool signaled upstream auth error
-        error_info = upstream_auth_error_flag.get()
+        error_info = self._flag.get()
         now = time.monotonic()
         self._prune_expired_cooldowns(now)
 
