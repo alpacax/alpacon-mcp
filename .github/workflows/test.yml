@@ -32,22 +32,18 @@ jobs:
 
     - name: Install dependencies
       run: |
-        uv pip install --no-cache -e .[dev]
-        uv pip install --no-cache pytest-cov
+        uv pip install -e .[dev]
+        uv pip install pytest-cov ruff mypy
 
     - name: Lint with ruff
-      run: |
-        uv pip install ruff
-        uv run ruff check .
+      run: .venv/bin/ruff check .
 
     - name: Type check with mypy
-      run: |
-        uv pip install mypy
-        uv run mypy --ignore-missing-imports --no-strict-optional .
+      run: .venv/bin/mypy --ignore-missing-imports --no-strict-optional .
       continue-on-error: true
 
     - name: Test with pytest
       run: |
-        uv run pytest tests/ -v --tb=short --cov=. --cov-report=term-missing --cov-fail-under=60
+        .venv/bin/pytest tests/ -v --tb=short --cov=. --cov-report=term-missing --cov-fail-under=60
       env:
         PYTHONPATH: .
