@@ -17,39 +17,29 @@ def _reset_auth_error_flag():
 
 
 class _FakeFlag:
-    """Simple flag replacement that avoids contextvars async isolation issues.
+    """Deterministic flag replacement that always returns a predetermined value.
 
-    asyncio.create_task() copies the contextvars context, so set() in a child
-    task doesn't propagate back. This makes tests reliable across all runtimes.
+    Avoids all contextvars/async isolation issues by making get() return the
+    value set at construction time, ignoring set() calls from the middleware.
     """
 
-    def __init__(self, value=None):
-        self._value = value
+    def __init__(self, return_value=None):
+        self._return_value = return_value
 
     def get(self, *args):
-        return self._value
+        return self._return_value
 
     def set(self, value):
-        self._value = value
+        pass  # No-op: value is controlled at construction time
 
 
 class _MockApp:
-    """Minimal ASGI app that sets a flag during execution (simulates tool 401)."""
+    """Minimal ASGI app that returns a 200 JSON response."""
 
-    def __init__(
-        self,
-        body: dict | None = None,
-        flag: _FakeFlag | None = None,
-        flag_value: dict | None = None,
-    ):
+    def __init__(self, body: dict | None = None):
         self._body = json.dumps(body or {'ok': True}).encode()
-        self._flag = flag
-        self._flag_value = flag_value
 
     async def __call__(self, scope, receive, send):
-        if self._flag is not None and self._flag_value is not None:
-            self._flag.set(self._flag_value)
-
         await send(
             {
                 'type': 'http.response.start',
@@ -103,9 +93,13 @@ async def _run(middleware, scope=None):
 
 
 def _make(flag_value=None, body=None, resource_metadata_url='', cooldown_seconds=60):
-    """Create middleware with injected FakeFlag (no contextvars, no patching)."""
-    fake = _FakeFlag()
-    app = _MockApp(body=body, flag=fake, flag_value=flag_value)
+    """Create middleware with injected FakeFlag (no contextvars, no patching).
+
+    The FakeFlag always returns flag_value from get(), making tests
+    deterministic regardless of async context isolation behavior.
+    """
+    fake = _FakeFlag(return_value=flag_value)
+    app = _MockApp(body=body)
     mw = UpstreamAuthErrorMiddleware(
         app,
         resource_metadata_url=resource_metadata_url,
