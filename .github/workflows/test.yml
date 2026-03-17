@@ -32,8 +32,8 @@ jobs:
 
     - name: Install dependencies
       run: |
-        uv pip install -e .[dev]
-        uv pip install pytest-cov
+        uv pip install --no-cache -e .[dev]
+        uv pip install --no-cache pytest-cov
 
     - name: Lint with ruff
       run: |

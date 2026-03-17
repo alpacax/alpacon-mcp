@@ -1,9 +1,12 @@
 """Tests for UpstreamAuthErrorMiddleware."""
 
+import inspect
 import json
+import sys
 
 import pytest
 
+import utils.auth_error_middleware as _mw_module
 from utils.auth_error_middleware import UpstreamAuthErrorMiddleware
 from utils.error_handler import upstream_auth_error_flag
 
@@ -97,6 +100,7 @@ def _make(flag_value=None, body=None, resource_metadata_url='', cooldown_seconds
 
     The FakeFlag always returns flag_value from get(), making tests
     deterministic regardless of async context isolation behavior.
+    Directly assigns mw._flag to bypass constructor logic entirely.
     """
     fake = _FakeFlag(return_value=flag_value)
     app = _MockApp(body=body)
@@ -104,9 +108,24 @@ def _make(flag_value=None, body=None, resource_metadata_url='', cooldown_seconds
         app,
         resource_metadata_url=resource_metadata_url,
         cooldown_seconds=cooldown_seconds,
-        flag_provider=fake,
     )
+    # Direct assignment - bypass constructor's `flag_provider or upstream_auth_error_flag`
+    mw._flag = fake
     return mw
+
+
+def test_module_source():
+    """Diagnostic: verify middleware is loaded from source, not stale cache."""
+    src = inspect.getfile(_mw_module)
+    print(f'DIAG: module={src}')
+    print(f'DIAG: sys.path={sys.path[:5]}')
+    init_sig = inspect.signature(UpstreamAuthErrorMiddleware.__init__)
+    print(f'DIAG: __init__ params={list(init_sig.parameters.keys())}')
+    # Verify __init__ has flag_provider parameter
+    assert 'flag_provider' in init_sig.parameters, (
+        f'flag_provider missing from __init__! params={list(init_sig.parameters.keys())}, '
+        f'source={src}'
+    )
 
 
 @pytest.mark.asyncio
