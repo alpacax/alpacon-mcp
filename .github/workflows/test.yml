@@ -15,6 +15,9 @@ jobs:
       matrix:
         python-version: ["3.12", "3.13", "3.14"]
 
+    env:
+      UV_PYTHON: python${{ matrix.python-version }}
+
     steps:
     - uses: actions/checkout@v4
 
@@ -38,16 +41,16 @@ jobs:
     - name: Lint with ruff
       run: |
         uv pip install ruff
-        uv run ruff check .
+        uv run --no-sync ruff check .
 
     - name: Type check with mypy
       run: |
         uv pip install mypy
-        uv run mypy --ignore-missing-imports --no-strict-optional .
+        uv run --no-sync mypy --ignore-missing-imports --no-strict-optional .
       continue-on-error: true
 
     - name: Test with pytest
       run: |
-        uv run pytest tests/ -v --tb=short --cov=. --cov-report=term-missing --cov-fail-under=60
+        uv run --no-sync pytest tests/ -v --tb=short --cov=. --cov-report=term-missing --cov-fail-under=60
       env:
         PYTHONPATH: .
