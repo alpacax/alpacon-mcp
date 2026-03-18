@@ -37,7 +37,7 @@ All MCP tools follow a consistent response structure:
 
 ## 🖥️ Server management tools
 
-### `servers_list`
+### `list_servers`
 List all servers in a region and workspace.
 
 **Parameters:**
@@ -46,7 +46,7 @@ List all servers in a region and workspace.
 
 **Returns:** Array of server objects with ID, name, status, and metadata.
 
-### `server_get`
+### `get_server`
 Get detailed information about a specific server.
 
 **Parameters:**
@@ -56,7 +56,7 @@ Get detailed information about a specific server.
 
 **Returns:** Complete server information including hardware specs, status, and configuration.
 
-### `server_notes_list`
+### `list_server_notes`
 List notes for a specific server.
 
 **Parameters:**
@@ -64,7 +64,7 @@ List notes for a specific server.
 - `region` (string, default: "ap1"): Region name
 - `workspace` (string): Workspace name
 
-### `server_note_create`
+### `create_server_note`
 Create a new note for a server.
 
 **Parameters:**
@@ -125,8 +125,18 @@ Get network traffic metrics for a server.
 - `region` (string, default: "ap1"): Region name
 - `workspace` (string): Workspace name
 
-### `get_cpu_top_servers`
-Get top 5 servers by CPU usage in the last 24 hours.
+### `get_disk_io`
+Get disk I/O performance metrics for a server.
+
+**Parameters:**
+- `server_id` (string): Server ID
+- `start_date` (string, optional): Start date in ISO format
+- `end_date` (string, optional): End date in ISO format
+- `region` (string, default: "ap1"): Region name
+- `workspace` (string): Workspace name
+
+### `get_top_servers`
+Get top servers by metric type(s).
 
 **Parameters:**
 - `region` (string, default: "ap1"): Region name
@@ -271,9 +281,79 @@ Search events by criteria.
 
 ---
 
-## 🖥️ Websh and command execution tools
+## 💻 Command API tools (requires ACL permission)
 
-> ⚠️ **ACL configuration required**: All command execution tools require pre-approved commands in your token's Access Control List (ACL). Configure permissions by clicking on your token in the Alpacon web interface → ACL settings.
+> ⚠️ **ACL configuration required**: Command API tools require pre-approved commands in your token's Access Control List (ACL). Configure permissions by clicking on your token in the Alpacon web interface → ACL settings.
+
+### `execute_command_with_acl`
+Execute commands on servers using the Command API.
+
+**Parameters:**
+- `server_id` (string): Server ID
+- `command` (string): Command to execute
+- `workspace` (string): Workspace name
+- `region` (string, default: "ap1"): Region name
+
+### `execute_command_sync`
+Execute a command and wait for results.
+
+**Parameters:**
+- `server_id` (string): Server ID
+- `command` (string): Command to execute
+- `workspace` (string): Workspace name
+- `region` (string, default: "ap1"): Region name
+- `timeout` (integer, optional): Timeout in seconds
+
+### `get_command_result`
+Get command execution results.
+
+**Parameters:**
+- `command_id` (string): Command ID
+- `workspace` (string): Workspace name
+- `region` (string, default: "ap1"): Region name
+
+### `list_commands`
+List recent command history.
+
+**Parameters:**
+- `server_id` (string, optional): Filter by server ID
+- `workspace` (string): Workspace name
+- `region` (string, default: "ap1"): Region name
+
+### `execute_command_multi_server`
+Execute a command on multiple servers simultaneously.
+
+**Parameters:**
+- `server_ids` (array): List of server IDs
+- `command` (string): Command to execute
+- `workspace` (string): Workspace name
+- `region` (string, default: "ap1"): Region name
+
+---
+
+## 🖥️ Websh tools
+
+### `execute_command`
+Execute a single command on a server. Automatically manages Websh sessions and WebSocket connections.
+
+**Parameters:**
+- `server_id` (string): Server ID
+- `command` (string): Command to execute
+- `workspace` (string): Workspace name
+- `region` (string, default: "ap1"): Region name
+
+**Returns:** Command output.
+
+### `execute_command_batch`
+Execute multiple commands efficiently on the same server.
+
+**Parameters:**
+- `server_id` (string): Server ID
+- `commands` (array): List of commands to execute
+- `workspace` (string): Workspace name
+- `region` (string, default: "ap1"): Region name
+
+**Returns:** Results for each command.
 
 ### `websh_session_create`
 Create a new Websh session for remote shell access.
@@ -317,6 +397,16 @@ Execute commands in Websh session via WebSocket.
 - `websocket_url` (string): WebSocket URL
 - `command` (string): Command to execute
 - `timeout` (integer, default: 10): Timeout in seconds
+
+### `websh_websocket_batch_execute`
+Execute multiple commands sequentially via WebSocket.
+
+**Parameters:**
+- `websocket_url` (string): WebSocket URL
+- `commands` (array): List of commands to execute
+- `timeout` (integer, default: 10): Timeout per command in seconds
+
+**Returns:** Results for each command.
 
 ### `websh_channel_connect`
 Connect to Websh user channel and maintain persistent connection.
@@ -373,28 +463,50 @@ Get list of WebFTP sessions.
 - `workspace` (string): Workspace name
 
 ### `webftp_upload_file`
-Upload a file through WebFTP session.
+Upload a local file to a server using S3 presigned URLs.
 
 **Parameters:**
-- `session_id` (string): WebFTP session ID
-- `file_path` (string): Target file path on server
-- `file_data` (string): File content (base64 encoded for binary files)
-- `region` (string, default: "ap1"): Region name
+- `server_id` (string): Server ID
+- `local_file_path` (string): Absolute path to local file
+- `remote_file_path` (string): Absolute path on server
 - `workspace` (string): Workspace name
+- `username` (string, optional): Username (defaults to authenticated user)
+- `region` (string, default: "ap1"): Region name
+- `allow_overwrite` (boolean, default: true): Allow overwriting existing files
+
+### `webftp_download_file`
+Download a file or folder from a server to local storage.
+
+**Parameters:**
+- `server_id` (string): Server ID
+- `remote_file_path` (string): Absolute path on server
+- `local_file_path` (string): Absolute path for local download
+- `workspace` (string): Workspace name
+- `resource_type` (string, default: "file"): "file" or "folder" (folders download as .zip)
+- `username` (string, optional): Username (defaults to authenticated user)
+- `region` (string, default: "ap1"): Region name
+
+### `webftp_uploads_list`
+List uploaded files (upload history).
+
+**Parameters:**
+- `workspace` (string): Workspace name
+- `server_id` (string, optional): Filter by server ID
+- `region` (string, default: "ap1"): Region name
 
 ### `webftp_downloads_list`
-Get list of downloadable files from WebFTP session.
+List download requests (download history).
 
 **Parameters:**
-- `session_id` (string): WebFTP session ID
-- `region` (string, default: "ap1"): Region name
 - `workspace` (string): Workspace name
+- `server_id` (string, optional): Filter by server ID
+- `region` (string, default: "ap1"): Region name
 
 ---
 
 ## 🔐 Identity and access management (IAM)
 
-> **Comprehensive IAM system**: Manage users, groups, roles, and permissions with workspace-level isolation and RBAC support.
+> Manage users and groups with workspace-level isolation.
 
 ### User management
 
