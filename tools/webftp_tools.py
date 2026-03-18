@@ -11,7 +11,7 @@ from utils.http_client import http_client
 
 
 @mcp_tool_handler(
-    description='Create a new WebFTP file transfer session on a server. Required before uploading or downloading files. Returns session ID and connection details. For direct file operations, use webftp_upload_file or webftp_download_file which handle sessions automatically.'
+    description='Create a new WebFTP file transfer session on a server. Returns session ID and connection details. Use this for advanced session management or inspecting session state.'
 )
 async def webftp_session_create(
     server_id: str,

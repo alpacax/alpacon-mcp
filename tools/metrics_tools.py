@@ -616,7 +616,7 @@ async def get_network_traffic(
 
 
 @mcp_tool_handler(
-    description='Get the top 5 servers ranked by resource usage in the last 24 hours. Supports cpu, memory, disk_io, and traffic metrics. Multiple metrics can be queried in one call by passing comma-separated values. Leave metric_types empty to get all metrics at once.'
+    description='Get the top servers ranked by resource usage in the last 24 hours. Supports cpu, memory, disk_io, and traffic metrics. Multiple metrics can be queried in one call by passing comma-separated values. Leave metric_types empty to get all metrics at once.'
 )
 async def get_top_servers(
     workspace: str, metric_types: str = '', region: str = '', **kwargs

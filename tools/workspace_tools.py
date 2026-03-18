@@ -52,7 +52,7 @@ def _collect_workspaces_from_tokens(
 
 
 @mcp.tool(
-    description='List all available workspaces and their regions. Returns workspace names, region codes, and domain URLs. In local mode reads from token.json; in server mode extracts from JWT claims. Use this to discover which workspaces are configured before calling other tools.'
+    description='List all available workspaces and their regions. Returns workspace names, region codes, and domain hostnames. In local mode reads from token.json; in server mode extracts from JWT claims. Use this to discover which workspaces are configured before calling other tools.'
 )
 async def list_workspaces(region: str = '') -> dict[str, Any]:
     """Get list of available workspaces.
