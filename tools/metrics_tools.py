@@ -70,7 +70,9 @@ def parse_cpu_metrics(results: list) -> dict[str, Any]:
     }
 
 
-@mcp_tool_handler(description='Get server CPU usage metrics')
+@mcp_tool_handler(
+    description='Get CPU utilization metrics for a server over a time range. Returns current, average, min, and max usage percentage with health status (idle/low/moderate/high/critical). Defaults to the last 24 hours if no date range is specified.'
+)
 async def get_cpu_usage(
     server_id: str,
     workspace: str,
@@ -186,7 +188,9 @@ def parse_memory_metrics(results: list) -> dict[str, Any]:
     }
 
 
-@mcp_tool_handler(description='Get server memory usage metrics')
+@mcp_tool_handler(
+    description='Get RAM memory utilization metrics for a server over a time range. Returns current, average, min, and max usage percentage with health status. Defaults to the last 24 hours if no date range is specified.'
+)
 async def get_memory_usage(
     server_id: str,
     workspace: str,
@@ -293,7 +297,9 @@ def parse_disk_metrics(results: list) -> dict[str, Any]:
     }
 
 
-@mcp_tool_handler(description='Get server disk usage metrics')
+@mcp_tool_handler(
+    description='Get disk space usage metrics for a server by device or partition. Returns usage percentage and total/used/free space in human-readable format. Automatically discovers the first available device if none is specified.'
+)
 async def get_disk_usage(
     server_id: str,
     workspace: str,
@@ -486,7 +492,9 @@ def parse_network_metrics(results: list) -> dict[str, Any]:
     }
 
 
-@mcp_tool_handler(description='Get disk I/O performance metrics for a server')
+@mcp_tool_handler(
+    description='Get disk I/O read and write throughput metrics for a server. Returns peak and average transfer rates per device. Useful for diagnosing storage performance bottlenecks. Defaults to the last 24 hours.'
+)
 async def get_disk_io(
     server_id: str,
     workspace: str,
@@ -545,7 +553,9 @@ async def get_disk_io(
     )
 
 
-@mcp_tool_handler(description='Get network traffic metrics for a server')
+@mcp_tool_handler(
+    description='Get network bandwidth and traffic metrics for a server by interface. Returns current, average, and peak values for input/output in bps and packets per second. Defaults to the last 24 hours.'
+)
 async def get_network_traffic(
     server_id: str,
     workspace: str,
@@ -606,7 +616,7 @@ async def get_network_traffic(
 
 
 @mcp_tool_handler(
-    description='Get top performing servers by metrics (supports multiple metrics in one call)'
+    description='Get the top servers ranked by resource usage in the last 24 hours. Supports cpu, memory, disk_io, and traffic metrics. Multiple metrics can be queried in one call by passing comma-separated values. Leave metric_types empty to get all metrics at once.'
 )
 async def get_top_servers(
     workspace: str, metric_types: str = '', region: str = '', **kwargs
@@ -704,7 +714,9 @@ async def get_top_servers(
     )
 
 
-@mcp_tool_handler(description='Get alert rules')
+@mcp_tool_handler(
+    description='Get monitoring alert rules and notification thresholds configured for servers. Returns rule conditions, severity levels, and notification settings. Filterable by server ID.'
+)
 async def get_alert_rules(
     workspace: str, server_id: str | None = None, region: str = '', **kwargs
 ) -> dict[str, Any]:
@@ -739,7 +751,9 @@ async def get_alert_rules(
     )
 
 
-@mcp_tool_handler(description='Get server metrics summary')
+@mcp_tool_handler(
+    description='Get a comprehensive monitoring overview combining CPU, memory, disk, and network metrics for a single server. Returns a compact summary with data availability status. Use individual metric tools (get_cpu_usage, get_memory_usage, etc.) for full detailed data.'
+)
 async def get_server_metrics_summary(
     server_id: str, workspace: str, hours: int = 24, region: str = '', **kwargs
 ) -> dict[str, Any]:

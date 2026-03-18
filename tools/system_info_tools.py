@@ -8,7 +8,9 @@ from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 
 
-@mcp_tool_handler(description='Get system information for a server')
+@mcp_tool_handler(
+    description='Get hardware and system information for a server including CPU model, core count, total RAM size, and architecture. Use this when you need to understand the physical or virtual hardware specifications of a server.'
+)
 async def get_system_info(
     server_id: str, workspace: str, region: str = '', **kwargs
 ) -> dict[str, Any]:
@@ -38,7 +40,9 @@ async def get_system_info(
     )
 
 
-@mcp_tool_handler(description='Get OS version information for a server')
+@mcp_tool_handler(
+    description='Get operating system details for a server including OS name, version, kernel version, and Linux distribution info. Use this to check OS compatibility or plan upgrades.'
+)
 async def get_os_version(
     server_id: str, workspace: str, region: str = '', **kwargs
 ) -> dict[str, Any]:
@@ -68,7 +72,9 @@ async def get_os_version(
     )
 
 
-@mcp_tool_handler(description='List system users on a server')
+@mcp_tool_handler(
+    description='List OS-level user accounts (passwd entries) on a server. Filterable by username search or login-enabled status. Returns UID, home directory, shell, and group memberships for each user.'
+)
 async def list_system_users(
     server_id: str,
     workspace: str,
@@ -117,7 +123,9 @@ async def list_system_users(
     )
 
 
-@mcp_tool_handler(description='List system groups on a server')
+@mcp_tool_handler(
+    description='List OS-level groups on a server. Filterable by group name search. Returns GID and member lists for each group.'
+)
 async def list_system_groups(
     server_id: str,
     workspace: str,
@@ -161,7 +169,9 @@ async def list_system_groups(
     )
 
 
-@mcp_tool_handler(description='List installed packages on a server')
+@mcp_tool_handler(
+    description='List installed software packages (rpm/deb) on a server. Searchable by package name and filterable by architecture (x86_64, aarch64, etc.). Returns package name, version, and architecture.'
+)
 async def list_system_packages(
     server_id: str,
     workspace: str,
@@ -213,7 +223,9 @@ async def list_system_packages(
     )
 
 
-@mcp_tool_handler(description='Get network interfaces information')
+@mcp_tool_handler(
+    description='Get network interface configuration for a server. Returns interface names, IP addresses, MAC addresses, MTU, and link up/down status. Use this to understand network topology or troubleshoot connectivity.'
+)
 async def get_network_interfaces(
     server_id: str, workspace: str, region: str = '', **kwargs
 ) -> dict[str, Any]:
@@ -243,7 +255,9 @@ async def get_network_interfaces(
     )
 
 
-@mcp_tool_handler(description='Get disk and partition information')
+@mcp_tool_handler(
+    description='Get physical disk devices and partition layout for a server. Returns disk models, sizes, partition mount points, filesystem types, and capacity. Fetches both disk and partition data concurrently.'
+)
 async def get_disk_info(
     server_id: str, workspace: str, region: str = '', **kwargs
 ) -> dict[str, Any]:
@@ -303,7 +317,9 @@ async def get_disk_info(
     return success_response(data=disk_info)
 
 
-@mcp_tool_handler(description='Get system time information')
+@mcp_tool_handler(
+    description='Get the current system clock time, timezone setting, and uptime duration for a server. Use this to check time synchronization or verify how long a server has been running.'
+)
 async def get_system_time(
     server_id: str, workspace: str, region: str = '', **kwargs
 ) -> dict[str, Any]:
@@ -333,7 +349,9 @@ async def get_system_time(
     )
 
 
-@mcp_tool_handler(description='Get comprehensive server overview')
+@mcp_tool_handler(
+    description='Get a comprehensive server overview combining hardware specs, OS version, uptime, network interfaces, and disk layout in a single call. Fetches all system information concurrently. Use this for a quick full picture of a server instead of calling individual system info tools.'
+)
 async def get_server_overview(
     server_id: str, workspace: str, region: str = '', **kwargs
 ) -> dict[str, Any]:

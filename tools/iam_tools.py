@@ -12,7 +12,9 @@ from utils.http_client import http_client
 # ===============================
 
 
-@mcp_tool_handler(description='List all IAM users in workspace')
+@mcp_tool_handler(
+    description='List all IAM users in a workspace. Returns username, email, active status, and group memberships for each user. Supports pagination for large user lists.'
+)
 async def list_iam_users(
     workspace: str,
     region: str = '',
@@ -52,7 +54,9 @@ async def list_iam_users(
     return success_response(data=result, region=region, workspace=workspace)
 
 
-@mcp_tool_handler(description='Get detailed information about a specific IAM user')
+@mcp_tool_handler(
+    description='Get detailed information about a specific IAM user by their user ID. Returns email, first/last name, active status, and assigned groups. Use this when you need full profile details for a single user.'
+)
 async def get_iam_user(
     user_id: str, workspace: str, region: str = '', **kwargs
 ) -> dict[str, Any]:
@@ -81,7 +85,9 @@ async def get_iam_user(
     )
 
 
-@mcp_tool_handler(description='Create a new IAM user')
+@mcp_tool_handler(
+    description='Create a new IAM user account in the workspace. Requires username and email. Optionally assign the user to groups and set first/last name. The user is active by default.'
+)
 async def create_iam_user(
     username: str,
     email: str,
@@ -134,7 +140,9 @@ async def create_iam_user(
     )
 
 
-@mcp_tool_handler(description='Update an existing IAM user')
+@mcp_tool_handler(
+    description='Update an existing IAM user profile. Can change email, first/last name, active/inactive status, or group memberships. Only the fields you provide will be updated (partial update).'
+)
 async def update_iam_user(
     user_id: str,
     workspace: str,
@@ -193,7 +201,9 @@ async def update_iam_user(
     )
 
 
-@mcp_tool_handler(description='Delete an IAM user')
+@mcp_tool_handler(
+    description='Permanently delete an IAM user account from the workspace. This action cannot be undone. Use update_iam_user to deactivate a user instead if you want to preserve the account.'
+)
 async def delete_iam_user(
     user_id: str, workspace: str, region: str = '', **kwargs
 ) -> dict[str, Any]:
@@ -227,7 +237,9 @@ async def delete_iam_user(
 # ===============================
 
 
-@mcp_tool_handler(description='List all IAM groups in workspace')
+@mcp_tool_handler(
+    description='List all IAM permission groups in a workspace. Returns group names, descriptions, and member information. Supports pagination for large group lists.'
+)
 async def list_iam_groups(
     workspace: str,
     region: str = '',
@@ -267,7 +279,9 @@ async def list_iam_groups(
     return success_response(data=result, region=region, workspace=workspace)
 
 
-@mcp_tool_handler(description='Create a new IAM group')
+@mcp_tool_handler(
+    description='Create a new IAM permission group in the workspace. Requires a group name. Optionally set a description and assign permissions. Users can then be added to this group via create_iam_user or update_iam_user.'
+)
 async def create_iam_group(
     name: str,
     workspace: str,

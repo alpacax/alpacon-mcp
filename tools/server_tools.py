@@ -7,7 +7,9 @@ from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 
 
-@mcp_tool_handler(description='Get list of servers')
+@mcp_tool_handler(
+    description='List all servers in a workspace. Returns server names, UUIDs, status, OS, and connection info. Use this to discover available servers and obtain server IDs required by other tools.'
+)
 async def list_servers(workspace: str, region: str = '', **kwargs) -> dict[str, Any]:
     """Get list of servers.
 
@@ -40,7 +42,9 @@ async def list_servers(workspace: str, region: str = '', **kwargs) -> dict[str, 
     return success_response(data=result, region=region, workspace=workspace)
 
 
-@mcp_tool_handler(description='Get detailed information of a specific server')
+@mcp_tool_handler(
+    description='Get detailed information about a specific server by its UUID. Returns hostname, IP address, OS, agent version, and online status. Use this when you need full details about a single server rather than the summary list.'
+)
 async def get_server(
     server_id: str, workspace: str, region: str = '', **kwargs
 ) -> dict[str, Any]:
@@ -89,7 +93,9 @@ async def get_server(
     )
 
 
-@mcp_tool_handler(description='Get list of server notes')
+@mcp_tool_handler(
+    description='List documentation notes attached to a server. Returns note titles, content, and timestamps. Use this to review existing server documentation or operational records.'
+)
 async def list_server_notes(
     server_id: str, workspace: str, region: str = '', **kwargs
 ) -> dict[str, Any]:
@@ -119,7 +125,9 @@ async def list_server_notes(
     )
 
 
-@mcp_tool_handler(description='Create a new note for server')
+@mcp_tool_handler(
+    description='Create a documentation note on a server with a title and content body. Use this to record operational notes, maintenance logs, or configuration documentation for a server.'
+)
 async def create_server_note(
     server_id: str,
     title: str,

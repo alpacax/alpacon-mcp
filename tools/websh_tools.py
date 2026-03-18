@@ -325,7 +325,9 @@ async def execute_command_via_channel(
     return ''.join(output_lines)
 
 
-@mcp_tool_handler(description='Create a new Websh session')
+@mcp_tool_handler(
+    description='Create a new Websh terminal session on a server and establish a WebSocket connection. Returns session ID, channel ID, and WebSocket URL for command execution. Use this for manual session management; for simpler usage, prefer execute_command instead.'
+)
 async def websh_session_create(
     server_id: str,
     workspace: str,
@@ -409,7 +411,9 @@ async def websh_session_create(
     )
 
 
-@mcp_tool_handler(description='Get list of Websh sessions')
+@mcp_tool_handler(
+    description='List active and past Websh terminal sessions in a workspace. Filterable by server ID. Use this to check which sessions are currently open or to find a session ID for reconnection.'
+)
 async def websh_sessions_list(
     workspace: str, server_id: str | None = None, region: str = '', **kwargs
 ) -> dict[str, Any]:
@@ -444,7 +448,9 @@ async def websh_sessions_list(
     )
 
 
-@mcp_tool_handler(description='Create a new user channel for an existing Websh session')
+@mcp_tool_handler(
+    description='Reconnect to an existing Websh session by creating a new user channel. Returns a fresh WebSocket URL and channel ID. Use this when a previous channel connection was lost but the session is still active on the server.'
+)
 async def websh_session_reconnect(
     session_id: str, workspace: str, region: str = '', **kwargs
 ) -> dict[str, Any]:
@@ -500,7 +506,9 @@ async def websh_session_reconnect(
     )
 
 
-@mcp_tool_handler(description='Terminate a Websh session')
+@mcp_tool_handler(
+    description='Terminate and close a Websh terminal session on the server. Use this to clean up sessions that are no longer needed and free server resources.'
+)
 async def websh_session_terminate(
     session_id: str, workspace: str, region: str = '', **kwargs
 ) -> dict[str, Any]:
@@ -531,7 +539,7 @@ async def websh_session_terminate(
 
 
 @mcp.tool(
-    description='Connect to Websh user channel and maintain persistent connection'
+    description='Open a persistent WebSocket connection to a Websh user channel and store it in the connection pool. The connection can be reused for multiple commands via websh_channel_execute. Use websh_channel_disconnect to close it when done.'
 )
 async def websh_channel_connect(
     channel_id: str, websocket_url: str, session_id: str
@@ -601,7 +609,9 @@ async def websh_channel_connect(
         }
 
 
-@mcp.tool(description='List active WebSocket channels')
+@mcp.tool(
+    description='List all active WebSocket channel connections in the local connection pool. Returns channel IDs, session IDs, and live health status via ping check. Use this to see which persistent connections are currently available.'
+)
 async def websh_channels_list() -> dict[str, Any]:
     """List all active WebSocket connections in the pool.
 
@@ -643,7 +653,9 @@ async def websh_channels_list() -> dict[str, Any]:
         return {'status': 'error', 'message': f'Failed to list channels: {str(e)}'}
 
 
-@mcp.tool(description='Disconnect WebSocket channel')
+@mcp.tool(
+    description='Close a WebSocket channel connection and remove it from the connection pool. Always disconnect channels when finished to free resources. The channel ID comes from websh_channel_connect or websh_channels_list.'
+)
 async def websh_channel_disconnect(channel_id: str) -> dict[str, Any]:
     """Disconnect and remove WebSocket connection from pool.
 
@@ -690,7 +702,9 @@ async def websh_channel_disconnect(channel_id: str) -> dict[str, Any]:
         }
 
 
-@mcp.tool(description='Execute command using persistent WebSocket connection')
+@mcp.tool(
+    description='Execute a shell command on an already-connected WebSocket channel and return the terminal output. The channel must have been opened with websh_channel_connect first. Use this for running multiple commands efficiently on the same connection.'
+)
 async def websh_channel_execute(
     channel_id: str, command: str, timeout: int = 10
 ) -> dict[str, Any]:
@@ -782,7 +796,9 @@ async def websh_channel_execute(
         }
 
 
-@mcp.tool(description='Execute commands in Websh session via WebSocket')
+@mcp.tool(
+    description='Execute a single command via a disposable WebSocket connection to a Websh session URL. The connection is opened, used once, and closed automatically. For running multiple commands, use execute_command_batch or websh_channel_* tools instead.'
+)
 async def websh_websocket_execute(
     websocket_url: str, command: str, timeout: int = 10
 ) -> dict[str, Any]:
@@ -849,7 +865,7 @@ async def websh_websocket_execute(
 
 
 @mcp_tool_handler(
-    description='Execute command using persistent connection (recommended)'
+    description='Execute a shell command on a server using automatic connection pooling. This is the recommended way to run commands — it creates or reuses Websh sessions and WebSocket connections transparently. No ACL permission required unlike Command API tools.'
 )
 async def execute_command(
     server_id: str,
@@ -917,7 +933,9 @@ async def execute_command(
         )
 
 
-@mcp_tool_handler(description='Execute multiple commands using persistent connection')
+@mcp_tool_handler(
+    description='Execute multiple shell commands sequentially on the same server using a single persistent connection. Much more efficient than calling execute_command repeatedly. Returns per-command output. No ACL permission required.'
+)
 async def execute_command_batch(
     server_id: str,
     commands: list[str],
@@ -990,7 +1008,9 @@ async def execute_command_batch(
         )
 
 
-@mcp.tool(description='Execute multiple commands in Websh session via WebSocket')
+@mcp.tool(
+    description='Execute multiple commands sequentially via a disposable WebSocket connection to a Websh session URL. Returns per-command output. The connection is opened once and closed after all commands complete. For persistent connections, use execute_command_batch instead.'
+)
 async def websh_websocket_batch_execute(
     websocket_url: str, commands: list[str], timeout: int = 30
 ) -> dict[str, Any]:

@@ -10,7 +10,9 @@ from utils.error_handler import format_validation_error, validate_file_path
 from utils.http_client import http_client
 
 
-@mcp_tool_handler(description='Create a new WebFTP session')
+@mcp_tool_handler(
+    description='Create a new WebFTP file transfer session on a server. Returns session ID and connection details. Use this for advanced session management or inspecting session state.'
+)
 async def webftp_session_create(
     server_id: str,
     workspace: str,
@@ -56,7 +58,9 @@ async def webftp_session_create(
     )
 
 
-@mcp_tool_handler(description='Get list of WebFTP sessions')
+@mcp_tool_handler(
+    description='List active and past WebFTP file transfer sessions in a workspace. Filterable by server ID. Use this to check which file transfer sessions are currently open.'
+)
 async def webftp_sessions_list(
     workspace: str, server_id: str | None = None, region: str = '', **kwargs
 ) -> dict[str, Any]:
@@ -91,7 +95,9 @@ async def webftp_sessions_list(
     )
 
 
-@mcp_tool_handler(description='Upload a file using WebFTP uploads API (S3-based)')
+@mcp_tool_handler(
+    description='Upload a local file to a remote server. Reads the file from a local absolute path, transfers it via S3 presigned URL, and places it at the specified remote path on the server. The file is automatically processed after upload.'
+)
 async def webftp_upload_file(
     server_id: str,
     local_file_path: str,
@@ -213,7 +219,9 @@ async def webftp_upload_file(
         )
 
 
-@mcp_tool_handler(description='Download a file or folder using WebFTP downloads API')
+@mcp_tool_handler(
+    description='Download a file or folder from a remote server and save it to a local path. For folders, the content is automatically packaged as a ZIP archive. Uses S3 presigned URLs for efficient transfer.'
+)
 async def webftp_download_file(
     server_id: str,
     remote_file_path: str,
@@ -323,7 +331,9 @@ async def webftp_download_file(
         )
 
 
-@mcp_tool_handler(description='List uploaded files (upload history)')
+@mcp_tool_handler(
+    description='List file upload history showing filenames, sizes, timestamps, and transfer status. Filterable by server ID. Use this to verify past uploads or check upload progress.'
+)
 async def webftp_uploads_list(
     workspace: str, server_id: str | None = None, region: str = '', **kwargs
 ) -> dict[str, Any]:
@@ -358,7 +368,9 @@ async def webftp_uploads_list(
     )
 
 
-@mcp_tool_handler(description='List download requests (download history)')
+@mcp_tool_handler(
+    description='List file download history showing filenames, sizes, timestamps, and transfer status. Filterable by server ID. Use this to verify past downloads or check download progress.'
+)
 async def webftp_downloads_list(
     workspace: str, server_id: str | None = None, region: str = '', **kwargs
 ) -> dict[str, Any]:

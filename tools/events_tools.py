@@ -7,7 +7,9 @@ from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 
 
-@mcp_tool_handler(description='List server events')
+@mcp_tool_handler(
+    description='List recent server events and activity logs ordered by newest first. Filterable by server ID and reporter. Use this for reviewing audit trails, operational history, or troubleshooting recent changes.'
+)
 async def list_events(
     workspace: str,
     server_id: str | None = None,
@@ -44,7 +46,9 @@ async def list_events(
     )
 
 
-@mcp_tool_handler(description='Get event details by ID')
+@mcp_tool_handler(
+    description='Get full details of a specific event by its ID. Returns description, timestamp, associated server, reporter, and event record. Use this when you need complete information about a particular event from list_events or search_events results.'
+)
 async def get_event(
     event_id: str, workspace: str, region: str = '', **kwargs
 ) -> dict[str, Any]:
@@ -63,7 +67,9 @@ async def get_event(
     )
 
 
-@mcp_tool_handler(description='Search events by criteria')
+@mcp_tool_handler(
+    description='Search events by keyword query across server name, reporter, record, and description fields. Supports full-text search and can be further filtered by server ID. Use this instead of list_events when looking for specific events.'
+)
 async def search_events(
     search_query: str,
     workspace: str,
