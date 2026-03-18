@@ -1,12 +1,12 @@
-# API Reference
+# API reference
 
 Complete reference for all Alpacon MCP Server tools and capabilities.
 
-## 📋 Response Structure
+## 📋 Response structure
 
 All MCP tools follow a consistent response structure:
 
-### Successful HTTP Request
+### Successful HTTP request
 ```json
 {
   "status": "success",
@@ -17,7 +17,7 @@ All MCP tools follow a consistent response structure:
 }
 ```
 
-### HTTP Request with API Error
+### HTTP request with API error
 ```json
 {
   "status": "success",  // HTTP request succeeded
@@ -35,7 +35,7 @@ All MCP tools follow a consistent response structure:
 
 > **Note**: `"status": "success"` indicates successful HTTP communication. Check the `data.error` field for API-level errors like ACL permission issues (403/404).
 
-## 🔐 Authentication Tools
+## 🔐 Authentication tools
 
 ### `auth_set_token`
 Set or update API tokens for specific region and workspace.
@@ -63,7 +63,7 @@ Remove stored API token for a region and workspace.
 
 ---
 
-## 🖥️ Server Management Tools
+## 🖥️ Server management tools
 
 ### `servers_list`
 List all servers in a region and workspace.
@@ -104,7 +104,7 @@ Create a new note for a server.
 
 ---
 
-## 📊 Metrics and Monitoring Tools
+## 📊 Metrics and monitoring tools
 
 ### `get_cpu_usage`
 Get CPU usage metrics for a server.
@@ -179,7 +179,7 @@ Get comprehensive metrics summary for a server.
 
 ---
 
-## 💻 System Information Tools
+## 💻 System information tools
 
 ### `get_system_info`
 Get detailed system information for a server.
@@ -267,7 +267,7 @@ Get comprehensive overview of server system information.
 
 ---
 
-## 🗂️ Event Management Tools
+## 🗂️ Event management tools
 
 ### `list_events`
 List server events.
@@ -336,9 +336,9 @@ Delete a scheduled command that hasn't been delivered yet.
 
 ---
 
-## 🖥️ Websh and Command Execution Tools
+## 🖥️ Websh and command execution tools
 
-> ⚠️ **ACL Configuration Required**: All command execution tools require pre-approved commands in your token's Access Control List (ACL). Configure permissions by clicking on your token in the Alpacon web interface → ACL settings.
+> ⚠️ **ACL configuration required**: All command execution tools require pre-approved commands in your token's Access Control List (ACL). Configure permissions by clicking on your token in the Alpacon web interface → ACL settings.
 
 ### `websh_session_create`
 Create a new Websh session for remote shell access.
@@ -427,7 +427,7 @@ Disconnect and remove WebSocket connection from pool.
 
 ---
 
-## 📁 WebFTP Tools
+## 📁 WebFTP tools
 
 ### `webftp_session_create`
 Create a new WebFTP session for file transfer.
@@ -466,11 +466,11 @@ Get list of downloadable files from WebFTP session.
 
 ---
 
-## 🔐 Identity and Access Management (IAM)
+## 🔐 Identity and access management (IAM)
 
-> **Comprehensive IAM System** - Manage users, groups, roles, and permissions with workspace-level isolation and RBAC support.
+> **Comprehensive IAM system**: Manage users, groups, roles, and permissions with workspace-level isolation and RBAC support.
 
-### User Management
+### User management
 
 #### `iam_users_list`
 List all IAM users in workspace with pagination support.
@@ -552,7 +552,7 @@ Delete IAM user from workspace.
 
 **⚠️ Warning:** This action is irreversible and will remove all user permissions and group memberships.
 
-### Group Management
+### Group management
 
 #### `iam_groups_list`
 List all IAM groups in workspace with pagination support.
@@ -585,7 +585,7 @@ Create new IAM group with permission assignments.
 }
 ```
 
-### Role and Permission Management
+### Role and permission management
 
 #### `iam_roles_list`
 List all IAM roles in workspace.
@@ -663,22 +663,22 @@ Get user's effective permissions (direct + inherited from groups).
 }
 ```
 
-### IAM Best Practices
+### IAM best practices
 
-**Security Guidelines:**
-1. **Least Privilege**: Grant minimum required permissions
-2. **Group-Based Management**: Use groups for permission inheritance
-3. **Regular Audits**: Review user permissions periodically
-4. **Workspace Isolation**: Separate environments with different workspaces
+**Security guidelines:**
+1. **Least privilege**: Grant minimum required permissions
+2. **Group-based management**: Use groups for permission inheritance
+3. **Regular audits**: Review user permissions periodically
+4. **Workspace isolation**: Separate environments with different workspaces
 
-**Performance Tips:**
+**Performance tips:**
 1. **Pagination**: Use page_size for large user/group lists
 2. **Caching**: Cache permission lookups for better performance
-3. **Bulk Operations**: Group multiple user operations when possible
+3. **Bulk operations**: Group multiple user operations when possible
 
 ---
 
-## 🏢 Workspace and User Management
+## 🏢 Workspace and user management
 
 ### `workspace_list`
 Get list of available workspaces.
@@ -715,11 +715,11 @@ Get user profile information.
 
 The server also provides authentication resources for checking status and configuration:
 
-- **`auth://status`** - Check authentication status
-- **`auth://config`** - Check configuration directory information
-- **`auth://tokens/{env}/{workspace}`** - Query specific token
+- **`auth://status`**: Check authentication status
+- **`auth://config`**: Check configuration directory information
+- **`auth://tokens/{env}/{workspace}`**: Query specific token
 
-## ⚠️ Error Handling
+## ⚠️ Error handling
 
 All tools return a consistent error structure:
 
@@ -737,7 +737,7 @@ Common error scenarios:
 - **404 Not Found**: Server, resource, or session not found
 - **500 Internal Error**: Server-side error
 
-## 📝 Response Format
+## 📝 Response format
 
 Successful responses follow this structure:
 

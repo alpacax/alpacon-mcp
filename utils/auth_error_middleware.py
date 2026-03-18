@@ -15,6 +15,8 @@ Only active in remote (streamable-http) mode where OAuth is enabled.
 
 import json
 import time
+from collections.abc import MutableMapping
+from typing import Any
 
 from starlette.types import ASGIApp, Receive, Scope, Send
 
@@ -93,9 +95,9 @@ class UpstreamAuthErrorMiddleware:
         token_key = self._extract_token_key(scope)
 
         # Buffer the response so we can replace it if needed
-        buffered: list[dict] = []
+        buffered: list[MutableMapping[str, Any]] = []
 
-        async def buffer_send(message: dict) -> None:
+        async def buffer_send(message: MutableMapping[str, Any]) -> None:
             buffered.append(message)
 
         try:

@@ -3,6 +3,7 @@ import signal
 import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import Literal
 
 from mcp.server.fastmcp import FastMCP
 
@@ -227,7 +228,10 @@ def _register_http_health_endpoint():
         )
 
 
-def run(transport: str = 'stdio', config_file: str | None = None):
+def run(
+    transport: Literal['stdio', 'sse', 'streamable-http'] = 'stdio',
+    config_file: str | None = None,
+):
     """Run MCP server with optional config file path.
 
     Args:

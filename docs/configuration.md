@@ -1,14 +1,14 @@
-# Configuration Guide
+# Configuration guide
 
 Comprehensive configuration guide for the Alpacon MCP Server.
 
-## 🔐 Authentication Configuration
+## 🔐 Authentication configuration
 
-### Method 1: Environment Variables (Recommended for uvx)
+### Method 1: Environment variables (recommended for uvx)
 
 The Alpacon MCP Server supports environment variables for token management, perfect for uvx usage:
 
-#### Environment Variable Format
+#### Environment variable format
 
 ```bash
 # Format: ALPACON_MCP_<REGION>_<WORKSPACE>_TOKEN
@@ -33,9 +33,9 @@ uvx alpacon-mcp
 ALPACON_MCP_AP1_PRODUCTION_TOKEN="your-token" uvx alpacon-mcp
 ```
 
-### Method 2: Configuration File
+### Method 2: Configuration file
 
-#### Token File Structure
+#### Token file structure
 
 ```json
 {
@@ -53,13 +53,13 @@ ALPACON_MCP_AP1_PRODUCTION_TOKEN="your-token" uvx alpacon-mcp
 }
 ```
 
-#### Configuration Priority
+#### Configuration priority
 
 The server uses this priority system to find tokens:
 
-1. **Environment Variables**: `ALPACON_MCP_<REGION>_<WORKSPACE>_TOKEN`
-2. **Config File**: Path from `ALPACON_MCP_CONFIG_FILE` environment variable
-3. **Default Location**: `config/token.json`
+1. **Environment variables**: `ALPACON_MCP_<REGION>_<WORKSPACE>_TOKEN`
+2. **Config file**: Path from `ALPACON_MCP_CONFIG_FILE` environment variable
+3. **Default location**: `config/token.json`
 
 #### Examples
 
@@ -77,16 +77,16 @@ uvx alpacon-mcp
 
 ---
 
-## 🖥️ MCP Client Configuration
+## 🖥️ MCP client configuration
 
 ### Claude Desktop
 
-**Configuration File Locations:**
+**Configuration file locations:**
 - **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
 - **Windows**: `%APPDATA%/Claude/claude_desktop_config.json`
 - **Linux**: `~/.config/Claude/claude_desktop_config.json`
 
-**Using uvx (Recommended):**
+**Using uvx (recommended):**
 ```json
 {
   "mcpServers": {
@@ -101,7 +101,7 @@ uvx alpacon-mcp
 }
 ```
 
-**Development Setup:**
+**Development setup:**
 ```json
 {
   "mcpServers": {
@@ -119,7 +119,7 @@ uvx alpacon-mcp
 
 ### Cursor IDE
 
-**Configuration File**: `.cursor/mcp_config.json` in your project root
+**Configuration file**: `.cursor/mcp_config.json` in your project root
 
 ```json
 {
@@ -156,7 +156,7 @@ uvx alpacon-mcp
 }
 ```
 
-### Continue (VS Code Extension)
+### Continue (VS Code extension)
 
 **Configuration**: Add to Continue configuration:
 ```json
@@ -173,9 +173,9 @@ uvx alpacon-mcp
 
 ---
 
-## ⚙️ Server Configuration Options
+## ⚙️ Server configuration options
 
-### Command Line Arguments
+### Command line arguments
 
 ```bash
 # Basic usage
@@ -191,9 +191,9 @@ python main_sse.py
 python main.py --help
 ```
 
-### Transport Modes
+### Transport modes
 
-#### STDIO Mode (Default)
+#### STDIO mode (default)
 - Standard MCP protocol transport
 - Bidirectional communication via stdin/stdout
 - Recommended for most MCP clients
@@ -202,7 +202,7 @@ python main.py --help
 python main.py
 ```
 
-#### SSE Mode (Server-Sent Events)
+#### SSE mode (Server-Sent Events)
 - HTTP-based transport with Server-Sent Events
 - Useful for web-based integrations
 - Runs on host 0.0.0.0:8237
@@ -211,9 +211,9 @@ python main.py
 python main_sse.py
 ```
 
-### Environment Configuration
+### Environment configuration
 
-#### Environment Variables
+#### Environment variables
 
 ```bash
 # Token configuration
@@ -228,7 +228,7 @@ export LOG_LEVEL=ERROR   # For production
 export DEBUG=true        # Enable debug logging
 ```
 
-#### Configuration Examples
+#### Configuration examples
 
 ```bash
 # Development setup
@@ -246,11 +246,11 @@ export LOG_LEVEL=INFO
 
 ---
 
-## 🏗️ Advanced Configuration
+## 🏗️ Advanced configuration
 
-### Multiple Workspace Setup
+### Multiple workspace setup
 
-**Token Configuration:**
+**Token configuration:**
 ```json
 {
   "ap1": {
@@ -264,13 +264,13 @@ export LOG_LEVEL=INFO
 }
 ```
 
-**Usage in AI Prompts:**
+**Usage in AI prompts:**
 ```
 "List servers in the company-backup workspace in ap1 region"
 "Get metrics for servers in the company-main workspace"
 ```
 
-### Region-Specific Configuration
+### Region-specific configuration
 
 #### Asia Pacific (ap1)
 ```json
@@ -305,9 +305,9 @@ export LOG_LEVEL=INFO
 }
 ```
 
-### Docker Configuration
+### Docker configuration
 
-#### Dockerfile Configuration
+#### Dockerfile configuration
 ```dockerfile
 FROM python:3.11-slim
 
@@ -337,7 +337,7 @@ services:
       - "8237:8237"  # For SSE mode
 ```
 
-#### MCP Client Docker Configuration
+#### MCP client Docker configuration
 ```json
 {
   "mcpServers": {
@@ -355,9 +355,9 @@ services:
 
 ---
 
-## 🔧 Performance Configuration
+## 🔧 Performance configuration
 
-### Connection Pooling
+### Connection pooling
 
 The server uses connection pooling for better performance:
 
@@ -368,7 +368,7 @@ MAX_CONNECTIONS = 100
 MAX_KEEPALIVE_CONNECTIONS = 20
 ```
 
-### Request Timeout Configuration
+### Request timeout configuration
 
 ```bash
 # Environment variables for timeout control
@@ -377,7 +377,7 @@ export ALPACON_CONNECT_TIMEOUT=10
 export ALPACON_READ_TIMEOUT=30
 ```
 
-### Concurrent Request Limits
+### Concurrent request limits
 
 ```python
 # Internal configuration
@@ -387,9 +387,9 @@ REQUEST_QUEUE_SIZE = 100
 
 ---
 
-## 📊 Logging Configuration
+## 📊 Logging configuration
 
-### Log Levels
+### Log levels
 
 ```bash
 # Debug logging (local)
@@ -402,7 +402,7 @@ export LOG_LEVEL=INFO
 export LOG_LEVEL=ERROR
 ```
 
-### Log Format
+### Log format
 
 ```bash
 # Structured JSON logging
@@ -412,7 +412,7 @@ export LOG_FORMAT=json
 export LOG_FORMAT=text
 ```
 
-### Log File Configuration
+### Log file configuration
 
 ```bash
 # Enable file logging
@@ -425,34 +425,34 @@ export LOG_BACKUP_COUNT=5
 
 ---
 
-## 🔒 Security Configuration
+## 🔒 Security configuration
 
-### Token Security
+### Token security
 
-#### File Permissions
+#### File permissions
 ```bash
 # Secure token files
 chmod 600 config/token.json
 chmod 700 config/
 ```
 
-#### Environment-based Tokens
+#### Environment-based tokens
 ```bash
 # Alternative to file-based tokens
 export ALPACON_AP1_COMPANY_MAIN_TOKEN="your-token-here"
 export ALPACON_US1_BACKUP_TOKEN="your-backup-token"
 ```
 
-#### Token Encryption (Optional)
+#### Token encryption (optional)
 ```python
 # Enable token encryption in storage
 export ALPACON_ENCRYPT_TOKENS=true
 export ALPACON_ENCRYPTION_KEY="your-encryption-key"
 ```
 
-### Network Security
+### Network security
 
-#### HTTPS Configuration
+#### HTTPS configuration
 ```bash
 # Force HTTPS for all API calls
 export ALPACON_FORCE_HTTPS=true
@@ -461,15 +461,15 @@ export ALPACON_FORCE_HTTPS=true
 export ALPACON_VERIFY_SSL=true
 ```
 
-#### IP Restrictions
+#### IP restrictions
 ```bash
 # Restrict API access to specific IPs
 export ALPACON_ALLOWED_IPS="10.0.0.0/8,192.168.0.0/16"
 ```
 
-### Access Control
+### Access control
 
-#### Workspace Restrictions
+#### Workspace restrictions
 ```json
 {
   "access_control": {
@@ -482,9 +482,9 @@ export ALPACON_ALLOWED_IPS="10.0.0.0/8,192.168.0.0/16"
 
 ---
 
-## 🚦 Health Checks and Monitoring
+## 🚦 Health checks and monitoring
 
-### Health Check Endpoints
+### Health check endpoints
 
 ```bash
 # Check server health (SSE mode)
@@ -494,7 +494,7 @@ curl http://localhost:8237/health
 curl http://localhost:8237/auth/status
 ```
 
-### Monitoring Configuration
+### Monitoring configuration
 
 ```bash
 # Enable metrics collection
@@ -507,7 +507,7 @@ export ALPACON_METRICS_INTERVAL=60
 export ALPACON_PROMETHEUS_PORT=9090
 ```
 
-### Status Monitoring
+### Status monitoring
 
 ```python
 # Internal health checks
@@ -518,9 +518,9 @@ CONNECTION_TEST_INTERVAL = 600  # 10 minutes
 
 ---
 
-## 🔄 Backup and Recovery
+## 🔄 Backup and recovery
 
-### Configuration Backup
+### Configuration backup
 
 ```bash
 # Backup token configuration
@@ -530,7 +530,7 @@ cp config/token.json config/token.json.backup
 cp config/token.json "config/token.json.backup.$(date +%Y%m%d_%H%M%S)"
 ```
 
-### Disaster Recovery
+### Disaster recovery
 
 ```bash
 # Recovery script
@@ -547,9 +547,9 @@ python main.py
 
 ---
 
-## 📋 Configuration Validation
+## 📋 Configuration validation
 
-### Validate Token Configuration
+### Validate token configuration
 
 ```bash
 # Test all tokens
@@ -562,14 +562,14 @@ for (region, workspace), token in tokens.items():
 "
 ```
 
-### Test MCP Client Connection
+### Test MCP client connection
 
 ```bash
 # Test MCP protocol
 echo '{"jsonrpc":"2.0","id":1,"method":"ping","params":{}}' | python main.py
 ```
 
-### Validate API Access
+### Validate API access
 
 ```python
 # Test API connectivity

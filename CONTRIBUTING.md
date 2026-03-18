@@ -1,8 +1,8 @@
-# Contributing to Alpacon MCP Server
+# Contributing to Alpacon MCP server
 
-Thank you for your interest in contributing to the Alpacon MCP Server! This guide will help you get started with contributing to the project.
+Thank you for your interest in contributing to the Alpacon MCP server! This guide will help you get started with contributing to the project.
 
-## 🚀 Getting Started
+## 🚀 Getting started
 
 ### Prerequisites
 
@@ -11,7 +11,7 @@ Thank you for your interest in contributing to the Alpacon MCP Server! This guid
 - UV package manager (recommended)
 - Active Alpacon account for testing
 
-### Development Setup
+### Development setup
 
 1. **Fork and Clone**
    ```bash
@@ -60,9 +60,9 @@ Thank you for your interest in contributing to the Alpacon MCP Server! This guid
    flake8 .
    ```
 
-## 📋 Development Guidelines
+## 📋 Development guidelines
 
-### Code Style
+### Code style
 
 We use the following tools for code quality:
 
@@ -87,7 +87,7 @@ mypy .
 pre-commit run --all-files
 ```
 
-### Commit Message Format
+### Commit message format
 
 We follow [Conventional Commits](https://www.conventionalcommits.org/):
 
@@ -116,16 +116,16 @@ docs(api): update server management examples
 test(metrics): add integration tests for CPU metrics
 ```
 
-### Branch Naming
+### Branch naming
 
-- `feature/description` - New features
-- `fix/description` - Bug fixes
-- `docs/description` - Documentation updates
-- `refactor/description` - Code refactoring
+- `feature/description`: New features
+- `fix/description`: Bug fixes
+- `docs/description`: Documentation updates
+- `refactor/description`: Code refactoring
 
 ## 🧪 Testing
 
-### Running Tests
+### Running tests
 
 ```bash
 # Run all tests
@@ -141,7 +141,7 @@ python -m pytest tests/test_auth.py
 python -m pytest -k "test_auth"
 ```
 
-### Writing Tests
+### Writing tests
 
 Tests are located in the `tests/` directory:
 
@@ -178,16 +178,16 @@ async def test_servers_list_success():
         mock_get.assert_called_once()
 ```
 
-### Test Categories
+### Test categories
 
 1. **Unit Tests**: Test individual functions and methods
 2. **Integration Tests**: Test API interactions
 3. **MCP Protocol Tests**: Test MCP tool functionality
 4. **End-to-End Tests**: Test complete workflows
 
-## 🔧 Adding New Features
+## 🔧 Adding new features
 
-### Adding New Tools
+### Adding new tools
 
 1. **Create Tool File**
    ```python
@@ -257,7 +257,7 @@ async def test_servers_list_success():
    - Add examples to `docs/examples.md`
    - Update README if necessary
 
-### Adding New Endpoints
+### Adding new endpoints
 
 1. **Study Alpacon API Documentation**
 2. **Implement in Appropriate Tool Module**
@@ -267,7 +267,7 @@ async def test_servers_list_success():
 
 ## 📚 Documentation
 
-### Documentation Structure
+### Documentation structure
 
 ```
 docs/
@@ -280,21 +280,21 @@ docs/
 └── troubleshooting.md    # Common issues and solutions
 ```
 
-### Writing Documentation
+### Writing documentation
 
 - Use clear, concise language
 - Include code examples
 - Test all examples before submitting
 - Update related documentation when adding features
 
-### Documentation Style
+### Documentation style
 
 - Use present tense
 - Use active voice when possible
 - Include command-line examples with syntax highlighting
 - Add cross-references between related sections
 
-## 🐛 Bug Reports
+## 🐛 Bug reports
 
 When reporting bugs, please include:
 
@@ -348,7 +348,7 @@ Complete error messages here
 Any other relevant information.
 ```
 
-## 💡 Feature Requests
+## 💡 Feature requests
 
 Feature requests should include:
 
@@ -357,7 +357,7 @@ Feature requests should include:
 3. **Alternatives**: Other solutions considered
 4. **Implementation Ideas**: Technical approach if known
 
-## 🔄 Pull Request Process
+## 🔄 Pull request process
 
 1. **Create Feature Branch**
    ```bash
@@ -399,7 +399,7 @@ Feature requests should include:
    - [ ] CHANGELOG.md updated (if applicable)
    - [ ] PR description explains changes
 
-### PR Template
+### PR template
 
 ```markdown
 ## Description
@@ -428,38 +428,38 @@ Brief description of changes.
 - [ ] No unnecessary console.log or debug prints
 ```
 
-## 📈 Performance Guidelines
+## 📈 Performance guidelines
 
-### Code Performance
+### Code performance
 
 - Use async/await for I/O operations
 - Implement connection pooling where appropriate
 - Cache frequently accessed data
 - Use batch operations when possible
 
-### Memory Management
+### Memory management
 
 - Close resources properly
 - Use context managers for file operations
 - Avoid memory leaks in long-running sessions
 
-### Error Handling
+### Error handling
 
 - Use specific exception types
 - Provide meaningful error messages
 - Include enough context for debugging
 - Don't suppress errors without logging
 
-## 🔒 Security Guidelines
+## 🔒 Security guidelines
 
-### Token Handling
+### Token handling
 
 - Never log or print tokens
 - Store tokens securely
 - Implement token rotation support
 - Validate token permissions
 
-### Input Validation
+### Input validation
 
 - Validate all user inputs
 - Sanitize data before API calls
@@ -472,7 +472,7 @@ Brief description of changes.
 - Review security advisories
 - Use tools like `safety` to check for vulnerabilities
 
-## 🏷️ Release Process
+## 🏷️ Release process
 
 1. **Version Bumping**
    ```bash
@@ -500,7 +500,7 @@ Brief description of changes.
 
 ## 🤝 Community
 
-### Code of Conduct
+### Code of conduct
 
 - Be respectful and inclusive
 - Help others learn and contribute
@@ -521,7 +521,7 @@ Contributors will be recognized in:
 - CHANGELOG.md release notes
 - GitHub contributor insights
 
-Thank you for contributing to Alpacon MCP Server!
+Thank you for contributing to Alpacon MCP server!
 
 ---
 

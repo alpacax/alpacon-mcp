@@ -16,7 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Version now automatically synchronized via `importlib.metadata`
   - Development fallback version for non-installed environments
 
-### Technical Details
+### Technical details
 - `websh_session_create`: Removed `asyncio.sleep(0.5)` after WebSocket connection
 - `get_or_create_channel`: Already properly filters sessions by user_agent='alpacon-mcp'
 - `MCP_VERSION`: Now reads from package metadata instead of hardcoded value
@@ -95,7 +95,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated CONTRIBUTING.md with unified tool creation guide
 - Added decorator benefits and technical details to documentation
 
-### Technical Details
+### Technical details
 - All 22+ tool functions refactored across 8 tool modules:
   - command_tools.py
   - events_tools.py

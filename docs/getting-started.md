@@ -1,4 +1,4 @@
-# Getting Started with Alpacon MCP Server
+# Getting started with Alpacon MCP Server
 
 This guide will help you set up and configure the Alpacon MCP Server in just a few minutes.
 
@@ -11,9 +11,9 @@ Before you begin, make sure you have:
 - [ ] **API tokens** for your Alpacon workspace
 - [ ] **An MCP-compatible client** (Claude Desktop, Cursor, VS Code, etc.)
 
-## 🚀 Quick Setup
+## 🚀 Quick setup
 
-### Method 1: Using uvx (Recommended - Zero Installation)
+### Method 1: Using uvx (recommended—zero installation)
 
 ```bash
 # Install UV if not already installed
@@ -27,9 +27,9 @@ export ALPACON_MCP_AP1_PRODUCTION_TOKEN="your-token-here"
 uvx alpacon-mcp
 ```
 
-### Method 2: Traditional Installation
+### Method 2: Traditional installation
 
-#### Step 1: Install UV Package Manager
+#### Step 1: Install UV package manager
 
 ```bash
 # macOS/Linux
@@ -55,7 +55,7 @@ uv tool install alpacon-mcp
 alpacon-mcp
 ```
 
-### Method 3: Development Setup
+### Method 3: Development setup
 
 ```bash
 # Clone the repository
@@ -73,11 +73,11 @@ source .venv/bin/activate  # Linux/macOS
 uv pip install mcp[cli] httpx
 ```
 
-### Step 3: Get API Token from Alpacon
+### Step 3: Get API token from Alpacon
 
 Before configuring authentication, you need to obtain API tokens from your Alpacon workspace:
 
-#### 3.1 Generate API Token
+#### 3.1 Generate API token
 
 1. **Visit your Alpacon workspace**: `https://alpacon.io`
    - Or if you have a specific workspace: `https://alpacon.io/workspace/`
@@ -91,7 +91,7 @@ Before configuring authentication, you need to obtain API tokens from your Alpac
 4. **Generate or Copy Token**:
    - Click "Create New Token" if you don't have one
    - Or copy an existing token
-   - **Save this token securely** - you'll need it for configuration
+   - **Save this token securely**—you'll need it for configuration
 
 5. **Configure Token Permissions (ACL)**:
    - **Click on the token** to open its details page
@@ -104,7 +104,7 @@ Before configuring authentication, you need to obtain API tokens from your Alpac
 
 > ⚠️ **Important**: Command execution will fail with 403/404 errors if commands are not pre-approved in ACL settings
 
-#### 3.2 Configure Authentication
+#### 3.2 Configure authentication
 
 Create your token configuration file:
 
@@ -125,7 +125,7 @@ EOF
 nano config/token.json  # or your preferred editor
 ```
 
-**Token Configuration Format:**
+**Token configuration format:**
 ```json
 {
   "ap1": {
@@ -141,7 +141,7 @@ nano config/token.json  # or your preferred editor
 }
 ```
 
-### Step 4: Test the Server
+### Step 4: Test the server
 
 Verify everything is working:
 
@@ -155,7 +155,7 @@ python main.py
 
 You should see output indicating the server is running and tools are loaded.
 
-### Step 5: Configure Your MCP Client
+### Step 5: Configure your MCP client
 
 Choose your preferred AI client and follow the setup:
 
@@ -222,54 +222,54 @@ Test your setup with these simple commands in your AI client:
 3. **Check metrics**:
    > "Show CPU usage for the last hour for server [server-id]"
 
-## 🎯 First Tasks
+## 🎯 First tasks
 
 Now that you're set up, try these common tasks:
 
-### Monitor Server Health
+### Monitor server health
 ```
 "Give me a comprehensive health check for server [server-id] including CPU, memory, and disk usage"
 ```
 
-### Manage System Users
+### Manage system users
 ```
 "List all system users on server [server-id] who can login"
 ```
 
-### Execute Commands
+### Execute commands
 ```
 "Execute 'df -h' command on server [server-id] and show the results"
 ```
 
-### Set Up Alerts
+### Set up alerts
 ```
 "Show me current alert rules and help me create a new CPU usage alert"
 ```
 
-## 🔧 Advanced Configuration
+## 🔧 Advanced configuration
 
-### Custom Config File Path
+### Custom config file path
 
 ```bash
 python main.py --config-file /path/to/custom-tokens.json
 ```
 
-### Custom Config File
+### Custom config file
 
 ```bash
 export ALPACON_CONFIG_FILE=".config/token.json"
 python main.py
 ```
 
-### SSE Mode (Server-Sent Events)
+### SSE mode (Server-Sent Events)
 
 ```bash
 python main_sse.py
 ```
 
-## 🚨 Common Issues
+## 🚨 Common issues
 
-### 1. Python Not Found
+### 1. Python not found
 ```bash
 # Make sure Python is in your PATH
 which python  # Should show Python location
@@ -278,35 +278,35 @@ which python  # Should show Python location
 python3 main.py
 ```
 
-### 2. Permission Errors
+### 2. Permission errors
 ```bash
 # Make sure virtual environment is activated
 source .venv/bin/activate
 ```
 
-### 3. Token Authentication Failed
+### 3. Token authentication failed
 - Double-check your API tokens in `.config/token.json`
 - Verify workspace names match your Alpacon account
 - Ensure tokens have proper permissions
 
-### 4. MCP Client Connection Issues
+### 4. MCP client connection issues
 - Use absolute paths in configuration
 - Restart your MCP client after configuration
 - Check client logs for error messages
 
-## 📚 Next Steps
+## 📚 Next steps
 
 Now that you're up and running:
 
-- 📖 **[Configuration Guide](configuration.md)** - Learn about advanced settings
-- 🔧 **[API Reference](api-reference.md)** - Explore all available tools
-- 💡 **[Examples](examples.md)** - See common usage patterns
-- 🛟 **[Troubleshooting](troubleshooting.md)** - Solve common problems
+- 📖 **[Configuration Guide](configuration.md)**: Learn about advanced settings
+- 🔧 **[API Reference](api-reference.md)**: Explore all available tools
+- 💡 **[Examples](examples.md)**: See common usage patterns
+- 🛟 **[Troubleshooting](troubleshooting.md)**: Solve common problems
 
-## 💡 Pro Tips
+## 💡 Pro tips
 
 1. **Use .config directory** for local testing and development
-2. **Keep tokens secure** - never commit them to repositories
+2. **Keep tokens secure**—never commit them to repositories
 3. **Test with simple commands** first before complex operations
 4. **Check server logs** if something isn't working as expected
 

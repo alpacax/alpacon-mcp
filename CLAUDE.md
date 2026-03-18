@@ -7,13 +7,13 @@ stack: python
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Project Overview
+## Project overview
 
 This is an **Alpacon MCP Server** - A Model Context Protocol (MCP) server that provides AI assistants with direct access to Alpacon's server management platform. The server enables natural language server administration, monitoring, and automation through HTTP API calls.
 
-## Quick Start Guide
+## Quick start guide
 
-### Simple Setup (Recommended)
+### Simple setup (recommended)
 
 ```bash
 # 1. Run the MCP server - it will automatically start setup wizard
@@ -31,7 +31,7 @@ uvx alpacon-mcp
 
 That's it! The setup wizard handles everything automatically.
 
-### Alternative: Manual Setup
+### Alternative: manual setup
 
 If you prefer manual configuration or need to use specific paths:
 
@@ -55,7 +55,7 @@ echo '{"ap1": {"your-workspace": "your-api-token"}}' > ~/.alpacon-mcp/token.json
 # 4. Restart Claude Desktop
 ```
 
-### CLI Commands
+### CLI commands
 
 ```bash
 uvx alpacon-mcp                                       # Start MCP server (auto-setup if needed)
@@ -67,16 +67,16 @@ uvx alpacon-mcp list                                  # Show configured workspac
 uvx alpacon-mcp add                                   # Add another workspace (shows path)
 ```
 
-## Development Commands
+## Development commands
 
-### Environment Setup
+### Environment setup
 ```bash
 uv venv                    # Create virtual environment
 source .venv/bin/activate  # Activate virtual environment (Linux/Mac)
 uv install                 # Install dependencies from pyproject.toml
 ```
 
-### Running the MCP Server
+### Running the MCP server
 ```bash
 # Run with stdio transport (default MCP mode)
 python main.py
@@ -88,7 +88,7 @@ python main_sse.py
 python -c "from server import mcp; print('MCP Server initialized successfully')"
 ```
 
-### Testing and Development
+### Testing and development
 ```bash
 # Run with specific workspace for testing
 python main.py  # Then connect via MCP client
@@ -98,56 +98,56 @@ curl -X GET "https://alpacon.io/api/servers/servers/" \
   -H "Authorization: Bearer YOUR_TOKEN"
 ```
 
-## Architecture Overview
+## Architecture overview
 
 This MCP server provides a **pure HTTP API bridge** to Alpacon's infrastructure management platform. No external CLI dependencies required.
 
-### Core Components
+### Core components
 
-**MCP Server (`server.py`)**
+**MCP server (`server.py`)**
 - Built with FastMCP framework
 - Supports stdio and SSE transports
 - Single shared instance across all tools
 - Thread-safe HTTP client for concurrent operations
 
-**Tool Modules** (all in `tools/` directory):
-- `server_tools.py` - Server listing, details, and management
-- `command_tools.py` - Remote command execution and monitoring (ACL-based)
-- `websh_tools.py` - Websh session management, persistent connections, and terminal operations
-- `webftp_tools.py` - File transfer and management via S3 presigned URLs
-- `metrics_tools.py` - Performance monitoring, metrics, and alerting
-- `alert_tools.py` - Alert management, alert rules CRUD, and muting
-- `events_tools.py` - Event logging and search
-- `system_info_tools.py` - System information, hardware details, user/group/package management
-- `iam_tools.py` - Identity and access management (users, groups)
-- `security_tools.py` - Security ACL management (command, server, file ACLs)
-- `audit_tools.py` - Audit activity logs, server logs, and WebFTP logs
-- `workspace_tools.py` - Workspace and configuration management
+**Tool modules** (all in `tools/` directory):
+- `server_tools.py`: Server listing, details, and management
+- `command_tools.py`: Remote command execution and monitoring (ACL-based)
+- `websh_tools.py`: Websh session management, persistent connections, and terminal operations
+- `webftp_tools.py`: File transfer and management via S3 presigned URLs
+- `metrics_tools.py`: Performance monitoring, metrics, and alerting
+- `alert_tools.py`: Alert management, alert rules CRUD, and muting
+- `events_tools.py`: Event logging and search
+- `system_info_tools.py`: System information, hardware details, user/group/package management
+- `iam_tools.py`: Identity and access management (users, groups)
+- `security_tools.py`: Security ACL management (command, server, file ACLs)
+- `audit_tools.py`: Audit activity logs, server logs, and WebFTP logs
+- `workspace_tools.py`: Workspace and configuration management
 
 **Utilities** (all in `utils/` directory):
-- `http_client.py` - Async HTTP client for Alpacon API
-- `token_manager.py` - Secure token storage and management
-- `decorators.py` - MCP tool decorators (token validation, input validation, error handling, logging)
-- `error_handler.py` - Input validators, validation error formatting, circuit breaker, upstream auth flag
-- `auth_error_middleware.py` - ASGI middleware for upstream 401 → MCP transport 401 propagation (MFA re-auth)
-- `common.py` - Shared helpers (token validation, response formatting)
-- `logger.py` - Logging configuration
-- `setup_wizard.py` - Interactive setup wizard for first-time configuration
+- `http_client.py`: Async HTTP client for Alpacon API
+- `token_manager.py`: Secure token storage and management
+- `decorators.py`: MCP tool decorators (token validation, input validation, error handling, logging)
+- `error_handler.py`: Input validators, validation error formatting, circuit breaker, upstream auth flag
+- `auth_error_middleware.py`: ASGI middleware for upstream 401 → MCP transport 401 propagation (MFA re-auth)
+- `common.py`: Shared helpers (token validation, response formatting)
+- `logger.py`: Logging configuration
+- `setup_wizard.py`: Interactive setup wizard for first-time configuration
 
 **Configuration**:
-- `config/token.json` - API tokens by region and workspace
-- `pyproject.toml` - Project dependencies and metadata
+- `config/token.json`: API tokens by region and workspace
+- `pyproject.toml`: Project dependencies and metadata
 
-### Authentication & Token Management
+### Authentication & token management
 
-**Authentication Flow**:
-1. **Get Token**: Obtain API token from Alpacon web interface (see "API Token Setup" section)
-2. **Store Token**: Save in `config/token.json` by region and workspace
-3. **Token Retrieval**: `TokenManager` provides secure token access
-4. **API Authentication**: HTTP client uses tokens for all API requests
-5. **Request Format**: All requests go to Alpacon's API endpoints
+**Authentication flow**:
+1. **Get token**: Obtain API token from Alpacon web interface (see "API token setup" section)
+2. **Store token**: Save in `config/token.json` by region and workspace
+3. **Token retrieval**: `TokenManager` provides secure token access
+4. **API authentication**: HTTP client uses tokens for all API requests
+5. **Request format**: All requests go to Alpacon's API endpoints
 
-**Token Storage Structure**:
+**Token storage structure**:
 ```json
 {
   "ap1": {
@@ -159,7 +159,7 @@ This MCP server provides a **pure HTTP API bridge** to Alpacon's infrastructure 
 }
 ```
 
-**MFA Re-authentication Flow** (remote/streamable-http mode only):
+**MFA re-authentication flow** (remote/streamable-http mode only):
 
 When the Alpacon API returns 401 (e.g., MFA timeout with `code: "auth_mfa_required"`), the system automatically triggers OAuth re-authentication:
 
@@ -173,7 +173,7 @@ When the Alpacon API returns 401 (e.g., MFA timeout with `code: "auth_mfa_requir
 
 A 60-second cooldown prevents infinite re-auth loops when 401s are not fixable by re-authentication.
 
-### Tool Registration Pattern
+### Tool registration pattern
 
 All tools use the unified `@mcp_tool_handler` decorator pattern for consistent error handling and token management:
 
@@ -207,59 +207,59 @@ async def tool_function(
     )
 ```
 
-**Key Benefits**:
+**Key benefits**:
 - Automatic input validation (region, workspace, server_id, server_ids) before any API call
 - Automatic token injection via decorator
 - Unified error handling and response formatting
 - Reduced boilerplate code (~60% less per function)
 - Consistent logging across all tools
 
-### Input Validation
+### Input validation
 
 The `with_token_validation` decorator (`utils/decorators.py`) validates inputs **before** token lookup:
 
-1. **Region format** - Must be one of: `ap1`, `us1`, `eu1`
-2. **Workspace format** - Alphanumeric with hyphens/underscores, 1-63 characters
-3. **Server ID format** - Must be valid UUID (when present)
-4. **Server IDs list** - Each element must be valid UUID (when present)
+1. **Region format**: Must be one of: `ap1`, `us1`, `eu1`
+2. **Workspace format**: Alphanumeric with hyphens/underscores, 1-63 characters
+3. **Server ID format**: Must be valid UUID (when present)
+4. **Server IDs list**: Each element must be valid UUID (when present)
 
 File path validation is applied inline in `webftp_upload_file` and `webftp_download_file` using `validate_file_path()` from `utils/error_handler.py`. Rejects path traversal (`../`), relative paths, null bytes, and dangerous characters.
 
 All validators are defined in `utils/error_handler.py` and return user-friendly error responses via `format_validation_error()`.
 
-### Key Architecture Principles
+### Key architecture principles
 
-1. **HTTP-First**: All operations use direct HTTP API calls
-2. **Async/Await**: Concurrent operations with asyncio
-3. **No CLI Dependencies**: Pure Python implementation
-4. **Workspace Explicit**: All operations require workspace parameter
-5. **Input Validation**: Early validation of region, workspace, server_id, and file paths before API calls
-6. **Error Handling**: Comprehensive error handling and reporting
-7. **Multi-Workspace**: Support for multiple workspaces across regions
+1. **HTTP-first**: All operations use direct HTTP API calls
+2. **Async/await**: Concurrent operations with asyncio
+3. **No CLI dependencies**: Pure Python implementation
+4. **Workspace explicit**: All operations require workspace parameter
+5. **Input validation**: Early validation of region, workspace, server_id, and file paths before API calls
+6. **Error handling**: Comprehensive error handling and reporting
+7. **Multi-workspace**: Support for multiple workspaces across regions
 
-## Available MCP Tools
+## Available MCP tools
 
-### 🖥️ Server Management
-- `list_servers` - List all servers in workspace
-- `get_server` - Get detailed server information
-- `get_server_overview` - Get comprehensive server overview (system info + metrics)
-- `list_server_notes` - List server documentation
-- `create_server_note` - Create server notes
+### 🖥️ Server management
+- `list_servers`: List all servers in workspace
+- `get_server`: Get detailed server information
+- `get_server_overview`: Get comprehensive server overview (system info + metrics)
+- `list_server_notes`: List server documentation
+- `create_server_note`: Create server notes
 
-### 💻 Remote Operations (Command API - requires ACL permission)
-- `execute_command_with_acl` - Execute commands on servers using Command API
-- `execute_command_sync` - Execute and wait for results using Command API
-- `get_command_result` - Get command execution results
-- `list_commands` - List recent command history
-- `execute_command_multi_server` - Execute command on multiple servers simultaneously
+### 💻 Remote operations (Command API: requires ACL permission)
+- `execute_command_with_acl`: Execute commands on servers using Command API
+- `execute_command_sync`: Execute and wait for results using Command API
+- `get_command_result`: Get command execution results
+- `list_commands`: List recent command history
+- `execute_command_multi_server`: Execute command on multiple servers simultaneously
 
 **Note**: These tools require API token with command execution ACL permission enabled.
 
-### 🔧 Websh (Command Execution)
+### 🔧 Websh (command execution)
 
-**⭐ Recommended: Persistent Connection Tools** (efficient, automatic connection pooling, no ACL required):
-- `execute_command` - Execute single command (automatically reuses WebSocket connections)
-- `execute_command_batch` - Execute multiple commands efficiently on same server
+**⭐ Recommended: persistent connection tools** (efficient, automatic connection pooling, no ACL required):
+- `execute_command`: Execute single command (automatically reuses WebSocket connections)
+- `execute_command_batch`: Execute multiple commands efficiently on same server
 
 These tools automatically:
 - Reuse existing WebSocket connections for the same server
@@ -267,111 +267,111 @@ These tools automatically:
 - Perform health checks and auto-recovery
 - Minimize API calls (1 session creation per server instead of per command)
 
-**Session Management**:
-- `websh_session_create` - Create Websh session for command execution (non-interactive)
-- `websh_sessions_list` - List active sessions
-- `websh_session_reconnect` - Create a new user channel for an existing session
-- `websh_session_terminate` - Close sessions
+**Session management**:
+- `websh_session_create`: Create Websh session for command execution (non-interactive)
+- `websh_sessions_list`: List active sessions
+- `websh_session_reconnect`: Create a new user channel for an existing session
+- `websh_session_terminate`: Close sessions
 
-**WebSocket-based Execution** (for single-use commands):
-- `websh_websocket_execute` - Execute single command via WebSocket
-- `websh_websocket_batch_execute` - Execute multiple commands sequentially
+**WebSocket-based execution** (for single-use commands):
+- `websh_websocket_execute`: Execute single command via WebSocket
+- `websh_websocket_batch_execute`: Execute multiple commands sequentially
 
-**Manual Channel Management** (advanced use only):
-- `websh_channel_connect` - Connect to Websh user channel and maintain persistent connection
-- `websh_channel_execute` - Execute commands using existing WebSocket connection
-- `websh_channels_list` - List active WebSocket channels
-- `websh_channel_disconnect` - Disconnect and clean up WebSocket connections
+**Manual channel management** (advanced use only):
+- `websh_channel_connect`: Connect to Websh user channel and maintain persistent connection
+- `websh_channel_execute`: Execute commands using existing WebSocket connection
+- `websh_channels_list`: List active WebSocket channels
+- `websh_channel_disconnect`: Disconnect and clean up WebSocket connections
 
 **Note**: Websh tools are for programmatic command execution only. For interactive terminal access, use the Alpacon web interface at https://alpacon.io
 
-### 📁 File Management (WebFTP)
-- `webftp_session_create` - Create file transfer session
-- `webftp_sessions_list` - List active FTP sessions
-- `webftp_upload_file` - Upload local files to servers using S3 presigned URLs with automatic processing
-- `webftp_download_file` - Download server files or folders to local storage (folders as .zip)
-- `webftp_uploads_list` - List uploaded files (upload history)
-- `webftp_downloads_list` - List download requests (download history)
+### 📁 File management (WebFTP)
+- `webftp_session_create`: Create file transfer session
+- `webftp_sessions_list`: List active FTP sessions
+- `webftp_upload_file`: Upload local files to servers using S3 presigned URLs with automatic processing
+- `webftp_download_file`: Download server files or folders to local storage (folders as .zip)
+- `webftp_uploads_list`: List uploaded files (upload history)
+- `webftp_downloads_list`: List download requests (download history)
 
-**WebFTP Architecture**: Uses S3 presigned URLs for efficient file transfers. Upload process: local file → S3 → server processing. Download process: server → S3 → local file. Supports both individual files and folder downloads (as ZIP archives).
+**WebFTP architecture**: Uses S3 presigned URLs for efficient file transfers. Upload process: local file → S3 → server processing. Download process: server → S3 → local file. Supports both individual files and folder downloads (as ZIP archives).
 
-### 📊 Monitoring & Metrics
-- `get_cpu_usage` - CPU utilization metrics
-- `get_memory_usage` - Memory usage statistics
-- `get_disk_usage` - Disk space metrics
-- `get_disk_io` - Disk I/O performance metrics
-- `get_network_traffic` - Network interface statistics
-- `get_top_servers` - Get top performing servers by metric type(s) - supports multiple metrics in one call
-- `get_alert_rules` - Get alert rules configuration
-- `get_server_metrics_summary` - Comprehensive metrics overview
+### 📊 Monitoring & metrics
+- `get_cpu_usage`: CPU utilization metrics
+- `get_memory_usage`: Memory usage statistics
+- `get_disk_usage`: Disk space metrics
+- `get_disk_io`: Disk I/O performance metrics
+- `get_network_traffic`: Network interface statistics
+- `get_top_servers`: Get top performing servers by metric type(s), supports multiple metrics in one call
+- `get_alert_rules`: Get alert rules configuration
+- `get_server_metrics_summary`: Comprehensive metrics overview
 
-### 🔔 Alert Management
-- `list_alerts` - List alerts with optional filtering by server or status
-- `get_alert` - Get detailed information about a specific alert
-- `mute_alert` - Mute an alert to suppress notifications temporarily
-- `create_alert_rule` - Create an alert rule with monitoring thresholds
-- `update_alert_rule` - Update an existing alert rule configuration
-- `delete_alert_rule` - Delete an alert rule
+### 🔔 Alert management
+- `list_alerts`: List alerts with optional filtering by server or status
+- `get_alert`: Get detailed information about a specific alert
+- `mute_alert`: Mute an alert to suppress notifications temporarily
+- `create_alert_rule`: Create an alert rule with monitoring thresholds
+- `update_alert_rule`: Update an existing alert rule configuration
+- `delete_alert_rule`: Delete an alert rule
 
 ### 🛡️ Security ACLs
-- `list_command_acls` - List command ACL rules
-- `create_command_acl` - Create a command ACL rule (allow/deny command execution)
-- `update_command_acl` - Update an existing command ACL rule
-- `delete_command_acl` - Delete a command ACL rule
-- `list_server_acls` - List server ACL rules
-- `create_server_acl` - Create a server ACL rule (control server access)
-- `list_file_acls` - List file ACL rules
-- `create_file_acl` - Create a file ACL rule (control file access)
+- `list_command_acls`: List command ACL rules
+- `create_command_acl`: Create a command ACL rule (allow/deny command execution)
+- `update_command_acl`: Update an existing command ACL rule
+- `delete_command_acl`: Delete a command ACL rule
+- `list_server_acls`: List server ACL rules
+- `create_server_acl`: Create a server ACL rule (control server access)
+- `list_file_acls`: List file ACL rules
+- `create_file_acl`: Create a file ACL rule (control file access)
 
-### 📋 Events & Logging
-- `list_events` - List server events
-- `get_event` - Get event details by ID
-- `search_events` - Search server events and logs
+### 📋 Events & logging
+- `list_events`: List server events
+- `get_event`: Get event details by ID
+- `search_events`: Search server events and logs
 
-### 📝 Audit Logs
-- `list_activity_logs` - List activity logs for auditing user and system actions
-- `get_activity_log` - Get detailed information about a specific activity log entry
-- `list_server_logs` - List server command execution logs from history
-- `list_webftp_logs` - List WebFTP file transfer logs from history
+### 📝 Audit logs
+- `list_activity_logs`: List activity logs for auditing user and system actions
+- `get_activity_log`: Get detailed information about a specific activity log entry
+- `list_server_logs`: List server command execution logs from history
+- `list_webftp_logs`: List WebFTP file transfer logs from history
 
-### 🔍 System Information
-- `get_system_info` - Hardware and OS information
-- `get_os_version` - Operating system details
-- `list_system_users` - User account management
-- `list_system_groups` - Group management
-- `list_system_packages` - Installed software packages
-- `get_network_interfaces` - Network configuration
-- `get_disk_info` - Storage and partition information
-- `get_system_time` - System time and uptime
+### 🔍 System information
+- `get_system_info`: Hardware and OS information
+- `get_os_version`: Operating system details
+- `list_system_users`: User account management
+- `list_system_groups`: Group management
+- `list_system_packages`: Installed software packages
+- `get_network_interfaces`: Network configuration
+- `get_disk_info`: Storage and partition information
+- `get_system_time`: System time and uptime
 
-### 🔐 Identity and Access Management (IAM)
+### 🔐 Identity and access management (IAM)
 
-**User Management**:
-- `list_iam_users` - List all IAM users in workspace with pagination support
-- `get_iam_user` - Get detailed information about a specific IAM user
-- `create_iam_user` - Create new IAM user with groups assignment
-- `update_iam_user` - Update existing IAM user (email, name, active status, groups)
-- `delete_iam_user` - Delete IAM user from workspace
+**User management**:
+- `list_iam_users`: List all IAM users in workspace with pagination support
+- `get_iam_user`: Get detailed information about a specific IAM user
+- `create_iam_user`: Create new IAM user with groups assignment
+- `update_iam_user`: Update existing IAM user (email, name, active status, groups)
+- `delete_iam_user`: Delete IAM user from workspace
 
-**Group Management**:
-- `list_iam_groups` - List all IAM groups in workspace with pagination support
-- `create_iam_group` - Create new IAM group
+**Group management**:
+- `list_iam_groups`: List all IAM groups in workspace with pagination support
+- `create_iam_group`: Create new IAM group
 
-**IAM Architecture**: Basic identity management supporting users and groups with workspace-level isolation. Group-based permission management.
+**IAM architecture**: Basic identity management supporting users and groups with workspace-level isolation. Group-based permission management.
 
 **Note**: Role and permission management endpoints are not currently implemented in the Alpacon server. The following tools have been removed:
-- ~~`list_iam_roles`~~ - Not available
-- ~~`assign_iam_user_role`~~ - Not available
-- ~~`list_iam_permissions`~~ - Not available
-- ~~`get_iam_user_permissions`~~ - Not available
+- ~~`list_iam_roles`~~: Not available
+- ~~`assign_iam_user_role`~~: Not available
+- ~~`list_iam_permissions`~~: Not available
+- ~~`get_iam_user_permissions`~~: Not available
 
-### ⚙️ Authentication & Workspace
-- `list_workspaces` - List available workspaces
+### ⚙️ Authentication & workspace
+- `list_workspaces`: List available workspaces
 
 **Note**: User settings and profile endpoints are not currently implemented in the Alpacon server. The following tools have been removed:
-- ~~`get_user_settings`~~ - Not available (was using `/api/user/settings/`)
-- ~~`update_user_settings`~~ - Not available (was using `/api/user/settings/`)
-- ~~`get_user_profile`~~ - Not available (was using `/api/user/profile/`)
+- ~~`get_user_settings`~~: Not available (was using `/api/user/settings/`)
+- ~~`update_user_settings`~~: Not available (was using `/api/user/settings/`)
+- ~~`get_user_profile`~~: Not available (was using `/api/user/profile/`)
 
 Alternative endpoints available in the server:
 - `/api/profiles/preferences/` (profiles app)
@@ -380,54 +380,60 @@ Alternative endpoints available in the server:
 
 ## Dependencies
 
-**Runtime Dependencies** (from `pyproject.toml`):
-- `mcp[cli]>=1.9.4` - Model Context Protocol framework
-- `httpx>=0.25.0` - Async HTTP client
-- `websockets>=15.0.1` - WebSocket support for real-time features
+**Runtime dependencies** (from `pyproject.toml`):
+- `mcp[cli]>=1.9.4`: Model Context Protocol framework
+- `httpx>=0.25.0`: Async HTTP client
+- `websockets>=15.0.1`: WebSocket support for real-time features
 
-**Development Dependencies**:
-- `pytest>=7.0.0` - Testing framework
-- `pytest-asyncio>=0.21.0` - Async test support
-- `black>=23.0.0` - Code formatting
-- `isort>=5.12.0` - Import sorting
-- `flake8>=6.0.0` - Linting
-- `mypy>=1.0.0` - Type checking
+**Development dependencies**:
+- `pytest>=7.0.0`: Testing framework
+- `pytest-asyncio>=0.21.0`: Async test support
+- `black>=23.0.0`: Code formatting
+- `isort>=5.12.0`: Import sorting
+- `flake8>=6.0.0`: Linting
+- `mypy>=1.0.0`: Type checking
 
-**No External Dependencies**:
+**No external dependencies**:
 - ✅ No alpacon CLI required
 - ✅ No subprocess calls
 - ✅ Pure Python HTTP implementation
 - ✅ Cross-platform compatibility
 
-## Language Guidelines
+## Language guidelines
 
-- **ALL Code Comments**: English only
-- **ALL Documentation**: English only
-- **ALL Commit Messages**: English only
-- **ALL PR Titles/Descriptions**: English only
-- **ALL Docstrings**: English only
-- **ALL Variable/Function/Class Names**: English only
-- **User-facing Output Messages**: Korean for better user experience in CLI/console output
+- **ALL code comments**: English only
+- **ALL documentation**: English only
+- **ALL commit messages**: English only
+- **ALL PR titles/descriptions**: English only
+- **ALL docstrings**: English only
+- **ALL variable/function/class names**: English only
+- **User-facing output messages**: Korean for better user experience in CLI/console output
 
-## Naming Conventions
+## Writing style
 
-### Technology Names
+### General rules
+- **Sentence case**: Use sentence case for all headings and titles (capitalize only the first word and proper nouns)
+  - Correct: "## Available MCP tools", "### Key architecture principles"
+  - Incorrect: "## Available MCP Tools", "### Key Architecture Principles"
+- **Em-dash**: No spaces around em-dashes
+  - Correct: "remote/streamable-http mode—not stdio"
+  - Incorrect: "remote/streamable-http mode — not stdio"
+- **Itemized descriptions**: Use a colon, not a dash, to separate an item from its description in bullet lists
+  - Correct: `- `list_servers`: List all servers in workspace`
+  - Incorrect: `- `list_servers` - List all servers in workspace`
+
+### Technology names
 - **Websh**: Always use "Websh" (not "WebSH") for web shell functionality
   - Correct: `websh_session_create`, "Websh session", "Websh tools"
   - Incorrect: `webSH_session_create`, "WebSH session", "WebSH tools"
 - **WebFTP**: Use "WebFTP" for file transfer functionality (maintain existing convention)
 - **MCP**: Use "MCP" for Model Context Protocol (maintain existing convention)
 
-### Rationale
-- Consistent capitalization reduces confusion across documentation and code
-- Matches Alpacon's internal naming conventions
-- Ensures uniformity across all project materials
-
-## CRITICAL: MCP-Only Policy
+## CRITICAL: MCP-only policy
 
 **🚨 ABSOLUTE RULE: Never use alpacon CLI or any external CLI tools**
 
-- ✅ **ONLY USE MCP Tools**: All operations must use MCP tools (`mcp__alpacon__*`)
+- ✅ **ONLY USE MCP tools**: All operations must use MCP tools (`mcp__alpacon__*`)
 - ❌ **NO CLI FALLBACK**: Never fall back to CLI commands when MCP fails
 - ❌ **NO SUBPROCESS**: Never use `subprocess` or shell commands
 - ❌ **NO DIRECT COMMANDS**: Never execute `alpacon`, `ssh`, or any external commands
@@ -444,27 +450,27 @@ Alternative endpoints available in the server:
 - No external dependencies
 - Reliable cross-platform compatibility
 
-## Important Usage Notes
+## Important usage notes
 
-### Server ID Requirements
+### Server ID requirements
 ⚠️ **Critical**: Always use server UUIDs, not server names for all operations:
 - ✅ Correct: `server_id="7e3984de-49ab-4cc6-bcdf-21fbd35858b8"`
 - ❌ Incorrect: `server_id="amazon-linux-1"`
 - Use `servers_list` to get the correct UUID from the server name
 
-### WebFTP File Paths
+### WebFTP file paths
 - **Local paths**: Absolute paths on the local machine (e.g., `/Users/user/file.txt`)
 - **Remote paths**: Absolute paths on the server (e.g., `/home/user/file.txt`)
 - **Username**: Optional parameter; if omitted, uses authenticated user's name
 
-### Websh Connection Management
+### Websh connection management
 - **Single commands**: Use `websh_websocket_execute` for simplicity
 - **Multiple commands**: Use `websh_channel_*` tools for efficiency
 - **Channel cleanup**: Always disconnect channels when finished to free resources
 
-## Development Workflow
+## Development workflow
 
-### Adding New Tools
+### Adding new tools
 1. Create function in appropriate `tools/*.py` file
 2. Use `@mcp_tool_handler(description="...")` decorator
 3. Add `**kwargs` parameter to receive token from decorator
@@ -474,9 +480,9 @@ Alternative endpoints available in the server:
 7. Common parameters (`region`, `workspace`, `server_id`) are validated automatically by the decorator
 8. Update this documentation
 
-### API Token Setup
+### API token setup
 
-#### Simple Method (Recommended)
+#### Simple method (recommended)
 
 Use the interactive setup wizard:
 
@@ -492,11 +498,11 @@ The wizard will:
 5. Test the connection
 6. Show Claude Desktop config to copy
 
-#### Manual Method
+#### Manual method
 
 If you need to manually configure or use project-specific settings:
 
-**Global Configuration** (`~/.alpacon-mcp/token.json`):
+**Global configuration** (`~/.alpacon-mcp/token.json`):
 ```bash
 mkdir -p ~/.alpacon-mcp
 echo '{
@@ -507,7 +513,7 @@ echo '{
 }' > ~/.alpacon-mcp/token.json
 ```
 
-**Local Configuration** (`./config/token.json`):
+**Local configuration** (`./config/token.json`):
 ```bash
 mkdir -p config
 echo '{
@@ -517,19 +523,19 @@ echo '{
 }' > config/token.json
 ```
 
-**Priority Order**:
+**Priority order**:
 1. Project-local config (`./config/token.json`)
 2. Global config (`~/.alpacon-mcp/token.json`)
 3. Environment variable (`ALPACON_MCP_AP1_WORKSPACE_TOKEN`)
 
-#### Get API Token from Alpacon
+#### Get API token from Alpacon
 
 1. Visit `https://alpacon.io`
 2. Log in to your account
 3. Click **"API Token"** in the left sidebar
 4. Create a new token or copy existing token
 
-#### Test Configuration
+#### Test configuration
 
 ```bash
 # Test connection
@@ -542,9 +548,9 @@ uvx alpacon-mcp list
 uvx alpacon-mcp add-workspace
 ```
 
-**Supported Regions**: `ap1` (Asia Pacific), `us1` (US), `eu1` (Europe)
+**Supported regions**: `ap1` (Asia Pacific), `us1` (US), `eu1` (Europe)
 
-### Testing MCP Integration
+### Testing MCP integration
 ```bash
 # Test with Claude Code or other MCP client
 # Add to .mcp.json in your project:
@@ -558,9 +564,9 @@ uvx alpacon-mcp add-workspace
 }
 ```
 
-## Common Usage Patterns
+## Common usage patterns
 
-### Server Management Example:
+### Server management example:
 ```python
 # List servers
 servers = await servers_list(workspace="production", region="ap1")
@@ -573,7 +579,7 @@ result = await execute_command_sync(
 )
 ```
 
-### Monitoring Example:
+### Monitoring example:
 ```python
 # Get comprehensive server overview
 overview = await get_server_metrics_summary(
@@ -591,7 +597,7 @@ cpu = await get_cpu_usage(
 )
 ```
 
-### Websh Channel Management Example:
+### Websh channel management example:
 ```python
 # Create Websh session
 session = await websh_session_create(
@@ -618,7 +624,7 @@ channels = await websh_channels_list()
 await websh_channel_disconnect(channel_id)
 ```
 
-### WebFTP Example:
+### WebFTP example:
 ```python
 # Upload a local file to server using S3 presigned URLs
 upload_result = await webftp_upload_file(
@@ -651,7 +657,7 @@ uploads = await webftp_uploads_list(workspace="production")
 downloads = await webftp_downloads_list(workspace="production")
 ```
 
-## Task Master AI Instructions
+## Task Master AI instructions
 **Import Task Master's development workflow commands and guidelines, treat as if import is in the main CLAUDE.md file.**
 @./.taskmaster/CLAUDE.md
 
