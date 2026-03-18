@@ -35,34 +35,6 @@ All MCP tools follow a consistent response structure:
 
 > **Note**: `"status": "success"` indicates successful HTTP communication. Check the `data.error` field for API-level errors like ACL permission issues (403/404).
 
-## 🔐 Authentication tools
-
-### `auth_set_token`
-Set or update API tokens for specific region and workspace.
-
-**Parameters:**
-- `region` (string): Region name (currently supports 'ap1')
-- `workspace` (string): Workspace name
-- `token` (string): API token
-
-**Example:**
-```json
-{
-  "region": "ap1",
-  "workspace": "company-main",
-  "token": "your-api-token-here"
-}
-```
-
-### `auth_remove_token`
-Remove stored API token for a region and workspace.
-
-**Parameters:**
-- `region` (string): Region name
-- `workspace` (string): Workspace name
-
----
-
 ## 🖥️ Server management tools
 
 ### `servers_list`
@@ -297,43 +269,6 @@ Search events by criteria.
 - `region` (string, default: "ap1"): Region name
 - `workspace` (string): Workspace name
 
-### `acknowledge_command`
-Acknowledge that a command has been received and started.
-
-**Parameters:**
-- `command_id` (string): Command ID to acknowledge
-- `success` (boolean, default: true): Whether command started successfully
-- `result` (string, optional): Optional result message
-- `region` (string, default: "ap1"): Region name
-- `workspace` (string): Workspace name
-
-### `finish_command`
-Mark a command as finished with results.
-
-**Parameters:**
-- `command_id` (string): Command ID to mark as finished
-- `success` (boolean, default: true): Whether command completed successfully
-- `result` (string, optional): Optional result output or error message
-- `elapsed_time` (float, optional): Optional execution time in seconds
-- `region` (string, default: "ap1"): Region name
-- `workspace` (string): Workspace name
-
-### `get_command_status`
-Get detailed status and execution information for a command.
-
-**Parameters:**
-- `command_id` (string): Command ID to get status for
-- `region` (string, default: "ap1"): Region name
-- `workspace` (string): Workspace name
-
-### `delete_command`
-Delete a scheduled command that hasn't been delivered yet.
-
-**Parameters:**
-- `command_id` (string): Command ID to delete
-- `region` (string, default: "ap1"): Region name
-- `workspace` (string): Workspace name
-
 ---
 
 ## 🖥️ Websh and command execution tools
@@ -356,15 +291,6 @@ Get list of active Websh sessions.
 
 **Parameters:**
 - `server_id` (string, optional): Filter by server ID
-- `region` (string, default: "ap1"): Region name
-- `workspace` (string): Workspace name
-
-### `websh_command_execute`
-Execute a command in a Websh session.
-
-**Parameters:**
-- `session_id` (string): Websh session ID
-- `command` (string): Command to execute
 - `region` (string, default: "ap1"): Region name
 - `workspace` (string): Workspace name
 
@@ -472,7 +398,7 @@ Get list of downloadable files from WebFTP session.
 
 ### User management
 
-#### `iam_users_list`
+#### `list_iam_users`
 List all IAM users in workspace with pagination support.
 
 **Parameters:**
@@ -492,7 +418,7 @@ List all IAM users in workspace with pagination support.
 
 **Returns:** Paginated list of users with metadata, groups, and creation dates.
 
-#### `iam_user_get`
+#### `get_iam_user`
 Get detailed information about a specific IAM user.
 
 **Parameters:**
@@ -502,7 +428,7 @@ Get detailed information about a specific IAM user.
 
 **Returns:** Complete user profile including permissions and group memberships.
 
-#### `iam_user_create`
+#### `create_iam_user`
 Create new IAM user with optional group assignment.
 
 **Parameters:**
@@ -527,7 +453,7 @@ Create new IAM user with optional group assignment.
 }
 ```
 
-#### `iam_user_update`
+#### `update_iam_user`
 Update existing user information and group memberships.
 
 **Parameters:**
@@ -542,7 +468,7 @@ Update existing user information and group memberships.
 
 **Note:** Only provided fields will be updated. Omitted fields remain unchanged.
 
-#### `iam_user_delete`
+#### `delete_iam_user`
 Delete IAM user from workspace.
 
 **Parameters:**
@@ -554,7 +480,7 @@ Delete IAM user from workspace.
 
 ### Group management
 
-#### `iam_groups_list`
+#### `list_iam_groups`
 List all IAM groups in workspace with pagination support.
 
 **Parameters:**
@@ -565,7 +491,7 @@ List all IAM groups in workspace with pagination support.
 
 **Returns:** List of groups with member counts and permission summaries.
 
-#### `iam_group_create`
+#### `create_iam_group`
 Create new IAM group with permission assignments.
 
 **Parameters:**
@@ -585,128 +511,15 @@ Create new IAM group with permission assignments.
 }
 ```
 
-### Role and permission management
-
-#### `iam_roles_list`
-List all IAM roles in workspace.
-
-**Parameters:**
-- `workspace` (string): Workspace name
-- `region` (string, default: "ap1"): Region name
-- `page` (number, optional): Page number
-- `page_size` (number, optional): Roles per page
-
-**Returns:** Available roles with descriptions and associated permissions.
-
-#### `iam_permissions_list`
-List all available permissions in workspace.
-
-**Parameters:**
-- `workspace` (string): Workspace name
-- `region` (string, default: "ap1"): Region name
-- `page` (number, optional): Page number
-- `page_size` (number, optional): Permissions per page
-
-**Returns:** Complete permission catalog with descriptions and scopes.
-
-#### `iam_user_assign_role`
-Assign a role to a user.
-
-**Parameters:**
-- `user_id` (string): IAM user ID
-- `role_id` (string): Role ID to assign
-- `workspace` (string): Workspace name
-- `region` (string, default: "ap1"): Region name
-
-**Example:**
-```json
-{
-  "user_id": "user-123",
-  "role_id": "admin-role",
-  "workspace": "production"
-}
-```
-
-#### `iam_user_permissions_get`
-Get user's effective permissions (direct + inherited from groups).
-
-**Parameters:**
-- `user_id` (string): IAM user ID
-- `workspace` (string): Workspace name
-- `region` (string, default: "ap1"): Region name
-
-**Returns:**
-```json
-{
-  "status": "success",
-  "data": {
-    "direct_permissions": [
-      {
-        "id": "perm-read-servers",
-        "name": "Read Servers",
-        "description": "Can view server information"
-      }
-    ],
-    "group_permissions": [
-      {
-        "group": "developers",
-        "permissions": [
-          {
-            "id": "perm-deploy-staging",
-            "name": "Deploy to Staging"
-          }
-        ]
-      }
-    ],
-    "effective_permissions": ["perm-read-servers", "perm-deploy-staging"]
-  }
-}
-```
-
-### IAM best practices
-
-**Security guidelines:**
-1. **Least privilege**: Grant minimum required permissions
-2. **Group-based management**: Use groups for permission inheritance
-3. **Regular audits**: Review user permissions periodically
-4. **Workspace isolation**: Separate environments with different workspaces
-
-**Performance tips:**
-1. **Pagination**: Use page_size for large user/group lists
-2. **Caching**: Cache permission lookups for better performance
-3. **Bulk operations**: Group multiple user operations when possible
-
 ---
 
-## 🏢 Workspace and user management
+## 🏢 Workspace management
 
-### `workspace_list`
+### `list_workspaces`
 Get list of available workspaces.
 
 **Parameters:**
 - `region` (string, default: "ap1"): Region name
-
-### `user_settings_get`
-Get user settings.
-
-**Parameters:**
-- `region` (string, default: "ap1"): Region name
-- `workspace` (string): Workspace name
-
-### `user_settings_update`
-Update user settings.
-
-**Parameters:**
-- `settings` (object): Settings object to update
-- `region` (string, default: "ap1"): Region name
-- `workspace` (string): Workspace name
-
-### `user_profile_get`
-Get user profile information.
-
-**Parameters:**
-- `region` (string, default: "ap1"): Region name
-- `workspace` (string): Workspace name
 
 ---
 

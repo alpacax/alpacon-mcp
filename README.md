@@ -230,18 +230,21 @@ Install the MCP extension and add to settings:
 ## 🔧 Available tools
 
 ### 🖥️ Server management
-- **servers_list**: List all servers in workspace
-- **server_get**: Get detailed server information
-- **server_notes_list**: View server documentation
-- **server_note_create**: Create server notes
+- **list_servers**: List all servers in workspace
+- **get_server**: Get detailed server information
+- **get_server_overview**: Comprehensive server overview (system info + metrics)
+- **list_server_notes**: View server documentation
+- **create_server_note**: Create server notes
 
 ### 📊 Monitoring & metrics
 - **get_cpu_usage**: CPU utilization metrics
 - **get_memory_usage**: Memory consumption data
-- **get_disk_usage**: Disk space and I/O metrics
+- **get_disk_usage**: Disk space metrics
+- **get_disk_io**: Disk I/O performance metrics
 - **get_network_traffic**: Network bandwidth usage
+- **get_top_servers**: Top servers by metric type(s)
+- **get_alert_rules**: Alert rules configuration
 - **get_server_metrics_summary**: Comprehensive health overview
-- **get_cpu_top_servers**: Identify performance leaders
 
 ### 💻 System information
 - **get_system_info**: Hardware specifications and details
@@ -251,57 +254,59 @@ Install the MCP extension and add to settings:
 - **list_system_packages**: Installed software inventory
 - **get_network_interfaces**: Network configuration
 - **get_disk_info**: Storage device information
+- **get_system_time**: System time and uptime
 
 ### 🔧 Remote operations
 
+#### Command API (requires ACL permission)
+- **execute_command_with_acl**: Execute commands on servers
+- **execute_command_sync**: Execute and wait for results
+- **get_command_result**: Get command execution results
+- **list_commands**: List recent command history
+- **execute_command_multi_server**: Execute on multiple servers simultaneously
+
 #### Websh (shell access)
-- **websh_session_create**: Create secure shell sessions
-- **websh_command_execute**: Execute single commands
-- **websh_websocket_execute**: Single command via WebSocket
-- **websh_channel_connect**: Persistent connection management
-- **websh_channel_execute**: Execute commands using persistent channels
-- **websh_channels_list**: List active WebSocket channels
+- **execute_command**: Execute single command (auto-manages connections)
+- **execute_command_batch**: Execute multiple commands on same server
+- **websh_session_create**: Create Websh session
+- **websh_sessions_list**: List active sessions
+- **websh_session_reconnect**: Create new channel for existing session
 - **websh_session_terminate**: Close sessions
+- **websh_websocket_execute**: Single command via WebSocket
+- **websh_websocket_batch_execute**: Multiple commands via WebSocket
+- **websh_channel_connect**: Persistent connection management
+- **websh_channel_execute**: Execute using persistent channels
+- **websh_channels_list**: List active WebSocket channels
+- **websh_channel_disconnect**: Disconnect and clean up connections
 
 #### WebFTP (file management)
+- **webftp_session_create**: Create file transfer session
 - **webftp_upload_file**: Upload files using S3 presigned URLs
 - **webftp_download_file**: Download files/folders (folders as .zip)
 - **webftp_uploads_list**: Upload history
 - **webftp_downloads_list**: Download history
 - **webftp_sessions_list**: Active FTP sessions
 
-### 📋 Event management
+### 📋 Events & logging
 - **list_events**: Browse server events and logs
-- **search_events**: Find specific events
-- **acknowledge_command**: Confirm command receipt
-- **finish_command**: Mark commands as complete
+- **get_event**: Get event details by ID
+- **search_events**: Search and filter events
 
 ### 🔐 Identity and access management (IAM)
 
-**User Management**:
-- **iam_users_list**: List workspace IAM users with pagination
-- **iam_user_get**: Get detailed user information
-- **iam_user_create**: Create new users with group assignment
-- **iam_user_update**: Update user details and group memberships
-- **iam_user_delete**: Remove users from workspace
-- **iam_user_permissions_get**: View effective user permissions
-- **iam_user_assign_role**: Assign roles to users
+**User management**:
+- **list_iam_users**: List workspace IAM users with pagination
+- **get_iam_user**: Get detailed user information
+- **create_iam_user**: Create new users with group assignment
+- **update_iam_user**: Update user details and group memberships
+- **delete_iam_user**: Remove users from workspace
 
-**Group & Role Management**:
-- **iam_groups_list**: List all workspace groups
-- **iam_group_create**: Create groups with permissions
-- **iam_roles_list**: List available roles
-- **iam_permissions_list**: View all permissions
+**Group management**:
+- **list_iam_groups**: List all workspace groups
+- **create_iam_group**: Create new IAM group
 
-**Advanced IAM Features**:
-- Workspace-level isolation for multi-tenant security
-- Role-based access control (RBAC) implementation
-- Group-based permission inheritance
-- Comprehensive audit trails and logging
-
-### 🔐 Authentication
-- **auth_set_token**: Configure API tokens
-- **auth_remove_token**: Remove stored tokens
+### ⚙️ Workspace
+- **list_workspaces**: List available workspaces
 
 ## 🌍 Supported platforms
 
