@@ -8,7 +8,9 @@ from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 
 
-@mcp_tool_handler(description='Execute a command on a server (requires ACL permission)')
+@mcp_tool_handler(
+    description='Run a shell command on a remote server asynchronously via Command API. Returns a command ID that can be polled with get_command_result. Requires ACL permission on the API token. For synchronous execution, use execute_command_sync instead.'
+)
 async def execute_command_with_acl(
     server_id: str,
     command: str,
@@ -57,7 +59,9 @@ async def execute_command_with_acl(
     )
 
 
-@mcp_tool_handler(description='Get command execution result by command ID')
+@mcp_tool_handler(
+    description='Retrieve the result of a previously executed command by its command ID. Returns stdout, stderr, exit code, and completion status. Use this to poll for results after execute_command_with_acl.'
+)
 async def get_command_result(
     command_id: str, workspace: str, region: str = '', **kwargs
 ) -> dict[str, Any]:
@@ -76,7 +80,9 @@ async def get_command_result(
     )
 
 
-@mcp_tool_handler(description='List recent commands executed on servers')
+@mcp_tool_handler(
+    description='List recent command execution history with status, output, and timestamps. Filterable by server ID. Use this to review what commands have been run or check past results.'
+)
 async def list_commands(
     workspace: str,
     server_id: str | None = None,
@@ -111,7 +117,7 @@ async def list_commands(
 
 
 @mcp_tool_handler(
-    description='Execute a command and wait for result (requires ACL permission)'
+    description='Run a shell command on a server and wait for it to complete. Returns stdout, stderr, and exit code in a single call. Requires ACL permission. This is the simplest way to run a command via the Command API when you need the result immediately.'
 )
 async def execute_command_sync(
     server_id: str,
@@ -224,7 +230,7 @@ async def execute_command_sync(
 
 
 @mcp_tool_handler(
-    description='Execute command on multiple servers simultaneously (requires ACL permission)'
+    description='Run the same shell command on multiple servers simultaneously or sequentially. Returns per-server results with success/failure status. Requires ACL permission. Use this for batch operations like deploying configs or checking status across a fleet.'
 )
 async def execute_command_multi_server(
     server_ids: list[str],
