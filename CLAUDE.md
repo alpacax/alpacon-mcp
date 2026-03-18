@@ -116,9 +116,12 @@ This MCP server provides a **pure HTTP API bridge** to Alpacon's infrastructure 
 - `websh_tools.py` - Websh session management, persistent connections, and terminal operations
 - `webftp_tools.py` - File transfer and management via S3 presigned URLs
 - `metrics_tools.py` - Performance monitoring, metrics, and alerting
+- `alert_tools.py` - Alert management, alert rules CRUD, and muting
 - `events_tools.py` - Event logging and search
 - `system_info_tools.py` - System information, hardware details, user/group/package management
 - `iam_tools.py` - Identity and access management (users, groups)
+- `security_tools.py` - Security ACL management (command, server, file ACLs)
+- `audit_tools.py` - Audit activity logs, server logs, and WebFTP logs
 - `workspace_tools.py` - Workspace and configuration management
 
 **Utilities** (all in `utils/` directory):
@@ -302,10 +305,34 @@ These tools automatically:
 - `get_alert_rules` - Get alert rules configuration
 - `get_server_metrics_summary` - Comprehensive metrics overview
 
+### 🔔 Alert Management
+- `list_alerts` - List alerts with optional filtering by server or status
+- `get_alert` - Get detailed information about a specific alert
+- `mute_alert` - Mute an alert to suppress notifications temporarily
+- `create_alert_rule` - Create an alert rule with monitoring thresholds
+- `update_alert_rule` - Update an existing alert rule configuration
+- `delete_alert_rule` - Delete an alert rule
+
+### 🛡️ Security ACLs
+- `list_command_acls` - List command ACL rules
+- `create_command_acl` - Create a command ACL rule (allow/deny command execution)
+- `update_command_acl` - Update an existing command ACL rule
+- `delete_command_acl` - Delete a command ACL rule
+- `list_server_acls` - List server ACL rules
+- `create_server_acl` - Create a server ACL rule (control server access)
+- `list_file_acls` - List file ACL rules
+- `create_file_acl` - Create a file ACL rule (control file access)
+
 ### 📋 Events & Logging
 - `list_events` - List server events
 - `get_event` - Get event details by ID
 - `search_events` - Search server events and logs
+
+### 📝 Audit Logs
+- `list_activity_logs` - List activity logs for auditing user and system actions
+- `get_activity_log` - Get detailed information about a specific activity log entry
+- `list_server_logs` - List server command execution logs from history
+- `list_webftp_logs` - List WebFTP file transfer logs from history
 
 ### 🔍 System Information
 - `get_system_info` - Hardware and OS information

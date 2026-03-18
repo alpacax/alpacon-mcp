@@ -275,10 +275,13 @@ def run(transport: str = 'stdio', config_file: str | None = None):
         logger.info('Local mode: health_check MCP tool registered')
 
     # Import all tool modules to register MCP tools via decorators
+    import tools.alert_tools  # noqa: F401
+    import tools.audit_tools  # noqa: F401
     import tools.command_tools  # noqa: F401
     import tools.events_tools  # noqa: F401
     import tools.iam_tools  # noqa: F401
     import tools.metrics_tools  # noqa: F401
+    import tools.security_tools  # noqa: F401
     import tools.server_tools  # noqa: F401
     import tools.system_info_tools  # noqa: F401
     import tools.webftp_tools  # noqa: F401
