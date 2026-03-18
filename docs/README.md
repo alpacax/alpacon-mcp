@@ -1,6 +1,6 @@
 # Alpacon MCP Server documentation
 
-Welcome to the Alpacon MCP (Model Context Protocol) Server documentation. This comprehensive guide will help you get started with server management, monitoring, and automation through AI-powered interfaces.
+Welcome to the Alpacon MCP Server documentation. Alpacon provides browser-based, zero-trust server access—no VPN, no SSH keys. This MCP server extends that secure access to AI assistants, letting them operate your infrastructure through natural language while every action is authenticated, authorized, and recorded.
 
 ## 📖 Documentation structure
 
@@ -34,13 +34,13 @@ Welcome to the Alpacon MCP (Model Context Protocol) Server documentation. This c
 
 ## 🎯 What is Alpacon MCP?
 
-Alpacon MCP Server connects AI tools directly to Alpacon's server management platform, enabling:
+Alpacon MCP Server extends [Alpacon's](https://www.alpacax.com/alpacon/) zero-trust infrastructure access to AI assistants, enabling:
 
-- **Server management**: Monitor and control servers across regions
-- **Real-time metrics**: CPU, memory, disk, and network monitoring
-- **System information**: Hardware details, OS info, users, and packages
-- **Event management**: Command execution and event tracking
-- **Websh & WebFTP**: Secure shell and file transfer capabilities
+- **Secure remote operations**: Websh terminal and WebFTP file transfer—no SSH keys or VPN required
+- **Real-time monitoring**: CPU, memory, disk, and network metrics with alerting
+- **System administration**: Hardware details, OS info, users, packages, and IAM
+- **Compliance-ready audit**: Every AI operation logged with full session recording
+- **Multi-workspace access**: Operate across customer environments and regions from a single interface
 
 ## 🏗️ Architecture
 
@@ -125,8 +125,8 @@ Supports Alpacon workspaces with secure API authentication:
 ## 🆘 Need help?
 
 - 📖 Check the [Troubleshooting Guide](troubleshooting.md)
-- 🐛 [Report Issues](https://github.com/your-repo/alpacon-mcp/issues)
-- 💬 [Discussions](https://github.com/your-repo/alpacon-mcp/discussions)
+- 🐛 [Report Issues](https://github.com/alpacax/alpacon-mcp/issues)
+- 💬 [Discussions](https://github.com/alpacax/alpacon-mcp/discussions)
 
 ---
 

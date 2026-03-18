@@ -9,7 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project overview
 
-This is an **Alpacon MCP Server** - A Model Context Protocol (MCP) server that provides AI assistants with direct access to Alpacon's server management platform. The server enables natural language server administration, monitoring, and automation through HTTP API calls.
+This is an **Alpacon MCP Server**: an MCP (Model Context Protocol) server that extends Alpacon's zero-trust, browser-based infrastructure access to AI assistants. Alpacon provides secure server access without VPNs or SSH keys. This MCP server lets AI agents authenticate through the same identity layer, execute commands, transfer files, monitor metrics, and manage servers—with every action authorized by RBAC and recorded for audit.
 
 ## Quick start guide
 
@@ -663,4 +663,4 @@ downloads = await webftp_downloads_list(workspace="production")
 
 ---
 
-*This MCP server enables AI-powered infrastructure management through natural language interactions with Alpacon's platform.*
+*This MCP server extends Alpacon's zero-trust infrastructure access to AI agents, enabling secure server operations through natural language.*

@@ -1,8 +1,8 @@
 # Alpacon MCP Server
 
-> 🚀 **AI-powered server management**: Connect Claude, Cursor, and other AI tools directly to your Alpacon infrastructure
+> 🚀 **Zero-trust server access for AI agents**: Let Claude, Cursor, and other AI tools operate your infrastructure through Alpacon—no VPN, no SSH keys
 
-An advanced MCP (Model Context Protocol) server that bridges AI assistants with Alpacon's server management platform, enabling natural language server administration, monitoring, and automation.
+An MCP (Model Context Protocol) server that extends Alpacon's browser-based, zero-trust infrastructure access to AI assistants. Execute commands, transfer files, monitor metrics, and manage servers across workspaces using natural language.
 
 [![Python Version](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://python.org)
 [![MCP Compatible](https://img.shields.io/badge/MCP-Compatible-green.svg)](https://modelcontextprotocol.io)
@@ -10,49 +10,42 @@ An advanced MCP (Model Context Protocol) server that bridges AI assistants with 
 
 ## ✨ What is Alpacon MCP server?
 
-The Alpacon MCP Server transforms how you interact with your server infrastructure by connecting AI assistants directly to Alpacon's management platform. Instead of switching between interfaces, you can now manage servers, monitor metrics, execute commands, and troubleshoot issues using natural language.
+[Alpacon](https://www.alpacax.com/alpacon/) provides browser-based server access with zero-trust security built in—no SSH keys, no VPNs. The Alpacon MCP Server brings that same secure access to AI assistants, so you can operate your infrastructure through natural language while every action is authenticated, authorized, and recorded.
 
 ### 🎯 Key benefits
 
-- **Natural language server management**: "Show me CPU usage for all web servers in production"
+- **Zero-trust access for AI**: AI agents authenticate through Alpacon's identity layer—same RBAC, audit trails, and session recording as human users
+- **No credential management**: No SSH keys or VPN configs to distribute—one identity, every server
+- **Natural language operations**: "Show me CPU usage for all web servers in production"
 - **AI-powered troubleshooting**: "Investigate why server-web-01 is slow and suggest fixes"
-- **Multi-workspace support**: Connect to your Alpacon workspaces with secure API authentication
-- **Real-time monitoring integration**: Access metrics, logs, and events through AI conversations
-- **Secure Websh & file operations**: Execute commands and transfer files via AI interface
+- **Multi-workspace support**: Access servers across customer environments and regions with a single interface
+- **Compliance-ready**: Every AI operation is logged with full session recording and audit trails
 
 ## 🌟 Core features
 
-### 🖥️ **Server management**
-- List and monitor servers in your workspace
-- Get detailed system information and specifications
-- Create and manage server documentation
-- Multi-workspace support with API token management
+### 🔐 **Zero-trust infrastructure access**
+- Authenticate once, access every authorized server
+- Role-based access control (RBAC) with time-limited permissions
+- Full audit trail for every AI operation
+- Automatic session recording for compliance
+
+### 🔧 **Secure remote operations**
+- Websh sessions for browser-based terminal access
+- Command execution with real-time output
+- File upload/download via WebFTP with S3 presigned URLs
+- Persistent connections with automatic session management
 
 ### 📊 **Real-time monitoring**
 - CPU, memory, disk, and network metrics
-- Performance trend analysis
-- Top server identification
+- Performance trend analysis and top server identification
 - Custom alert rule management
 - Comprehensive health dashboards
 
 ### 💻 **System administration**
-- User and group management
-- Package inventory and updates
-- Network interface monitoring
-- Disk and partition analysis
-- System time and uptime tracking
-
-### 🔧 **Remote operations**
-- Websh sessions for secure shell access
-- Command execution with real-time output
-- File upload/download via WebFTP
-- Session management and monitoring
-
-### 📋 **Event management**
-- Command acknowledgment and tracking
-- Event search and filtering
-- Execution history and status
-- Automated workflow coordination
+- User, group, and IAM management
+- Package inventory and system information
+- Network interface and disk analysis
+- Event tracking and search
 
 ## 🚀 Quick start
 
@@ -367,11 +360,11 @@ python main_sse.py
 
 ## 🔒 Security & best practices
 
-- **Secure token storage**: Tokens encrypted and never committed to git
-- **Workspace-based access control**: Separate tokens per workspace environment
+- **Zero-trust architecture**: Every request authenticated and authorized through Alpacon's identity layer
+- **Session recording**: All Websh and WebFTP operations automatically recorded for audit
+- **Workspace-based access control**: Separate tokens per workspace with RBAC
 - **ACL configuration required**: Configure token permissions in Alpacon web interface for command execution
-- **Audit logging**: All operations logged for security review
-- **Connection validation**: API endpoints verified before execution
+- **Audit logging**: All operations logged with full traceability
 
 ### ⚠️ Command execution limitations
 
@@ -397,9 +390,9 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
-**Ready to transform your server management experience?**
+**Ready to give your AI agents secure infrastructure access?**
 - 📖 Start with our [Getting Started Guide](docs/getting-started.md)
 - 🔧 Explore the [API Reference](docs/api-reference.md)
 - 💬 Join our community discussions
 
-*Built with ❤️ for the Alpacon ecosystem* 
+*Built with ❤️ by [AlpacaX](https://www.alpacax.com/) for the Alpacon ecosystem*
