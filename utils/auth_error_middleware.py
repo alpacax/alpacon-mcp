@@ -1,9 +1,17 @@
 """ASGI middleware to propagate upstream API 401 as MCP transport 401.
 
 When the Alpacon API returns 401 (e.g., MFA timeout), the HTTP client
-sets a contextvars flag. This middleware detects the flag and replaces
-the HTTP 200 JSON-RPC response with HTTP 401 + WWW-Authenticate header,
-triggering the MCP client's automatic OAuth re-authentication flow.
+mutates a shared dict in a contextvars flag. This middleware detects the
+mutation and replaces the HTTP 200 JSON-RPC response with HTTP 401 +
+WWW-Authenticate header, triggering the MCP client's automatic OAuth
+re-authentication flow.
+
+IMPORTANT: The MCP streamable-http transport runs tool code in child
+tasks via anyio.create_task_group(). Child tasks get a COPY of the
+contextvars context, so ContextVar.set() in a child is invisible to the
+parent. We work around this by using a shared mutable dict: the middleware
+initializes it, and the http_client MUTATES (not replaces) it. Mutation
+of the same object is visible across copied contexts.
 
 Only active in remote (streamable-http) mode where OAuth is enabled.
 """
@@ -75,8 +83,13 @@ class UpstreamAuthErrorMiddleware:
             await self.app(scope, receive, send)
             return
 
-        # Reset flag for this request
-        self._flag.set(None)
+        # Initialize a shared mutable dict for this request.
+        # Child tasks (anyio.start_soon) get a copied context, but both
+        # parent and child hold a reference to the SAME dict object.
+        # The http_client mutates flag['error'] instead of calling .set(),
+        # so the change is visible here after await self.app() returns.
+        shared_flag = {'error': None}
+        self._flag.set(shared_flag)
 
         # Buffer the response so we can replace it if needed
         buffered: list[dict] = []
@@ -86,8 +99,8 @@ class UpstreamAuthErrorMiddleware:
 
         await self.app(scope, receive, buffer_send)
 
-        # Check if tool signaled upstream auth error
-        error_info = self._flag.get()
+        # Check if tool signaled upstream auth error via shared dict mutation
+        error_info = shared_flag['error']
         now = time.monotonic()
         self._prune_expired_cooldowns(now)
 

@@ -428,26 +428,27 @@ class TestHandleUpstream401:
 
     @patch.dict('os.environ', {'ALPACON_MCP_AUTH_ENABLED': 'true'})
     def test_sets_flag_in_remote_mode(self):
-        """Sets upstream_auth_error_flag when auth is enabled."""
+        """Mutates shared dict in upstream_auth_error_flag when auth is enabled."""
         from utils.error_handler import upstream_auth_error_flag
 
-        upstream_auth_error_flag.set(None)
+        # Simulate what the middleware does: initialize a shared mutable dict
+        shared_flag = {'error': None}
+        upstream_auth_error_flag.set(shared_flag)
         exc = self._make_401_exc({'code': 'auth_mfa_required', 'source': 'websh'})
         AlpaconHTTPClient._handle_upstream_401(exc)
 
-        flag = upstream_auth_error_flag.get()
-        assert flag is not None
-        assert flag['mfa_required'] is True
-        assert flag['source'] == 'websh'
+        assert shared_flag['error'] is not None
+        assert shared_flag['error']['mfa_required'] is True
+        assert shared_flag['error']['source'] == 'websh'
 
     @patch.dict('os.environ', {'ALPACON_MCP_AUTH_ENABLED': 'false'})
     def test_no_flag_in_stdio_mode(self):
-        """Does NOT set flag when auth is disabled (stdio mode)."""
+        """Does NOT mutate flag when auth is disabled (stdio mode)."""
         from utils.error_handler import upstream_auth_error_flag
 
-        upstream_auth_error_flag.set(None)
+        shared_flag = {'error': None}
+        upstream_auth_error_flag.set(shared_flag)
         exc = self._make_401_exc({'code': 'auth_mfa_required', 'source': 'websh'})
         AlpaconHTTPClient._handle_upstream_401(exc)
 
-        flag = upstream_auth_error_flag.get()
-        assert flag is None
+        assert shared_flag['error'] is None
