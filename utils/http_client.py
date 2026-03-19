@@ -176,14 +176,19 @@ class AlpaconHTTPClient:
                     'mfa_required': mfa_required,
                     'source': source,
                 }
+                logger.warning(
+                    'Upstream 401 detected (mfa_required=%s, source=%s), '
+                    'signaling middleware for re-auth',
+                    mfa_required,
+                    source,
+                )
             except LookupError:
-                pass
-            logger.warning(
-                'Upstream 401 detected (mfa_required=%s, source=%s), '
-                'signaling middleware for re-auth',
-                mfa_required,
-                source,
-            )
+                # No shared flag in this context (middleware not installed).
+                # Skip signaling; the 401 will be returned as a tool error.
+                logger.debug(
+                    'Upstream 401 detected but no auth error flag in context; '
+                    'skipping middleware signaling'
+                )
 
         error_msg = 'MFA verification required' if mfa_required else str(exc)
         error_response = {
