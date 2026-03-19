@@ -163,16 +163,21 @@ class AlpaconHTTPClient:
         except Exception as parse_exc:
             logger.debug('Failed to parse 401 response body as JSON: %s', parse_exc)
 
-        # Signal middleware in remote (streamable-http) mode only
+        # Signal middleware in remote (streamable-http) mode only.
+        # Mutate the shared dict instead of replacing via .set() because
+        # anyio child tasks get a copied context where .set() is invisible
+        # to the parent (middleware). Mutation of the shared object IS visible.
         if os.getenv('ALPACON_MCP_AUTH_ENABLED', '').lower() == 'true':
             from utils.error_handler import upstream_auth_error_flag
 
-            upstream_auth_error_flag.set(
-                {
+            try:
+                flag = upstream_auth_error_flag.get()
+                flag['error'] = {
                     'mfa_required': mfa_required,
                     'source': source,
                 }
-            )
+            except LookupError:
+                pass
             logger.warning(
                 'Upstream 401 detected (mfa_required=%s, source=%s), '
                 'signaling middleware for re-auth',

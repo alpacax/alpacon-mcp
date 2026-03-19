@@ -5,32 +5,27 @@ import json
 import pytest
 
 from utils.auth_error_middleware import UpstreamAuthErrorMiddleware
-from utils.error_handler import upstream_auth_error_flag
-
-
-@pytest.fixture(autouse=True)
-def _reset_auth_error_flag():
-    """Reset the upstream auth error flag before and after each test."""
-    upstream_auth_error_flag.set(None)
-    yield
-    upstream_auth_error_flag.set(None)
 
 
 class _FakeFlag:
-    """Deterministic flag replacement that always returns a predetermined value.
+    """Deterministic flag replacement that mimics the shared mutable dict pattern.
 
-    Avoids all contextvars/async isolation issues by making get() return the
-    value set at construction time, ignoring set() calls from the middleware.
+    The middleware creates a shared dict {'error': None} and calls set() to store it,
+    then checks shared_flag['error'] after the app runs. This fake intercepts set()
+    to inject the pre-configured error value into the shared dict, simulating what
+    the http_client would do in a real upstream 401 scenario.
     """
 
-    def __init__(self, return_value=None):
-        self._return_value = return_value
+    def __init__(self, error_value=None):
+        self._error_value = error_value
 
     def get(self, *args):
-        return self._return_value
+        raise LookupError  # Not used in new pattern
 
     def set(self, value):
-        pass  # No-op: value is controlled at construction time
+        # Middleware passes {'error': None}; inject our test error value
+        if isinstance(value, dict):
+            value['error'] = self._error_value
 
 
 class _MockApp:
@@ -92,13 +87,12 @@ async def _run(middleware, scope=None):
     return sent
 
 
-def _make(flag_value=None, body=None, resource_metadata_url='', cooldown_seconds=60):
-    """Create middleware with injected FakeFlag (no contextvars, no patching).
+def _make(error_value=None, body=None, resource_metadata_url='', cooldown_seconds=60):
+    """Create middleware with injected FakeFlag.
 
-    The FakeFlag always returns flag_value from get(), making tests
-    deterministic regardless of async context isolation behavior.
+    error_value: The upstream error info dict, or None for no error.
     """
-    fake = _FakeFlag(return_value=flag_value)
+    fake = _FakeFlag(error_value=error_value)
     app = _MockApp(body=body)
     mw = UpstreamAuthErrorMiddleware(
         app,
@@ -111,7 +105,7 @@ def _make(flag_value=None, body=None, resource_metadata_url='', cooldown_seconds
 
 @pytest.mark.asyncio
 async def test_no_flag_passes_through():
-    """When no flag is set, response passes through as-is."""
+    """When no error is signaled, response passes through as-is."""
     mw = _make()
     sent = await _run(mw)
     status, _, body = await _collect_response(sent)
@@ -121,9 +115,9 @@ async def test_no_flag_passes_through():
 
 @pytest.mark.asyncio
 async def test_flag_triggers_401():
-    """When flag is set, middleware returns HTTP 401."""
+    """When error is signaled, middleware returns HTTP 401."""
     mw = _make(
-        flag_value={'mfa_required': False, 'source': ''},
+        error_value={'mfa_required': False, 'source': ''},
         resource_metadata_url='https://example.com/.well-known/oauth-protected-resource',
     )
     sent = await _run(mw)
@@ -142,7 +136,7 @@ async def test_flag_triggers_401():
 @pytest.mark.asyncio
 async def test_mfa_flag_includes_mfa_scope():
     """MFA flag adds 'mfa' to WWW-Authenticate scope."""
-    mw = _make(flag_value={'mfa_required': True, 'source': 'websh'})
+    mw = _make(error_value={'mfa_required': True, 'source': 'websh'})
     sent = await _run(mw)
     status, headers, body = await _collect_response(sent)
 
@@ -154,7 +148,7 @@ async def test_mfa_flag_includes_mfa_scope():
 @pytest.mark.asyncio
 async def test_non_mfa_flag_excludes_mfa_scope():
     """Non-MFA flag does NOT add 'mfa' to scope."""
-    mw = _make(flag_value={'mfa_required': False, 'source': ''})
+    mw = _make(error_value={'mfa_required': False, 'source': ''})
     sent = await _run(mw)
     status, headers, _ = await _collect_response(sent)
 
@@ -166,7 +160,7 @@ async def test_non_mfa_flag_excludes_mfa_scope():
 async def test_cooldown_passes_through_on_second_401():
     """Second 401 within cooldown passes through as normal response."""
     mw = _make(
-        flag_value={'mfa_required': False, 'source': ''},
+        error_value={'mfa_required': False, 'source': ''},
         body={'tool_error': 'auth failed'},
         cooldown_seconds=60,
     )
@@ -186,7 +180,7 @@ async def test_cooldown_passes_through_on_second_401():
 async def test_per_client_cooldown_isolation():
     """Different clients have independent cooldowns."""
     mw = _make(
-        flag_value={'mfa_required': False, 'source': ''},
+        error_value={'mfa_required': False, 'source': ''},
         cooldown_seconds=60,
     )
 

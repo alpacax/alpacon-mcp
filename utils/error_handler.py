@@ -13,8 +13,15 @@ logger = get_logger('error_handler')
 # Set by http_client when the Alpacon API returns 401 in remote mode.
 # The middleware reads this to replace HTTP 200 with HTTP 401, triggering
 # the MCP client's automatic OAuth re-authentication flow.
-upstream_auth_error_flag: contextvars.ContextVar[dict | None] = contextvars.ContextVar(
-    'upstream_auth_error', default=None
+#
+# IMPORTANT: Uses a shared mutable dict instead of replacing the value.
+# The MCP streamable-http transport runs tool code in child tasks via
+# anyio.create_task_group(), which copies the contextvars context.
+# ContextVar.set() in a child task is invisible to the parent, but
+# MUTATING a shared dict object is visible because both contexts hold
+# a reference to the same object.
+upstream_auth_error_flag: contextvars.ContextVar[dict] = contextvars.ContextVar(
+    'upstream_auth_error'
 )
 
 
