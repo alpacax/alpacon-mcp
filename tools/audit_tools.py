@@ -33,9 +33,9 @@ async def list_activity_logs(
     token = kwargs.get('token')
 
     params = {}
-    if page:
+    if page is not None:
         params['page'] = page
-    if page_size:
+    if page_size is not None:
         params['page_size'] = page_size
 
     result = await http_client.get(
@@ -110,9 +110,9 @@ async def list_server_logs(
     params: dict[str, Any] = {}
     if server_id:
         params['server'] = server_id
-    if page:
+    if page is not None:
         params['page'] = page
-    if page_size:
+    if page_size is not None:
         params['page_size'] = page_size
 
     result = await http_client.get(
@@ -154,9 +154,9 @@ async def list_webftp_logs(
     params: dict[str, Any] = {}
     if server_id:
         params['server'] = server_id
-    if page:
+    if page is not None:
         params['page'] = page
-    if page_size:
+    if page_size is not None:
         params['page_size'] = page_size
 
     result = await http_client.get(
