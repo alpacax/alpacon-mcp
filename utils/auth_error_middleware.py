@@ -30,8 +30,8 @@ class UpstreamAuthErrorMiddleware:
     Uses a per-client cooldown timer to prevent infinite re-auth loops:
     after emitting a 401 for a given client, subsequent upstream auth errors
     from that client within the cooldown period are passed through as normal
-    tool error responses. Cooldown is tracked per client (by hashed
-    Authorization header) so one client's re-auth does not suppress another's.
+    tool error responses. Cooldown is tracked per client (by JWT token hash)
+    so one client's re-auth does not suppress another's.
     """
 
     def __init__(
@@ -88,18 +88,28 @@ class UpstreamAuthErrorMiddleware:
             await self.app(scope, receive, send)
             return
 
+        # Extract token key upfront so we can always clean up stale entries
+        # in the module-level dict, even if the app raises or is cancelled.
+        token_key = self._extract_token_key(scope)
+
         # Buffer the response so we can replace it if needed
         buffered: list[dict] = []
 
         async def buffer_send(message: dict) -> None:
             buffered.append(message)
 
-        await self.app(scope, receive, buffer_send)
+        try:
+            await self.app(scope, receive, buffer_send)
+        except BaseException:
+            # App raised or request was cancelled. Consume any pending
+            # signal to prevent stale entries and unbounded dict growth.
+            if token_key:
+                consume_upstream_auth_error(token_key)
+            raise
 
         # Check if tool signaled upstream auth error via module-level dict.
         # The http_client and this middleware both derive the same key from
         # the JWT token, bypassing the contextvars isolation issue.
-        token_key = self._extract_token_key(scope)
         error_info = consume_upstream_auth_error(token_key) if token_key else None
         now = time.monotonic()
         self._prune_expired_cooldowns(now)
