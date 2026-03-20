@@ -258,3 +258,76 @@ async def test_successful_response_ignores_stale_signal():
     # Should pass through as 200, NOT consume the stale signal
     assert status == 200
     assert 'ok' in body
+
+
+def _mcp_jsonrpc_body(tool_result: dict) -> dict:
+    """Build a realistic MCP JSON-RPC response body.
+
+    MCP wraps tool results as TextContent(text=json.dumps(result)) inside
+    a JSON-RPC response. This produces escaped JSON-in-JSON where inner
+    quotes become \\", which the middleware must handle correctly.
+    """
+    return {
+        'jsonrpc': '2.0',
+        'id': 'test-123',
+        'result': {'content': [{'type': 'text', 'text': json.dumps(tool_result)}]},
+    }
+
+
+@pytest.mark.asyncio
+async def test_flag_triggers_401_with_mcp_jsonrpc_body():
+    """Middleware detects 401 in realistic MCP JSON-RPC response (escaped JSON).
+
+    This is the critical test: in production, tool results are serialized as
+    escaped JSON inside MCP's TextContent, so "status_code": 401 appears as
+    \\"status_code\\": 401 in the HTTP response bytes. The middleware must
+    still detect and consume the signal.
+    """
+    token = 'jsonrpc-test-jwt'
+    jsonrpc_body = _mcp_jsonrpc_body(
+        {
+            'error': 'HTTP Error',
+            'status_code': 401,
+            'message': 'Client error 401 Unauthorized',
+            'mfa_required': False,
+        }
+    )
+    mw = _make(
+        error_value={'mfa_required': False, 'source': ''},
+        body=jsonrpc_body,
+        auth_value=token,
+    )
+
+    sent = await _run(mw, scope=_http_scope(f'Bearer {token}'))
+    status, headers, _ = await _collect_response(sent)
+
+    assert status == 401, (
+        'Middleware failed to detect 401 in MCP JSON-RPC escaped body. '
+        'The response body guard does not handle escaped JSON correctly.'
+    )
+    assert 'www-authenticate' in headers
+
+
+@pytest.mark.asyncio
+async def test_successful_jsonrpc_body_ignores_signal():
+    """Successful MCP JSON-RPC response does not trigger 401 even with stale signal."""
+    token = 'jsonrpc-success-jwt'
+    token_key = make_auth_error_key(token)
+
+    # Stale signal from another request
+    signal_upstream_auth_error(token_key, {'mfa_required': False, 'source': ''})
+
+    # Successful tool result (no status_code, no 401)
+    jsonrpc_body = _mcp_jsonrpc_body(
+        {
+            'status': 'success',
+            'data': {'servers': [{'name': 'web-01'}]},
+        }
+    )
+    app = _MockApp(body=jsonrpc_body)
+    mw = UpstreamAuthErrorMiddleware(app)
+
+    sent = await _run(mw, scope=_http_scope(f'Bearer {token}'))
+    status, _, _ = await _collect_response(sent)
+
+    assert status == 200
