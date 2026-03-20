@@ -1,6 +1,5 @@
 """Enhanced error handling utilities for Alpacon MCP server."""
 
-import contextvars
 import hashlib
 import re
 import threading
@@ -11,32 +10,21 @@ from utils.logger import get_logger
 
 logger = get_logger('error_handler')
 
-# Context variable for signaling upstream API 401 to the ASGI middleware.
-# Set by http_client when the Alpacon API returns 401 in remote mode.
-# The middleware reads this to replace HTTP 200 with HTTP 401, triggering
-# the MCP client's automatic OAuth re-authentication flow.
-#
-# IMPORTANT: Uses a shared mutable dict instead of replacing the value.
-# The MCP streamable-http transport runs tool code in child tasks via
-# anyio.create_task_group(), which copies the contextvars context.
-# ContextVar.set() in a child task is invisible to the parent, but
-# MUTATING a shared dict object is visible because both contexts hold
-# a reference to the same object.
-upstream_auth_error_flag: contextvars.ContextVar[dict] = contextvars.ContextVar(
-    'upstream_auth_error'
-)
-
 # Module-level thread-safe dict for signaling upstream auth errors between
-# the ASGI middleware and MCP tool handlers. This replaces the contextvars
-# approach above because MCP streamable-http transport runs tool handlers
-# in a separate anyio task context where ContextVar mutations are invisible
-# to the middleware's parent context.
+# the ASGI middleware and MCP tool handlers. Uses a module-level dict
+# instead of contextvars because MCP streamable-http transport runs tool
+# handlers in a separate anyio task context where ContextVar mutations
+# are invisible to the middleware's parent context.
 _upstream_auth_errors: dict[str, dict] = {}
 _upstream_auth_lock = threading.Lock()
 
 
 def make_auth_error_key(token: str) -> str:
-    """Derive a short hash key from an auth token for error signaling."""
+    """Derive a short hash key from an auth token for error signaling.
+
+    NOTE: Uses SHA-256 for fast, collision-resistant key derivation only
+    (not for password hashing). The input is a JWT token, not a password.
+    """
     return hashlib.sha256(token.encode()).hexdigest()[:16]
 
 
@@ -45,9 +33,22 @@ def signal_upstream_auth_error(token_key: str, error_info: dict) -> None:
 
     Called by http_client when the Alpacon API returns 401 in remote mode.
     The ASGI middleware reads this via consume_upstream_auth_error().
+
+    If a signal already exists for this token_key (e.g., multiple API
+    calls in one tool run), merges with the existing entry, preserving
+    mfa_required=True once set so a later non-MFA 401 cannot downgrade it.
     """
     with _upstream_auth_lock:
-        _upstream_auth_errors[token_key] = error_info
+        existing = _upstream_auth_errors.get(token_key)
+        if existing is None:
+            _upstream_auth_errors[token_key] = error_info
+            return
+
+        merged = existing.copy()
+        merged.update(error_info)
+        if existing.get('mfa_required') or error_info.get('mfa_required'):
+            merged['mfa_required'] = True
+        _upstream_auth_errors[token_key] = merged
 
 
 def consume_upstream_auth_error(token_key: str) -> dict | None:

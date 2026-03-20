@@ -39,7 +39,6 @@ class UpstreamAuthErrorMiddleware:
         app: ASGIApp,
         resource_metadata_url: str = '',
         cooldown_seconds: float = 60,
-        **kwargs,
     ):
         self.app = app
         self.resource_metadata_url = resource_metadata_url
@@ -65,12 +64,23 @@ class UpstreamAuthErrorMiddleware:
         Returns a short hash key that matches make_auth_error_key() output
         from the http_client, enabling cross-context error signaling.
         Returns None if no Bearer token is present.
+
+        Handles the Bearer scheme case-insensitively per RFC 6750 and
+        decodes defensively to avoid UnicodeDecodeError on malformed headers.
         """
         headers = dict(scope.get('headers', []))
-        auth_header = headers.get(b'authorization', b'').decode()
-        if auth_header.startswith('Bearer '):
-            token = auth_header[7:]  # Strip "Bearer " prefix
-            return make_auth_error_key(token)
+        auth_raw = headers.get(b'authorization', b'')
+        if not auth_raw:
+            return None
+        try:
+            auth_header = auth_raw.decode('utf-8')
+        except UnicodeDecodeError:
+            auth_header = auth_raw.decode('latin-1', errors='replace')
+        auth_header = auth_header.strip()
+        if auth_header.lower().startswith('bearer '):
+            token = auth_header[len('Bearer ') :].strip()
+            if token:
+                return make_auth_error_key(token)
         return None
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:

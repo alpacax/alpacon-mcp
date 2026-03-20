@@ -431,7 +431,7 @@ class TestHandleUpstream401:
         """Signals upstream auth error via module-level dict when auth is enabled."""
         from utils.error_handler import consume_upstream_auth_error, make_auth_error_key
 
-        token = 'test-jwt-token'
+        token = 'header.payload.signature'  # Must pass _is_jwt() check
         exc = self._make_401_exc({'code': 'auth_mfa_required', 'source': 'websh'})
         AlpaconHTTPClient._handle_upstream_401(exc, token=token)
 
@@ -446,7 +446,7 @@ class TestHandleUpstream401:
         """Does NOT signal error when auth is disabled (stdio mode)."""
         from utils.error_handler import consume_upstream_auth_error, make_auth_error_key
 
-        token = 'test-jwt-token'
+        token = 'header.payload.signature'
         exc = self._make_401_exc({'code': 'auth_mfa_required', 'source': 'websh'})
         AlpaconHTTPClient._handle_upstream_401(exc, token=token)
 

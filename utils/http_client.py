@@ -171,7 +171,14 @@ class AlpaconHTTPClient:
         # of contextvars, because MCP streamable-http runs tool handlers in
         # a separate anyio task context where ContextVar mutations are
         # invisible to the ASGI middleware's parent context.
-        if os.getenv('ALPACON_MCP_AUTH_ENABLED', '').lower() == 'true' and token:
+        # Only signal for JWT (Bearer) tokens — API tokens (token=...) use
+        # a different auth scheme and the middleware cannot derive a matching
+        # key from them, which would leave unconsumed entries.
+        if (
+            os.getenv('ALPACON_MCP_AUTH_ENABLED', '').lower() == 'true'
+            and token
+            and AlpaconHTTPClient._is_jwt(token)
+        ):
             from utils.error_handler import (
                 make_auth_error_key,
                 signal_upstream_auth_error,
