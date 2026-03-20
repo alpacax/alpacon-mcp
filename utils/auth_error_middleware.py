@@ -1,28 +1,24 @@
 """ASGI middleware to propagate upstream API 401 as MCP transport 401.
 
 When the Alpacon API returns 401 (e.g., MFA timeout), the HTTP client
-mutates a shared dict in a contextvars flag. This middleware detects the
-mutation and replaces the HTTP 200 JSON-RPC response with HTTP 401 +
-WWW-Authenticate header, triggering the MCP client's automatic OAuth
-re-authentication flow.
+signals via a module-level thread-safe dict (keyed by token hash).
+This middleware checks the dict after the request completes and replaces
+the HTTP 200 JSON-RPC response with HTTP 401 + WWW-Authenticate header,
+triggering the MCP client's automatic OAuth re-authentication flow.
 
-IMPORTANT: The MCP streamable-http transport runs tool code in child
-tasks via anyio.create_task_group(). Child tasks get a COPY of the
-contextvars context, so ContextVar.set() in a child is invisible to the
-parent. We work around this by using a shared mutable dict: the middleware
-initializes it, and the http_client MUTATES (not replaces) it. Mutation
-of the same object is visible across copied contexts.
+Uses a module-level dict instead of contextvars because MCP
+streamable-http transport runs tool handlers in a separate anyio task
+context where ContextVar mutations are invisible to the middleware.
 
 Only active in remote (streamable-http) mode where OAuth is enabled.
 """
 
-import hashlib
 import json
 import time
 
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from utils.error_handler import upstream_auth_error_flag
+from utils.error_handler import consume_upstream_auth_error, make_auth_error_key
 from utils.logger import get_logger
 
 logger = get_logger('auth_error_middleware')
@@ -34,8 +30,8 @@ class UpstreamAuthErrorMiddleware:
     Uses a per-client cooldown timer to prevent infinite re-auth loops:
     after emitting a 401 for a given client, subsequent upstream auth errors
     from that client within the cooldown period are passed through as normal
-    tool error responses. Cooldown is tracked per client (by hashed
-    Authorization header) so one client's re-auth does not suppress another's.
+    tool error responses. Cooldown is tracked per client (by JWT token hash)
+    so one client's re-auth does not suppress another's.
     """
 
     def __init__(
@@ -43,15 +39,11 @@ class UpstreamAuthErrorMiddleware:
         app: ASGIApp,
         resource_metadata_url: str = '',
         cooldown_seconds: float = 60,
-        flag_provider=None,
     ):
         self.app = app
         self.resource_metadata_url = resource_metadata_url
         self._cooldown_seconds = cooldown_seconds
-        # Allow injecting a custom flag provider for testing.
-        # Defaults to the module-level contextvars flag.
-        self._flag = flag_provider or upstream_auth_error_flag
-        # Per-client cooldown: hash(authorization) -> last 401 time.
+        # Per-client cooldown: token_key -> last 401 time.
         # Pruned on each request to prevent unbounded growth.
         self._client_cooldowns: dict[str, float] = {}
 
@@ -66,30 +58,39 @@ class UpstreamAuthErrorMiddleware:
             del self._client_cooldowns[key]
 
     @staticmethod
-    def _get_client_key(scope: Scope) -> str:
-        """Derive a client key from the Authorization header.
+    def _extract_token_key(scope: Scope) -> str | None:
+        """Extract JWT token from Authorization header and derive a hash key.
 
-        Uses a SHA-256 hash prefix to avoid storing raw tokens in memory.
-        Falls back to a fixed key if no Authorization header is present.
+        Returns a short hash key that matches make_auth_error_key() output
+        from the http_client, enabling cross-context error signaling.
+        Returns None if no Bearer token is present.
+
+        Handles the Bearer scheme case-insensitively per RFC 6750 and
+        decodes defensively to avoid UnicodeDecodeError on malformed headers.
         """
         headers = dict(scope.get('headers', []))
-        auth_header = headers.get(b'authorization', b'')
-        if auth_header:
-            return hashlib.sha256(auth_header).hexdigest()[:16]
-        return '_anonymous'
+        auth_raw = headers.get(b'authorization', b'')
+        if not auth_raw:
+            return None
+        try:
+            auth_header = auth_raw.decode('utf-8')
+        except UnicodeDecodeError:
+            auth_header = auth_raw.decode('latin-1', errors='replace')
+        auth_header = auth_header.strip()
+        if auth_header.lower().startswith('bearer '):
+            token = auth_header[len('Bearer ') :].strip()
+            if token:
+                return make_auth_error_key(token)
+        return None
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope['type'] != 'http':
             await self.app(scope, receive, send)
             return
 
-        # Initialize a shared mutable dict for this request.
-        # Child tasks (anyio.start_soon) get a copied context, but both
-        # parent and child hold a reference to the SAME dict object.
-        # The http_client mutates flag['error'] instead of calling .set(),
-        # so the change is visible here after await self.app() returns.
-        shared_flag = {'error': None}
-        self._flag.set(shared_flag)
+        # Extract token key upfront so we can always clean up stale entries
+        # in the module-level dict, even if the app raises or is cancelled.
+        token_key = self._extract_token_key(scope)
 
         # Buffer the response so we can replace it if needed
         buffered: list[dict] = []
@@ -97,15 +98,37 @@ class UpstreamAuthErrorMiddleware:
         async def buffer_send(message: dict) -> None:
             buffered.append(message)
 
-        await self.app(scope, receive, buffer_send)
+        try:
+            await self.app(scope, receive, buffer_send)
+        except BaseException:
+            # App raised or request was cancelled. Consume any pending
+            # signal to prevent stale entries and unbounded dict growth.
+            if token_key:
+                consume_upstream_auth_error(token_key)
+            raise
 
-        # Check if tool signaled upstream auth error via shared dict mutation
-        error_info = shared_flag['error']
+        # Only consume the upstream auth signal if THIS request's response
+        # actually contains a 401 error. This prevents a concurrent successful
+        # request from consuming a signal that belongs to a different failed
+        # request with the same token (same client, parallel requests).
+        # The http_client always includes "status_code": 401 in its error dict.
+        error_info = None
+        if token_key:
+            body_bytes = b''.join(
+                msg.get('body', b'')
+                for msg in buffered
+                if msg.get('type') == 'http.response.body'
+            )
+            if (
+                b'"status_code": 401' in body_bytes
+                or b'"status_code":401' in body_bytes
+            ):
+                error_info = consume_upstream_auth_error(token_key)
         now = time.monotonic()
         self._prune_expired_cooldowns(now)
 
         if error_info:
-            client_key = self._get_client_key(scope)
+            client_key = token_key or '_anonymous'
             cooldown_active = False
             last_401: float = 0
             if client_key in self._client_cooldowns:

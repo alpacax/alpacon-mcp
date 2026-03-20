@@ -427,28 +427,29 @@ class TestHandleUpstream401:
         assert 'response' not in result
 
     @patch.dict('os.environ', {'ALPACON_MCP_AUTH_ENABLED': 'true'})
-    def test_sets_flag_in_remote_mode(self):
-        """Mutates shared dict in upstream_auth_error_flag when auth is enabled."""
-        from utils.error_handler import upstream_auth_error_flag
+    def test_signals_error_in_remote_mode(self):
+        """Signals upstream auth error via module-level dict when auth is enabled."""
+        from utils.error_handler import consume_upstream_auth_error, make_auth_error_key
 
-        # Simulate what the middleware does: initialize a shared mutable dict
-        shared_flag = {'error': None}
-        upstream_auth_error_flag.set(shared_flag)
+        token = 'header.payload.signature'  # Must pass _is_jwt() check
         exc = self._make_401_exc({'code': 'auth_mfa_required', 'source': 'websh'})
-        AlpaconHTTPClient._handle_upstream_401(exc)
+        AlpaconHTTPClient._handle_upstream_401(exc, token=token)
 
-        assert shared_flag['error'] is not None
-        assert shared_flag['error']['mfa_required'] is True
-        assert shared_flag['error']['source'] == 'websh'
+        token_key = make_auth_error_key(token)
+        error_info = consume_upstream_auth_error(token_key)
+        assert error_info is not None
+        assert error_info['mfa_required'] is True
+        assert error_info['source'] == 'websh'
 
     @patch.dict('os.environ', {'ALPACON_MCP_AUTH_ENABLED': 'false'})
-    def test_no_flag_in_stdio_mode(self):
-        """Does NOT mutate flag when auth is disabled (stdio mode)."""
-        from utils.error_handler import upstream_auth_error_flag
+    def test_no_signal_in_stdio_mode(self):
+        """Does NOT signal error when auth is disabled (stdio mode)."""
+        from utils.error_handler import consume_upstream_auth_error, make_auth_error_key
 
-        shared_flag = {'error': None}
-        upstream_auth_error_flag.set(shared_flag)
+        token = 'header.payload.signature'
         exc = self._make_401_exc({'code': 'auth_mfa_required', 'source': 'websh'})
-        AlpaconHTTPClient._handle_upstream_401(exc)
+        AlpaconHTTPClient._handle_upstream_401(exc, token=token)
 
-        assert shared_flag['error'] is None
+        token_key = make_auth_error_key(token)
+        error_info = consume_upstream_auth_error(token_key)
+        assert error_info is None

@@ -5,36 +5,49 @@ import json
 import pytest
 
 from utils.auth_error_middleware import UpstreamAuthErrorMiddleware
+from utils.error_handler import make_auth_error_key, signal_upstream_auth_error
 
-
-class _FakeFlag:
-    """Deterministic flag replacement that mimics the shared mutable dict pattern.
-
-    The middleware creates a shared dict {'error': None} and calls set() to store it,
-    then checks shared_flag['error'] after the app runs. This fake intercepts set()
-    to inject the pre-configured error value into the shared dict, simulating what
-    the http_client would do in a real upstream 401 scenario.
-    """
-
-    def __init__(self, error_value=None):
-        self._error_value = error_value
-
-    def get(self, *args):
-        raise LookupError  # Not used in new pattern
-
-    def set(self, value):
-        # Middleware passes {'error': None}; inject our test error value
-        if isinstance(value, dict):
-            value['error'] = self._error_value
+# Default body that mimics http_client's 401 error response dict,
+# which the middleware checks for "status_code": 401 in the response body.
+_DEFAULT_401_BODY = {
+    'error': 'HTTP Error',
+    'status_code': 401,
+    'message': 'Unauthorized',
+    'mfa_required': False,
+}
 
 
 class _MockApp:
-    """Minimal ASGI app that returns a 200 JSON response."""
+    """Minimal ASGI app that returns a 200 JSON response.
 
-    def __init__(self, body: dict | None = None):
-        self._body = json.dumps(body or {'ok': True}).encode()
+    Optionally signals an upstream auth error via the module-level dict,
+    simulating what http_client does when it receives a 401.
+    When signaling, the response body defaults to a 401 error dict
+    (matching http_client._handle_upstream_401 output) so the middleware's
+    response-body guard recognizes it.
+    """
+
+    def __init__(
+        self,
+        body: dict | None = None,
+        signal_error: dict | None = None,
+        auth_value: str = 'test-jwt',  # noqa: S107
+    ):
+        if body is not None:
+            self._body = json.dumps(body).encode()
+        elif signal_error is not None:
+            self._body = json.dumps(_DEFAULT_401_BODY).encode()
+        else:
+            self._body = json.dumps({'ok': True}).encode()
+        self._signal_error = signal_error
+        self._token = auth_value
 
     async def __call__(self, scope, receive, send):
+        # Simulate http_client signaling upstream 401
+        if self._signal_error is not None:
+            token_key = make_auth_error_key(self._token)
+            signal_upstream_auth_error(token_key, self._signal_error)
+
         await send(
             {
                 'type': 'http.response.start',
@@ -50,7 +63,7 @@ class _MockApp:
         )
 
 
-def _http_scope(auth_header: str = 'Bearer test-token') -> dict:
+def _http_scope(auth_header: str = 'Bearer test-jwt') -> dict:
     return {
         'type': 'http',
         'method': 'POST',
@@ -87,18 +100,19 @@ async def _run(middleware, scope=None):
     return sent
 
 
-def _make(error_value=None, body=None, resource_metadata_url='', cooldown_seconds=60):
-    """Create middleware with injected FakeFlag.
-
-    error_value: The upstream error info dict, or None for no error.
-    """
-    fake = _FakeFlag(error_value=error_value)
-    app = _MockApp(body=body)
+def _make(
+    error_value=None,
+    body=None,
+    resource_metadata_url='',
+    cooldown_seconds=60,
+    auth_value='test-jwt',
+):
+    """Create middleware with mock app that optionally signals upstream error."""
+    app = _MockApp(body=body, signal_error=error_value, auth_value=auth_value)
     mw = UpstreamAuthErrorMiddleware(
         app,
         resource_metadata_url=resource_metadata_url,
         cooldown_seconds=cooldown_seconds,
-        flag_provider=fake,
     )
     return mw
 
@@ -159,37 +173,55 @@ async def test_non_mfa_flag_excludes_mfa_scope():
 @pytest.mark.asyncio
 async def test_cooldown_passes_through_on_second_401():
     """Second 401 within cooldown passes through as normal response."""
-    mw = _make(
-        error_value={'mfa_required': False, 'source': ''},
-        body={'tool_error': 'auth failed'},
-        cooldown_seconds=60,
+    # Use a shared token for both requests
+    token = 'cooldown-test-token'
+
+    # Create middleware with mock app that signals error.
+    # Body includes status_code: 401 so the middleware's response-body guard matches.
+    app = _MockApp(
+        signal_error={'mfa_required': False, 'source': ''},
+        auth_value=token,
     )
+    mw = UpstreamAuthErrorMiddleware(app, cooldown_seconds=60)
+
+    scope = _http_scope(f'Bearer {token}')
 
     # First: 401
-    sent1 = await _run(mw)
+    sent1 = await _run(mw, scope=scope)
     assert (await _collect_response(sent1))[0] == 401
 
-    # Second (same client, within cooldown): pass through
-    sent2 = await _run(mw)
+    # Second (same client, within cooldown): pass through as tool error
+    sent2 = await _run(mw, scope=scope)
     status2, _, body2 = await _collect_response(sent2)
     assert status2 == 200
-    assert 'tool_error' in body2
+    assert 'status_code' in body2
 
 
 @pytest.mark.asyncio
 async def test_per_client_cooldown_isolation():
     """Different clients have independent cooldowns."""
-    mw = _make(
-        error_value={'mfa_required': False, 'source': ''},
-        cooldown_seconds=60,
+    token_a = 'token-A'
+    token_b = 'token-B'
+
+    # Client A's app signals error with token A
+    app_a = _MockApp(
+        signal_error={'mfa_required': False, 'source': ''}, auth_value=token_a
+    )
+    # Client B's app signals error with token B
+    app_b = _MockApp(
+        signal_error={'mfa_required': False, 'source': ''}, auth_value=token_b
     )
 
+    # Use same middleware instance but swap inner app for each client
+    mw = UpstreamAuthErrorMiddleware(app_a, cooldown_seconds=60)
+
     # Client A: 401
-    sent_a = await _run(mw, scope=_http_scope('Bearer token-A'))
+    sent_a = await _run(mw, scope=_http_scope(f'Bearer {token_a}'))
     assert (await _collect_response(sent_a))[0] == 401
 
-    # Client B (different token): also 401 (not affected by A's cooldown)
-    sent_b = await _run(mw, scope=_http_scope('Bearer token-B'))
+    # Client B (different token): swap app and test
+    mw.app = app_b
+    sent_b = await _run(mw, scope=_http_scope(f'Bearer {token_b}'))
     assert (await _collect_response(sent_b))[0] == 401
 
 
@@ -205,3 +237,24 @@ async def test_non_http_scope_passes_through():
     mw = UpstreamAuthErrorMiddleware(mock_app)
     await mw({'type': 'websocket'}, lambda: {}, lambda msg: None)
     assert call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_successful_response_ignores_stale_signal():
+    """A successful response does not consume a stale signal from another request."""
+    token = 'shared-token'
+    token_key = make_auth_error_key(token)
+
+    # Simulate a stale signal left by a previous/concurrent request
+    signal_upstream_auth_error(token_key, {'mfa_required': False, 'source': ''})
+
+    # This app succeeds (no signal, no 401 in body)
+    app = _MockApp(body={'ok': True})
+    mw = UpstreamAuthErrorMiddleware(app)
+
+    sent = await _run(mw, scope=_http_scope(f'Bearer {token}'))
+    status, _, body = await _collect_response(sent)
+
+    # Should pass through as 200, NOT consume the stale signal
+    assert status == 200
+    assert 'ok' in body

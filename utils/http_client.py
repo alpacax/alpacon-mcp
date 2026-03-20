@@ -142,12 +142,15 @@ class AlpaconHTTPClient:
         return len(parts) == 3 and all(parts)
 
     @staticmethod
-    def _handle_upstream_401(exc: httpx.HTTPStatusError) -> dict[str, Any]:
+    def _handle_upstream_401(
+        exc: httpx.HTTPStatusError, token: str | None = None
+    ) -> dict[str, Any]:
         """Handle upstream API 401 responses.
 
         Detects MFA-required errors from the Alpacon API response body
-        and signals the ASGI middleware (via contextvars) to return HTTP 401,
-        triggering the MCP client's OAuth re-authentication flow.
+        and signals the ASGI middleware (via module-level dict keyed by
+        token hash) to return HTTP 401, triggering the MCP client's
+        OAuth re-authentication flow.
 
         In stdio/SSE mode (auth not enabled), only returns an error dict
         without signaling the middleware.
@@ -164,31 +167,37 @@ class AlpaconHTTPClient:
             logger.debug('Failed to parse 401 response body as JSON: %s', parse_exc)
 
         # Signal middleware in remote (streamable-http) mode only.
-        # Mutate the shared dict instead of replacing via .set() because
-        # anyio child tasks get a copied context where .set() is invisible
-        # to the parent (middleware). Mutation of the shared object IS visible.
-        if os.getenv('ALPACON_MCP_AUTH_ENABLED', '').lower() == 'true':
-            from utils.error_handler import upstream_auth_error_flag
+        # Uses a module-level thread-safe dict keyed by token hash instead
+        # of contextvars, because MCP streamable-http runs tool handlers in
+        # a separate anyio task context where ContextVar mutations are
+        # invisible to the ASGI middleware's parent context.
+        # Only signal for JWT (Bearer) tokens — API tokens (token=...) use
+        # a different auth scheme and the middleware cannot derive a matching
+        # key from them, which would leave unconsumed entries.
+        if (
+            os.getenv('ALPACON_MCP_AUTH_ENABLED', '').lower() == 'true'
+            and token
+            and AlpaconHTTPClient._is_jwt(token)
+        ):
+            from utils.error_handler import (
+                make_auth_error_key,
+                signal_upstream_auth_error,
+            )
 
-            try:
-                flag = upstream_auth_error_flag.get()
-                flag['error'] = {
+            token_key = make_auth_error_key(token)
+            signal_upstream_auth_error(
+                token_key,
+                {
                     'mfa_required': mfa_required,
                     'source': source,
-                }
-                logger.warning(
-                    'Upstream 401 detected (mfa_required=%s, source=%s), '
-                    'signaling middleware for re-auth',
-                    mfa_required,
-                    source,
-                )
-            except LookupError:
-                # No shared flag in this context (middleware not installed).
-                # Skip signaling; the 401 will be returned as a tool error.
-                logger.debug(
-                    'Upstream 401 detected but no auth error flag in context; '
-                    'skipping middleware signaling'
-                )
+                },
+            )
+            logger.warning(
+                'Upstream 401 detected (mfa_required=%s, source=%s), '
+                'signaling middleware for re-auth',
+                mfa_required,
+                source,
+            )
 
         error_msg = 'MFA verification required' if mfa_required else str(exc)
         error_response = {
@@ -349,7 +358,7 @@ class AlpaconHTTPClient:
                 else:
                     # Client error - don't retry
                     if e.response.status_code == 401:
-                        return self._handle_upstream_401(e)
+                        return self._handle_upstream_401(e, token=token)
 
                     error_response = {
                         'error': 'HTTP Error',
