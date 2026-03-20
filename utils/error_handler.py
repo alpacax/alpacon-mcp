@@ -1,7 +1,9 @@
 """Enhanced error handling utilities for Alpacon MCP server."""
 
 import contextvars
+import hashlib
 import re
+import threading
 import uuid
 from typing import Any
 
@@ -23,6 +25,40 @@ logger = get_logger('error_handler')
 upstream_auth_error_flag: contextvars.ContextVar[dict] = contextvars.ContextVar(
     'upstream_auth_error'
 )
+
+# Module-level thread-safe dict for signaling upstream auth errors between
+# the ASGI middleware and MCP tool handlers. This replaces the contextvars
+# approach above because MCP streamable-http transport runs tool handlers
+# in a separate anyio task context where ContextVar mutations are invisible
+# to the middleware's parent context.
+_upstream_auth_errors: dict[str, dict] = {}
+_upstream_auth_lock = threading.Lock()
+
+
+def make_auth_error_key(token: str) -> str:
+    """Derive a short hash key from an auth token for error signaling."""
+    return hashlib.sha256(token.encode()).hexdigest()[:16]
+
+
+def signal_upstream_auth_error(token_key: str, error_info: dict) -> None:
+    """Signal that an upstream 401 was received for the given token.
+
+    Called by http_client when the Alpacon API returns 401 in remote mode.
+    The ASGI middleware reads this via consume_upstream_auth_error().
+    """
+    with _upstream_auth_lock:
+        _upstream_auth_errors[token_key] = error_info
+
+
+def consume_upstream_auth_error(token_key: str) -> dict | None:
+    """Check and consume an upstream auth error for the given token.
+
+    Called by the ASGI middleware after the request completes.
+    Returns the error info dict if present, None otherwise.
+    Atomically removes the entry to prevent double-consumption.
+    """
+    with _upstream_auth_lock:
+        return _upstream_auth_errors.pop(token_key, None)
 
 
 class ValidationError(Exception):
