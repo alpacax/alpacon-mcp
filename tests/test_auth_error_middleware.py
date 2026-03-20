@@ -7,12 +7,24 @@ import pytest
 from utils.auth_error_middleware import UpstreamAuthErrorMiddleware
 from utils.error_handler import make_auth_error_key, signal_upstream_auth_error
 
+# Default body that mimics http_client's 401 error response dict,
+# which the middleware checks for "status_code": 401 in the response body.
+_DEFAULT_401_BODY = {
+    'error': 'HTTP Error',
+    'status_code': 401,
+    'message': 'Unauthorized',
+    'mfa_required': False,
+}
+
 
 class _MockApp:
     """Minimal ASGI app that returns a 200 JSON response.
 
     Optionally signals an upstream auth error via the module-level dict,
     simulating what http_client does when it receives a 401.
+    When signaling, the response body defaults to a 401 error dict
+    (matching http_client._handle_upstream_401 output) so the middleware's
+    response-body guard recognizes it.
     """
 
     def __init__(
@@ -21,7 +33,12 @@ class _MockApp:
         signal_error: dict | None = None,
         auth_value: str = 'test-jwt',  # noqa: S107
     ):
-        self._body = json.dumps(body or {'ok': True}).encode()
+        if body is not None:
+            self._body = json.dumps(body).encode()
+        elif signal_error is not None:
+            self._body = json.dumps(_DEFAULT_401_BODY).encode()
+        else:
+            self._body = json.dumps({'ok': True}).encode()
         self._signal_error = signal_error
         self._token = auth_value
 
@@ -159,9 +176,9 @@ async def test_cooldown_passes_through_on_second_401():
     # Use a shared token for both requests
     token = 'cooldown-test-token'
 
-    # Create middleware with mock app that signals error
+    # Create middleware with mock app that signals error.
+    # Body includes status_code: 401 so the middleware's response-body guard matches.
     app = _MockApp(
-        body={'tool_error': 'auth failed'},
         signal_error={'mfa_required': False, 'source': ''},
         auth_value=token,
     )
@@ -173,11 +190,11 @@ async def test_cooldown_passes_through_on_second_401():
     sent1 = await _run(mw, scope=scope)
     assert (await _collect_response(sent1))[0] == 401
 
-    # Second (same client, within cooldown): pass through
+    # Second (same client, within cooldown): pass through as tool error
     sent2 = await _run(mw, scope=scope)
     status2, _, body2 = await _collect_response(sent2)
     assert status2 == 200
-    assert 'tool_error' in body2
+    assert 'status_code' in body2
 
 
 @pytest.mark.asyncio
@@ -220,3 +237,24 @@ async def test_non_http_scope_passes_through():
     mw = UpstreamAuthErrorMiddleware(mock_app)
     await mw({'type': 'websocket'}, lambda: {}, lambda msg: None)
     assert call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_successful_response_ignores_stale_signal():
+    """A successful response does not consume a stale signal from another request."""
+    token = 'shared-token'
+    token_key = make_auth_error_key(token)
+
+    # Simulate a stale signal left by a previous/concurrent request
+    signal_upstream_auth_error(token_key, {'mfa_required': False, 'source': ''})
+
+    # This app succeeds (no signal, no 401 in body)
+    app = _MockApp(body={'ok': True})
+    mw = UpstreamAuthErrorMiddleware(app)
+
+    sent = await _run(mw, scope=_http_scope(f'Bearer {token}'))
+    status, _, body = await _collect_response(sent)
+
+    # Should pass through as 200, NOT consume the stale signal
+    assert status == 200
+    assert 'ok' in body

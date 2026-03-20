@@ -107,10 +107,23 @@ class UpstreamAuthErrorMiddleware:
                 consume_upstream_auth_error(token_key)
             raise
 
-        # Check if tool signaled upstream auth error via module-level dict.
-        # The http_client and this middleware both derive the same key from
-        # the JWT token, bypassing the contextvars isolation issue.
-        error_info = consume_upstream_auth_error(token_key) if token_key else None
+        # Only consume the upstream auth signal if THIS request's response
+        # actually contains a 401 error. This prevents a concurrent successful
+        # request from consuming a signal that belongs to a different failed
+        # request with the same token (same client, parallel requests).
+        # The http_client always includes "status_code": 401 in its error dict.
+        error_info = None
+        if token_key:
+            body_bytes = b''.join(
+                msg.get('body', b'')
+                for msg in buffered
+                if msg.get('type') == 'http.response.body'
+            )
+            if (
+                b'"status_code": 401' in body_bytes
+                or b'"status_code":401' in body_bytes
+            ):
+                error_info = consume_upstream_auth_error(token_key)
         now = time.monotonic()
         self._prune_expired_cooldowns(now)
 
