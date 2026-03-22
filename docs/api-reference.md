@@ -325,6 +325,7 @@ List recent command history.
 
 **Parameters:**
 - `server_id` (string, optional): Filter by server ID
+- `limit` (integer, default: 20): Maximum number of recent commands to return
 - `workspace` (string): Workspace name
 - `region` (string, default: "ap1"): Region name
 

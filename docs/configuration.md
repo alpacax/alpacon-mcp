@@ -59,7 +59,8 @@ The server uses this priority system to find tokens:
 
 1. **Environment variables**: `ALPACON_MCP_<REGION>_<WORKSPACE>_TOKEN`
 2. **Config file**: Path from `ALPACON_MCP_CONFIG_FILE` environment variable
-3. **Default location**: `config/token.json`
+3. **Global config**: `~/.alpacon-mcp/token.json` (if exists)
+4. **Local config**: `config/token.json` (fallback)
 
 #### Examples
 
@@ -438,9 +439,9 @@ chmod 700 config/
 
 #### Environment-based tokens
 ```bash
-# Alternative to file-based tokens
-export ALPACON_AP1_COMPANY_MAIN_TOKEN="your-token-here"
-export ALPACON_US1_BACKUP_TOKEN="your-backup-token"
+# Alternative to file-based tokens (uses ALPACON_MCP_<REGION>_<WORKSPACE>_TOKEN format)
+export ALPACON_MCP_AP1_COMPANY_MAIN_TOKEN="your-token-here"
+export ALPACON_MCP_US1_BACKUP_TOKEN="your-backup-token"
 ```
 
 #### Token encryption (optional)
@@ -557,8 +558,10 @@ python -c "
 from utils.token_manager import TokenManager
 tm = TokenManager()
 tokens = tm.get_all_tokens()
-for (region, workspace), token in tokens.items():
-    print(f'{region}/{workspace}: {'✓' if token else '✗'}')
+for region, workspaces in tokens.items():
+    for workspace, token in workspaces.items():
+        status = '✓' if token else '✗'
+        print(f'{region}/{workspace}: {status}')
 "
 ```
 
