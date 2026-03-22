@@ -365,16 +365,6 @@ ps aux | grep python | grep main.py
 netstat -an | grep :8237
 ```
 
-**Optimize configuration:**
-```bash
-# Increase timeout values
-export ALPACON_REQUEST_TIMEOUT=60
-export ALPACON_CONNECT_TIMEOUT=30
-
-# Reduce concurrent requests
-export MAX_CONCURRENT_REQUESTS=20
-```
-
 **Check API latency:**
 ```bash
 # Test API response time

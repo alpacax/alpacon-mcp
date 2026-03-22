@@ -129,7 +129,7 @@ uvx alpacon-mcp
       "args": ["run", "python", "main.py"],
       "cwd": "./path/to/alpacon-mcp",
       "env": {
-        "ALPACON_CONFIG_FILE": ".config/token.json"
+        "ALPACON_MCP_CONFIG_FILE": ".config/token.json"
       }
     }
   }
@@ -149,7 +149,7 @@ uvx alpacon-mcp
       "args": ["run", "python", "main.py"],
       "cwd": "./path/to/alpacon-mcp",
       "env": {
-        "ALPACON_CONFIG_FILE": ".config/token.json"
+        "ALPACON_MCP_CONFIG_FILE": ".config/token.json"
       }
     }
   }
@@ -217,7 +217,7 @@ python main_sse.py
 
 ```bash
 # Token configuration
-export ALPACON_CONFIG_FILE="/path/to/custom-tokens.json"  # Custom token file (optional)
+export ALPACON_MCP_CONFIG_FILE="/path/to/custom-tokens.json"  # Custom token file (optional)
 
 # Logging configuration
 export ALPACON_MCP_LOG_LEVEL=DEBUG   # For development
@@ -232,15 +232,15 @@ export DEBUG=true        # Enable debug logging
 
 ```bash
 # Development setup
-export ALPACON_CONFIG_FILE=".config/local-tokens.json"
+export ALPACON_MCP_CONFIG_FILE=".config/local-tokens.json"
 export ALPACON_MCP_LOG_LEVEL=DEBUG
 
 # Production setup
-export ALPACON_CONFIG_FILE="/etc/alpacon-mcp/production-tokens.json"
+export ALPACON_MCP_CONFIG_FILE="/etc/alpacon-mcp/production-tokens.json"
 export ALPACON_MCP_LOG_LEVEL=ERROR
 
 # User-specific setup
-export ALPACON_CONFIG_FILE="~/.alpacon/my-tokens.json"
+export ALPACON_MCP_CONFIG_FILE="~/.alpacon/my-tokens.json"
 export ALPACON_MCP_LOG_LEVEL=INFO
 ```
 
@@ -332,7 +332,7 @@ services:
     volumes:
       - ./config:/app/config:ro
     environment:
-      - ALPACON_CONFIG_FILE=/app/config/tokens.json
+      - ALPACON_MCP_CONFIG_FILE=/app/config/tokens.json
     ports:
       - "8237:8237"  # For SSE mode
 ```

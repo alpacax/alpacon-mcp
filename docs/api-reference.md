@@ -292,6 +292,10 @@ Execute commands on servers using the Command API.
 - `server_id` (string): Server ID
 - `command` (string): Command to execute
 - `workspace` (string): Workspace name
+- `shell` (string, default: "internal"): Shell type
+- `username` (string, optional): Username for execution
+- `groupname` (string, default: "alpacon"): Group name
+- `env` (object, optional): Environment variables
 - `region` (string, default: "ap1"): Region name
 
 ### `execute_command_sync`
@@ -301,8 +305,12 @@ Execute a command and wait for results.
 - `server_id` (string): Server ID
 - `command` (string): Command to execute
 - `workspace` (string): Workspace name
+- `shell` (string, default: "bash"): Shell type
+- `username` (string, optional): Username for execution
+- `groupname` (string, default: "alpacon"): Group name
+- `env` (object, optional): Environment variables
+- `timeout` (integer, default: 30): Timeout in seconds
 - `region` (string, default: "ap1"): Region name
-- `timeout` (integer, optional): Timeout in seconds
 
 ### `get_command_result`
 Get command execution results.
@@ -327,6 +335,11 @@ Execute a command on multiple servers simultaneously.
 - `server_ids` (array): List of server IDs
 - `command` (string): Command to execute
 - `workspace` (string): Workspace name
+- `shell` (string, default: "internal"): Shell type
+- `username` (string, optional): Username for execution
+- `groupname` (string, default: "alpacon"): Group name
+- `env` (object, optional): Environment variables
+- `parallel` (boolean, default: true): Execute in parallel
 - `region` (string, default: "ap1"): Region name
 
 ---
@@ -404,7 +417,7 @@ Execute multiple commands sequentially via WebSocket.
 **Parameters:**
 - `websocket_url` (string): WebSocket URL
 - `commands` (array): List of commands to execute
-- `timeout` (integer, default: 10): Timeout per command in seconds
+- `timeout` (integer, default: 30): Total timeout in seconds for the entire batch
 
 **Returns:** Results for each command.
 

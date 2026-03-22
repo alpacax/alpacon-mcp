@@ -257,7 +257,7 @@ python main.py --config-file /path/to/custom-tokens.json
 ### Custom config file
 
 ```bash
-export ALPACON_CONFIG_FILE=".config/token.json"
+export ALPACON_MCP_CONFIG_FILE=".config/token.json"
 python main.py
 ```
 
