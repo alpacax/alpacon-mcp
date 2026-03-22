@@ -1,8 +1,8 @@
 # Alpacon MCP Server
 
-> 🚀 **Zero-trust server access for AI agents**: Let Claude, Cursor, and other AI tools operate your infrastructure through Alpacon—no VPN, no SSH keys
+> 🚀 **Zero-trust server access for AI agents**: Let Claude, Cursor, and other AI tools operate your own and your customers' infrastructure through Alpacon—no VPN, no SSH keys
 
-An MCP (Model Context Protocol) server that extends Alpacon's browser-based, zero-trust infrastructure access to AI assistants. Execute commands, transfer files, monitor metrics, and manage servers across workspaces using natural language.
+An MCP (Model Context Protocol) server that extends Alpacon's browser-based, zero-trust infrastructure access to AI assistants. Execute commands, transfer files, monitor metrics, and manage servers across your own and customer environments using natural language.
 
 [![Python Version](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://python.org)
 [![MCP Compatible](https://img.shields.io/badge/MCP-Compatible-green.svg)](https://modelcontextprotocol.io)
@@ -10,7 +10,7 @@ An MCP (Model Context Protocol) server that extends Alpacon's browser-based, zer
 
 ## ✨ What is Alpacon MCP server?
 
-[Alpacon](https://www.alpacax.com/alpacon/) provides browser-based server access with zero-trust security built in—no SSH keys, no VPNs. The Alpacon MCP Server brings that same secure access to AI assistants, so you can operate your infrastructure through natural language while every action is authenticated, authorized, and recorded.
+[Alpacon](https://www.alpacax.com/alpacon/) provides browser-based server access with zero-trust security built in—no SSH keys, no VPNs. The Alpacon MCP Server brings that same secure access to AI assistants, so you can operate your own and your customers' infrastructure through natural language while every action is authenticated, authorized, and recorded.
 
 ### 🎯 Key benefits
 
@@ -18,7 +18,7 @@ An MCP (Model Context Protocol) server that extends Alpacon's browser-based, zer
 - **No credential management**: No SSH keys or VPN configs to distribute—one identity, every server
 - **Natural language operations**: "Show me CPU usage for all web servers in production"
 - **AI-powered troubleshooting**: "Investigate why server-web-01 is slow and suggest fixes"
-- **Multi-workspace support**: Access servers across customer environments and regions with a single interface
+- **Multi-workspace support**: Access servers across your own and customer environments with a single interface
 - **Compliance-ready**: Every AI operation is logged with full session recording and audit trails
 
 ## 🌟 Core features
