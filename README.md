@@ -287,10 +287,34 @@ Install the MCP extension and add to settings:
 - **webftp_downloads_list**: Download history
 - **webftp_sessions_list**: Active FTP sessions
 
+### 🔔 Alert management
+- **list_alerts**: List alerts with optional filtering
+- **get_alert**: Get alert details
+- **mute_alert**: Mute an alert temporarily
+- **create_alert_rule**: Create monitoring thresholds
+- **update_alert_rule**: Update alert rule configuration
+- **delete_alert_rule**: Delete an alert rule
+
+### 🛡️ Security ACLs
+- **list_command_acls**: List command ACL rules
+- **create_command_acl**: Create command ACL rule
+- **update_command_acl**: Update command ACL rule
+- **delete_command_acl**: Delete command ACL rule
+- **list_server_acls**: List server ACL rules
+- **create_server_acl**: Create server ACL rule
+- **list_file_acls**: List file ACL rules
+- **create_file_acl**: Create file ACL rule
+
 ### 📋 Events & logging
 - **list_events**: Browse server events and logs
 - **get_event**: Get event details by ID
 - **search_events**: Search and filter events
+
+### 📝 Audit logs
+- **list_activity_logs**: Audit user and system actions
+- **get_activity_log**: Get activity log details
+- **list_server_logs**: Server command execution logs
+- **list_webftp_logs**: WebFTP file transfer logs
 
 ### 🔐 Identity and access management (IAM)
 
