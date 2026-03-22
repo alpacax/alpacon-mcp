@@ -10,7 +10,7 @@ Real-world examples of managing infrastructure with AI through the Alpacon MCP S
 > "Show me all servers in my production workspace"
 
 **Expected MCP actions:**
-1. Uses `servers_list` tool with configured workspace and region
+1. Uses `list_servers` tool with configured workspace and region
 2. Returns formatted server list with status indicators
 
 **Example Response:**
@@ -31,7 +31,7 @@ Real-world examples of managing infrastructure with AI through the Alpacon MCP S
 
 **Expected MCP actions:**
 1. Identifies server by name/pattern matching
-2. Uses `server_get` tool with server UUID
+2. Uses `get_server` tool with server UUID
 3. May follow up with system info and metrics
 
 **Example Response:**
@@ -64,7 +64,7 @@ Real-world examples of managing infrastructure with AI through the Alpacon MCP S
 > "Give me a comprehensive health check for all web servers including CPU, memory, and disk usage for the last 24 hours"
 
 **Expected MCP actions:**
-1. `servers_list` to identify web servers
+1. `list_servers` to identify web servers
 2. `get_server_metrics_summary` for each server
 3. `get_cpu_usage`, `get_memory_usage`, `get_disk_usage` for detailed metrics
 4. Generate consolidated dashboard
@@ -103,7 +103,7 @@ Real-world examples of managing infrastructure with AI through the Alpacon MCP S
 
 **Expected MCP actions:**
 1. `get_server_metrics_summary` for overview
-2. `websh_command_execute` for real-time diagnostics:
+2. `execute_command` for real-time diagnostics:
    - `top -b -n 1`
    - `iostat -x 1 5`
    - `free -h`
@@ -150,10 +150,10 @@ Would you like me to execute any of these fixes?
 > "Audit all user accounts across our production servers. Show me who has sudo access and any accounts that haven't been used recently"
 
 **Expected MCP actions:**
-1. `servers_list` for all production servers
+1. `list_servers` for all production servers
 2. `list_system_users` for each server
 3. `list_system_groups` to check sudo/admin groups
-4. `websh_command_execute` to check last login times
+4. `execute_command` to check last login times
 
 **Example Response:**
 ```
@@ -192,7 +192,7 @@ Would you like me to disable the inactive accounts?
 
 **Expected MCP actions:**
 1. `list_system_packages` on all servers
-2. `websh_command_execute` to check for available updates:
+2. `execute_command` to check for available updates:
    - `apt list --upgradable` (Ubuntu/Debian)
    - `yum check-update` (CentOS/RHEL)
 3. Cross-reference with security databases

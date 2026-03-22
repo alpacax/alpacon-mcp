@@ -419,8 +419,8 @@ Alternative endpoints available in the server:
   - Correct: "remote/streamable-http mode—not stdio"
   - Incorrect: "remote/streamable-http mode — not stdio"
 - **Itemized descriptions**: Use a colon, not a dash, to separate an item from its description in bullet lists
-  - Correct: `- `list_servers`: List all servers in workspace`
-  - Incorrect: `- `list_servers` - List all servers in workspace`
+  - Correct: ``- `list_servers`: List all servers in workspace``
+  - Incorrect: ``- `list_servers` - List all servers in workspace``
 
 ### Technology names
 - **Websh**: Always use "Websh" (not "WebSH") for web shell functionality
@@ -456,7 +456,7 @@ Alternative endpoints available in the server:
 ⚠️ **Critical**: Always use server UUIDs, not server names for all operations:
 - ✅ Correct: `server_id="7e3984de-49ab-4cc6-bcdf-21fbd35858b8"`
 - ❌ Incorrect: `server_id="amazon-linux-1"`
-- Use `servers_list` to get the correct UUID from the server name
+- Use `list_servers` to get the correct UUID from the server name
 
 ### WebFTP file paths
 - **Local paths**: Absolute paths on the local machine (e.g., `/Users/user/file.txt`)
@@ -569,7 +569,7 @@ uvx alpacon-mcp add-workspace
 ### Server management example:
 ```python
 # List servers
-servers = await servers_list(workspace="production", region="ap1")
+servers = await list_servers(workspace="production", region="ap1")
 
 # Execute command
 result = await execute_command_sync(

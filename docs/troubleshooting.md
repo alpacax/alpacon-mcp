@@ -22,7 +22,7 @@ python -c "from server import mcp; print([tool.name for tool in mcp.get_tools()]
 ```bash
 # Enable debug logging
 export DEBUG=true
-export LOG_LEVEL=DEBUG
+export ALPACON_MCP_LOG_LEVEL=DEBUG
 python main.py
 ```
 
@@ -260,8 +260,8 @@ curl -H "Authorization: Bearer your-token" \
 **Verify server status:**
 ```python
 # Check if server exists
-from tools.server_tools import servers_list
-result = await servers_list(region='ap1', workspace='your-workspace')
+from tools.server_tools import list_servers
+result = await list_servers(region='ap1', workspace='your-workspace')
 print(result)
 ```
 
@@ -288,8 +288,8 @@ print(result)
 **Check server connectivity:**
 ```python
 # Verify server is online
-from tools.server_tools import server_get
-result = await server_get(server_id='your-server-id')
+from tools.server_tools import get_server
+result = await get_server(server_id='your-server-id')
 print("Server status:", result.get('data', {}).get('status'))
 ```
 
@@ -421,7 +421,7 @@ import logging
 logging.basicConfig(level=logging.DEBUG)
 
 # Or set environment variable
-export LOG_LEVEL=DEBUG
+export ALPACON_MCP_LOG_LEVEL=DEBUG
 ```
 
 ### Network debugging

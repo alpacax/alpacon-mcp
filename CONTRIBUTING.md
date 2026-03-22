@@ -159,11 +159,11 @@ tests/
 import pytest
 from unittest.mock import AsyncMock, patch
 
-from tools.server_tools import servers_list
+from tools.server_tools import list_servers
 
 
 @pytest.mark.asyncio
-async def test_servers_list_success():
+async def test_list_servers_success():
     """Test successful server listing."""
     with patch('tools.server_tools.http_client.get') as mock_get:
         mock_get.return_value = {
@@ -171,7 +171,7 @@ async def test_servers_list_success():
             'results': [{'id': 'srv-1', 'name': 'Test Server'}]
         }
 
-        result = await servers_list(region='ap1', workspace='test')
+        result = await list_servers(region='ap1', workspace='test')
 
         assert result['status'] == 'success'
         assert 'data' in result

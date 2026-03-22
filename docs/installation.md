@@ -443,8 +443,8 @@ python -c "from server import mcp; print('MCP tools loaded:', len(mcp.get_tools(
 # Test API connectivity (requires valid token)
 python -c "
 import asyncio
-from tools.server_tools import servers_list
-result = asyncio.run(servers_list(region='ap1', workspace='your-workspace'))
+from tools.server_tools import list_servers
+result = asyncio.run(list_servers(region='ap1', workspace='your-workspace'))
 print('API test result:', result['status'])
 "
 ```

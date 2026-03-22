@@ -10,8 +10,8 @@
   - Correct: "remote/streamable-http mode—not stdio"
   - Incorrect: "remote/streamable-http mode — not stdio"
 - **Itemized descriptions**: Use a colon, not a dash, to separate an item from its description in bullet lists
-  - Correct: `- `list_servers`: List all servers in workspace`
-  - Incorrect: `- `list_servers` - List all servers in workspace`
+  - Correct: ``- `list_servers`: List all servers in workspace``
+  - Incorrect: ``- `list_servers` - List all servers in workspace``
 
 ### Technology names
 - **Websh**: Always use "Websh" (not "WebSH") for web shell functionality

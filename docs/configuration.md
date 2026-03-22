@@ -220,9 +220,9 @@ python main_sse.py
 export ALPACON_CONFIG_FILE="/path/to/custom-tokens.json"  # Custom token file (optional)
 
 # Logging configuration
-export LOG_LEVEL=DEBUG   # For development
-export LOG_LEVEL=INFO    # For standard use (default)
-export LOG_LEVEL=ERROR   # For production
+export ALPACON_MCP_LOG_LEVEL=DEBUG   # For development
+export ALPACON_MCP_LOG_LEVEL=INFO    # For standard use (default)
+export ALPACON_MCP_LOG_LEVEL=ERROR   # For production
 
 # Debug mode
 export DEBUG=true        # Enable debug logging
@@ -233,15 +233,15 @@ export DEBUG=true        # Enable debug logging
 ```bash
 # Development setup
 export ALPACON_CONFIG_FILE=".config/local-tokens.json"
-export LOG_LEVEL=DEBUG
+export ALPACON_MCP_LOG_LEVEL=DEBUG
 
 # Production setup
 export ALPACON_CONFIG_FILE="/etc/alpacon-mcp/production-tokens.json"
-export LOG_LEVEL=ERROR
+export ALPACON_MCP_LOG_LEVEL=ERROR
 
 # User-specific setup
 export ALPACON_CONFIG_FILE="~/.alpacon/my-tokens.json"
-export LOG_LEVEL=INFO
+export ALPACON_MCP_LOG_LEVEL=INFO
 ```
 
 ---
@@ -393,13 +393,13 @@ REQUEST_QUEUE_SIZE = 100
 
 ```bash
 # Debug logging (local)
-export LOG_LEVEL=DEBUG
+export ALPACON_MCP_LOG_LEVEL=DEBUG
 
 # Info logging (standard)
-export LOG_LEVEL=INFO
+export ALPACON_MCP_LOG_LEVEL=INFO
 
 # Error logging only
-export LOG_LEVEL=ERROR
+export ALPACON_MCP_LOG_LEVEL=ERROR
 ```
 
 ### Log format
