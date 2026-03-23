@@ -14,6 +14,7 @@ Only active in remote (streamable-http) mode where OAuth is enabled.
 """
 
 import json
+import re
 import time
 
 from starlette.types import ASGIApp, Receive, Scope, Send
@@ -111,9 +112,9 @@ class UpstreamAuthErrorMiddleware:
         # actually contains a 401 error. This prevents a concurrent successful
         # request from consuming a signal that belongs to a different failed
         # request with the same token (same client, parallel requests).
-        # Check for "status_code" and "401" separately since the tool result
-        # is serialized as escaped JSON inside MCP's JSON-RPC text content
-        # (e.g., \"status_code\": 401), so exact-match byte checks won't work.
+        # Use a regex that matches "status_code": 401 with optional escaped
+        # quotes and whitespace, covering both plain JSON and MCP's escaped
+        # JSON-in-JSON (e.g., \"status_code\": 401 or "status_code":401).
         error_info = None
         if token_key:
             body_bytes = b''.join(
@@ -121,7 +122,7 @@ class UpstreamAuthErrorMiddleware:
                 for msg in buffered
                 if msg.get('type') == 'http.response.body'
             )
-            if b'status_code' in body_bytes and b'401' in body_bytes:
+            if re.search(rb'status_code\\*"?\s*:\s*401\b', body_bytes):
                 error_info = consume_upstream_auth_error(token_key)
         now = time.monotonic()
         self._prune_expired_cooldowns(now)
