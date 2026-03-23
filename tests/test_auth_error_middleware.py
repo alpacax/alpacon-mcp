@@ -7,8 +7,7 @@ import pytest
 from utils.auth_error_middleware import UpstreamAuthErrorMiddleware
 from utils.error_handler import make_auth_error_key, signal_upstream_auth_error
 
-# Default body that mimics http_client's 401 error response dict,
-# which the middleware checks for "status_code": 401 in the response body.
+# Default body that mimics http_client's 401 error response dict.
 _DEFAULT_401_BODY = {
     'error': 'HTTP Error',
     'status_code': 401,
@@ -22,9 +21,6 @@ class _MockApp:
 
     Optionally signals an upstream auth error via the module-level dict,
     simulating what http_client does when it receives a 401.
-    When signaling, the response body defaults to a 401 error dict
-    (matching http_client._handle_upstream_401 output) so the middleware's
-    response-body guard recognizes it.
     """
 
     def __init__(
@@ -177,7 +173,6 @@ async def test_cooldown_passes_through_on_second_401():
     token = 'cooldown-test-token'
 
     # Create middleware with mock app that signals error.
-    # Body includes status_code: 401 so the middleware's response-body guard matches.
     app = _MockApp(
         signal_error={'mfa_required': False, 'source': ''},
         auth_value=token,
@@ -240,94 +235,66 @@ async def test_non_http_scope_passes_through():
 
 
 @pytest.mark.asyncio
-async def test_successful_response_ignores_stale_signal():
-    """A successful response does not consume a stale signal from another request."""
+async def test_stale_signal_triggers_401_on_next_request():
+    """A stale signal from a previous request triggers 401 on the next request.
+
+    This is correct behavior: if the upstream returned 401 for this token,
+    all requests with that token need re-auth regardless of body content.
+    The signal is per-client (token hash), not per-request.
+    """
     token = 'shared-token'
     token_key = make_auth_error_key(token)
 
     # Simulate a stale signal left by a previous/concurrent request
     signal_upstream_auth_error(token_key, {'mfa_required': False, 'source': ''})
 
-    # This app succeeds (no signal, no 401 in body)
+    # This app succeeds (no signal, body has no 401)
     app = _MockApp(body={'ok': True})
     mw = UpstreamAuthErrorMiddleware(app)
 
     sent = await _run(mw, scope=_http_scope(f'Bearer {token}'))
-    status, _, body = await _collect_response(sent)
+    status, headers, _ = await _collect_response(sent)
 
-    # Should pass through as 200, NOT consume the stale signal
-    assert status == 200
-    assert 'ok' in body
-
-
-def _mcp_jsonrpc_body(tool_result: dict) -> dict:
-    """Build a realistic MCP JSON-RPC response body.
-
-    MCP wraps tool results as TextContent(text=json.dumps(result)) inside
-    a JSON-RPC response. This produces escaped JSON-in-JSON where inner
-    quotes become \\", which the middleware must handle correctly.
-    """
-    return {
-        'jsonrpc': '2.0',
-        'id': 'test-123',
-        'result': {'content': [{'type': 'text', 'text': json.dumps(tool_result)}]},
-    }
+    # Signal is consumed → 401 returned to trigger re-auth
+    assert status == 401
+    assert 'www-authenticate' in headers
 
 
 @pytest.mark.asyncio
-async def test_flag_triggers_401_with_mcp_jsonrpc_body():
-    """Middleware detects 401 in realistic MCP JSON-RPC response (escaped JSON).
+async def test_flag_triggers_401_with_any_body():
+    """Middleware triggers 401 based on signal, regardless of body content.
 
-    This is the critical test: in production, tool results are serialized as
-    escaped JSON inside MCP's TextContent, so "status_code": 401 appears as
-    \\"status_code\\": 401 in the HTTP response bytes. The middleware must
-    still detect and consume the signal.
+    The middleware no longer inspects response body. The signal from
+    http_client is the sole source of truth for upstream 401 detection.
     """
-    token = 'jsonrpc-test-jwt'
-    jsonrpc_body = _mcp_jsonrpc_body(
-        {
-            'error': 'HTTP Error',
-            'status_code': 401,
-            'message': 'Client error 401 Unauthorized',
-            'mfa_required': False,
-        }
-    )
+    token = 'any-body-test-jwt'
     mw = _make(
         error_value={'mfa_required': False, 'source': ''},
-        body=jsonrpc_body,
+        body={'status': 'success', 'data': {'ok': True}},
         auth_value=token,
     )
 
     sent = await _run(mw, scope=_http_scope(f'Bearer {token}'))
     status, headers, _ = await _collect_response(sent)
 
-    assert status == 401, (
-        'Middleware failed to detect 401 in MCP JSON-RPC escaped body. '
-        'The response body guard does not handle escaped JSON correctly.'
-    )
+    assert status == 401
     assert 'www-authenticate' in headers
 
 
 @pytest.mark.asyncio
-async def test_successful_jsonrpc_body_ignores_signal():
-    """Successful MCP JSON-RPC response does not trigger 401 even with stale signal."""
-    token = 'jsonrpc-success-jwt'
-    token_key = make_auth_error_key(token)
+async def test_no_signal_passes_through_regardless_of_body():
+    """Without a signal, response passes through even if body contains 401-like content."""
+    token = 'no-signal-jwt'
 
-    # Stale signal from another request
-    signal_upstream_auth_error(token_key, {'mfa_required': False, 'source': ''})
-
-    # Successful tool result (no status_code, no 401)
-    jsonrpc_body = _mcp_jsonrpc_body(
-        {
-            'status': 'success',
-            'data': {'servers': [{'name': 'web-01'}]},
-        }
+    # Body looks like a 401 error but no signal was set
+    app = _MockApp(
+        body={'error': 'HTTP Error', 'status_code': 401, 'message': 'Unauthorized'}
     )
-    app = _MockApp(body=jsonrpc_body)
     mw = UpstreamAuthErrorMiddleware(app)
 
     sent = await _run(mw, scope=_http_scope(f'Bearer {token}'))
-    status, _, _ = await _collect_response(sent)
+    status, _, body = await _collect_response(sent)
 
+    # No signal → passes through as 200
     assert status == 200
+    assert '401' in body

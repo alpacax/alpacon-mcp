@@ -35,6 +35,7 @@ async def list_servers(workspace: str, region: str = '', **kwargs) -> dict[str, 
     if isinstance(result, dict) and 'error' in result:
         return error_response(
             result.get('message', 'Failed to get servers list'),
+            status_code=result.get('status_code'),
             region=region,
             workspace=workspace,
         )
@@ -75,6 +76,7 @@ async def get_server(
     if isinstance(result, dict) and 'error' in result:
         return error_response(
             result.get('message', 'Failed to get server details'),
+            status_code=result.get('status_code'),
             server_id=server_id,
             region=region,
             workspace=workspace,

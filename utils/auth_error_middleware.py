@@ -2,9 +2,9 @@
 
 When the Alpacon API returns 401 (e.g., MFA timeout), the HTTP client
 signals via a module-level thread-safe dict (keyed by token hash).
-This middleware checks the dict after the request completes and replaces
-the HTTP 200 JSON-RPC response with HTTP 401 + WWW-Authenticate header,
-triggering the MCP client's automatic OAuth re-authentication flow.
+This middleware consumes the signal and replaces the HTTP 200 JSON-RPC
+response with HTTP 401 + WWW-Authenticate header, triggering the MCP
+client's automatic OAuth re-authentication flow.
 
 Uses a module-level dict instead of contextvars because MCP
 streamable-http transport runs tool handlers in a separate anyio task
@@ -14,7 +14,6 @@ Only active in remote (streamable-http) mode where OAuth is enabled.
 """
 
 import json
-import re
 import time
 from collections.abc import MutableMapping
 from typing import Any
@@ -23,11 +22,6 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 from utils.error_handler import consume_upstream_auth_error, make_auth_error_key
 from utils.logger import get_logger
-
-# Precompiled regex for detecting status_code: 401 in response bodies.
-# Handles both plain JSON ("status_code": 401) and MCP's escaped
-# JSON-in-JSON (\"status_code\": 401) via optional backslash/quote chars.
-_STATUS_CODE_401_RE = re.compile(rb'status_code\\*"?\s*:\s*401\b')
 
 logger = get_logger('auth_error_middleware')
 
@@ -115,21 +109,15 @@ class UpstreamAuthErrorMiddleware:
                 consume_upstream_auth_error(token_key)
             raise
 
-        # Only consume the upstream auth signal if THIS request's response
-        # actually contains a 401 error (status_code: 401). This prevents a
-        # concurrent successful request from consuming a signal that belongs
-        # to a different failed request with the same token.
-        # Uses precompiled _STATUS_CODE_401_RE regex that handles both plain
-        # and MCP escaped JSON-in-JSON formats.
+        # Consume the upstream auth signal directly. The signal is only set
+        # when http_client receives an actual 401 from the upstream API, so
+        # no body inspection is needed. Previous body-check approaches were
+        # structurally broken: MCP serializes tool results as JSON-in-JSON
+        # where inner quotes are escaped (\"status_code\"), making byte-level
+        # pattern matching unreliable across all transport modes.
         error_info = None
         if token_key:
-            body_bytes = b''.join(
-                msg.get('body', b'')
-                for msg in buffered
-                if msg.get('type') == 'http.response.body'
-            )
-            if _STATUS_CODE_401_RE.search(body_bytes):
-                error_info = consume_upstream_auth_error(token_key)
+            error_info = consume_upstream_auth_error(token_key)
         now = time.monotonic()
         self._prune_expired_cooldowns(now)
 

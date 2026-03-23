@@ -122,6 +122,7 @@ async def handle_api_call(
         if isinstance(result, dict) and 'error' in result:
             return error_response(
                 result.get('message', str(result.get('error', 'Unknown error'))),
+                status_code=result.get('status_code'),
                 region=region,
                 workspace=workspace,
             )

@@ -898,6 +898,7 @@ async def get_server_metrics_summary(
                 return {
                     'available': False,
                     'error': result.get('message', 'Data unavailable'),
+                    'status_code': result.get('status_code'),
                 }
 
             # Return metadata only, not the full data points
