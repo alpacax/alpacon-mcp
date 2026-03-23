@@ -329,7 +329,7 @@ print(result)
 ```bash
 # Ensure target directory exists and is writable
 # Check via Websh first:
-websh_command_execute(command="ls -la /target/directory/")
+execute_command(command="ls -la /target/directory/")
 ```
 
 **Verify file encoding:**

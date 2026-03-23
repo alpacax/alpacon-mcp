@@ -524,9 +524,9 @@ echo '{
 ```
 
 **Priority order**:
-1. Project-local config (`./config/token.json`)
-2. Global config (`~/.alpacon-mcp/token.json`)
-3. Environment variable (`ALPACON_MCP_AP1_WORKSPACE_TOKEN`)
+1. `ALPACON_MCP_CONFIG_FILE` environment variable (if set)
+2. Global config (`~/.alpacon-mcp/token.json`, if exists)
+3. Local config (`./config/token.json`, fallback)
 
 #### Get API token from Alpacon
 
