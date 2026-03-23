@@ -1,12 +1,12 @@
-# API Reference
+# API reference
 
 Complete reference for all Alpacon MCP Server tools and capabilities.
 
-## 📋 Response Structure
+## 📋 Response structure
 
 All MCP tools follow a consistent response structure:
 
-### Successful HTTP Request
+### Successful HTTP request
 ```json
 {
   "status": "success",
@@ -17,7 +17,7 @@ All MCP tools follow a consistent response structure:
 }
 ```
 
-### HTTP Request with API Error
+### HTTP request with API error
 ```json
 {
   "status": "success",  // HTTP request succeeded
@@ -35,37 +35,9 @@ All MCP tools follow a consistent response structure:
 
 > **Note**: `"status": "success"` indicates successful HTTP communication. Check the `data.error` field for API-level errors like ACL permission issues (403/404).
 
-## 🔐 Authentication Tools
+## 🖥️ Server management tools
 
-### `auth_set_token`
-Set or update API tokens for specific region and workspace.
-
-**Parameters:**
-- `region` (string): Region name (currently supports 'ap1')
-- `workspace` (string): Workspace name
-- `token` (string): API token
-
-**Example:**
-```json
-{
-  "region": "ap1",
-  "workspace": "company-main",
-  "token": "your-api-token-here"
-}
-```
-
-### `auth_remove_token`
-Remove stored API token for a region and workspace.
-
-**Parameters:**
-- `region` (string): Region name
-- `workspace` (string): Workspace name
-
----
-
-## 🖥️ Server Management Tools
-
-### `servers_list`
+### `list_servers`
 List all servers in a region and workspace.
 
 **Parameters:**
@@ -74,7 +46,7 @@ List all servers in a region and workspace.
 
 **Returns:** Array of server objects with ID, name, status, and metadata.
 
-### `server_get`
+### `get_server`
 Get detailed information about a specific server.
 
 **Parameters:**
@@ -84,7 +56,7 @@ Get detailed information about a specific server.
 
 **Returns:** Complete server information including hardware specs, status, and configuration.
 
-### `server_notes_list`
+### `list_server_notes`
 List notes for a specific server.
 
 **Parameters:**
@@ -92,7 +64,7 @@ List notes for a specific server.
 - `region` (string, default: "ap1"): Region name
 - `workspace` (string): Workspace name
 
-### `server_note_create`
+### `create_server_note`
 Create a new note for a server.
 
 **Parameters:**
@@ -104,7 +76,7 @@ Create a new note for a server.
 
 ---
 
-## 📊 Metrics and Monitoring Tools
+## 📊 Metrics and monitoring tools
 
 ### `get_cpu_usage`
 Get CPU usage metrics for a server.
@@ -153,8 +125,18 @@ Get network traffic metrics for a server.
 - `region` (string, default: "ap1"): Region name
 - `workspace` (string): Workspace name
 
-### `get_cpu_top_servers`
-Get top 5 servers by CPU usage in the last 24 hours.
+### `get_disk_io`
+Get disk I/O performance metrics for a server.
+
+**Parameters:**
+- `server_id` (string): Server ID
+- `start_date` (string, optional): Start date in ISO format
+- `end_date` (string, optional): End date in ISO format
+- `region` (string, default: "ap1"): Region name
+- `workspace` (string): Workspace name
+
+### `get_top_servers`
+Get top servers by metric type(s).
 
 **Parameters:**
 - `region` (string, default: "ap1"): Region name
@@ -179,7 +161,7 @@ Get comprehensive metrics summary for a server.
 
 ---
 
-## 💻 System Information Tools
+## 💻 System information tools
 
 ### `get_system_info`
 Get detailed system information for a server.
@@ -267,7 +249,7 @@ Get comprehensive overview of server system information.
 
 ---
 
-## 🗂️ Event Management Tools
+## 🗂️ Event management tools
 
 ### `list_events`
 List server events.
@@ -297,48 +279,95 @@ Search events by criteria.
 - `region` (string, default: "ap1"): Region name
 - `workspace` (string): Workspace name
 
-### `acknowledge_command`
-Acknowledge that a command has been received and started.
+---
+
+## 💻 Command API tools (requires ACL permission)
+
+> ⚠️ **ACL configuration required**: Command API tools require pre-approved commands in your token's Access Control List (ACL). Configure permissions by clicking on your token in the Alpacon web interface → ACL settings.
+
+### `execute_command_with_acl`
+Execute commands on servers using the Command API.
 
 **Parameters:**
-- `command_id` (string): Command ID to acknowledge
-- `success` (boolean, default: true): Whether command started successfully
-- `result` (string, optional): Optional result message
-- `region` (string, default: "ap1"): Region name
+- `server_id` (string): Server ID
+- `command` (string): Command to execute
 - `workspace` (string): Workspace name
+- `shell` (string, default: "internal"): Shell type
+- `username` (string, optional): Username for execution
+- `groupname` (string, default: "alpacon"): Group name
+- `env` (object, optional): Environment variables
+- `region` (string, default: "ap1"): Region name
 
-### `finish_command`
-Mark a command as finished with results.
+### `execute_command_sync`
+Execute a command and wait for results.
 
 **Parameters:**
-- `command_id` (string): Command ID to mark as finished
-- `success` (boolean, default: true): Whether command completed successfully
-- `result` (string, optional): Optional result output or error message
-- `elapsed_time` (float, optional): Optional execution time in seconds
-- `region` (string, default: "ap1"): Region name
+- `server_id` (string): Server ID
+- `command` (string): Command to execute
 - `workspace` (string): Workspace name
+- `shell` (string, default: "bash"): Shell type
+- `username` (string, optional): Username for execution
+- `groupname` (string, default: "alpacon"): Group name
+- `env` (object, optional): Environment variables
+- `timeout` (integer, default: 30): Timeout in seconds
+- `region` (string, default: "ap1"): Region name
 
-### `get_command_status`
-Get detailed status and execution information for a command.
+### `get_command_result`
+Get command execution results.
 
 **Parameters:**
-- `command_id` (string): Command ID to get status for
-- `region` (string, default: "ap1"): Region name
+- `command_id` (string): Command ID
 - `workspace` (string): Workspace name
+- `region` (string, default: "ap1"): Region name
 
-### `delete_command`
-Delete a scheduled command that hasn't been delivered yet.
+### `list_commands`
+List recent command history.
 
 **Parameters:**
-- `command_id` (string): Command ID to delete
-- `region` (string, default: "ap1"): Region name
+- `server_id` (string, optional): Filter by server ID
+- `limit` (integer, default: 20): Maximum number of recent commands to return
 - `workspace` (string): Workspace name
+- `region` (string, default: "ap1"): Region name
+
+### `execute_command_multi_server`
+Execute a command on multiple servers simultaneously.
+
+**Parameters:**
+- `server_ids` (array): List of server IDs
+- `command` (string): Command to execute
+- `workspace` (string): Workspace name
+- `shell` (string, default: "internal"): Shell type
+- `username` (string, optional): Username for execution
+- `groupname` (string, default: "alpacon"): Group name
+- `env` (object, optional): Environment variables
+- `parallel` (boolean, default: true): Execute in parallel
+- `region` (string, default: "ap1"): Region name
 
 ---
 
-## 🖥️ Websh and Command Execution Tools
+## 🖥️ Websh tools
 
-> ⚠️ **ACL Configuration Required**: All command execution tools require pre-approved commands in your token's Access Control List (ACL). Configure permissions by clicking on your token in the Alpacon web interface → ACL settings.
+### `execute_command`
+Execute a single command on a server. Automatically manages Websh sessions and WebSocket connections.
+
+**Parameters:**
+- `server_id` (string): Server ID
+- `command` (string): Command to execute
+- `workspace` (string): Workspace name
+- `region` (string, default: "ap1"): Region name
+
+**Returns:** Command output.
+
+### `execute_command_batch`
+Execute multiple commands efficiently on the same server.
+
+**Parameters:**
+- `server_id` (string): Server ID
+- `commands` (array): List of commands to execute
+- `workspace` (string): Workspace name
+- `region` (string, default: "ap1"): Region name
+
+**Returns:** Results for each command.
 
 ### `websh_session_create`
 Create a new Websh session for remote shell access.
@@ -356,15 +385,6 @@ Get list of active Websh sessions.
 
 **Parameters:**
 - `server_id` (string, optional): Filter by server ID
-- `region` (string, default: "ap1"): Region name
-- `workspace` (string): Workspace name
-
-### `websh_command_execute`
-Execute a command in a Websh session.
-
-**Parameters:**
-- `session_id` (string): Websh session ID
-- `command` (string): Command to execute
 - `region` (string, default: "ap1"): Region name
 - `workspace` (string): Workspace name
 
@@ -391,6 +411,16 @@ Execute commands in Websh session via WebSocket.
 - `websocket_url` (string): WebSocket URL
 - `command` (string): Command to execute
 - `timeout` (integer, default: 10): Timeout in seconds
+
+### `websh_websocket_batch_execute`
+Execute multiple commands sequentially via WebSocket.
+
+**Parameters:**
+- `websocket_url` (string): WebSocket URL
+- `commands` (array): List of commands to execute
+- `timeout` (integer, default: 30): Total timeout in seconds for the entire batch
+
+**Returns:** Results for each command.
 
 ### `websh_channel_connect`
 Connect to Websh user channel and maintain persistent connection.
@@ -427,7 +457,7 @@ Disconnect and remove WebSocket connection from pool.
 
 ---
 
-## 📁 WebFTP Tools
+## 📁 WebFTP tools
 
 ### `webftp_session_create`
 Create a new WebFTP session for file transfer.
@@ -447,32 +477,54 @@ Get list of WebFTP sessions.
 - `workspace` (string): Workspace name
 
 ### `webftp_upload_file`
-Upload a file through WebFTP session.
+Upload a local file to a server using S3 presigned URLs.
 
 **Parameters:**
-- `session_id` (string): WebFTP session ID
-- `file_path` (string): Target file path on server
-- `file_data` (string): File content (base64 encoded for binary files)
-- `region` (string, default: "ap1"): Region name
+- `server_id` (string): Server ID
+- `local_file_path` (string): Absolute path to local file
+- `remote_file_path` (string): Absolute path on server
 - `workspace` (string): Workspace name
+- `username` (string, optional): Username (defaults to authenticated user)
+- `region` (string, default: "ap1"): Region name
+- `allow_overwrite` (boolean, default: true): Allow overwriting existing files
+
+### `webftp_download_file`
+Download a file or folder from a server to local storage.
+
+**Parameters:**
+- `server_id` (string): Server ID
+- `remote_file_path` (string): Absolute path on server
+- `local_file_path` (string): Absolute path for local download
+- `workspace` (string): Workspace name
+- `resource_type` (string, default: "file"): "file" or "folder" (folders download as .zip)
+- `username` (string, optional): Username (defaults to authenticated user)
+- `region` (string, default: "ap1"): Region name
+
+### `webftp_uploads_list`
+List uploaded files (upload history).
+
+**Parameters:**
+- `workspace` (string): Workspace name
+- `server_id` (string, optional): Filter by server ID
+- `region` (string, default: "ap1"): Region name
 
 ### `webftp_downloads_list`
-Get list of downloadable files from WebFTP session.
+List download requests (download history).
 
 **Parameters:**
-- `session_id` (string): WebFTP session ID
-- `region` (string, default: "ap1"): Region name
 - `workspace` (string): Workspace name
+- `server_id` (string, optional): Filter by server ID
+- `region` (string, default: "ap1"): Region name
 
 ---
 
-## 🔐 Identity and Access Management (IAM)
+## 🔐 Identity and access management (IAM)
 
-> **Comprehensive IAM System** - Manage users, groups, roles, and permissions with workspace-level isolation and RBAC support.
+> Manage users and groups with workspace-level isolation.
 
-### User Management
+### User management
 
-#### `iam_users_list`
+#### `list_iam_users`
 List all IAM users in workspace with pagination support.
 
 **Parameters:**
@@ -492,7 +544,7 @@ List all IAM users in workspace with pagination support.
 
 **Returns:** Paginated list of users with metadata, groups, and creation dates.
 
-#### `iam_user_get`
+#### `get_iam_user`
 Get detailed information about a specific IAM user.
 
 **Parameters:**
@@ -502,7 +554,7 @@ Get detailed information about a specific IAM user.
 
 **Returns:** Complete user profile including permissions and group memberships.
 
-#### `iam_user_create`
+#### `create_iam_user`
 Create new IAM user with optional group assignment.
 
 **Parameters:**
@@ -527,7 +579,7 @@ Create new IAM user with optional group assignment.
 }
 ```
 
-#### `iam_user_update`
+#### `update_iam_user`
 Update existing user information and group memberships.
 
 **Parameters:**
@@ -542,7 +594,7 @@ Update existing user information and group memberships.
 
 **Note:** Only provided fields will be updated. Omitted fields remain unchanged.
 
-#### `iam_user_delete`
+#### `delete_iam_user`
 Delete IAM user from workspace.
 
 **Parameters:**
@@ -552,9 +604,9 @@ Delete IAM user from workspace.
 
 **⚠️ Warning:** This action is irreversible and will remove all user permissions and group memberships.
 
-### Group Management
+### Group management
 
-#### `iam_groups_list`
+#### `list_iam_groups`
 List all IAM groups in workspace with pagination support.
 
 **Parameters:**
@@ -565,7 +617,7 @@ List all IAM groups in workspace with pagination support.
 
 **Returns:** List of groups with member counts and permission summaries.
 
-#### `iam_group_create`
+#### `create_iam_group`
 Create new IAM group with permission assignments.
 
 **Parameters:**
@@ -585,128 +637,15 @@ Create new IAM group with permission assignments.
 }
 ```
 
-### Role and Permission Management
-
-#### `iam_roles_list`
-List all IAM roles in workspace.
-
-**Parameters:**
-- `workspace` (string): Workspace name
-- `region` (string, default: "ap1"): Region name
-- `page` (number, optional): Page number
-- `page_size` (number, optional): Roles per page
-
-**Returns:** Available roles with descriptions and associated permissions.
-
-#### `iam_permissions_list`
-List all available permissions in workspace.
-
-**Parameters:**
-- `workspace` (string): Workspace name
-- `region` (string, default: "ap1"): Region name
-- `page` (number, optional): Page number
-- `page_size` (number, optional): Permissions per page
-
-**Returns:** Complete permission catalog with descriptions and scopes.
-
-#### `iam_user_assign_role`
-Assign a role to a user.
-
-**Parameters:**
-- `user_id` (string): IAM user ID
-- `role_id` (string): Role ID to assign
-- `workspace` (string): Workspace name
-- `region` (string, default: "ap1"): Region name
-
-**Example:**
-```json
-{
-  "user_id": "user-123",
-  "role_id": "admin-role",
-  "workspace": "production"
-}
-```
-
-#### `iam_user_permissions_get`
-Get user's effective permissions (direct + inherited from groups).
-
-**Parameters:**
-- `user_id` (string): IAM user ID
-- `workspace` (string): Workspace name
-- `region` (string, default: "ap1"): Region name
-
-**Returns:**
-```json
-{
-  "status": "success",
-  "data": {
-    "direct_permissions": [
-      {
-        "id": "perm-read-servers",
-        "name": "Read Servers",
-        "description": "Can view server information"
-      }
-    ],
-    "group_permissions": [
-      {
-        "group": "developers",
-        "permissions": [
-          {
-            "id": "perm-deploy-staging",
-            "name": "Deploy to Staging"
-          }
-        ]
-      }
-    ],
-    "effective_permissions": ["perm-read-servers", "perm-deploy-staging"]
-  }
-}
-```
-
-### IAM Best Practices
-
-**Security Guidelines:**
-1. **Least Privilege**: Grant minimum required permissions
-2. **Group-Based Management**: Use groups for permission inheritance
-3. **Regular Audits**: Review user permissions periodically
-4. **Workspace Isolation**: Separate environments with different workspaces
-
-**Performance Tips:**
-1. **Pagination**: Use page_size for large user/group lists
-2. **Caching**: Cache permission lookups for better performance
-3. **Bulk Operations**: Group multiple user operations when possible
-
 ---
 
-## 🏢 Workspace and User Management
+## 🏢 Workspace management
 
-### `workspace_list`
+### `list_workspaces`
 Get list of available workspaces.
 
 **Parameters:**
 - `region` (string, default: "ap1"): Region name
-
-### `user_settings_get`
-Get user settings.
-
-**Parameters:**
-- `region` (string, default: "ap1"): Region name
-- `workspace` (string): Workspace name
-
-### `user_settings_update`
-Update user settings.
-
-**Parameters:**
-- `settings` (object): Settings object to update
-- `region` (string, default: "ap1"): Region name
-- `workspace` (string): Workspace name
-
-### `user_profile_get`
-Get user profile information.
-
-**Parameters:**
-- `region` (string, default: "ap1"): Region name
-- `workspace` (string): Workspace name
 
 ---
 
@@ -715,11 +654,11 @@ Get user profile information.
 
 The server also provides authentication resources for checking status and configuration:
 
-- **`auth://status`** - Check authentication status
-- **`auth://config`** - Check configuration directory information
-- **`auth://tokens/{env}/{workspace}`** - Query specific token
+- **`auth://status`**: Check authentication status
+- **`auth://config`**: Check configuration directory information
+- **`auth://tokens/{env}/{workspace}`**: Query specific token
 
-## ⚠️ Error Handling
+## ⚠️ Error handling
 
 All tools return a consistent error structure:
 
@@ -737,7 +676,7 @@ Common error scenarios:
 - **404 Not Found**: Server, resource, or session not found
 - **500 Internal Error**: Server-side error
 
-## 📝 Response Format
+## 📝 Response format
 
 Successful responses follow this structure:
 

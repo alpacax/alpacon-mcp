@@ -1,18 +1,18 @@
-# Alpacon MCP Server Documentation
+# Alpacon MCP Server documentation
 
-Welcome to the Alpacon MCP (Model Context Protocol) Server documentation. This comprehensive guide will help you get started with server management, monitoring, and automation through AI-powered interfaces.
+Welcome to the Alpacon MCP Server documentation. Alpacon provides browser-based, zero-trust server access—no VPN, no SSH keys. This MCP server extends that secure access to AI assistants, letting them operate your infrastructure through natural language while every action is authenticated, authorized, and recorded.
 
-## 📖 Documentation Structure
+## 📖 Documentation structure
 
-- **[Getting Started](getting-started.md)** - Quick setup and first steps
-- **[Installation Guide](installation.md)** - Detailed installation instructions
-- **[Configuration](configuration.md)** - Authentication and settings
-- **[API Reference](api-reference.md)** - Complete tool documentation
-- **[Examples](examples.md)** - Common usage patterns
-- **[Troubleshooting](troubleshooting.md)** - Common issues and solutions
-- **[Contributing](../CONTRIBUTING.md)** - How to contribute to the project
+- **[Getting Started](getting-started.md)**: Quick setup and first steps
+- **[Installation Guide](installation.md)**: Detailed installation instructions
+- **[Configuration](configuration.md)**: Authentication and settings
+- **[API Reference](api-reference.md)**: Complete tool documentation
+- **[Examples](examples.md)**: Common usage patterns
+- **[Troubleshooting](troubleshooting.md)**: Common issues and solutions
+- **[Contributing](../CONTRIBUTING.md)**: How to contribute to the project
 
-## 🚀 Quick Start
+## 🚀 Quick start
 
 1. **Install dependencies**
    ```bash
@@ -34,13 +34,13 @@ Welcome to the Alpacon MCP (Model Context Protocol) Server documentation. This c
 
 ## 🎯 What is Alpacon MCP?
 
-Alpacon MCP Server connects AI tools directly to Alpacon's server management platform, enabling:
+Alpacon MCP Server extends [Alpacon's](https://www.alpacax.com/alpacon/) zero-trust infrastructure access to AI assistants, enabling:
 
-- **Server Management**: Monitor and control servers across regions
-- **Real-time Metrics**: CPU, memory, disk, and network monitoring
-- **System Information**: Hardware details, OS info, users, and packages
-- **Event Management**: Command execution and event tracking
-- **Websh & WebFTP**: Secure shell and file transfer capabilities
+- **Secure remote operations**: Websh terminal and WebFTP file transfer—no SSH keys or VPN required
+- **Real-time monitoring**: CPU, memory, disk, and network metrics with alerting
+- **System administration**: Hardware details, OS info, users, packages, and IAM
+- **Compliance-ready audit**: Every AI operation logged with full session recording
+- **Multi-workspace access**: Operate across customer environments and regions from a single interface
 
 ## 🏗️ Architecture
 
@@ -61,39 +61,39 @@ AI Client (Claude/Cursor/VS Code)
 - **Alpacon API tokens** for your workspace
 - **Active Alpacon account** with server access
 
-## 🛠️ Core Features
+## 🛠️ Core features
 
-### Server Management Tools
+### Server management tools
 - List servers across regions
 - Get detailed server information
 - Create notes and documentation
 
-### Monitoring & Metrics
+### Monitoring & metrics
 - Real-time CPU, memory, disk usage
 - Network traffic monitoring
 - Top performing servers analysis
 - Custom alert rules
 
-### System Information
+### System information
 - Hardware specifications
 - Operating system details
 - User and group management
 - Installed packages inventory
 - Network interface details
 
-### Websh & Command Execution
+### Websh & command execution
 - Secure shell sessions
 - Command execution with history
 - Session management
 - Real-time output streaming
 
-### Event Management
+### Event management
 - Command acknowledgment
 - Event tracking and logging
 - Search and filtering
 - Status monitoring
 
-## 🔧 Supported Platforms
+## 🔧 Supported platforms
 
 | Platform | Status | Notes |
 |----------|--------|-------|
@@ -101,12 +101,12 @@ AI Client (Claude/Cursor/VS Code)
 | Cursor IDE | ✅ Full | Native integration |
 | VS Code | ✅ Full | With MCP extension |
 | Continue | ✅ Full | Via MCP protocol |
-| Other MCP Clients | ✅ Full | Standard MCP protocol |
+| Other MCP clients | ✅ Full | Standard MCP protocol |
 
 ## 📊 Workspaces
 
 Supports Alpacon workspaces with secure API authentication:
-- **ap1** - Currently supported region
+- **ap1**: Currently supported region
 - Multiple workspaces per region supported
 
 ## 🔐 Security
@@ -116,17 +116,17 @@ Supports Alpacon workspaces with secure API authentication:
 - No token storage in repositories
 - Multi-workspace separation
 
-## 📚 Next Steps
+## 📚 Next steps
 
-- **New Users**: Start with [Getting Started](getting-started.md)
-- **Existing Users**: Check [API Reference](api-reference.md)
+- **New users**: Start with [Getting Started](getting-started.md)
+- **Existing users**: Check [API Reference](api-reference.md)
 - **Developers**: See [Contributing Guidelines](../CONTRIBUTING.md)
 
-## 🆘 Need Help?
+## 🆘 Need help?
 
 - 📖 Check the [Troubleshooting Guide](troubleshooting.md)
-- 🐛 [Report Issues](https://github.com/your-repo/alpacon-mcp/issues)
-- 💬 [Discussions](https://github.com/your-repo/alpacon-mcp/discussions)
+- 🐛 [Report Issues](https://github.com/alpacax/alpacon-mcp/issues)
+- 💬 [Discussions](https://github.com/alpacax/alpacon-mcp/discussions)
 
 ---
 

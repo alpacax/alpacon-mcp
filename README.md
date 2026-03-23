@@ -1,62 +1,55 @@
 # Alpacon MCP Server
 
-> 🚀 **AI-Powered Server Management** - Connect Claude, Cursor, and other AI tools directly to your Alpacon infrastructure
+> 🚀 **Zero-trust server access for AI agents**: Let Claude, Cursor, and other AI tools operate your own and your customers' infrastructure through Alpacon—no VPN, no SSH keys
 
-An advanced MCP (Model Context Protocol) server that bridges AI assistants with Alpacon's server management platform, enabling natural language server administration, monitoring, and automation.
+An MCP (Model Context Protocol) server that extends Alpacon's browser-based, zero-trust infrastructure access to AI assistants. Execute commands, transfer files, monitor metrics, and manage servers across your own and customer environments using natural language.
 
 [![Python Version](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://python.org)
 [![MCP Compatible](https://img.shields.io/badge/MCP-Compatible-green.svg)](https://modelcontextprotocol.io)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-## ✨ What is Alpacon MCP Server?
+## ✨ What is Alpacon MCP server?
 
-The Alpacon MCP Server transforms how you interact with your server infrastructure by connecting AI assistants directly to Alpacon's management platform. Instead of switching between interfaces, you can now manage servers, monitor metrics, execute commands, and troubleshoot issues using natural language.
+[Alpacon](https://www.alpacax.com/alpacon/) provides browser-based server access with zero-trust security built in—no SSH keys, no VPNs. The Alpacon MCP Server brings that same secure access to AI assistants, so you can operate your own and your customers' infrastructure through natural language while every action is authenticated, authorized, and recorded.
 
-### 🎯 Key Benefits
+### 🎯 Key benefits
 
-- **Natural Language Server Management** - "Show me CPU usage for all web servers in production"
-- **AI-Powered Troubleshooting** - "Investigate why server-web-01 is slow and suggest fixes"
-- **Multi-Workspace Support** - Connect to your Alpacon workspaces with secure API authentication
-- **Real-Time Monitoring Integration** - Access metrics, logs, and events through AI conversations
-- **Secure Websh & File Operations** - Execute commands and transfer files via AI interface
+- **Zero-trust access for AI**: AI agents authenticate through Alpacon's identity layer—same RBAC, audit trails, and session recording as human users
+- **No credential management**: No SSH keys or VPN configs to distribute—one identity, every server
+- **Natural language operations**: "Show me CPU usage for all web servers in production"
+- **AI-powered troubleshooting**: "Investigate why server-web-01 is slow and suggest fixes"
+- **Multi-workspace support**: Access servers across your own and customer environments with a single interface
+- **Compliance-ready**: Every AI operation is logged with full session recording and audit trails
 
-## 🌟 Core Features
+## 🌟 Core features
 
-### 🖥️ **Server Management**
-- List and monitor servers in your workspace
-- Get detailed system information and specifications
-- Create and manage server documentation
-- Multi-workspace support with API token management
+### 🔐 **Zero-trust infrastructure access**
+- Authenticate once, access every authorized server
+- Role-based access control (RBAC) with time-limited permissions
+- Full audit trail for every AI operation
+- Automatic session recording for compliance
 
-### 📊 **Real-Time Monitoring**
+### 🔧 **Secure remote operations**
+- Websh sessions for browser-based terminal access
+- Command execution with real-time output
+- File upload/download via WebFTP with S3 presigned URLs
+- Persistent connections with automatic session management
+
+### 📊 **Real-time monitoring**
 - CPU, memory, disk, and network metrics
-- Performance trend analysis
-- Top server identification
+- Performance trend analysis and top server identification
 - Custom alert rule management
 - Comprehensive health dashboards
 
-### 💻 **System Administration**
-- User and group management
-- Package inventory and updates
-- Network interface monitoring
-- Disk and partition analysis
-- System time and uptime tracking
+### 💻 **System administration**
+- User, group, and IAM management
+- Package inventory and system information
+- Network interface and disk analysis
+- Event tracking and search
 
-### 🔧 **Remote Operations**
-- Websh sessions for secure shell access
-- Command execution with real-time output
-- File upload/download via WebFTP
-- Session management and monitoring
+## 🚀 Quick start
 
-### 📋 **Event Management**
-- Command acknowledgment and tracking
-- Event search and filtering
-- Execution history and status
-- Automated workflow coordination
-
-## 🚀 Quick Start
-
-### For First-Time Users (Recommended)
+### For first-time users (recommended)
 
 **Just run this command and follow the interactive setup:**
 
@@ -74,7 +67,7 @@ That's it! The setup wizard will:
 
 **No manual file editing required!**
 
-### Get Your API Token
+### Get your API token
 
 Before running the setup, get your API token:
 
@@ -85,7 +78,7 @@ Before running the setup, get your API token:
 5. **Configure ACL permissions** (important for command execution)
 6. Copy the token (starts with `alpat-...`)
 
-### Connect to Your MCP Client
+### Connect to your MCP client
 
 After setup completes, add the configuration to your MCP client:
 
@@ -111,7 +104,7 @@ After setup completes, add the configuration to your MCP client:
 
 ---
 
-## 📋 CLI Commands Reference
+## 📋 CLI commands reference
 
 ```bash
 uvx alpacon-mcp                                # Start server (auto-setup if needed)
@@ -125,14 +118,14 @@ uvx alpacon-mcp add                            # Add another workspace (shows pa
 
 ---
 
-## 🔧 Advanced Installation Options
+## 🔧 Advanced installation options
 
-### Option A: Install UV (if not already installed)
+### Option A: install UV (if not already installed)
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-### Option B: Manual Configuration
+### Option B: manual configuration
 
 If you prefer to manually configure tokens:
 
@@ -163,7 +156,7 @@ export ALPACON_MCP_AP1_PRODUCTION_TOKEN="alpat-ABC123xyz789..."
 uvx alpacon-mcp
 ```
 
-### Option C: Development Installation
+### Option C: development installation
 ```bash
 git clone https://github.com/alpacax/alpacon-mcp.git
 cd alpacon-mcp
@@ -174,7 +167,7 @@ python main.py
 
 ---
 
-## 🔌 Connect to Other AI Tools
+## 🔌 Connect to other AI tools
 
 ### Cursor IDE
 
@@ -191,7 +184,7 @@ Create `.cursor/mcp.json` in your project root:
 }
 ```
 
-### VS Code with MCP Extension
+### VS Code with MCP extension
 
 Install the MCP extension and add to settings:
 
@@ -211,106 +204,135 @@ Install the MCP extension and add to settings:
 2. `./config/token.json` (project-local)
 3. Environment variables
 
-## 💬 Usage Examples
+## 💬 Usage examples
 
-### Server Health Monitoring
+### Server health monitoring
 > *"Give me a comprehensive health check for server web-01 including CPU, memory, and disk usage for the last 24 hours"*
 
-### Performance Analysis
+### Performance analysis
 > *"Show me the top 5 servers with highest CPU usage and analyze performance trends"*
 
-### System Administration
+### System administration
 > *"List all users who can login on server web-01 and check for any users with sudo privileges"*
 
-### Automated Troubleshooting
+### Automated troubleshooting
 > *"Server web-01 is responding slowly. Help me investigate CPU, memory, disk I/O, and network usage to find the bottleneck"*
 
-### Command Execution
+### Command execution
 > *"Execute 'systemctl status nginx' on server web-01 and check the service logs"*
 
-### File Management
+### File management
 > *"Upload my config.txt file to /home/user/ on server web-01 and then download the logs folder as a zip"*
 
-### Persistent Shell Sessions
+### Persistent shell sessions
 > *"Create a persistent shell connection to server web-01 and run these commands: check disk usage, list running processes, and create a backup directory"*
 
-## 🔧 Available Tools
+## 🔧 Available tools
 
-### 🖥️ Server Management
-- **servers_list** - List all servers in workspace
-- **server_get** - Get detailed server information
-- **server_notes_list** - View server documentation
-- **server_note_create** - Create server notes
+### 🖥️ Server management
+- **list_servers**: List all servers in workspace
+- **get_server**: Get detailed server information
+- **get_server_overview**: Comprehensive server overview (system info + metrics)
+- **list_server_notes**: View server documentation
+- **create_server_note**: Create server notes
 
-### 📊 Monitoring & Metrics
-- **get_cpu_usage** - CPU utilization metrics
-- **get_memory_usage** - Memory consumption data
-- **get_disk_usage** - Disk space and I/O metrics
-- **get_network_traffic** - Network bandwidth usage
-- **get_server_metrics_summary** - Comprehensive health overview
-- **get_cpu_top_servers** - Identify performance leaders
+### 📊 Monitoring & metrics
+- **get_cpu_usage**: CPU utilization metrics
+- **get_memory_usage**: Memory consumption data
+- **get_disk_usage**: Disk space metrics
+- **get_disk_io**: Disk I/O performance metrics
+- **get_network_traffic**: Network bandwidth usage
+- **get_top_servers**: Top servers by metric type(s)
+- **get_alert_rules**: Alert rules configuration
+- **get_server_metrics_summary**: Comprehensive health overview
 
-### 💻 System Information
-- **get_system_info** - Hardware specifications and details
-- **get_os_version** - Operating system information
-- **list_system_users** - User account management
-- **list_system_groups** - Group membership details
-- **list_system_packages** - Installed software inventory
-- **get_network_interfaces** - Network configuration
-- **get_disk_info** - Storage device information
+### 💻 System information
+- **get_system_info**: Hardware specifications and details
+- **get_os_version**: Operating system information
+- **list_system_users**: User account management
+- **list_system_groups**: Group membership details
+- **list_system_packages**: Installed software inventory
+- **get_network_interfaces**: Network configuration
+- **get_disk_info**: Storage device information
+- **get_system_time**: System time and uptime
 
-### 🔧 Remote Operations
+### 🔧 Remote operations
 
-#### Websh (Shell Access)
-- **websh_session_create** - Create secure shell sessions
-- **websh_command_execute** - Execute single commands
-- **websh_websocket_execute** - Single command via WebSocket
-- **websh_channel_connect** - Persistent connection management
-- **websh_channel_execute** - Execute commands using persistent channels
-- **websh_channels_list** - List active WebSocket channels
-- **websh_session_terminate** - Close sessions
+#### Command API (requires ACL permission)
+- **execute_command_with_acl**: Execute commands on servers
+- **execute_command_sync**: Execute and wait for results
+- **get_command_result**: Get command execution results
+- **list_commands**: List recent command history
+- **execute_command_multi_server**: Execute on multiple servers simultaneously
 
-#### WebFTP (File Management)
-- **webftp_upload_file** - Upload files using S3 presigned URLs
-- **webftp_download_file** - Download files/folders (folders as .zip)
-- **webftp_uploads_list** - Upload history
-- **webftp_downloads_list** - Download history
-- **webftp_sessions_list** - Active FTP sessions
+#### Websh (shell access)
+- **execute_command**: Execute single command (auto-manages connections)
+- **execute_command_batch**: Execute multiple commands on same server
+- **websh_session_create**: Create Websh session
+- **websh_sessions_list**: List active sessions
+- **websh_session_reconnect**: Create new channel for existing session
+- **websh_session_terminate**: Close sessions
+- **websh_websocket_execute**: Single command via WebSocket
+- **websh_websocket_batch_execute**: Multiple commands via WebSocket
+- **websh_channel_connect**: Persistent connection management
+- **websh_channel_execute**: Execute using persistent channels
+- **websh_channels_list**: List active WebSocket channels
+- **websh_channel_disconnect**: Disconnect and clean up connections
 
-### 📋 Event Management
-- **list_events** - Browse server events and logs
-- **search_events** - Find specific events
-- **acknowledge_command** - Confirm command receipt
-- **finish_command** - Mark commands as complete
+#### WebFTP (file management)
+- **webftp_session_create**: Create file transfer session
+- **webftp_upload_file**: Upload files using S3 presigned URLs
+- **webftp_download_file**: Download files/folders (folders as .zip)
+- **webftp_uploads_list**: Upload history
+- **webftp_downloads_list**: Download history
+- **webftp_sessions_list**: Active FTP sessions
 
-### 🔐 Identity and Access Management (IAM)
+### 🔔 Alert management
+- **list_alerts**: List alerts with optional filtering
+- **get_alert**: Get alert details
+- **mute_alert**: Mute an alert temporarily
+- **create_alert_rule**: Create monitoring thresholds
+- **update_alert_rule**: Update alert rule configuration
+- **delete_alert_rule**: Delete an alert rule
 
-**User Management**:
-- **iam_users_list** - List workspace IAM users with pagination
-- **iam_user_get** - Get detailed user information
-- **iam_user_create** - Create new users with group assignment
-- **iam_user_update** - Update user details and group memberships
-- **iam_user_delete** - Remove users from workspace
-- **iam_user_permissions_get** - View effective user permissions
-- **iam_user_assign_role** - Assign roles to users
+### 🛡️ Security ACLs
+- **list_command_acls**: List command ACL rules
+- **create_command_acl**: Create command ACL rule
+- **update_command_acl**: Update command ACL rule
+- **delete_command_acl**: Delete command ACL rule
+- **list_server_acls**: List server ACL rules
+- **create_server_acl**: Create server ACL rule
+- **list_file_acls**: List file ACL rules
+- **create_file_acl**: Create file ACL rule
 
-**Group & Role Management**:
-- **iam_groups_list** - List all workspace groups
-- **iam_group_create** - Create groups with permissions
-- **iam_roles_list** - List available roles
-- **iam_permissions_list** - View all permissions
+### 📋 Events & logging
+- **list_events**: Browse server events and logs
+- **get_event**: Get event details by ID
+- **search_events**: Search and filter events
 
-**Advanced IAM Features**:
-- Workspace-level isolation for multi-tenant security
-- Role-based access control (RBAC) implementation
-- Group-based permission inheritance
-- Comprehensive audit trails and logging
+### 📝 Audit logs
+- **list_activity_logs**: Audit user and system actions
+- **get_activity_log**: Get activity log details
+- **list_server_logs**: Server command execution logs
+- **list_webftp_logs**: WebFTP file transfer logs
 
-### 🔐 Authentication
-- **auth_set_token** - Configure API tokens
-- **auth_remove_token** - Remove stored tokens
+### 🔐 Identity and access management (IAM)
 
-## 🌍 Supported Platforms
+**User management**:
+- **list_iam_users**: List workspace IAM users with pagination
+- **get_iam_user**: Get detailed user information
+- **create_iam_user**: Create new users with group assignment
+- **update_iam_user**: Update user details and group memberships
+- **delete_iam_user**: Remove users from workspace
+
+**Group management**:
+- **list_iam_groups**: List all workspace groups
+- **create_iam_group**: Create new IAM group
+
+### ⚙️ Workspace
+- **list_workspaces**: List available workspaces
+
+## 🌍 Supported platforms
 
 | Platform | Status | Notes |
 |----------|--------|-------|
@@ -330,9 +352,9 @@ Install the MCP extension and add to settings:
 - 🛠️ **[Installation Guide](docs/installation.md)** - Platform-specific setup
 - 🔍 **[Troubleshooting](docs/troubleshooting.md)** - Common issues and solutions
 
-## 🚀 Advanced Usage
+## 🚀 Advanced usage
 
-### Multi-Workspace Management
+### Multi-workspace management
 ```bash
 # Configure tokens for multiple workspaces (ap1 region)
 python -c "
@@ -344,36 +366,36 @@ tm.set_token('ap1', 'company-dev', 'ap1-company-dev-token')
 "
 ```
 
-### Custom Config File
+### Custom config file
 ```bash
 # Use custom config file location
 export ALPACON_MCP_CONFIG_FILE="/path/to/custom-tokens.json"
 uvx alpacon-mcp
 ```
 
-### Docker Deployment
+### Docker deployment
 ```bash
 # Build and run with Docker
 docker build -t alpacon-mcp .
 docker run -v $(pwd)/config:/app/config:ro alpacon-mcp
 ```
 
-### SSE Mode (HTTP Transport)
+### SSE mode (HTTP transport)
 ```bash
 # Run in Server-Sent Events mode for web integration
 python main_sse.py
 # Server available at http://localhost:8237
 ```
 
-## 🔒 Security & Best Practices
+## 🔒 Security & best practices
 
-- **Secure Token Storage** - Tokens encrypted and never committed to git
-- **Workspace-Based Access Control** - Separate tokens per workspace environment
-- **ACL Configuration Required** - Configure token permissions in Alpacon web interface for command execution
-- **Audit Logging** - All operations logged for security review
-- **Connection Validation** - API endpoints verified before execution
+- **Zero-trust architecture**: Every request authenticated and authorized through Alpacon's identity layer
+- **Session recording**: All Websh and WebFTP operations automatically recorded for audit
+- **Workspace-based access control**: Separate tokens per workspace with RBAC
+- **ACL configuration required**: Configure token permissions in Alpacon web interface for command execution
+- **Audit logging**: All operations logged with full traceability
 
-### ⚠️ Command Execution Limitations
+### ⚠️ Command execution limitations
 
 **Important**: Websh and command execution tools can only run **pre-approved commands** configured in your token's ACL settings:
 
@@ -386,10 +408,10 @@ python main_sse.py
 
 We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
 
-- 🐛 **Bug Reports** - Use GitHub issues
-- 💡 **Feature Requests** - Open discussions
-- 📝 **Documentation** - Help improve guides
-- 🔧 **Code Contributions** - Submit pull requests
+- 🐛 **Bug reports**: Use GitHub issues
+- 💡 **Feature requests**: Open discussions
+- 📝 **Documentation**: Help improve guides
+- 🔧 **Code contributions**: Submit pull requests
 
 ## 📄 License
 
@@ -397,9 +419,9 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
-**Ready to transform your server management experience?**
+**Ready to give your AI agents secure infrastructure access?**
 - 📖 Start with our [Getting Started Guide](docs/getting-started.md)
 - 🔧 Explore the [API Reference](docs/api-reference.md)
 - 💬 Join our community discussions
 
-*Built with ❤️ for the Alpacon ecosystem* 
+*Built with ❤️ by [AlpacaX](https://www.alpacax.com/) for the Alpacon ecosystem*

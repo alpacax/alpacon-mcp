@@ -1,29 +1,29 @@
-# Alpacon MCP Server Installation Guide
+# Alpacon MCP Server installation guide
 
 Comprehensive installation and setup guide for the Alpacon MCP Server across different platforms and use cases.
 
-## Table of Contents
+## Table of contents
 
-1. [System Requirements](#system-requirements)
-2. [Installation Methods](#installation-methods)
-3. [Platform-Specific Setup](#platform-specific-setup)
-4. [Token Configuration](#token-configuration)
-5. [AI Client Integration](#ai-client-integration)
-6. [Verification and Testing](#verification-and-testing)
-7. [Advanced Configuration](#advanced-configuration)
+1. [System requirements](#system-requirements)
+2. [Installation methods](#installation-methods)
+3. [Platform-specific setup](#platform-specific-setup)
+4. [Token configuration](#token-configuration)
+5. [AI client integration](#ai-client-integration)
+6. [Verification and testing](#verification-and-testing)
+7. [Advanced configuration](#advanced-configuration)
 8. [Troubleshooting](#troubleshooting)
 
-## System Requirements
+## System requirements
 
-### Minimum Requirements
+### Minimum requirements
 
 - **Python**: 3.12 or higher
 - **Memory**: 256MB RAM available
 - **Storage**: 100MB free disk space
 - **Network**: Internet connection for API calls
-- **Operating System**: Windows 10+, macOS 10.15+, or Linux (any modern distribution)
+- **Operating system**: Windows 10+, macOS 10.15+, or Linux (any modern distribution)
 
-### Recommended Requirements
+### Recommended requirements
 
 - **Python**: 3.12+ with pip and venv
 - **Memory**: 512MB RAM available
@@ -34,13 +34,13 @@ Comprehensive installation and setup guide for the Alpacon MCP Server across dif
 
 The following dependencies are automatically installed:
 
-- **mcp[cli]** ≥1.9.4 - Model Context Protocol framework
-- **httpx** ≥0.25.0 - Async HTTP client for API calls
-- **websockets** ≥15.0.1 - WebSocket support for real-time features
+- **mcp[cli]** ≥1.9.4: Model Context Protocol framework
+- **httpx** ≥0.25.0: Async HTTP client for API calls
+- **websockets** ≥15.0.1: WebSocket support for real-time features
 
-## Installation Methods
+## Installation methods
 
-### Method 1: uvx (Recommended)
+### Method 1: uvx (recommended)
 
 **Best for:** End users who want zero-configuration setup.
 
@@ -61,7 +61,7 @@ uvx alpacon-mcp --config-file ~/.config/alpacon/tokens.json
 - Isolated environment prevents conflicts
 - Works across all platforms
 
-### Method 2: pip Installation
+### Method 2: pip installation
 
 **Best for:** Users familiar with Python package management.
 
@@ -76,7 +76,7 @@ alpacon-mcp --help
 alpacon-mcp
 ```
 
-### Method 3: UV Tool Installation
+### Method 3: UV tool installation
 
 **Best for:** Users who prefer UV's package management.
 
@@ -91,7 +91,7 @@ uv tool install alpacon-mcp
 alpacon-mcp
 ```
 
-### Method 4: Development Installation
+### Method 4: Development installation
 
 **Best for:** Developers, contributors, or users who need the latest features.
 
@@ -112,7 +112,7 @@ uv pip install -e .
 python main.py
 ```
 
-## Platform-Specific Setup
+## Platform-specific setup
 
 ### macOS
 
@@ -137,7 +137,7 @@ uvx alpacon-mcp --help
 pip3 install alpacon-mcp
 ```
 
-**Configuration Path:**
+**Configuration path:**
 ```bash
 # Create configuration directory
 mkdir -p ~/.config/alpacon
@@ -165,7 +165,7 @@ uvx alpacon-mcp --help
 pip install alpacon-mcp
 ```
 
-**Configuration Path:**
+**Configuration path:**
 ```powershell
 # Create configuration directory
 mkdir %APPDATA%\alpacon
@@ -218,7 +218,7 @@ uvx alpacon-mcp --help
 pip3 install --user alpacon-mcp
 ```
 
-**Configuration Path:**
+**Configuration path:**
 ```bash
 # Create configuration directory
 mkdir -p ~/.config/alpacon
@@ -227,28 +227,28 @@ mkdir -p ~/.config/alpacon
 ~/.config/alpacon/tokens.json
 ```
 
-## Token Configuration
+## Token configuration
 
-### Step 1: Obtain API Tokens
+### Step 1: Obtain API tokens
 
-1. **Access Alpacon Workspace:**
+1. **Access Alpacon workspace:**
    ```
    https://alpacon.io
    ```
    - Or for specific workspace: `https://alpacon.io/workspace/`
    - Currently supports `ap1` region
 
-2. **Generate Tokens:**
+2. **Generate tokens:**
    - Navigate to **Settings** → **API Tokens**
    - Click **"Generate New Token"**
    - Copy the token immediately (shown only once)
 
-3. **Configure Permissions:**
+3. **Configure permissions:**
    - Click on the token to access settings
    - Configure **Access Control List (ACL)**
    - Set allowed servers, commands, and operations
 
-### Step 2: Create Configuration File
+### Step 2: Create configuration file
 
 **Linux/macOS:**
 ```bash
@@ -262,7 +262,7 @@ mkdir $env:APPDATA\alpacon
 notepad $env:APPDATA\alpacon\tokens.json
 ```
 
-**Configuration Format:**
+**Configuration format:**
 ```json
 {
   "ap1": {
@@ -281,7 +281,7 @@ notepad $env:APPDATA\alpacon\tokens.json
 }
 ```
 
-### Step 3: Environment Variables (Alternative)
+### Step 3: Environment variables (alternative)
 
 Instead of a configuration file, use environment variables:
 
@@ -301,11 +301,11 @@ $env:ALPACON_MCP_US1_BACKUP_TOKEN="alpat-JKL012..."
 
 **Format:** `ALPACON_MCP_<REGION>_<WORKSPACE>_TOKEN`
 
-## AI Client Integration
+## AI client integration
 
 ### Claude Desktop
 
-**Configuration File Location:**
+**Configuration file location:**
 - **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
 - **Windows:** `%APPDATA%/Claude/claude_desktop_config.json`
 - **Linux:** `~/.config/Claude/claude_desktop_config.json`
@@ -357,7 +357,7 @@ Create `.cursor/mcp.json` in your project root:
 }
 ```
 
-### VS Code with MCP Extension
+### VS Code with MCP extension
 
 Add to your VS Code `settings.json`:
 
@@ -375,7 +375,7 @@ Add to your VS Code `settings.json`:
 }
 ```
 
-### Continue Extension
+### Continue extension
 
 Configure in your Continue config:
 
@@ -393,9 +393,9 @@ Configure in your Continue config:
 }
 ```
 
-## Verification and Testing
+## Verification and testing
 
-### Step 1: Test MCP Server
+### Step 1: Test MCP server
 
 **Direct server test:**
 ```bash
@@ -417,7 +417,7 @@ print('Token status:', '✅ Found' if token else '❌ Not found')
 "
 ```
 
-### Step 2: Test AI Client Connection
+### Step 2: Test AI client connection
 
 **Claude Desktop:**
 1. Restart Claude Desktop completely
@@ -429,26 +429,26 @@ print('Token status:', '✅ Found' if token else '❌ Not found')
 2. Open a new chat
 3. Try: "List available MCP servers"
 
-### Step 3: Test Basic Operations
+### Step 3: Test basic operations
 
-**Server Listing:**
+**Server listing:**
 ```
 Show me all servers in my production workspace in the ap1 region.
 ```
 
-**System Information:**
+**System information:**
 ```
 Get system information for server [server-id].
 ```
 
-**Command Execution:**
+**Command execution:**
 ```
 Execute 'uname -a' on server [server-id].
 ```
 
-## Advanced Configuration
+## Advanced configuration
 
-### Custom Configuration File Location
+### Custom configuration file location
 
 ```bash
 # Set custom configuration file
@@ -456,7 +456,7 @@ export ALPACON_MCP_CONFIG_FILE="/path/to/custom/tokens.json"
 uvx alpacon-mcp
 ```
 
-### Server-Sent Events (SSE) Mode
+### Server-Sent Events (SSE) mode
 
 For web-based integrations:
 
@@ -467,7 +467,7 @@ python main_sse.py
 # Server available at http://localhost:8237
 ```
 
-### Docker Deployment
+### Docker deployment
 
 ```dockerfile
 # Dockerfile
@@ -488,7 +488,7 @@ docker build -t alpacon-mcp .
 docker run -v $(pwd)/config:/app/config:ro -p 8237:8237 alpacon-mcp
 ```
 
-### Logging Configuration
+### Logging configuration
 
 Create `logging.conf`:
 
@@ -528,9 +528,9 @@ args=('alpacon-mcp.log',)
 format=%(asctime)s - %(name)s - %(levelname)s - %(message)s
 ```
 
-### Performance Tuning
+### Performance tuning
 
-**Environment Variables:**
+**Environment variables:**
 ```bash
 # HTTP timeout settings
 export ALPACON_HTTP_TIMEOUT=30
@@ -545,9 +545,9 @@ export ALPACON_CACHE_TTL=300
 
 ## Troubleshooting
 
-### Common Installation Issues
+### Common installation issues
 
-#### 1. Python Version Errors
+#### 1. Python version errors
 
 **Problem:** "Python 3.12 is required"
 
@@ -560,7 +560,7 @@ python --version
 sudo apt install python3.12 python3.12-pip python3.12-venv
 ```
 
-#### 2. Permission Errors
+#### 2. Permission errors
 
 **Problem:** "Permission denied" during installation
 
@@ -575,7 +575,7 @@ source .venv/bin/activate  # Linux/macOS
 pip install alpacon-mcp
 ```
 
-#### 3. Network/Firewall Issues
+#### 3. Network/firewall issues
 
 **Problem:** Cannot connect to PyPI or Alpacon API
 
@@ -591,9 +591,9 @@ curl -I https://api.alpacon.io
 pip install --proxy http://proxy:port alpacon-mcp
 ```
 
-### Configuration Issues
+### Configuration issues
 
-#### 1. Token Not Found
+#### 1. Token not found
 
 **Problem:** "No token found for workspace.region"
 
@@ -614,7 +614,7 @@ print('Tokens loaded:', bool(tm.tokens))
 "
 ```
 
-#### 2. Invalid JSON Format
+#### 2. Invalid JSON format
 
 **Problem:** JSON parsing errors
 
@@ -627,9 +627,9 @@ python -c "import json; print('Valid JSON' if json.loads(open('~/.config/alpacon
 cat ~/.config/alpacon/tokens.json | python -m json.tool
 ```
 
-### AI Client Issues
+### AI client issues
 
-#### 1. MCP Server Not Starting
+#### 1. MCP server not starting
 
 **Problem:** Client shows "MCP server failed to start"
 
@@ -653,7 +653,7 @@ cat ~/.config/alpacon/tokens.json | python -m json.tool
    uvx alpacon-mcp --help
    ```
 
-#### 2. Claude Desktop Configuration
+#### 2. Claude Desktop configuration
 
 **Problem:** Claude doesn't recognize MCP server
 
@@ -670,9 +670,9 @@ cat ~/.config/alpacon/tokens.json | python -m json.tool
    python -m json.tool ~/Library/Application\ Support/Claude/claude_desktop_config.json
    ```
 
-### API Connection Issues
+### API connection issues
 
-#### 1. Authentication Failures
+#### 1. Authentication failures
 
 **Problem:** "401 Unauthorized" or "403 Forbidden"
 
@@ -687,7 +687,7 @@ cat ~/.config/alpacon/tokens.json | python -m json.tool
    - Verify allowed servers and commands
    - Update permissions as needed
 
-#### 2. Network Timeouts
+#### 2. Network timeouts
 
 **Problem:** "Request timeout" or "Connection failed"
 
@@ -700,14 +700,14 @@ curl -H "Authorization: Bearer your-token" https://alpacon.io/api/servers/
 export ALPACON_HTTP_TIMEOUT=60
 ```
 
-### Getting Help
+### Getting help
 
-1. **Enable Debug Mode:**
+1. **Enable debug mode:**
    ```bash
    DEBUG=1 uvx alpacon-mcp
    ```
 
-2. **Check Logs:**
+2. **Check logs:**
    ```bash
    # Find log files
    find ~ -name "*.log" -path "*alpacon*" 2>/dev/null
@@ -716,7 +716,7 @@ export ALPACON_HTTP_TIMEOUT=60
    tail -f ~/.local/share/alpacon-mcp/logs/*.log
    ```
 
-3. **Collect System Information:**
+3. **Collect system information:**
    ```bash
    # System info for support
    echo "OS: $(uname -a)"
@@ -726,19 +726,19 @@ export ALPACON_HTTP_TIMEOUT=60
    echo "Config file: $ALPACON_MCP_CONFIG_FILE"
    ```
 
-4. **Contact Support:**
+4. **Contact support:**
    - **GitHub Issues:** https://github.com/alpacax/alpacon-mcp/issues
    - **Email:** support@alpacax.com
    - **Include:** Error messages, system info, configuration (without tokens)
 
-## Next Steps
+## Next steps
 
 After successful installation:
 
-1. **[Getting Started Guide](getting-started.md)** - Basic usage and first tasks
-2. **[API Reference](api-reference.md)** - Complete tool documentation
-3. **[Configuration Guide](configuration.md)** - Advanced configuration options
-4. **[Usage Examples](examples.md)** - Real-world usage scenarios
+1. **[Getting Started Guide](getting-started.md)**: Basic usage and first tasks
+2. **[API Reference](api-reference.md)**: Complete tool documentation
+3. **[Configuration Guide](configuration.md)**: Advanced configuration options
+4. **[Usage Examples](examples.md)**: Real-world usage scenarios
 
 ---
 

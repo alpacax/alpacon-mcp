@@ -1,10 +1,10 @@
-# Troubleshooting Guide
+# Troubleshooting guide
 
 Common issues and solutions for the Alpacon MCP Server.
 
-## 🔍 Diagnostic Tools
+## 🔍 Diagnostic tools
 
-### Quick Health Check
+### Quick health check
 
 ```bash
 # Test server startup
@@ -17,16 +17,16 @@ python -c "from utils.token_manager import TokenManager; tm = TokenManager(); pr
 python -c "from server import mcp; print([tool.name for tool in mcp.get_tools()])"
 ```
 
-### Debug Mode
+### Debug mode
 
 ```bash
 # Enable debug logging
 export DEBUG=true
-export LOG_LEVEL=DEBUG
+export ALPACON_MCP_LOG_LEVEL=DEBUG
 python main.py
 ```
 
-### Connection Test
+### Connection test
 
 ```python
 # Test API connectivity
@@ -56,9 +56,9 @@ asyncio.run(test())
 
 ---
 
-## 🚨 Common Issues
+## 🚨 Common issues
 
-### 1. Server Won't Start
+### 1. Server won't start
 
 #### Symptoms
 ```
@@ -82,7 +82,7 @@ which python
 python --version
 ```
 
-#### Check Installation
+#### Check installation
 ```bash
 # List installed packages
 uv pip list
@@ -93,7 +93,7 @@ python -c "import mcp; print(mcp.__version__)"
 
 ---
 
-### 2. Authentication Failures
+### 2. Authentication failures
 
 #### Symptoms
 ```json
@@ -105,7 +105,7 @@ python -c "import mcp; print(mcp.__version__)"
 
 #### Solutions
 
-**Check Token File:**
+**Check token file:**
 ```bash
 # Verify token file exists
 ls -la config/token.json
@@ -118,7 +118,7 @@ chmod 600 config/token.json
 python -c "import json; json.load(open('config/token.json'))"
 ```
 
-**Verify Token Format:**
+**Verify token format:**
 ```json
 {
   "ap1": {
@@ -127,13 +127,13 @@ python -c "import json; json.load(open('config/token.json'))"
 }
 ```
 
-**Test Token Manually:**
+**Test token manually:**
 ```bash
 curl -H "Authorization: Bearer your-token-here" \
      "https://alpacon.io/api/servers/"
 ```
 
-**Debug Token Loading:**
+**Debug token loading:**
 ```python
 from utils.token_manager import TokenManager
 tm = TokenManager()
@@ -144,7 +144,7 @@ print("Specific token:", tm.get_token('ap1', 'your-workspace'))
 
 ---
 
-### 3. MCP Client Connection Issues
+### 3. MCP client connection issues
 
 #### Symptoms
 - Client shows "MCP server not responding"
@@ -153,7 +153,7 @@ print("Specific token:", tm.get_token('ap1', 'your-workspace'))
 
 #### Solutions
 
-**Check Configuration Paths:**
+**Check configuration paths:**
 ```json
 {
   "mcpServers": {
@@ -166,7 +166,7 @@ print("Specific token:", tm.get_token('ap1', 'your-workspace'))
 }
 ```
 
-**Test Manual Execution:**
+**Test manual execution:**
 ```bash
 # Navigate to project directory
 cd /path/to/alpacon-mcp
@@ -178,7 +178,7 @@ uv run python main.py
 /path/to/alpacon-mcp/.venv/bin/python main.py
 ```
 
-**Common Path Issues:**
+**Common path issues:**
 ```bash
 # ❌ Wrong - relative path
 "cwd": "./alpacon-mcp"
@@ -194,7 +194,7 @@ uv run python main.py
 "args": ["run", "python", "main.py"]
 ```
 
-**Client-Specific Solutions:**
+**Client-specific solutions:**
 
 **Claude Desktop:**
 ```bash
@@ -227,7 +227,7 @@ cat ~/.config/Code/User/settings.json | grep -A5 "mcp.servers"
 
 ---
 
-### 4. API Request Failures
+### 4. API request failures
 
 #### Symptoms
 ```json
@@ -246,7 +246,7 @@ cat ~/.config/Code/User/settings.json | grep -A5 "mcp.servers"
 
 #### Solutions
 
-**Check API Endpoints:**
+**Check API endpoints:**
 ```bash
 # Test server list endpoint
 curl -H "Authorization: Bearer your-token" \
@@ -257,15 +257,15 @@ curl -H "Authorization: Bearer your-token" \
      "https://alpacon.io/api/servers/server-id/"
 ```
 
-**Verify Server Status:**
+**Verify server status:**
 ```python
 # Check if server exists
-from tools.server_tools import servers_list
-result = await servers_list(region='ap1', workspace='your-workspace')
+from tools.server_tools import list_servers
+result = await list_servers(region='ap1', workspace='your-workspace')
 print(result)
 ```
 
-**Common API Issues:**
+**Common API issues:**
 - **401 Unauthorized**: Invalid or expired token
 - **403 Forbidden**: Token lacks required permissions
 - **404 Not Found**: Server ID doesn't exist or incorrect endpoint
@@ -273,7 +273,7 @@ print(result)
 
 ---
 
-### 5. Websh Session Issues
+### 5. Websh session issues
 
 #### Symptoms
 ```json
@@ -285,21 +285,21 @@ print(result)
 
 #### Solutions
 
-**Check Server Connectivity:**
+**Check server connectivity:**
 ```python
 # Verify server is online
-from tools.server_tools import server_get
-result = await server_get(server_id='your-server-id')
+from tools.server_tools import get_server
+result = await get_server(server_id='your-server-id')
 print("Server status:", result.get('data', {}).get('status'))
 ```
 
-**Test Websh Prerequisites:**
+**Test Websh prerequisites:**
 ```bash
 # Ensure server allows SSH connections
 # Check with Alpacon web interface first
 ```
 
-**Debug Session Creation:**
+**Debug session creation:**
 ```python
 from tools.websh_tools import websh_session_create
 result = await websh_session_create(
@@ -313,7 +313,7 @@ print(result)
 
 ---
 
-### 6. File Upload/Download Issues
+### 6. File upload/download issues
 
 #### Symptoms
 ```json
@@ -325,14 +325,14 @@ print(result)
 
 #### Solutions
 
-**Check File Permissions:**
+**Check file permissions:**
 ```bash
 # Ensure target directory exists and is writable
 # Check via Websh first:
-websh_command_execute(command="ls -la /target/directory/")
+execute_command(command="ls -la /target/directory/")
 ```
 
-**Verify File Encoding:**
+**Verify file encoding:**
 ```python
 # For binary files, use base64 encoding
 import base64
@@ -347,7 +347,7 @@ with open('file.txt', 'r') as f:
 
 ---
 
-### 7. Performance Issues
+### 7. Performance issues
 
 #### Symptoms
 - Slow response times
@@ -356,7 +356,7 @@ with open('file.txt', 'r') as f:
 
 #### Solutions
 
-**Monitor Resource Usage:**
+**Monitor resource usage:**
 ```bash
 # Check memory usage
 ps aux | grep python | grep main.py
@@ -365,17 +365,7 @@ ps aux | grep python | grep main.py
 netstat -an | grep :8237
 ```
 
-**Optimize Configuration:**
-```bash
-# Increase timeout values
-export ALPACON_REQUEST_TIMEOUT=60
-export ALPACON_CONNECT_TIMEOUT=30
-
-# Reduce concurrent requests
-export MAX_CONCURRENT_REQUESTS=20
-```
-
-**Check API Latency:**
+**Check API latency:**
 ```bash
 # Test API response time
 time curl -H "Authorization: Bearer token" \
@@ -384,9 +374,9 @@ time curl -H "Authorization: Bearer token" \
 
 ---
 
-### 8. Configuration Issues
+### 8. Configuration issues
 
-#### Development vs Production Mode
+#### Development vs production mode
 
 **Issue:** Wrong configuration directory being used
 
@@ -412,19 +402,19 @@ python main.py --config-file /path/to/custom/config.json
 
 ---
 
-## 🛠️ Advanced Debugging
+## 🛠️ Advanced debugging
 
-### Enable Verbose Logging
+### Enable verbose logging
 
 ```python
 import logging
 logging.basicConfig(level=logging.DEBUG)
 
 # Or set environment variable
-export LOG_LEVEL=DEBUG
+export ALPACON_MCP_LOG_LEVEL=DEBUG
 ```
 
-### Network Debugging
+### Network debugging
 
 ```bash
 # Monitor HTTP traffic
@@ -432,14 +422,14 @@ export HTTPX_LOG_LEVEL=DEBUG
 python main.py
 ```
 
-### MCP Protocol Debugging
+### MCP protocol debugging
 
 ```bash
 # Test MCP protocol manually
 echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"clientInfo":{"name":"test","version":"1.0"}}}' | python main.py
 ```
 
-### Memory Debugging
+### Memory debugging
 
 ```python
 import tracemalloc
@@ -454,11 +444,11 @@ print(f"Peak memory usage: {peak / 1024 / 1024:.1f} MB")
 
 ---
 
-## 🔧 Environment-Specific Issues
+## 🔧 Environment-specific issues
 
-### macOS Issues
+### macOS issues
 
-**Python Path Issues:**
+**Python path issues:**
 ```bash
 # Use system Python
 /usr/bin/python3 -m venv venv
@@ -470,23 +460,23 @@ print(f"Peak memory usage: {peak / 1024 / 1024:.1f} MB")
 which python3
 ```
 
-**Permission Issues:**
+**Permission issues:**
 ```bash
 # Fix permissions on config directory
 chmod 700 ~/.config/
 chmod 600 ~/.config/token.json
 ```
 
-### Windows Issues
+### Windows issues
 
-**Path Separator Issues:**
+**Path separator issues:**
 ```json
 {
   "cwd": "C:\\Users\\username\\alpacon-mcp"
 }
 ```
 
-**Virtual Environment Activation:**
+**Virtual environment activation:**
 ```cmd
 # Windows Command Prompt
 .venv\Scripts\activate
@@ -495,9 +485,9 @@ chmod 600 ~/.config/token.json
 .venv\Scripts\Activate.ps1
 ```
 
-### Linux Issues
+### Linux issues
 
-**Python Version Issues:**
+**Python version issues:**
 ```bash
 # Install Python 3.12+
 sudo apt update
@@ -507,7 +497,7 @@ sudo apt install python3.12 python3.12-venv python3.12-pip
 python3.12 -m venv .venv
 ```
 
-**Service Configuration:**
+**Service configuration:**
 ```ini
 # systemd service file
 [Unit]
@@ -528,9 +518,9 @@ WantedBy=multi-user.target
 
 ---
 
-## 🆘 Getting Help
+## 🆘 Getting help
 
-### Collect Debug Information
+### Collect debug information
 
 Create a debug report:
 
@@ -572,7 +562,7 @@ except Exception as e:
 echo "Debug report saved to debug_report.txt"
 ```
 
-### Contact Support
+### Contact support
 
 When reporting issues, include:
 
@@ -582,7 +572,7 @@ When reporting issues, include:
 4. **Steps to reproduce** the issue
 5. **Expected vs actual behavior**
 
-### Community Resources
+### Community resources
 
 - **Documentation**: Check the [API Reference](api-reference.md)
 - **Examples**: See [Usage Examples](examples.md)
@@ -590,7 +580,7 @@ When reporting issues, include:
 
 ---
 
-## ✅ Quick Fix Checklist
+## ✅ Quick fix checklist
 
 Before seeking help, verify:
 

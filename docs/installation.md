@@ -1,10 +1,10 @@
-# Installation Guide
+# Installation guide
 
 Complete installation guide for the Alpacon MCP Server across different platforms and environments.
 
 ## 📋 Prerequisites
 
-### System Requirements
+### System requirements
 
 - **Python 3.12 or higher**
 - **Git** (for cloning the repository)
@@ -12,22 +12,22 @@ Complete installation guide for the Alpacon MCP Server across different platform
 - **Active Alpacon account** with API access
 - **MCP-compatible client** (Claude Desktop, Cursor, VS Code, etc.)
 
-### Platform Support
+### Platform support
 
 | Platform | Status | Notes |
 |----------|--------|-------|
-| macOS (Intel) | ✅ Fully Supported | Tested on macOS 10.15+ |
-| macOS (Apple Silicon) | ✅ Fully Supported | Tested on macOS 11+ |
-| Linux (Ubuntu/Debian) | ✅ Fully Supported | Tested on Ubuntu 20.04+ |
-| Linux (RHEL/CentOS) | ✅ Fully Supported | Tested on RHEL 8+ |
-| Windows 10/11 | ✅ Fully Supported | PowerShell or WSL2 recommended |
-| Docker | ✅ Fully Supported | Multi-arch images available |
+| macOS (Intel) | ✅ Fully supported | Tested on macOS 10.15+ |
+| macOS (Apple Silicon) | ✅ Fully supported | Tested on macOS 11+ |
+| Linux (Ubuntu/Debian) | ✅ Fully supported | Tested on Ubuntu 20.04+ |
+| Linux (RHEL/CentOS) | ✅ Fully supported | Tested on RHEL 8+ |
+| Windows 10/11 | ✅ Fully supported | PowerShell or WSL2 recommended |
+| Docker | ✅ Fully supported | Multi-arch images available |
 
 ---
 
-## 🚀 Quick Installation
+## 🚀 Quick installation
 
-### Using uvx (Recommended)
+### Using uvx (recommended)
 
 ```bash
 # Install UV if not already installed
@@ -50,13 +50,13 @@ uvx alpacon-mcp@0.1.0
 - ✅ Always runs latest version
 - ✅ Easy to update
 
-### One-Line Installation (Unix/Linux/macOS)
+### One-line installation (Unix/Linux/macOS)
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/your-repo/alpacon-mcp/main/install.sh | bash
 ```
 
-### Manual Installation
+### Manual installation
 
 ```bash
 # Clone the repository
@@ -85,11 +85,11 @@ python main.py --test
 
 ---
 
-## 🔧 Detailed Installation by Platform
+## 🔧 Detailed installation by platform
 
 ### macOS
 
-#### Method 1: Using Homebrew (Recommended)
+#### Method 1: Using Homebrew (recommended)
 
 ```bash
 # Install prerequisites
@@ -110,7 +110,7 @@ source .venv/bin/activate
 uv pip install mcp[cli] httpx
 ```
 
-#### Method 2: Using System Python
+#### Method 2: Using system Python
 
 ```bash
 # Verify Python version
@@ -132,7 +132,7 @@ source .venv/bin/activate
 uv pip install mcp[cli] httpx
 ```
 
-#### macOS-Specific Configuration
+#### macOS-specific configuration
 
 ```bash
 # Add UV to PATH (add to ~/.zshrc or ~/.bash_profile)
@@ -144,7 +144,7 @@ mkdir -p ~/Library/Application\ Support/Claude/
 
 ### Linux (Ubuntu/Debian)
 
-#### Install Prerequisites
+#### Install prerequisites
 
 ```bash
 # Update package list
@@ -176,7 +176,7 @@ uv pip install mcp[cli] httpx
 python main.py --test
 ```
 
-#### Linux Service Setup (Optional)
+#### Linux service setup (optional)
 
 ```bash
 # Create systemd service file
@@ -207,7 +207,7 @@ sudo systemctl status alpacon-mcp
 
 ### Linux (RHEL/CentOS/Fedora)
 
-#### Install Prerequisites
+#### Install prerequisites
 
 ```bash
 # RHEL/CentOS 8+
@@ -221,7 +221,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
-#### Setup Process
+#### Setup process
 
 ```bash
 # Clone and setup (same as Ubuntu)
@@ -246,7 +246,7 @@ python --version
 git --version
 ```
 
-#### Method 1: PowerShell (Recommended)
+#### Method 1: PowerShell (recommended)
 
 ```powershell
 # Install UV
@@ -279,7 +279,7 @@ sudo apt install python3.12 python3.12-venv python3.12-pip git curl
 # ... continue with Linux setup
 ```
 
-#### Windows-Specific Configuration
+#### Windows-specific configuration
 
 ```powershell
 # Set execution policy (if needed)
@@ -291,9 +291,9 @@ $env:PATH += ";$env:USERPROFILE\.local\bin"
 
 ---
 
-## 🐳 Docker Installation
+## 🐳 Docker installation
 
-### Using Pre-built Image
+### Using pre-built image
 
 ```bash
 # Pull the image
@@ -307,7 +307,7 @@ docker run -d \
   alpacon/mcp-server:latest
 ```
 
-### Building from Source
+### Building from source
 
 ```bash
 # Clone repository
@@ -356,9 +356,9 @@ docker-compose up -d
 
 ---
 
-## 🔒 Security Considerations
+## 🔒 Security considerations
 
-### File Permissions
+### File permissions
 
 ```bash
 # Secure configuration directory
@@ -370,7 +370,7 @@ chmod 700 .config/
 chmod 600 .config/token.json
 ```
 
-### Network Security
+### Network security
 
 ```bash
 # Firewall rules (if needed for SSE mode)
@@ -378,7 +378,7 @@ sudo ufw allow 8237/tcp  # Ubuntu/Debian
 sudo firewall-cmd --add-port=8237/tcp --permanent  # RHEL/CentOS
 ```
 
-### User Isolation
+### User isolation
 
 ```bash
 # Create dedicated user (Linux)
@@ -388,9 +388,9 @@ sudo chown -R alpacon-mcp:alpacon-mcp /opt/alpacon-mcp
 
 ---
 
-## 🧪 Development Installation
+## 🧪 Development installation
 
-### For Contributing
+### For contributing
 
 ```bash
 # Clone and setup for development
@@ -414,7 +414,7 @@ isort .
 flake8 .
 ```
 
-### Custom Configuration
+### Custom configuration
 
 ```bash
 # Use custom config file location (optional)
@@ -428,7 +428,7 @@ export ALPACON_CONFIG_FILE=".config/local-tokens.json"
 
 ## 🚦 Verification
 
-### Test Installation
+### Test installation
 
 ```bash
 # Basic functionality test
@@ -443,13 +443,13 @@ python -c "from server import mcp; print('MCP tools loaded:', len(mcp.get_tools(
 # Test API connectivity (requires valid token)
 python -c "
 import asyncio
-from tools.server_tools import servers_list
-result = asyncio.run(servers_list(region='ap1', workspace='your-workspace'))
+from tools.server_tools import list_servers
+result = asyncio.run(list_servers(region='ap1', workspace='your-workspace'))
 print('API test result:', result['status'])
 "
 ```
 
-### Integration Test
+### Integration test
 
 ```bash
 # Test with MCP client
@@ -458,9 +458,9 @@ echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"clientInfo":{"nam
 
 ---
 
-## 🔄 Updates and Maintenance
+## 🔄 Updates and maintenance
 
-### Update Installation
+### Update installation
 
 ```bash
 # Pull latest changes
@@ -475,7 +475,7 @@ sudo systemctl restart alpacon-mcp  # Linux service
 docker-compose restart alpacon-mcp
 ```
 
-### Backup Configuration
+### Backup configuration
 
 ```bash
 # Backup tokens before updates
@@ -487,11 +487,11 @@ tar -czf alpacon-mcp-backup-$(date +%Y%m%d).tar.gz config/ .config/
 
 ---
 
-## ❓ Installation Troubleshooting
+## ❓ Installation troubleshooting
 
-### Common Issues
+### Common issues
 
-#### Python Version Issues
+#### Python version issues
 ```bash
 # Check Python version
 python --version
@@ -501,7 +501,7 @@ python3 --version
 python3.12 -m venv .venv
 ```
 
-#### UV Installation Issues
+#### UV installation issues
 ```bash
 # Alternative UV installation methods
 pip install uv
@@ -511,14 +511,14 @@ conda install uv
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-#### Permission Issues
+#### Permission issues
 ```bash
 # Fix common permission issues
 sudo chown -R $USER:$USER ~/.local/
 chmod +x ~/.local/bin/uv
 ```
 
-#### Virtual Environment Issues
+#### Virtual environment issues
 ```bash
 # Recreate virtual environment
 rm -rf .venv
@@ -527,21 +527,21 @@ source .venv/bin/activate
 uv pip install mcp[cli] httpx
 ```
 
-### Platform-Specific Issues
+### Platform-specific issues
 
-#### macOS: Command Line Tools
+#### macOS: Command line tools
 ```bash
 # Install Xcode Command Line Tools if needed
 xcode-select --install
 ```
 
-#### Windows: Long Path Names
+#### Windows: Long path names
 ```powershell
 # Enable long path names
 New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" -Name "LongPathsEnabled" -Value 1 -PropertyType DWORD -Force
 ```
 
-#### Linux: Missing Development Headers
+#### Linux: Missing development headers
 ```bash
 # Ubuntu/Debian
 sudo apt install python3-dev build-essential
@@ -552,14 +552,14 @@ sudo dnf install python3-devel gcc
 
 ---
 
-## 📚 Next Steps
+## 📚 Next steps
 
 After successful installation:
 
-1. **Configure Authentication**: See [Configuration Guide](configuration.md)
-2. **Set up MCP Client**: Follow [Getting Started Guide](getting-started.md)
-3. **Test Basic Functionality**: Try [Usage Examples](examples.md)
-4. **Review Documentation**: Check [API Reference](api-reference.md)
+1. **Configure authentication**: See [Configuration Guide](configuration.md)
+2. **Set up MCP client**: Follow [Getting Started Guide](getting-started.md)
+3. **Test basic functionality**: Try [Usage Examples](examples.md)
+4. **Review documentation**: Check [API Reference](api-reference.md)
 
 ---
 

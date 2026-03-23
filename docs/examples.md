@@ -1,16 +1,16 @@
-# Alpacon MCP Server - Usage Examples and Scenarios
+# Alpacon MCP Server: Usage examples and scenarios
 
 Real-world examples of managing infrastructure with AI through the Alpacon MCP Server.
 
-## 🚀 Basic Server Management
+## 🚀 Basic server management
 
-### List All Servers
+### List all servers
 
 **AI Prompt:**
 > "Show me all servers in my production workspace"
 
-**Expected MCP Actions:**
-1. Uses `servers_list` tool with configured workspace and region
+**Expected MCP actions:**
+1. Uses `list_servers` tool with configured workspace and region
 2. Returns formatted server list with status indicators
 
 **Example Response:**
@@ -24,14 +24,14 @@ Real-world examples of managing infrastructure with AI through the Alpacon MCP S
 🟢 monitoring-01 (192.168.1.104) - Online
 ```
 
-### Get Server Details
+### Get server details
 
 **AI Prompt:**
 > "Give me detailed information about the database server"
 
-**Expected MCP Actions:**
+**Expected MCP actions:**
 1. Identifies server by name/pattern matching
-2. Uses `server_get` tool with server UUID
+2. Uses `get_server` tool with server UUID
 3. May follow up with system info and metrics
 
 **Example Response:**
@@ -56,15 +56,15 @@ Real-world examples of managing infrastructure with AI through the Alpacon MCP S
 - "Scheduled maintenance: Sunday 2AM" (2024-01-15)
 ```
 
-## 📊 Monitoring and Performance Analysis
+## 📊 Monitoring and performance analysis
 
-### Health Check Dashboard
+### Health check dashboard
 
 **AI Prompt:**
 > "Give me a comprehensive health check for all web servers including CPU, memory, and disk usage for the last 24 hours"
 
-**Expected MCP Actions:**
-1. `servers_list` to identify web servers
+**Expected MCP actions:**
+1. `list_servers` to identify web servers
 2. `get_server_metrics_summary` for each server
 3. `get_cpu_usage`, `get_memory_usage`, `get_disk_usage` for detailed metrics
 4. Generate consolidated dashboard
@@ -96,14 +96,14 @@ Real-world examples of managing infrastructure with AI through the Alpacon MCP S
 3. Consider scaling out if pattern continues
 ```
 
-### Performance Bottleneck Investigation
+### Performance bottleneck investigation
 
 **AI Prompt:**
 > "Server web-01 is running slowly. Help me identify the bottleneck - check CPU, memory, disk I/O, and network"
 
-**Expected MCP Actions:**
+**Expected MCP actions:**
 1. `get_server_metrics_summary` for overview
-2. `websh_command_execute` for real-time diagnostics:
+2. `execute_command` for real-time diagnostics:
    - `top -b -n 1`
    - `iostat -x 1 5`
    - `free -h`
@@ -142,18 +142,18 @@ Memory pressure is causing excessive swapping, which increases CPU wait times.
 Would you like me to execute any of these fixes?
 ```
 
-## 💻 System Administration
+## 💻 System administration
 
-### User Access Audit
+### User access audit
 
 **AI Prompt:**
 > "Audit all user accounts across our production servers. Show me who has sudo access and any accounts that haven't been used recently"
 
-**Expected MCP Actions:**
-1. `servers_list` for all production servers
+**Expected MCP actions:**
+1. `list_servers` for all production servers
 2. `list_system_users` for each server
 3. `list_system_groups` to check sudo/admin groups
-4. `websh_command_execute` to check last login times
+4. `execute_command` to check last login times
 
 **Example Response:**
 ```
@@ -185,14 +185,14 @@ Would you like me to execute any of these fixes?
 Would you like me to disable the inactive accounts?
 ```
 
-### Package Inventory and Security Updates
+### Package inventory and security updates
 
 **AI Prompt:**
 > "Check all servers for outdated packages, particularly security updates. Prioritize by criticality"
 
-**Expected MCP Actions:**
+**Expected MCP actions:**
 1. `list_system_packages` on all servers
-2. `websh_command_execute` to check for available updates:
+2. `execute_command` to check for available updates:
    - `apt list --upgradable` (Ubuntu/Debian)
    - `yum check-update` (CentOS/RHEL)
 3. Cross-reference with security databases
@@ -231,14 +231,14 @@ Would you like me to:
 - Create rollback plan?
 ```
 
-## 🖥️ Command Execution Workflows
+## 🖥️ Command execution workflows
 
-### System Maintenance Tasks
+### System maintenance tasks
 
 **AI Prompt:**
 > "Perform routine maintenance on web-server-01: clear old logs, update package cache, restart services if needed, and check disk space"
 
-**Expected MCP Actions:**
+**Expected MCP actions:**
 1. Create Websh session
 2. Execute maintenance commands sequentially
 3. Monitor results and handle errors
@@ -282,12 +282,12 @@ Would you like me to:
 Maintenance completed successfully! ✅
 ```
 
-### Deployment and Verification
+### Deployment and verification
 
 **AI Prompt:**
 > "I just deployed a new version to web-server-01. Please verify the deployment is working correctly: check services, test endpoints, verify logs, and confirm performance"
 
-**Expected MCP Actions:**
+**Expected MCP actions:**
 1. Service status checks
 2. HTTP endpoint testing
 3. Log file analysis
@@ -337,14 +337,14 @@ Overall Status: ⚠️ Mostly Successful (1 critical issue)
 Would you like me to investigate the reports endpoint issue further?
 ```
 
-## 📁 File Management Operations
+## 📁 File management operations
 
-### Configuration Backup and Restore
+### Configuration backup and restore
 
 **AI Prompt:**
 > "Backup all important configuration files from web-server-01 and upload a new nginx configuration"
 
-**Expected MCP Actions:**
+**Expected MCP actions:**
 1. Identify configuration files to backup
 2. Download files using WebFTP
 3. Upload new configuration
@@ -384,12 +384,12 @@ Would you like me to investigate the reports endpoint issue further?
 All services running normally with new configuration.
 ```
 
-### Log Collection and Analysis
+### Log collection and analysis
 
 **AI Prompt:**
 > "Download the last 7 days of application logs from all web servers for analysis"
 
-**Expected MCP Actions:**
+**Expected MCP actions:**
 1. Identify web servers and log locations
 2. Use WebFTP to download log files
 3. Organize files locally
@@ -440,14 +440,14 @@ web-server-03:
 Log files ready for detailed analysis with your preferred tools!
 ```
 
-## 🔍 Advanced Troubleshooting Scenarios
+## 🔍 Advanced troubleshooting scenarios
 
-### Application Performance Investigation
+### Application performance investigation
 
 **AI Prompt:**
 > "Our application is slow during peak hours. Help me investigate: check database connections, analyze query performance, monitor resource usage, and identify bottlenecks"
 
-**Expected MCP Actions:**
+**Expected MCP actions:**
 1. Real-time performance monitoring
 2. Database connection analysis
 3. Resource utilization tracking
@@ -526,12 +526,12 @@ Would you like me to:
 - Create a detailed implementation plan?
 ```
 
-### Security Incident Response
+### Security incident response
 
 **AI Prompt:**
 > "We detected suspicious activity on our servers. Please help me investigate: check for unauthorized access, review recent commands, analyze network connections, and secure the systems"
 
-**Expected MCP Actions:**
+**Expected MCP actions:**
 1. Security audit across all servers
 2. Log analysis for suspicious patterns
 3. Network connection monitoring
@@ -640,14 +640,14 @@ Continue monitoring for 48 hours. Would you like me to:
 - Plan the long-term security improvements?
 ```
 
-## 🤖 Automation and Integration Workflows
+## 🤖 Automation and integration workflows
 
-### Automated Deployment Pipeline
+### Automated deployment pipeline
 
 **AI Prompt:**
 > "Set up an automated health check that runs after each deployment: verify services, test endpoints, check logs, and rollback if issues are detected"
 
-**Expected MCP Actions:**
+**Expected MCP actions:**
 1. Create deployment verification script
 2. Implement health check sequence
 3. Set up automated rollback triggers
@@ -746,12 +746,12 @@ Next Steps:
 Would you like me to help you integrate this with your specific CI/CD tool?
 ```
 
-### Multi-Server Orchestration
+### Multi-server orchestration
 
 **AI Prompt:**
 > "I need to update SSL certificates across all web servers. Please coordinate this: backup old certificates, install new ones, verify each server, and ensure zero downtime"
 
-**Expected MCP Actions:**
+**Expected MCP actions:**
 1. Plan zero-downtime certificate rotation
 2. Coordinate across multiple servers
 3. Implement load balancer management
@@ -865,14 +865,14 @@ Would you like me to:
 - Document this process for future rotations?
 ```
 
-## 📱 Workspace Management and Scaling Operations
+## 📱 Workspace management and scaling operations
 
-### Cross-Region Disaster Recovery Test
+### Cross-region disaster recovery test
 
 **AI Prompt:**
 > "Simulate a disaster recovery scenario: take ap1 region offline, failover traffic to us1, verify data consistency, and then test failback process"
 
-**Expected MCP Actions:**
+**Expected MCP actions:**
 1. Plan and execute controlled failover
 2. Verify cross-region data synchronization
 3. Test application functionality in DR mode
@@ -1016,14 +1016,14 @@ Would you like me to:
 - Create automated failover scripts?
 ```
 
-## 💡 Advanced Tips and Best Practices
+## 💡 Advanced tips and best practices
 
-### Performance Optimization Strategies
+### Performance optimization strategies
 
 **AI Prompt:**
 > "Optimize our infrastructure for better performance. Analyze bottlenecks, tune configurations, implement caching, and provide ongoing monitoring recommendations"
 
-**Expected MCP Actions:**
+**Expected MCP actions:**
 1. Comprehensive performance analysis
 2. Configuration optimization recommendations
 3. Caching strategy implementation
@@ -1212,17 +1212,17 @@ Would you like me to:
 
 ---
 
-## 🔗 Related Documentation
+## 🔗 Related documentation
 
-- **[Installation Guide](installation-guide.md)** - Complete setup instructions
-- **[Getting Started](getting-started.md)** - Basic usage and first tasks
-- **[API Reference](api-reference.md)** - Detailed tool documentation
-- **[Configuration Guide](configuration.md)** - Advanced configuration options
-- **[Troubleshooting](troubleshooting.md)** - Common issues and solutions
+- **[Installation Guide](installation-guide.md)**: Complete setup instructions
+- **[Getting Started](getting-started.md)**: Basic usage and first tasks
+- **[API Reference](api-reference.md)**: Detailed tool documentation
+- **[Configuration Guide](configuration.md)**: Advanced configuration options
+- **[Troubleshooting](troubleshooting.md)**: Common issues and solutions
 
 ---
 
-## 📞 Support and Community
+## 📞 Support and community
 
 - **GitHub Issues**: [Report bugs and request features](https://github.com/alpacax/alpacon-mcp/issues)
 - **Documentation**: [Full documentation site](https://docs.alpacon.io)
