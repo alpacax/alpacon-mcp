@@ -120,11 +120,16 @@ async def handle_api_call(
 
         # Check for HTTP client errors
         if isinstance(result, dict) and 'error' in result:
+            error_kwargs: dict[str, Any] = {
+                'region': region,
+                'workspace': workspace,
+            }
+            status_code = result.get('status_code')
+            if status_code is not None:
+                error_kwargs['status_code'] = status_code
             return error_response(
                 result.get('message', str(result.get('error', 'Unknown error'))),
-                status_code=result.get('status_code'),
-                region=region,
-                workspace=workspace,
+                **error_kwargs,
             )
 
         return result
