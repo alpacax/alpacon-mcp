@@ -22,6 +22,11 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from utils.error_handler import consume_upstream_auth_error, make_auth_error_key
 from utils.logger import get_logger
 
+# Precompiled regex for detecting status_code: 401 in response bodies.
+# Handles both plain JSON ("status_code": 401) and MCP's escaped
+# JSON-in-JSON (\"status_code\": 401) via optional backslash/quote chars.
+_STATUS_CODE_401_RE = re.compile(rb'status_code\\*"?\s*:\s*401\b')
+
 logger = get_logger('auth_error_middleware')
 
 
@@ -109,12 +114,11 @@ class UpstreamAuthErrorMiddleware:
             raise
 
         # Only consume the upstream auth signal if THIS request's response
-        # actually contains a 401 error. This prevents a concurrent successful
-        # request from consuming a signal that belongs to a different failed
-        # request with the same token (same client, parallel requests).
-        # Use a regex that matches "status_code": 401 with optional escaped
-        # quotes and whitespace, covering both plain JSON and MCP's escaped
-        # JSON-in-JSON (e.g., \"status_code\": 401 or "status_code":401).
+        # actually contains a 401 error (status_code: 401). This prevents a
+        # concurrent successful request from consuming a signal that belongs
+        # to a different failed request with the same token.
+        # Uses precompiled _STATUS_CODE_401_RE regex that handles both plain
+        # and MCP escaped JSON-in-JSON formats.
         error_info = None
         if token_key:
             body_bytes = b''.join(
@@ -122,7 +126,7 @@ class UpstreamAuthErrorMiddleware:
                 for msg in buffered
                 if msg.get('type') == 'http.response.body'
             )
-            if re.search(rb'status_code\\*"?\s*:\s*401\b', body_bytes):
+            if _STATUS_CODE_401_RE.search(body_bytes):
                 error_info = consume_upstream_auth_error(token_key)
         now = time.monotonic()
         self._prune_expired_cooldowns(now)
