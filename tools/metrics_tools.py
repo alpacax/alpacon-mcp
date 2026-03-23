@@ -891,14 +891,19 @@ async def get_server_metrics_summary(
             if 'error' in result:
                 # Extract actual error message from response if available
                 if 'response' in result:
-                    return {
+                    error_info = {
                         'available': False,
                         'error': f'{result.get("message", "Error")} - {result.get("response", "")}',
                     }
-                return {
-                    'available': False,
-                    'error': result.get('message', 'Data unavailable'),
-                }
+                else:
+                    error_info = {
+                        'available': False,
+                        'error': result.get('message', 'Data unavailable'),
+                    }
+                status_code = result.get('status_code')
+                if status_code is not None:
+                    error_info['status_code'] = status_code
+                return error_info
 
             # Return metadata only, not the full data points
             if 'results' in result:

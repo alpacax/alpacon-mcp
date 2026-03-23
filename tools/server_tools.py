@@ -33,10 +33,13 @@ async def list_servers(workspace: str, region: str = '', **kwargs) -> dict[str, 
 
     # Check if result is an error response from http_client
     if isinstance(result, dict) and 'error' in result:
+        error_kwargs: dict[str, Any] = {'region': region, 'workspace': workspace}
+        status_code = result.get('status_code')
+        if status_code is not None:
+            error_kwargs['status_code'] = status_code
         return error_response(
             result.get('message', 'Failed to get servers list'),
-            region=region,
-            workspace=workspace,
+            **error_kwargs,
         )
 
     return success_response(data=result, region=region, workspace=workspace)
@@ -73,11 +76,17 @@ async def get_server(
 
     # Check if result is an error response from http_client
     if isinstance(result, dict) and 'error' in result:
+        error_kwargs: dict[str, Any] = {
+            'server_id': server_id,
+            'region': region,
+            'workspace': workspace,
+        }
+        status_code = result.get('status_code')
+        if status_code is not None:
+            error_kwargs['status_code'] = status_code
         return error_response(
             result.get('message', 'Failed to get server details'),
-            server_id=server_id,
-            region=region,
-            workspace=workspace,
+            **error_kwargs,
         )
 
     # Extract the first result from the list if results exist
