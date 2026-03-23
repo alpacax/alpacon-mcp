@@ -24,7 +24,7 @@ OAUTH_ENV = {
     'AUTH0_DOMAIN': TEST_AUTH0_DOMAIN,
     'AUTH0_CLIENT_ID': TEST_CLIENT_ID,
     'AUTH0_CLIENT_SECRET': TEST_CLIENT_SECRET,
-    'AUTH0_AUDIENCE': 'https://alpacon.io/access/',
+    'AUTH0_AUDIENCE': 'https://alpacon.io/',
     'ALPACON_MCP_AUTH_ENABLED': 'true',
     'ALPACON_MCP_RESOURCE_URL': TEST_RESOURCE_URL,
 }
@@ -446,7 +446,7 @@ class TestOAuthToken:
         env_without_secret = {
             'AUTH0_DOMAIN': TEST_AUTH0_DOMAIN,
             'AUTH0_CLIENT_ID': TEST_CLIENT_ID,
-            'AUTH0_AUDIENCE': 'https://alpacon.io/access/',
+            'AUTH0_AUDIENCE': 'https://alpacon.io/',
             'ALPACON_MCP_AUTH_ENABLED': 'true',
             'ALPACON_MCP_RESOURCE_URL': TEST_RESOURCE_URL,
         }

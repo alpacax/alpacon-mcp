@@ -28,18 +28,26 @@ def _get_jwks_lock() -> asyncio.Lock:
     return _jwks_lock
 
 
-def _get_auth0_config() -> dict[str, str]:
+def _get_auth0_config() -> dict[str, str | list[str]]:
     """Get Auth0 configuration from environment variables."""
     domain = os.getenv('AUTH0_DOMAIN', '')
-    audience = os.getenv('AUTH0_AUDIENCE', 'https://alpacon.io/access/')
+    audience = os.getenv('AUTH0_AUDIENCE', 'https://alpacon.io/')
     namespace = 'https://alpacon.io/'
 
     if not domain:
         raise ValueError('AUTH0_DOMAIN environment variable is required')
 
+    # Accept both old and new audience for backward compatibility during migration.
+    # PyJWT's jwt.decode() accepts a list of audiences and validates that the token's
+    # audience matches any one of them.
+    _OLD_AUDIENCE = 'https://alpacon.io/access/'
+    audiences: list[str] = [audience]
+    if _OLD_AUDIENCE not in audiences:
+        audiences.append(_OLD_AUDIENCE)
+
     return {
         'domain': domain,
-        'audience': audience,
+        'audience': audiences,
         'namespace': namespace,
         'issuer': f'https://{domain}/',
         'jwks_url': f'https://{domain}/.well-known/jwks.json',

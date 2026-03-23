@@ -13,7 +13,7 @@ import pytest
 
 AUTH_ENV = {
     'AUTH0_DOMAIN': 'test.us.auth0.com',
-    'AUTH0_AUDIENCE': 'https://alpacon.io/access/',
+    'AUTH0_AUDIENCE': 'https://alpacon.io/',
 }
 
 
@@ -43,7 +43,7 @@ def _make_token(private_key, kid='test-kid-1', claims=None, expired=False):
     now = int(time.time())
     default_claims = {
         'sub': 'auth0|test-user',
-        'aud': 'https://alpacon.io/access/',
+        'aud': 'https://alpacon.io/',
         'iss': 'https://test.us.auth0.com/',
         'iat': now,
         'exp': now - 3600 if expired else now + 3600,
@@ -123,7 +123,23 @@ class TestDecodeJwt:
         token = _make_token(rsa_keypair)
         public_key = _get_signing_key(jwks_response, token)
         config = {
-            'audience': 'https://alpacon.io/access/',
+            'audience': ['https://alpacon.io/', 'https://alpacon.io/access/'],
+            'issuer': 'https://test.us.auth0.com/',
+        }
+        claims = decode_jwt(token, public_key, config)
+        assert claims is not None
+        assert claims['sub'] == 'auth0|test-user'
+
+    def test_decodes_token_with_old_audience(self, rsa_keypair, jwks_response):
+        """Tokens with the old audience should still be accepted."""
+        from utils.auth import _get_signing_key, decode_jwt
+
+        token = _make_token(
+            rsa_keypair, claims={'aud': 'https://alpacon.io/access/'}
+        )
+        public_key = _get_signing_key(jwks_response, token)
+        config = {
+            'audience': ['https://alpacon.io/', 'https://alpacon.io/access/'],
             'issuer': 'https://test.us.auth0.com/',
         }
         claims = decode_jwt(token, public_key, config)
@@ -136,7 +152,7 @@ class TestDecodeJwt:
         token = _make_token(rsa_keypair, expired=True)
         public_key = _get_signing_key(jwks_response, token)
         config = {
-            'audience': 'https://alpacon.io/access/',
+            'audience': ['https://alpacon.io/', 'https://alpacon.io/access/'],
             'issuer': 'https://test.us.auth0.com/',
         }
         claims = decode_jwt(token, public_key, config)
@@ -160,7 +176,7 @@ class TestDecodeJwt:
         token = _make_token(rsa_keypair)
         public_key = _get_signing_key(jwks_response, token)
         config = {
-            'audience': 'https://alpacon.io/access/',
+            'audience': ['https://alpacon.io/', 'https://alpacon.io/access/'],
             'issuer': 'https://wrong-issuer.com/',
         }
         claims = decode_jwt(token, public_key, config)

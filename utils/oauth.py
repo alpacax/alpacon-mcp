@@ -99,7 +99,7 @@ def _get_oauth_config() -> dict[str, str]:
     domain = os.getenv('AUTH0_DOMAIN', '')
     client_id = os.getenv('AUTH0_CLIENT_ID', '')
     client_secret = os.getenv('AUTH0_CLIENT_SECRET', '')
-    audience = os.getenv('AUTH0_AUDIENCE', 'https://alpacon.io/access/')
+    audience = os.getenv('AUTH0_AUDIENCE', 'https://alpacon.io/')
 
     if not domain:
         raise ValueError('AUTH0_DOMAIN environment variable is required')

@@ -6,7 +6,7 @@ and streamable-http transport for remote deployment.
 Environment variables must be set before running:
     AUTH0_DOMAIN        - Auth0 tenant domain (required)
     AUTH0_CLIENT_ID     - Auth0 application client ID (required)
-    AUTH0_AUDIENCE      - Auth0 API audience (default: https://alpacon.io/access/)
+    AUTH0_AUDIENCE      - Auth0 API audience (default: https://alpacon.io/)
 
 Usage:
     alpacon-mcp-http          # Via installed script entry
@@ -38,7 +38,7 @@ def main():
         print('  AUTH0_CLIENT_ID     - Auth0 application client ID')
         print('\nOptional environment variables:')
         print(
-            '  AUTH0_AUDIENCE      - Auth0 API audience (default: https://alpacon.io/access/)'
+            '  AUTH0_AUDIENCE      - Auth0 API audience (default: https://alpacon.io/)'
         )
         print(
             '  AUTH0_CLIENT_SECRET - Auth0 client secret (only for confidential clients)'
