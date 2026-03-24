@@ -149,6 +149,7 @@ def _create_mcp_server() -> FastMCP:
             token_verifier=token_verifier,
             lifespan=app_lifespan,
             json_response=True,
+            stateless_http=True,
         )
     else:
         logger.info('Creating FastMCP server without auth (stdio/SSE mode)')
