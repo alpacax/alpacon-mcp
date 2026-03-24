@@ -61,7 +61,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: dev
     steps:
-      - name: Trigger dev deployment (ap1)
+      - name: Trigger dev deployment
         uses: benc-uk/workflow-dispatch@v1
         with:
           workflow: image-tag-update-pr.yaml
@@ -75,7 +75,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: prod
     steps:
-      - name: Trigger prod deployment (ap1)
+      - name: Trigger prod deployment
         uses: benc-uk/workflow-dispatch@v1
         with:
           workflow: image-tag-update-pr.yaml
