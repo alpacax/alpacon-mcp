@@ -5,6 +5,7 @@ account service. Used in remote (streamable-http) mode to proactively
 determine whether MFA is required before making API calls.
 """
 
+import asyncio
 import hashlib
 import os
 import time
@@ -47,6 +48,8 @@ class SecuritySettingsCache:
         self._ttl = ttl
         # {token_key: {workspace: (settings, expiry_time)}}
         self._cache: dict[str, dict[str, tuple[WorkspaceSecuritySettings, float]]] = {}
+        # Per-token in-flight deduplication to prevent thundering herd
+        self._inflight: dict[str, asyncio.Task] = {}
 
     @staticmethod
     def _token_key(token: str) -> str:
@@ -138,13 +141,33 @@ class SecuritySettingsCache:
     ) -> WorkspaceSecuritySettings | None:
         """Get settings for a workspace, fetching if not cached.
 
+        Uses per-token in-flight deduplication to prevent thundering herd
+        when multiple concurrent tool calls trigger a cache miss for the
+        same token.
+
         Returns None if settings cannot be determined (fail-open).
         """
         cached = self.get_cached(token, workspace)
         if cached is not None:
             return cached
 
-        results = await self.fetch_and_cache(token)
+        key = self._token_key(token)
+
+        # Deduplicate concurrent fetches for the same token
+        if key in self._inflight:
+            try:
+                results = await self._inflight[key]
+            except Exception:
+                return None
+            return results.get(workspace)
+
+        task = asyncio.ensure_future(self.fetch_and_cache(token))
+        self._inflight[key] = task
+        try:
+            results = await task
+        finally:
+            self._inflight.pop(key, None)
+
         return results.get(workspace)
 
 
@@ -175,6 +198,14 @@ def check_mfa_completed(
 
     for method, timestamp_str in completed_mfa.items():
         if allowed_methods and method not in allowed_methods:
+            continue
+
+        if not isinstance(timestamp_str, str):
+            logger.warning(
+                'MFA claim value is not a string for method %s: %r',
+                method,
+                timestamp_str,
+            )
             continue
 
         try:

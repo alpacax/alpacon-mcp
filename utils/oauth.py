@@ -662,7 +662,7 @@ def register_oauth_routes(mcp_server):
             # the side effect of MFA completion in the Auth0 session.
             try:
                 async with httpx.AsyncClient(timeout=30.0) as client:
-                    await client.post(
+                    mfa_response = await client.post(
                         f'{config["auth0_base_url"]}/oauth/token',
                         data={
                             'grant_type': 'authorization_code',
@@ -675,9 +675,17 @@ def register_oauth_routes(mcp_server):
                             'Content-Type': 'application/x-www-form-urlencoded',
                         },
                     )
-                    # We don't check the response — even if token exchange
-                    # fails, the MFA was already completed in the Auth0
-                    # session. Proceed to Stage 2 regardless.
+                    # MFA token is discarded — we only need the side effect
+                    # of MFA completion in the Auth0 session. Log non-2xx
+                    # responses for debugging misconfiguration.
+                    if mfa_response.status_code >= 400:
+                        logger.warning(
+                            'MFA token exchange returned %s (non-fatal): %s',
+                            mfa_response.status_code,
+                            mfa_response.text[:200],
+                        )
+                    else:
+                        logger.info('MFA token exchange succeeded (token discarded)')
             except httpx.HTTPError as e:
                 logger.warning(f'MFA token exchange failed (non-fatal): {e}')
 

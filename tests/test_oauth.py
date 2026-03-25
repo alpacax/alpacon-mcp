@@ -671,10 +671,10 @@ class TestOAuthFallbackRoutes:
         assert response.json()['client_id'] == TEST_CLIENT_ID
 
 
-def _make_composite_state(redirect_uri='', state=''):
+def _make_composite_state(redirect_uri='', state='', **extra):
     """Helper to create composite state as the authorize endpoint does."""
-    state_data = json.dumps({'redirect_uri': redirect_uri, 'state': state})
-    return base64.urlsafe_b64encode(state_data.encode()).decode()
+    data = {'redirect_uri': redirect_uri, 'state': state, **extra}
+    return base64.urlsafe_b64encode(json.dumps(data).encode()).decode()
 
 
 class TestOAuthCallback:
@@ -775,3 +775,48 @@ class TestOAuthCallback:
         location = response.headers['location']
         assert location.startswith('https://claude.ai/api/mcp/auth_callback')
         assert 'code=auth-code' in location
+
+    def test_callback_mfa_stage_exchanges_code_and_redirects_to_stage2(self, oauth_app):
+        """MFA stage callback should exchange MFA code and redirect to regular audience."""
+        composite = _make_composite_state(
+            redirect_uri='http://localhost:8080/callback',
+            state='orig-state',
+            stage='mfa',
+            original_scope='openid profile email offline_access',
+        )
+
+        mock_client = _mock_auth0_response(status_code=200)
+
+        with patch('httpx.AsyncClient', return_value=mock_client):
+            response = oauth_app.get(
+                '/oauth/callback',
+                params={'code': 'mfa-auth-code', 'state': composite},
+                follow_redirects=False,
+            )
+
+        assert response.status_code == 302
+        location = response.headers['location']
+        from urllib.parse import parse_qs, urlparse
+
+        parsed = urlparse(location)
+        params = parse_qs(parsed.query)
+
+        # Should redirect to Auth0 with regular audience (not MFA)
+        audience = params.get('audience', [''])[0]
+        assert audience == 'https://alpacon.io/access/'
+        assert '/mfa/' not in audience
+
+        # Scope should be the original scope (not enroll)
+        scope = params.get('scope', [''])[0]
+        assert 'openid' in scope
+        assert 'enroll' not in scope
+
+        # State should contain stage='regular'
+        state = params.get('state', [''])[0]
+        state_data = json.loads(base64.urlsafe_b64decode(state.encode()).decode())
+        assert state_data.get('stage') == 'regular'
+        assert state_data.get('redirect_uri') == 'http://localhost:8080/callback'
+        assert state_data.get('state') == 'orig-state'
+
+        # MFA code should have been exchanged
+        mock_client.post.assert_called_once()
