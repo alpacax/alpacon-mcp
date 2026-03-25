@@ -269,3 +269,110 @@ class TestMfaPrecheck:
 
         assert result is False
         mock_signal.assert_not_called()
+
+
+class TestSecuritySettingsCache:
+    """Tests for SecuritySettingsCache TTL, pruning, and deduplication."""
+
+    def test_cache_hit(self):
+        from utils.security_settings import SecuritySettingsCache
+
+        cache = SecuritySettingsCache(ttl=60)
+        settings = WorkspaceSecuritySettings({'mfa_required': True, 'mfa_timeout': 900})
+        cache._put_bulk('token-a', {'ws1': settings})
+        result = cache.get_cached('token-a', 'ws1')
+        assert result is not None
+        assert result.mfa_required is True
+
+    def test_cache_miss(self):
+        from utils.security_settings import SecuritySettingsCache
+
+        cache = SecuritySettingsCache(ttl=60)
+        assert cache.get_cached('token-a', 'ws1') is None
+
+    def test_expired_entry(self):
+        import time
+
+        from utils.security_settings import SecuritySettingsCache
+
+        cache = SecuritySettingsCache(ttl=0)
+        settings = WorkspaceSecuritySettings({'mfa_required': True})
+        cache._put_bulk('token-a', {'ws1': settings})
+        time.sleep(0.01)
+        assert cache.get_cached('token-a', 'ws1') is None
+
+    def test_prune_removes_all_expired(self):
+        import time
+
+        from utils.security_settings import SecuritySettingsCache
+
+        cache = SecuritySettingsCache(ttl=0)
+        settings = WorkspaceSecuritySettings({'mfa_required': True})
+        cache._put_bulk('token-a', {'ws1': settings, 'ws2': settings})
+        cache._last_prune = 0
+        time.sleep(0.01)
+        cache._prune_expired()
+        assert len(cache._cache) == 0
+
+    @pytest.mark.asyncio
+    async def test_fetch_on_cache_miss(self):
+        from unittest.mock import MagicMock
+
+        from utils.security_settings import SecuritySettingsCache
+
+        cache = SecuritySettingsCache(ttl=60)
+
+        # httpx.Response methods (json, raise_for_status) are sync
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = [
+            {
+                'workspace': 'ws1',
+                'mfa_required': True,
+                'mfa_timeout': 900,
+                'mfa_required_actions': ['websh'],
+                'allowed_mfa_methods': [],
+            },
+        ]
+
+        mock_client = AsyncMock()
+        mock_client.get.return_value = mock_response
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+
+        with (
+            patch.dict(os.environ, {'ALPACON_ACCOUNT_URL': 'https://account.test.com'}),
+            patch('httpx.AsyncClient', return_value=mock_client),
+        ):
+            result = await cache.get_settings('fake-jwt', 'ws1')
+
+        assert result is not None
+        assert result.mfa_required is True
+        assert cache.get_cached('fake-jwt', 'ws1') is not None
+
+    @pytest.mark.asyncio
+    async def test_concurrent_misses_deduplicate(self):
+        """Multiple concurrent get_settings for same token should only fetch once."""
+        import asyncio
+
+        from utils.security_settings import SecuritySettingsCache
+
+        cache = SecuritySettingsCache(ttl=60)
+        fetch_count = 0
+
+        async def counting_fetch(token):
+            nonlocal fetch_count
+            fetch_count += 1
+            await asyncio.sleep(0.05)
+            return {'ws1': WorkspaceSecuritySettings({'mfa_required': True})}
+
+        cache.fetch_and_cache = counting_fetch
+
+        results = await asyncio.gather(
+            cache.get_settings('same-token', 'ws1'),
+            cache.get_settings('same-token', 'ws1'),
+            cache.get_settings('same-token', 'ws1'),
+        )
+
+        assert fetch_count == 1
+        assert all(r is not None for r in results)

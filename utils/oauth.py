@@ -710,8 +710,18 @@ def register_oauth_routes(mcp_server):
             }
             # Replay PKCE and other client params preserved from Stage 1
             # so the final code exchange succeeds with the client's verifier.
-            if authorize_params:
-                stage2_params.update(authorize_params)
+            # Validate authorize_params is a dict with only expected keys
+            # to prevent forged state from injecting arbitrary params.
+            _ALLOWED_REPLAY_KEYS = {
+                'code_challenge',
+                'code_challenge_method',
+                'nonce',
+                'resource',
+            }
+            if isinstance(authorize_params, dict):
+                for key, value in authorize_params.items():
+                    if key in _ALLOWED_REPLAY_KEYS and isinstance(value, str):
+                        stage2_params[key] = value
 
             auth0_url = (
                 f'{config["auth0_base_url"]}/authorize?{urlencode(stage2_params)}'

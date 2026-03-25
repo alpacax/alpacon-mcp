@@ -50,11 +50,34 @@ class SecuritySettingsCache:
         self._cache: dict[str, dict[str, tuple[WorkspaceSecuritySettings, float]]] = {}
         # Per-token in-flight deduplication to prevent thundering herd
         self._inflight: dict[str, asyncio.Task] = {}
+        # Timestamp of last global prune (max once per TTL period)
+        self._last_prune: float = 0
 
     @staticmethod
     def _token_key(token: str) -> str:
         """Derive a short hash key from a JWT for cache isolation."""
         return hashlib.sha256(token.encode()).hexdigest()[:16]
+
+    def _prune_expired(self) -> None:
+        """Remove all expired entries across all tokens.
+
+        Called opportunistically from get_settings, at most once per TTL
+        period to avoid excessive iteration on every lookup.
+        """
+        now = time.time()
+        if (now - self._last_prune) < self._ttl:
+            return
+        self._last_prune = now
+
+        empty_keys = []
+        for token_key, ws_cache in self._cache.items():
+            expired = [ws for ws, (_, exp) in ws_cache.items() if now > exp]
+            for ws in expired:
+                del ws_cache[ws]
+            if not ws_cache:
+                empty_keys.append(token_key)
+        for key in empty_keys:
+            del self._cache[key]
 
     def get_cached(
         self, token: str, workspace: str
@@ -147,6 +170,8 @@ class SecuritySettingsCache:
 
         Returns None if settings cannot be determined (fail-open).
         """
+        self._prune_expired()
+
         cached = self.get_cached(token, workspace)
         if cached is not None:
             return cached
