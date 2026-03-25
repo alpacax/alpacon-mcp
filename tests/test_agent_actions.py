@@ -43,9 +43,9 @@ class TestRestartAgent:
         mock_http_client.post.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint=f'/api/servers/servers/{SERVER_ID}/action/',
+            endpoint=f'/api/servers/servers/{SERVER_ID}/actions/',
             token='test-token',
-            data={'action': 'restart'},
+            data={'action': 'restart_agent'},
         )
 
     @pytest.mark.asyncio
@@ -78,9 +78,9 @@ class TestShutdownAgent:
         mock_http_client.post.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint=f'/api/servers/servers/{SERVER_ID}/action/',
+            endpoint=f'/api/servers/servers/{SERVER_ID}/actions/',
             token='test-token',
-            data={'action': 'shutdown'},
+            data={'action': 'shutdown_agent'},
         )
 
 
@@ -101,9 +101,9 @@ class TestUpgradeAgent:
         mock_http_client.post.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint=f'/api/servers/servers/{SERVER_ID}/action/',
+            endpoint=f'/api/servers/servers/{SERVER_ID}/actions/',
             token='test-token',
-            data={'action': 'upgrade'},
+            data={'action': 'upgrade_agent'},
         )
 
     @pytest.mark.asyncio

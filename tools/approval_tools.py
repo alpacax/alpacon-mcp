@@ -47,7 +47,7 @@ async def list_approval_requests(
     result = await http_client.get(
         region=region,
         workspace=workspace,
-        endpoint='/api/approvals/requests/',
+        endpoint='/api/approvals/approvals/',
         token=token,
         params=params,
     )
@@ -76,7 +76,7 @@ async def get_approval_request(
     result = await http_client.get(
         region=region,
         workspace=workspace,
-        endpoint=f'/api/approvals/requests/{request_id}/',
+        endpoint=f'/api/approvals/approvals/{request_id}/',
         token=token,
     )
 
@@ -115,7 +115,7 @@ async def approve_request(
     result = await http_client.post(
         region=region,
         workspace=workspace,
-        endpoint=f'/api/approvals/requests/{request_id}/approve/',
+        endpoint=f'/api/approvals/approvals/{request_id}/approve/',
         token=token,
         data=data,
     )
@@ -155,7 +155,7 @@ async def reject_request(
     result = await http_client.post(
         region=region,
         workspace=workspace,
-        endpoint=f'/api/approvals/requests/{request_id}/reject/',
+        endpoint=f'/api/approvals/approvals/{request_id}/reject/',
         token=token,
         data=data,
     )
@@ -202,7 +202,7 @@ async def list_sudo_policies(
     result = await http_client.get(
         region=region,
         workspace=workspace,
-        endpoint='/api/sudo/policies/',
+        endpoint='/api/approvals/sudo-policies/',
         token=token,
         params=params,
     )
@@ -265,7 +265,7 @@ async def create_sudo_policy(
     result = await http_client.post(
         region=region,
         workspace=workspace,
-        endpoint='/api/sudo/policies/',
+        endpoint='/api/approvals/sudo-policies/',
         token=token,
         data=policy_data,
     )

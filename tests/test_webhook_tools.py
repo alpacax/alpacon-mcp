@@ -62,14 +62,14 @@ class TestEventSubscriptions:
         """Test successful event subscription creation."""
         mock_http_client.post.return_value = {
             'id': 'sub-1',
-            'event_type': 'server.alert',
+            'event_type': 'command_fin',
         }
 
         result = await create_event_subscription(
             workspace='testworkspace',
-            event_type='server.alert',
-            webhook_id='wh-1',
-            servers=['server-1'],
+            channel='ch-1',
+            event_type='command_fin',
+            target_id='server-1',
             region='ap1',
         )
 
@@ -80,10 +80,9 @@ class TestEventSubscriptions:
             endpoint='/api/events/subscriptions/',
             token='test-token',
             data={
-                'event_type': 'server.alert',
-                'enabled': True,
-                'webhook': 'wh-1',
-                'servers': ['server-1'],
+                'channel': 'ch-1',
+                'event_type': 'command_fin',
+                'target_id': 'server-1',
             },
         )
 
@@ -96,7 +95,8 @@ class TestEventSubscriptions:
 
         result = await create_event_subscription(
             workspace='testworkspace',
-            event_type='server.offline',
+            channel='ch-2',
+            event_type='sudo',
             region='ap1',
         )
 
@@ -106,7 +106,7 @@ class TestEventSubscriptions:
             workspace='testworkspace',
             endpoint='/api/events/subscriptions/',
             token='test-token',
-            data={'event_type': 'server.offline', 'enabled': True},
+            data={'channel': 'ch-2', 'event_type': 'sudo'},
         )
 
     @pytest.mark.asyncio
@@ -147,7 +147,7 @@ class TestWebhooks:
         mock_http_client.get.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/webhooks/',
+            endpoint='/api/notifications/webhooks/',
             token='test-token',
             params={},
         )
@@ -165,7 +165,7 @@ class TestWebhooks:
             workspace='testworkspace',
             name='alerts',
             url='https://example.com/webhook',
-            secret='my-secret',
+            ssl_verify=False,
             region='ap1',
         )
 
@@ -173,13 +173,13 @@ class TestWebhooks:
         mock_http_client.post.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/webhooks/',
+            endpoint='/api/notifications/webhooks/',
             token='test-token',
             data={
                 'name': 'alerts',
                 'url': 'https://example.com/webhook',
+                'ssl_verify': False,
                 'enabled': True,
-                'secret': 'my-secret',
             },
         )
 
@@ -204,7 +204,7 @@ class TestWebhooks:
         mock_http_client.patch.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/webhooks/wh-1/',
+            endpoint='/api/notifications/webhooks/wh-1/',
             token='test-token',
             data={'name': 'updated-alerts', 'enabled': False},
         )
@@ -234,6 +234,6 @@ class TestWebhooks:
         mock_http_client.delete.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/webhooks/wh-1/',
+            endpoint='/api/notifications/webhooks/wh-1/',
             token='test-token',
         )

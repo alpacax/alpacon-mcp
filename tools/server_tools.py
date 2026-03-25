@@ -207,9 +207,9 @@ async def restart_agent(
     result = await http_client.post(
         region=region,
         workspace=workspace,
-        endpoint=f'/api/servers/servers/{server_id}/action/',
+        endpoint=f'/api/servers/servers/{server_id}/actions/',
         token=token,
-        data={'action': 'restart'},
+        data={'action': 'restart_agent'},
     )
 
     return success_response(
@@ -238,9 +238,9 @@ async def shutdown_agent(
     result = await http_client.post(
         region=region,
         workspace=workspace,
-        endpoint=f'/api/servers/servers/{server_id}/action/',
+        endpoint=f'/api/servers/servers/{server_id}/actions/',
         token=token,
-        data={'action': 'shutdown'},
+        data={'action': 'shutdown_agent'},
     )
 
     return success_response(
@@ -269,9 +269,9 @@ async def upgrade_agent(
     result = await http_client.post(
         region=region,
         workspace=workspace,
-        endpoint=f'/api/servers/servers/{server_id}/action/',
+        endpoint=f'/api/servers/servers/{server_id}/actions/',
         token=token,
-        data={'action': 'upgrade'},
+        data={'action': 'upgrade_agent'},
     )
 
     return success_response(

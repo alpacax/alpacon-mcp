@@ -45,7 +45,7 @@ async def list_system_package_entries(
     result = await http_client.get(
         region=region,
         workspace=workspace,
-        endpoint='/api/packages/entries/',
+        endpoint='/api/packages/system/entries/',
         token=token,
         params=params,
     )
@@ -91,7 +91,7 @@ async def install_system_package(
     result = await http_client.post(
         region=region,
         workspace=workspace,
-        endpoint='/api/packages/entries/',
+        endpoint='/api/packages/system/entries/',
         token=token,
         data=package_data,
     )
@@ -122,7 +122,7 @@ async def remove_system_package(
     result = await http_client.delete(
         region=region,
         workspace=workspace,
-        endpoint=f'/api/packages/entries/{entry_id}/',
+        endpoint=f'/api/packages/system/entries/{entry_id}/',
         token=token,
     )
 
@@ -170,7 +170,7 @@ async def list_python_packages(
     result = await http_client.get(
         region=region,
         workspace=workspace,
-        endpoint='/api/packages/python/',
+        endpoint='/api/packages/python/entries/',
         token=token,
         params=params,
     )
@@ -216,7 +216,7 @@ async def install_python_package(
     result = await http_client.post(
         region=region,
         workspace=workspace,
-        endpoint='/api/packages/python/',
+        endpoint='/api/packages/python/entries/',
         token=token,
         data=package_data,
     )
@@ -247,7 +247,7 @@ async def remove_python_package(
     result = await http_client.delete(
         region=region,
         workspace=workspace,
-        endpoint=f'/api/packages/python/{entry_id}/',
+        endpoint=f'/api/packages/python/entries/{entry_id}/',
         token=token,
     )
 

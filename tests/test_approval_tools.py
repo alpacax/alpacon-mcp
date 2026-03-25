@@ -51,7 +51,7 @@ class TestListApprovalRequests:
         mock_http_client.get.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/approvals/requests/',
+            endpoint='/api/approvals/approvals/',
             token='test-token',
             params={},
         )
@@ -71,7 +71,7 @@ class TestListApprovalRequests:
         mock_http_client.get.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/approvals/requests/',
+            endpoint='/api/approvals/approvals/',
             token='test-token',
             params={'status': 'pending'},
         )
@@ -91,7 +91,7 @@ class TestListApprovalRequests:
         mock_http_client.get.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/approvals/requests/',
+            endpoint='/api/approvals/approvals/',
             token='test-token',
             params={'page': 2, 'page_size': 5},
         )
@@ -120,7 +120,7 @@ class TestGetApprovalRequest:
         mock_http_client.get.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/approvals/requests/req-1/',
+            endpoint='/api/approvals/approvals/req-1/',
             token='test-token',
         )
 
@@ -142,7 +142,7 @@ class TestApproveRequest:
         mock_http_client.post.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/approvals/requests/req-1/approve/',
+            endpoint='/api/approvals/approvals/req-1/approve/',
             token='test-token',
             data={},
         )
@@ -165,7 +165,7 @@ class TestApproveRequest:
         mock_http_client.post.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/approvals/requests/req-1/approve/',
+            endpoint='/api/approvals/approvals/req-1/approve/',
             token='test-token',
             data={'comment': 'Approved for production access'},
         )
@@ -187,7 +187,7 @@ class TestRejectRequest:
         mock_http_client.post.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/approvals/requests/req-1/reject/',
+            endpoint='/api/approvals/approvals/req-1/reject/',
             token='test-token',
             data={},
         )
@@ -210,7 +210,7 @@ class TestRejectRequest:
         mock_http_client.post.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/approvals/requests/req-1/reject/',
+            endpoint='/api/approvals/approvals/req-1/reject/',
             token='test-token',
             data={'comment': 'Insufficient justification'},
         )
@@ -235,7 +235,7 @@ class TestSudoPolicies:
         mock_http_client.get.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/sudo/policies/',
+            endpoint='/api/approvals/sudo-policies/',
             token='test-token',
             params={},
         )
@@ -264,7 +264,7 @@ class TestSudoPolicies:
         mock_http_client.post.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/sudo/policies/',
+            endpoint='/api/approvals/sudo-policies/',
             token='test-token',
             data={
                 'name': 'deploy-sudo',
@@ -293,7 +293,7 @@ class TestSudoPolicies:
         mock_http_client.post.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/sudo/policies/',
+            endpoint='/api/approvals/sudo-policies/',
             token='test-token',
             data={
                 'name': 'basic',

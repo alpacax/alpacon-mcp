@@ -52,7 +52,7 @@ class TestCertificateAuthorities:
         mock_http_client.get.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/certs/authorities/',
+            endpoint='/api/cert/authorities/',
             token='test-token',
             params={},
         )
@@ -82,7 +82,7 @@ class TestCertificateAuthorities:
         mock_http_client.post.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/certs/authorities/',
+            endpoint='/api/cert/authorities/',
             token='test-token',
             data={
                 'name': 'Internal CA',
@@ -111,7 +111,7 @@ class TestCertificateAuthorities:
         mock_http_client.post.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/certs/authorities/',
+            endpoint='/api/cert/authorities/',
             token='test-token',
             data={'name': 'Test CA', 'common_name': 'Test Root CA'},
         )
@@ -136,7 +136,7 @@ class TestSignRequests:
         mock_http_client.get.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/certs/requests/',
+            endpoint='/api/cert/sign-requests/',
             token='test-token',
             params={},
         )
@@ -165,7 +165,7 @@ class TestSignRequests:
         mock_http_client.post.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/certs/requests/',
+            endpoint='/api/cert/sign-requests/',
             token='test-token',
             data={
                 'authority': 'ca-1',
@@ -194,7 +194,7 @@ class TestSignRequests:
         mock_http_client.post.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/certs/requests/',
+            endpoint='/api/cert/sign-requests/',
             token='test-token',
             data={'authority': 'ca-1', 'common_name': 'web.example.com'},
         )
@@ -219,7 +219,7 @@ class TestCertificates:
         mock_http_client.get.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/certs/certificates/',
+            endpoint='/api/cert/certificates/',
             token='test-token',
             params={},
         )
@@ -239,7 +239,7 @@ class TestCertificates:
         mock_http_client.get.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/certs/certificates/',
+            endpoint='/api/cert/certificates/',
             token='test-token',
             params={'authority': 'ca-1'},
         )
@@ -263,9 +263,9 @@ class TestCertificates:
         mock_http_client.post.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/certs/certificates/cert-1/revoke/',
+            endpoint='/api/cert/revoke-requests/',
             token='test-token',
-            data={},
+            data={'certificate': 'cert-1'},
         )
 
     @pytest.mark.asyncio
@@ -286,7 +286,7 @@ class TestCertificates:
         mock_http_client.post.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/certs/certificates/cert-1/revoke/',
+            endpoint='/api/cert/revoke-requests/',
             token='test-token',
-            data={'reason': 'Key compromise'},
+            data={'certificate': 'cert-1', 'reason': 'Key compromise'},
         )

@@ -60,7 +60,7 @@ class TestSystemPackages:
         mock_http_client.get.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/packages/entries/',
+            endpoint='/api/packages/system/entries/',
             token='test-token',
             params={'server': SERVER_ID},
         )
@@ -84,7 +84,7 @@ class TestSystemPackages:
         mock_http_client.get.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/packages/entries/',
+            endpoint='/api/packages/system/entries/',
             token='test-token',
             params={'server': SERVER_ID, 'page': 2, 'page_size': 10},
         )
@@ -112,7 +112,7 @@ class TestSystemPackages:
         mock_http_client.post.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/packages/entries/',
+            endpoint='/api/packages/system/entries/',
             token='test-token',
             data={'server': SERVER_ID, 'name': 'htop'},
         )
@@ -136,7 +136,7 @@ class TestSystemPackages:
         mock_http_client.post.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/packages/entries/',
+            endpoint='/api/packages/system/entries/',
             token='test-token',
             data={'server': SERVER_ID, 'name': 'nginx', 'version': '1.24.0'},
         )
@@ -157,7 +157,7 @@ class TestSystemPackages:
         mock_http_client.delete.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/packages/entries/pkg-1/',
+            endpoint='/api/packages/system/entries/pkg-1/',
             token='test-token',
         )
 
@@ -187,7 +187,7 @@ class TestPythonPackages:
         mock_http_client.get.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/packages/python/',
+            endpoint='/api/packages/python/entries/',
             token='test-token',
             params={'server': SERVER_ID},
         )
@@ -214,7 +214,7 @@ class TestPythonPackages:
         mock_http_client.post.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/packages/python/',
+            endpoint='/api/packages/python/entries/',
             token='test-token',
             data={'server': SERVER_ID, 'name': 'django'},
         )
@@ -238,7 +238,7 @@ class TestPythonPackages:
         mock_http_client.post.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/packages/python/',
+            endpoint='/api/packages/python/entries/',
             token='test-token',
             data={'server': SERVER_ID, 'name': 'django', 'version': '4.2.0'},
         )
@@ -259,6 +259,6 @@ class TestPythonPackages:
         mock_http_client.delete.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/packages/python/py-1/',
+            endpoint='/api/packages/python/entries/py-1/',
             token='test-token',
         )

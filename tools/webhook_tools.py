@@ -52,15 +52,13 @@ async def list_event_subscriptions(
 
 
 @mcp_tool_handler(
-    description='Create an event subscription to receive notifications when specific event types occur.'
+    description='Create an event subscription to receive notifications when specific event types occur. Event types: command_fin, servers_commit, sudo.'
 )
 async def create_event_subscription(
     workspace: str,
+    channel: str,
     event_type: str,
-    webhook_id: str | None = None,
-    servers: list[str] | None = None,
-    enabled: bool = True,
-    description: str | None = None,
+    target_id: str | None = None,
     region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
@@ -68,11 +66,9 @@ async def create_event_subscription(
 
     Args:
         workspace: Workspace name. Required parameter
-        event_type: Type of event to subscribe to
-        webhook_id: Webhook ID to deliver events to (optional)
-        servers: List of server IDs to filter events from (optional)
-        enabled: Whether the subscription is enabled (default: True)
-        description: Description of the subscription (optional)
+        channel: Notification channel ID to deliver events to
+        event_type: Type of event to subscribe to (command_fin, servers_commit, sudo)
+        target_id: Target resource ID to filter events for (optional)
         region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
@@ -81,16 +77,12 @@ async def create_event_subscription(
     token = kwargs.get('token')
 
     subscription_data: dict[str, Any] = {
+        'channel': channel,
         'event_type': event_type,
-        'enabled': enabled,
     }
 
-    if webhook_id is not None:
-        subscription_data['webhook'] = webhook_id
-    if servers is not None:
-        subscription_data['servers'] = servers
-    if description is not None:
-        subscription_data['description'] = description
+    if target_id is not None:
+        subscription_data['target_id'] = target_id
 
     result = await http_client.post(
         region=region,
@@ -173,7 +165,7 @@ async def list_webhooks(
     result = await http_client.get(
         region=region,
         workspace=workspace,
-        endpoint='/api/webhooks/',
+        endpoint='/api/notifications/webhooks/',
         token=token,
         params=params,
     )
@@ -188,9 +180,8 @@ async def create_webhook(
     workspace: str,
     name: str,
     url: str,
-    secret: str | None = None,
+    ssl_verify: bool = True,
     enabled: bool = True,
-    description: str | None = None,
     region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
@@ -200,9 +191,8 @@ async def create_webhook(
         workspace: Workspace name. Required parameter
         name: Name of the webhook
         url: URL to receive webhook callbacks
-        secret: Secret for webhook signature verification (optional)
+        ssl_verify: Whether to verify SSL certificates (default: True)
         enabled: Whether the webhook is enabled (default: True)
-        description: Description of the webhook (optional)
         region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
@@ -213,18 +203,14 @@ async def create_webhook(
     webhook_data: dict[str, Any] = {
         'name': name,
         'url': url,
+        'ssl_verify': ssl_verify,
         'enabled': enabled,
     }
-
-    if secret is not None:
-        webhook_data['secret'] = secret
-    if description is not None:
-        webhook_data['description'] = description
 
     result = await http_client.post(
         region=region,
         workspace=workspace,
-        endpoint='/api/webhooks/',
+        endpoint='/api/notifications/webhooks/',
         token=token,
         data=webhook_data,
     )
@@ -240,9 +226,8 @@ async def update_webhook(
     workspace: str,
     name: str | None = None,
     url: str | None = None,
-    secret: str | None = None,
+    ssl_verify: bool | None = None,
     enabled: bool | None = None,
-    description: str | None = None,
     region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
@@ -253,9 +238,8 @@ async def update_webhook(
         workspace: Workspace name. Required parameter
         name: Name of the webhook (optional)
         url: URL to receive webhook callbacks (optional)
-        secret: Secret for webhook signature verification (optional)
+        ssl_verify: Whether to verify SSL certificates (optional)
         enabled: Whether the webhook is enabled (optional)
-        description: Description of the webhook (optional)
         region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
@@ -268,12 +252,10 @@ async def update_webhook(
         update_data['name'] = name
     if url is not None:
         update_data['url'] = url
-    if secret is not None:
-        update_data['secret'] = secret
+    if ssl_verify is not None:
+        update_data['ssl_verify'] = ssl_verify
     if enabled is not None:
         update_data['enabled'] = enabled
-    if description is not None:
-        update_data['description'] = description
 
     if not update_data:
         return error_response('No update data provided')
@@ -281,7 +263,7 @@ async def update_webhook(
     result = await http_client.patch(
         region=region,
         workspace=workspace,
-        endpoint=f'/api/webhooks/{webhook_id}/',
+        endpoint=f'/api/notifications/webhooks/{webhook_id}/',
         token=token,
         data=update_data,
     )
@@ -312,7 +294,7 @@ async def delete_webhook(
     result = await http_client.delete(
         region=region,
         workspace=workspace,
-        endpoint=f'/api/webhooks/{webhook_id}/',
+        endpoint=f'/api/notifications/webhooks/{webhook_id}/',
         token=token,
     )
 

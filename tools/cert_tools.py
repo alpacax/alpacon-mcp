@@ -43,7 +43,7 @@ async def list_certificate_authorities(
     result = await http_client.get(
         region=region,
         workspace=workspace,
-        endpoint='/api/certs/authorities/',
+        endpoint='/api/cert/authorities/',
         token=token,
         params=params,
     )
@@ -103,7 +103,7 @@ async def create_certificate_authority(
     result = await http_client.post(
         region=region,
         workspace=workspace,
-        endpoint='/api/certs/authorities/',
+        endpoint='/api/cert/authorities/',
         token=token,
         data=ca_data,
     )
@@ -148,7 +148,7 @@ async def list_sign_requests(
     result = await http_client.get(
         region=region,
         workspace=workspace,
-        endpoint='/api/certs/requests/',
+        endpoint='/api/cert/sign-requests/',
         token=token,
         params=params,
     )
@@ -208,7 +208,7 @@ async def create_sign_request(
     result = await http_client.post(
         region=region,
         workspace=workspace,
-        endpoint='/api/certs/requests/',
+        endpoint='/api/cert/sign-requests/',
         token=token,
         data=csr_data,
     )
@@ -257,7 +257,7 @@ async def list_certificates(
     result = await http_client.get(
         region=region,
         workspace=workspace,
-        endpoint='/api/certs/certificates/',
+        endpoint='/api/cert/certificates/',
         token=token,
         params=params,
     )
@@ -266,7 +266,7 @@ async def list_certificates(
 
 
 @mcp_tool_handler(
-    description='Revoke an issued certificate. This permanently invalidates the certificate.'
+    description='Create a certificate revocation request. This starts the process to permanently invalidate a certificate.'
 )
 async def revoke_certificate(
     certificate_id: str,
@@ -275,7 +275,7 @@ async def revoke_certificate(
     region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
-    """Revoke a certificate.
+    """Create a certificate revocation request.
 
     Args:
         certificate_id: Certificate ID to revoke
@@ -284,18 +284,20 @@ async def revoke_certificate(
         region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
-        Certificate revocation response
+        Certificate revocation request response
     """
     token = kwargs.get('token')
 
-    data: dict[str, Any] = {}
+    data: dict[str, Any] = {
+        'certificate': certificate_id,
+    }
     if reason is not None:
         data['reason'] = reason
 
     result = await http_client.post(
         region=region,
         workspace=workspace,
-        endpoint=f'/api/certs/certificates/{certificate_id}/revoke/',
+        endpoint='/api/cert/revoke-requests/',
         token=token,
         data=data,
     )
