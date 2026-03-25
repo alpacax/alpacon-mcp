@@ -338,9 +338,6 @@ class TestOAuthAuthorize:
         assert 'enroll' in scope_value
         assert 'read:authenticators' in scope_value
         # State should contain stage='mfa'
-        import base64
-        import json
-
         state = params.get('state', [''])[0]
         state_data = json.loads(base64.urlsafe_b64decode(state.encode()).decode())
         assert state_data.get('stage') == 'mfa'

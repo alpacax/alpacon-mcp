@@ -4,7 +4,7 @@ This document describes how the MCP server handles workspace-level MFA requireme
 
 ## Overview
 
-Some Alpacon workspaces require MFA for sensitive actions (websh, webftp, command, editor). The MCP server proactively detects this by caching workspace security settings from the account service, and triggers a two-stage OAuth flow when MFA is needed.
+Some Alpacon workspaces require MFA for sensitive actions (websh, webftp, command). The MCP server proactively detects this by caching workspace security settings from the account service, and triggers a two-stage OAuth flow when MFA is needed.
 
 ## Flow diagrams
 

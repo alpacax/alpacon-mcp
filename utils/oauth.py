@@ -260,12 +260,22 @@ def register_oauth_routes(mcp_server):
                 'scope': 'enroll read:authenticators',
             }
 
+            # Preserve PKCE and other client authorize params for Stage 2.
+            # The MCP client's PKCE code_challenge must be replayed when
+            # redirecting to the regular audience so the final code exchange
+            # succeeds with the client's code_verifier.
+            stage2_authorize_params = {}
+            for key in ('code_challenge', 'code_challenge_method', 'nonce', 'resource'):
+                if key in params:
+                    stage2_authorize_params[key] = params[key]
+
             state_data = json.dumps(
                 {
                     'redirect_uri': client_redirect_uri,
                     'state': original_state,
                     'stage': 'mfa',
                     'original_scope': scope,
+                    'authorize_params': stage2_authorize_params,
                 }
             )
             mfa_params['state'] = base64.urlsafe_b64encode(state_data.encode()).decode()
@@ -578,6 +588,7 @@ def register_oauth_routes(mcp_server):
         original_state = ''
         stage = ''
         original_scope = ''
+        authorize_params: dict = {}
         if composite_state:
             try:
                 state_data = json.loads(
@@ -587,6 +598,7 @@ def register_oauth_routes(mcp_server):
                 original_state = state_data.get('state', '')
                 stage = state_data.get('stage', '')
                 original_scope = state_data.get('original_scope', '')
+                authorize_params = state_data.get('authorize_params', {})
             except (
                 json.JSONDecodeError,
                 UnicodeDecodeError,
@@ -688,6 +700,10 @@ def register_oauth_routes(mcp_server):
                 'scope': original_scope or 'openid profile email offline_access',
                 'state': base64.urlsafe_b64encode(stage2_state.encode()).decode(),
             }
+            # Replay PKCE and other client params preserved from Stage 1
+            # so the final code exchange succeeds with the client's verifier.
+            if authorize_params:
+                stage2_params.update(authorize_params)
 
             auth0_url = (
                 f'{config["auth0_base_url"]}/authorize?{urlencode(stage2_params)}'

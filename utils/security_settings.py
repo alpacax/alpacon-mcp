@@ -69,6 +69,8 @@ class SecuritySettingsCache:
         settings, expiry = entry
         if time.time() > expiry:
             del user_cache[workspace]
+            if not user_cache:
+                del self._cache[key]
             return None
 
         return settings
@@ -161,7 +163,7 @@ def check_mfa_completed(
     Returns:
         True if MFA is completed and within timeout, False otherwise
     """
-    namespace = os.getenv('AUTH0_NAMESPACE', 'https://alpacon.io/')
+    namespace = os.getenv('AUTH0_NAMESPACE', 'https://alpacon.io/').rstrip('/') + '/'
     mfa_claim_key = f'{namespace}completed_mfa_methods'
     completed_mfa = jwt_claims.get(mfa_claim_key, {})
 
