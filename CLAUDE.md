@@ -111,7 +111,7 @@ This MCP server provides a **pure HTTP API bridge** to Alpacon's infrastructure 
 - Thread-safe HTTP client for concurrent operations
 
 **Tool modules** (all in `tools/` directory):
-- `server_tools.py`: Server listing, details, and management
+- `server_tools.py`: Server listing, details, management, and agent actions (restart, shutdown, upgrade)
 - `command_tools.py`: Remote command execution and monitoring (ACL-based)
 - `websh_tools.py`: Websh session management, persistent connections, and terminal operations
 - `webftp_tools.py`: File transfer and management via S3 presigned URLs
@@ -123,6 +123,10 @@ This MCP server provides a **pure HTTP API bridge** to Alpacon's infrastructure 
 - `security_tools.py`: Security ACL management (command, server, file ACLs)
 - `audit_tools.py`: Audit activity logs, server logs, and WebFTP logs
 - `workspace_tools.py`: Workspace and configuration management
+- `approval_tools.py`: Approval requests and sudo policy management
+- `webhook_tools.py`: Webhook endpoints and event subscription management
+- `package_tools.py`: System and Python package management
+- `cert_tools.py`: Certificate authority, signing requests, and certificate management
 
 **Utilities** (all in `utils/` directory):
 - `http_client.py`: Async HTTP client for Alpacon API
@@ -245,6 +249,9 @@ All validators are defined in `utils/error_handler.py` and return user-friendly 
 - `get_server_overview`: Get comprehensive server overview (system info + metrics)
 - `list_server_notes`: List server documentation
 - `create_server_note`: Create server notes
+- `restart_agent`: Restart the Alpacon agent on a server
+- `shutdown_agent`: Shut down the Alpacon agent on a server
+- `upgrade_agent`: Upgrade the Alpacon agent to latest version
 
 ### 💻 Remote operations (Command API: requires ACL permission)
 - `execute_command_with_acl`: Execute commands on servers using Command API
@@ -364,6 +371,39 @@ These tools automatically:
 - ~~`assign_iam_user_role`~~: Not available
 - ~~`list_iam_permissions`~~: Not available
 - ~~`get_iam_user_permissions`~~: Not available
+
+### ✅ Approval management
+- `list_approval_requests`: List pending and historical approval requests
+- `get_approval_request`: Get detailed approval request information
+- `approve_request`: Approve a pending approval request
+- `reject_request`: Reject a pending approval request
+- `list_sudo_policies`: List sudo privilege policies
+- `create_sudo_policy`: Create a sudo policy for elevated privileges
+
+### 🔗 Webhooks & event subscriptions
+- `list_event_subscriptions`: List event subscriptions
+- `create_event_subscription`: Create an event subscription
+- `delete_event_subscription`: Delete an event subscription
+- `list_webhooks`: List configured webhooks
+- `create_webhook`: Create a webhook endpoint
+- `update_webhook`: Update a webhook configuration
+- `delete_webhook`: Delete a webhook endpoint
+
+### 📦 Package management
+- `list_system_package_entries`: List system packages on a server
+- `install_system_package`: Install a system package on a server
+- `remove_system_package`: Remove a system package entry
+- `list_python_packages`: List Python packages on a server
+- `install_python_package`: Install a Python package on a server
+- `remove_python_package`: Remove a Python package entry
+
+### 📜 Certificate management
+- `list_certificate_authorities`: List certificate authorities
+- `create_certificate_authority`: Create a certificate authority
+- `list_sign_requests`: List certificate signing requests
+- `create_sign_request`: Create a certificate signing request
+- `list_certificates`: List issued certificates
+- `revoke_certificate`: Revoke an issued certificate
 
 ### ⚙️ Authentication & workspace
 - `list_workspaces`: List available workspaces
