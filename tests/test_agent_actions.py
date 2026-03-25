@@ -111,7 +111,9 @@ class TestUpgradeAgent:
         """Test agent upgrade with no token."""
         mock_token_manager.get_token.return_value = None
 
-        result = await upgrade_agent(server_id=SERVER_ID, workspace='testworkspace')
+        result = await upgrade_agent(
+            server_id=SERVER_ID, workspace='testworkspace', region='ap1'
+        )
 
         assert result['status'] == 'error'
         assert 'No token found' in result['message']
