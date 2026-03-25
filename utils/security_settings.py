@@ -123,9 +123,11 @@ class SecuritySettingsCache:
         """
         account_url = os.getenv('ALPACON_ACCOUNT_URL', '').rstrip('/')
         if not account_url:
-            logger.warning(
-                'ALPACON_ACCOUNT_URL not set, skipping security settings fetch'
-            )
+            if not hasattr(self, '_account_url_warned'):
+                logger.warning(
+                    'ALPACON_ACCOUNT_URL not set, skipping security settings fetch'
+                )
+                self._account_url_warned = True
             return {}
 
         endpoint = f'{account_url}/api/workspaces/security/'
