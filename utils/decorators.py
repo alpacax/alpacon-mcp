@@ -162,6 +162,59 @@ def _resolve_region_local(workspace: str | None) -> tuple[str | None, str | None
     return None, 'No regions configured. Please run setup first.'
 
 
+async def _check_mfa_requirement(
+    tool_name: str, jwt_token: str, workspace: str
+) -> None:
+    """Check if MFA is required for this tool call and signal re-auth if needed.
+
+    Fetches workspace security settings, checks the JWT's MFA completion
+    claims, and signals the upstream auth error middleware to return 401
+    with MFA scope if MFA is required but expired/missing.
+
+    Raises no exception on failure (fail-open) — the upstream API will
+    catch it with its own MFA check as a fallback.
+    """
+    from utils.security_settings import (
+        check_mfa_completed,
+        get_action_for_tool,
+        security_cache,
+    )
+
+    action = get_action_for_tool(tool_name)
+    if not action:
+        return
+
+    try:
+        settings = await security_cache.get_settings(jwt_token, workspace)
+        if not settings or not settings.is_action_mfa_required(action):
+            return
+
+        claims = _decode_jwt_claims(jwt_token)
+        if not claims:
+            return
+
+        if check_mfa_completed(claims, settings):
+            return
+
+        # MFA required but not completed — signal middleware to return 401
+        from utils.error_handler import make_auth_error_key, signal_upstream_auth_error
+
+        token_key = make_auth_error_key(jwt_token)
+        signal_upstream_auth_error(
+            token_key,
+            {'mfa_required': True, 'source': action},
+        )
+        logger.info(
+            'MFA pre-check: %s requires MFA for workspace %s, signaling re-auth',
+            action,
+            workspace,
+        )
+    except Exception as e:
+        # Fail-open: if pre-check fails, let the API call proceed.
+        # The upstream API's own MFA check will catch it as a fallback.
+        logger.debug('MFA pre-check failed (non-fatal): %s', e)
+
+
 def with_token_validation(func: Callable) -> Callable:
     """Decorator to add automatic token validation to MCP tools.
 
@@ -258,6 +311,9 @@ def with_token_validation(func: Callable) -> Callable:
                     workspace=workspace,
                 )
             extra_kwargs['token'] = jwt_token
+
+            # MFA pre-check: verify MFA completion for actions that require it
+            await _check_mfa_requirement(func.__name__, jwt_token, workspace)
         else:
             # stdio mode — token.json only
             token = validate_token(region, workspace)

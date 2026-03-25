@@ -100,6 +100,7 @@ def _get_oauth_config() -> dict[str, str]:
     client_id = os.getenv('AUTH0_CLIENT_ID', '')
     client_secret = os.getenv('AUTH0_CLIENT_SECRET', '')
     audience = os.getenv('AUTH0_AUDIENCE', 'https://alpacon.io/access/')
+    mfa_audience = os.getenv('AUTH0_MFA_AUDIENCE', '')
 
     if not domain:
         raise ValueError('AUTH0_DOMAIN environment variable is required')
@@ -108,11 +109,16 @@ def _get_oauth_config() -> dict[str, str]:
     if not client_secret:
         raise ValueError('AUTH0_CLIENT_SECRET environment variable is required')
 
+    # Derive MFA audience from domain if not explicitly set
+    if not mfa_audience:
+        mfa_audience = f'https://{domain}/mfa/'
+
     return {
         'domain': domain,
         'client_id': client_id,
         'client_secret': client_secret,
         'audience': audience,
+        'mfa_audience': mfa_audience,
         'auth0_base_url': f'https://{domain}',
     }
 
@@ -210,17 +216,11 @@ def register_oauth_routes(mcp_server):
         # Detect MFA pseudo-scope from re-auth flow.
         # When the ASGI middleware returns 401 with scope="... mfa",
         # the MCP client includes 'mfa' in the authorize request scope.
-        # Convert it to Auth0's acr_values to force MFA verification.
         scope_parts = scope.split()
-        if 'mfa' in scope_parts:
-            mfa_acr = 'http://schemas.openid.net/psp/mfa'
-            existing = params.get('acr_values', '')
-            if mfa_acr not in existing:
-                params['acr_values'] = (
-                    f'{existing} {mfa_acr}'.strip() if existing else mfa_acr
-                )
+        mfa_requested = 'mfa' in scope_parts
+        if mfa_requested:
             scope = ' '.join(s for s in scope_parts if s != 'mfa')
-            logger.info('MFA scope detected, adding acr_values to force MFA in Auth0')
+            logger.info('MFA scope detected, will use two-stage OAuth flow')
 
         params['scope'] = scope
 
@@ -248,21 +248,47 @@ def register_oauth_routes(mcp_server):
 
         original_state = params.get('state', '')
 
-        # Encode client redirect_uri and original state into a composite state
-        state_data = json.dumps(
-            {
-                'redirect_uri': client_redirect_uri,
-                'state': original_state,
+        if mfa_requested:
+            # Two-stage OAuth flow: Stage 1 — redirect to Auth0 MFA audience
+            # to force MFA verification. After MFA completion, the callback
+            # handler will redirect again to the regular audience (Stage 2).
+            mfa_params = {
+                'response_type': 'code',
+                'client_id': config['client_id'],
+                'audience': config['mfa_audience'],
+                'redirect_uri': f'{server_url}/oauth/callback',
+                'scope': 'enroll read:authenticators',
             }
-        )
-        composite_state = base64.urlsafe_b64encode(state_data.encode()).decode()
 
-        # Override redirect_uri to point to this server's callback
-        params['redirect_uri'] = f'{server_url}/oauth/callback'
-        params['state'] = composite_state
+            state_data = json.dumps(
+                {
+                    'redirect_uri': client_redirect_uri,
+                    'state': original_state,
+                    'stage': 'mfa',
+                    'original_scope': scope,
+                }
+            )
+            mfa_params['state'] = base64.urlsafe_b64encode(state_data.encode()).decode()
 
-        auth0_url = f'{config["auth0_base_url"]}/authorize?{urlencode(params)}'
-        logger.info('Redirecting to Auth0 authorize endpoint')
+            auth0_url = f'{config["auth0_base_url"]}/authorize?{urlencode(mfa_params)}'
+            logger.info(
+                'Stage 1: Redirecting to Auth0 MFA audience for MFA verification'
+            )
+        else:
+            # Standard single-stage OAuth flow (no MFA required)
+            state_data = json.dumps(
+                {
+                    'redirect_uri': client_redirect_uri,
+                    'state': original_state,
+                }
+            )
+            composite_state = base64.urlsafe_b64encode(state_data.encode()).decode()
+
+            params['redirect_uri'] = f'{server_url}/oauth/callback'
+            params['state'] = composite_state
+
+            auth0_url = f'{config["auth0_base_url"]}/authorize?{urlencode(params)}'
+            logger.info('Redirecting to Auth0 authorize endpoint')
         return RedirectResponse(url=auth0_url, status_code=302)
 
     @mcp_server.custom_route('/oauth/token', methods=['POST'])
@@ -532,10 +558,13 @@ def register_oauth_routes(mcp_server):
     async def oauth_callback(request):
         """Handle Auth0 callback after authorization.
 
-        This endpoint receives the authorization code from Auth0
-        and redirects the user back to the MCP client's original
-        redirect_uri with the code and state.
+        Supports two-stage MFA flow:
+        - Stage 'mfa': MFA completed, exchange code then redirect to
+          regular audience (Stage 2) using Auth0 SSO session.
+        - Stage 'regular' or absent: forward code to MCP client.
         """
+        from urllib.parse import urlencode
+
         from starlette.responses import JSONResponse, RedirectResponse
 
         # Extract callback parameters
@@ -547,6 +576,8 @@ def register_oauth_routes(mcp_server):
         # Decode the composite state to get client's redirect_uri and original state
         client_redirect_uri = ''
         original_state = ''
+        stage = ''
+        original_scope = ''
         if composite_state:
             try:
                 state_data = json.loads(
@@ -554,6 +585,8 @@ def register_oauth_routes(mcp_server):
                 )
                 client_redirect_uri = state_data.get('redirect_uri', '')
                 original_state = state_data.get('state', '')
+                stage = state_data.get('stage', '')
+                original_scope = state_data.get('original_scope', '')
             except (
                 json.JSONDecodeError,
                 UnicodeDecodeError,
@@ -598,6 +631,71 @@ def register_oauth_routes(mcp_server):
                 status_code=400,
             )
 
+        # --- Two-stage MFA flow: Stage 1 callback ---
+        if stage == 'mfa':
+            logger.info(
+                'Stage 1 complete: MFA authorization code received, '
+                'exchanging and proceeding to Stage 2 (regular audience)'
+            )
+
+            try:
+                config = _get_oauth_config()
+            except ValueError as e:
+                return JSONResponse({'error': str(e)}, status_code=500)
+
+            server_url = _get_server_url(request)
+
+            # Exchange the MFA code to confirm MFA was completed.
+            # The resulting MFA token is discarded — we only need
+            # the side effect of MFA completion in the Auth0 session.
+            try:
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    await client.post(
+                        f'{config["auth0_base_url"]}/oauth/token',
+                        data={
+                            'grant_type': 'authorization_code',
+                            'code': code,
+                            'redirect_uri': f'{server_url}/oauth/callback',
+                            'client_id': config['client_id'],
+                            'client_secret': config['client_secret'],
+                        },
+                        headers={
+                            'Content-Type': 'application/x-www-form-urlencoded',
+                        },
+                    )
+                    # We don't check the response — even if token exchange
+                    # fails, the MFA was already completed in the Auth0
+                    # session. Proceed to Stage 2 regardless.
+            except httpx.HTTPError as e:
+                logger.warning(f'MFA token exchange failed (non-fatal): {e}')
+
+            # Stage 2: redirect to Auth0 with regular audience.
+            # The Auth0 SSO session will skip the login prompt since
+            # the user just authenticated (with MFA) moments ago.
+            stage2_state = json.dumps(
+                {
+                    'redirect_uri': client_redirect_uri,
+                    'state': original_state,
+                    'stage': 'regular',
+                }
+            )
+
+            stage2_params = {
+                'response_type': 'code',
+                'client_id': config['client_id'],
+                'audience': config['audience'],
+                'redirect_uri': f'{server_url}/oauth/callback',
+                'scope': original_scope or 'openid profile email offline_access',
+                'state': base64.urlsafe_b64encode(stage2_state.encode()).decode(),
+            }
+
+            auth0_url = (
+                f'{config["auth0_base_url"]}/authorize?{urlencode(stage2_params)}'
+            )
+            logger.info('Stage 2: Redirecting to Auth0 regular audience (SSO)')
+            return RedirectResponse(url=auth0_url, status_code=302)
+
+        # --- Standard callback (stage 'regular' or absent) ---
         logger.info('Auth0 callback received authorization code')
 
         # Redirect back to the MCP client's original redirect_uri with the code
