@@ -314,8 +314,8 @@ class TestOAuthAuthorize:
         location = response.headers['location']
         assert 'offline_access' in location
 
-    def test_authorize_converts_mfa_scope_to_acr_values(self, oauth_app):
-        """When 'mfa' pseudo-scope is present, it is converted to acr_values."""
+    def test_authorize_mfa_scope_redirects_to_mfa_audience(self, oauth_app):
+        """When 'mfa' pseudo-scope is present, redirects to Auth0 MFA audience."""
         response = oauth_app.get(
             '/oauth/authorize',
             params={
@@ -327,21 +327,26 @@ class TestOAuthAuthorize:
         )
         assert response.status_code == 302
         location = response.headers['location']
-        # Parse redirect URL to validate parameters precisely
         from urllib.parse import parse_qs, urlparse
 
         parsed = urlparse(location)
         params = parse_qs(parsed.query)
-        # acr_values should contain the exact MFA ACR value
-        acr_values = params.get('acr_values', [''])[0]
-        assert acr_values == 'http://schemas.openid.net/psp/mfa'
-        # 'mfa' pseudo-scope should be removed from the scope parameter
+        # Should redirect to MFA audience with enroll scope
+        audience = params.get('audience', [''])[0]
+        assert '/mfa/' in audience
         scope_value = params.get('scope', [''])[0]
-        assert 'mfa' not in scope_value.split()
-        assert 'openid' in scope_value
+        assert 'enroll' in scope_value
+        assert 'read:authenticators' in scope_value
+        # State should contain stage='mfa'
+        import base64
+        import json
 
-    def test_authorize_without_mfa_scope_no_acr_values(self, oauth_app):
-        """When 'mfa' is not in scope, no acr_values are added."""
+        state = params.get('state', [''])[0]
+        state_data = json.loads(base64.urlsafe_b64decode(state.encode()).decode())
+        assert state_data.get('stage') == 'mfa'
+
+    def test_authorize_without_mfa_scope_uses_regular_audience(self, oauth_app):
+        """When 'mfa' is not in scope, redirects to regular audience."""
         response = oauth_app.get(
             '/oauth/authorize',
             params={
@@ -353,7 +358,12 @@ class TestOAuthAuthorize:
         )
         assert response.status_code == 302
         location = response.headers['location']
-        assert 'acr_values' not in location
+        from urllib.parse import parse_qs, urlparse
+
+        parsed = urlparse(location)
+        params = parse_qs(parsed.query)
+        audience = params.get('audience', [''])[0]
+        assert '/mfa/' not in audience
 
 
 class TestOAuthToken:
