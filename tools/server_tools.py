@@ -179,3 +179,101 @@ async def create_server_note(
         region=region,
         workspace=workspace,
     )
+
+
+# ===============================
+# AGENT ACTION TOOLS
+# ===============================
+
+
+@mcp_tool_handler(
+    description='Restart the Alpacon agent on a server. Use this when the agent is unresponsive or after configuration changes.'
+)
+async def restart_agent(
+    server_id: str, workspace: str, region: str = '', **kwargs
+) -> dict[str, Any]:
+    """Restart the Alpacon agent on a server.
+
+    Args:
+        server_id: Server ID
+        workspace: Workspace name. Required parameter
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
+
+    Returns:
+        Agent restart response
+    """
+    token = kwargs.get('token')
+
+    result = await http_client.post(
+        region=region,
+        workspace=workspace,
+        endpoint=f'/api/servers/servers/{server_id}/action/',
+        token=token,
+        data={'action': 'restart'},
+    )
+
+    return success_response(
+        data=result, server_id=server_id, region=region, workspace=workspace
+    )
+
+
+@mcp_tool_handler(
+    description='Shut down the Alpacon agent on a server. The agent will stop and the server will appear offline until manually restarted.'
+)
+async def shutdown_agent(
+    server_id: str, workspace: str, region: str = '', **kwargs
+) -> dict[str, Any]:
+    """Shut down the Alpacon agent on a server.
+
+    Args:
+        server_id: Server ID
+        workspace: Workspace name. Required parameter
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
+
+    Returns:
+        Agent shutdown response
+    """
+    token = kwargs.get('token')
+
+    result = await http_client.post(
+        region=region,
+        workspace=workspace,
+        endpoint=f'/api/servers/servers/{server_id}/action/',
+        token=token,
+        data={'action': 'shutdown'},
+    )
+
+    return success_response(
+        data=result, server_id=server_id, region=region, workspace=workspace
+    )
+
+
+@mcp_tool_handler(
+    description='Upgrade the Alpacon agent on a server to the latest version. The agent will briefly restart during the upgrade.'
+)
+async def upgrade_agent(
+    server_id: str, workspace: str, region: str = '', **kwargs
+) -> dict[str, Any]:
+    """Upgrade the Alpacon agent on a server to the latest version.
+
+    Args:
+        server_id: Server ID
+        workspace: Workspace name. Required parameter
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
+
+    Returns:
+        Agent upgrade response
+    """
+    token = kwargs.get('token')
+
+    result = await http_client.post(
+        region=region,
+        workspace=workspace,
+        endpoint=f'/api/servers/servers/{server_id}/action/',
+        token=token,
+        data={'action': 'upgrade'},
+    )
+
+    return success_response(
+        data=result, server_id=server_id, region=region, workspace=workspace
+    )
