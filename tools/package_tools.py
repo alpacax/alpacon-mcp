@@ -12,7 +12,7 @@ from utils.http_client import http_client
 
 
 @mcp_tool_handler(
-    description='List system package entries (installed via package manager) on a specific server. Use this to audit installed OS-level packages.'
+    description='List system package entries on a specific server. Returns package names, versions, and installation details from the OS package manager. Filterable by server ID. Use this to audit installed OS-level packages or check for specific software.'
 )
 async def list_system_package_entries(
     server_id: str,
@@ -56,7 +56,7 @@ async def list_system_package_entries(
 
 
 @mcp_tool_handler(
-    description='Install a system package on a server via the package manager. Specify the package name and optionally a version.'
+    description='Install a system package on a server via the OS package manager. Specify the server ID and package name. Optionally pin a specific version. The installation runs asynchronously on the target server.'
 )
 async def install_system_package(
     server_id: str,
@@ -102,7 +102,7 @@ async def install_system_package(
 
 
 @mcp_tool_handler(
-    description='Remove a system package entry by its ID. Use list_system_package_entries to find the entry ID first.'
+    description='Remove a system package entry by its ID. This triggers package removal on the target server. Use list_system_package_entries first to find the entry ID.'
 )
 async def remove_system_package(
     entry_id: str, workspace: str, region: str = '', **kwargs
@@ -137,7 +137,7 @@ async def remove_system_package(
 
 
 @mcp_tool_handler(
-    description='List Python packages installed on a specific server. Use this to audit Python dependencies.'
+    description='List Python packages installed on a specific server. Returns package names, versions, and installation details. Filterable by server ID. Use this to audit Python dependencies or check for specific libraries.'
 )
 async def list_python_packages(
     server_id: str,
@@ -181,7 +181,7 @@ async def list_python_packages(
 
 
 @mcp_tool_handler(
-    description='Install a Python package on a server. Specify the package name and optionally a version.'
+    description='Install a Python package on a server via pip. Specify the server ID and package name. Optionally pin a specific version. The installation runs asynchronously on the target server.'
 )
 async def install_python_package(
     server_id: str,
@@ -227,7 +227,7 @@ async def install_python_package(
 
 
 @mcp_tool_handler(
-    description='Remove a Python package entry by its ID. Use list_python_packages to find the entry ID first.'
+    description='Remove a Python package entry by its ID. This triggers package removal on the target server. Use list_python_packages first to find the entry ID.'
 )
 async def remove_python_package(
     entry_id: str, workspace: str, region: str = '', **kwargs

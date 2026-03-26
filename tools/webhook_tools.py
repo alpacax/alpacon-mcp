@@ -12,7 +12,7 @@ from utils.http_client import http_client
 
 
 @mcp_tool_handler(
-    description='List event subscriptions that define which events trigger notifications or webhook calls.'
+    description='List event subscriptions in a workspace. Returns subscription ID, channel, event type, and target ID. Subscriptions define which events (command_fin, servers_commit, sudo) trigger notifications to a channel.'
 )
 async def list_event_subscriptions(
     workspace: str,
@@ -52,7 +52,7 @@ async def list_event_subscriptions(
 
 
 @mcp_tool_handler(
-    description='Create an event subscription to receive notifications when specific event types occur. Event types: command_fin, servers_commit, sudo.'
+    description='Create an event subscription to receive notifications when specific events occur. Requires a notification channel ID and event type (command_fin, servers_commit, sudo). Optionally filter by target resource ID. Users can only manage their own subscriptions.'
 )
 async def create_event_subscription(
     workspace: str,
@@ -96,7 +96,7 @@ async def create_event_subscription(
 
 
 @mcp_tool_handler(
-    description='Delete an event subscription to stop receiving notifications for that event type.'
+    description='Delete an event subscription by its ID to stop receiving notifications for that event type. Users can only delete their own subscriptions.'
 )
 async def delete_event_subscription(
     subscription_id: str, workspace: str, region: str = '', **kwargs
@@ -134,7 +134,7 @@ async def delete_event_subscription(
 
 
 @mcp_tool_handler(
-    description='List configured webhooks that receive event notifications via HTTP callbacks.'
+    description='List configured webhooks in a workspace. Returns webhook ID, name, URL, SSL verification setting, and enabled status. Webhooks receive event notifications via HTTP callbacks. Requires admin permission.'
 )
 async def list_webhooks(
     workspace: str,
@@ -174,7 +174,7 @@ async def list_webhooks(
 
 
 @mcp_tool_handler(
-    description='Create a webhook endpoint to receive HTTP callbacks when subscribed events occur.'
+    description='Create a webhook endpoint to receive HTTP callbacks when subscribed events occur. Requires a name and URL. Optionally configure SSL verification and enabled status. Requires admin permission.'
 )
 async def create_webhook(
     workspace: str,
@@ -219,7 +219,7 @@ async def create_webhook(
 
 
 @mcp_tool_handler(
-    description='Update an existing webhook configuration such as URL, name, or enabled status.'
+    description='Update an existing webhook configuration by its ID. Can change name, URL, SSL verification, or enabled status. Only the fields you provide will be updated (partial update). Requires admin permission.'
 )
 async def update_webhook(
     webhook_id: str,
@@ -274,7 +274,7 @@ async def update_webhook(
 
 
 @mcp_tool_handler(
-    description='Delete a webhook endpoint and stop receiving HTTP callbacks.'
+    description='Permanently delete a webhook endpoint by its ID. This stops all HTTP callbacks for subscriptions using this webhook. Requires admin permission.'
 )
 async def delete_webhook(
     webhook_id: str, workspace: str, region: str = '', **kwargs

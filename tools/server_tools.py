@@ -187,7 +187,7 @@ async def create_server_note(
 
 
 @mcp_tool_handler(
-    description='Restart the Alpacon agent on a server. Use this when the agent is unresponsive or after configuration changes.'
+    description='Restart the Alpacon agent process on a server. The agent will briefly go offline during restart. Use this when the agent is unresponsive or after configuration changes. Returns a command object tracking the restart operation.'
 )
 async def restart_agent(
     server_id: str, workspace: str, region: str = '', **kwargs
@@ -218,7 +218,7 @@ async def restart_agent(
 
 
 @mcp_tool_handler(
-    description='Shut down the Alpacon agent on a server. The agent will stop and the server will appear offline until manually restarted.'
+    description='Shut down the Alpacon agent process on a server. The server will appear offline in the workspace until the agent is manually restarted. Use with caution as remote access will be lost. Returns a command object tracking the shutdown operation.'
 )
 async def shutdown_agent(
     server_id: str, workspace: str, region: str = '', **kwargs
@@ -249,7 +249,7 @@ async def shutdown_agent(
 
 
 @mcp_tool_handler(
-    description='Upgrade the Alpacon agent on a server to the latest version. The agent will briefly restart during the upgrade.'
+    description='Upgrade the Alpacon agent on a server to the latest available version. The agent will briefly restart during the upgrade process. Use this to keep agents up to date with the latest features and security patches. Returns a command object tracking the upgrade operation.'
 )
 async def upgrade_agent(
     server_id: str, workspace: str, region: str = '', **kwargs
