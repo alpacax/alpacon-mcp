@@ -405,6 +405,297 @@ async def webftp_downloads_list(
     )
 
 
+# ===============================
+# BULK WEBFTP TOOLS
+# ===============================
+
+
+@mcp_tool_handler(
+    description='Upload multiple local files to a remote server in a single operation. All files are placed in the same destination directory. Uses S3 presigned URLs for efficient parallel transfer. Returns per-file upload status and URLs.'
+)
+async def webftp_bulk_upload(
+    server_id: str,
+    local_file_paths: list[str],
+    remote_directory: str,
+    workspace: str,
+    username: str | None = None,
+    region: str = '',
+    allow_overwrite: bool = True,
+    **kwargs,
+) -> dict[str, Any]:
+    """Upload multiple files to a server using bulk WebFTP API.
+
+    Args:
+        server_id: Server ID to upload files to
+        local_file_paths: List of local file paths to upload
+        remote_directory: Remote directory to place all files (e.g., "/home/user/uploads/")
+        workspace: Workspace name. Required parameter
+        username: Optional username for the upload (uses authenticated user if not provided)
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        allow_overwrite: Allow overwriting existing files (default: True)
+
+    Returns:
+        Bulk upload response with per-file status
+    """
+    token = kwargs.get('token')
+
+    # Validate all file paths
+    for path in local_file_paths:
+        if not validate_file_path(path):
+            return format_validation_error('local_file_paths', path)
+    if not validate_file_path(remote_directory):
+        return format_validation_error('remote_directory', remote_directory)
+
+    # Read all local files
+    file_contents: dict[str, bytes] = {}
+    for path in local_file_paths:
+        try:
+            with open(path, 'rb') as f:
+                file_contents[path] = f.read()
+        except FileNotFoundError:
+            return error_response(f'Local file not found: {path}')
+        except Exception as e:
+            return error_response(f'Failed to read local file {path}: {str(e)}')
+
+    # Create bulk upload records via API
+    file_names = [os.path.basename(p) for p in local_file_paths]
+    bulk_data: dict[str, Any] = {
+        'server': server_id,
+        'path': remote_directory,
+        'names': file_names,
+        'allow_overwrite': allow_overwrite,
+    }
+    if username:
+        bulk_data['username'] = username
+
+    result = await http_client.post(
+        region=region,
+        workspace=workspace,
+        endpoint='/api/webftp/uploads/bulk/',
+        token=token,
+        data=bulk_data,
+    )
+
+    # Upload each file to S3 using presigned URLs
+    import httpx
+
+    upload_results = []
+    file_ids = []
+
+    upload_items = (
+        result if isinstance(result, list) else result.get('results', [result])
+    )
+
+    async with httpx.AsyncClient() as client:
+        for i, item in enumerate(upload_items):
+            upload_url = item.get('upload_url')
+            file_id = item.get('id')
+            if file_id:
+                file_ids.append(file_id)
+
+            if upload_url and i < len(local_file_paths):
+                try:
+                    resp = await client.put(
+                        upload_url,
+                        content=file_contents[local_file_paths[i]],
+                        headers={'Content-Type': 'application/octet-stream'},
+                    )
+                    upload_results.append(
+                        {
+                            'file': file_names[i] if i < len(file_names) else 'unknown',
+                            'status': 'uploaded'
+                            if resp.status_code in [200, 201]
+                            else 'failed',
+                            'file_id': file_id,
+                            'size': len(file_contents[local_file_paths[i]]),
+                        }
+                    )
+                except Exception as e:
+                    upload_results.append(
+                        {
+                            'file': file_names[i] if i < len(file_names) else 'unknown',
+                            'status': 'error',
+                            'message': str(e),
+                        }
+                    )
+            else:
+                upload_results.append(
+                    {
+                        'file': file_names[i] if i < len(file_names) else 'unknown',
+                        'status': 'created',
+                        'file_id': file_id,
+                    }
+                )
+
+    # Trigger bulk upload processing
+    if file_ids:
+        await http_client.post(
+            region=region,
+            workspace=workspace,
+            endpoint='/api/webftp/uploads/bulk-upload/',
+            token=token,
+            data={'ids': file_ids},
+        )
+
+    successful = sum(
+        1 for r in upload_results if r['status'] in ['uploaded', 'created']
+    )
+
+    return success_response(
+        message=f'Bulk upload completed: {successful}/{len(local_file_paths)} files',
+        data=upload_results,
+        server_id=server_id,
+        remote_directory=remote_directory,
+        total_files=len(local_file_paths),
+        successful_count=successful,
+        failed_count=len(local_file_paths) - successful,
+        region=region,
+        workspace=workspace,
+    )
+
+
+@mcp_tool_handler(
+    description='Download multiple files or folders from a remote server as a single ZIP archive. All paths must share the same parent directory. Uses S3 presigned URLs for efficient transfer. Saves the ZIP file to the specified local path.'
+)
+async def webftp_bulk_download(
+    server_id: str,
+    remote_paths: list[str],
+    local_file_path: str,
+    workspace: str,
+    username: str | None = None,
+    region: str = '',
+    **kwargs,
+) -> dict[str, Any]:
+    """Download multiple files/folders as a ZIP archive.
+
+    Args:
+        server_id: Server ID to download from
+        remote_paths: List of remote file/folder paths to download (must share same parent directory)
+        local_file_path: Local path to save the ZIP file (e.g., "/Users/user/downloads/files.zip")
+        workspace: Workspace name. Required parameter
+        username: Optional username for the download (uses authenticated user if not provided)
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
+
+    Returns:
+        Bulk download response with file saved locally
+    """
+    token = kwargs.get('token')
+
+    # Validate paths
+    for path in remote_paths:
+        if not validate_file_path(path):
+            return format_validation_error('remote_paths', path)
+    if not validate_file_path(local_file_path):
+        return format_validation_error('local_file_path', local_file_path)
+
+    # Create bulk download record
+    download_data: dict[str, Any] = {
+        'server': server_id,
+        'path': remote_paths,
+    }
+    if username:
+        download_data['username'] = username
+
+    result = await http_client.post(
+        region=region,
+        workspace=workspace,
+        endpoint='/api/webftp/downloads/bulk/',
+        token=token,
+        data=download_data,
+    )
+
+    # Download ZIP from S3
+    download_url = result.get('download_url') if isinstance(result, dict) else None
+    if download_url:
+        import httpx
+
+        async with httpx.AsyncClient() as client:
+            download_response = await client.get(download_url)
+
+            if download_response.status_code != 200:
+                return error_response(
+                    f'Failed to download from S3: {download_response.status_code}',
+                    download_url=download_url,
+                )
+
+            try:
+                os.makedirs(os.path.dirname(local_file_path), exist_ok=True)
+                with open(local_file_path, 'wb') as f:
+                    f.write(download_response.content)
+            except Exception as e:
+                return error_response(f'Failed to save file locally: {str(e)}')
+
+        return success_response(
+            message=f'Bulk download completed: {len(remote_paths)} items saved as ZIP',
+            data=result,
+            server_id=server_id,
+            remote_paths=remote_paths,
+            local_file_path=local_file_path,
+            file_size=len(download_response.content),
+            download_url=download_url,
+            region=region,
+            workspace=workspace,
+        )
+    else:
+        return success_response(
+            message='Bulk download request created (file processing in progress)',
+            data=result,
+            server_id=server_id,
+            remote_paths=remote_paths,
+            region=region,
+            workspace=workspace,
+        )
+
+
+@mcp_tool_handler(
+    description='Check the transfer status of a WebFTP upload or download operation. Returns whether the transfer is still in progress, succeeded, or failed. Use this to poll for completion of async file transfers.'
+)
+async def webftp_check_status(
+    file_id: str,
+    transfer_type: str,
+    workspace: str,
+    region: str = '',
+    **kwargs,
+) -> dict[str, Any]:
+    """Check status of a WebFTP file transfer.
+
+    Args:
+        file_id: File ID from upload or download operation
+        transfer_type: Type of transfer - "upload" or "download"
+        workspace: Workspace name. Required parameter
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
+
+    Returns:
+        Transfer status (success, in_progress, or failed)
+    """
+    token = kwargs.get('token')
+
+    endpoint_map = {
+        'upload': f'/api/webftp/uploads/{file_id}/status/',
+        'download': f'/api/webftp/downloads/{file_id}/status/',
+    }
+
+    if transfer_type not in endpoint_map:
+        return error_response(
+            f'Invalid transfer_type: {transfer_type}. Must be "upload" or "download".'
+        )
+
+    result = await http_client.get(
+        region=region,
+        workspace=workspace,
+        endpoint=endpoint_map[transfer_type],
+        token=token,
+    )
+
+    return success_response(
+        data=result,
+        file_id=file_id,
+        transfer_type=transfer_type,
+        region=region,
+        workspace=workspace,
+    )
+
+
 # WebFTP sessions resource
 @mcp.resource(
     uri='webftp://sessions/{region}/{workspace}',
