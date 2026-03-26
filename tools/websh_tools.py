@@ -1084,6 +1084,441 @@ async def websh_websocket_batch_execute(
         }
 
 
+# ===============================
+# WEBSH TUNNEL TOOLS
+# ===============================
+
+
+@mcp_tool_handler(
+    description='List Websh tunnel sessions in a workspace. Tunnels provide port forwarding to remote servers. Filterable by server ID or username. Returns tunnel ID, target port, status, and connection details.'
+)
+async def list_websh_tunnels(
+    workspace: str,
+    server_id: str | None = None,
+    username: str | None = None,
+    region: str = '',
+    page: int | None = None,
+    page_size: int | None = None,
+    **kwargs,
+) -> dict[str, Any]:
+    """List Websh tunnel sessions.
+
+    Args:
+        workspace: Workspace name. Required parameter
+        server_id: Filter by server ID (optional)
+        username: Filter by username (optional)
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        page: Page number for pagination (optional)
+        page_size: Number of items per page (optional)
+
+    Returns:
+        Tunnel sessions list response
+    """
+    token = kwargs.get('token')
+
+    params: dict[str, Any] = {}
+    if server_id:
+        params['server'] = server_id
+    if username:
+        params['username'] = username
+    if page is not None:
+        params['page'] = page
+    if page_size is not None:
+        params['page_size'] = page_size
+
+    result = await http_client.get(
+        region=region,
+        workspace=workspace,
+        endpoint='/api/websh/tunnels/',
+        token=token,
+        params=params,
+    )
+
+    return success_response(
+        data=result, server_id=server_id, region=region, workspace=workspace
+    )
+
+
+@mcp_tool_handler(
+    description='Create a Websh tunnel session for port forwarding to a remote server. Returns tunnel ID, WebSocket URL for CLI/Web connections, and connect URL for editor connections. Requires tunnel_enabled on the target server.'
+)
+async def create_websh_tunnel(
+    server_id: str,
+    workspace: str,
+    target_port: int | None = None,
+    username: str | None = None,
+    groupname: str | None = None,
+    region: str = '',
+    **kwargs,
+) -> dict[str, Any]:
+    """Create a new Websh tunnel session.
+
+    Args:
+        server_id: Server ID to create tunnel to
+        workspace: Workspace name. Required parameter
+        target_port: Target port for port forwarding (1-65535). Required for CLI tunnels, optional for editor tunnels
+        username: Optional username for the tunnel session
+        groupname: Optional group name for the tunnel session
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
+
+    Returns:
+        Tunnel creation response with connection URLs
+    """
+    token = kwargs.get('token')
+
+    tunnel_data: dict[str, Any] = {'server': server_id}
+    if target_port is not None:
+        if not (1 <= target_port <= 65535):
+            return error_response(
+                f'target_port must be between 1 and 65535, got {target_port}'
+            )
+        tunnel_data['target_port'] = target_port
+    if username:
+        tunnel_data['username'] = username
+    if groupname:
+        tunnel_data['groupname'] = groupname
+
+    result = await http_client.post(
+        region=region,
+        workspace=workspace,
+        endpoint='/api/websh/tunnels/',
+        token=token,
+        data=tunnel_data,
+    )
+
+    return success_response(
+        data=result,
+        server_id=server_id,
+        target_port=target_port,
+        region=region,
+        workspace=workspace,
+    )
+
+
+@mcp_tool_handler(
+    description='Close an active Websh tunnel session. Terminates the port forwarding connection. Use list_websh_tunnels to find the tunnel ID.'
+)
+async def close_websh_tunnel(
+    tunnel_id: str,
+    workspace: str,
+    region: str = '',
+    **kwargs,
+) -> dict[str, Any]:
+    """Close a Websh tunnel session.
+
+    Args:
+        tunnel_id: Tunnel session ID to close
+        workspace: Workspace name. Required parameter
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
+
+    Returns:
+        Tunnel closure response
+    """
+    token = kwargs.get('token')
+
+    result = await http_client.post(
+        region=region,
+        workspace=workspace,
+        endpoint=f'/api/websh/tunnels/{tunnel_id}/close/',
+        token=token,
+        data={},
+    )
+
+    return success_response(
+        data=result, tunnel_id=tunnel_id, region=region, workspace=workspace
+    )
+
+
+# ===============================
+# WEBSH SESSION SHARING TOOLS
+# ===============================
+
+
+@mcp_tool_handler(
+    description='Generate a shareable link for a Websh session with password protection. The link allows temporary access to the session for collaboration. Only the session owner can share. Returns shared URL, password, and expiration time.'
+)
+async def share_websh_session(
+    session_id: str,
+    workspace: str,
+    read_only: bool = True,
+    region: str = '',
+    **kwargs,
+) -> dict[str, Any]:
+    """Share a Websh session via shareable link.
+
+    Args:
+        session_id: Session ID to share
+        workspace: Workspace name. Required parameter
+        read_only: Whether shared access is read-only (default: True)
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
+
+    Returns:
+        Shared session details with URL, password, and expiration
+    """
+    token = kwargs.get('token')
+
+    result = await http_client.post(
+        region=region,
+        workspace=workspace,
+        endpoint=f'/api/websh/sessions/{session_id}/share/',
+        token=token,
+        data={'read_only': read_only},
+    )
+
+    return success_response(
+        data=result,
+        session_id=session_id,
+        read_only=read_only,
+        region=region,
+        workspace=workspace,
+    )
+
+
+@mcp_tool_handler(
+    description='Send email invitations to collaborate on a Websh session. Invitees receive a link with temporary access token. Only the session owner can invite. Supports bulk invitations to multiple email addresses.'
+)
+async def invite_to_websh_session(
+    session_id: str,
+    emails: list[str],
+    workspace: str,
+    read_only: bool = True,
+    region: str = '',
+    **kwargs,
+) -> dict[str, Any]:
+    """Invite users to a Websh session via email.
+
+    Args:
+        session_id: Session ID to invite users to
+        emails: List of email addresses to invite
+        workspace: Workspace name. Required parameter
+        read_only: Whether invitees get read-only access (default: True)
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
+
+    Returns:
+        Invitation status response
+    """
+    token = kwargs.get('token')
+
+    result = await http_client.post(
+        region=region,
+        workspace=workspace,
+        endpoint=f'/api/websh/sessions/{session_id}/invite/',
+        token=token,
+        data={'emails': emails, 'read_only': read_only},
+    )
+
+    return success_response(
+        data=result,
+        session_id=session_id,
+        invited_count=len(emails),
+        region=region,
+        workspace=workspace,
+    )
+
+
+@mcp_tool_handler(
+    description='Join a shared Websh session using a password or invitation token. Returns WebSocket URL for connecting to the shared session. Requires MCP authentication. The password or token provides session-level access on top of the authenticated connection.'
+)
+async def join_shared_session(
+    channel_id: str,
+    workspace: str,
+    password: str | None = None,
+    token_value: str | None = None,
+    username: str | None = None,
+    region: str = '',
+    **kwargs,
+) -> dict[str, Any]:
+    """Join a shared Websh session.
+
+    Args:
+        channel_id: User channel ID from the shared session link
+        workspace: Workspace name. Required parameter
+        password: Password from share_websh_session used as a session-level credential on top of MCP authentication
+        token_value: Invitation token used as a session-level credential for joining via invite (in addition to MCP authentication)
+        username: Display name for the session (optional)
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
+
+    Returns:
+        Join response with WebSocket URL and session details
+    """
+    auth_token = kwargs.get('token')
+
+    join_data: dict[str, Any] = {}
+    if password:
+        join_data['password'] = password
+    if token_value:
+        join_data['token'] = token_value
+    if username:
+        join_data['username'] = username
+
+    result = await http_client.post(
+        region=region,
+        workspace=workspace,
+        endpoint=f'/api/websh/user-channels/{channel_id}/join/',
+        token=auth_token,
+        data=join_data,
+    )
+
+    return success_response(
+        data=result,
+        channel_id=channel_id,
+        region=region,
+        workspace=workspace,
+    )
+
+
+# ===============================
+# WEBSH SESSION RECORDS & ANALYSIS TOOLS
+# ===============================
+
+
+@mcp_tool_handler(
+    description='Retrieve terminal recording data for a closed Websh session. Returns paginated terminal output with timestamps for session playback and auditing. Useful for reviewing what commands were executed and their output.'
+)
+async def get_session_records(
+    session_id: str,
+    workspace: str,
+    region: str = '',
+    page: int | None = None,
+    **kwargs,
+) -> dict[str, Any]:
+    """Get session recording data.
+
+    Args:
+        session_id: Session ID to get records for
+        workspace: Workspace name. Required parameter
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        page: Page number for pagination (optional)
+
+    Returns:
+        Session recording data with timestamps
+    """
+    token = kwargs.get('token')
+
+    params: dict[str, Any] = {}
+    if page is not None:
+        params['page'] = page
+
+    result = await http_client.get(
+        region=region,
+        workspace=workspace,
+        endpoint=f'/api/websh/sessions/{session_id}/records/',
+        token=token,
+        params=params,
+    )
+
+    return success_response(
+        data=result, session_id=session_id, region=region, workspace=workspace
+    )
+
+
+@mcp_tool_handler(
+    description='Search terminal recording content within a Websh session using fuzzy matching. Finds specific commands or output text in session history. Useful for finding when a particular command was run or locating specific output.'
+)
+async def search_session_records(
+    session_id: str,
+    query: str,
+    workspace: str,
+    region: str = '',
+    **kwargs,
+) -> dict[str, Any]:
+    """Search session records by content.
+
+    Args:
+        session_id: Session ID to search records in
+        query: Search query string (fuzzy match on terminal content)
+        workspace: Workspace name. Required parameter
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
+
+    Returns:
+        Matching session records with timestamps
+    """
+    token = kwargs.get('token')
+
+    result = await http_client.get(
+        region=region,
+        workspace=workspace,
+        endpoint=f'/api/websh/sessions/{session_id}/search/',
+        token=token,
+        params={'q': query},
+    )
+
+    return success_response(
+        data=result,
+        session_id=session_id,
+        query=query,
+        region=region,
+        workspace=workspace,
+    )
+
+
+@mcp_tool_handler(
+    description='Get AI-generated security analysis results for a Websh session. Returns risk score, detected commands, threat indicators, MITRE ATT&CK mapping, and recommended actions. The session must have been analyzed first via request_session_analysis.'
+)
+async def get_session_analysis(
+    session_id: str,
+    workspace: str,
+    region: str = '',
+    **kwargs,
+) -> dict[str, Any]:
+    """Get session security analysis results.
+
+    Args:
+        session_id: Session ID to get analysis for
+        workspace: Workspace name. Required parameter
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
+
+    Returns:
+        Session analysis with risk score, commands, threat indicators, and recommendations
+    """
+    token = kwargs.get('token')
+
+    result = await http_client.get(
+        region=region,
+        workspace=workspace,
+        endpoint=f'/api/websh/sessions/{session_id}/analysis/',
+        token=token,
+    )
+
+    return success_response(
+        data=result, session_id=session_id, region=region, workspace=workspace
+    )
+
+
+@mcp_tool_handler(
+    description='Request AI security analysis for a closed Websh session. Queues the session for analysis by the AI service. Returns accepted (202) if queued, or already_exists if previously analyzed. Use get_session_analysis to retrieve results after processing.'
+)
+async def request_session_analysis(
+    session_id: str,
+    workspace: str,
+    region: str = '',
+    **kwargs,
+) -> dict[str, Any]:
+    """Request AI analysis of a closed Websh session.
+
+    Args:
+        session_id: Session ID to analyze (must be a closed session)
+        workspace: Workspace name. Required parameter
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
+
+    Returns:
+        Analysis request status (accepted, no_content, or already_exists)
+    """
+    token = kwargs.get('token')
+
+    result = await http_client.post(
+        region=region,
+        workspace=workspace,
+        endpoint=f'/api/websh/sessions/{session_id}/analyze/',
+        token=token,
+        data={},
+    )
+
+    return success_response(
+        data=result, session_id=session_id, region=region, workspace=workspace
+    )
+
+
 # Websh sessions resource
 @mcp.resource(
     uri='websh://sessions/{region}/{workspace}',

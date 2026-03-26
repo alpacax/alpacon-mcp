@@ -294,6 +294,22 @@ These tools automatically:
 - `websh_channels_list`: List active WebSocket channels
 - `websh_channel_disconnect`: Disconnect and clean up WebSocket connections
 
+**Tunnel management**:
+- `list_websh_tunnels`: List tunnel sessions with filtering by server or username
+- `create_websh_tunnel`: Create port forwarding tunnel to a remote server
+- `close_websh_tunnel`: Close an active tunnel session
+
+**Session sharing & collaboration**:
+- `share_websh_session`: Generate shareable link with password for session access
+- `invite_to_websh_session`: Send email invitations to collaborate on a session
+- `join_shared_session`: Join a shared session using password or invitation token
+
+**Session records & analysis**:
+- `get_session_records`: Retrieve terminal recording data for session playback
+- `search_session_records`: Search terminal content within a session (fuzzy match)
+- `get_session_analysis`: Get AI security analysis results (risk score, threats, recommendations)
+- `request_session_analysis`: Request AI security analysis for a closed session
+
 **Note**: Websh tools are for programmatic command execution only. For interactive terminal access, use the Alpacon web interface at https://alpacon.io
 
 ### 📁 File management (WebFTP)
@@ -303,6 +319,11 @@ These tools automatically:
 - `webftp_download_file`: Download server files or folders to local storage (folders as .zip)
 - `webftp_uploads_list`: List uploaded files (upload history)
 - `webftp_downloads_list`: List download requests (download history)
+
+**Bulk operations**:
+- `webftp_bulk_upload`: Upload multiple files to a server in a single operation
+- `webftp_bulk_download`: Download multiple files/folders as a single ZIP archive
+- `webftp_check_status`: Check transfer status of an async upload or download operation
 
 **WebFTP architecture**: Uses S3 presigned URLs for efficient file transfers. Upload process: local file → S3 → server processing. Download process: server → S3 → local file. Supports both individual files and folder downloads (as ZIP archives).
 
@@ -344,6 +365,8 @@ These tools automatically:
 - `get_activity_log`: Get detailed information about a specific activity log entry
 - `list_server_logs`: List server command execution logs from history
 - `list_webftp_logs`: List WebFTP file transfer logs from history
+- `list_session_analyses`: List AI security analysis results across the workspace
+- `get_session_analysis_detail`: Get detailed AI security analysis with MITRE ATT&CK mapping
 
 ### 🔍 System information
 - `get_system_info`: Hardware and OS information
