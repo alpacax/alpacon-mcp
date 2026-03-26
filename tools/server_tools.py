@@ -277,3 +277,127 @@ async def upgrade_agent(
     return success_response(
         data=result, server_id=server_id, region=region, workspace=workspace
     )
+
+
+@mcp_tool_handler(
+    description='Refresh system information for a server by triggering the agent to re-collect hardware, OS, network, and package data. Use this after hardware changes or OS updates to ensure the dashboard reflects the current state. Returns a command object tracking the operation.'
+)
+async def update_information(
+    server_id: str, workspace: str, region: str = '', **kwargs
+) -> dict[str, Any]:
+    """Trigger system information update on a server.
+
+    Args:
+        server_id: Server ID
+        workspace: Workspace name. Required parameter
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
+
+    Returns:
+        Update information response
+    """
+    token = kwargs.get('token')
+
+    result = await http_client.post(
+        region=region,
+        workspace=workspace,
+        endpoint=f'/api/servers/servers/{server_id}/actions/',
+        token=token,
+        data={'action': 'update_information'},
+    )
+
+    return success_response(
+        data=result, server_id=server_id, region=region, workspace=workspace
+    )
+
+
+@mcp_tool_handler(
+    description='Upgrade all system packages on a server via the OS package manager (e.g., apt upgrade, yum update). This may take several minutes depending on the number of pending updates. Use with caution in production environments. Returns a command object tracking the upgrade operation.'
+)
+async def upgrade_system(
+    server_id: str, workspace: str, region: str = '', **kwargs
+) -> dict[str, Any]:
+    """Upgrade all system packages on a server.
+
+    Args:
+        server_id: Server ID
+        workspace: Workspace name. Required parameter
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
+
+    Returns:
+        System upgrade response
+    """
+    token = kwargs.get('token')
+
+    result = await http_client.post(
+        region=region,
+        workspace=workspace,
+        endpoint=f'/api/servers/servers/{server_id}/actions/',
+        token=token,
+        data={'action': 'upgrade_system'},
+    )
+
+    return success_response(
+        data=result, server_id=server_id, region=region, workspace=workspace
+    )
+
+
+@mcp_tool_handler(
+    description='Reboot a server. The server will go offline briefly during the reboot process and reconnect automatically when the agent starts back up. Use this after kernel updates or when a full system restart is required. Returns a command object tracking the reboot operation.'
+)
+async def reboot_system(
+    server_id: str, workspace: str, region: str = '', **kwargs
+) -> dict[str, Any]:
+    """Reboot a server.
+
+    Args:
+        server_id: Server ID
+        workspace: Workspace name. Required parameter
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
+
+    Returns:
+        System reboot response
+    """
+    token = kwargs.get('token')
+
+    result = await http_client.post(
+        region=region,
+        workspace=workspace,
+        endpoint=f'/api/servers/servers/{server_id}/actions/',
+        token=token,
+        data={'action': 'reboot_system'},
+    )
+
+    return success_response(
+        data=result, server_id=server_id, region=region, workspace=workspace
+    )
+
+
+@mcp_tool_handler(
+    description='Shut down a server completely. The server will power off and will NOT automatically reconnect. Manual intervention is required to bring the server back online. Use with extreme caution. Returns a command object tracking the shutdown operation.'
+)
+async def shutdown_system(
+    server_id: str, workspace: str, region: str = '', **kwargs
+) -> dict[str, Any]:
+    """Shut down a server.
+
+    Args:
+        server_id: Server ID
+        workspace: Workspace name. Required parameter
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
+
+    Returns:
+        System shutdown response
+    """
+    token = kwargs.get('token')
+
+    result = await http_client.post(
+        region=region,
+        workspace=workspace,
+        endpoint=f'/api/servers/servers/{server_id}/actions/',
+        token=token,
+        data={'action': 'shutdown_system'},
+    )
+
+    return success_response(
+        data=result, server_id=server_id, region=region, workspace=workspace
+    )

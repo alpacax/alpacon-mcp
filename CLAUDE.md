@@ -252,6 +252,10 @@ All validators are defined in `utils/error_handler.py` and return user-friendly 
 - `restart_agent`: Restart the Alpacon agent on a server
 - `shutdown_agent`: Shut down the Alpacon agent on a server
 - `upgrade_agent`: Upgrade the Alpacon agent to latest version
+- `update_information`: Refresh system information collected by the agent
+- `upgrade_system`: Upgrade all system packages via OS package manager
+- `reboot_system`: Reboot a server
+- `shutdown_system`: Shut down a server completely
 
 ### 💻 Remote operations (Command API: requires ACL permission)
 - `execute_command_with_acl`: Execute commands on servers using Command API

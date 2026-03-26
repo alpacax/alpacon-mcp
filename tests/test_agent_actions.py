@@ -4,7 +4,15 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from tools.server_tools import restart_agent, shutdown_agent, upgrade_agent
+from tools.server_tools import (
+    reboot_system,
+    restart_agent,
+    shutdown_agent,
+    shutdown_system,
+    update_information,
+    upgrade_agent,
+    upgrade_system,
+)
 
 
 @pytest.fixture
@@ -118,3 +126,97 @@ class TestUpgradeAgent:
         assert result['status'] == 'error'
         assert 'No token found' in result['message']
         mock_http_client.post.assert_not_called()
+
+
+class TestUpdateInformation:
+    """Test system information update functionality."""
+
+    @pytest.mark.asyncio
+    async def test_update_information_success(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Test successful system information update."""
+        mock_http_client.post.return_value = {'status': 'updating'}
+
+        result = await update_information(
+            server_id=SERVER_ID, workspace='testworkspace', region='ap1'
+        )
+
+        assert result['status'] == 'success'
+        assert result['server_id'] == SERVER_ID
+        mock_http_client.post.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint=f'/api/servers/servers/{SERVER_ID}/actions/',
+            token='test-token',
+            data={'action': 'update_information'},
+        )
+
+
+class TestUpgradeSystem:
+    """Test system upgrade functionality."""
+
+    @pytest.mark.asyncio
+    async def test_upgrade_system_success(self, mock_http_client, mock_token_manager):
+        """Test successful system upgrade."""
+        mock_http_client.post.return_value = {'status': 'upgrading'}
+
+        result = await upgrade_system(
+            server_id=SERVER_ID, workspace='testworkspace', region='ap1'
+        )
+
+        assert result['status'] == 'success'
+        assert result['server_id'] == SERVER_ID
+        mock_http_client.post.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint=f'/api/servers/servers/{SERVER_ID}/actions/',
+            token='test-token',
+            data={'action': 'upgrade_system'},
+        )
+
+
+class TestRebootSystem:
+    """Test system reboot functionality."""
+
+    @pytest.mark.asyncio
+    async def test_reboot_system_success(self, mock_http_client, mock_token_manager):
+        """Test successful system reboot."""
+        mock_http_client.post.return_value = {'status': 'rebooting'}
+
+        result = await reboot_system(
+            server_id=SERVER_ID, workspace='testworkspace', region='ap1'
+        )
+
+        assert result['status'] == 'success'
+        assert result['server_id'] == SERVER_ID
+        mock_http_client.post.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint=f'/api/servers/servers/{SERVER_ID}/actions/',
+            token='test-token',
+            data={'action': 'reboot_system'},
+        )
+
+
+class TestShutdownSystem:
+    """Test system shutdown functionality."""
+
+    @pytest.mark.asyncio
+    async def test_shutdown_system_success(self, mock_http_client, mock_token_manager):
+        """Test successful system shutdown."""
+        mock_http_client.post.return_value = {'status': 'shutting_down'}
+
+        result = await shutdown_system(
+            server_id=SERVER_ID, workspace='testworkspace', region='ap1'
+        )
+
+        assert result['status'] == 'success'
+        assert result['server_id'] == SERVER_ID
+        mock_http_client.post.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint=f'/api/servers/servers/{SERVER_ID}/actions/',
+            token='test-token',
+            data={'action': 'shutdown_system'},
+        )
