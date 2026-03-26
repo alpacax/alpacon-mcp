@@ -412,7 +412,7 @@ async def webftp_downloads_list(
 
 
 @mcp_tool_handler(
-    description='Upload multiple local files to a remote server in a single operation. All files are placed in the same destination directory. Uses S3 presigned URLs with concurrent uploads. Returns per-file upload status and URLs.'
+    description='Upload multiple local files to a remote server in a single operation. All files are placed in the same destination directory. Uses S3 presigned URLs with concurrent uploads. Returns per-file upload status for each file.'
 )
 async def webftp_bulk_upload(
     server_id: str,
@@ -444,12 +444,14 @@ async def webftp_bulk_upload(
     if not local_file_paths:
         return error_response('local_file_paths must not be empty')
 
-    # Validate all file paths and ensure they exist
+    # Validate all file paths and ensure they are regular, readable files
     for path in local_file_paths:
         if not validate_file_path(path):
             return format_validation_error('local_file_paths', path)
-        if not os.path.exists(path):
-            return error_response(f'Local file not found: {path}')
+        if not os.path.isfile(path):
+            return error_response(f'Local file is not a regular file: {path}')
+        if not os.access(path, os.R_OK):
+            return error_response(f'Local file is not readable: {path}')
     if not validate_file_path(remote_directory):
         return format_validation_error('remote_directory', remote_directory)
 
@@ -503,19 +505,18 @@ async def webftp_bulk_upload(
         async with semaphore:
             try:
                 with open(local_file_paths[idx], 'rb') as f:
-                    content = f.read()
-                resp = await client.put(
-                    upload_url,
-                    content=content,
-                    headers={'Content-Type': 'application/octet-stream'},
-                )
+                    resp = await client.put(
+                        upload_url,
+                        content=f,
+                        headers={'Content-Type': 'application/octet-stream'},
+                    )
                 return {
                     'file': name,
                     'status': 'uploaded'
                     if resp.status_code in [200, 201]
                     else 'failed',
                     'file_id': file_id,
-                    'size': len(content),
+                    'size': os.path.getsize(local_file_paths[idx]),
                 }
             except Exception as e:
                 return {'file': name, 'status': 'error', 'message': str(e)}
@@ -554,7 +555,7 @@ async def webftp_bulk_upload(
 
 
 @mcp_tool_handler(
-    description='Download multiple files or folders from a remote server as a single ZIP archive. All paths must share the same parent directory. Uses S3 presigned URLs for efficient transfer. Saves the ZIP file to the specified local path.'
+    description='Download multiple files or folders from a remote server as a single ZIP archive. All paths must share the same parent directory. If the ZIP is ready, downloads via S3 presigned URL and saves locally. If still processing, returns the download record — use webftp_check_status to poll for completion, then retry.'
 )
 async def webftp_bulk_download(
     server_id: str,
