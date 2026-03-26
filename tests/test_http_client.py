@@ -427,14 +427,24 @@ class TestHandleUpstream401:
         assert 'response' not in result
 
     @patch.dict('os.environ', {'ALPACON_MCP_AUTH_ENABLED': 'true'})
-    def test_signals_error_in_remote_mode(self):
-        """Signals upstream auth error via module-level dict when auth is enabled."""
-        from utils.error_handler import consume_upstream_auth_error, make_auth_error_key
+    def test_raises_and_signals_in_remote_mode(self):
+        """Raises UpstreamAuthError and signals dict in remote mode."""
+        from utils.error_handler import (
+            UpstreamAuthError,
+            consume_upstream_auth_error,
+            make_auth_error_key,
+        )
 
         token = 'header.payload.signature'  # Must pass _is_jwt() check
         exc = self._make_401_exc({'code': 'auth_mfa_required', 'source': 'websh'})
-        AlpaconHTTPClient._handle_upstream_401(exc, token=token)
 
+        with pytest.raises(UpstreamAuthError) as exc_info:
+            AlpaconHTTPClient._handle_upstream_401(exc, token=token)
+
+        assert exc_info.value.mfa_required is True
+        assert exc_info.value.source == 'websh'
+
+        # Dict signal should also be set (fallback mechanism)
         token_key = make_auth_error_key(token)
         error_info = consume_upstream_auth_error(token_key)
         assert error_info is not None

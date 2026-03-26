@@ -20,7 +20,11 @@ from typing import Any
 
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from utils.error_handler import consume_upstream_auth_error, make_auth_error_key
+from utils.error_handler import (
+    UpstreamAuthError,
+    consume_upstream_auth_error,
+    make_auth_error_key,
+)
 from utils.logger import get_logger
 
 logger = get_logger('auth_error_middleware')
@@ -102,6 +106,43 @@ class UpstreamAuthErrorMiddleware:
 
         try:
             await self.app(scope, receive, buffer_send)
+        except UpstreamAuthError as e:
+            # Primary path: http_client raised UpstreamAuthError on upstream 401.
+            # This propagates reliably across anyio task boundaries.
+            # Consume any dict signal too (set before the raise) to prevent
+            # stale entries.
+            if token_key:
+                consume_upstream_auth_error(token_key)
+
+            now = time.monotonic()
+            self._prune_expired_cooldowns(now)
+            client_key = token_key or '_anonymous'
+            last_401 = self._client_cooldowns.get(client_key, 0)
+            cooldown_active = (now - last_401) <= self._cooldown_seconds
+
+            if not cooldown_active:
+                self._client_cooldowns[client_key] = now
+                logger.info(
+                    'UpstreamAuthError caught (mfa_required=%s, source=%s), '
+                    'returning HTTP 401 to trigger re-auth',
+                    e.mfa_required,
+                    e.source,
+                )
+                await self._send_401(send, mfa_required=e.mfa_required)
+                return
+
+            remaining = self._cooldown_seconds - (now - last_401)
+            logger.info(
+                'UpstreamAuthError caught but cooldown active '
+                '(%.0fs remaining), returning generic error',
+                remaining,
+            )
+            # Fall through to send buffered response (which may be incomplete
+            # since the app raised). Send a generic 500 instead.
+            await self._send_error(
+                send, status_code=500, message='Authentication error'
+            )
+            return
         except BaseException:
             # App raised or request was cancelled. Consume any pending
             # signal to prevent stale entries and unbounded dict growth.
@@ -109,12 +150,9 @@ class UpstreamAuthErrorMiddleware:
                 consume_upstream_auth_error(token_key)
             raise
 
-        # Consume the upstream auth signal directly. The signal is only set
-        # when http_client receives an actual 401 from the upstream API, so
-        # no body inspection is needed. Previous body-check approaches were
-        # structurally broken: MCP serializes tool results as JSON-in-JSON
-        # where inner quotes are escaped (\"status_code\"), making byte-level
-        # pattern matching unreliable across all transport modes.
+        # Fallback path: Consume the upstream auth signal from the dict.
+        # This handles cases where the exception was caught by an intermediate
+        # handler but the dict signal was still set.
         error_info = None
         if token_key:
             error_info = consume_upstream_auth_error(token_key)
@@ -124,7 +162,7 @@ class UpstreamAuthErrorMiddleware:
         if error_info:
             client_key = token_key or '_anonymous'
             cooldown_active = False
-            last_401: float = 0
+            last_401 = 0.0
             if client_key in self._client_cooldowns:
                 last_401 = self._client_cooldowns[client_key]
                 cooldown_active = (now - last_401) <= self._cooldown_seconds
@@ -151,6 +189,28 @@ class UpstreamAuthErrorMiddleware:
 
         for msg in buffered:
             await send(msg)
+
+    async def _send_error(
+        self, send: Send, *, status_code: int = 500, message: str = 'Internal error'
+    ) -> None:
+        """Send a generic HTTP error response."""
+        body = json.dumps({'error': message}).encode()
+        await send(
+            {
+                'type': 'http.response.start',
+                'status': status_code,
+                'headers': [
+                    (b'content-type', b'application/json'),
+                    (b'content-length', str(len(body)).encode()),
+                ],
+            }
+        )
+        await send(
+            {
+                'type': 'http.response.body',
+                'body': body,
+            }
+        )
 
     async def _send_401(self, send: Send, *, mfa_required: bool = False) -> None:
         """Send HTTP 401 with WWW-Authenticate header.

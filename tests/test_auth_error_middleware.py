@@ -5,7 +5,11 @@ import json
 import pytest
 
 from utils.auth_error_middleware import UpstreamAuthErrorMiddleware
-from utils.error_handler import make_auth_error_key, signal_upstream_auth_error
+from utils.error_handler import (
+    UpstreamAuthError,
+    make_auth_error_key,
+    signal_upstream_auth_error,
+)
 
 # Default body that mimics http_client's 401 error response dict.
 _DEFAULT_401_BODY = {
@@ -298,3 +302,90 @@ async def test_no_signal_passes_through_regardless_of_body():
     # No signal → passes through as 200
     assert status == 200
     assert '401' in body
+
+
+# --- Exception-based path tests ---
+
+
+class _RaisingApp:
+    """Mock ASGI app that raises UpstreamAuthError, simulating the new exception path."""
+
+    def __init__(
+        self,
+        mfa_required: bool = True,
+        source: str = 'websh',
+        auth_value: str = 'test-jwt',
+    ):  # noqa: S107
+        self.mfa_required = mfa_required
+        self.source = source
+        self._token = auth_value
+
+    async def __call__(self, scope, receive, send):
+        # Also set dict signal (like real http_client does before raising)
+        token_key = make_auth_error_key(self._token)
+        signal_upstream_auth_error(
+            token_key,
+            {'mfa_required': self.mfa_required, 'source': self.source},
+        )
+        raise UpstreamAuthError(mfa_required=self.mfa_required, source=self.source)
+
+
+@pytest.mark.asyncio
+async def test_exception_triggers_401():
+    """UpstreamAuthError exception should trigger HTTP 401."""
+    app = _RaisingApp(mfa_required=True, source='websh')
+    mw = UpstreamAuthErrorMiddleware(app)
+
+    sent = await _run(mw)
+    status, headers, _ = await _collect_response(sent)
+
+    assert status == 401
+    assert 'www-authenticate' in headers
+    assert 'mfa' in headers['www-authenticate']
+
+
+@pytest.mark.asyncio
+async def test_exception_non_mfa_triggers_401_without_mfa_scope():
+    """Non-MFA UpstreamAuthError should trigger 401 without mfa scope."""
+    app = _RaisingApp(mfa_required=False, source='')
+    mw = UpstreamAuthErrorMiddleware(app)
+
+    sent = await _run(mw)
+    status, headers, _ = await _collect_response(sent)
+
+    assert status == 401
+    assert 'www-authenticate' in headers
+    assert 'mfa' not in headers['www-authenticate']
+
+
+@pytest.mark.asyncio
+async def test_exception_consumes_dict_signal():
+    """Exception path should consume the dict signal to prevent stale entries."""
+    token = 'test-jwt'
+    app = _RaisingApp(auth_value=token)
+    mw = UpstreamAuthErrorMiddleware(app)
+
+    await _run(mw)
+
+    # Dict signal should be consumed
+    from utils.error_handler import consume_upstream_auth_error
+
+    token_key = make_auth_error_key(token)
+    assert consume_upstream_auth_error(token_key) is None
+
+
+@pytest.mark.asyncio
+async def test_exception_respects_cooldown():
+    """Exception path should respect cooldown like signal path."""
+    app = _RaisingApp(mfa_required=True)
+    mw = UpstreamAuthErrorMiddleware(app, cooldown_seconds=60)
+
+    # First call: should get 401
+    sent1 = await _run(mw)
+    status1, _, _ = await _collect_response(sent1)
+    assert status1 == 401
+
+    # Second call within cooldown: should get 500 (generic error during cooldown)
+    sent2 = await _run(mw)
+    status2, _, _ = await _collect_response(sent2)
+    assert status2 == 500

@@ -10,6 +10,7 @@ import websockets
 from server import mcp
 from utils.common import MCP_USER_AGENT, error_response, success_response
 from utils.decorators import mcp_tool_handler
+from utils.error_handler import UpstreamAuthError
 from utils.http_client import http_client
 from utils.logger import get_logger
 
@@ -232,8 +233,12 @@ async def get_or_create_channel(
                             session_pool[pool_key] = pool_entry
 
                         return channel_id, session_detail
+                except UpstreamAuthError:
+                    raise
                 except Exception:  # noqa: S112
                     continue
+    except UpstreamAuthError:
+        raise
     except Exception:
         pass
 
@@ -476,6 +481,8 @@ async def websh_session_reconnect(
             endpoint=f'/api/websh/sessions/{session_id}/',
             token=token,
         )
+    except UpstreamAuthError:
+        raise
     except Exception as e:
         return error_response(
             f'Session {session_id} not found or not accessible: {str(e)}'
@@ -927,6 +934,8 @@ async def execute_command(
             message='Command executed via persistent connection',
         )
 
+    except UpstreamAuthError:
+        raise
     except Exception as e:
         return error_response(
             f'Command execution failed: {str(e)}', server_id=server_id, command=command
@@ -985,6 +994,8 @@ async def execute_command_batch(
                 results.append(
                     {'command': command, 'output': output, 'status': 'success'}
                 )
+            except UpstreamAuthError:
+                raise
             except Exception as e:
                 results.append({'command': command, 'error': str(e), 'status': 'error'})
 
@@ -1002,6 +1013,8 @@ async def execute_command_batch(
             message=f'Executed {len(commands)} commands via persistent connection',
         )
 
+    except UpstreamAuthError:
+        raise
     except Exception as e:
         return error_response(
             f'Batch execution failed: {str(e)}', server_id=server_id, commands=commands

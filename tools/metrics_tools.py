@@ -6,6 +6,7 @@ from typing import Any
 
 from utils.common import error_response, success_response
 from utils.decorators import mcp_tool_handler
+from utils.error_handler import UpstreamAuthError
 from utils.http_client import http_client
 
 
@@ -357,6 +358,8 @@ async def get_disk_usage(
                     region=region,
                     workspace=workspace,
                 )
+        except UpstreamAuthError:
+            raise
         except Exception as e:
             return error_response(
                 message=f'Failed to fetch disk devices: {str(e)}',
@@ -806,6 +809,8 @@ async def get_server_metrics_summary(
                 if '/' in mount_points:
                     disk_device = partition.get('name')
                     break
+    except UpstreamAuthError:
+        raise
     except Exception:
         pass  # Disk metrics will show as unavailable
 
@@ -827,6 +832,8 @@ async def get_server_metrics_summary(
                 if not iface.get('is_loopback', False) and iface.get('is_up', False):
                     network_interface = iface.get('name')
                     break
+    except UpstreamAuthError:
+        raise
     except Exception:
         pass  # Network metrics will show as unavailable
 

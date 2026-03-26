@@ -62,6 +62,26 @@ def consume_upstream_auth_error(token_key: str) -> dict | None:
         return _upstream_auth_errors.pop(token_key, None)
 
 
+class UpstreamAuthError(Exception):
+    """Raised when the upstream Alpacon API returns 401.
+
+    Used in remote (streamable-http) mode to propagate auth errors
+    through the call stack to the ASGI middleware, which replaces
+    the HTTP 200 JSON-RPC response with HTTP 401 to trigger the
+    MCP client's OAuth re-authentication flow.
+
+    This exception-based path complements the dict-based signaling
+    mechanism (signal_upstream_auth_error) for more reliable
+    cross-task propagation.
+    """
+
+    def __init__(self, mfa_required: bool = False, source: str = ''):
+        self.mfa_required = mfa_required
+        self.source = source
+        msg = 'MFA verification required' if mfa_required else 'Authentication expired'
+        super().__init__(msg)
+
+
 class ValidationError(Exception):
     """Custom exception for input validation errors."""
 
