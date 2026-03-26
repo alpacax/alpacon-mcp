@@ -178,7 +178,7 @@ async def list_webftp_logs(
 
 
 @mcp_tool_handler(
-    description='List AI security analysis results for Websh sessions across the workspace. Filterable by server, user, risk score, or analysis status. Returns summary, risk scores, and analysis timestamps. Useful for security auditing and threat monitoring.'
+    description='List AI security analysis results for Websh sessions across the workspace. Filterable by server, risk score, or analysis status. Returns summary, risk scores, and analysis timestamps. Useful for security auditing and threat monitoring.'
 )
 async def list_session_analyses(
     workspace: str,

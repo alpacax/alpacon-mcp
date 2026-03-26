@@ -1,5 +1,6 @@
 """WebFTP (Web FTP) management tools for Alpacon MCP server."""
 
+import asyncio
 import os
 from typing import Any
 
@@ -411,7 +412,7 @@ async def webftp_downloads_list(
 
 
 @mcp_tool_handler(
-    description='Upload multiple local files to a remote server in a single operation. All files are placed in the same destination directory. Uses S3 presigned URLs for efficient parallel transfer. Returns per-file upload status and URLs.'
+    description='Upload multiple local files to a remote server in a single operation. All files are placed in the same destination directory. Uses S3 presigned URLs with concurrent uploads. Returns per-file upload status and URLs.'
 )
 async def webftp_bulk_upload(
     server_id: str,
@@ -427,7 +428,7 @@ async def webftp_bulk_upload(
 
     Args:
         server_id: Server ID to upload files to
-        local_file_paths: List of local file paths to upload
+        local_file_paths: List of local file paths to upload (must not be empty)
         remote_directory: Remote directory to place all files (e.g., "/home/user/uploads/")
         workspace: Workspace name. Required parameter
         username: Optional username for the upload (uses authenticated user if not provided)
@@ -438,6 +439,10 @@ async def webftp_bulk_upload(
         Bulk upload response with per-file status
     """
     token = kwargs.get('token')
+
+    # Validate non-empty file list
+    if not local_file_paths:
+        return error_response('local_file_paths must not be empty')
 
     # Validate all file paths
     for path in local_file_paths:
@@ -476,56 +481,52 @@ async def webftp_bulk_upload(
         data=bulk_data,
     )
 
-    # Upload each file to S3 using presigned URLs
+    # Upload files to S3 concurrently using presigned URLs
     import httpx
 
-    upload_results = []
     file_ids = []
-
     upload_items = (
         result if isinstance(result, list) else result.get('results', [result])
     )
 
-    async with httpx.AsyncClient() as client:
-        for i, item in enumerate(upload_items):
-            upload_url = item.get('upload_url')
-            file_id = item.get('id')
-            if file_id:
-                file_ids.append(file_id)
+    # Collect file IDs
+    for item in upload_items:
+        file_id = item.get('id')
+        if file_id:
+            file_ids.append(file_id)
 
-            if upload_url and i < len(local_file_paths):
-                try:
-                    resp = await client.put(
-                        upload_url,
-                        content=file_contents[local_file_paths[i]],
-                        headers={'Content-Type': 'application/octet-stream'},
-                    )
-                    upload_results.append(
-                        {
-                            'file': file_names[i] if i < len(file_names) else 'unknown',
-                            'status': 'uploaded'
-                            if resp.status_code in [200, 201]
-                            else 'failed',
-                            'file_id': file_id,
-                            'size': len(file_contents[local_file_paths[i]]),
-                        }
-                    )
-                except Exception as e:
-                    upload_results.append(
-                        {
-                            'file': file_names[i] if i < len(file_names) else 'unknown',
-                            'status': 'error',
-                            'message': str(e),
-                        }
-                    )
-            else:
-                upload_results.append(
-                    {
-                        'file': file_names[i] if i < len(file_names) else 'unknown',
-                        'status': 'created',
-                        'file_id': file_id,
-                    }
-                )
+    async def _upload_one(
+        client: httpx.AsyncClient,
+        idx: int,
+        item: dict,
+    ) -> dict[str, Any]:
+        upload_url = item.get('upload_url')
+        file_id = item.get('id')
+        name = file_names[idx] if idx < len(file_names) else 'unknown'
+
+        if not upload_url or idx >= len(local_file_paths):
+            return {'file': name, 'status': 'created', 'file_id': file_id}
+
+        try:
+            resp = await client.put(
+                upload_url,
+                content=file_contents[local_file_paths[idx]],
+                headers={'Content-Type': 'application/octet-stream'},
+            )
+            return {
+                'file': name,
+                'status': 'uploaded' if resp.status_code in [200, 201] else 'failed',
+                'file_id': file_id,
+                'size': len(file_contents[local_file_paths[idx]]),
+            }
+        except Exception as e:
+            return {'file': name, 'status': 'error', 'message': str(e)}
+
+    async with httpx.AsyncClient() as client:
+        upload_results = await asyncio.gather(
+            *[_upload_one(client, i, item) for i, item in enumerate(upload_items)]
+        )
+    upload_results = list(upload_results)
 
     # Trigger bulk upload processing
     if file_ids:
@@ -581,12 +582,26 @@ async def webftp_bulk_download(
     """
     token = kwargs.get('token')
 
+    # Validate non-empty paths list
+    if not remote_paths:
+        return error_response('remote_paths must not be empty')
+
     # Validate paths
     for path in remote_paths:
         if not validate_file_path(path):
             return format_validation_error('remote_paths', path)
     if not validate_file_path(local_file_path):
         return format_validation_error('local_file_path', local_file_path)
+
+    # Ensure all remote paths share the same parent directory
+    if len(remote_paths) > 1:
+        base_dir = os.path.dirname(remote_paths[0])
+        for path in remote_paths[1:]:
+            if os.path.dirname(path) != base_dir:
+                return error_response(
+                    'All remote_paths must share the same parent directory',
+                    remote_paths=remote_paths,
+                )
 
     # Create bulk download record
     download_data: dict[str, Any] = {

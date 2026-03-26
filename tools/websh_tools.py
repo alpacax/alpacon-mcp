@@ -1090,7 +1090,7 @@ async def websh_websocket_batch_execute(
 
 
 @mcp_tool_handler(
-    description='List Websh tunnel sessions in a workspace. Tunnels provide port forwarding to remote servers. Filterable by server ID, username, or groupname. Returns tunnel ID, target port, status, and connection details.'
+    description='List Websh tunnel sessions in a workspace. Tunnels provide port forwarding to remote servers. Filterable by server ID or username. Returns tunnel ID, target port, status, and connection details.'
 )
 async def list_websh_tunnels(
     workspace: str,
@@ -1313,7 +1313,7 @@ async def invite_to_websh_session(
 
 
 @mcp_tool_handler(
-    description='Join a shared Websh session using a password or invitation token. Returns WebSocket URL for connecting to the shared session. Authentication is optional if using a valid password from share_websh_session.'
+    description='Join a shared Websh session using a password or invitation token. Returns WebSocket URL for connecting to the shared session. Requires MCP authentication. The password or token provides session-level access on top of the authenticated connection.'
 )
 async def join_shared_session(
     channel_id: str,
