@@ -179,3 +179,225 @@ async def create_server_note(
         region=region,
         workspace=workspace,
     )
+
+
+# ===============================
+# AGENT ACTION TOOLS
+# ===============================
+
+
+@mcp_tool_handler(
+    description='Restart the Alpacon agent process on a server. The agent will briefly go offline during restart. Use this when the agent is unresponsive or after configuration changes. Returns a command object tracking the restart operation.'
+)
+async def restart_agent(
+    server_id: str, workspace: str, region: str = '', **kwargs
+) -> dict[str, Any]:
+    """Restart the Alpacon agent on a server.
+
+    Args:
+        server_id: Server ID
+        workspace: Workspace name. Required parameter
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
+
+    Returns:
+        Agent restart response
+    """
+    token = kwargs.get('token')
+
+    result = await http_client.post(
+        region=region,
+        workspace=workspace,
+        endpoint=f'/api/servers/servers/{server_id}/actions/',
+        token=token,
+        data={'action': 'restart_agent'},
+    )
+
+    return success_response(
+        data=result, server_id=server_id, region=region, workspace=workspace
+    )
+
+
+@mcp_tool_handler(
+    description='Shut down the Alpacon agent process on a server. The server will appear offline in the workspace until the agent is manually restarted. Use with caution as remote access will be lost. Returns a command object tracking the shutdown operation.'
+)
+async def shutdown_agent(
+    server_id: str, workspace: str, region: str = '', **kwargs
+) -> dict[str, Any]:
+    """Shut down the Alpacon agent on a server.
+
+    Args:
+        server_id: Server ID
+        workspace: Workspace name. Required parameter
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
+
+    Returns:
+        Agent shutdown response
+    """
+    token = kwargs.get('token')
+
+    result = await http_client.post(
+        region=region,
+        workspace=workspace,
+        endpoint=f'/api/servers/servers/{server_id}/actions/',
+        token=token,
+        data={'action': 'shutdown_agent'},
+    )
+
+    return success_response(
+        data=result, server_id=server_id, region=region, workspace=workspace
+    )
+
+
+@mcp_tool_handler(
+    description='Upgrade the Alpacon agent on a server to the latest available version. The agent will briefly restart during the upgrade process. Use this to keep agents up to date with the latest features and security patches. Returns a command object tracking the upgrade operation.'
+)
+async def upgrade_agent(
+    server_id: str, workspace: str, region: str = '', **kwargs
+) -> dict[str, Any]:
+    """Upgrade the Alpacon agent on a server to the latest version.
+
+    Args:
+        server_id: Server ID
+        workspace: Workspace name. Required parameter
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
+
+    Returns:
+        Agent upgrade response
+    """
+    token = kwargs.get('token')
+
+    result = await http_client.post(
+        region=region,
+        workspace=workspace,
+        endpoint=f'/api/servers/servers/{server_id}/actions/',
+        token=token,
+        data={'action': 'upgrade_agent'},
+    )
+
+    return success_response(
+        data=result, server_id=server_id, region=region, workspace=workspace
+    )
+
+
+@mcp_tool_handler(
+    description='Refresh system information for a server by triggering the agent to re-collect hardware, OS, network, and package data. Use this after hardware changes or OS updates to ensure the dashboard reflects the current state. Returns a command object tracking the operation.'
+)
+async def update_information(
+    server_id: str, workspace: str, region: str = '', **kwargs
+) -> dict[str, Any]:
+    """Trigger system information update on a server.
+
+    Args:
+        server_id: Server ID
+        workspace: Workspace name. Required parameter
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
+
+    Returns:
+        Update information response
+    """
+    token = kwargs.get('token')
+
+    result = await http_client.post(
+        region=region,
+        workspace=workspace,
+        endpoint=f'/api/servers/servers/{server_id}/actions/',
+        token=token,
+        data={'action': 'update_information'},
+    )
+
+    return success_response(
+        data=result, server_id=server_id, region=region, workspace=workspace
+    )
+
+
+@mcp_tool_handler(
+    description='Upgrade all system packages on a server via the OS package manager (e.g., apt upgrade, yum update). This may take several minutes depending on the number of pending updates. Use with caution in production environments. Returns a command object tracking the upgrade operation.'
+)
+async def upgrade_system(
+    server_id: str, workspace: str, region: str = '', **kwargs
+) -> dict[str, Any]:
+    """Upgrade all system packages on a server.
+
+    Args:
+        server_id: Server ID
+        workspace: Workspace name. Required parameter
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
+
+    Returns:
+        System upgrade response
+    """
+    token = kwargs.get('token')
+
+    result = await http_client.post(
+        region=region,
+        workspace=workspace,
+        endpoint=f'/api/servers/servers/{server_id}/actions/',
+        token=token,
+        data={'action': 'upgrade_system'},
+    )
+
+    return success_response(
+        data=result, server_id=server_id, region=region, workspace=workspace
+    )
+
+
+@mcp_tool_handler(
+    description='Reboot a server. The server will go offline briefly during the reboot process and reconnect automatically when the agent starts back up. Use this after kernel updates or when a full system restart is required. Returns a command object tracking the reboot operation.'
+)
+async def reboot_system(
+    server_id: str, workspace: str, region: str = '', **kwargs
+) -> dict[str, Any]:
+    """Reboot a server.
+
+    Args:
+        server_id: Server ID
+        workspace: Workspace name. Required parameter
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
+
+    Returns:
+        System reboot response
+    """
+    token = kwargs.get('token')
+
+    result = await http_client.post(
+        region=region,
+        workspace=workspace,
+        endpoint=f'/api/servers/servers/{server_id}/actions/',
+        token=token,
+        data={'action': 'reboot_system'},
+    )
+
+    return success_response(
+        data=result, server_id=server_id, region=region, workspace=workspace
+    )
+
+
+@mcp_tool_handler(
+    description='Shut down a server completely. The server will power off and will NOT automatically reconnect. Manual intervention is required to bring the server back online. Use with extreme caution. Returns a command object tracking the shutdown operation.'
+)
+async def shutdown_system(
+    server_id: str, workspace: str, region: str = '', **kwargs
+) -> dict[str, Any]:
+    """Shut down a server.
+
+    Args:
+        server_id: Server ID
+        workspace: Workspace name. Required parameter
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
+
+    Returns:
+        System shutdown response
+    """
+    token = kwargs.get('token')
+
+    result = await http_client.post(
+        region=region,
+        workspace=workspace,
+        endpoint=f'/api/servers/servers/{server_id}/actions/',
+        token=token,
+        data={'action': 'shutdown_system'},
+    )
+
+    return success_response(
+        data=result, server_id=server_id, region=region, workspace=workspace
+    )
