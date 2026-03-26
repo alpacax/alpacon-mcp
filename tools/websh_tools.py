@@ -1168,6 +1168,10 @@ async def create_websh_tunnel(
 
     tunnel_data: dict[str, Any] = {'server': server_id}
     if target_port is not None:
+        if not (1 <= target_port <= 65535):
+            return error_response(
+                f'target_port must be between 1 and 65535, got {target_port}'
+            )
         tunnel_data['target_port'] = target_port
     if username:
         tunnel_data['username'] = username
@@ -1329,8 +1333,8 @@ async def join_shared_session(
     Args:
         channel_id: User channel ID from the shared session link
         workspace: Workspace name. Required parameter
-        password: Password from share_websh_session (for unauthenticated access)
-        token_value: Invitation token (for authenticated access via invite)
+        password: Password from share_websh_session used as a session-level credential on top of MCP authentication
+        token_value: Invitation token used as a session-level credential for joining via invite (in addition to MCP authentication)
         username: Display name for the session (optional)
         region: Region (ap1, us1, eu1). Auto-detected if not provided
 

@@ -444,23 +444,14 @@ async def webftp_bulk_upload(
     if not local_file_paths:
         return error_response('local_file_paths must not be empty')
 
-    # Validate all file paths
+    # Validate all file paths and ensure they exist
     for path in local_file_paths:
         if not validate_file_path(path):
             return format_validation_error('local_file_paths', path)
+        if not os.path.exists(path):
+            return error_response(f'Local file not found: {path}')
     if not validate_file_path(remote_directory):
         return format_validation_error('remote_directory', remote_directory)
-
-    # Read all local files
-    file_contents: dict[str, bytes] = {}
-    for path in local_file_paths:
-        try:
-            with open(path, 'rb') as f:
-                file_contents[path] = f.read()
-        except FileNotFoundError:
-            return error_response(f'Local file not found: {path}')
-        except Exception as e:
-            return error_response(f'Failed to read local file {path}: {str(e)}')
 
     # Create bulk upload records via API
     file_names = [os.path.basename(p) for p in local_file_paths]
@@ -495,6 +486,8 @@ async def webftp_bulk_upload(
         if file_id:
             file_ids.append(file_id)
 
+    semaphore = asyncio.Semaphore(10)
+
     async def _upload_one(
         client: httpx.AsyncClient,
         idx: int,
@@ -507,20 +500,25 @@ async def webftp_bulk_upload(
         if not upload_url or idx >= len(local_file_paths):
             return {'file': name, 'status': 'created', 'file_id': file_id}
 
-        try:
-            resp = await client.put(
-                upload_url,
-                content=file_contents[local_file_paths[idx]],
-                headers={'Content-Type': 'application/octet-stream'},
-            )
-            return {
-                'file': name,
-                'status': 'uploaded' if resp.status_code in [200, 201] else 'failed',
-                'file_id': file_id,
-                'size': len(file_contents[local_file_paths[idx]]),
-            }
-        except Exception as e:
-            return {'file': name, 'status': 'error', 'message': str(e)}
+        async with semaphore:
+            try:
+                with open(local_file_paths[idx], 'rb') as f:
+                    content = f.read()
+                resp = await client.put(
+                    upload_url,
+                    content=content,
+                    headers={'Content-Type': 'application/octet-stream'},
+                )
+                return {
+                    'file': name,
+                    'status': 'uploaded'
+                    if resp.status_code in [200, 201]
+                    else 'failed',
+                    'file_id': file_id,
+                    'size': len(content),
+                }
+            except Exception as e:
+                return {'file': name, 'status': 'error', 'message': str(e)}
 
     async with httpx.AsyncClient() as client:
         upload_results = await asyncio.gather(
@@ -619,26 +617,36 @@ async def webftp_bulk_download(
         data=download_data,
     )
 
-    # Download ZIP from S3
+    # Download ZIP from S3 using streaming to avoid high memory usage
     download_url = result.get('download_url') if isinstance(result, dict) else None
     if download_url:
         import httpx
 
+        file_size = 0
         async with httpx.AsyncClient() as client:
-            download_response = await client.get(download_url)
+            try:
+                async with client.stream('GET', download_url, timeout=60.0) as response:
+                    if response.status_code != 200:
+                        return error_response(
+                            f'Failed to download from S3: {response.status_code}',
+                            download_url=download_url,
+                        )
 
-            if download_response.status_code != 200:
+                    try:
+                        dir_name = os.path.dirname(local_file_path)
+                        if dir_name:
+                            os.makedirs(dir_name, exist_ok=True)
+                        with open(local_file_path, 'wb') as f:
+                            async for chunk in response.aiter_bytes(chunk_size=8192):
+                                file_size += len(chunk)
+                                f.write(chunk)
+                    except Exception as e:
+                        return error_response(f'Failed to save file locally: {str(e)}')
+            except httpx.HTTPError as exc:
                 return error_response(
-                    f'Failed to download from S3: {download_response.status_code}',
+                    f'Failed to download from S3: {str(exc)}',
                     download_url=download_url,
                 )
-
-            try:
-                os.makedirs(os.path.dirname(local_file_path), exist_ok=True)
-                with open(local_file_path, 'wb') as f:
-                    f.write(download_response.content)
-            except Exception as e:
-                return error_response(f'Failed to save file locally: {str(e)}')
 
         return success_response(
             message=f'Bulk download completed: {len(remote_paths)} items saved as ZIP',
@@ -646,7 +654,7 @@ async def webftp_bulk_download(
             server_id=server_id,
             remote_paths=remote_paths,
             local_file_path=local_file_path,
-            file_size=len(download_response.content),
+            file_size=file_size,
             download_url=download_url,
             region=region,
             workspace=workspace,
