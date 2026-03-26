@@ -70,7 +70,8 @@ def _get_jwt_workspaces(jwt_token: str) -> list[dict[str, str]]:
     if not claims:
         return []
 
-    return extract_workspaces(claims, 'https://alpacon.io/')
+    namespace = os.getenv('AUTH0_NAMESPACE', 'https://alpacon.io/').rstrip('/') + '/'
+    return extract_workspaces(claims, namespace)
 
 
 def _validate_jwt_workspace(jwt_token: str, region: str, workspace: str) -> bool:
@@ -160,6 +161,62 @@ def _resolve_region_local(workspace: str | None) -> tuple[str | None, str | None
             f'Please specify a region parameter.'
         )
     return None, 'No regions configured. Please run setup first.'
+
+
+async def _check_mfa_requirement(
+    tool_name: str, jwt_token: str, workspace: str
+) -> bool:
+    """Check if MFA is required for this tool call and signal re-auth if needed.
+
+    Fetches workspace security settings, checks the JWT's MFA completion
+    claims, and signals the upstream auth error middleware to return 401
+    with MFA scope if MFA is required but expired/missing.
+
+    Returns True if MFA is required but not satisfied (caller should
+    short-circuit the tool invocation). Returns False otherwise.
+    Fails open on errors — the upstream API will catch it as a fallback.
+    """
+    from utils.security_settings import (
+        check_mfa_completed,
+        get_action_for_tool,
+        security_cache,
+    )
+
+    action = get_action_for_tool(tool_name)
+    if not action:
+        return False
+
+    try:
+        settings = await security_cache.get_settings(jwt_token, workspace)
+        if not settings or not settings.is_action_mfa_required(action):
+            return False
+
+        claims = _decode_jwt_claims(jwt_token)
+        if not claims:
+            return False
+
+        if check_mfa_completed(claims, settings):
+            return False
+
+        # MFA required but not completed — signal middleware to return 401
+        from utils.error_handler import make_auth_error_key, signal_upstream_auth_error
+
+        token_key = make_auth_error_key(jwt_token)
+        signal_upstream_auth_error(
+            token_key,
+            {'mfa_required': True, 'source': action},
+        )
+        logger.info(
+            'MFA pre-check: %s requires MFA for workspace %s, signaling re-auth',
+            action,
+            workspace,
+        )
+        return True
+    except Exception as e:
+        # Fail-open: if pre-check fails, let the API call proceed.
+        # The upstream API's own MFA check will catch it as a fallback.
+        logger.debug('MFA pre-check failed (non-fatal): %s', e)
+        return False
 
 
 def with_token_validation(func: Callable) -> Callable:
@@ -258,6 +315,20 @@ def with_token_validation(func: Callable) -> Callable:
                     workspace=workspace,
                 )
             extra_kwargs['token'] = jwt_token
+
+            # MFA pre-check: verify MFA completion for actions that require it.
+            # If MFA is required but not yet satisfied, short-circuit so we do not
+            # invoke the underlying tool. The auth middleware will replace this
+            # placeholder response with a 401 error.
+            mfa_needed = await _check_mfa_requirement(
+                func.__name__, jwt_token, workspace
+            )
+            if mfa_needed:
+                return error_response(
+                    'Multi-factor authentication is required for this operation.',
+                    region=region,
+                    workspace=workspace,
+                )
         else:
             # stdio mode — token.json only
             token = validate_token(region, workspace)
