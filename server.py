@@ -197,6 +197,7 @@ def _install_upstream_auth_middleware():
             host=host,
             port=port,
             log_level='info',
+            server_header=False,
         )
         server = uvicorn.Server(config)
         await server.serve()
