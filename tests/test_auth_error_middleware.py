@@ -385,7 +385,8 @@ async def test_exception_respects_cooldown():
     status1, _, _ = await _collect_response(sent1)
     assert status1 == 401
 
-    # Second call within cooldown: should get 500 (generic error during cooldown)
+    # Second call within cooldown: should get 500 fallback (no buffered response
+    # because _RaisingApp raises before writing any response)
     sent2 = await _run(mw)
     status2, _, _ = await _collect_response(sent2)
     assert status2 == 500

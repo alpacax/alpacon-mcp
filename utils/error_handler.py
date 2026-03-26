@@ -63,12 +63,17 @@ def consume_upstream_auth_error(token_key: str) -> dict | None:
 
 
 class UpstreamAuthError(Exception):
-    """Raised when the upstream Alpacon API returns 401.
+    """Raised when re-authentication is required for the Alpacon API.
 
-    Used in remote (streamable-http) mode to propagate auth errors
-    through the call stack to the ASGI middleware, which replaces
-    the HTTP 200 JSON-RPC response with HTTP 401 to trigger the
-    MCP client's OAuth re-authentication flow.
+    Used in remote (streamable-http) mode to propagate authentication
+    state through the call stack to the ASGI middleware, which replaces
+    the HTTP 200 JSON-RPC response with HTTP 401 to trigger the MCP
+    client's OAuth re-authentication flow.
+
+    Typically raised when the upstream Alpacon API returns 401 or when
+    local checks (such as MFA pre-checks) determine that the current
+    session requires re-authentication. The ``mfa_required`` flag
+    indicates whether multi-factor verification is specifically needed.
 
     This exception-based path complements the dict-based signaling
     mechanism (signal_upstream_auth_error) for more reliable
