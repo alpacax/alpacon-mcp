@@ -1,14 +1,23 @@
 """ASGI middleware to propagate upstream API 401 as MCP transport 401.
 
-When the Alpacon API returns 401 (e.g., MFA timeout), the HTTP client
-signals via a module-level thread-safe dict (keyed by token hash).
-This middleware consumes the signal and replaces the HTTP 200 JSON-RPC
-response with HTTP 401 + WWW-Authenticate header, triggering the MCP
-client's automatic OAuth re-authentication flow.
+When the Alpacon API returns 401 (e.g., MFA timeout), this middleware
+intercepts the error and returns HTTP 401 + WWW-Authenticate header,
+triggering the MCP client's automatic OAuth re-authentication flow.
 
-Uses a module-level dict instead of contextvars because MCP
-streamable-http transport runs tool handlers in a separate anyio task
-context where ContextVar mutations are invisible to the middleware.
+Two complementary propagation mechanisms are supported:
+
+1. **Exception path (primary)**: ``http_client`` raises
+   ``UpstreamAuthError`` which propagates through the call stack.
+   The middleware catches it in the ``try/except`` around
+   ``self.app()``.
+
+2. **Dict-signal path (fallback)**: ``http_client`` sets a
+   module-level thread-safe dict entry (keyed by token hash) before
+   raising.  If an intermediate handler catches the exception, the
+   middleware still finds the signal after the request completes.
+   Uses a module-level dict instead of contextvars because MCP
+   streamable-http runs tool handlers in a separate anyio task
+   context where ContextVar mutations are invisible.
 
 Only active in remote (streamable-http) mode where OAuth is enabled.
 """

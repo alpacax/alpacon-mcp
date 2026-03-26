@@ -175,7 +175,6 @@ class AlpaconHTTPClient:
             logger.debug('Failed to parse 401 response body as JSON: %s', parse_exc)
 
         auth_enabled = os.getenv('ALPACON_MCP_AUTH_ENABLED', '').lower() == 'true'
-        is_jwt = token and AlpaconHTTPClient._is_jwt(token)
 
         # Signal middleware AND raise exception in remote (streamable-http) mode.
         # Uses a module-level thread-safe dict keyed by token hash instead
@@ -185,15 +184,14 @@ class AlpaconHTTPClient:
         # Only signal for JWT (Bearer) tokens — API tokens (token=...) use
         # a different auth scheme and the middleware cannot derive a matching
         # key from them, which would leave unconsumed entries.
-        if auth_enabled and is_jwt:
+        if auth_enabled and token and AlpaconHTTPClient._is_jwt(token):
             from utils.error_handler import (
                 UpstreamAuthError,
                 make_auth_error_key,
                 signal_upstream_auth_error,
             )
 
-            # token is guaranteed non-None by is_jwt check above
-            token_key = make_auth_error_key(token)  # type: ignore[arg-type]
+            token_key = make_auth_error_key(token)
             signal_upstream_auth_error(
                 token_key,
                 {

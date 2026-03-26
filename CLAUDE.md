@@ -168,8 +168,8 @@ This MCP server provides a **pure HTTP API bridge** to Alpacon's infrastructure 
 When the Alpacon API returns 401 (e.g., MFA timeout with `code: "auth_mfa_required"`), the system triggers a two-stage OAuth re-authentication via the browser:
 
 1. `http_client` detects 401, raises `UpstreamAuthError` (also sets module-level dict signal as fallback)
-2. `UpstreamAuthErrorMiddleware` catches the exception and returns HTTP 401 + `WWW-Authenticate` header with `mfa` pseudo-scope
-3. MCP client opens browser to `/oauth/authorize` with `mfa` in scope
+2. `UpstreamAuthErrorMiddleware` catches the exception and returns HTTP 401 + `WWW-Authenticate` header (includes `mfa` pseudo-scope when `mfa_required` is true)
+3. MCP client opens browser to `/oauth/authorize` with `mfa` in scope when present in the header
 4. `/oauth/authorize` detects `mfa` scope → **Stage 1**: redirects browser to Auth0 MFA audience (`https://{domain}/mfa/`) to force MFA verification
 5. User completes MFA in browser → Auth0 redirects to `/oauth/callback`
 6. `/oauth/callback` exchanges MFA code (token discarded, only MFA session side-effect needed) → **Stage 2**: redirects browser to Auth0 regular audience, which issues a new authorization code (Auth0 SSO session now has MFA completed)

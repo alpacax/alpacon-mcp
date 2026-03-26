@@ -149,8 +149,8 @@ class TestMfaPrecheck:
             yield
 
     @pytest.mark.asyncio
-    async def test_mfa_required_signals_and_returns_true(self):
-        """When MFA is required but not completed, should signal and return True."""
+    async def test_mfa_required_raises_upstream_auth_error(self):
+        """When MFA is required but not completed, should raise UpstreamAuthError."""
         from utils.decorators import _check_mfa_requirement
 
         settings = WorkspaceSecuritySettings(
