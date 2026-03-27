@@ -165,15 +165,16 @@ This MCP server provides a **pure HTTP API bridge** to Alpacon's infrastructure 
 
 **MFA re-authentication flow** (remote/streamable-http mode only):
 
-When the Alpacon API returns 401 (e.g., MFA timeout with `code: "auth_mfa_required"`), the system automatically triggers OAuth re-authentication:
+When the Alpacon API returns 401 (e.g., MFA timeout with `code: "auth_mfa_required"`), the system triggers a two-stage OAuth re-authentication via the browser:
 
-1. `http_client` detects 401, sets `upstream_auth_error_flag` contextvars flag
-2. `UpstreamAuthErrorMiddleware` replaces HTTP 200 with HTTP 401 + `WWW-Authenticate` header
-3. MCP client's OAuth handler triggers browser-based re-auth via Auth0
-4. For MFA-required 401s, the `mfa` pseudo-scope is included in `WWW-Authenticate`
-5. `/oauth/authorize` proxy converts `mfa` scope to Auth0 `acr_values` to force MFA
-6. After MFA completion, new token (with fresh `completed_mfa_methods` timestamp) is issued
-7. MCP client automatically retries the original tool call with the new token
+1. `http_client` detects 401, raises `UpstreamAuthError` (also sets module-level dict signal as fallback)
+2. `UpstreamAuthErrorMiddleware` catches the exception and returns HTTP 401 + `WWW-Authenticate` header (includes `mfa` pseudo-scope when `mfa_required` is true)
+3. MCP client opens browser to `/oauth/authorize` with `mfa` in scope when present in the header
+4. `/oauth/authorize` detects `mfa` scope → **Stage 1**: redirects browser to Auth0 MFA audience (`https://{domain}/mfa/`) to force MFA verification
+5. User completes MFA in browser → Auth0 redirects to `/oauth/callback`
+6. `/oauth/callback` exchanges MFA code (token discarded, only MFA session side-effect needed) → **Stage 2**: redirects browser to Auth0 regular audience, which issues a new authorization code (Auth0 SSO session now has MFA completed)
+7. Final `/oauth/callback` forwards code to MCP client's redirect URI → client exchanges for new JWT with fresh `completed_mfa_methods` timestamp
+8. MCP client automatically retries the original tool call with the new token
 
 A 60-second cooldown prevents infinite re-auth loops when 401s are not fixable by re-authentication.
 

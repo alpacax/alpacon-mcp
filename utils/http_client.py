@@ -148,12 +148,20 @@ class AlpaconHTTPClient:
         """Handle upstream API 401 responses.
 
         Detects MFA-required errors from the Alpacon API response body
-        and signals the ASGI middleware (via module-level dict keyed by
-        token hash) to return HTTP 401, triggering the MCP client's
-        OAuth re-authentication flow.
+        and triggers re-authentication in remote (streamable-http) mode
+        via two complementary mechanisms:
+
+        1. Dict-based signal: Sets a module-level flag keyed by token hash
+           that the ASGI middleware consumes after the request completes.
+        2. Exception: Raises UpstreamAuthError which propagates through
+           the call stack to the middleware's try/except handler.
+
+        The exception path is the primary mechanism (more reliable across
+        anyio task boundaries). The dict signal is a fallback for edge
+        cases where the exception might be caught by intermediate handlers.
 
         In stdio/SSE mode (auth not enabled), only returns an error dict
-        without signaling the middleware.
+        without signaling or raising.
         """
         mfa_required = False
         source = ''
@@ -166,7 +174,21 @@ class AlpaconHTTPClient:
         except Exception as parse_exc:
             logger.debug('Failed to parse 401 response body as JSON: %s', parse_exc)
 
-        # Signal middleware in remote (streamable-http) mode only.
+        auth_enabled = os.getenv('ALPACON_MCP_AUTH_ENABLED', '').lower() == 'true'
+        is_jwt = bool(token and AlpaconHTTPClient._is_jwt(token))
+
+        # DEBUG: Log all decision factors for 401 handling
+        logger.warning(
+            '[DEBUG-401] auth_enabled=%s, token_present=%s, is_jwt=%s, '
+            'mfa_required=%s, source=%s',
+            auth_enabled,
+            bool(token),
+            is_jwt,
+            mfa_required,
+            source,
+        )
+
+        # Signal middleware AND raise exception in remote (streamable-http) mode.
         # Uses a module-level thread-safe dict keyed by token hash instead
         # of contextvars, because MCP streamable-http runs tool handlers in
         # a separate anyio task context where ContextVar mutations are
@@ -174,17 +196,18 @@ class AlpaconHTTPClient:
         # Only signal for JWT (Bearer) tokens — API tokens (token=...) use
         # a different auth scheme and the middleware cannot derive a matching
         # key from them, which would leave unconsumed entries.
-        if (
-            os.getenv('ALPACON_MCP_AUTH_ENABLED', '').lower() == 'true'
-            and token
-            and AlpaconHTTPClient._is_jwt(token)
-        ):
+        if auth_enabled and token and is_jwt:
             from utils.error_handler import (
+                UpstreamAuthError,
                 make_auth_error_key,
                 signal_upstream_auth_error,
             )
 
             token_key = make_auth_error_key(token)
+            logger.warning(
+                '[DEBUG-401] Setting dict signal with token_key=%s',
+                token_key,
+            )
             signal_upstream_auth_error(
                 token_key,
                 {
@@ -193,12 +216,18 @@ class AlpaconHTTPClient:
                 },
             )
             logger.warning(
-                'Upstream 401 detected (mfa_required=%s, source=%s), '
-                'signaling middleware for re-auth',
+                '[DEBUG-401] Raising UpstreamAuthError (mfa_required=%s, source=%s)',
                 mfa_required,
                 source,
             )
+            raise UpstreamAuthError(mfa_required=mfa_required, source=source)
 
+        logger.warning(
+            '[DEBUG-401] NOT signaling/raising — falling through to error dict. '
+            'auth_enabled=%s, is_jwt=%s',
+            auth_enabled,
+            is_jwt,
+        )
         error_msg = 'MFA verification required' if mfa_required else str(exc)
         error_response = {
             'error': 'MFA Required' if mfa_required else 'HTTP Error',

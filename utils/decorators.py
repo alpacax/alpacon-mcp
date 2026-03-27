@@ -7,6 +7,7 @@ from functools import wraps
 
 from utils.common import error_response, token_error_response, validate_token
 from utils.error_handler import (
+    UpstreamAuthError,
     format_validation_error,
     validate_region_format,
     validate_server_id_format,
@@ -165,16 +166,18 @@ def _resolve_region_local(workspace: str | None) -> tuple[str | None, str | None
 
 async def _check_mfa_requirement(
     tool_name: str, jwt_token: str, workspace: str
-) -> bool:
-    """Check if MFA is required for this tool call and signal re-auth if needed.
+) -> None:
+    """Check if MFA is required for this tool call and raise if needed.
 
     Fetches workspace security settings, checks the JWT's MFA completion
-    claims, and signals the upstream auth error middleware to return 401
-    with MFA scope if MFA is required but expired/missing.
+    claims, and raises UpstreamAuthError if MFA is required but
+    expired/missing. The ASGI middleware catches this exception and
+    returns HTTP 401 with MFA scope to trigger re-authentication.
 
-    Returns True if MFA is required but not satisfied (caller should
-    short-circuit the tool invocation). Returns False otherwise.
     Fails open on errors — the upstream API will catch it as a fallback.
+
+    Raises:
+        UpstreamAuthError: If MFA is required but not completed.
     """
     from utils.security_settings import (
         check_mfa_completed,
@@ -184,21 +187,21 @@ async def _check_mfa_requirement(
 
     action = get_action_for_tool(tool_name)
     if not action:
-        return False
+        return
 
     try:
         settings = await security_cache.get_settings(jwt_token, workspace)
         if not settings or not settings.is_action_mfa_required(action):
-            return False
+            return
 
         claims = _decode_jwt_claims(jwt_token)
         if not claims:
-            return False
+            return
 
         if check_mfa_completed(claims, settings):
-            return False
+            return
 
-        # MFA required but not completed — signal middleware to return 401
+        # MFA required but not completed — also set dict signal as fallback
         from utils.error_handler import make_auth_error_key, signal_upstream_auth_error
 
         token_key = make_auth_error_key(jwt_token)
@@ -207,16 +210,17 @@ async def _check_mfa_requirement(
             {'mfa_required': True, 'source': action},
         )
         logger.info(
-            'MFA pre-check: %s requires MFA for workspace %s, signaling re-auth',
+            'MFA pre-check: %s requires MFA for workspace %s, raising UpstreamAuthError',
             action,
             workspace,
         )
-        return True
+        raise UpstreamAuthError(mfa_required=True, source=action)
+    except UpstreamAuthError:
+        raise
     except Exception as e:
         # Fail-open: if pre-check fails, let the API call proceed.
         # The upstream API's own MFA check will catch it as a fallback.
         logger.debug('MFA pre-check failed (non-fatal): %s', e)
-        return False
 
 
 def with_token_validation(func: Callable) -> Callable:
@@ -317,18 +321,9 @@ def with_token_validation(func: Callable) -> Callable:
             extra_kwargs['token'] = jwt_token
 
             # MFA pre-check: verify MFA completion for actions that require it.
-            # If MFA is required but not yet satisfied, short-circuit so we do not
-            # invoke the underlying tool. The auth middleware will replace this
-            # placeholder response with a 401 error.
-            mfa_needed = await _check_mfa_requirement(
-                func.__name__, jwt_token, workspace
-            )
-            if mfa_needed:
-                return error_response(
-                    'Multi-factor authentication is required for this operation.',
-                    region=region,
-                    workspace=workspace,
-                )
+            # Raises UpstreamAuthError if MFA is required but not satisfied.
+            # The ASGI middleware catches this and returns HTTP 401.
+            await _check_mfa_requirement(func.__name__, jwt_token, workspace)
         else:
             # stdio mode — token.json only
             token = validate_token(region, workspace)
@@ -374,6 +369,11 @@ def with_error_handling(func: Callable) -> Callable:
             # Call the original function
             result = await func(*args, **kwargs)
             return result
+
+        except UpstreamAuthError:
+            # Let upstream auth errors propagate to the ASGI middleware
+            # which converts them to HTTP 401 for MCP client re-auth.
+            raise
 
         except Exception as e:
             # Get workspace and region for context

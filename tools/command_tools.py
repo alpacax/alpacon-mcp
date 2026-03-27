@@ -5,6 +5,7 @@ from typing import Any
 
 from utils.common import error_response, success_response
 from utils.decorators import mcp_tool_handler
+from utils.error_handler import UpstreamAuthError
 from utils.http_client import http_client
 
 
@@ -145,6 +146,8 @@ async def execute_command_sync(
             workspace=workspace,
             **kwargs,  # Pass token through
         )
+    except UpstreamAuthError:
+        raise
     except Exception as e:
         return error_response(
             f'Failed to execute command: {str(e)}', workspace=workspace, region=region

@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from utils.error_handler import UpstreamAuthError
 from utils.security_settings import (
     WorkspaceSecuritySettings,
     check_mfa_completed,
@@ -148,8 +149,8 @@ class TestMfaPrecheck:
             yield
 
     @pytest.mark.asyncio
-    async def test_mfa_required_signals_and_returns_true(self):
-        """When MFA is required but not completed, should signal and return True."""
+    async def test_mfa_required_raises_upstream_auth_error(self):
+        """When MFA is required but not completed, should raise UpstreamAuthError."""
         from utils.decorators import _check_mfa_requirement
 
         settings = WorkspaceSecuritySettings(
@@ -177,18 +178,18 @@ class TestMfaPrecheck:
             patch('utils.error_handler.signal_upstream_auth_error') as mock_signal,
             patch('utils.error_handler.make_auth_error_key', return_value='test-key'),
         ):
-            result = await _check_mfa_requirement(
-                'execute_command', 'fake-jwt', 'test-ws'
-            )
+            with pytest.raises(UpstreamAuthError) as exc_info:
+                await _check_mfa_requirement('execute_command', 'fake-jwt', 'test-ws')
 
-        assert result is True
+        assert exc_info.value.mfa_required is True
+        assert exc_info.value.source == 'websh'
         mock_signal.assert_called_once_with(
             'test-key', {'mfa_required': True, 'source': 'websh'}
         )
 
     @pytest.mark.asyncio
-    async def test_mfa_not_required_returns_false(self):
-        """When MFA is not required, should return False without signaling."""
+    async def test_mfa_not_required_no_raise(self):
+        """When MFA is not required, should return without raising."""
         from utils.decorators import _check_mfa_requirement
 
         settings = WorkspaceSecuritySettings(
@@ -208,30 +209,28 @@ class TestMfaPrecheck:
             ),
             patch('utils.error_handler.signal_upstream_auth_error') as mock_signal,
         ):
-            result = await _check_mfa_requirement(
-                'execute_command', 'fake-jwt', 'test-ws'
-            )
+            # Should not raise
+            await _check_mfa_requirement('execute_command', 'fake-jwt', 'test-ws')
 
-        assert result is False
         mock_signal.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_non_mfa_tool_returns_false(self):
-        """Non-MFA tools should return False immediately."""
+    async def test_non_mfa_tool_no_raise(self):
+        """Non-MFA tools should return without raising."""
         from utils.decorators import _check_mfa_requirement
 
         with patch(
             'utils.security_settings.security_cache.get_settings',
             new_callable=AsyncMock,
         ) as mock_get:
-            result = await _check_mfa_requirement('list_servers', 'fake-jwt', 'test-ws')
+            # Should not raise
+            await _check_mfa_requirement('list_servers', 'fake-jwt', 'test-ws')
 
-        assert result is False
         mock_get.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_mfa_completed_returns_false(self):
-        """When MFA is required and completed, should return False."""
+    async def test_mfa_completed_no_raise(self):
+        """When MFA is required and completed, should not raise."""
         from utils.decorators import _check_mfa_requirement
 
         recent = (
@@ -263,11 +262,9 @@ class TestMfaPrecheck:
             ),
             patch('utils.error_handler.signal_upstream_auth_error') as mock_signal,
         ):
-            result = await _check_mfa_requirement(
-                'execute_command', 'fake-jwt', 'test-ws'
-            )
+            # Should not raise
+            await _check_mfa_requirement('execute_command', 'fake-jwt', 'test-ws')
 
-        assert result is False
         mock_signal.assert_not_called()
 
 
