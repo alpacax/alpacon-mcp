@@ -175,6 +175,18 @@ class AlpaconHTTPClient:
             logger.debug('Failed to parse 401 response body as JSON: %s', parse_exc)
 
         auth_enabled = os.getenv('ALPACON_MCP_AUTH_ENABLED', '').lower() == 'true'
+        is_jwt = bool(token and AlpaconHTTPClient._is_jwt(token))
+
+        # DEBUG: Log all decision factors for 401 handling
+        logger.warning(
+            '[DEBUG-401] auth_enabled=%s, token_present=%s, is_jwt=%s, '
+            'mfa_required=%s, source=%s',
+            auth_enabled,
+            bool(token),
+            is_jwt,
+            mfa_required,
+            source,
+        )
 
         # Signal middleware AND raise exception in remote (streamable-http) mode.
         # Uses a module-level thread-safe dict keyed by token hash instead
@@ -184,7 +196,7 @@ class AlpaconHTTPClient:
         # Only signal for JWT (Bearer) tokens — API tokens (token=...) use
         # a different auth scheme and the middleware cannot derive a matching
         # key from them, which would leave unconsumed entries.
-        if auth_enabled and token and AlpaconHTTPClient._is_jwt(token):
+        if auth_enabled and token and is_jwt:
             from utils.error_handler import (
                 UpstreamAuthError,
                 make_auth_error_key,
@@ -192,6 +204,10 @@ class AlpaconHTTPClient:
             )
 
             token_key = make_auth_error_key(token)
+            logger.warning(
+                '[DEBUG-401] Setting dict signal with token_key=%s',
+                token_key,
+            )
             signal_upstream_auth_error(
                 token_key,
                 {
@@ -200,13 +216,18 @@ class AlpaconHTTPClient:
                 },
             )
             logger.warning(
-                'Upstream 401 detected (mfa_required=%s, source=%s), '
-                'raising UpstreamAuthError for middleware',
+                '[DEBUG-401] Raising UpstreamAuthError (mfa_required=%s, source=%s)',
                 mfa_required,
                 source,
             )
             raise UpstreamAuthError(mfa_required=mfa_required, source=source)
 
+        logger.warning(
+            '[DEBUG-401] NOT signaling/raising — falling through to error dict. '
+            'auth_enabled=%s, is_jwt=%s',
+            auth_enabled,
+            is_jwt,
+        )
         error_msg = 'MFA verification required' if mfa_required else str(exc)
         error_response = {
             'error': 'MFA Required' if mfa_required else 'HTTP Error',
