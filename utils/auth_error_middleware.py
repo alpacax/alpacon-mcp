@@ -126,8 +126,10 @@ class UpstreamAuthErrorMiddleware:
             now = time.monotonic()
             self._prune_expired_cooldowns(now)
             client_key = token_key or '_anonymous'
-            last_401 = self._client_cooldowns.get(client_key, 0)
-            cooldown_active = (now - last_401) <= self._cooldown_seconds
+            cooldown_active = False
+            if client_key in self._client_cooldowns:
+                last_401 = self._client_cooldowns[client_key]
+                cooldown_active = (now - last_401) <= self._cooldown_seconds
 
             if not cooldown_active:
                 self._client_cooldowns[client_key] = now
