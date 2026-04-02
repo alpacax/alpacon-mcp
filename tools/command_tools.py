@@ -211,6 +211,8 @@ async def execute_command_sync(
         )
 
     # Wait for command completion with progress-based timeout reset
+    # Hard cap at 3x timeout to prevent indefinite waiting
+    hard_deadline = asyncio.get_event_loop().time() + timeout * 3
     deadline = asyncio.get_event_loop().time() + timeout
     while asyncio.get_event_loop().time() < deadline:
         result = await get_command_result(
@@ -245,9 +247,12 @@ async def execute_command_sync(
                     details=command_data,
                 )
 
-            # Command still in progress — reset deadline
+            # Command still in progress — reset deadline (within hard cap)
             if status in ('running', 'acked'):
-                deadline = asyncio.get_event_loop().time() + timeout
+                deadline = min(
+                    asyncio.get_event_loop().time() + timeout,
+                    hard_deadline,
+                )
 
         # Wait before next check
         await asyncio.sleep(1)
