@@ -4,7 +4,6 @@ Unit tests for graceful shutdown functionality.
 Tests http_client.close() idempotency and the app_lifespan teardown sequence.
 """
 
-import asyncio
 import signal
 from unittest.mock import AsyncMock, MagicMock, patch
 
