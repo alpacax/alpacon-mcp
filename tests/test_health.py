@@ -72,7 +72,6 @@ class TestGetHealthInfoLocal:
             'transport',
             'auth',
             'http_client',
-            'websocket_pool',
         }
         assert required_keys.issubset(result.keys())
 
@@ -155,28 +154,6 @@ class TestGetHealthInfoLocal:
 
         assert result['http_client']['pool_active'] is False
         assert result['http_client']['cache_size'] == 0
-
-    @pytest.mark.asyncio
-    async def test_websocket_pool_info(self, patched_health_local):
-        """WebSocket pool section must report channel and session counts."""
-        with (
-            patch(
-                'tools.websh_tools.websocket_pool',
-                {'ch1': {}, 'ch2': {}},
-            ),
-            patch(
-                'tools.websh_tools.session_pool',
-                {'sess1': {}},
-            ),
-        ):
-            from utils.health import get_health_info
-
-            result = await get_health_info()
-
-        ws_info = result['websocket_pool']
-        assert ws_info['active_channels'] == 2
-        assert ws_info['active_sessions'] == 1
-
 
 class TestGetHealthInfoRemote:
     """Tests for get_health_info in remote (streamable-http) mode."""

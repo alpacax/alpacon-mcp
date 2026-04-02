@@ -17,11 +17,11 @@ from utils.security_settings import (
 class TestGetActionForTool:
     """Tests for tool name -> MFA action mapping."""
 
-    def test_websh_tools(self):
-        assert get_action_for_tool('execute_command') == 'websh'
-        assert get_action_for_tool('execute_command_batch') == 'websh'
-        assert get_action_for_tool('websh_session_create') == 'websh'
-        assert get_action_for_tool('websh_channel_execute') == 'websh'
+    def test_removed_websh_tools_return_none(self):
+        assert get_action_for_tool('execute_command') is None
+        assert get_action_for_tool('execute_command_batch') is None
+        assert get_action_for_tool('websh_session_create') is None
+        assert get_action_for_tool('websh_channel_execute') is None
 
     def test_webftp_tools(self):
         assert get_action_for_tool('webftp_upload_file') == 'webftp'
@@ -50,7 +50,7 @@ class TestCheckMfaCompleted:
             {
                 'mfa_required': mfa_required,
                 'mfa_timeout': timeout,
-                'mfa_required_actions': actions or ['websh', 'command'],
+                'mfa_required_actions': actions or ['command'],
                 'allowed_mfa_methods': methods or [],
             }
         )
@@ -157,7 +157,7 @@ class TestMfaPrecheck:
             {
                 'mfa_required': True,
                 'mfa_timeout': 900,
-                'mfa_required_actions': ['websh'],
+                'mfa_required_actions': ['command'],
                 'allowed_mfa_methods': [],
             }
         )
@@ -179,12 +179,12 @@ class TestMfaPrecheck:
             patch('utils.error_handler.make_auth_error_key', return_value='test-key'),
         ):
             with pytest.raises(UpstreamAuthError) as exc_info:
-                await _check_mfa_requirement('execute_command', 'fake-jwt', 'test-ws')
+                await _check_mfa_requirement('execute_command_with_acl', 'fake-jwt', 'test-ws')
 
         assert exc_info.value.mfa_required is True
-        assert exc_info.value.source == 'websh'
+        assert exc_info.value.source == 'command'
         mock_signal.assert_called_once_with(
-            'test-key', {'mfa_required': True, 'source': 'websh'}
+            'test-key', {'mfa_required': True, 'source': 'command'}
         )
 
     @pytest.mark.asyncio
@@ -210,7 +210,7 @@ class TestMfaPrecheck:
             patch('utils.error_handler.signal_upstream_auth_error') as mock_signal,
         ):
             # Should not raise
-            await _check_mfa_requirement('execute_command', 'fake-jwt', 'test-ws')
+            await _check_mfa_requirement('execute_command_with_acl', 'fake-jwt', 'test-ws')
 
         mock_signal.assert_not_called()
 
@@ -242,7 +242,7 @@ class TestMfaPrecheck:
             {
                 'mfa_required': True,
                 'mfa_timeout': 900,
-                'mfa_required_actions': ['websh'],
+                'mfa_required_actions': ['command'],
                 'allowed_mfa_methods': [],
             }
         )
@@ -263,7 +263,7 @@ class TestMfaPrecheck:
             patch('utils.error_handler.signal_upstream_auth_error') as mock_signal,
         ):
             # Should not raise
-            await _check_mfa_requirement('execute_command', 'fake-jwt', 'test-ws')
+            await _check_mfa_requirement('execute_command_with_acl', 'fake-jwt', 'test-ws')
 
         mock_signal.assert_not_called()
 
@@ -327,7 +327,7 @@ class TestSecuritySettingsCache:
                 'workspace': 'ws1',
                 'mfa_required': True,
                 'mfa_timeout': 900,
-                'mfa_required_actions': ['websh'],
+                'mfa_required_actions': ['command'],
                 'allowed_mfa_methods': [],
             },
         ]

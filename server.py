@@ -36,14 +36,7 @@ async def app_lifespan(app: FastMCP) -> AsyncIterator[None]:
         yield
     finally:
         logger.info('Application shutting down, cleaning up resources...')
-        # Lazy imports to avoid circular imports (server.py <-> tools/*.py)
-        from tools.websh_tools import cleanup_all_connections
         from utils.http_client import http_client
-
-        try:
-            await cleanup_all_connections()
-        except Exception as e:
-            logger.error(f'Error during WebSocket cleanup: {e}')
 
         try:
             await http_client.close()
@@ -295,7 +288,6 @@ def run(
     import tools.system_info_tools  # noqa: F401
     import tools.webftp_tools  # noqa: F401
     import tools.webhook_tools  # noqa: F401
-    import tools.websh_tools  # noqa: F401
     import tools.workspace_tools  # noqa: F401
 
     # In remote mode, wrap the Starlette app with upstream auth error

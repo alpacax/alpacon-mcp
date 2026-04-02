@@ -55,7 +55,7 @@ class TestExecuteCommand:
         assert result['status'] == 'success'
         assert result['server_id'] == '550e8400-e29b-41d4-a716-446655440001'
         assert result['command'] == 'ls -la'
-        assert result['shell'] == 'internal'  # default value
+        assert result['shell'] == 'system'  # default value
         assert result['region'] == 'ap1'
         assert result['workspace'] == 'testworkspace'
         assert 'data' in result
@@ -68,7 +68,7 @@ class TestExecuteCommand:
             token='test-token',
             data={
                 'server': '550e8400-e29b-41d4-a716-446655440001',
-                'shell': 'internal',
+                'shell': 'system',
                 'line': 'ls -la',
                 'groupname': 'alpacon',
             },
