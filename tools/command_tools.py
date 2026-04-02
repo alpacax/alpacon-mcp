@@ -216,7 +216,10 @@ async def execute_command_sync(
     deadline = asyncio.get_event_loop().time() + timeout
     while asyncio.get_event_loop().time() < deadline:
         result = await get_command_result(
-            command_id=command_id, region=region, workspace=workspace
+            command_id=command_id,
+            region=region,
+            workspace=workspace,
+            **kwargs,
         )
 
         if result['status'] == 'success':
