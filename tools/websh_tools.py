@@ -898,7 +898,7 @@ async def websh_websocket_execute(
 
 
 @mcp_tool_handler(
-    description='Execute a shell command on a server using automatic connection pooling. This is the recommended way to run commands — it creates or reuses Websh sessions and WebSocket connections transparently. No ACL permission required unlike Command API tools.',
+    description='Execute a shell command on a server using automatic connection pooling. This is the recommended way to run commands—it creates or reuses Websh sessions and WebSocket connections transparently. No ACL permission required unlike Command API tools.',
     annotations=ADDITIVE,
     meta={'anthropic/searchHint': 'command run shell execute websh simple'},
 )
