@@ -5,6 +5,7 @@ from typing import Any
 from utils.common import success_response
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
+from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, READ_ONLY
 
 # ===============================
 # APPROVAL REQUEST TOOLS
@@ -12,7 +13,9 @@ from utils.http_client import http_client
 
 
 @mcp_tool_handler(
-    description='List pending and historical approval requests in a workspace. Returns request ID, type, status, and requestor details. Filterable by status (pending, approved, rejected, cancelled, expired). Use this to review access requests that need approval or check approval history.'
+    description='List pending and historical approval requests in a workspace. Returns request ID, type, status, and requestor details. Filterable by status (pending, approved, rejected, cancelled, expired). Use this to review access requests that need approval or check approval history.',
+    annotations=READ_ONLY,
+    meta={'anthropic/searchHint': 'approval requests pending review'},
 )
 async def list_approval_requests(
     workspace: str,
@@ -56,7 +59,9 @@ async def list_approval_requests(
 
 
 @mcp_tool_handler(
-    description='Get detailed information about a specific approval request by its ID. Returns requestor, request type, reason, status, and timestamps. Use this when you need full details about a single approval request.'
+    description='Get detailed information about a specific approval request by its ID. Returns requestor, request type, reason, status, and timestamps. Use this when you need full details about a single approval request.',
+    annotations=READ_ONLY,
+    meta={'anthropic/searchHint': 'approval request detail'},
 )
 async def get_approval_request(
     request_id: str, workspace: str, region: str = '', **kwargs
@@ -86,7 +91,9 @@ async def get_approval_request(
 
 
 @mcp_tool_handler(
-    description='Approve a pending approval request by its ID. Optionally include a comment explaining the approval decision. Only pending requests can be approved. Requires superuser or approval permission.'
+    description='Approve a pending approval request by its ID. Optionally include a comment explaining the approval decision. Only pending requests can be approved. Requires superuser or approval permission. Related: list_approval_requests (find pending requests), reject_request (deny instead).',
+    annotations=ADDITIVE,
+    meta={'anthropic/searchHint': 'approval approve accept grant'},
 )
 async def approve_request(
     request_id: str,
@@ -126,7 +133,9 @@ async def approve_request(
 
 
 @mcp_tool_handler(
-    description='Reject a pending approval request by its ID. Optionally include a comment explaining the rejection reason. Only pending requests can be rejected. Requires superuser or approval permission.'
+    description='Reject a pending approval request by its ID. Optionally include a comment explaining the rejection reason. Only pending requests can be rejected. Requires superuser or approval permission. Related: list_approval_requests (find pending requests), approve_request (approve instead). Note: Rejection is irreversible.',
+    annotations=DESTRUCTIVE,
+    meta={'anthropic/searchHint': 'approval reject deny refuse'},
 )
 async def reject_request(
     request_id: str,
@@ -171,7 +180,9 @@ async def reject_request(
 
 
 @mcp_tool_handler(
-    description='List sudo policies that define elevated privilege rules. Returns policy names, allowed commands, assigned users/servers, and validity periods. Filterable by user or server ID. Use this to audit which sudo privileges are configured in the workspace.'
+    description='List sudo policies that define elevated privilege rules. Returns policy names, allowed commands, assigned users/servers, and validity periods. Filterable by user or server ID. Use this to audit which sudo privileges are configured in the workspace.',
+    annotations=READ_ONLY,
+    meta={'anthropic/searchHint': 'sudo policy privilege elevation rules'},
 )
 async def list_sudo_policies(
     workspace: str,
@@ -211,7 +222,9 @@ async def list_sudo_policies(
 
 
 @mcp_tool_handler(
-    description='Create a sudo policy to define elevated privilege rules. Specify allowed commands, target users/servers, and whether passwordless sudo is permitted. Empty users or servers fields mean the policy applies to all. Requires superuser permission.'
+    description='Create a sudo policy to define elevated privilege rules. Specify allowed commands, target users/servers, and whether passwordless sudo is permitted. Empty users or servers fields mean the policy applies to all. Requires superuser permission.',
+    annotations=ADDITIVE,
+    meta={'anthropic/searchHint': 'sudo policy create privilege elevation'},
 )
 async def create_sudo_policy(
     workspace: str,

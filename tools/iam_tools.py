@@ -6,6 +6,7 @@ from server import mcp
 from utils.common import error_response, success_response
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
+from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ_ONLY
 
 # ===============================
 # USER MANAGEMENT TOOLS
@@ -13,7 +14,9 @@ from utils.http_client import http_client
 
 
 @mcp_tool_handler(
-    description='List all IAM users in a workspace. Returns username, email, active status, and group memberships for each user. Supports pagination for large user lists.'
+    description='List all IAM users in a workspace. Returns username, email, active status, and group memberships for each user. Supports pagination for large user lists. Related: get_iam_user (details), create_iam_user, list_system_users (OS-level users, not IAM).',
+    annotations=READ_ONLY,
+    meta={'anthropic/searchHint': 'iam users list workspace identity access'},
 )
 async def list_iam_users(
     workspace: str,
@@ -55,7 +58,9 @@ async def list_iam_users(
 
 
 @mcp_tool_handler(
-    description='Get detailed information about a specific IAM user by their user ID. Returns email, first/last name, active status, and assigned groups. Use this when you need full profile details for a single user.'
+    description='Get detailed information about a specific IAM user by their user ID. Returns email, first/last name, active status, and assigned groups. Use this when you need full profile details for a single user.',
+    annotations=READ_ONLY,
+    meta={'anthropic/searchHint': 'iam user detail profile'},
 )
 async def get_iam_user(
     user_id: str, workspace: str, region: str = '', **kwargs
@@ -86,7 +91,9 @@ async def get_iam_user(
 
 
 @mcp_tool_handler(
-    description='Create a new IAM user account in the workspace. Requires username and email. Optionally assign the user to groups and set first/last name. The user is active by default.'
+    description='Create a new IAM user account in the workspace. Requires username and email. Optionally assign the user to groups and set first/last name. The user is active by default. Related: list_iam_groups (find groups to assign), update_iam_user, delete_iam_user.',
+    annotations=ADDITIVE,
+    meta={'anthropic/searchHint': 'iam user create add new account'},
 )
 async def create_iam_user(
     username: str,
@@ -141,7 +148,9 @@ async def create_iam_user(
 
 
 @mcp_tool_handler(
-    description='Update an existing IAM user profile. Can change email, first/last name, active/inactive status, or group memberships. Only the fields you provide will be updated (partial update).'
+    description='Update an existing IAM user profile. Can change email, first/last name, active/inactive status, or group memberships. Only the fields you provide will be updated (partial update).',
+    annotations=IDEMPOTENT_WRITE,
+    meta={'anthropic/searchHint': 'iam user update modify edit'},
 )
 async def update_iam_user(
     user_id: str,
@@ -202,7 +211,9 @@ async def update_iam_user(
 
 
 @mcp_tool_handler(
-    description='Permanently delete an IAM user account from the workspace. This action cannot be undone. Use update_iam_user to deactivate a user instead if you want to preserve the account.'
+    description='Permanently delete an IAM user account from the workspace. This action cannot be undone. Use update_iam_user to deactivate a user instead if you want to preserve the account.',
+    annotations=DESTRUCTIVE,
+    meta={'anthropic/searchHint': 'iam user delete remove'},
 )
 async def delete_iam_user(
     user_id: str, workspace: str, region: str = '', **kwargs
@@ -238,7 +249,9 @@ async def delete_iam_user(
 
 
 @mcp_tool_handler(
-    description='List all IAM permission groups in a workspace. Returns group names, descriptions, and member information. Supports pagination for large group lists.'
+    description='List all IAM permission groups in a workspace. Returns group names, descriptions, and member information. Supports pagination for large group lists. Related: create_iam_group, list_system_groups (OS-level groups, not IAM).',
+    annotations=READ_ONLY,
+    meta={'anthropic/searchHint': 'iam groups list workspace'},
 )
 async def list_iam_groups(
     workspace: str,
@@ -280,7 +293,9 @@ async def list_iam_groups(
 
 
 @mcp_tool_handler(
-    description='Create a new IAM permission group in the workspace. Requires a group name. Optionally set a description and assign permissions. Users can then be added to this group via create_iam_user or update_iam_user.'
+    description='Create a new IAM permission group in the workspace. Requires a group name. Optionally set a description and assign permissions. Users can then be added to this group via create_iam_user or update_iam_user.',
+    annotations=ADDITIVE,
+    meta={'anthropic/searchHint': 'iam group create add new'},
 )
 async def create_iam_group(
     name: str,

@@ -5,6 +5,7 @@ from typing import Any
 from utils.common import error_response, success_response
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
+from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ_ONLY
 
 # ===============================
 # COMMAND ACL TOOLS
@@ -12,7 +13,9 @@ from utils.http_client import http_client
 
 
 @mcp_tool_handler(
-    description='List command ACL rules for controlling command execution permissions'
+    description='List command ACL rules that control which commands can be executed. When to use: checking command execution permissions or debugging 403 errors from execute_command_sync. Related: create_command_acl (add rules), list_server_acls (server access rules), list_file_acls (file access rules).',
+    annotations=READ_ONLY,
+    meta={'anthropic/searchHint': 'command acl permission rules security'},
 )
 async def list_command_acls(
     workspace: str,
@@ -52,7 +55,9 @@ async def list_command_acls(
 
 
 @mcp_tool_handler(
-    description='Create a command ACL rule to allow or deny command execution'
+    description='Create a command ACL rule to allow or deny command execution. When to use: granting or restricting command execution permissions. Related: list_command_acls (view existing), update_command_acl (modify), delete_command_acl (remove). Note: Higher priority values take precedence.',
+    annotations=ADDITIVE,
+    meta={'anthropic/searchHint': 'command acl create permission allow deny'},
 )
 async def create_command_acl(
     workspace: str,
@@ -111,7 +116,11 @@ async def create_command_acl(
     return success_response(data=result, region=region, workspace=workspace)
 
 
-@mcp_tool_handler(description='Update an existing command ACL rule')
+@mcp_tool_handler(
+    description='Update an existing command ACL rule. Related: list_command_acls (find rule ID).',
+    annotations=IDEMPOTENT_WRITE,
+    meta={'anthropic/searchHint': 'command acl update modify'},
+)
 async def update_command_acl(
     acl_id: str,
     workspace: str,
@@ -176,7 +185,11 @@ async def update_command_acl(
     )
 
 
-@mcp_tool_handler(description='Delete a command ACL rule')
+@mcp_tool_handler(
+    description='Delete a command ACL rule permanently. Related: list_command_acls (find rule ID), update_command_acl (modify instead). Note: Cannot be undone.',
+    annotations=DESTRUCTIVE,
+    meta={'anthropic/searchHint': 'command acl delete remove'},
+)
 async def delete_command_acl(
     acl_id: str, workspace: str, region: str = '', **kwargs
 ) -> dict[str, Any]:
@@ -210,7 +223,9 @@ async def delete_command_acl(
 
 
 @mcp_tool_handler(
-    description='List server ACL rules for controlling server access permissions'
+    description='List server ACL rules that control which users can access which servers. When to use: checking server access permissions. Related: create_server_acl, list_command_acls (command permissions), list_file_acls (file permissions).',
+    annotations=READ_ONLY,
+    meta={'anthropic/searchHint': 'server acl access permission rules'},
 )
 async def list_server_acls(
     workspace: str,
@@ -249,7 +264,11 @@ async def list_server_acls(
     return success_response(data=result, region=region, workspace=workspace)
 
 
-@mcp_tool_handler(description='Create a server ACL rule to control server access')
+@mcp_tool_handler(
+    description='Create a server ACL rule to control server access. When to use: granting or restricting server access for users or groups. Related: list_server_acls (view existing). Note: Higher priority values take precedence.',
+    annotations=ADDITIVE,
+    meta={'anthropic/searchHint': 'server acl create permission allow deny'},
+)
 async def create_server_acl(
     workspace: str,
     effect: str,
@@ -308,7 +327,9 @@ async def create_server_acl(
 
 
 @mcp_tool_handler(
-    description='List file ACL rules for controlling file access permissions'
+    description='List file ACL rules that control file access permissions (WebFTP). When to use: checking file transfer permissions. Related: create_file_acl, list_command_acls (command permissions), list_server_acls (server permissions).',
+    annotations=READ_ONLY,
+    meta={'anthropic/searchHint': 'file acl access permission rules path'},
 )
 async def list_file_acls(
     workspace: str,
@@ -347,7 +368,11 @@ async def list_file_acls(
     return success_response(data=result, region=region, workspace=workspace)
 
 
-@mcp_tool_handler(description='Create a file ACL rule to control file access')
+@mcp_tool_handler(
+    description='Create a file ACL rule to control file access. When to use: granting or restricting file transfer permissions for specific paths. Related: list_file_acls (view existing). Note: Higher priority values take precedence.',
+    annotations=ADDITIVE,
+    meta={'anthropic/searchHint': 'file acl create permission allow deny'},
+)
 async def create_file_acl(
     workspace: str,
     effect: str,

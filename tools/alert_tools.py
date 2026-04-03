@@ -5,13 +5,21 @@ from typing import Any
 from utils.common import error_response, success_response
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
+from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ_ONLY
 
 # ===============================
 # ALERT TOOLS
 # ===============================
 
 
-@mcp_tool_handler(description='List alerts with optional filtering by server or status')
+@mcp_tool_handler(
+    description='List alerts with optional filtering by server or status. When to use: checking active alerts or reviewing alert history. Related: get_alert (full details), get_alert_rules (threshold configuration), mute_alert (suppress notifications).',
+    annotations=READ_ONLY,
+    meta={
+        'anthropic/alwaysLoad': True,
+        'anthropic/searchHint': 'alerts active triggered notifications monitoring',
+    },
+)
 async def list_alerts(
     workspace: str,
     server_id: str | None = None,
@@ -59,7 +67,11 @@ async def list_alerts(
     )
 
 
-@mcp_tool_handler(description='Get detailed information about a specific alert')
+@mcp_tool_handler(
+    description='Get detailed information about a specific alert. When to use: need full context about a triggered alert. Related: list_alerts (browse alerts), mute_alert (suppress this alert).',
+    annotations=READ_ONLY,
+    meta={'anthropic/searchHint': 'alert detail info specific'},
+)
 async def get_alert(
     alert_id: str, workspace: str, region: str = '', **kwargs
 ) -> dict[str, Any]:
@@ -87,7 +99,11 @@ async def get_alert(
     )
 
 
-@mcp_tool_handler(description='Mute an alert to suppress notifications temporarily')
+@mcp_tool_handler(
+    description='Mute an alert to suppress notifications temporarily. When to use: an alert is known and being worked on, and you want to stop repeated notifications. Related: list_alerts (find alert ID), get_alert (check alert details first).',
+    annotations=ADDITIVE,
+    meta={'anthropic/searchHint': 'alert mute suppress silence notification'},
+)
 async def mute_alert(
     alert_id: str,
     workspace: str,
@@ -131,7 +147,11 @@ async def mute_alert(
 
 
 @mcp_tool_handler(
-    description='Create an alert rule to define monitoring thresholds and notifications'
+    description='Create an alert rule to define monitoring thresholds and notifications. When to use: setting up new monitoring for cpu, memory, or disk metrics. Related: get_alert_rules (view existing rules), update_alert_rule (modify rules), list_alerts (see triggered alerts).',
+    annotations=ADDITIVE,
+    meta={
+        'anthropic/searchHint': 'alert rule create threshold monitoring notification'
+    },
 )
 async def create_alert_rule(
     workspace: str,
@@ -191,7 +211,11 @@ async def create_alert_rule(
     return success_response(data=result, region=region, workspace=workspace)
 
 
-@mcp_tool_handler(description='Update an existing alert rule configuration')
+@mcp_tool_handler(
+    description='Update an existing alert rule configuration. When to use: adjusting thresholds or notification settings. Related: get_alert_rules (find rule ID), create_alert_rule (create new), delete_alert_rule (remove).',
+    annotations=IDEMPOTENT_WRITE,
+    meta={'anthropic/searchHint': 'alert rule update modify threshold'},
+)
 async def update_alert_rule(
     rule_id: str,
     workspace: str,
@@ -260,7 +284,11 @@ async def update_alert_rule(
     )
 
 
-@mcp_tool_handler(description='Delete an alert rule')
+@mcp_tool_handler(
+    description='Delete an alert rule permanently. When to use: removing alert rules that are no longer needed. Related: get_alert_rules (find rule ID), update_alert_rule (modify instead of deleting). Note: This cannot be undone.',
+    annotations=DESTRUCTIVE,
+    meta={'anthropic/searchHint': 'alert rule delete remove'},
+)
 async def delete_alert_rule(
     rule_id: str, workspace: str, region: str = '', **kwargs
 ) -> dict[str, Any]:

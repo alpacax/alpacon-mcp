@@ -5,13 +5,18 @@ from typing import Any
 from utils.common import success_response
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
+from utils.tool_annotations import READ_ONLY
 
 # ===============================
 # ACTIVITY LOG TOOLS
 # ===============================
 
 
-@mcp_tool_handler(description='List activity logs for auditing user and system actions')
+@mcp_tool_handler(
+    description='List activity logs for auditing user and system actions. When to use: auditing who did what in the workspace. Related: get_activity_log (full details), list_server_logs (command history), list_webftp_logs (file transfer history).',
+    annotations=READ_ONLY,
+    meta={'anthropic/searchHint': 'audit activity logs user actions'},
+)
 async def list_activity_logs(
     workspace: str,
     region: str = '',
@@ -50,7 +55,9 @@ async def list_activity_logs(
 
 
 @mcp_tool_handler(
-    description='Get detailed information about a specific activity log entry'
+    description='Get detailed information about a specific activity log entry. Related: list_activity_logs (browse logs).',
+    annotations=READ_ONLY,
+    meta={'anthropic/searchHint': 'audit activity log detail'},
 )
 async def get_activity_log(
     log_id: str, workspace: str, region: str = '', **kwargs
@@ -84,7 +91,11 @@ async def get_activity_log(
 # ===============================
 
 
-@mcp_tool_handler(description='List server command execution logs from history')
+@mcp_tool_handler(
+    description='List server command execution logs from history. When to use: reviewing command execution audit trail. Related: list_commands (recent commands with output), list_activity_logs (broader audit).',
+    annotations=READ_ONLY,
+    meta={'anthropic/searchHint': 'server command execution logs history'},
+)
 async def list_server_logs(
     workspace: str,
     server_id: str | None = None,
@@ -128,7 +139,11 @@ async def list_server_logs(
     )
 
 
-@mcp_tool_handler(description='List WebFTP file transfer logs from history')
+@mcp_tool_handler(
+    description='List WebFTP file transfer logs from history. When to use: reviewing file transfer audit trail. Related: webftp_uploads_list (upload status), webftp_downloads_list (download status).',
+    annotations=READ_ONLY,
+    meta={'anthropic/searchHint': 'webftp file transfer logs history'},
+)
 async def list_webftp_logs(
     workspace: str,
     server_id: str | None = None,
@@ -178,7 +193,9 @@ async def list_webftp_logs(
 
 
 @mcp_tool_handler(
-    description='List AI security analysis results for Websh sessions across the workspace. Filterable by server, risk score, or analysis status. Returns summary, risk scores, and analysis timestamps. Useful for security auditing and threat monitoring.'
+    description='List AI security analysis results for Websh sessions across the workspace. Filterable by server, risk score, or analysis status. Returns summary, risk scores, and analysis timestamps. Useful for security auditing and threat monitoring.',
+    annotations=READ_ONLY,
+    meta={'anthropic/searchHint': 'session analysis security risk threat'},
 )
 async def list_session_analyses(
     workspace: str,
@@ -232,7 +249,9 @@ async def list_session_analyses(
 
 
 @mcp_tool_handler(
-    description='Get detailed AI security analysis for a specific session analysis record. Returns full analysis including risk factors, MITRE ATT&CK mapping, attack chain analysis, threat indicators, timeline analysis, and recommended actions.'
+    description='Get detailed AI security analysis for a specific session analysis record. Returns full analysis including risk factors, MITRE ATT&CK mapping, attack chain analysis, threat indicators, timeline analysis, and recommended actions.',
+    annotations=READ_ONLY,
+    meta={'anthropic/searchHint': 'session analysis detail mitre attack threat'},
 )
 async def get_session_analysis_detail(
     analysis_id: str,

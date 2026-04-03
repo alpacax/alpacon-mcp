@@ -7,10 +7,13 @@ from utils.common import error_response, success_response
 from utils.decorators import mcp_tool_handler
 from utils.error_handler import UpstreamAuthError
 from utils.http_client import http_client
+from utils.tool_annotations import ADDITIVE, READ_ONLY
 
 
 @mcp_tool_handler(
-    description='Run a shell command on a remote server asynchronously via Command API. Returns a command ID that can be polled with get_command_result. Requires ACL permission on the API token. For synchronous execution, use execute_command_sync instead.'
+    description='Run a shell command on a remote server asynchronously via Command API. Returns a command ID for polling with get_command_result. Requires ACL permission. When to use: you need async command execution and will poll for results separately. Related: execute_command_sync (simpler, waits for result), get_command_result (poll for results), execute_command_multi_server (same command on many servers). Note: Prefer execute_command_sync for most use cases.',
+    annotations=ADDITIVE,
+    meta={'anthropic/searchHint': 'command run shell execute async ACL'},
 )
 async def execute_command_with_acl(
     server_id: str,
@@ -61,7 +64,9 @@ async def execute_command_with_acl(
 
 
 @mcp_tool_handler(
-    description='Retrieve the result of a previously executed command by its command ID. Returns stdout, stderr, exit code, and completion status. Use this to poll for results after execute_command_with_acl.'
+    description='Retrieve the result of a previously executed command by its command ID. Returns stdout, stderr, exit code, and completion status. When to use: polling for results after execute_command_with_acl. Related: execute_command_with_acl (creates the command), list_commands (browse history).',
+    annotations=READ_ONLY,
+    meta={'anthropic/searchHint': 'command result output status poll'},
 )
 async def get_command_result(
     command_id: str, workspace: str, region: str = '', **kwargs
@@ -82,7 +87,9 @@ async def get_command_result(
 
 
 @mcp_tool_handler(
-    description='List recent command execution history with status, output, and timestamps. Filterable by server ID. Use this to review what commands have been run or check past results.'
+    description='List recent command execution history with status, output, and timestamps. Filterable by server ID. When to use: reviewing past commands or checking what has been run on a server. Related: get_command_result (get full output of a specific command).',
+    annotations=READ_ONLY,
+    meta={'anthropic/searchHint': 'command history list recent'},
 )
 async def list_commands(
     workspace: str,
@@ -118,7 +125,12 @@ async def list_commands(
 
 
 @mcp_tool_handler(
-    description='Run a shell command on a server and wait for it to complete. Returns stdout, stderr, and exit code in a single call. Requires ACL permission. This is the simplest way to run a command via the Command API when you need the result immediately.'
+    description='Run a shell command on a server and wait for the result. Returns stdout, stderr, and exit code in a single call. Requires ACL permission. When to use: the simplest and recommended way to run a command when you need the result immediately. Related: execute_command_with_acl (async alternative), execute_command_multi_server (run on multiple servers). Note: Default timeout is 30 seconds.',
+    annotations=ADDITIVE,
+    meta={
+        'anthropic/alwaysLoad': True,
+        'anthropic/searchHint': 'command run shell execute sync wait result',
+    },
 )
 async def execute_command_sync(
     server_id: str,
@@ -233,7 +245,9 @@ async def execute_command_sync(
 
 
 @mcp_tool_handler(
-    description='Run the same shell command on multiple servers simultaneously or sequentially. Returns per-server results with success/failure status. Requires ACL permission. Use this for batch operations like deploying configs or checking status across a fleet.'
+    description='Run the same shell command on multiple servers simultaneously or sequentially. Returns per-server results with success/failure status. Requires ACL permission. When to use: batch operations like deploying configs, checking status, or running diagnostics across a fleet. Related: execute_command_sync (single server), execute_command_with_acl (single server async). Note: Set parallel=false for sequential execution.',
+    annotations=ADDITIVE,
+    meta={'anthropic/searchHint': 'command multi server batch deploy fleet parallel'},
 )
 async def execute_command_multi_server(
     server_ids: list[str],

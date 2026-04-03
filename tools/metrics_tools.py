@@ -8,6 +8,7 @@ from utils.common import error_response, success_response
 from utils.decorators import mcp_tool_handler
 from utils.error_handler import UpstreamAuthError
 from utils.http_client import http_client
+from utils.tool_annotations import READ_ONLY
 
 
 def parse_cpu_metrics(results: list) -> dict[str, Any]:
@@ -72,7 +73,9 @@ def parse_cpu_metrics(results: list) -> dict[str, Any]:
 
 
 @mcp_tool_handler(
-    description='Get CPU utilization metrics for a server over a time range. Returns current, average, min, and max usage percentage with health status (idle/low/moderate/high/critical). Defaults to the last 24 hours if no date range is specified.'
+    description='Get CPU utilization metrics for a server over a time range. Returns current, average, min, max usage percentage with health status. When to use: investigating performance issues or checking server load. Related: get_memory_usage (pair with CPU for full picture), get_server_metrics_summary (quick overview of all metrics), get_top_servers (compare across servers). Note: Defaults to last 24 hours if no date range specified.',
+    annotations=READ_ONLY,
+    meta={'anthropic/searchHint': 'cpu usage load processor utilization performance'},
 )
 async def get_cpu_usage(
     server_id: str,
@@ -190,7 +193,9 @@ def parse_memory_metrics(results: list) -> dict[str, Any]:
 
 
 @mcp_tool_handler(
-    description='Get RAM memory utilization metrics for a server over a time range. Returns current, average, min, and max usage percentage with health status. Defaults to the last 24 hours if no date range is specified.'
+    description='Get RAM memory utilization metrics for a server over a time range. Returns current, average, min, max usage percentage with health status. When to use: investigating memory pressure or OOM issues. Related: get_cpu_usage (pair for full resource picture), get_server_metrics_summary (quick overview). Note: Defaults to last 24 hours.',
+    annotations=READ_ONLY,
+    meta={'anthropic/searchHint': 'memory ram usage utilization'},
 )
 async def get_memory_usage(
     server_id: str,
@@ -299,7 +304,9 @@ def parse_disk_metrics(results: list) -> dict[str, Any]:
 
 
 @mcp_tool_handler(
-    description='Get disk space usage metrics for a server by device or partition. Returns usage percentage and total/used/free space in human-readable format. Automatically discovers the first available device if none is specified.'
+    description='Get disk space usage metrics for a server by device or partition. Returns usage percentage and total/used/free space. When to use: checking available disk space or monitoring storage growth. Related: get_disk_io (I/O throughput, not space), get_disk_info (physical disk layout). Note: Auto-discovers first device if none specified.',
+    annotations=READ_ONLY,
+    meta={'anthropic/searchHint': 'disk space storage partition mount usage'},
 )
 async def get_disk_usage(
     server_id: str,
@@ -496,7 +503,11 @@ def parse_network_metrics(results: list) -> dict[str, Any]:
 
 
 @mcp_tool_handler(
-    description='Get disk I/O read and write throughput metrics for a server. Returns peak and average transfer rates per device. Useful for diagnosing storage performance bottlenecks. Defaults to the last 24 hours.'
+    description='Get disk I/O read/write throughput metrics for a server. Returns peak and average transfer rates per device. When to use: diagnosing storage performance bottlenecks or slow I/O. Related: get_disk_usage (space, not I/O), get_top_servers (compare I/O across servers). Note: Defaults to last 24 hours.',
+    annotations=READ_ONLY,
+    meta={
+        'anthropic/searchHint': 'disk io read write throughput iops storage performance'
+    },
 )
 async def get_disk_io(
     server_id: str,
@@ -557,7 +568,9 @@ async def get_disk_io(
 
 
 @mcp_tool_handler(
-    description='Get network bandwidth and traffic metrics for a server by interface. Returns current, average, and peak values for input/output in bps and packets per second. Defaults to the last 24 hours.'
+    description='Get network bandwidth and traffic metrics for a server by interface. Returns current, average, and peak values for input/output in bps and pps. When to use: investigating network bottlenecks or monitoring bandwidth. Related: get_network_interfaces (list available interfaces), get_top_servers (compare traffic across servers). Note: Defaults to last 24 hours.',
+    annotations=READ_ONLY,
+    meta={'anthropic/searchHint': 'network traffic bandwidth interface bps packets'},
 )
 async def get_network_traffic(
     server_id: str,
@@ -619,7 +632,11 @@ async def get_network_traffic(
 
 
 @mcp_tool_handler(
-    description='Get the top servers ranked by resource usage in the last 24 hours. Supports cpu, memory, disk_io, and traffic metrics. Multiple metrics can be queried in one call by passing comma-separated values. Leave metric_types empty to get all metrics at once.'
+    description='Get the top servers ranked by resource usage in the last 24 hours. When to use: finding the busiest or most loaded servers in a workspace, comparing resource usage across servers. Related: get_cpu_usage, get_memory_usage (detailed metrics for a specific server). Note: Supports cpu, memory, disk_io, traffic. Pass comma-separated or leave empty for all.',
+    annotations=READ_ONLY,
+    meta={
+        'anthropic/searchHint': 'top servers ranking busiest compare metrics workspace'
+    },
 )
 async def get_top_servers(
     workspace: str, metric_types: str = '', region: str = '', **kwargs
@@ -718,7 +735,11 @@ async def get_top_servers(
 
 
 @mcp_tool_handler(
-    description='Get monitoring alert rules and notification thresholds configured for servers. Returns rule conditions, severity levels, and notification settings. Filterable by server ID.'
+    description='Get monitoring alert rules and notification thresholds configured for servers. Returns rule conditions, severity levels, and notification settings. When to use: reviewing what alerts are configured or checking thresholds. Related: list_alerts (triggered alerts), create_alert_rule (create new rules in alert_tools). Note: This is in metrics_tools; alert CRUD operations are in alert_tools.',
+    annotations=READ_ONLY,
+    meta={
+        'anthropic/searchHint': 'alert rules monitoring threshold notification configuration'
+    },
 )
 async def get_alert_rules(
     workspace: str, server_id: str | None = None, region: str = '', **kwargs
@@ -755,7 +776,12 @@ async def get_alert_rules(
 
 
 @mcp_tool_handler(
-    description='Get a comprehensive monitoring overview combining CPU, memory, disk, and network metrics for a single server. Returns a compact summary with data availability status. Use individual metric tools (get_cpu_usage, get_memory_usage, etc.) for full detailed data.'
+    description='Get a comprehensive monitoring overview combining CPU, memory, disk, and network metrics for a single server. Returns a compact summary with data availability status. When to use: quick health check of a server or starting point for investigation. Related: get_cpu_usage, get_memory_usage, get_disk_usage, get_network_traffic (full detailed data per metric). Note: Use individual metric tools for time-series data.',
+    annotations=READ_ONLY,
+    meta={
+        'anthropic/searchHint': 'server metrics summary overview health monitoring dashboard',
+        'anthropic/alwaysLoad': True,
+    },
 )
 async def get_server_metrics_summary(
     server_id: str, workspace: str, hours: int = 24, region: str = '', **kwargs

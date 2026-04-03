@@ -6,6 +6,7 @@ import time
 from typing import Any
 
 import websockets
+from mcp.types import ToolAnnotations
 
 from server import mcp
 from utils.common import MCP_USER_AGENT, error_response, success_response
@@ -13,6 +14,7 @@ from utils.decorators import mcp_tool_handler
 from utils.error_handler import UpstreamAuthError
 from utils.http_client import http_client
 from utils.logger import get_logger
+from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, READ_ONLY
 
 logger = get_logger('websh_tools')
 
@@ -331,7 +333,9 @@ async def execute_command_via_channel(
 
 
 @mcp_tool_handler(
-    description='Create a new Websh terminal session on a server and establish a WebSocket connection. Returns session ID, channel ID, and WebSocket URL for command execution. Use this for manual session management; for simpler usage, prefer execute_command instead.'
+    description='Create a new Websh terminal session on a server and establish a WebSocket connection. Returns session ID, channel ID, and WebSocket URL for command execution. Use this for manual session management; for simpler usage, prefer execute_command instead.',
+    annotations=ADDITIVE,
+    meta={'anthropic/searchHint': 'websh session create terminal shell'},
 )
 async def websh_session_create(
     server_id: str,
@@ -417,7 +421,9 @@ async def websh_session_create(
 
 
 @mcp_tool_handler(
-    description='List active and past Websh terminal sessions in a workspace. Filterable by server ID. Use this to check which sessions are currently open or to find a session ID for reconnection.'
+    description='List active and past Websh terminal sessions in a workspace. Filterable by server ID. Use this to check which sessions are currently open or to find a session ID for reconnection.',
+    annotations=READ_ONLY,
+    meta={'anthropic/searchHint': 'websh sessions list active terminal'},
 )
 async def websh_sessions_list(
     workspace: str, server_id: str | None = None, region: str = '', **kwargs
@@ -454,7 +460,9 @@ async def websh_sessions_list(
 
 
 @mcp_tool_handler(
-    description='Reconnect to an existing Websh session by creating a new user channel. Returns a fresh WebSocket URL and channel ID. Use this when a previous channel connection was lost but the session is still active on the server.'
+    description='Reconnect to an existing Websh session by creating a new user channel. Returns a fresh WebSocket URL and channel ID. Use this when a previous channel connection was lost but the session is still active on the server.',
+    annotations=ADDITIVE,
+    meta={'anthropic/searchHint': 'websh session reconnect resume channel'},
 )
 async def websh_session_reconnect(
     session_id: str, workspace: str, region: str = '', **kwargs
@@ -514,7 +522,9 @@ async def websh_session_reconnect(
 
 
 @mcp_tool_handler(
-    description='Terminate and close a Websh terminal session on the server. Use this to clean up sessions that are no longer needed and free server resources.'
+    description='Terminate and close a Websh terminal session on the server. Use this to clean up sessions that are no longer needed and free server resources.',
+    annotations=DESTRUCTIVE,
+    meta={'anthropic/searchHint': 'websh session terminate close end'},
 )
 async def websh_session_terminate(
     session_id: str, workspace: str, region: str = '', **kwargs
@@ -546,7 +556,11 @@ async def websh_session_terminate(
 
 
 @mcp.tool(
-    description='Open a persistent WebSocket connection to a Websh user channel and store it in the connection pool. The connection can be reused for multiple commands via websh_channel_execute. Use websh_channel_disconnect to close it when done.'
+    description='Open a persistent WebSocket connection to a Websh user channel and store it in the connection pool. The connection can be reused for multiple commands via websh_channel_execute. Use websh_channel_disconnect to close it when done.',
+    annotations=ToolAnnotations(
+        readOnlyHint=False, destructiveHint=False, idempotentHint=False
+    ),
+    meta={'anthropic/searchHint': 'websh channel connect websocket persistent'},
 )
 async def websh_channel_connect(
     channel_id: str, websocket_url: str, session_id: str
@@ -617,7 +631,9 @@ async def websh_channel_connect(
 
 
 @mcp.tool(
-    description='List all active WebSocket channel connections in the local connection pool. Returns channel IDs, session IDs, and live health status via ping check. Use this to see which persistent connections are currently available.'
+    description='List all active WebSocket channel connections in the local connection pool. Returns channel IDs, session IDs, and live health status via ping check. Use this to see which persistent connections are currently available.',
+    annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False),
+    meta={'anthropic/searchHint': 'websh channels list active connections'},
 )
 async def websh_channels_list() -> dict[str, Any]:
     """List all active WebSocket connections in the pool.
@@ -661,7 +677,9 @@ async def websh_channels_list() -> dict[str, Any]:
 
 
 @mcp.tool(
-    description='Close a WebSocket channel connection and remove it from the connection pool. Always disconnect channels when finished to free resources. The channel ID comes from websh_channel_connect or websh_channels_list.'
+    description='Close a WebSocket channel connection and remove it from the connection pool. Always disconnect channels when finished to free resources. The channel ID comes from websh_channel_connect or websh_channels_list.',
+    annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True),
+    meta={'anthropic/searchHint': 'websh channel disconnect close websocket'},
 )
 async def websh_channel_disconnect(channel_id: str) -> dict[str, Any]:
     """Disconnect and remove WebSocket connection from pool.
@@ -710,7 +728,11 @@ async def websh_channel_disconnect(channel_id: str) -> dict[str, Any]:
 
 
 @mcp.tool(
-    description='Execute a shell command on an already-connected WebSocket channel and return the terminal output. The channel must have been opened with websh_channel_connect first. Use this for running multiple commands efficiently on the same connection.'
+    description='Execute a shell command on an already-connected WebSocket channel and return the terminal output. The channel must have been opened with websh_channel_connect first. Use this for running multiple commands efficiently on the same connection.',
+    annotations=ToolAnnotations(
+        readOnlyHint=False, destructiveHint=False, idempotentHint=False
+    ),
+    meta={'anthropic/searchHint': 'websh channel execute command websocket'},
 )
 async def websh_channel_execute(
     channel_id: str, command: str, timeout: int = 10
@@ -804,7 +826,11 @@ async def websh_channel_execute(
 
 
 @mcp.tool(
-    description='Execute a single command via a disposable WebSocket connection to a Websh session URL. The connection is opened, used once, and closed automatically. For running multiple commands, use execute_command_batch or websh_channel_* tools instead.'
+    description='Execute a single command via a disposable WebSocket connection to a Websh session URL. The connection is opened, used once, and closed automatically. For running multiple commands, use execute_command_batch or websh_channel_* tools instead.',
+    annotations=ToolAnnotations(
+        readOnlyHint=False, destructiveHint=False, idempotentHint=False
+    ),
+    meta={'anthropic/searchHint': 'websh websocket execute command disposable oneshot'},
 )
 async def websh_websocket_execute(
     websocket_url: str, command: str, timeout: int = 10
@@ -872,7 +898,9 @@ async def websh_websocket_execute(
 
 
 @mcp_tool_handler(
-    description='Execute a shell command on a server using automatic connection pooling. This is the recommended way to run commands — it creates or reuses Websh sessions and WebSocket connections transparently. No ACL permission required unlike Command API tools.'
+    description='Execute a shell command on a server using automatic connection pooling. This is the recommended way to run commands — it creates or reuses Websh sessions and WebSocket connections transparently. No ACL permission required unlike Command API tools.',
+    annotations=ADDITIVE,
+    meta={'anthropic/searchHint': 'command run shell execute websh simple'},
 )
 async def execute_command(
     server_id: str,
@@ -943,7 +971,9 @@ async def execute_command(
 
 
 @mcp_tool_handler(
-    description='Execute multiple shell commands sequentially on the same server using a single persistent connection. Much more efficient than calling execute_command repeatedly. Returns per-command output. No ACL permission required.'
+    description='Execute multiple shell commands sequentially on the same server using a single persistent connection. Much more efficient than calling execute_command repeatedly. Returns per-command output. No ACL permission required.',
+    annotations=ADDITIVE,
+    meta={'anthropic/searchHint': 'command batch multiple sequential websh'},
 )
 async def execute_command_batch(
     server_id: str,
@@ -1022,7 +1052,11 @@ async def execute_command_batch(
 
 
 @mcp.tool(
-    description='Execute multiple commands sequentially via a disposable WebSocket connection to a Websh session URL. Returns per-command output. The connection is opened once and closed after all commands complete. For persistent connections, use execute_command_batch instead.'
+    description='Execute multiple commands sequentially via a disposable WebSocket connection to a Websh session URL. Returns per-command output. The connection is opened once and closed after all commands complete. For persistent connections, use execute_command_batch instead.',
+    annotations=ToolAnnotations(
+        readOnlyHint=False, destructiveHint=False, idempotentHint=False
+    ),
+    meta={'anthropic/searchHint': 'websh websocket batch execute commands disposable'},
 )
 async def websh_websocket_batch_execute(
     websocket_url: str, commands: list[str], timeout: int = 30
@@ -1103,7 +1137,9 @@ async def websh_websocket_batch_execute(
 
 
 @mcp_tool_handler(
-    description='List Websh tunnel sessions in a workspace. Tunnels provide port forwarding to remote servers. Filterable by server ID or username. Returns tunnel ID, target port, status, and connection details.'
+    description='List Websh tunnel sessions in a workspace. Tunnels provide port forwarding to remote servers. Filterable by server ID or username. Returns tunnel ID, target port, status, and connection details.',
+    annotations=READ_ONLY,
+    meta={'anthropic/searchHint': 'websh tunnel port forward list'},
 )
 async def list_websh_tunnels(
     workspace: str,
@@ -1153,7 +1189,9 @@ async def list_websh_tunnels(
 
 
 @mcp_tool_handler(
-    description='Create a Websh tunnel session for port forwarding to a remote server. Returns tunnel ID, WebSocket URL for CLI/Web connections, and connect URL for editor connections. Requires tunnel_enabled on the target server.'
+    description='Create a Websh tunnel session for port forwarding to a remote server. Returns tunnel ID, WebSocket URL for CLI/Web connections, and connect URL for editor connections. Requires tunnel_enabled on the target server.',
+    annotations=ADDITIVE,
+    meta={'anthropic/searchHint': 'websh tunnel port forward create'},
 )
 async def create_websh_tunnel(
     server_id: str,
@@ -1209,7 +1247,9 @@ async def create_websh_tunnel(
 
 
 @mcp_tool_handler(
-    description='Close an active Websh tunnel session. Terminates the port forwarding connection. Use list_websh_tunnels to find the tunnel ID.'
+    description='Close an active Websh tunnel session. Terminates the port forwarding connection. Use list_websh_tunnels to find the tunnel ID.',
+    annotations=DESTRUCTIVE,
+    meta={'anthropic/searchHint': 'websh tunnel close stop'},
 )
 async def close_websh_tunnel(
     tunnel_id: str,
@@ -1248,7 +1288,9 @@ async def close_websh_tunnel(
 
 
 @mcp_tool_handler(
-    description='Generate a shareable link for a Websh session with password protection. The link allows temporary access to the session for collaboration. Only the session owner can share. Returns shared URL, password, and expiration time.'
+    description='Generate a shareable link for a Websh session with password protection. The link allows temporary access to the session for collaboration. Only the session owner can share. Returns shared URL, password, and expiration time.',
+    annotations=ADDITIVE,
+    meta={'anthropic/searchHint': 'websh session share link collaborate'},
 )
 async def share_websh_session(
     session_id: str,
@@ -1288,7 +1330,9 @@ async def share_websh_session(
 
 
 @mcp_tool_handler(
-    description='Send email invitations to collaborate on a Websh session. Invitees receive a link with temporary access token. Only the session owner can invite. Supports bulk invitations to multiple email addresses.'
+    description='Send email invitations to collaborate on a Websh session. Invitees receive a link with temporary access token. Only the session owner can invite. Supports bulk invitations to multiple email addresses.',
+    annotations=ADDITIVE,
+    meta={'anthropic/searchHint': 'websh session invite email collaborate'},
 )
 async def invite_to_websh_session(
     session_id: str,
@@ -1330,7 +1374,9 @@ async def invite_to_websh_session(
 
 
 @mcp_tool_handler(
-    description='Join a shared Websh session using a password or invitation token. Returns WebSocket URL for connecting to the shared session. Requires MCP authentication. The password or token provides session-level access on top of the authenticated connection.'
+    description='Join a shared Websh session using a password or invitation token. Returns WebSocket URL for connecting to the shared session. Requires MCP authentication. The password or token provides session-level access on top of the authenticated connection.',
+    annotations=ADDITIVE,
+    meta={'anthropic/searchHint': 'websh session join shared collaborate'},
 )
 async def join_shared_session(
     channel_id: str,
@@ -1386,7 +1432,9 @@ async def join_shared_session(
 
 
 @mcp_tool_handler(
-    description='Retrieve terminal recording data for a closed Websh session. Returns paginated terminal output with timestamps for session playback and auditing. Useful for reviewing what commands were executed and their output.'
+    description='Retrieve terminal recording data for a closed Websh session. Returns paginated terminal output with timestamps for session playback and auditing. Useful for reviewing what commands were executed and their output.',
+    annotations=READ_ONLY,
+    meta={'anthropic/searchHint': 'websh session recording history terminal playback'},
 )
 async def get_session_records(
     session_id: str,
@@ -1426,7 +1474,9 @@ async def get_session_records(
 
 
 @mcp_tool_handler(
-    description='Search terminal recording content within a Websh session using fuzzy matching. Finds specific commands or output text in session history. Useful for finding when a particular command was run or locating specific output.'
+    description='Search terminal recording content within a Websh session using fuzzy matching. Finds specific commands or output text in session history. Useful for finding when a particular command was run or locating specific output.',
+    annotations=READ_ONLY,
+    meta={'anthropic/searchHint': 'websh session search find command output'},
 )
 async def search_session_records(
     session_id: str,
@@ -1466,7 +1516,9 @@ async def search_session_records(
 
 
 @mcp_tool_handler(
-    description='Get AI-generated security analysis results for a Websh session. Returns risk score, detected commands, threat indicators, MITRE ATT&CK mapping, and recommended actions. The session must have been analyzed first via request_session_analysis.'
+    description='Get AI-generated security analysis results for a Websh session. Returns risk score, detected commands, threat indicators, MITRE ATT&CK mapping, and recommended actions. The session must have been analyzed first via request_session_analysis.',
+    annotations=READ_ONLY,
+    meta={'anthropic/searchHint': 'websh session analysis security risk threat'},
 )
 async def get_session_analysis(
     session_id: str,
@@ -1499,7 +1551,9 @@ async def get_session_analysis(
 
 
 @mcp_tool_handler(
-    description='Request AI security analysis for a closed Websh session. Queues the session for analysis by the AI service. Returns accepted (202) if queued, or already_exists if previously analyzed. Use get_session_analysis to retrieve results after processing.'
+    description='Request AI security analysis for a closed Websh session. Queues the session for analysis by the AI service. Returns accepted (202) if queued, or already_exists if previously analyzed. Use get_session_analysis to retrieve results after processing.',
+    annotations=ADDITIVE,
+    meta={'anthropic/searchHint': 'websh session analysis request security scan'},
 )
 async def request_session_analysis(
     session_id: str,

@@ -5,6 +5,7 @@ from typing import Any
 from utils.common import success_response
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
+from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, READ_ONLY
 
 # ===============================
 # SYSTEM PACKAGE TOOLS
@@ -12,7 +13,9 @@ from utils.http_client import http_client
 
 
 @mcp_tool_handler(
-    description='List system package entries on a specific server. Returns package names, versions, and installation details from the OS package manager. Filterable by server ID. Use this to audit installed OS-level packages or check for specific software.'
+    description='List system package entries on a specific server. Returns package names, versions, and installation details from the OS package manager. Filterable by server ID. Use this to audit installed OS-level packages or check for specific software. Related: install_system_package (add packages), list_system_packages (proc-level package list).',
+    annotations=READ_ONLY,
+    meta={'anthropic/searchHint': 'system package entries installed server'},
 )
 async def list_system_package_entries(
     server_id: str,
@@ -56,7 +59,9 @@ async def list_system_package_entries(
 
 
 @mcp_tool_handler(
-    description='Install a system package on a server via the OS package manager. Specify the server ID and package name. Optionally pin a specific version. The installation runs asynchronously on the target server.'
+    description='Install a system package on a server via the OS package manager. Specify the server ID and package name. Optionally pin a specific version. The installation runs asynchronously on the target server. Related: list_system_package_entries (check installed), remove_system_package.',
+    annotations=ADDITIVE,
+    meta={'anthropic/searchHint': 'system package install add server'},
 )
 async def install_system_package(
     server_id: str,
@@ -102,7 +107,9 @@ async def install_system_package(
 
 
 @mcp_tool_handler(
-    description='Remove a system package entry by its ID. This triggers package removal on the target server. Use list_system_package_entries first to find the entry ID.'
+    description='Remove a system package entry by its ID. This triggers package removal on the target server. Use list_system_package_entries first to find the entry ID.',
+    annotations=DESTRUCTIVE,
+    meta={'anthropic/searchHint': 'system package remove uninstall delete'},
 )
 async def remove_system_package(
     entry_id: str, workspace: str, region: str = '', **kwargs
@@ -137,7 +144,9 @@ async def remove_system_package(
 
 
 @mcp_tool_handler(
-    description='List Python packages installed on a specific server. Returns package names, versions, and installation details. Filterable by server ID. Use this to audit Python dependencies or check for specific libraries.'
+    description='List Python packages installed on a specific server. Returns package names, versions, and installation details. Filterable by server ID. Use this to audit Python dependencies or check for specific libraries. Related: install_python_package (add packages), remove_python_package.',
+    annotations=READ_ONLY,
+    meta={'anthropic/searchHint': 'python package pip installed server'},
 )
 async def list_python_packages(
     server_id: str,
@@ -181,7 +190,9 @@ async def list_python_packages(
 
 
 @mcp_tool_handler(
-    description='Install a Python package on a server via pip. Specify the server ID and package name. Optionally pin a specific version. The installation runs asynchronously on the target server.'
+    description='Install a Python package on a server via pip. Specify the server ID and package name. Optionally pin a specific version. The installation runs asynchronously on the target server. Related: list_python_packages (check installed), remove_python_package.',
+    annotations=ADDITIVE,
+    meta={'anthropic/searchHint': 'python package pip install add'},
 )
 async def install_python_package(
     server_id: str,
@@ -227,7 +238,9 @@ async def install_python_package(
 
 
 @mcp_tool_handler(
-    description='Remove a Python package entry by its ID. This triggers package removal on the target server. Use list_python_packages first to find the entry ID.'
+    description='Remove a Python package entry by its ID. This triggers package removal on the target server. Use list_python_packages first to find the entry ID.',
+    annotations=DESTRUCTIVE,
+    meta={'anthropic/searchHint': 'python package pip remove uninstall'},
 )
 async def remove_python_package(
     entry_id: str, workspace: str, region: str = '', **kwargs

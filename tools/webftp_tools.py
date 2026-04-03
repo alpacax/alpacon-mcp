@@ -9,10 +9,13 @@ from utils.common import error_response, success_response
 from utils.decorators import mcp_tool_handler
 from utils.error_handler import format_validation_error, validate_file_path
 from utils.http_client import http_client
+from utils.tool_annotations import ADDITIVE, READ_ONLY
 
 
 @mcp_tool_handler(
-    description='Create a new WebFTP file transfer session on a server. Returns session ID and connection details. Use this for advanced session management or inspecting session state.'
+    description='Create a new WebFTP file transfer session on a server. Returns session ID and connection details. When to use: advanced session management. For simple file transfers, use webftp_upload_file or webftp_download_file directly. Related: webftp_sessions_list (view sessions), webftp_upload_file, webftp_download_file.',
+    annotations=ADDITIVE,
+    meta={'anthropic/searchHint': 'webftp session create file transfer'},
 )
 async def webftp_session_create(
     server_id: str,
@@ -60,7 +63,9 @@ async def webftp_session_create(
 
 
 @mcp_tool_handler(
-    description='List active and past WebFTP file transfer sessions in a workspace. Filterable by server ID. Use this to check which file transfer sessions are currently open.'
+    description='List active and past WebFTP file transfer sessions in a workspace. Filterable by server ID. When to use: checking which file transfer sessions are currently open. Related: webftp_session_create (create new session).',
+    annotations=READ_ONLY,
+    meta={'anthropic/searchHint': 'webftp sessions list active file transfer'},
 )
 async def webftp_sessions_list(
     workspace: str, server_id: str | None = None, region: str = '', **kwargs
@@ -97,7 +102,9 @@ async def webftp_sessions_list(
 
 
 @mcp_tool_handler(
-    description='Upload a local file to a remote server. Reads the file from a local absolute path, transfers it via S3 presigned URL, and places it at the specified remote path on the server. The file is automatically processed after upload.'
+    description='Upload a local file to a remote server. Reads the file from a local absolute path, transfers it via S3 presigned URL, and places it at the specified remote path on the server. When to use: transferring a single file to a server. Related: webftp_bulk_upload (multiple files), webftp_download_file (download from server), webftp_uploads_list (check upload history). Note: Both local and remote paths must be absolute.',
+    annotations=ADDITIVE,
+    meta={'anthropic/searchHint': 'file upload transfer scp sftp send server'},
 )
 async def webftp_upload_file(
     server_id: str,
@@ -221,7 +228,9 @@ async def webftp_upload_file(
 
 
 @mcp_tool_handler(
-    description='Download a file or folder from a remote server and save it to a local path. For folders, the content is automatically packaged as a ZIP archive. Uses S3 presigned URLs for efficient transfer.'
+    description='Download a file or folder from a remote server and save it to a local path. For folders, the content is automatically packaged as a ZIP archive. When to use: retrieving a single file or folder from a server. Related: webftp_bulk_download (multiple files as ZIP), webftp_upload_file (upload to server), webftp_downloads_list (check download history). Note: Set resource_type="folder" for directories.',
+    annotations=ADDITIVE,
+    meta={'anthropic/searchHint': 'file download transfer get retrieve server'},
 )
 async def webftp_download_file(
     server_id: str,
@@ -333,7 +342,9 @@ async def webftp_download_file(
 
 
 @mcp_tool_handler(
-    description='List file upload history showing filenames, sizes, timestamps, and transfer status. Filterable by server ID. Use this to verify past uploads or check upload progress.'
+    description='List file upload history showing filenames, sizes, timestamps, and transfer status. Filterable by server ID. When to use: verifying past uploads or checking upload progress. Related: webftp_upload_file (upload files), webftp_check_status (check specific transfer), list_webftp_logs (audit trail).',
+    annotations=READ_ONLY,
+    meta={'anthropic/searchHint': 'webftp uploads history list files'},
 )
 async def webftp_uploads_list(
     workspace: str, server_id: str | None = None, region: str = '', **kwargs
@@ -370,7 +381,9 @@ async def webftp_uploads_list(
 
 
 @mcp_tool_handler(
-    description='List file download history showing filenames, sizes, timestamps, and transfer status. Filterable by server ID. Use this to verify past downloads or check download progress.'
+    description='List file download history showing filenames, sizes, timestamps, and transfer status. Filterable by server ID. When to use: verifying past downloads or checking download progress. Related: webftp_download_file (download files), webftp_check_status (check specific transfer), list_webftp_logs (audit trail).',
+    annotations=READ_ONLY,
+    meta={'anthropic/searchHint': 'webftp downloads history list files'},
 )
 async def webftp_downloads_list(
     workspace: str, server_id: str | None = None, region: str = '', **kwargs
@@ -412,7 +425,9 @@ async def webftp_downloads_list(
 
 
 @mcp_tool_handler(
-    description='Upload multiple local files to a remote server in a single operation. All files are placed in the same destination directory. Uses S3 presigned URLs with concurrent uploads. Returns per-file upload status for each file.'
+    description='Upload multiple local files to a remote server in a single operation. All files are placed in the same destination directory. Uses S3 presigned URLs with concurrent uploads. When to use: uploading several files at once (more efficient than repeated webftp_upload_file calls). Related: webftp_upload_file (single file), webftp_bulk_download (download multiple). Note: All files go to the same remote directory.',
+    annotations=ADDITIVE,
+    meta={'anthropic/searchHint': 'bulk upload multiple files batch transfer'},
 )
 async def webftp_bulk_upload(
     server_id: str,
@@ -555,7 +570,9 @@ async def webftp_bulk_upload(
 
 
 @mcp_tool_handler(
-    description='Download multiple files or folders from a remote server as a single ZIP archive. All paths must share the same parent directory. If the ZIP is ready, downloads via S3 presigned URL and saves locally. If still processing, returns the download record — use webftp_check_status to poll for completion, then retry.'
+    description='Download multiple files or folders from a remote server as a single ZIP archive. All paths must share the same parent directory. When to use: downloading several files at once. Related: webftp_download_file (single file), webftp_bulk_upload (upload multiple), webftp_check_status (poll if still processing). Note: If ZIP is not ready, poll with webftp_check_status then retry.',
+    annotations=ADDITIVE,
+    meta={'anthropic/searchHint': 'bulk download multiple files zip archive batch'},
 )
 async def webftp_bulk_download(
     server_id: str,
@@ -672,7 +689,9 @@ async def webftp_bulk_download(
 
 
 @mcp_tool_handler(
-    description='Check the transfer status of a WebFTP upload or download operation. Returns whether the transfer is still in progress, succeeded, or failed. Use this to poll for completion of async file transfers.'
+    description='Check the transfer status of a WebFTP upload or download operation. Returns whether the transfer is still in progress, succeeded, or failed. When to use: polling for completion after webftp_bulk_download or other async file transfers. Related: webftp_bulk_download, webftp_upload_file.',
+    annotations=READ_ONLY,
+    meta={'anthropic/searchHint': 'webftp transfer status check poll progress'},
 )
 async def webftp_check_status(
     file_id: str,
