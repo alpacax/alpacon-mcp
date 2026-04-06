@@ -10,16 +10,19 @@ from utils.http_client import http_client
 
 
 @mcp_tool_handler(
-    description='Run a shell command on a remote server asynchronously via Command API. Returns a command ID that can be polled with get_command_result. Requires ACL permission on the API token. For synchronous execution, use execute_command_sync instead.'
+    description='Run a shell command on a remote server asynchronously via Command API. Returns a command ID that can be polled with get_command_result. Requires ACL permission on the API token. Supports dependency chains (run_after), scheduled execution (scheduled_at), and stdin data. For synchronous execution, use execute_command_sync instead.'
 )
 async def execute_command_with_acl(
     server_id: str,
     command: str,
     workspace: str,
-    shell: str = 'internal',
+    shell: str = 'system',
     username: str | None = None,
     groupname: str = 'alpacon',
     env: dict[str, str] | None = None,
+    run_after: list[str] | None = None,
+    scheduled_at: str | None = None,
+    data: str | None = None,
     region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
@@ -38,6 +41,12 @@ async def execute_command_with_acl(
         command_data['username'] = username
     if env:
         command_data['env'] = env
+    if run_after:
+        command_data['run_after'] = run_after
+    if scheduled_at:
+        command_data['scheduled_at'] = scheduled_at
+    if data:
+        command_data['data'] = data
 
     # Make async call to execute command
     result = await http_client.post(
@@ -118,17 +127,20 @@ async def list_commands(
 
 
 @mcp_tool_handler(
-    description='Run a shell command on a server and wait for it to complete. Returns stdout, stderr, and exit code in a single call. Requires ACL permission. This is the simplest way to run a command via the Command API when you need the result immediately.'
+    description='Run a shell command on a server and wait for it to complete (up to 5 minutes by default). Returns stdout, stderr, and exit code in a single call. Requires ACL permission. The timeout resets when the command is actively running. This is the simplest way to run a command via the Command API when you need the result immediately.'
 )
 async def execute_command_sync(
     server_id: str,
     command: str,
     workspace: str,
-    shell: str = 'bash',
+    shell: str = 'system',
     username: str | None = None,
     groupname: str = 'alpacon',
     env: dict[str, str] | None = None,
-    timeout: int = 30,
+    run_after: list[str] | None = None,
+    scheduled_at: str | None = None,
+    data: str | None = None,
+    timeout: int = 300,
     region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
@@ -142,6 +154,9 @@ async def execute_command_sync(
             username=username,
             groupname=groupname,
             env=env,
+            run_after=run_after,
+            scheduled_at=scheduled_at,
+            data=data,
             region=region,
             workspace=workspace,
             **kwargs,  # Pass token through
@@ -195,17 +210,23 @@ async def execute_command_sync(
             details=exec_data,
         )
 
-    # Wait for command completion
-    start_time = asyncio.get_event_loop().time()
-    while (asyncio.get_event_loop().time() - start_time) < timeout:
+    # Wait for command completion with progress-based timeout reset
+    # Hard cap at 3x timeout to prevent indefinite waiting
+    hard_deadline = asyncio.get_event_loop().time() + timeout * 3
+    deadline = asyncio.get_event_loop().time() + timeout
+    while asyncio.get_event_loop().time() < deadline:
         result = await get_command_result(
-            command_id=command_id, region=region, workspace=workspace
+            command_id=command_id,
+            region=region,
+            workspace=workspace,
+            **kwargs,
         )
 
         if result['status'] == 'success':
             command_data = result['data']
+            status = command_data.get('status', '')
 
-            # Check if command is completed
+            # Command completed
             if command_data.get('finished_at') is not None:
                 return success_response(
                     data=command_data,
@@ -215,6 +236,25 @@ async def execute_command_sync(
                     shell=shell,
                     region=region,
                     workspace=workspace,
+                )
+
+            # Command failed with terminal status
+            if status in ('stuck', 'error'):
+                return error_response(
+                    f'Command failed with status: {status}',
+                    command_id=command_id,
+                    server_id=server_id,
+                    command=command,
+                    region=region,
+                    workspace=workspace,
+                    details=command_data,
+                )
+
+            # Command still in progress — reset deadline (within hard cap)
+            if status in ('running', 'acked'):
+                deadline = min(
+                    asyncio.get_event_loop().time() + timeout,
+                    hard_deadline,
                 )
 
         # Wait before next check
@@ -239,7 +279,7 @@ async def execute_command_multi_server(
     server_ids: list[str],
     command: str,
     workspace: str,
-    shell: str = 'internal',
+    shell: str = 'system',
     username: str | None = None,
     groupname: str = 'alpacon',
     env: dict[str, str] | None = None,
