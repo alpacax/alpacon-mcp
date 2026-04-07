@@ -4,7 +4,7 @@ from typing import Any
 
 
 def _detect_error_domain(
-    status_code: int | str | None,
+    status_code: int | None,
     message: str,
     tool_name: str | None = None,
     endpoint: str | None = None,
@@ -14,7 +14,7 @@ def _detect_error_domain(
     tool_lower = (tool_name or '').lower()
     ep_lower = (endpoint or '').lower()
 
-    if any(k in msg_lower for k in ('command', 'acl')) or 'command' in tool_lower:
+    if 'command' in msg_lower or 'command' in tool_lower:
         return 'command'
     if (
         any(k in msg_lower for k in ('webftp', 'upload', 'download', 'file'))
@@ -140,14 +140,22 @@ _HINT_REGISTRY: dict[tuple[int, str], dict[str, list[str]]] = {
 }
 
 
-def _parse_status_code(raw: int | str | None) -> int:
-    """Normalize status_code to int, defaulting to 0 for unknown."""
+def _parse_status_code(raw: int | str | None) -> int | None:
+    """Normalize status_code to int, or None if missing/invalid."""
     if raw is None:
-        return 0
+        return None
     try:
         return int(raw)
     except (ValueError, TypeError):
-        return 0
+        return None
+
+
+def _copy_hints(hints: dict[str, list[str]]) -> dict[str, list[str]]:
+    """Return a shallow copy of a hints entry to protect the registry."""
+    return {
+        'recovery_hints': list(hints['recovery_hints']),
+        'related_tools': list(hints['related_tools']),
+    }
 
 
 def get_recovery_hints(
@@ -169,16 +177,21 @@ def get_recovery_hints(
         Returns empty lists if no hints match.
     """
     code = _parse_status_code(status_code)
+
+    # No hints when status code is missing or unrecognized
+    if code is None:
+        return {'recovery_hints': [], 'related_tools': []}
+
     domain = _detect_error_domain(code, message, tool_name, endpoint)
 
     # Try domain-specific first, then general fallback
     hints = _HINT_REGISTRY.get((code, domain))
     if hints:
-        return hints
+        return _copy_hints(hints)
 
     hints = _HINT_REGISTRY.get((code, 'general'))
     if hints:
-        return hints
+        return _copy_hints(hints)
 
     return {'recovery_hints': [], 'related_tools': []}
 

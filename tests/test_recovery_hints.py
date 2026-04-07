@@ -60,6 +60,15 @@ class TestDetectErrorDomain:
     def test_alert_from_tool_name(self):
         assert _detect_error_domain(404, 'not found', tool_name='get_alert') == 'alert'
 
+    def test_acl_alone_does_not_match_command(self):
+        assert _detect_error_domain(403, 'ACL denied') != 'command'
+
+    def test_server_acl_matches_server_not_command(self):
+        assert (
+            _detect_error_domain(403, 'server ACL denied', tool_name='list_server_acls')
+            == 'server'
+        )
+
     def test_general_fallback(self):
         assert _detect_error_domain(500, 'something broke') == 'general'
 
@@ -74,10 +83,15 @@ class TestParseStatusCode:
         assert _parse_status_code('404') == 404
 
     def test_none(self):
-        assert _parse_status_code(None) == 0
+        assert _parse_status_code(None) is None
 
     def test_invalid_string(self):
-        assert _parse_status_code('timeout') == 0
+        assert _parse_status_code('timeout') is None
+
+    def test_none_returns_no_hints(self):
+        hints = get_recovery_hints(None, 'some error')
+        assert hints['recovery_hints'] == []
+        assert hints['related_tools'] == []
 
 
 class TestGetRecoveryHints:
@@ -140,6 +154,12 @@ class TestGetRecoveryHints:
         hints = get_recovery_hints(404, 'something not found')
         assert len(hints['recovery_hints']) > 0
 
+    def test_returned_hints_are_independent_copies(self):
+        hints1 = get_recovery_hints(401, 'auth failed')
+        hints2 = get_recovery_hints(401, 'auth failed')
+        hints1['recovery_hints'].append('mutated')
+        assert 'mutated' not in hints2['recovery_hints']
+
 
 class TestEnrichErrorResponse:
     """Tests for error response enrichment."""
@@ -200,3 +220,11 @@ class TestEnrichErrorResponse:
         }
         enriched = enrich_error_response(resp)
         assert 'recovery_hints' in enriched
+
+    def test_no_hints_when_status_code_missing(self):
+        resp = {
+            'status': 'error',
+            'message': 'something failed',
+        }
+        enriched = enrich_error_response(resp)
+        assert 'recovery_hints' not in enriched
