@@ -55,7 +55,7 @@ class TestExecuteCommand:
         assert result['status'] == 'success'
         assert result['server_id'] == '550e8400-e29b-41d4-a716-446655440001'
         assert result['command'] == 'ls -la'
-        assert result['shell'] == 'internal'  # default value
+        assert result['shell'] == 'system'  # default value
         assert result['region'] == 'ap1'
         assert result['workspace'] == 'testworkspace'
         assert 'data' in result
@@ -68,7 +68,7 @@ class TestExecuteCommand:
             token='test-token',
             data={
                 'server': '550e8400-e29b-41d4-a716-446655440001',
-                'shell': 'internal',
+                'shell': 'system',
                 'line': 'ls -la',
                 'groupname': 'alpacon',
             },
@@ -104,6 +104,90 @@ class TestExecuteCommand:
         call_args = mock_http_client.post.call_args
         assert call_args[1]['data']['username'] == 'testuser'
         assert call_args[1]['data']['env'] == {'PATH': '/usr/bin', 'HOME': '/home/test'}
+
+    @pytest.mark.asyncio
+    async def test_execute_command_with_run_after(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Test command execution with run_after dependency chain."""
+        from tools.command_tools import execute_command_with_acl
+
+        mock_http_client.post.return_value = {'id': 'cmd-456'}
+
+        result = await execute_command_with_acl(
+            server_id='550e8400-e29b-41d4-a716-446655440001',
+            command='echo done',
+            workspace='testworkspace',
+            run_after=['cmd-123', 'cmd-124'],
+            region='ap1',
+        )
+
+        assert result['status'] == 'success'
+        call_data = mock_http_client.post.call_args[1]['data']
+        assert call_data['run_after'] == ['cmd-123', 'cmd-124']
+
+    @pytest.mark.asyncio
+    async def test_execute_command_with_scheduled_at(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Test command execution with scheduled_at parameter."""
+        from tools.command_tools import execute_command_with_acl
+
+        mock_http_client.post.return_value = {'id': 'cmd-789'}
+
+        result = await execute_command_with_acl(
+            server_id='550e8400-e29b-41d4-a716-446655440001',
+            command='reboot',
+            workspace='testworkspace',
+            scheduled_at='2026-04-03T03:00:00Z',
+            region='ap1',
+        )
+
+        assert result['status'] == 'success'
+        call_data = mock_http_client.post.call_args[1]['data']
+        assert call_data['scheduled_at'] == '2026-04-03T03:00:00Z'
+
+    @pytest.mark.asyncio
+    async def test_execute_command_with_data(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Test command execution with stdin data parameter."""
+        from tools.command_tools import execute_command_with_acl
+
+        mock_http_client.post.return_value = {'id': 'cmd-101'}
+
+        result = await execute_command_with_acl(
+            server_id='550e8400-e29b-41d4-a716-446655440001',
+            command='cat',
+            workspace='testworkspace',
+            data='hello world\n',
+            region='ap1',
+        )
+
+        assert result['status'] == 'success'
+        call_data = mock_http_client.post.call_args[1]['data']
+        assert call_data['data'] == 'hello world\n'
+
+    @pytest.mark.asyncio
+    async def test_execute_command_new_params_omitted_when_none(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Test that run_after, scheduled_at, data are omitted from payload when None."""
+        from tools.command_tools import execute_command_with_acl
+
+        mock_http_client.post.return_value = {'id': 'cmd-102'}
+
+        await execute_command_with_acl(
+            server_id='550e8400-e29b-41d4-a716-446655440001',
+            command='ls',
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        call_data = mock_http_client.post.call_args[1]['data']
+        assert 'run_after' not in call_data
+        assert 'scheduled_at' not in call_data
+        assert 'data' not in call_data
 
     @pytest.mark.asyncio
     async def test_execute_command_no_token(self, mock_http_client, mock_token_manager):
@@ -467,6 +551,72 @@ class TestExecuteCommandSync:
             assert result['status'] == 'error'
             assert 'Failed to execute command' in result['message']
             assert 'Network error' in result['message']
+
+
+    @pytest.mark.asyncio
+    async def test_execute_command_sync_forwards_new_params(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Test that sync execution forwards run_after, scheduled_at, data."""
+        from tools.command_tools import execute_command_sync
+
+        with patch('tools.command_tools.execute_command_with_acl') as mock_execute:
+            with patch('tools.command_tools.get_command_result') as mock_get_result:
+                mock_execute.return_value = {
+                    'status': 'success',
+                    'data': {'id': 'cmd-200'},
+                }
+                mock_get_result.return_value = {
+                    'status': 'success',
+                    'data': {'id': 'cmd-200', 'finished_at': '2024-01-01T00:00:01Z'},
+                }
+
+                await execute_command_sync(
+                    server_id='550e8400-e29b-41d4-a716-446655440001',
+                    command='echo test',
+                    workspace='testworkspace',
+                    run_after=['cmd-100'],
+                    scheduled_at='2026-04-03T03:00:00Z',
+                    data='stdin input',
+                    timeout=10,
+                )
+
+                call_kwargs = mock_execute.call_args[1]
+                assert call_kwargs['run_after'] == ['cmd-100']
+                assert call_kwargs['scheduled_at'] == '2026-04-03T03:00:00Z'
+                assert call_kwargs['data'] == 'stdin input'
+
+    @pytest.mark.asyncio
+    async def test_execute_command_sync_stuck_status(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Test that sync execution returns error on stuck status."""
+        from tools.command_tools import execute_command_sync
+
+        with patch('tools.command_tools.execute_command_with_acl') as mock_execute:
+            with patch('tools.command_tools.get_command_result') as mock_get_result:
+                mock_execute.return_value = {
+                    'status': 'success',
+                    'data': {'id': 'cmd-300'},
+                }
+                mock_get_result.return_value = {
+                    'status': 'success',
+                    'data': {
+                        'id': 'cmd-300',
+                        'status': 'stuck',
+                        'finished_at': None,
+                    },
+                }
+
+                result = await execute_command_sync(
+                    server_id='550e8400-e29b-41d4-a716-446655440001',
+                    command='bad command',
+                    workspace='testworkspace',
+                    timeout=2,
+                )
+
+                assert result['status'] == 'error'
+                assert 'stuck' in result['message']
 
 
 if __name__ == '__main__':

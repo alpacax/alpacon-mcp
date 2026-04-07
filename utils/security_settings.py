@@ -257,13 +257,8 @@ def check_mfa_completed(
 def get_action_for_tool(tool_name: str) -> str | None:
     """Determine MFA action type from tool function name.
 
-    Returns 'websh', 'webftp', 'command', or None.
+    Returns 'webftp', 'command', or None.
     """
-    if tool_name.startswith('websh_') or tool_name in (
-        'execute_command',
-        'execute_command_batch',
-    ):
-        return 'websh'
     if tool_name.startswith('webftp_'):
         return 'webftp'
     if tool_name in (

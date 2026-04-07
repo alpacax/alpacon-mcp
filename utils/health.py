@@ -64,20 +64,6 @@ async def get_health_info() -> dict[str, Any]:
     http_pool_active = http_client.pool_active
     http_cache_size = http_client.cache_size
 
-    # WebSocket pool status (deferred import to avoid circular imports)
-    try:
-        from tools.websh_tools import session_pool, websocket_pool
-
-        ws_info = {
-            'active_channels': len(websocket_pool),
-            'active_sessions': len(session_pool),
-        }
-    except ImportError:
-        ws_info = {
-            'active_channels': 0,
-            'active_sessions': 0,
-        }
-
     health_info = {
         'status': 'ok',
         'version': MCP_VERSION,
@@ -88,7 +74,6 @@ async def get_health_info() -> dict[str, Any]:
             'pool_active': http_pool_active,
             'cache_size': http_cache_size,
         },
-        'websocket_pool': ws_info,
     }
     logger.debug(
         f'Health check: status={health_info["status"]}, uptime={health_info["uptime_seconds"]}s'

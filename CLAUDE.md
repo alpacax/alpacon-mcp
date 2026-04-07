@@ -113,7 +113,6 @@ This MCP server provides a **pure HTTP API bridge** to Alpacon's infrastructure 
 **Tool modules** (all in `tools/` directory):
 - `server_tools.py`: Server listing, details, management, and agent actions (restart, shutdown, upgrade)
 - `command_tools.py`: Remote command execution and monitoring (ACL-based)
-- `websh_tools.py`: Websh session management, persistent connections, and terminal operations
 - `webftp_tools.py`: File transfer and management via S3 presigned URLs
 - `metrics_tools.py`: Performance monitoring, metrics, and alerting
 - `alert_tools.py`: Alert management, alert rules CRUD, and muting
@@ -267,52 +266,6 @@ All validators are defined in `utils/error_handler.py` and return user-friendly 
 
 **Note**: These tools require API token with command execution ACL permission enabled.
 
-### 🔧 Websh (command execution)
-
-**⭐ Recommended: persistent connection tools** (efficient, automatic connection pooling, no ACL required):
-- `execute_command`: Execute single command (automatically reuses WebSocket connections)
-- `execute_command_batch`: Execute multiple commands efficiently on same server
-
-These tools automatically:
-- Reuse existing WebSocket connections for the same server
-- Handle session creation and connection management
-- Perform health checks and auto-recovery
-- Minimize API calls (1 session creation per server instead of per command)
-
-**Session management**:
-- `websh_session_create`: Create Websh session for command execution (non-interactive)
-- `websh_sessions_list`: List active sessions
-- `websh_session_reconnect`: Create a new user channel for an existing session
-- `websh_session_terminate`: Close sessions
-
-**WebSocket-based execution** (for single-use commands):
-- `websh_websocket_execute`: Execute single command via WebSocket
-- `websh_websocket_batch_execute`: Execute multiple commands sequentially
-
-**Manual channel management** (advanced use only):
-- `websh_channel_connect`: Connect to Websh user channel and maintain persistent connection
-- `websh_channel_execute`: Execute commands using existing WebSocket connection
-- `websh_channels_list`: List active WebSocket channels
-- `websh_channel_disconnect`: Disconnect and clean up WebSocket connections
-
-**Tunnel management**:
-- `list_websh_tunnels`: List tunnel sessions with filtering by server or username
-- `create_websh_tunnel`: Create port forwarding tunnel to a remote server
-- `close_websh_tunnel`: Close an active tunnel session
-
-**Session sharing & collaboration**:
-- `share_websh_session`: Generate shareable link with password for session access
-- `invite_to_websh_session`: Send email invitations to collaborate on a session
-- `join_shared_session`: Join a shared session using password or invitation token
-
-**Session records & analysis**:
-- `get_session_records`: Retrieve terminal recording data for session playback
-- `search_session_records`: Search terminal content within a session (fuzzy match)
-- `get_session_analysis`: Get AI security analysis results (risk score, threats, recommendations)
-- `request_session_analysis`: Request AI security analysis for a closed session
-
-**Note**: Websh tools are for programmatic command execution only. For interactive terminal access, use the Alpacon web interface at https://alpacon.io
-
 ### 📁 File management (WebFTP)
 - `webftp_session_create`: Create file transfer session
 - `webftp_sessions_list`: List active FTP sessions
@@ -451,7 +404,6 @@ Alternative endpoints available in the server:
 **Runtime dependencies** (from `pyproject.toml`):
 - `mcp[cli]>=1.9.4`: Model Context Protocol framework
 - `httpx>=0.25.0`: Async HTTP client
-- `websockets>=15.0.1`: WebSocket support for real-time features
 
 **Development dependencies**:
 - `pytest>=7.0.0`: Testing framework
@@ -491,9 +443,6 @@ Alternative endpoints available in the server:
   - Incorrect: ``- `list_servers` - List all servers in workspace``
 
 ### Technology names
-- **Websh**: Always use "Websh" (not "WebSH") for web shell functionality
-  - Correct: `websh_session_create`, "Websh session", "Websh tools"
-  - Incorrect: `webSH_session_create`, "WebSH session", "WebSH tools"
 - **WebFTP**: Use "WebFTP" for file transfer functionality (maintain existing convention)
 - **MCP**: Use "MCP" for Model Context Protocol (maintain existing convention)
 
@@ -531,10 +480,6 @@ Alternative endpoints available in the server:
 - **Remote paths**: Absolute paths on the server (e.g., `/home/user/file.txt`)
 - **Username**: Optional parameter; if omitted, uses authenticated user's name
 
-### Websh connection management
-- **Single commands**: Use `websh_websocket_execute` for simplicity
-- **Multiple commands**: Use `websh_channel_*` tools for efficiency
-- **Channel cleanup**: Always disconnect channels when finished to free resources
 
 ## Development workflow
 
@@ -663,33 +608,6 @@ cpu = await get_cpu_usage(
     end_date="2024-01-02T00:00:00Z",
     workspace="production"
 )
-```
-
-### Websh channel management example:
-```python
-# Create Websh session
-session = await websh_session_create(
-    server_id="server-uuid",
-    workspace="production"
-)
-
-# Connect to persistent channel
-connect_result = await websh_channel_connect(
-    channel_id=session["data"]["userchannel_id"],
-    websocket_url=session["data"]["websocket_url"],
-    session_id=session["data"]["id"]
-)
-
-# Execute multiple commands using same connection
-result1 = await websh_channel_execute(channel_id, "pwd")
-result2 = await websh_channel_execute(channel_id, "ls -la")
-result3 = await websh_channel_execute(channel_id, "touch test_file")
-
-# List active channels
-channels = await websh_channels_list()
-
-# Clean up connection
-await websh_channel_disconnect(channel_id)
 ```
 
 ### WebFTP example:
