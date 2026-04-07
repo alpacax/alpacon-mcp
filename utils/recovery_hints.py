@@ -112,7 +112,7 @@ _HINT_REGISTRY: dict[tuple[int, str], dict[str, list[str]]] = {
             'The resource was not found. Check the ID or name.',
             'Use the corresponding list tool to find valid IDs.',
         ],
-        'related_tools': ['list_servers'],
+        'related_tools': [],
     },
     # 429 - Rate limit
     (429, 'general'): {
