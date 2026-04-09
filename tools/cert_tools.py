@@ -5,6 +5,7 @@ from typing import Any
 from utils.common import success_response
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
+from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, READ_ONLY
 
 # ===============================
 # CERTIFICATE AUTHORITY TOOLS
@@ -12,7 +13,9 @@ from utils.http_client import http_client
 
 
 @mcp_tool_handler(
-    description='List certificate authorities (CAs) configured in the workspace. Returns CA names, common names, validity periods, and key types. CAs are used to sign and manage TLS/SSL certificates. Use this to discover available CAs before creating sign requests.'
+    description='List certificate authorities (CAs) configured in the workspace. Returns CA names, common names, validity periods, and key types. CAs are used to sign and manage TLS/SSL certificates. Use this to discover available CAs before creating sign requests.',
+    annotations=READ_ONLY,
+    meta={'anthropic/searchHint': 'certificate CA authority TLS SSL PKI'},
 )
 async def list_certificate_authorities(
     workspace: str,
@@ -52,7 +55,9 @@ async def list_certificate_authorities(
 
 
 @mcp_tool_handler(
-    description='Create a new certificate authority (CA) for signing certificates within the workspace. Requires a name and common name (CN). Optionally specify organization, country, validity period, and key type (rsa2048, rsa4096, ec256).'
+    description='Create a new certificate authority (CA) for signing certificates within the workspace. Requires a name and common name (CN). Optionally specify organization, country, validity period, and key type (rsa2048, rsa4096, ec256). Related: list_certificate_authorities (view existing CAs), create_sign_request (request certificate from CA).',
+    annotations=ADDITIVE,
+    meta={'anthropic/searchHint': 'certificate CA authority create TLS SSL'},
 )
 async def create_certificate_authority(
     workspace: str,
@@ -117,7 +122,9 @@ async def create_certificate_authority(
 
 
 @mcp_tool_handler(
-    description='List certificate signing requests (CSRs) in the workspace. Returns CSR details, status, common names, and associated CAs. CSRs can be in pending, approved, denied, or failed states. Use this to review pending certificate requests.'
+    description='List certificate signing requests (CSRs) in the workspace. Returns CSR details, status, common names, and associated CAs. CSRs can be in pending, approved, denied, or failed states. Use this to review pending certificate requests.',
+    annotations=READ_ONLY,
+    meta={'anthropic/searchHint': 'certificate CSR signing request'},
 )
 async def list_sign_requests(
     workspace: str,
@@ -157,7 +164,9 @@ async def list_sign_requests(
 
 
 @mcp_tool_handler(
-    description='Create a certificate signing request (CSR) to request a new certificate from a certificate authority. Requires the CA ID and common name (CN). Optionally specify Subject Alternative Names (DNS/IP), validity period, key type, and target server.'
+    description='Create a certificate signing request (CSR) to request a new certificate from a certificate authority. Requires the CA ID and common name (CN). Optionally specify Subject Alternative Names (DNS/IP), validity period, key type, and target server. Related: list_certificate_authorities (find CA ID first), list_certificates (view issued certs).',
+    annotations=ADDITIVE,
+    meta={'anthropic/searchHint': 'certificate CSR signing request create'},
 )
 async def create_sign_request(
     workspace: str,
@@ -222,7 +231,9 @@ async def create_sign_request(
 
 
 @mcp_tool_handler(
-    description='List issued certificates in the workspace. Returns certificate details, common names, expiry dates, and revocation status. Filterable by certificate authority ID. This is a read-only endpoint (certificates are issued through sign requests).'
+    description='List issued certificates in the workspace. Returns certificate details, common names, expiry dates, and revocation status. Filterable by certificate authority ID. This is a read-only endpoint (certificates are issued through sign requests).',
+    annotations=READ_ONLY,
+    meta={'anthropic/searchHint': 'certificate issued TLS SSL list'},
 )
 async def list_certificates(
     workspace: str,
@@ -266,7 +277,9 @@ async def list_certificates(
 
 
 @mcp_tool_handler(
-    description='Create a certificate revocation request to invalidate an issued certificate. Requires the certificate ID. Optionally include a reason for revocation. The request goes through an approval workflow before the certificate is actually revoked.'
+    description='Create a certificate revocation request to invalidate an issued certificate. Requires the certificate ID. Optionally include a reason for revocation. The request goes through an approval workflow before the certificate is actually revoked. Note: Goes through approval workflow before actual revocation.',
+    annotations=DESTRUCTIVE,
+    meta={'anthropic/searchHint': 'certificate revoke invalidate'},
 )
 async def revoke_certificate(
     certificate_id: str,

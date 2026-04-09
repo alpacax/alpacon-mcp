@@ -6,10 +6,13 @@ from typing import Any
 from utils.common import success_response
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
+from utils.tool_annotations import READ_ONLY
 
 
 @mcp_tool_handler(
-    description='Get hardware and system information for a server including CPU model, core count, total RAM size, and architecture. Use this when you need to understand the physical or virtual hardware specifications of a server.'
+    description='Get hardware and system information for a server including CPU model, core count, total RAM size, and architecture. Use this when you need to understand the physical or virtual hardware specifications of a server. Related: get_server_overview (all system info in one call), get_os_version (OS details).',
+    annotations=READ_ONLY,
+    meta={'anthropic/searchHint': 'system hardware cpu cores ram architecture specs'},
 )
 async def get_system_info(
     server_id: str, workspace: str, region: str = '', **kwargs
@@ -41,7 +44,9 @@ async def get_system_info(
 
 
 @mcp_tool_handler(
-    description='Get operating system details for a server including OS name, version, kernel version, and Linux distribution info. Use this to check OS compatibility or plan upgrades.'
+    description='Get operating system details for a server including OS name, version, kernel version, and Linux distribution info. Use this to check OS compatibility or plan upgrades. Related: get_server_overview (all system info in one call), get_system_info (hardware specs).',
+    annotations=READ_ONLY,
+    meta={'anthropic/searchHint': 'os operating system version kernel distribution'},
 )
 async def get_os_version(
     server_id: str, workspace: str, region: str = '', **kwargs
@@ -73,7 +78,9 @@ async def get_os_version(
 
 
 @mcp_tool_handler(
-    description='List OS-level user accounts (passwd entries) on a server. Filterable by username search or login-enabled status. Returns UID, home directory, shell, and group memberships for each user.'
+    description='List OS-level user accounts (passwd entries) on a server. Filterable by username search or login-enabled status. Returns UID, home directory, shell, and group memberships for each user. Related: list_iam_users (workspace-level IAM users, different from OS users).',
+    annotations=READ_ONLY,
+    meta={'anthropic/searchHint': 'system users accounts passwd uid'},
 )
 async def list_system_users(
     server_id: str,
@@ -124,7 +131,9 @@ async def list_system_users(
 
 
 @mcp_tool_handler(
-    description='List OS-level groups on a server. Filterable by group name search. Returns GID and member lists for each group.'
+    description='List OS-level groups on a server. Filterable by group name search. Returns GID and member lists for each group. Related: list_iam_groups (workspace-level IAM groups, different from OS groups).',
+    annotations=READ_ONLY,
+    meta={'anthropic/searchHint': 'system groups gid members'},
 )
 async def list_system_groups(
     server_id: str,
@@ -170,7 +179,9 @@ async def list_system_groups(
 
 
 @mcp_tool_handler(
-    description='List installed software packages (rpm/deb) on a server. Searchable by package name and filterable by architecture (x86_64, aarch64, etc.). Returns package name, version, and architecture.'
+    description='List installed software packages (rpm/deb) on a server. Searchable by package name and filterable by architecture (x86_64, aarch64, etc.). Returns package name, version, and architecture. Related: list_system_package_entries (package management entries), install_system_package.',
+    annotations=READ_ONLY,
+    meta={'anthropic/searchHint': 'system packages installed software rpm deb'},
 )
 async def list_system_packages(
     server_id: str,
@@ -224,7 +235,9 @@ async def list_system_packages(
 
 
 @mcp_tool_handler(
-    description='Get network interface configuration for a server. Returns interface names, IP addresses, MAC addresses, MTU, and link up/down status. Use this to understand network topology or troubleshoot connectivity.'
+    description='Get network interface configuration for a server. Returns interface names, IP addresses, MAC addresses, MTU, and link up/down status. Use this to understand network topology or troubleshoot connectivity. Related: get_network_traffic (bandwidth metrics for an interface).',
+    annotations=READ_ONLY,
+    meta={'anthropic/searchHint': 'network interfaces ip mac address mtu'},
 )
 async def get_network_interfaces(
     server_id: str, workspace: str, region: str = '', **kwargs
@@ -256,7 +269,9 @@ async def get_network_interfaces(
 
 
 @mcp_tool_handler(
-    description='Get physical disk devices and partition layout for a server. Returns disk models, sizes, partition mount points, filesystem types, and capacity. Fetches both disk and partition data concurrently.'
+    description='Get physical disk devices and partition layout for a server. Returns disk models, sizes, partition mount points, filesystem types, and capacity. Fetches both disk and partition data concurrently. Related: get_disk_usage (usage metrics over time), get_disk_io (I/O throughput).',
+    annotations=READ_ONLY,
+    meta={'anthropic/searchHint': 'disk partition mount filesystem storage layout'},
 )
 async def get_disk_info(
     server_id: str, workspace: str, region: str = '', **kwargs
@@ -318,7 +333,9 @@ async def get_disk_info(
 
 
 @mcp_tool_handler(
-    description='Get the current system clock time, timezone setting, and uptime duration for a server. Use this to check time synchronization or verify how long a server has been running.'
+    description='Get the current system clock time, timezone setting, and uptime duration for a server. Use this to check time synchronization or verify how long a server has been running.',
+    annotations=READ_ONLY,
+    meta={'anthropic/searchHint': 'time timezone uptime clock ntp'},
 )
 async def get_system_time(
     server_id: str, workspace: str, region: str = '', **kwargs
@@ -350,7 +367,12 @@ async def get_system_time(
 
 
 @mcp_tool_handler(
-    description='Get a comprehensive server overview combining hardware specs, OS version, uptime, network interfaces, and disk layout in a single call. Fetches all system information concurrently. Use this for a quick full picture of a server instead of calling individual system info tools.'
+    description='Get a comprehensive server overview combining hardware specs, OS version, uptime, network interfaces, and disk layout in a single call. Fetches all system information concurrently. Use this for a quick full picture of a server instead of calling individual system info tools. Related: get_server_metrics_summary (monitoring metrics overview). Note: Combines get_system_info, get_os_version, get_system_time, get_network_interfaces, get_disk_info in one call.',
+    annotations=READ_ONLY,
+    meta={
+        'anthropic/alwaysLoad': True,
+        'anthropic/searchHint': 'server overview comprehensive system info hardware os all',
+    },
 )
 async def get_server_overview(
     server_id: str, workspace: str, region: str = '', **kwargs

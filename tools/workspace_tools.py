@@ -2,6 +2,8 @@
 
 from typing import Any
 
+from mcp.types import ToolAnnotations
+
 from server import mcp
 from utils.common import success_response
 
@@ -52,7 +54,12 @@ def _collect_workspaces_from_tokens(
 
 
 @mcp.tool(
-    description='List all available workspaces and their regions. Returns workspace names, region codes, and domain hostnames. In local mode reads from token.json; in server mode extracts from JWT claims. Use this to discover which workspaces are configured before calling other tools.'
+    description='List all available workspaces and their regions. Returns workspace names, region codes, and domain hostnames. In local mode reads from token.json; in server mode extracts from JWT claims. When to use: first tool to call to discover which workspaces are configured. Related: list_servers (find servers in a workspace). Note: Most other tools require a workspace parameter from this list.',
+    annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False),
+    meta={
+        'anthropic/alwaysLoad': True,
+        'anthropic/searchHint': 'workspace list regions configured available',
+    },
 )
 async def list_workspaces(region: str = '') -> dict[str, Any]:
     """Get list of available workspaces.

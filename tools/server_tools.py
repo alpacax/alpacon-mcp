@@ -5,10 +5,20 @@ from typing import Any
 from utils.common import error_response, success_response
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
+from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, READ_ONLY
 
 
 @mcp_tool_handler(
-    description='List all servers in a workspace. Returns server names, UUIDs, status, OS, and connection info. Use this to discover available servers and obtain server IDs required by other tools.'
+    description=(
+        'List all servers in a workspace. Returns server names, UUIDs, status, OS, and connection info. '
+        'Use this to discover available servers and obtain server IDs required by other tools. '
+        'Related: get_server (single server details), get_server_overview (full system info).'
+    ),
+    annotations=READ_ONLY,
+    meta={
+        'anthropic/alwaysLoad': True,
+        'anthropic/searchHint': 'server list inventory discover find all',
+    },
 )
 async def list_servers(workspace: str, region: str = '', **kwargs) -> dict[str, Any]:
     """Get list of servers.
@@ -46,7 +56,16 @@ async def list_servers(workspace: str, region: str = '', **kwargs) -> dict[str, 
 
 
 @mcp_tool_handler(
-    description='Get detailed information about a specific server by its UUID. Returns hostname, IP address, OS, agent version, and online status. Use this when you need full details about a single server rather than the summary list.'
+    description=(
+        'Get detailed information about a specific server by its UUID. Returns hostname, IP address, OS, agent version, and online status. '
+        'Use this when you need full details about a single server rather than the summary list. '
+        'Related: list_servers (find server UUID first), get_server_overview (includes hardware and OS details).'
+    ),
+    annotations=READ_ONLY,
+    meta={
+        'anthropic/alwaysLoad': True,
+        'anthropic/searchHint': 'server detail info status hostname IP',
+    },
 )
 async def get_server(
     server_id: str, workspace: str, region: str = '', **kwargs
@@ -103,7 +122,13 @@ async def get_server(
 
 
 @mcp_tool_handler(
-    description='List documentation notes attached to a server. Returns note titles, content, and timestamps. Use this to review existing server documentation or operational records.'
+    description=(
+        'List documentation notes attached to a server. Returns note titles, content, and timestamps. '
+        'Use this to review existing server documentation or operational records. '
+        'Related: create_server_note (add new notes).'
+    ),
+    annotations=READ_ONLY,
+    meta={'anthropic/searchHint': 'server notes documentation'},
 )
 async def list_server_notes(
     server_id: str, workspace: str, region: str = '', **kwargs
@@ -135,7 +160,13 @@ async def list_server_notes(
 
 
 @mcp_tool_handler(
-    description='Create a documentation note on a server with a title and content body. Use this to record operational notes, maintenance logs, or configuration documentation for a server.'
+    description=(
+        'Create a documentation note on a server with a title and content body. '
+        'Use this to record operational notes, maintenance logs, or configuration documentation for a server. '
+        'Related: list_server_notes (view existing notes).'
+    ),
+    annotations=ADDITIVE,
+    meta={'anthropic/searchHint': 'server note create documentation'},
 )
 async def create_server_note(
     server_id: str,
@@ -187,7 +218,13 @@ async def create_server_note(
 
 
 @mcp_tool_handler(
-    description='Restart the Alpacon agent process on a server. The agent will briefly go offline during restart. Use this when the agent is unresponsive or after configuration changes. Returns a command object tracking the restart operation.'
+    description=(
+        'Restart the Alpacon agent process on a server. The agent will briefly go offline during restart. '
+        'Use this when the agent is unresponsive or after configuration changes. Returns a command object tracking the restart operation. '
+        'Related: shutdown_agent, upgrade_agent. Note: Server will briefly go offline.'
+    ),
+    annotations=DESTRUCTIVE,
+    meta={'anthropic/searchHint': 'agent restart alpacon process'},
 )
 async def restart_agent(
     server_id: str, workspace: str, region: str = '', **kwargs
@@ -218,7 +255,13 @@ async def restart_agent(
 
 
 @mcp_tool_handler(
-    description='Shut down the Alpacon agent process on a server. The server will appear offline in the workspace until the agent is manually restarted. Use with caution as remote access will be lost. Returns a command object tracking the shutdown operation.'
+    description=(
+        'Shut down the Alpacon agent process on a server. The server will appear offline in the workspace until the agent is manually restarted. '
+        'Use with caution as remote access will be lost. Returns a command object tracking the shutdown operation. '
+        'Related: restart_agent. Note: Remote access will be lost until manual restart.'
+    ),
+    annotations=DESTRUCTIVE,
+    meta={'anthropic/searchHint': 'agent shutdown stop process'},
 )
 async def shutdown_agent(
     server_id: str, workspace: str, region: str = '', **kwargs
@@ -249,7 +292,13 @@ async def shutdown_agent(
 
 
 @mcp_tool_handler(
-    description='Upgrade the Alpacon agent on a server to the latest available version. The agent will briefly restart during the upgrade process. Use this to keep agents up to date with the latest features and security patches. Returns a command object tracking the upgrade operation.'
+    description=(
+        'Upgrade the Alpacon agent on a server to the latest available version. The agent will briefly restart during the upgrade process. '
+        'Use this to keep agents up to date with the latest features and security patches. Returns a command object tracking the upgrade operation. '
+        'Related: restart_agent. Note: Agent briefly restarts during upgrade.'
+    ),
+    annotations=DESTRUCTIVE,
+    meta={'anthropic/searchHint': 'agent upgrade update version'},
 )
 async def upgrade_agent(
     server_id: str, workspace: str, region: str = '', **kwargs
@@ -280,7 +329,13 @@ async def upgrade_agent(
 
 
 @mcp_tool_handler(
-    description='Refresh system information for a server by triggering the agent to re-collect hardware, OS, network, and package data. Use this after hardware changes or OS updates to ensure the dashboard reflects the current state. Returns a command object tracking the operation.'
+    description=(
+        'Refresh system information for a server by triggering the agent to re-collect hardware, OS, network, and package data. '
+        'Use this after hardware changes or OS updates to ensure the dashboard reflects the current state. '
+        'Returns a command object tracking the operation.'
+    ),
+    annotations=ADDITIVE,
+    meta={'anthropic/searchHint': 'refresh system info hardware OS rescan'},
 )
 async def update_information(
     server_id: str, workspace: str, region: str = '', **kwargs
@@ -311,7 +366,14 @@ async def update_information(
 
 
 @mcp_tool_handler(
-    description='Upgrade all system packages on a server via the OS package manager (e.g., apt upgrade, yum update). This may take several minutes depending on the number of pending updates. Use with caution in production environments. Returns a command object tracking the upgrade operation.'
+    description=(
+        'Upgrade all system packages on a server via the OS package manager (e.g., apt upgrade, yum update). '
+        'This may take several minutes depending on the number of pending updates. Use with caution in production environments. '
+        'Returns a command object tracking the upgrade operation. '
+        'Related: list_system_packages (check pending updates), reboot_system (may be required after kernel updates). Note: May take several minutes.'
+    ),
+    annotations=DESTRUCTIVE,
+    meta={'anthropic/searchHint': 'system packages upgrade apt yum update all'},
 )
 async def upgrade_system(
     server_id: str, workspace: str, region: str = '', **kwargs
@@ -342,7 +404,13 @@ async def upgrade_system(
 
 
 @mcp_tool_handler(
-    description='Reboot a server. The server will go offline briefly during the reboot process and reconnect automatically when the agent starts back up. Use this after kernel updates or when a full system restart is required. Returns a command object tracking the reboot operation.'
+    description=(
+        'Reboot a server. The server will go offline briefly during the reboot process and reconnect automatically when the agent starts back up. '
+        'Use this after kernel updates or when a full system restart is required. Returns a command object tracking the reboot operation. '
+        'Related: shutdown_system (full power off), upgrade_system (often precedes reboot). Note: Server reconnects automatically.'
+    ),
+    annotations=DESTRUCTIVE,
+    meta={'anthropic/searchHint': 'server reboot restart machine'},
 )
 async def reboot_system(
     server_id: str, workspace: str, region: str = '', **kwargs
@@ -373,7 +441,14 @@ async def reboot_system(
 
 
 @mcp_tool_handler(
-    description='Shut down a server completely. The server will power off and will NOT automatically reconnect. Manual intervention is required to bring the server back online. Use with extreme caution. Returns a command object tracking the shutdown operation.'
+    description=(
+        'Shut down a server completely. The server will power off and will NOT automatically reconnect. '
+        'Manual intervention is required to bring the server back online. Use with extreme caution. '
+        'Returns a command object tracking the shutdown operation. '
+        'Related: reboot_system (use if you want the server to come back). Note: Requires manual intervention to power on again.'
+    ),
+    annotations=DESTRUCTIVE,
+    meta={'anthropic/searchHint': 'server shutdown power off halt'},
 )
 async def shutdown_system(
     server_id: str, workspace: str, region: str = '', **kwargs

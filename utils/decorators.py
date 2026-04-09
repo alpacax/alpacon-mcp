@@ -1,9 +1,14 @@
 """Decorators for MCP tools to reduce boilerplate code."""
 
+from __future__ import annotations
+
 import inspect
 import os
 from collections.abc import Callable
 from functools import wraps
+from typing import Any
+
+from mcp.types import ToolAnnotations
 
 from utils.common import error_response, token_error_response, validate_token
 from utils.error_handler import (
@@ -445,17 +450,23 @@ def with_logging(func: Callable) -> Callable:
     return wrapper
 
 
-def mcp_tool_handler(description: str):
+def mcp_tool_handler(
+    description: str,
+    annotations: ToolAnnotations | None = None,
+    meta: dict[str, Any] | None = None,
+):
     """Combined decorator for MCP tools that adds all common functionality.
 
     This decorator combines:
-    1. MCP tool registration
+    1. MCP tool registration (with optional annotations and meta)
     2. Token validation (JWT for streamable-http, token.json for stdio)
     3. Error handling
     4. Logging
 
     Args:
         description: Tool description for MCP
+        annotations: MCP ToolAnnotations (readOnlyHint, destructiveHint, etc.)
+        meta: MCP meta dict (anthropic/alwaysLoad, anthropic/searchHint, etc.)
 
     Returns:
         Decorator function
@@ -470,6 +481,10 @@ def mcp_tool_handler(description: str):
         # Register with MCP
         from server import mcp
 
-        return mcp.tool(description=description)(func)
+        return mcp.tool(
+            description=description,
+            annotations=annotations,
+            meta=meta,
+        )(func)
 
     return decorator
