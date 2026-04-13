@@ -259,9 +259,7 @@ Install the MCP extension and add to settings:
 ### 🔧 Remote operations
 
 #### Command API (requires ACL permission)
-- **execute_command_with_acl**: Execute commands on servers
-- **execute_command_sync**: Execute and wait for results
-- **get_command_result**: Get command execution results
+- **execute_command**: Execute a command on a server and wait for the result
 - **list_commands**: List recent command history
 - **execute_command_multi_server**: Execute on multiple servers simultaneously
 

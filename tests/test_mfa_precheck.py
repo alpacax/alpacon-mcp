@@ -17,8 +17,9 @@ from utils.security_settings import (
 class TestGetActionForTool:
     """Tests for tool name -> MFA action mapping."""
 
-    def test_removed_websh_tools_return_none(self):
-        assert get_action_for_tool('execute_command') is None
+    def test_removed_tools_return_none(self):
+        assert get_action_for_tool('execute_command_with_acl') is None
+        assert get_action_for_tool('execute_command_sync') is None
         assert get_action_for_tool('execute_command_batch') is None
         assert get_action_for_tool('websh_session_create') is None
         assert get_action_for_tool('websh_channel_execute') is None
@@ -29,9 +30,9 @@ class TestGetActionForTool:
         assert get_action_for_tool('webftp_session_create') == 'webftp'
 
     def test_command_tools(self):
-        assert get_action_for_tool('execute_command_with_acl') == 'command'
-        assert get_action_for_tool('execute_command_sync') == 'command'
+        assert get_action_for_tool('execute_command') == 'command'
         assert get_action_for_tool('execute_command_multi_server') == 'command'
+        assert get_action_for_tool('list_commands') == 'command'
 
     def test_non_mfa_tools(self):
         assert get_action_for_tool('list_servers') is None
@@ -179,7 +180,7 @@ class TestMfaPrecheck:
             patch('utils.error_handler.make_auth_error_key', return_value='test-key'),
         ):
             with pytest.raises(UpstreamAuthError) as exc_info:
-                await _check_mfa_requirement('execute_command_with_acl', 'fake-jwt', 'test-ws')
+                await _check_mfa_requirement('execute_command', 'fake-jwt', 'test-ws')
 
         assert exc_info.value.mfa_required is True
         assert exc_info.value.source == 'command'
@@ -210,7 +211,7 @@ class TestMfaPrecheck:
             patch('utils.error_handler.signal_upstream_auth_error') as mock_signal,
         ):
             # Should not raise
-            await _check_mfa_requirement('execute_command_with_acl', 'fake-jwt', 'test-ws')
+            await _check_mfa_requirement('execute_command', 'fake-jwt', 'test-ws')
 
         mock_signal.assert_not_called()
 
@@ -263,7 +264,7 @@ class TestMfaPrecheck:
             patch('utils.error_handler.signal_upstream_auth_error') as mock_signal,
         ):
             # Should not raise
-            await _check_mfa_requirement('execute_command_with_acl', 'fake-jwt', 'test-ws')
+            await _check_mfa_requirement('execute_command', 'fake-jwt', 'test-ws')
 
         mock_signal.assert_not_called()
 

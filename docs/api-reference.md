@@ -285,39 +285,21 @@ Search events by criteria.
 
 > ⚠️ **ACL configuration required**: Command API tools require pre-approved commands in your token's Access Control List (ACL). Configure permissions by clicking on your token in the Alpacon web interface → ACL settings.
 
-### `execute_command_with_acl`
-Execute commands on servers using the Command API.
+### `execute_command`
+Execute a command on a server and wait for the result.
 
 **Parameters:**
 - `server_id` (string): Server ID
 - `command` (string): Command to execute
 - `workspace` (string): Workspace name
-- `shell` (string, default: "internal"): Shell type
+- `shell` (string, default: "system"): Shell type
 - `username` (string, optional): Username for execution
 - `groupname` (string, default: "alpacon"): Group name
 - `env` (object, optional): Environment variables
-- `region` (string, default: "ap1"): Region name
-
-### `execute_command_sync`
-Execute a command and wait for results.
-
-**Parameters:**
-- `server_id` (string): Server ID
-- `command` (string): Command to execute
-- `workspace` (string): Workspace name
-- `shell` (string, default: "bash"): Shell type
-- `username` (string, optional): Username for execution
-- `groupname` (string, default: "alpacon"): Group name
-- `env` (object, optional): Environment variables
-- `timeout` (integer, default: 30): Timeout in seconds
-- `region` (string, default: "ap1"): Region name
-
-### `get_command_result`
-Get command execution results.
-
-**Parameters:**
-- `command_id` (string): Command ID
-- `workspace` (string): Workspace name
+- `run_after` (array, optional): Command IDs to wait for before executing
+- `scheduled_at` (string, optional): ISO 8601 datetime for scheduled execution
+- `data` (string, optional): Stdin data
+- `timeout` (integer, default: 300): Timeout in seconds
 - `region` (string, default: "ap1"): Region name
 
 ### `list_commands`

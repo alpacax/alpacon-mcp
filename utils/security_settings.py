@@ -262,10 +262,8 @@ def get_action_for_tool(tool_name: str) -> str | None:
     if tool_name.startswith('webftp_'):
         return 'webftp'
     if tool_name in (
-        'execute_command_with_acl',
-        'execute_command_sync',
+        'execute_command',
         'execute_command_multi_server',
-        'get_command_result',
         'list_commands',
     ):
         return 'command'
