@@ -23,7 +23,7 @@ async def _submit_command(
     region: str = '',
     *,
     token: str | None = None,
-) -> dict[str, Any]:
+) -> dict[str, Any] | list[Any]:
     """Submit a command to the Command API. Internal helper, not an MCP tool."""
     command_data: dict[str, Any] = {
         'server': server_id,
@@ -184,9 +184,10 @@ async def execute_command(
 
     # Poll for command completion with progress-based timeout reset
     # Hard cap at 3x timeout to prevent indefinite waiting
-    hard_deadline = asyncio.get_event_loop().time() + timeout * 3
-    deadline = asyncio.get_event_loop().time() + timeout
-    while asyncio.get_event_loop().time() < deadline:
+    loop = asyncio.get_running_loop()
+    hard_deadline = loop.time() + timeout * 3
+    deadline = loop.time() + timeout
+    while loop.time() < deadline:
         result = await _get_command_result(
             command_id=command_id,
             region=region,
@@ -224,7 +225,7 @@ async def execute_command(
             # Command still in progress — reset deadline (within hard cap)
             if status in ('running', 'acked'):
                 deadline = min(
-                    asyncio.get_event_loop().time() + timeout,
+                    loop.time() + timeout,
                     hard_deadline,
                 )
 
@@ -266,7 +267,7 @@ async def execute_command_multi_server(
     if not server_ids:
         return error_response('server_ids cannot be empty')
 
-    async def _submit_one(sid: str) -> dict[str, Any]:
+    async def _submit_one(sid: str) -> dict[str, Any] | list[Any]:
         return await _submit_command(
             server_id=sid,
             command=command,
