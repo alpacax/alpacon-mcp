@@ -232,7 +232,8 @@ class TestExecuteCommand:
                 timeout=1,
             )
 
-            assert result['status'] == 'timeout'
+            assert result['status'] == 'error'
+            assert result['error_type'] == 'timeout'
             assert 'timed out' in result['message']
 
     @pytest.mark.asyncio

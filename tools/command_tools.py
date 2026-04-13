@@ -244,15 +244,15 @@ async def execute_command(
         await asyncio.sleep(1)
 
     # Timeout reached
-    return {
-        'status': 'timeout',
-        'message': f'Command execution timed out after {timeout} seconds',
-        'command_id': command_id,
-        'server_id': server_id,
-        'command': command,
-        'region': region,
-        'workspace': workspace,
-    }
+    return error_response(
+        f'Command execution timed out after {timeout} seconds',
+        error_type='timeout',
+        command_id=command_id,
+        server_id=server_id,
+        command=command,
+        region=region,
+        workspace=workspace,
+    )
 
 
 @mcp_tool_handler(
