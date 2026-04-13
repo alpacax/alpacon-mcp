@@ -195,7 +195,18 @@ async def execute_command(
             token=token,
         )
 
-        if isinstance(result, dict) and 'error' not in result:
+        if isinstance(result, dict) and 'error' in result:
+            return error_response(
+                f'Failed to poll command result: {result.get("error")}',
+                command_id=command_id,
+                server_id=server_id,
+                command=command,
+                region=region,
+                workspace=workspace,
+                details=result,
+            )
+
+        if isinstance(result, dict):
             status = result.get('status', '')
 
             # Command completed
