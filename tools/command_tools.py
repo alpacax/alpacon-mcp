@@ -1,21 +1,15 @@
-"""Command execution tools for Alpacon MCP server - Refactored version."""
+"""Command execution tools for Alpacon MCP server."""
 
 import asyncio
 from typing import Any
 
 from utils.common import error_response, success_response
 from utils.decorators import mcp_tool_handler
-from utils.error_handler import UpstreamAuthError
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, READ_ONLY
 
 
-@mcp_tool_handler(
-    description='Run a shell command on a remote server asynchronously via Command API. Returns a command ID for polling with get_command_result. Requires ACL permission. Supports dependency chains (run_after), scheduled execution (scheduled_at), and stdin data. When to use: you need async command execution, dependency chains, or scheduled execution and will poll for results separately. Related: execute_command_sync (simpler, waits for result), get_command_result (poll for results), execute_command_multi_server (same command on many servers). Note: Prefer execute_command_sync for most use cases.',
-    annotations=ADDITIVE,
-    meta={'anthropic/searchHint': 'command run shell execute async ACL'},
-)
-async def execute_command_with_acl(
+async def _submit_command(
     server_id: str,
     command: str,
     workspace: str,
@@ -27,12 +21,10 @@ async def execute_command_with_acl(
     scheduled_at: str | None = None,
     data: str | None = None,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
-    """Execute a command on a specified server using Command API (requires ACL permission)."""
-    token = kwargs.get('token')
-
-    # Prepare command data
+    *,
+    token: str | None = None,
+) -> dict[str, Any] | list[Any]:
+    """Submit a command to the Command API. Internal helper, not an MCP tool."""
     command_data: dict[str, Any] = {
         'server': server_id,
         'shell': shell,
@@ -51,8 +43,7 @@ async def execute_command_with_acl(
     if data:
         command_data['data'] = data
 
-    # Make async call to execute command
-    result = await http_client.post(
+    return await http_client.post(
         region=region,
         workspace=workspace,
         endpoint='/api/events/commands/',
@@ -60,38 +51,20 @@ async def execute_command_with_acl(
         data=command_data,
     )
 
-    return success_response(
-        data=result,
-        server_id=server_id,
-        command=command,
-        shell=shell,
-        username=username or 'auto',
-        groupname=groupname,
-        region=region,
-        workspace=workspace,
-    )
 
-
-@mcp_tool_handler(
-    description='Retrieve the result of a previously executed command by its command ID. Returns stdout, stderr, exit code, and completion status. When to use: polling for results after execute_command_with_acl. Related: execute_command_with_acl (creates the command), list_commands (browse history).',
-    annotations=READ_ONLY,
-    meta={'anthropic/searchHint': 'command result output status poll'},
-)
-async def get_command_result(
-    command_id: str, workspace: str, region: str = '', **kwargs
+async def _get_command_result(
+    command_id: str,
+    workspace: str,
+    region: str = '',
+    *,
+    token: str | None = None,
 ) -> dict[str, Any]:
-    """Get the result of a previously executed command."""
-    token = kwargs.get('token')
-
-    result = await http_client.get(
+    """Poll a command result by ID. Internal helper, not an MCP tool."""
+    return await http_client.get(
         region=region,
         workspace=workspace,
         endpoint=f'/api/events/commands/{command_id}/',
         token=token,
-    )
-
-    return success_response(
-        data=result, command_id=command_id, region=region, workspace=workspace
     )
 
 
@@ -134,14 +107,14 @@ async def list_commands(
 
 
 @mcp_tool_handler(
-    description='Run a shell command on a server and wait for the result (up to 5 minutes by default). Returns stdout, stderr, and exit code in a single call. Requires ACL permission. The timeout resets when the command is actively running. When to use: the simplest and recommended way to run a command when you need the result immediately. Related: execute_command_with_acl (async alternative), execute_command_multi_server (run on multiple servers). Note: Default timeout is 300 seconds (5 minutes). The timeout resets while the command is actively running or acknowledged.',
+    description='Run a shell command on a server and wait for the result (up to 5 minutes by default). Returns stdout, stderr, and exit code in a single call. Requires ACL permission. The timeout resets when the command is actively running. Supports dependency chains (run_after), scheduled execution (scheduled_at), and stdin data. When to use: the recommended way to run a command on a server. Related: execute_command_multi_server (run on multiple servers), list_commands (browse history). Note: Default timeout is 300 seconds (5 minutes).',
     annotations=ADDITIVE,
     meta={
         'anthropic/alwaysLoad': True,
-        'anthropic/searchHint': 'command run shell execute sync wait result',
+        'anthropic/searchHint': 'command run shell execute wait result ACL',
     },
 )
-async def execute_command_sync(
+async def execute_command(
     server_id: str,
     command: str,
     workspace: str,
@@ -156,36 +129,24 @@ async def execute_command_sync(
     region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
-    """Execute a command and wait for the result using Command API (requires ACL permission)."""
-    # First, execute the command
-    try:
-        exec_result = await execute_command_with_acl(
-            server_id=server_id,
-            command=command,
-            shell=shell,
-            username=username,
-            groupname=groupname,
-            env=env,
-            run_after=run_after,
-            scheduled_at=scheduled_at,
-            data=data,
-            region=region,
-            workspace=workspace,
-            **kwargs,  # Pass token through
-        )
-    except UpstreamAuthError:
-        raise
-    except Exception as e:
-        return error_response(
-            f'Failed to execute command: {str(e)}', workspace=workspace, region=region
-        )
+    """Execute a command on a server and wait for the result (requires ACL permission)."""
+    token = kwargs.get('token')
 
-    # Check if execution was successful
-    if exec_result.get('status') != 'success':
-        return exec_result
-
-    # Handle case where data is a list (array) instead of object
-    exec_data = exec_result.get('data', {})
+    # Submit the command
+    exec_data = await _submit_command(
+        server_id=server_id,
+        command=command,
+        workspace=workspace,
+        shell=shell,
+        username=username,
+        groupname=groupname,
+        env=env,
+        run_after=run_after,
+        scheduled_at=scheduled_at,
+        data=data,
+        region=region,
+        token=token,
+    )
 
     # Check if exec_data contains an error (like ACL permission denied)
     if isinstance(exec_data, dict) and 'error' in exec_data:
@@ -196,20 +157,19 @@ async def execute_command_sync(
             details=exec_data,
         )
 
+    # Extract command ID from response (API may return dict or list)
     if isinstance(exec_data, list):
         if len(exec_data) > 0:
             command_id = exec_data[0].get('id')
         else:
             return error_response(
-                'No command data returned from execute_command',
-                workspace=workspace,
-                region=region,
+                'No command data returned', workspace=workspace, region=region
             )
     elif isinstance(exec_data, dict):
         command_id = exec_data.get('id')
     else:
         return error_response(
-            f'Unexpected command data format: {type(exec_data).__name__}',
+            f'Unexpected response format: {type(exec_data).__name__}',
             workspace=workspace,
             region=region,
         )
@@ -222,26 +182,37 @@ async def execute_command_sync(
             details=exec_data,
         )
 
-    # Wait for command completion with progress-based timeout reset
+    # Poll for command completion with progress-based timeout reset
     # Hard cap at 3x timeout to prevent indefinite waiting
-    hard_deadline = asyncio.get_event_loop().time() + timeout * 3
-    deadline = asyncio.get_event_loop().time() + timeout
-    while asyncio.get_event_loop().time() < deadline:
-        result = await get_command_result(
+    loop = asyncio.get_running_loop()
+    hard_deadline = loop.time() + timeout * 3
+    deadline = loop.time() + timeout
+    while loop.time() < deadline:
+        result = await _get_command_result(
             command_id=command_id,
             region=region,
             workspace=workspace,
-            **kwargs,
+            token=token,
         )
 
-        if result['status'] == 'success':
-            command_data = result['data']
-            status = command_data.get('status', '')
+        if isinstance(result, dict) and 'error' in result:
+            return error_response(
+                f'Failed to poll command result: {result.get("error")}',
+                command_id=command_id,
+                server_id=server_id,
+                command=command,
+                region=region,
+                workspace=workspace,
+                details=result,
+            )
+
+        if isinstance(result, dict):
+            status = result.get('status', '')
 
             # Command completed
-            if command_data.get('finished_at') is not None:
+            if result.get('finished_at') is not None:
                 return success_response(
-                    data=command_data,
+                    data=result,
                     command_id=command_id,
                     server_id=server_id,
                     command=command,
@@ -259,13 +230,13 @@ async def execute_command_sync(
                     command=command,
                     region=region,
                     workspace=workspace,
-                    details=command_data,
+                    details=result,
                 )
 
             # Command still in progress — reset deadline (within hard cap)
             if status in ('running', 'acked'):
                 deadline = min(
-                    asyncio.get_event_loop().time() + timeout,
+                    loop.time() + timeout,
                     hard_deadline,
                 )
 
@@ -273,19 +244,19 @@ async def execute_command_sync(
         await asyncio.sleep(1)
 
     # Timeout reached
-    return {
-        'status': 'timeout',
-        'message': f'Command execution timed out after {timeout} seconds',
-        'command_id': command_id,
-        'server_id': server_id,
-        'command': command,
-        'region': region,
-        'workspace': workspace,
-    }
+    return error_response(
+        f'Command execution timed out after {timeout} seconds',
+        error_type='timeout',
+        command_id=command_id,
+        server_id=server_id,
+        command=command,
+        region=region,
+        workspace=workspace,
+    )
 
 
 @mcp_tool_handler(
-    description='Run the same shell command on multiple servers simultaneously or sequentially. Returns per-server results with success/failure status. Requires ACL permission. When to use: batch operations like deploying configs, checking status, or running diagnostics across a fleet. Related: execute_command_sync (single server), execute_command_with_acl (single server async). Note: Set parallel=false for sequential execution.',
+    description='Run the same shell command on multiple servers simultaneously or sequentially. Returns per-server results with success/failure status. Requires ACL permission. When to use: batch operations like deploying configs, checking status, or running diagnostics across a fleet. Related: execute_command (single server). Note: Set parallel=false for sequential execution. This submits commands without waiting for results — use list_commands to check status.',
     annotations=ADDITIVE,
     meta={'anthropic/searchHint': 'command multi server batch deploy fleet parallel'},
 )
@@ -301,95 +272,70 @@ async def execute_command_multi_server(
     parallel: bool = True,
     **kwargs,
 ) -> dict[str, Any]:
-    """Execute a command on multiple servers using Command API Deploy Shell (requires ACL permission)."""
-    # Validate inputs
+    """Execute a command on multiple servers using Command API (requires ACL permission)."""
+    token = kwargs.get('token')
+
     if not server_ids:
         return error_response('server_ids cannot be empty')
 
+    async def _submit_one(sid: str) -> dict[str, Any] | list[Any]:
+        return await _submit_command(
+            server_id=sid,
+            command=command,
+            workspace=workspace,
+            shell=shell,
+            username=username,
+            groupname=groupname,
+            env=env,
+            region=region,
+            token=token,
+        )
+
+    deploy_results: dict[str, Any] = {}
+    successful_count = 0
+    failed_count = 0
+
     if parallel:
-        # Execute commands in parallel on all servers
-        tasks = []
-        for server_id in server_ids:
-            task = execute_command_with_acl(
-                server_id=server_id,
-                command=command,
-                workspace=workspace,
-                shell=shell,
-                username=username,
-                groupname=groupname,
-                env=env,
-                region=region,
-                **kwargs,
-            )
-            tasks.append(task)
-
-        # Wait for all commands to complete
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-
-        # Process results
-        deploy_results = {}
-        successful_count = 0
-        failed_count = 0
-
+        results = await asyncio.gather(
+            *[_submit_one(sid) for sid in server_ids], return_exceptions=True
+        )
         for i, result in enumerate(results):
-            server_id = server_ids[i]
+            sid = server_ids[i]
             if isinstance(result, BaseException):
                 if not isinstance(result, Exception):
-                    raise result  # Re-raise CancelledError, KeyboardInterrupt, etc.
-                deploy_results[server_id] = {
+                    raise result
+                deploy_results[sid] = {
                     'status': 'error',
-                    'message': f'Exception occurred: {str(result)}',
+                    'message': str(result),
                 }
                 failed_count += 1
+            elif isinstance(result, dict) and 'error' in result:
+                deploy_results[sid] = {'status': 'error', **result}
+                failed_count += 1
             else:
-                deploy_results[server_id] = result
-                if result.get('status') == 'success':
-                    successful_count += 1
-                else:
-                    failed_count += 1
-
-        return success_response(
-            deploy_shell_results=deploy_results,
-            command=command,
-            total_servers=len(server_ids),
-            successful_count=successful_count,
-            failed_count=failed_count,
-            execution_type='parallel',
-            region=region,
-            workspace=workspace,
-        )
-    else:
-        # Execute commands sequentially
-        deploy_results = {}
-        successful_count = 0
-        failed_count = 0
-
-        for server_id in server_ids:
-            result = await execute_command_with_acl(
-                server_id=server_id,
-                command=command,
-                workspace=workspace,
-                shell=shell,
-                username=username,
-                groupname=groupname,
-                env=env,
-                region=region,
-                **kwargs,
-            )
-
-            deploy_results[server_id] = result
-            if result.get('status') == 'success':
+                deploy_results[sid] = {'status': 'success', 'data': result}
                 successful_count += 1
-            else:
+    else:
+        for sid in server_ids:
+            try:
+                result = await _submit_one(sid)
+                if isinstance(result, dict) and 'error' in result:
+                    deploy_results[sid] = {'status': 'error', **result}
+                    failed_count += 1
+                else:
+                    deploy_results[sid] = {'status': 'success', 'data': result}
+                    successful_count += 1
+            except Exception as e:
+                deploy_results[sid] = {'status': 'error', 'message': str(e)}
                 failed_count += 1
 
-        return success_response(
-            deploy_shell_results=deploy_results,
-            command=command,
-            total_servers=len(server_ids),
-            successful_count=successful_count,
-            failed_count=failed_count,
-            execution_type='sequential',
-            region=region,
-            workspace=workspace,
-        )
+    return success_response(
+        deploy_shell_results=deploy_results,
+        command=command,
+        total_servers=len(server_ids),
+        successful_count=successful_count,
+        failed_count=failed_count,
+        execution_type='parallel' if parallel else 'sequential',
+        region=region,
+        workspace=workspace,
+    )

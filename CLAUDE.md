@@ -258,9 +258,7 @@ All validators are defined in `utils/error_handler.py` and return user-friendly 
 - `shutdown_system`: Shut down a server completely
 
 ### 💻 Remote operations (Command API: requires ACL permission)
-- `execute_command_with_acl`: Execute commands on servers using Command API
-- `execute_command_sync`: Execute and wait for results using Command API
-- `get_command_result`: Get command execution results
+- `execute_command`: Execute a command on a server and wait for the result
 - `list_commands`: List recent command history
 - `execute_command_multi_server`: Execute command on multiple servers simultaneously
 
@@ -585,7 +583,7 @@ uvx alpacon-mcp add-workspace
 servers = await list_servers(workspace="production", region="ap1")
 
 # Execute command
-result = await execute_command_sync(
+result = await execute_command(
     server_id="web-server-01",
     command="df -h",
     workspace="production"

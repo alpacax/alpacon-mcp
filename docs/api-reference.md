@@ -285,39 +285,21 @@ Search events by criteria.
 
 > ⚠️ **ACL configuration required**: Command API tools require pre-approved commands in your token's Access Control List (ACL). Configure permissions by clicking on your token in the Alpacon web interface → ACL settings.
 
-### `execute_command_with_acl`
-Execute commands on servers using the Command API.
+### `execute_command`
+Execute a command on a server and wait for the result.
 
 **Parameters:**
 - `server_id` (string): Server ID
 - `command` (string): Command to execute
 - `workspace` (string): Workspace name
-- `shell` (string, default: "internal"): Shell type
+- `shell` (string, default: "system"): Shell type
 - `username` (string, optional): Username for execution
 - `groupname` (string, default: "alpacon"): Group name
 - `env` (object, optional): Environment variables
-- `region` (string, default: "ap1"): Region name
-
-### `execute_command_sync`
-Execute a command and wait for results.
-
-**Parameters:**
-- `server_id` (string): Server ID
-- `command` (string): Command to execute
-- `workspace` (string): Workspace name
-- `shell` (string, default: "bash"): Shell type
-- `username` (string, optional): Username for execution
-- `groupname` (string, default: "alpacon"): Group name
-- `env` (object, optional): Environment variables
-- `timeout` (integer, default: 30): Timeout in seconds
-- `region` (string, default: "ap1"): Region name
-
-### `get_command_result`
-Get command execution results.
-
-**Parameters:**
-- `command_id` (string): Command ID
-- `workspace` (string): Workspace name
+- `run_after` (array, optional): Command IDs to wait for before executing
+- `scheduled_at` (string, optional): ISO 8601 datetime for scheduled execution
+- `data` (string, optional): Stdin data
+- `timeout` (integer, default: 300): Timeout in seconds
 - `region` (string, default: "ap1"): Region name
 
 ### `list_commands`
@@ -342,118 +324,6 @@ Execute a command on multiple servers simultaneously.
 - `env` (object, optional): Environment variables
 - `parallel` (boolean, default: true): Execute in parallel
 - `region` (string, default: "ap1"): Region name
-
----
-
-## 🖥️ Websh tools
-
-### `execute_command`
-Execute a single command on a server. Automatically manages Websh sessions and WebSocket connections.
-
-**Parameters:**
-- `server_id` (string): Server ID
-- `command` (string): Command to execute
-- `workspace` (string): Workspace name
-- `region` (string, default: "ap1"): Region name
-
-**Returns:** Command output.
-
-### `execute_command_batch`
-Execute multiple commands efficiently on the same server.
-
-**Parameters:**
-- `server_id` (string): Server ID
-- `commands` (array): List of commands to execute
-- `workspace` (string): Workspace name
-- `region` (string, default: "ap1"): Region name
-
-**Returns:** Results for each command.
-
-### `websh_session_create`
-Create a new Websh session for remote shell access.
-
-**Parameters:**
-- `server_id` (string): Server ID to create session for
-- `username` (string, optional): Username for the session
-- `region` (string, default: "ap1"): Region name
-- `workspace` (string): Workspace name
-
-**Returns:** Session ID and connection details.
-
-### `websh_sessions_list`
-Get list of active Websh sessions.
-
-**Parameters:**
-- `server_id` (string, optional): Filter by server ID
-- `region` (string, default: "ap1"): Region name
-- `workspace` (string): Workspace name
-
-### `websh_session_reconnect`
-Create a new user channel for an existing Websh session.
-
-**Parameters:**
-- `session_id` (string): Session ID to reconnect
-- `region` (string, default: "ap1"): Region name
-- `workspace` (string): Workspace name
-
-### `websh_session_terminate`
-Terminate a Websh session.
-
-**Parameters:**
-- `session_id` (string): Session ID to terminate
-- `region` (string, default: "ap1"): Region name
-- `workspace` (string): Workspace name
-
-### `websh_websocket_execute`
-Execute commands in Websh session via WebSocket.
-
-**Parameters:**
-- `websocket_url` (string): WebSocket URL
-- `command` (string): Command to execute
-- `timeout` (integer, default: 10): Timeout in seconds
-
-### `websh_websocket_batch_execute`
-Execute multiple commands sequentially via WebSocket.
-
-**Parameters:**
-- `websocket_url` (string): WebSocket URL
-- `commands` (array): List of commands to execute
-- `timeout` (integer, default: 30): Total timeout in seconds for the entire batch
-
-**Returns:** Results for each command.
-
-### `websh_channel_connect`
-Connect to Websh user channel and maintain persistent connection.
-
-**Parameters:**
-- `channel_id` (string): User channel ID
-- `websocket_url` (string): WebSocket URL from user channel creation
-- `session_id` (string): Session ID for reference
-
-**Returns:** Connection status and channel information.
-
-### `websh_channel_execute`
-Execute command using existing WebSocket connection from pool.
-
-**Parameters:**
-- `channel_id` (string): User channel ID
-- `command` (string): Command to execute
-- `timeout` (integer, default: 10): Timeout in seconds
-
-**Returns:** Command execution result with output.
-
-### `websh_channels_list`
-List all active WebSocket connections in the pool.
-
-**Returns:** List of active channels with connection status.
-
-### `websh_channel_disconnect`
-Disconnect and remove WebSocket connection from pool.
-
-**Parameters:**
-- `channel_id` (string): User channel ID to disconnect
-
-**Returns:** Disconnection status.
 
 ---
 

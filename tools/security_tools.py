@@ -13,7 +13,7 @@ from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ
 
 
 @mcp_tool_handler(
-    description='List command ACL rules that control which commands can be executed. When to use: checking command execution permissions or debugging 403 errors from execute_command_sync. Related: create_command_acl (add rules), list_server_acls (server access rules), list_file_acls (file access rules).',
+    description='List command ACL rules that control which commands can be executed. When to use: checking command execution permissions or debugging 403 errors from execute_command. Related: create_command_acl (add rules), list_server_acls (server access rules), list_file_acls (file access rules).',
     annotations=READ_ONLY,
     meta={'anthropic/searchHint': 'command acl permission rules security'},
 )

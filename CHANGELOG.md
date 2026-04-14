@@ -77,7 +77,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Better maintainability and testability of tool implementations
 
 ### Fixed
-- Enhanced error handling in `execute_command_sync` for ACL permission errors
+- Enhanced error handling in `execute_command` for ACL permission errors
 - Improved metric tools with human-readable formatting (GB/MB, Mbps/Kbps)
 - Added statistical summaries for metric data (current, average, min, max)
 - Fixed `get_server_metrics_summary` to return summary only (reduced from 75K to 2K tokens)
