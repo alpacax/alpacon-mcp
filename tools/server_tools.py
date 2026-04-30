@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from utils.common import error_response, success_response
+from utils.common import error_response, filter_non_none, success_response
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, READ_ONLY
@@ -43,13 +43,11 @@ async def list_servers(workspace: str, region: str = '', **kwargs) -> dict[str, 
 
     # Check if result is an error response from http_client
     if isinstance(result, dict) and 'error' in result:
-        error_kwargs: dict[str, Any] = {'region': region, 'workspace': workspace}
-        status_code = result.get('status_code')
-        if status_code is not None:
-            error_kwargs['status_code'] = status_code
         return error_response(
             result.get('message', 'Failed to get servers list'),
-            **error_kwargs,
+            region=region,
+            workspace=workspace,
+            **filter_non_none(status_code=result.get('status_code')),
         )
 
     return success_response(data=result, region=region, workspace=workspace)
@@ -95,17 +93,12 @@ async def get_server(
 
     # Check if result is an error response from http_client
     if isinstance(result, dict) and 'error' in result:
-        error_kwargs: dict[str, Any] = {
-            'server_id': server_id,
-            'region': region,
-            'workspace': workspace,
-        }
-        status_code = result.get('status_code')
-        if status_code is not None:
-            error_kwargs['status_code'] = status_code
         return error_response(
             result.get('message', 'Failed to get server details'),
-            **error_kwargs,
+            server_id=server_id,
+            region=region,
+            workspace=workspace,
+            **filter_non_none(status_code=result.get('status_code')),
         )
 
     # Extract the first result from the list if results exist

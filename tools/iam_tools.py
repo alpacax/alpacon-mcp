@@ -3,7 +3,7 @@
 from typing import Any
 
 from server import mcp
-from utils.common import error_response, success_response
+from utils.common import error_response, filter_non_none, success_response
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ_ONLY
@@ -38,12 +38,7 @@ async def list_iam_users(
     """
     token = kwargs.get('token')
 
-    # Prepare query parameters
-    params = {}
-    if page:
-        params['page'] = page
-    if page_size:
-        params['page_size'] = page_size
+    params = filter_non_none(page=page, page_size=page_size)
 
     # Make async call to IAM users endpoint
     result = await http_client.get(
@@ -123,15 +118,12 @@ async def create_iam_user(
     """
     token = kwargs.get('token')
 
-    # Prepare user data
-    user_data = {'username': username, 'email': email, 'is_active': is_active}
-
-    if first_name:
-        user_data['first_name'] = first_name
-    if last_name:
-        user_data['last_name'] = last_name
-    if groups:
-        user_data['groups'] = groups
+    user_data: dict[str, Any] = {
+        'username': username,
+        'email': email,
+        'is_active': is_active,
+        **filter_non_none(first_name=first_name, last_name=last_name, groups=groups),
+    }
 
     # Make async call to create IAM user
     result = await http_client.post(
@@ -180,18 +172,13 @@ async def update_iam_user(
     """
     token = kwargs.get('token')
 
-    # Prepare update data (only include provided fields)
-    update_data: dict[str, Any] = {}
-    if email is not None:
-        update_data['email'] = email
-    if first_name is not None:
-        update_data['first_name'] = first_name
-    if last_name is not None:
-        update_data['last_name'] = last_name
-    if is_active is not None:
-        update_data['is_active'] = is_active
-    if groups is not None:
-        update_data['groups'] = groups
+    update_data = filter_non_none(
+        email=email,
+        first_name=first_name,
+        last_name=last_name,
+        is_active=is_active,
+        groups=groups,
+    )
 
     if not update_data:
         return error_response('No update data provided')
@@ -273,12 +260,7 @@ async def list_iam_groups(
     """
     token = kwargs.get('token')
 
-    # Prepare query parameters
-    params = {}
-    if page:
-        params['page'] = page
-    if page_size:
-        params['page_size'] = page_size
+    params = filter_non_none(page=page, page_size=page_size)
 
     # Make async call to IAM groups endpoint
     result = await http_client.get(
@@ -319,13 +301,10 @@ async def create_iam_group(
     """
     token = kwargs.get('token')
 
-    # Prepare group data
-    group_data: dict[str, Any] = {'name': name}
-
-    if description:
-        group_data['description'] = description
-    if permissions:
-        group_data['permissions'] = permissions
+    group_data: dict[str, Any] = {
+        'name': name,
+        **filter_non_none(description=description, permissions=permissions),
+    }
 
     # Make async call to create IAM group
     result = await http_client.post(

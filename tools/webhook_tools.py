@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from utils.common import error_response, success_response
+from utils.common import error_response, filter_non_none, success_response
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ_ONLY
@@ -37,11 +37,7 @@ async def list_event_subscriptions(
     """
     token = kwargs.get('token')
 
-    params: dict[str, Any] = {}
-    if page is not None:
-        params['page'] = page
-    if page_size is not None:
-        params['page_size'] = page_size
+    params = filter_non_none(page=page, page_size=page_size)
 
     result = await http_client.get(
         region=region,
@@ -81,13 +77,11 @@ async def create_event_subscription(
     """
     token = kwargs.get('token')
 
-    subscription_data: dict[str, Any] = {
+    subscription_data = {
         'channel': channel,
         'event_type': event_type,
+        **filter_non_none(target_id=target_id),
     }
-
-    if target_id is not None:
-        subscription_data['target_id'] = target_id
 
     result = await http_client.post(
         region=region,
@@ -165,11 +159,7 @@ async def list_webhooks(
     """
     token = kwargs.get('token')
 
-    params: dict[str, Any] = {}
-    if page is not None:
-        params['page'] = page
-    if page_size is not None:
-        params['page_size'] = page_size
+    params = filter_non_none(page=page, page_size=page_size)
 
     result = await http_client.get(
         region=region,
@@ -260,15 +250,12 @@ async def update_webhook(
     """
     token = kwargs.get('token')
 
-    update_data: dict[str, Any] = {}
-    if name is not None:
-        update_data['name'] = name
-    if url is not None:
-        update_data['url'] = url
-    if ssl_verify is not None:
-        update_data['ssl_verify'] = ssl_verify
-    if enabled is not None:
-        update_data['enabled'] = enabled
+    update_data = filter_non_none(
+        name=name,
+        url=url,
+        ssl_verify=ssl_verify,
+        enabled=enabled,
+    )
 
     if not update_data:
         return error_response('No update data provided')

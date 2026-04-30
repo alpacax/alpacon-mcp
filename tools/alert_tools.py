@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from utils.common import error_response, success_response
+from utils.common import error_response, filter_non_none, success_response
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ_ONLY
@@ -44,15 +44,7 @@ async def list_alerts(
     """
     token = kwargs.get('token')
 
-    params: dict[str, Any] = {}
-    if server_id:
-        params['server'] = server_id
-    if status:
-        params['status'] = status
-    if page is not None:
-        params['page'] = page
-    if page_size is not None:
-        params['page_size'] = page_size
+    params = filter_non_none(page=page, page_size=page_size, server=server_id, status=status)
 
     result = await http_client.get(
         region=region,
@@ -124,9 +116,7 @@ async def mute_alert(
     """
     token = kwargs.get('token')
 
-    mute_data: dict[str, Any] = {}
-    if duration is not None:
-        mute_data['duration'] = duration
+    mute_data = filter_non_none(duration=duration)
 
     result = await http_client.post(
         region=region,
@@ -185,20 +175,18 @@ async def create_alert_rule(
     """
     token = kwargs.get('token')
 
-    rule_data: dict[str, Any] = {
+    rule_data = {
         'name': name,
         'metric_type': metric_type,
         'condition': condition,
         'threshold': threshold,
         'enabled': enabled,
+        **filter_non_none(
+            servers=servers,
+            notification_channels=notification_channels,
+            description=description,
+        ),
     }
-
-    if servers is not None:
-        rule_data['servers'] = servers
-    if notification_channels is not None:
-        rule_data['notification_channels'] = notification_channels
-    if description is not None:
-        rule_data['description'] = description
 
     result = await http_client.post(
         region=region,
@@ -250,23 +238,16 @@ async def update_alert_rule(
     """
     token = kwargs.get('token')
 
-    update_data: dict[str, Any] = {}
-    if name is not None:
-        update_data['name'] = name
-    if metric_type is not None:
-        update_data['metric_type'] = metric_type
-    if condition is not None:
-        update_data['condition'] = condition
-    if threshold is not None:
-        update_data['threshold'] = threshold
-    if servers is not None:
-        update_data['servers'] = servers
-    if notification_channels is not None:
-        update_data['notification_channels'] = notification_channels
-    if description is not None:
-        update_data['description'] = description
-    if enabled is not None:
-        update_data['enabled'] = enabled
+    update_data = filter_non_none(
+        name=name,
+        metric_type=metric_type,
+        condition=condition,
+        threshold=threshold,
+        servers=servers,
+        notification_channels=notification_channels,
+        description=description,
+        enabled=enabled,
+    )
 
     if not update_data:
         return error_response('No update data provided')

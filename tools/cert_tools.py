@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from utils.common import success_response
+from utils.common import filter_non_none, success_response
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, READ_ONLY
@@ -37,11 +37,7 @@ async def list_certificate_authorities(
     """
     token = kwargs.get('token')
 
-    params: dict[str, Any] = {}
-    if page is not None:
-        params['page'] = page
-    if page_size is not None:
-        params['page_size'] = page_size
+    params = filter_non_none(page=page, page_size=page_size)
 
     result = await http_client.get(
         region=region,
@@ -89,21 +85,17 @@ async def create_certificate_authority(
     """
     token = kwargs.get('token')
 
-    ca_data: dict[str, Any] = {
+    ca_data = {
         'name': name,
         'common_name': common_name,
+        **filter_non_none(
+            organization=organization,
+            country=country,
+            validity_days=validity_days,
+            key_type=key_type,
+            description=description,
+        ),
     }
-
-    if organization is not None:
-        ca_data['organization'] = organization
-    if country is not None:
-        ca_data['country'] = country
-    if validity_days is not None:
-        ca_data['validity_days'] = validity_days
-    if key_type is not None:
-        ca_data['key_type'] = key_type
-    if description is not None:
-        ca_data['description'] = description
 
     result = await http_client.post(
         region=region,
@@ -146,11 +138,7 @@ async def list_sign_requests(
     """
     token = kwargs.get('token')
 
-    params: dict[str, Any] = {}
-    if page is not None:
-        params['page'] = page
-    if page_size is not None:
-        params['page_size'] = page_size
+    params = filter_non_none(page=page, page_size=page_size)
 
     result = await http_client.get(
         region=region,
@@ -198,21 +186,17 @@ async def create_sign_request(
     """
     token = kwargs.get('token')
 
-    csr_data: dict[str, Any] = {
+    csr_data = {
         'authority': authority_id,
         'common_name': common_name,
+        **filter_non_none(
+            server=server_id,
+            san_dns=san_dns,
+            san_ip=san_ip,
+            validity_days=validity_days,
+            key_type=key_type,
+        ),
     }
-
-    if server_id is not None:
-        csr_data['server'] = server_id
-    if san_dns is not None:
-        csr_data['san_dns'] = san_dns
-    if san_ip is not None:
-        csr_data['san_ip'] = san_ip
-    if validity_days is not None:
-        csr_data['validity_days'] = validity_days
-    if key_type is not None:
-        csr_data['key_type'] = key_type
 
     result = await http_client.post(
         region=region,
@@ -257,13 +241,11 @@ async def list_certificates(
     """
     token = kwargs.get('token')
 
-    params: dict[str, Any] = {}
-    if authority_id is not None:
-        params['authority'] = authority_id
-    if page is not None:
-        params['page'] = page
-    if page_size is not None:
-        params['page_size'] = page_size
+    params = filter_non_none(
+        authority=authority_id,
+        page=page,
+        page_size=page_size,
+    )
 
     result = await http_client.get(
         region=region,
@@ -301,11 +283,10 @@ async def revoke_certificate(
     """
     token = kwargs.get('token')
 
-    data: dict[str, Any] = {
+    data = {
         'certificate': certificate_id,
+        **filter_non_none(reason=reason),
     }
-    if reason is not None:
-        data['reason'] = reason
 
     result = await http_client.post(
         region=region,

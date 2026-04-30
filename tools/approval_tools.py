@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from utils.common import success_response
+from utils.common import filter_non_none, success_response
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, READ_ONLY
@@ -39,13 +39,7 @@ async def list_approval_requests(
     """
     token = kwargs.get('token')
 
-    params: dict[str, Any] = {}
-    if status:
-        params['status'] = status
-    if page is not None:
-        params['page'] = page
-    if page_size is not None:
-        params['page_size'] = page_size
+    params = filter_non_none(page=page, page_size=page_size, status=status)
 
     result = await http_client.get(
         region=region,
@@ -115,9 +109,7 @@ async def approve_request(
     """
     token = kwargs.get('token')
 
-    data: dict[str, Any] = {}
-    if comment is not None:
-        data['comment'] = comment
+    data = filter_non_none(comment=comment)
 
     result = await http_client.post(
         region=region,
@@ -157,9 +149,7 @@ async def reject_request(
     """
     token = kwargs.get('token')
 
-    data: dict[str, Any] = {}
-    if comment is not None:
-        data['comment'] = comment
+    data = filter_non_none(comment=comment)
 
     result = await http_client.post(
         region=region,
@@ -204,11 +194,7 @@ async def list_sudo_policies(
     """
     token = kwargs.get('token')
 
-    params: dict[str, Any] = {}
-    if page is not None:
-        params['page'] = page
-    if page_size is not None:
-        params['page_size'] = page_size
+    params = filter_non_none(page=page, page_size=page_size)
 
     result = await http_client.get(
         region=region,
@@ -258,22 +244,18 @@ async def create_sudo_policy(
     """
     token = kwargs.get('token')
 
-    policy_data: dict[str, Any] = {
+    policy_data = {
         'name': name,
         'commands': commands,
         'no_password': no_password,
+        **filter_non_none(
+            users=users,
+            groups=groups,
+            servers=servers,
+            run_as=run_as,
+            description=description,
+        ),
     }
-
-    if users is not None:
-        policy_data['users'] = users
-    if groups is not None:
-        policy_data['groups'] = groups
-    if servers is not None:
-        policy_data['servers'] = servers
-    if run_as is not None:
-        policy_data['run_as'] = run_as
-    if description is not None:
-        policy_data['description'] = description
 
     result = await http_client.post(
         region=region,

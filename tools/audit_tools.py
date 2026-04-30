@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from utils.common import success_response
+from utils.common import filter_non_none, success_response
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import READ_ONLY
@@ -37,11 +37,7 @@ async def list_activity_logs(
     """
     token = kwargs.get('token')
 
-    params = {}
-    if page is not None:
-        params['page'] = page
-    if page_size is not None:
-        params['page_size'] = page_size
+    params = filter_non_none(page=page, page_size=page_size)
 
     result = await http_client.get(
         region=region,
@@ -118,13 +114,7 @@ async def list_server_logs(
     """
     token = kwargs.get('token')
 
-    params: dict[str, Any] = {}
-    if server_id:
-        params['server'] = server_id
-    if page is not None:
-        params['page'] = page
-    if page_size is not None:
-        params['page_size'] = page_size
+    params = filter_non_none(page=page, page_size=page_size, server=server_id)
 
     result = await http_client.get(
         region=region,
@@ -166,13 +156,7 @@ async def list_webftp_logs(
     """
     token = kwargs.get('token')
 
-    params: dict[str, Any] = {}
-    if server_id:
-        params['server'] = server_id
-    if page is not None:
-        params['page'] = page
-    if page_size is not None:
-        params['page_size'] = page_size
+    params = filter_non_none(page=page, page_size=page_size, server=server_id)
 
     result = await http_client.get(
         region=region,
@@ -223,17 +207,9 @@ async def list_session_analyses(
     """
     token = kwargs.get('token')
 
-    params: dict[str, Any] = {}
-    if server_id:
-        params['server'] = server_id
-    if status:
-        params['status'] = status
-    if risk_score:
-        params['risk_score'] = risk_score
-    if page is not None:
-        params['page'] = page
-    if page_size is not None:
-        params['page_size'] = page_size
+    params = filter_non_none(
+        page=page, page_size=page_size, server=server_id, status=status, risk_score=risk_score
+    )
 
     result = await http_client.get(
         region=region,

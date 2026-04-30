@@ -69,6 +69,20 @@ def success_response(data: Any = None, **kwargs) -> dict[str, Any]:
     return response
 
 
+def filter_non_none(**kwargs: Any) -> dict[str, Any]:
+    """Build a dict from kwargs, omitting any key whose value is None.
+
+    Useful for constructing API request bodies and query params where
+    optional fields should be excluded entirely (rather than sent as null)
+    when not provided. Falsy non-None values (False, 0, '', []) are kept.
+
+    Example:
+        >>> filter_non_none(name='alice', email=None, age=30)
+        {'name': 'alice', 'age': 30}
+    """
+    return {k: v for k, v in kwargs.items() if v is not None}
+
+
 def token_error_response(region: str, workspace: str) -> dict[str, Any]:
     """Create standardized token error response.
 
@@ -120,16 +134,11 @@ async def handle_api_call(
 
         # Check for HTTP client errors
         if isinstance(result, dict) and 'error' in result:
-            error_kwargs: dict[str, Any] = {
-                'region': region,
-                'workspace': workspace,
-            }
-            status_code = result.get('status_code')
-            if status_code is not None:
-                error_kwargs['status_code'] = status_code
             return error_response(
                 result.get('message', str(result.get('error', 'Unknown error'))),
-                **error_kwargs,
+                region=region,
+                workspace=workspace,
+                **filter_non_none(status_code=result.get('status_code')),
             )
 
         return result

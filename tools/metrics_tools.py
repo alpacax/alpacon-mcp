@@ -4,7 +4,7 @@ import asyncio
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from utils.common import error_response, success_response
+from utils.common import error_response, filter_non_none, success_response
 from utils.decorators import mcp_tool_handler
 from utils.error_handler import UpstreamAuthError
 from utils.http_client import http_client
@@ -933,9 +933,7 @@ async def get_server_metrics_summary(
                         'available': False,
                         'error': result.get('message', 'Data unavailable'),
                     }
-                status_code = result.get('status_code')
-                if status_code is not None:
-                    error_info['status_code'] = status_code
+                error_info.update(filter_non_none(status_code=result.get('status_code')))
                 return error_info
 
             # Return metadata only, not the full data points

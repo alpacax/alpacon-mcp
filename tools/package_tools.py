@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from utils.common import success_response
+from utils.common import filter_non_none, success_response
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, READ_ONLY
@@ -39,11 +39,7 @@ async def list_system_package_entries(
     """
     token = kwargs.get('token')
 
-    params: dict[str, Any] = {'server': server_id}
-    if page is not None:
-        params['page'] = page
-    if page_size is not None:
-        params['page_size'] = page_size
+    params = {'server': server_id, **filter_non_none(page=page, page_size=page_size)}
 
     result = await http_client.get(
         region=region,
@@ -85,13 +81,11 @@ async def install_system_package(
     """
     token = kwargs.get('token')
 
-    package_data: dict[str, Any] = {
+    package_data = {
         'server': server_id,
         'name': package_name,
+        **filter_non_none(version=version),
     }
-
-    if version is not None:
-        package_data['version'] = version
 
     result = await http_client.post(
         region=region,
@@ -170,11 +164,7 @@ async def list_python_packages(
     """
     token = kwargs.get('token')
 
-    params: dict[str, Any] = {'server': server_id}
-    if page is not None:
-        params['page'] = page
-    if page_size is not None:
-        params['page_size'] = page_size
+    params = {'server': server_id, **filter_non_none(page=page, page_size=page_size)}
 
     result = await http_client.get(
         region=region,
@@ -216,13 +206,11 @@ async def install_python_package(
     """
     token = kwargs.get('token')
 
-    package_data: dict[str, Any] = {
+    package_data = {
         'server': server_id,
         'name': package_name,
+        **filter_non_none(version=version),
     }
-
-    if version is not None:
-        package_data['version'] = version
 
     result = await http_client.post(
         region=region,

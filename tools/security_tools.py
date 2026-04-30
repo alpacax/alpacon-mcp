@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from utils.common import error_response, success_response
+from utils.common import error_response, filter_non_none, success_response
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ_ONLY
@@ -37,11 +37,7 @@ async def list_command_acls(
     """
     token = kwargs.get('token')
 
-    params = {}
-    if page is not None:
-        params['page'] = page
-    if page_size is not None:
-        params['page_size'] = page_size
+    params = filter_non_none(page=page, page_size=page_size)
 
     result = await http_client.get(
         region=region,
@@ -89,21 +85,17 @@ async def create_command_acl(
     """
     token = kwargs.get('token')
 
-    acl_data: dict[str, Any] = {
+    acl_data = {
         'effect': effect,
         'command_pattern': command_pattern,
+        **filter_non_none(
+            users=users,
+            groups=groups,
+            servers=servers,
+            description=description,
+            priority=priority,
+        ),
     }
-
-    if users is not None:
-        acl_data['users'] = users
-    if groups is not None:
-        acl_data['groups'] = groups
-    if servers is not None:
-        acl_data['servers'] = servers
-    if description is not None:
-        acl_data['description'] = description
-    if priority is not None:
-        acl_data['priority'] = priority
 
     result = await http_client.post(
         region=region,
@@ -153,21 +145,15 @@ async def update_command_acl(
     """
     token = kwargs.get('token')
 
-    update_data: dict[str, Any] = {}
-    if effect is not None:
-        update_data['effect'] = effect
-    if command_pattern is not None:
-        update_data['command_pattern'] = command_pattern
-    if users is not None:
-        update_data['users'] = users
-    if groups is not None:
-        update_data['groups'] = groups
-    if servers is not None:
-        update_data['servers'] = servers
-    if description is not None:
-        update_data['description'] = description
-    if priority is not None:
-        update_data['priority'] = priority
+    update_data = filter_non_none(
+        effect=effect,
+        command_pattern=command_pattern,
+        users=users,
+        groups=groups,
+        servers=servers,
+        description=description,
+        priority=priority,
+    )
 
     if not update_data:
         return error_response('No update data provided')
@@ -247,11 +233,7 @@ async def list_server_acls(
     """
     token = kwargs.get('token')
 
-    params = {}
-    if page is not None:
-        params['page'] = page
-    if page_size is not None:
-        params['page_size'] = page_size
+    params = filter_non_none(page=page, page_size=page_size)
 
     result = await http_client.get(
         region=region,
@@ -297,18 +279,16 @@ async def create_server_acl(
     """
     token = kwargs.get('token')
 
-    acl_data: dict[str, Any] = {'effect': effect}
-
-    if users is not None:
-        acl_data['users'] = users
-    if groups is not None:
-        acl_data['groups'] = groups
-    if servers is not None:
-        acl_data['servers'] = servers
-    if description is not None:
-        acl_data['description'] = description
-    if priority is not None:
-        acl_data['priority'] = priority
+    acl_data = {
+        'effect': effect,
+        **filter_non_none(
+            users=users,
+            groups=groups,
+            servers=servers,
+            description=description,
+            priority=priority,
+        ),
+    }
 
     result = await http_client.post(
         region=region,
@@ -351,11 +331,7 @@ async def list_file_acls(
     """
     token = kwargs.get('token')
 
-    params = {}
-    if page is not None:
-        params['page'] = page
-    if page_size is not None:
-        params['page_size'] = page_size
+    params = filter_non_none(page=page, page_size=page_size)
 
     result = await http_client.get(
         region=region,
@@ -403,21 +379,17 @@ async def create_file_acl(
     """
     token = kwargs.get('token')
 
-    acl_data: dict[str, Any] = {
+    acl_data = {
         'effect': effect,
         'file_pattern': file_pattern,
+        **filter_non_none(
+            users=users,
+            groups=groups,
+            servers=servers,
+            description=description,
+            priority=priority,
+        ),
     }
-
-    if users is not None:
-        acl_data['users'] = users
-    if groups is not None:
-        acl_data['groups'] = groups
-    if servers is not None:
-        acl_data['servers'] = servers
-    if description is not None:
-        acl_data['description'] = description
-    if priority is not None:
-        acl_data['priority'] = priority
 
     result = await http_client.post(
         region=region,
