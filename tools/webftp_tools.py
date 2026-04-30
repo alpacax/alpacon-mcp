@@ -6,6 +6,7 @@ from http import HTTPStatus
 from typing import Any
 
 import anyio
+import httpx
 
 from server import mcp
 from utils.common import error_response, success_response
@@ -195,8 +196,6 @@ async def webftp_upload_file(
 
     # Step 4: Upload file content to S3 using presigned URL
     if 'upload_url' in result and result['upload_url']:
-        import httpx
-
         async with httpx.AsyncClient() as client:
             upload_response = await client.put(
                 result['upload_url'],
@@ -312,8 +311,6 @@ async def webftp_download_file(
 
     # Step 3: Download file content from S3 using presigned URL
     if 'download_url' in result and result['download_url']:
-        import httpx
-
         file_size = 0
         try:
             dir_name = os.path.dirname(local_file_path)
@@ -510,8 +507,6 @@ async def webftp_bulk_upload(
     )
 
     # Upload files to S3 concurrently using presigned URLs
-    import httpx
-
     file_ids = []
     upload_items = (
         result if isinstance(result, list) else result.get('results', [result])
@@ -658,8 +653,6 @@ async def webftp_bulk_download(
     # Download ZIP from S3 using streaming to avoid high memory usage
     download_url = result.get('download_url') if isinstance(result, dict) else None
     if download_url:
-        import httpx
-
         file_size = 0
         async with httpx.AsyncClient() as client:
             try:
