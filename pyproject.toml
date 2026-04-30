@@ -76,8 +76,8 @@ include = [
     "/main.py",
     "/main_sse.py",
     "/main_http.py",
-    "/tools/*.py",
-    "/utils/*.py",
+    "/tools/**/*.py",
+    "/utils/**/*.py",
     "/config/token.json.example",
 ]
 
