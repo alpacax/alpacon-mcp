@@ -523,19 +523,19 @@ async def webftp_bulk_upload(
 
         async with semaphore:
             try:
-                with open(local_file_paths[idx], 'rb') as f:
-                    resp = await client.put(
-                        upload_url,
-                        content=f,
-                        headers={'Content-Type': 'application/octet-stream'},
-                    )
+                file_content = await anyio.Path(local_file_paths[idx]).read_bytes()
+                resp = await client.put(
+                    upload_url,
+                    content=file_content,
+                    headers={'Content-Type': 'application/octet-stream'},
+                )
                 return {
                     'file': name,
                     'status': 'uploaded'
                     if resp.status_code in [200, 201]
                     else 'failed',
                     'file_id': file_id,
-                    'size': os.path.getsize(local_file_paths[idx]),
+                    'size': len(file_content),
                 }
             except Exception as e:
                 return {'file': name, 'status': 'error', 'message': str(e)}
