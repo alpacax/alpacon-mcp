@@ -3,9 +3,9 @@
 import asyncio
 import os
 from http import HTTPStatus
+from pathlib import Path
 from typing import Any
 
-import anyio
 import httpx
 
 from server import mcp
@@ -50,7 +50,7 @@ async def _stream_s3_to_file(
     dir_name = os.path.dirname(local_path)
     if dir_name:
         try:
-            await anyio.Path(dir_name).mkdir(parents=True, exist_ok=True)
+            await asyncio.to_thread(Path(dir_name).mkdir, parents=True, exist_ok=True)
         except OSError as e:
             raise _LocalSaveError(str(e)) from e
     file_size = 0
@@ -59,21 +59,28 @@ async def _stream_s3_to_file(
             if response.status_code != HTTPStatus.OK:
                 await response.aread()
                 raise _S3DownloadError(f'{response.status_code} - {response.text}')
+            f = None
             try:
-                async with await anyio.open_file(local_path, 'wb') as f:
-                    async for chunk in response.aiter_bytes(chunk_size=_CHUNK_SIZE):
-                        file_size += len(chunk)
-                        await f.write(chunk)
+                f = await asyncio.to_thread(open, local_path, 'wb')
+                async for chunk in response.aiter_bytes(chunk_size=_CHUNK_SIZE):
+                    file_size += len(chunk)
+                    await asyncio.to_thread(f.write, chunk)
             except OSError as e:
                 raise _LocalSaveError(str(e)) from e
+            finally:
+                if f:
+                    await asyncio.to_thread(f.close)
     return file_size
 
 
 async def _aiter_file(path: str, chunk_size: int = _CHUNK_SIZE):
     """Async generator that yields file chunks for streaming uploads."""
-    async with await anyio.open_file(path, 'rb') as f:
-        while chunk := await f.read(chunk_size):
+    f = await asyncio.to_thread(open, path, 'rb')
+    try:
+        while chunk := await asyncio.to_thread(f.read, chunk_size):
             yield chunk
+    finally:
+        await asyncio.to_thread(f.close)
 
 
 @mcp_tool_handler(
@@ -212,7 +219,7 @@ async def webftp_upload_file(
 
     # Step 1: Read local file
     try:
-        file_content = await anyio.Path(local_file_path).read_bytes()
+        file_content = await asyncio.to_thread(Path(local_file_path).read_bytes)
     except FileNotFoundError:
         return error_response(f'Local file not found: {local_file_path}')
     except Exception as e:
@@ -514,9 +521,9 @@ async def webftp_bulk_upload(
     for path in local_file_paths:
         if not validate_file_path(path):
             return format_validation_error('local_file_paths', path)
-        if not await anyio.Path(path).is_file():
+        if not await asyncio.to_thread(Path(path).is_file):
             return error_response(f'Local file is not a regular file: {path}')
-        if not await anyio.to_thread.run_sync(os.access, path, os.R_OK):
+        if not await asyncio.to_thread(os.access, path, os.R_OK):
             return error_response(f'Local file is not readable: {path}')
     if not validate_file_path(remote_directory):
         return format_validation_error('remote_directory', remote_directory)
@@ -552,7 +559,7 @@ async def webftp_bulk_upload(
         if file_id:
             file_ids.append(file_id)
 
-    semaphore = anyio.Semaphore(_UPLOAD_CONCURRENCY)
+    semaphore = asyncio.Semaphore(_UPLOAD_CONCURRENCY)
 
     async def _upload_one(
         client: httpx.AsyncClient,
@@ -572,7 +579,9 @@ async def webftp_bulk_upload(
                     upload_url,
                     content=_aiter_file(local_file_paths[idx]),
                 )
-                file_size = (await anyio.Path(local_file_paths[idx]).stat()).st_size
+                file_size = (
+                    await asyncio.to_thread(os.stat, local_file_paths[idx])
+                ).st_size
                 return {
                     'file': name,
                     'status': 'uploaded'

@@ -5,9 +5,9 @@ Tests WebFTP functionality including session management, file uploads,
 file downloads, and file transfer history.
 """
 
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import anyio
 import pytest
 
 
@@ -230,9 +230,7 @@ class TestWebFtpUploadFile:
         # Mock file content
         file_content = b'test file content'
 
-        with patch.object(
-            anyio.Path, 'read_bytes', new=AsyncMock(return_value=file_content)
-        ):
+        with patch.object(Path, 'read_bytes', return_value=file_content):
             # Mock API response with S3 URL
             mock_http_client.post.return_value = {
                 'id': 'upload-123',
@@ -295,9 +293,7 @@ class TestWebFtpUploadFile:
 
         file_content = b'test file content'
 
-        with patch.object(
-            anyio.Path, 'read_bytes', new=AsyncMock(return_value=file_content)
-        ):
+        with patch.object(Path, 'read_bytes', return_value=file_content):
             # Mock API response without S3 URL
             mock_http_client.post.return_value = {
                 'id': 'upload-123',
@@ -321,9 +317,9 @@ class TestWebFtpUploadFile:
         from tools.webftp_tools import webftp_upload_file
 
         with patch.object(
-            anyio.Path,
+            Path,
             'read_bytes',
-            new=AsyncMock(side_effect=FileNotFoundError('File not found')),
+            side_effect=FileNotFoundError('File not found'),
         ):
             result = await webftp_upload_file(
                 server_id='550e8400-e29b-41d4-a716-446655440001',
@@ -345,9 +341,7 @@ class TestWebFtpUploadFile:
 
         file_content = b'test file content'
 
-        with patch.object(
-            anyio.Path, 'read_bytes', new=AsyncMock(return_value=file_content)
-        ):
+        with patch.object(Path, 'read_bytes', return_value=file_content):
             mock_http_client.post.return_value = {
                 'id': 'upload-123',
                 'upload_url': 'https://s3.amazonaws.com/bucket/presigned-url',
@@ -375,21 +369,16 @@ class TestWebFtpUploadFile:
         from tools.webftp_tools import webftp_upload_file
 
         mock_token_manager.get_token.return_value = None
-        file_content = b'test file content'
 
-        # Need to mock file reading since it happens before token check
-        with patch.object(
-            anyio.Path, 'read_bytes', new=AsyncMock(return_value=file_content)
-        ):
-            result = await webftp_upload_file(
-                server_id='550e8400-e29b-41d4-a716-446655440001',
-                local_file_path='/local/test.txt',
-                remote_file_path='/remote/test.txt',
-                workspace='testworkspace',
-            )
+        result = await webftp_upload_file(
+            server_id='550e8400-e29b-41d4-a716-446655440001',
+            local_file_path='/local/test.txt',
+            remote_file_path='/remote/test.txt',
+            workspace='testworkspace',
+        )
 
-            assert result['status'] == 'error'
-            assert 'No token found' in result['message']
+        assert result['status'] == 'error'
+        assert 'No token found' in result['message']
 
 
 class TestWebFtpDownloadFile:
