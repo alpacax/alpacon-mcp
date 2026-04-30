@@ -5,8 +5,9 @@ Tests WebFTP functionality including session management, file uploads,
 file downloads, and file transfer history.
 """
 
-from unittest.mock import AsyncMock, MagicMock, mock_open, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
+import anyio
 import pytest
 
 
@@ -229,7 +230,9 @@ class TestWebFtpUploadFile:
         # Mock file content
         file_content = b'test file content'
 
-        with patch('builtins.open', mock_open(read_data=file_content)):
+        with patch.object(
+            anyio.Path, 'read_bytes', new=AsyncMock(return_value=file_content)
+        ):
             # Mock API response with S3 URL
             mock_http_client.post.return_value = {
                 'id': 'upload-123',
@@ -293,7 +296,9 @@ class TestWebFtpUploadFile:
 
         file_content = b'test file content'
 
-        with patch('builtins.open', mock_open(read_data=file_content)):
+        with patch.object(
+            anyio.Path, 'read_bytes', new=AsyncMock(return_value=file_content)
+        ):
             # Mock API response without S3 URL
             mock_http_client.post.return_value = {
                 'id': 'upload-123',
@@ -316,7 +321,11 @@ class TestWebFtpUploadFile:
         """Test file upload when local file doesn't exist."""
         from tools.webftp_tools import webftp_upload_file
 
-        with patch('builtins.open', side_effect=FileNotFoundError('File not found')):
+        with patch.object(
+            anyio.Path,
+            'read_bytes',
+            new=AsyncMock(side_effect=FileNotFoundError('File not found')),
+        ):
             result = await webftp_upload_file(
                 server_id='550e8400-e29b-41d4-a716-446655440001',
                 local_file_path='/nonexistent/test.txt',
@@ -337,7 +346,9 @@ class TestWebFtpUploadFile:
 
         file_content = b'test file content'
 
-        with patch('builtins.open', mock_open(read_data=file_content)):
+        with patch.object(
+            anyio.Path, 'read_bytes', new=AsyncMock(return_value=file_content)
+        ):
             mock_http_client.post.return_value = {
                 'id': 'upload-123',
                 'upload_url': 'https://s3.amazonaws.com/bucket/presigned-url',
@@ -368,7 +379,9 @@ class TestWebFtpUploadFile:
         file_content = b'test file content'
 
         # Need to mock file reading since it happens before token check
-        with patch('builtins.open', mock_open(read_data=file_content)):
+        with patch.object(
+            anyio.Path, 'read_bytes', new=AsyncMock(return_value=file_content)
+        ):
             result = await webftp_upload_file(
                 server_id='550e8400-e29b-41d4-a716-446655440001',
                 local_file_path='/local/test.txt',
@@ -395,40 +408,32 @@ class TestWebFtpDownloadFile:
             'download_url': 'https://s3.amazonaws.com/bucket/download-url',
         }
 
-        m_open = mock_open()
-        with patch('builtins.open', m_open):
-            with patch('os.makedirs'):
-                with patch('httpx.AsyncClient') as mock_httpx_class:
-                    mock_client = AsyncMock()
-                    mock_httpx_class.return_value.__aenter__.return_value = mock_client
+        file_content = b'downloaded file content'
+        with patch(
+            'tools.webftp_tools._stream_s3_to_file',
+            new=AsyncMock(return_value=len(file_content)),
+        ) as mock_stream:
+            result = await webftp_download_file(
+                server_id='550e8400-e29b-41d4-a716-446655440001',
+                remote_file_path='/remote/test.txt',
+                local_file_path='/local/test.txt',
+                workspace='testworkspace',
+                username='testuser',
+                region='ap1',
+            )
 
-                    # Mock S3 download response
-                    file_content = b'downloaded file content'
-                    mock_s3_response = MagicMock()
-                    mock_s3_response.status_code = 200
-                    mock_s3_response.content = file_content
-                    mock_client.get = AsyncMock(return_value=mock_s3_response)
+            assert result['status'] == 'success'
+            assert 'downloaded successfully' in result['message']
+            assert result['server_id'] == '550e8400-e29b-41d4-a716-446655440001'
+            assert result['remote_file_path'] == '/remote/test.txt'
+            assert result['local_file_path'] == '/local/test.txt'
+            assert result['file_size'] == len(file_content)
+            assert result['resource_type'] == 'file'
 
-                    result = await webftp_download_file(
-                        server_id='550e8400-e29b-41d4-a716-446655440001',
-                        remote_file_path='/remote/test.txt',
-                        local_file_path='/local/test.txt',
-                        workspace='testworkspace',
-                        username='testuser',
-                        region='ap1',
-                    )
-
-                    assert result['status'] == 'success'
-                    assert 'downloaded successfully' in result['message']
-                    assert result['server_id'] == '550e8400-e29b-41d4-a716-446655440001'
-                    assert result['remote_file_path'] == '/remote/test.txt'
-                    assert result['local_file_path'] == '/local/test.txt'
-                    assert result['file_size'] == len(file_content)
-                    assert result['resource_type'] == 'file'
-
-                    # Verify file was written
-                    m_open.assert_called_once_with('/local/test.txt', 'wb')
-                    m_open().write.assert_called_once_with(file_content)
+            mock_stream.assert_called_once_with(
+                'https://s3.amazonaws.com/bucket/download-url',
+                '/local/test.txt',
+            )
 
     @pytest.mark.asyncio
     async def test_download_folder_success(self, mock_http_client, mock_token_manager):
@@ -441,33 +446,25 @@ class TestWebFtpDownloadFile:
             'download_url': 'https://s3.amazonaws.com/bucket/download-url',
         }
 
-        with patch('builtins.open', mock_open()):
-            with patch('os.makedirs'):
-                with patch('httpx.AsyncClient') as mock_httpx_class:
-                    mock_client = AsyncMock()
-                    mock_httpx_class.return_value.__aenter__.return_value = mock_client
+        with patch(
+            'tools.webftp_tools._stream_s3_to_file',
+            new=AsyncMock(return_value=16),
+        ):
+            result = await webftp_download_file(
+                server_id='550e8400-e29b-41d4-a716-446655440001',
+                remote_file_path='/remote/folder',
+                local_file_path='/local/folder.zip',
+                workspace='testworkspace',
+                resource_type='folder',
+            )
 
-                    zip_content = b'zip file content'
-                    mock_s3_response = MagicMock()
-                    mock_s3_response.status_code = 200
-                    mock_s3_response.content = zip_content
-                    mock_client.get = AsyncMock(return_value=mock_s3_response)
+            assert result['status'] == 'success'
+            assert result['resource_type'] == 'folder'
 
-                    result = await webftp_download_file(
-                        server_id='550e8400-e29b-41d4-a716-446655440001',
-                        remote_file_path='/remote/folder',
-                        local_file_path='/local/folder.zip',
-                        workspace='testworkspace',
-                        resource_type='folder',
-                    )
-
-                    assert result['status'] == 'success'
-                    assert result['resource_type'] == 'folder'
-
-                    # Verify correct data was sent to API
-                    call_args = mock_http_client.post.call_args
-                    assert call_args[1]['data']['resource_type'] == 'folder'
-                    assert call_args[1]['data']['name'] == 'folder.zip'
+            # Verify correct data was sent to API
+            call_args = mock_http_client.post.call_args
+            assert call_args[1]['data']['resource_type'] == 'folder'
+            assert call_args[1]['data']['name'] == 'folder.zip'
 
     @pytest.mark.asyncio
     async def test_download_file_direct_mode(
@@ -491,29 +488,25 @@ class TestWebFtpDownloadFile:
         assert result['server_id'] == '550e8400-e29b-41d4-a716-446655440001'
 
     @pytest.mark.asyncio
-    async def test_download_file_s3_error(
-        self, mock_http_client, mock_token_manager, mock_httpx
-    ):
+    async def test_download_file_s3_error(self, mock_http_client, mock_token_manager):
         """Test file download with S3 error."""
-        from tools.webftp_tools import webftp_download_file
+        from tools.webftp_tools import _S3DownloadError, webftp_download_file
 
         mock_http_client.post.return_value = {
             'id': 'download-123',
             'download_url': 'https://s3.amazonaws.com/bucket/download-url',
         }
 
-        # Mock S3 error response
-        mock_s3_response = MagicMock()
-        mock_s3_response.status_code = 404
-        mock_s3_response.text = 'Not Found'
-        mock_httpx.get.return_value = mock_s3_response
-
-        result = await webftp_download_file(
-            server_id='550e8400-e29b-41d4-a716-446655440001',
-            remote_file_path='/remote/test.txt',
-            local_file_path='/local/test.txt',
-            workspace='testworkspace',
-        )
+        with patch(
+            'tools.webftp_tools._stream_s3_to_file',
+            new=AsyncMock(side_effect=_S3DownloadError('404 - Not Found')),
+        ):
+            result = await webftp_download_file(
+                server_id='550e8400-e29b-41d4-a716-446655440001',
+                remote_file_path='/remote/test.txt',
+                local_file_path='/local/test.txt',
+                workspace='testworkspace',
+            )
 
         assert result['status'] == 'error'
         assert 'Failed to download from S3' in result['message']
@@ -521,33 +514,26 @@ class TestWebFtpDownloadFile:
     @pytest.mark.asyncio
     async def test_download_file_save_error(self, mock_http_client, mock_token_manager):
         """Test file download with local save error."""
-        from tools.webftp_tools import webftp_download_file
+        from tools.webftp_tools import _LocalSaveError, webftp_download_file
 
         mock_http_client.post.return_value = {
             'id': 'download-123',
             'download_url': 'https://s3.amazonaws.com/bucket/download-url',
         }
 
-        with patch('builtins.open', side_effect=PermissionError('Permission denied')):
-            with patch('os.makedirs'):
-                with patch('httpx.AsyncClient') as mock_httpx_class:
-                    mock_client = AsyncMock()
-                    mock_httpx_class.return_value.__aenter__.return_value = mock_client
+        with patch(
+            'tools.webftp_tools._stream_s3_to_file',
+            new=AsyncMock(side_effect=_LocalSaveError('Permission denied')),
+        ):
+            result = await webftp_download_file(
+                server_id='550e8400-e29b-41d4-a716-446655440001',
+                remote_file_path='/remote/test.txt',
+                local_file_path='/local/test.txt',
+                workspace='testworkspace',
+            )
 
-                    mock_s3_response = MagicMock()
-                    mock_s3_response.status_code = 200
-                    mock_s3_response.content = b'content'
-                    mock_client.get = AsyncMock(return_value=mock_s3_response)
-
-                    result = await webftp_download_file(
-                        server_id='550e8400-e29b-41d4-a716-446655440001',
-                        remote_file_path='/remote/test.txt',
-                        local_file_path='/local/test.txt',
-                        workspace='testworkspace',
-                    )
-
-                    assert result['status'] == 'error'
-                    assert 'Failed to save file locally' in result['message']
+        assert result['status'] == 'error'
+        assert 'Failed to save file locally' in result['message']
 
     @pytest.mark.asyncio
     async def test_download_file_no_token(self, mock_http_client, mock_token_manager):
