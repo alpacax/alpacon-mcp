@@ -2,6 +2,7 @@
 
 import asyncio
 import os
+from http import HTTPStatus
 from typing import Any
 
 import anyio
@@ -12,6 +13,21 @@ from utils.decorators import mcp_tool_handler
 from utils.error_handler import format_validation_error, validate_file_path
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, READ_ONLY
+
+# API endpoints
+_API_SESSIONS = '/api/webftp/sessions/'
+_API_UPLOADS = '/api/webftp/uploads/'
+_API_DOWNLOADS = '/api/webftp/downloads/'
+_API_BULK_UPLOADS = '/api/webftp/uploads/bulk/'
+_API_BULK_UPLOAD_TRIGGER = '/api/webftp/uploads/bulk-upload/'
+_API_BULK_DOWNLOADS = '/api/webftp/downloads/bulk/'
+
+# Transfer configuration
+_CHUNK_SIZE = 65536
+_UPLOAD_CONCURRENCY = 10
+_BULK_DOWNLOAD_TIMEOUT = 60.0
+_S3_SUCCESS_CODES = (HTTPStatus.OK, HTTPStatus.CREATED)
+_CONTENT_TYPE_BINARY = 'application/octet-stream'
 
 
 @mcp_tool_handler(
@@ -50,7 +66,7 @@ async def webftp_session_create(
     result = await http_client.post(
         region=region,
         workspace=workspace,
-        endpoint='/api/webftp/sessions/',
+        endpoint=_API_SESSIONS,
         token=token,
         data=session_data,
     )
@@ -93,7 +109,7 @@ async def webftp_sessions_list(
     result = await http_client.get(
         region=region,
         workspace=workspace,
-        endpoint='/api/webftp/sessions/',
+        endpoint=_API_SESSIONS,
         token=token,
         params=params,
     )
@@ -172,7 +188,7 @@ async def webftp_upload_file(
     result = await http_client.post(
         region=region,
         workspace=workspace,
-        endpoint='/api/webftp/uploads/',
+        endpoint=_API_UPLOADS,
         token=token,
         data=upload_data,
     )
@@ -185,10 +201,10 @@ async def webftp_upload_file(
             upload_response = await client.put(
                 result['upload_url'],
                 content=file_content,
-                headers={'Content-Type': 'application/octet-stream'},
+                headers={'Content-Type': _CONTENT_TYPE_BINARY},
             )
 
-            if upload_response.status_code not in [200, 201]:
+            if upload_response.status_code not in _S3_SUCCESS_CODES:
                 return error_response(
                     f'Failed to upload to S3: {upload_response.status_code} - {upload_response.text}',
                     upload_url=result['upload_url'],
@@ -198,7 +214,7 @@ async def webftp_upload_file(
         upload_trigger = await http_client.get(
             region=region,
             workspace=workspace,
-            endpoint=f'/api/webftp/uploads/{result["id"]}/upload/',
+            endpoint=f'{_API_UPLOADS}{result["id"]}/upload/',
             token=token,
         )
 
@@ -289,7 +305,7 @@ async def webftp_download_file(
     result = await http_client.post(
         region=region,
         workspace=workspace,
-        endpoint='/api/webftp/downloads/',
+        endpoint=_API_DOWNLOADS,
         token=token,
         data=download_data,
     )
@@ -314,7 +330,7 @@ async def webftp_download_file(
 
                     # Step 4: Save file content to local path
                     async with await anyio.open_file(local_file_path, 'wb') as f:
-                        async for chunk in response.aiter_bytes(chunk_size=65536):
+                        async for chunk in response.aiter_bytes(chunk_size=_CHUNK_SIZE):
                             await f.write(chunk)
                             file_size += len(chunk)
         except Exception as e:
@@ -374,7 +390,7 @@ async def webftp_uploads_list(
     result = await http_client.get(
         region=region,
         workspace=workspace,
-        endpoint='/api/webftp/uploads/',
+        endpoint=_API_UPLOADS,
         token=token,
         params=params,
     )
@@ -413,7 +429,7 @@ async def webftp_downloads_list(
     result = await http_client.get(
         region=region,
         workspace=workspace,
-        endpoint='/api/webftp/downloads/',
+        endpoint=_API_DOWNLOADS,
         token=token,
         params=params,
     )
@@ -488,7 +504,7 @@ async def webftp_bulk_upload(
     result = await http_client.post(
         region=region,
         workspace=workspace,
-        endpoint='/api/webftp/uploads/bulk/',
+        endpoint=_API_BULK_UPLOADS,
         token=token,
         data=bulk_data,
     )
@@ -507,7 +523,7 @@ async def webftp_bulk_upload(
         if file_id:
             file_ids.append(file_id)
 
-    semaphore = asyncio.Semaphore(10)
+    semaphore = asyncio.Semaphore(_UPLOAD_CONCURRENCY)
 
     async def _upload_one(
         client: httpx.AsyncClient,
@@ -527,12 +543,12 @@ async def webftp_bulk_upload(
                 resp = await client.put(
                     upload_url,
                     content=file_content,
-                    headers={'Content-Type': 'application/octet-stream'},
+                    headers={'Content-Type': _CONTENT_TYPE_BINARY},
                 )
                 return {
                     'file': name,
                     'status': 'uploaded'
-                    if resp.status_code in [200, 201]
+                    if resp.status_code in _S3_SUCCESS_CODES
                     else 'failed',
                     'file_id': file_id,
                     'size': len(file_content),
@@ -551,7 +567,7 @@ async def webftp_bulk_upload(
         await http_client.post(
             region=region,
             workspace=workspace,
-            endpoint='/api/webftp/uploads/bulk-upload/',
+            endpoint=_API_BULK_UPLOAD_TRIGGER,
             token=token,
             data={'ids': file_ids},
         )
@@ -634,7 +650,7 @@ async def webftp_bulk_download(
     result = await http_client.post(
         region=region,
         workspace=workspace,
-        endpoint='/api/webftp/downloads/bulk/',
+        endpoint=_API_BULK_DOWNLOADS,
         token=token,
         data=download_data,
     )
@@ -647,7 +663,7 @@ async def webftp_bulk_download(
         file_size = 0
         async with httpx.AsyncClient() as client:
             try:
-                async with client.stream('GET', download_url, timeout=60.0) as response:
+                async with client.stream('GET', download_url, timeout=_BULK_DOWNLOAD_TIMEOUT) as response:
                     if response.status_code != 200:
                         return error_response(
                             f'Failed to download from S3: {response.status_code}',
@@ -659,7 +675,7 @@ async def webftp_bulk_download(
                         if dir_name:
                             await anyio.Path(dir_name).mkdir(parents=True, exist_ok=True)
                         async with await anyio.open_file(local_file_path, 'wb') as f:
-                            async for chunk in response.aiter_bytes(chunk_size=65536):
+                            async for chunk in response.aiter_bytes(chunk_size=_CHUNK_SIZE):
                                 file_size += len(chunk)
                                 await f.write(chunk)
                     except Exception as e:
@@ -718,8 +734,8 @@ async def webftp_check_status(
     token = kwargs.get('token')
 
     endpoint_map = {
-        'upload': f'/api/webftp/uploads/{file_id}/status/',
-        'download': f'/api/webftp/downloads/{file_id}/status/',
+        'upload': f'{_API_UPLOADS}{file_id}/status/',
+        'download': f'{_API_DOWNLOADS}{file_id}/status/',
     }
 
     if transfer_type not in endpoint_map:
