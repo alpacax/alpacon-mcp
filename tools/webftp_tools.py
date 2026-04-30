@@ -22,6 +22,8 @@ _API_DOWNLOADS = '/api/webftp/downloads/'
 _API_BULK_UPLOADS = '/api/webftp/uploads/bulk/'
 _API_BULK_UPLOAD_TRIGGER = '/api/webftp/uploads/bulk-upload/'
 _API_BULK_DOWNLOADS = '/api/webftp/downloads/bulk/'
+_API_UPLOAD_STATUS = _API_UPLOADS + '{}/status/'
+_API_DOWNLOAD_STATUS = _API_DOWNLOADS + '{}/status/'
 
 # Transfer configuration
 _CHUNK_SIZE = 65536
@@ -744,8 +746,8 @@ async def webftp_check_status(
     token = kwargs.get('token')
 
     endpoint_map = {
-        'upload': f'{_API_UPLOADS}{file_id}/status/',
-        'download': f'{_API_DOWNLOADS}{file_id}/status/',
+        'upload': _API_UPLOAD_STATUS.format(file_id),
+        'download': _API_DOWNLOAD_STATUS.format(file_id),
     }
 
     if transfer_type not in endpoint_map:
