@@ -467,9 +467,9 @@ async def webftp_bulk_upload(
     for path in local_file_paths:
         if not validate_file_path(path):
             return format_validation_error('local_file_paths', path)
-        if not os.path.isfile(path):
+        if not await anyio.Path(path).is_file():
             return error_response(f'Local file is not a regular file: {path}')
-        if not os.access(path, os.R_OK):
+        if not await anyio.to_thread.run_sync(os.access, path, os.R_OK):
             return error_response(f'Local file is not readable: {path}')
     if not validate_file_path(remote_directory):
         return format_validation_error('remote_directory', remote_directory)
