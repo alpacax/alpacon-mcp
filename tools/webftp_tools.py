@@ -657,11 +657,11 @@ async def webftp_bulk_download(
                     try:
                         dir_name = os.path.dirname(local_file_path)
                         if dir_name:
-                            os.makedirs(dir_name, exist_ok=True)
-                        with open(local_file_path, 'wb') as f:
-                            async for chunk in response.aiter_bytes(chunk_size=8192):
+                            await anyio.Path(dir_name).mkdir(parents=True, exist_ok=True)
+                        async with await anyio.open_file(local_file_path, 'wb') as f:
+                            async for chunk in response.aiter_bytes(chunk_size=65536):
                                 file_size += len(chunk)
-                                f.write(chunk)
+                                await f.write(chunk)
                     except Exception as e:
                         return error_response(f'Failed to save file locally: {str(e)}')
             except httpx.HTTPError as exc:
