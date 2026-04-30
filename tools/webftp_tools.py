@@ -28,7 +28,6 @@ _CHUNK_SIZE = 65536
 _UPLOAD_CONCURRENCY = 10
 _BULK_DOWNLOAD_TIMEOUT = 60.0
 _S3_SUCCESS_CODES = (HTTPStatus.OK, HTTPStatus.CREATED)
-_CONTENT_TYPE_BINARY = 'application/octet-stream'
 
 
 class _S3DownloadError(Exception):
@@ -244,7 +243,6 @@ async def webftp_upload_file(
             upload_response = await client.put(
                 result['upload_url'],
                 content=file_content,
-                headers={'Content-Type': _CONTENT_TYPE_BINARY},
             )
 
             if upload_response.status_code not in _S3_SUCCESS_CODES:
@@ -571,7 +569,6 @@ async def webftp_bulk_upload(
                 resp = await client.put(
                     upload_url,
                     content=_aiter_file(local_file_paths[idx]),
-                    headers={'Content-Type': _CONTENT_TYPE_BINARY},
                 )
                 file_size = (await anyio.Path(local_file_paths[idx]).stat()).st_size
                 return {
