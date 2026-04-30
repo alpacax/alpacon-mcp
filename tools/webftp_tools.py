@@ -4,6 +4,8 @@ import asyncio
 import os
 from typing import Any
 
+import anyio
+
 from server import mcp
 from utils.common import error_response, success_response
 from utils.decorators import mcp_tool_handler
@@ -148,8 +150,7 @@ async def webftp_upload_file(
 
     # Step 1: Read local file
     try:
-        with open(local_file_path, 'rb') as f:
-            file_content = f.read()
+        file_content = await anyio.Path(local_file_path).read_bytes()
     except FileNotFoundError:
         return error_response(f'Local file not found: {local_file_path}')
     except Exception as e:
