@@ -298,24 +298,27 @@ async def webftp_download_file(
     if 'download_url' in result and result['download_url']:
         import httpx
 
-        async with httpx.AsyncClient() as client:
-            download_response = await client.get(result['download_url'])
+        file_size = 0
+        try:
+            dir_name = os.path.dirname(local_file_path)
+            if dir_name:
+                await anyio.Path(dir_name).mkdir(parents=True, exist_ok=True)
 
-            if download_response.status_code != 200:
-                return error_response(
-                    f'Failed to download from S3: {download_response.status_code} - {download_response.text}',
-                    download_url=result['download_url'],
-                )
+            async with httpx.AsyncClient() as client:
+                async with client.stream('GET', result['download_url']) as response:
+                    if response.status_code != 200:
+                        return error_response(
+                            f'Failed to download from S3: {response.status_code}',
+                            download_url=result['download_url'],
+                        )
 
-            # Step 4: Save file content to local path
-            try:
-                # Create directory if it doesn't exist
-                os.makedirs(os.path.dirname(local_file_path), exist_ok=True)
-
-                with open(local_file_path, 'wb') as f:
-                    f.write(download_response.content)
-            except Exception as e:
-                return error_response(f'Failed to save file locally: {str(e)}')
+                    # Step 4: Save file content to local path
+                    async with await anyio.open_file(local_file_path, 'wb') as f:
+                        async for chunk in response.aiter_bytes(chunk_size=65536):
+                            await f.write(chunk)
+                            file_size += len(chunk)
+        except Exception as e:
+            return error_response(f'Failed to save file locally: {str(e)}')
 
         return success_response(
             message=f'File downloaded successfully from {resource_type}: {remote_file_path}',
@@ -324,7 +327,7 @@ async def webftp_download_file(
             remote_file_path=remote_file_path,
             local_file_path=local_file_path,
             resource_type=resource_type,
-            file_size=len(download_response.content),
+            file_size=file_size,
             download_url=result.get('download_url'),
             region=region,
             workspace=workspace,
