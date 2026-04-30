@@ -31,6 +31,32 @@ _S3_SUCCESS_CODES = (HTTPStatus.OK, HTTPStatus.CREATED)
 _CONTENT_TYPE_BINARY = 'application/octet-stream'
 
 
+async def _stream_s3_to_file(
+    url: str,
+    local_path: str,
+    *,
+    timeout: float | None = None,
+) -> int:
+    """Stream a presigned S3 GET to a local file. Returns bytes written."""
+    dir_name = os.path.dirname(local_path)
+    if dir_name:
+        await anyio.Path(dir_name).mkdir(parents=True, exist_ok=True)
+    file_size = 0
+    async with httpx.AsyncClient() as client:
+        async with client.stream('GET', url, timeout=timeout) as response:
+            if response.status_code != 200:
+                raise httpx.HTTPStatusError(
+                    f'Failed to download from S3: {response.status_code}',
+                    request=response.request,
+                    response=response,
+                )
+            async with await anyio.open_file(local_path, 'wb') as f:
+                async for chunk in response.aiter_bytes(chunk_size=_CHUNK_SIZE):
+                    file_size += len(chunk)
+                    await f.write(chunk)
+    return file_size
+
+
 @mcp_tool_handler(
     description='Create a new WebFTP file transfer session on a server. Returns session ID and connection details. When to use: advanced session management. For simple file transfers, use webftp_upload_file or webftp_download_file directly. Related: webftp_sessions_list (view sessions), webftp_upload_file, webftp_download_file.',
     annotations=ADDITIVE,
@@ -311,27 +337,10 @@ async def webftp_download_file(
 
     # Step 3: Download file content from S3 using presigned URL
     if 'download_url' in result and result['download_url']:
-        file_size = 0
         try:
-            dir_name = os.path.dirname(local_file_path)
-            if dir_name:
-                await anyio.Path(dir_name).mkdir(parents=True, exist_ok=True)
-
-            async with httpx.AsyncClient() as client:
-                async with client.stream('GET', result['download_url']) as response:
-                    if response.status_code != 200:
-                        return error_response(
-                            f'Failed to download from S3: {response.status_code}',
-                            download_url=result['download_url'],
-                        )
-
-                    # Step 4: Save file content to local path
-                    async with await anyio.open_file(local_file_path, 'wb') as f:
-                        async for chunk in response.aiter_bytes(chunk_size=_CHUNK_SIZE):
-                            await f.write(chunk)
-                            file_size += len(chunk)
+            file_size = await _stream_s3_to_file(result['download_url'], local_file_path)
         except Exception as e:
-            return error_response(f'Failed to save file locally: {str(e)}')
+            return error_response(str(e), download_url=result['download_url'])
 
         return success_response(
             message=f'File downloaded successfully from {resource_type}: {remote_file_path}',
@@ -653,31 +662,12 @@ async def webftp_bulk_download(
     # Download ZIP from S3 using streaming to avoid high memory usage
     download_url = result.get('download_url') if isinstance(result, dict) else None
     if download_url:
-        file_size = 0
-        async with httpx.AsyncClient() as client:
-            try:
-                async with client.stream('GET', download_url, timeout=_BULK_DOWNLOAD_TIMEOUT) as response:
-                    if response.status_code != 200:
-                        return error_response(
-                            f'Failed to download from S3: {response.status_code}',
-                            download_url=download_url,
-                        )
-
-                    try:
-                        dir_name = os.path.dirname(local_file_path)
-                        if dir_name:
-                            await anyio.Path(dir_name).mkdir(parents=True, exist_ok=True)
-                        async with await anyio.open_file(local_file_path, 'wb') as f:
-                            async for chunk in response.aiter_bytes(chunk_size=_CHUNK_SIZE):
-                                file_size += len(chunk)
-                                await f.write(chunk)
-                    except Exception as e:
-                        return error_response(f'Failed to save file locally: {str(e)}')
-            except httpx.HTTPError as exc:
-                return error_response(
-                    f'Failed to download from S3: {str(exc)}',
-                    download_url=download_url,
-                )
+        try:
+            file_size = await _stream_s3_to_file(
+                download_url, local_file_path, timeout=_BULK_DOWNLOAD_TIMEOUT
+            )
+        except Exception as e:
+            return error_response(str(e), download_url=download_url)
 
         return success_response(
             message=f'Bulk download completed: {len(remote_paths)} items saved as ZIP',
