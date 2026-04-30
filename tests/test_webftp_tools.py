@@ -278,7 +278,6 @@ class TestWebFtpUploadFile:
                 mock_client.put.assert_called_once_with(
                     'https://s3.amazonaws.com/bucket/presigned-url',
                     content=file_content,
-                    headers={'Content-Type': 'application/octet-stream'},
                 )
                 mock_http_client.get.assert_called_once_with(
                     region='ap1',
