@@ -59,28 +59,28 @@ async def _stream_s3_to_file(
             if response.status_code != HTTPStatus.OK:
                 await response.aread()
                 raise _S3DownloadError(f'{response.status_code} - {response.text}')
-            f = None
+            dest_file = None
             try:
-                f = await asyncio.to_thread(open, local_path, 'wb')
+                dest_file = await asyncio.to_thread(open, local_path, 'wb')
                 async for chunk in response.aiter_bytes(chunk_size=_CHUNK_SIZE):
                     file_size += len(chunk)
-                    await asyncio.to_thread(f.write, chunk)
+                    await asyncio.to_thread(dest_file.write, chunk)
             except OSError as e:
                 raise _LocalSaveError(str(e)) from e
             finally:
-                if f:
-                    await asyncio.to_thread(f.close)
+                if dest_file:
+                    await asyncio.to_thread(dest_file.close)
     return file_size
 
 
 async def _aiter_file(path: str, chunk_size: int = _CHUNK_SIZE):
     """Async generator that yields file chunks for streaming uploads."""
-    f = await asyncio.to_thread(open, path, 'rb')
+    src_file = await asyncio.to_thread(open, path, 'rb')
     try:
-        while chunk := await asyncio.to_thread(f.read, chunk_size):
+        while chunk := await asyncio.to_thread(src_file.read, chunk_size):
             yield chunk
     finally:
-        await asyncio.to_thread(f.close)
+        await asyncio.to_thread(src_file.close)
 
 
 @mcp_tool_handler(
