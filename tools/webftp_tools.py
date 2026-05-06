@@ -31,6 +31,13 @@ _UPLOAD_CONCURRENCY = 10
 _BULK_DOWNLOAD_TIMEOUT = 60.0
 _S3_SUCCESS_CODES = (HTTPStatus.OK, HTTPStatus.CREATED)
 
+# Result statuses
+_STATUS_ERROR = 'error'
+_UNKNOWN_FILE = 'unknown'
+
+# Type aliases
+type _UploadResult = dict[str, str | int | None]
+
 
 class _S3DownloadError(Exception):
     pass
@@ -102,7 +109,7 @@ async def _save_stream(response: httpx.Response, local_path: str) -> int:
 
 
 async def _aiter_file(path: str, chunk_size: int = _CHUNK_SIZE):
-    """Async generator that yields file chunks for streaming uploads."""
+    """Yield file chunks for streaming uploads. Single-shot: not replayable on retry."""
     src_file = await asyncio.to_thread(open, path, 'rb')
     try:
         while chunk := await asyncio.to_thread(src_file.read, chunk_size):
@@ -596,7 +603,7 @@ async def webftp_bulk_upload(
     ) -> dict[str, Any]:
         upload_url = item.get('upload_url')
         file_id = item.get('id')
-        name = file_names[idx] if idx < len(file_names) else 'unknown'
+        name = file_names[idx] if idx < len(file_names) else _UNKNOWN_FILE
 
         if not upload_url or idx >= len(local_file_paths):
             return {'file': name, 'status': 'created', 'file_id': file_id}
@@ -619,13 +626,32 @@ async def webftp_bulk_upload(
                     'size': file_size,
                 }
             except Exception as e:
-                return {'file': name, 'status': 'error', 'message': str(e)}
+                return {'file': name, 'status': _STATUS_ERROR, 'message': str(e)}
 
     async with httpx.AsyncClient() as client:
-        upload_results = await asyncio.gather(
-            *[_upload_one(client, i, item) for i, item in enumerate(upload_items)]
+        raw_results = await asyncio.gather(
+            *[
+                _upload_one(client, idx, item)
+                for idx, item in enumerate(upload_items)
+            ],
+            return_exceptions=True,
         )
-    upload_results = list(upload_results)
+    upload_results: list[_UploadResult] = []
+    for idx, gathered in enumerate(raw_results):
+        if isinstance(gathered, BaseException):
+            if not isinstance(gathered, Exception):
+                raise gathered
+            upload_results.append(
+                {
+                    'file': file_names[idx]
+                    if idx < len(file_names)
+                    else _UNKNOWN_FILE,
+                    'status': _STATUS_ERROR,
+                    'message': str(gathered),
+                }
+            )
+        else:
+            upload_results.append(gathered)
 
     # Trigger bulk upload processing
     if file_ids:
