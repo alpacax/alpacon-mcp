@@ -102,12 +102,12 @@ async def _save_stream(response: httpx.Response, local_path: str) -> int:
         try:
             await asyncio.to_thread(dest_file.close)
         except OSError:
-            pass
+            pass  # don't shadow the original stream error
         if not success:
             try:
                 await asyncio.to_thread(os.unlink, local_path)
             except OSError:
-                pass
+                pass  # best-effort partial-file cleanup
     return file_size
 
 
