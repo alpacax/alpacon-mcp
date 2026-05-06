@@ -99,7 +99,10 @@ async def _save_stream(response: httpx.Response, local_path: str) -> int:
     except OSError as e:
         raise _LocalSaveError(str(e)) from e
     finally:
-        await asyncio.to_thread(dest_file.close)
+        try:
+            await asyncio.to_thread(dest_file.close)
+        except OSError:
+            pass
         if not success:
             try:
                 await asyncio.to_thread(os.unlink, local_path)
