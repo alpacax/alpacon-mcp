@@ -47,29 +47,46 @@ async def _stream_s3_to_file(
     timeout: float | None = None,
 ) -> int:
     """Stream a presigned S3 GET to a local file. Returns bytes written."""
-    dir_name = os.path.dirname(local_path)
-    if dir_name:
-        try:
-            await asyncio.to_thread(Path(dir_name).mkdir, parents=True, exist_ok=True)
-        except OSError as e:
-            raise _LocalSaveError(str(e)) from e
-    file_size = 0
-    async with httpx.AsyncClient() as client:
-        async with client.stream('GET', url, timeout=timeout) as response:
+    await _ensure_parent_dir(local_path)
+    try:
+        async with (
+            httpx.AsyncClient() as client,
+            client.stream('GET', url, timeout=timeout) as response,
+        ):
             if response.status_code != HTTPStatus.OK:
                 await response.aread()
                 raise _S3DownloadError(f'{response.status_code} - {response.text}')
-            dest_file = None
-            try:
-                dest_file = await asyncio.to_thread(open, local_path, 'wb')
-                async for chunk in response.aiter_bytes(chunk_size=_CHUNK_SIZE):
-                    file_size += len(chunk)
-                    await asyncio.to_thread(dest_file.write, chunk)
-            except OSError as e:
-                raise _LocalSaveError(str(e)) from e
-            finally:
-                if dest_file:
-                    await asyncio.to_thread(dest_file.close)
+            return await _save_stream(response, local_path)
+    except httpx.HTTPError as e:
+        raise _S3DownloadError(str(e)) from e
+
+
+async def _ensure_parent_dir(local_path: str) -> None:
+    """Create parent directory for the destination file if needed."""
+    dir_name = os.path.dirname(local_path)
+    if not dir_name:
+        return
+    try:
+        await asyncio.to_thread(Path(dir_name).mkdir, parents=True, exist_ok=True)
+    except OSError as e:
+        raise _LocalSaveError(str(e)) from e
+
+
+async def _save_stream(response: httpx.Response, local_path: str) -> int:
+    """Save streaming response body to a local file. Returns bytes written."""
+    try:
+        dest_file = await asyncio.to_thread(open, local_path, 'wb')
+    except OSError as e:
+        raise _LocalSaveError(str(e)) from e
+    file_size = 0
+    try:
+        async for chunk in response.aiter_bytes(chunk_size=_CHUNK_SIZE):
+            file_size += len(chunk)
+            await asyncio.to_thread(dest_file.write, chunk)
+    except OSError as e:
+        raise _LocalSaveError(str(e)) from e
+    finally:
+        await asyncio.to_thread(dest_file.close)
     return file_size
 
 
