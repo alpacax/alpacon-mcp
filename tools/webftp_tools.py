@@ -73,20 +73,31 @@ async def _ensure_parent_dir(local_path: str) -> None:
 
 
 async def _save_stream(response: httpx.Response, local_path: str) -> int:
-    """Save streaming response body to a local file. Returns bytes written."""
+    """Save streaming response body to a local file. Returns bytes written.
+
+    On any failure during the write loop (network error, OSError), the
+    partially-written file is removed so retries do not see stale data.
+    """
     try:
         dest_file = await asyncio.to_thread(open, local_path, 'wb')
     except OSError as e:
         raise _LocalSaveError(str(e)) from e
     file_size = 0
+    success = False
     try:
         async for chunk in response.aiter_bytes(chunk_size=_CHUNK_SIZE):
             file_size += len(chunk)
             await asyncio.to_thread(dest_file.write, chunk)
+        success = True
     except OSError as e:
         raise _LocalSaveError(str(e)) from e
     finally:
         await asyncio.to_thread(dest_file.close)
+        if not success:
+            try:
+                await asyncio.to_thread(os.unlink, local_path)
+            except OSError:
+                pass
     return file_size
 
 
