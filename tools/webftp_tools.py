@@ -630,10 +630,7 @@ async def webftp_bulk_upload(
 
     async with httpx.AsyncClient() as client:
         raw_results = await asyncio.gather(
-            *[
-                _upload_one(client, idx, item)
-                for idx, item in enumerate(upload_items)
-            ],
+            *[_upload_one(client, idx, item) for idx, item in enumerate(upload_items)],
             return_exceptions=True,
         )
     upload_results: list[_UploadResult] = []
@@ -643,9 +640,7 @@ async def webftp_bulk_upload(
                 raise gathered
             upload_results.append(
                 {
-                    'file': file_names[idx]
-                    if idx < len(file_names)
-                    else _UNKNOWN_FILE,
+                    'file': file_names[idx] if idx < len(file_names) else _UNKNOWN_FILE,
                     'status': _STATUS_ERROR,
                     'message': str(gathered),
                 }
