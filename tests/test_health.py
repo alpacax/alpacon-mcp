@@ -155,6 +155,7 @@ class TestGetHealthInfoLocal:
         assert result['http_client']['pool_active'] is False
         assert result['http_client']['cache_size'] == 0
 
+
 class TestGetHealthInfoRemote:
     """Tests for get_health_info in remote (streamable-http) mode."""
 
