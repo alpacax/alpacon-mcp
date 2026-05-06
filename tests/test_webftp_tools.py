@@ -13,6 +13,7 @@ import pytest
 from tools.webftp_tools import (
     _STATUS_ERROR,
     _aiter_file,
+    _ensure_parent_dir,
     _LocalSaveError,
     _S3DownloadError,
     _save_stream,
@@ -1104,8 +1105,8 @@ class TestAiterFile:
     """Test the _aiter_file streaming-upload helper."""
 
     @pytest.mark.asyncio
-    async def test_aiter_file_yields_chunks_and_closes(self, tmp_path):
-        """Yields exact file contents in chunks and closes the handle."""
+    async def test_aiter_file_yields_chunks(self, tmp_path):
+        """Yields exact file contents in chunks bounded by chunk_size."""
 
         path = tmp_path / 'src.bin'
         payload = b'x' * (1024 * 3 + 17)
@@ -1115,6 +1116,40 @@ class TestAiterFile:
 
         assert b''.join(chunks) == payload
         assert all(len(c) <= 1024 for c in chunks)
+
+    @pytest.mark.asyncio
+    async def test_aiter_file_closes_handle(self):
+        """Closes the underlying file handle after iteration completes."""
+
+        fake_handle = MagicMock()
+        fake_handle.read.side_effect = [b'chunk1', b'']
+
+        with patch('tools.webftp_tools.open', return_value=fake_handle, create=True):
+            chunks = [c async for c in _aiter_file('/tmp/anything')]
+
+        assert chunks == [b'chunk1']
+        fake_handle.close.assert_called_once()
+
+
+class TestEnsureParentDir:
+    """Test the _ensure_parent_dir helper."""
+
+    @pytest.mark.asyncio
+    async def test_ensure_parent_dir_wraps_oserror_as_local_save_error(self):
+        """OSError from mkdir surfaces as _LocalSaveError with the OS message."""
+
+        with patch('tools.webftp_tools.Path') as mock_path_cls:
+            mock_path_cls.return_value.mkdir.side_effect = PermissionError('denied')
+            with pytest.raises(_LocalSaveError, match='denied'):
+                await _ensure_parent_dir('/forbidden/dir/file.txt')
+
+    @pytest.mark.asyncio
+    async def test_ensure_parent_dir_noop_when_no_parent(self):
+        """No mkdir attempt when the path has no parent component."""
+
+        with patch('tools.webftp_tools.Path') as mock_path_cls:
+            await _ensure_parent_dir('file.txt')
+            mock_path_cls.assert_not_called()
 
 
 if __name__ == '__main__':
