@@ -212,6 +212,43 @@ async def create_server_note(
     )
 
 
+@mcp_tool_handler(
+    description=(
+        'Get detailed information about a specific server note by its ID. '
+        'Returns the note title, content, server, author, timestamps, and privacy settings. '
+        'Use this when you need full details about one note rather than the summary list. '
+        'Related: list_server_notes (find note ID first), update_server_note, delete_server_note.'
+    ),
+    annotations=READ_ONLY,
+    meta={'anthropic/searchHint': 'server note detail describe single get'},
+)
+async def get_server_note(
+    note_id: str, workspace: str, region: str = '', **kwargs
+) -> dict[str, Any]:
+    """Get a single server note by ID.
+
+    Args:
+        note_id: Note ID
+        workspace: Workspace name. Required parameter
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
+
+    Returns:
+        Server note detail response
+    """
+    token = kwargs.get('token')
+
+    result = await http_client.get(
+        region=region,
+        workspace=workspace,
+        endpoint=f'/api/servers/notes/{note_id}/',
+        token=token,
+    )
+
+    return success_response(
+        data=result, note_id=note_id, region=region, workspace=workspace
+    )
+
+
 # ===============================
 # AGENT ACTION TOOLS
 # ===============================

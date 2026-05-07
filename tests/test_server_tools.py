@@ -437,5 +437,33 @@ class TestRegionHandling:
         )
 
 
+class TestServerNoteCRUD:
+    """Tests for get_server_note, update_server_note, delete_server_note."""
+
+    @pytest.mark.asyncio
+    async def test_get_server_note_success(self, mock_http_client, mock_token_manager):
+        """Returns single note detail by ID."""
+        from tools.server_tools import get_server_note
+
+        mock_http_client.get.return_value = {
+            'id': 'note-1',
+            'title': 'Maintenance',
+            'content': 'Sundays 2 AM UTC',
+        }
+
+        result = await get_server_note(
+            note_id='note-1', workspace='testworkspace', region='ap1'
+        )
+
+        assert result['status'] == 'success'
+        assert result['data']['id'] == 'note-1'
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/servers/notes/note-1/',
+            token='test-token',
+        )
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])
