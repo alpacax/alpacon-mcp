@@ -183,6 +183,43 @@ async def list_webhooks(
 
 
 @mcp_tool_handler(
+    description=(
+        'Get detailed information about a specific webhook by its ID. '
+        'Returns webhook ID, name, URL, SSL verification setting, enabled status, and owner. '
+        'Use this when you need full details about one webhook rather than the summary list. '
+        'Related: list_webhooks (find webhook ID first), update_webhook, delete_webhook.'
+    ),
+    annotations=READ_ONLY,
+    meta={'anthropic/searchHint': 'webhook detail describe single get'},
+)
+async def get_webhook(
+    webhook_id: str, workspace: str, region: str = '', **kwargs
+) -> dict[str, Any]:
+    """Get a single webhook by ID.
+
+    Args:
+        webhook_id: Webhook ID
+        workspace: Workspace name. Required parameter
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
+
+    Returns:
+        Webhook detail response
+    """
+    token = kwargs.get('token')
+
+    result = await http_client.get(
+        region=region,
+        workspace=workspace,
+        endpoint=f'/api/notifications/webhooks/{webhook_id}/',
+        token=token,
+    )
+
+    return success_response(
+        data=result, webhook_id=webhook_id, region=region, workspace=workspace
+    )
+
+
+@mcp_tool_handler(
     description='Create a webhook endpoint to receive HTTP callbacks when subscribed events occur. Requires a name and URL. Optionally configure SSL verification and enabled status. Requires admin permission.',
     annotations=ADDITIVE,
     meta={'anthropic/searchHint': 'webhook create endpoint callback'},
