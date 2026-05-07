@@ -156,5 +156,59 @@ class TestListWorkspaces:
         assert len(workspaces) == 6
 
 
+class TestGetCurrentUser:
+    """Test get_current_user function."""
+
+    @pytest.fixture
+    def mock_http_client(self):
+        from unittest.mock import AsyncMock
+        from unittest.mock import patch as patch_
+
+        with patch_('tools.workspace_tools.http_client', create=True) as mock_client:
+            mock_client.get = AsyncMock()
+            yield mock_client
+
+    @pytest.fixture
+    def mock_token(self):
+        from unittest.mock import patch as patch_
+
+        with patch_('utils.common.token_manager') as mock_manager:
+            mock_manager.get_token.return_value = 'test-token'
+            yield mock_manager
+
+    @pytest.mark.asyncio
+    async def test_get_current_user_success(self, mock_http_client, mock_token):
+        """Returns current user info from /api/iam/users/-/."""
+        from tools.workspace_tools import get_current_user
+
+        mock_http_client.get.return_value = {
+            'id': 'user-1',
+            'username': 'alice',
+            'email': 'alice@example.com',
+            'role': 'staff',
+        }
+
+        result = await get_current_user(workspace='production', region='ap1')
+
+        assert result['status'] == 'success'
+        assert result['data']['username'] == 'alice'
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='production',
+            endpoint='/api/iam/users/-/',
+            token='test-token',
+        )
+
+    @pytest.mark.asyncio
+    async def test_get_current_user_missing_workspace(self):
+        """Missing workspace returns validation error."""
+        from tools.workspace_tools import get_current_user
+
+        result = await get_current_user(workspace='', region='ap1')
+
+        assert result['status'] == 'error'
+        assert 'workspace' in result['message'].lower()
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])

@@ -6,6 +6,9 @@ from mcp.types import ToolAnnotations
 
 from server import mcp
 from utils.common import success_response
+from utils.decorators import mcp_tool_handler
+from utils.http_client import http_client
+from utils.tool_annotations import READ_ONLY
 
 
 def _collect_workspaces_from_tokens(
@@ -128,6 +131,42 @@ async def list_workspaces(region: str = '') -> dict[str, Any]:
         },
         region=region or 'all',
     )
+
+
+@mcp_tool_handler(
+    description=(
+        'Get the current authenticated user info (username, email, role, UID, shell, home directory). '
+        'In stdio mode returns the API token owner; in streamable-http mode returns the JWT subject. '
+        'Use this to verify identity before performing privileged actions. '
+        'Related: list_workspaces (find configured workspaces).'
+    ),
+    annotations=READ_ONLY,
+    meta={
+        'anthropic/searchHint': 'whoami current user identity me authenticated principal',
+    },
+)
+async def get_current_user(
+    workspace: str, region: str = '', **kwargs
+) -> dict[str, Any]:
+    """Get the currently authenticated user.
+
+    Args:
+        workspace: Workspace name. Required parameter
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
+
+    Returns:
+        Current user info response
+    """
+    token = kwargs.get('token')
+
+    result = await http_client.get(
+        region=region,
+        workspace=workspace,
+        endpoint='/api/iam/users/-/',
+        token=token,
+    )
+
+    return success_response(data=result, region=region, workspace=workspace)
 
 
 # ===============================
