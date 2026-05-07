@@ -307,6 +307,41 @@ async def update_server_note(
     )
 
 
+@mcp_tool_handler(
+    description=(
+        'Permanently delete a server note by its ID. This action cannot be undone. '
+        'Use with caution. Related: get_server_note (verify note before deleting), update_server_note.'
+    ),
+    annotations=DESTRUCTIVE,
+    meta={'anthropic/searchHint': 'server note delete remove'},
+)
+async def delete_server_note(
+    note_id: str, workspace: str, region: str = '', **kwargs
+) -> dict[str, Any]:
+    """Delete a server note.
+
+    Args:
+        note_id: Note ID
+        workspace: Workspace name. Required parameter
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
+
+    Returns:
+        Server note delete response
+    """
+    token = kwargs.get('token')
+
+    result = await http_client.delete(
+        region=region,
+        workspace=workspace,
+        endpoint=f'/api/servers/notes/{note_id}/',
+        token=token,
+    )
+
+    return success_response(
+        data=result, note_id=note_id, region=region, workspace=workspace
+    )
+
+
 # ===============================
 # AGENT ACTION TOOLS
 # ===============================

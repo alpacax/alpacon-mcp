@@ -528,6 +528,27 @@ class TestServerNoteCRUD:
         _, kwargs = mock_http_client.patch.call_args
         assert kwargs['data'] == {'title': 'Only title'}
 
+    @pytest.mark.asyncio
+    async def test_delete_server_note_success(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Deletes note by ID."""
+        from tools.server_tools import delete_server_note
+
+        mock_http_client.delete.return_value = {}
+
+        result = await delete_server_note(
+            note_id='note-1', workspace='testworkspace', region='ap1'
+        )
+
+        assert result['status'] == 'success'
+        mock_http_client.delete.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/servers/notes/note-1/',
+            token='test-token',
+        )
+
 
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])
