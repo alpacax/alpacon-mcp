@@ -69,7 +69,17 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["."]
+include = [
+    "/__init__.py",
+    "/py.typed",
+    "/server.py",
+    "/main.py",
+    "/main_sse.py",
+    "/main_http.py",
+    "/tools/**/*.py",
+    "/utils/**/*.py",
+    "/config/token.json.example",
+]
 
 [dependency-groups]
 dev = [
