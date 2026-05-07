@@ -5,7 +5,7 @@ from typing import Any
 from utils.common import error_response, success_response
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
-from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, READ_ONLY
+from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ_ONLY
 
 
 @mcp_tool_handler(
@@ -242,6 +242,64 @@ async def get_server_note(
         workspace=workspace,
         endpoint=f'/api/servers/notes/{note_id}/',
         token=token,
+    )
+
+    return success_response(
+        data=result, note_id=note_id, region=region, workspace=workspace
+    )
+
+
+@mcp_tool_handler(
+    description=(
+        'Update an existing server note by its ID. Can change title or content. '
+        'Only the fields you provide will be updated (partial update). '
+        'Related: get_server_note (view existing note), delete_server_note.'
+    ),
+    annotations=IDEMPOTENT_WRITE,
+    meta={'anthropic/searchHint': 'server note update edit modify'},
+)
+async def update_server_note(
+    note_id: str,
+    workspace: str,
+    title: str | None = None,
+    content: str | None = None,
+    region: str = '',
+    **kwargs,
+) -> dict[str, Any]:
+    """Update an existing server note.
+
+    Args:
+        note_id: Note ID
+        workspace: Workspace name. Required parameter
+        title: New title (optional)
+        content: New content (optional)
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
+
+    Returns:
+        Server note update response
+    """
+    token = kwargs.get('token')
+
+    update_data: dict[str, Any] = {}
+    if title is not None:
+        update_data['title'] = title
+    if content is not None:
+        update_data['content'] = content
+
+    if not update_data:
+        return error_response(
+            'No update data provided',
+            note_id=note_id,
+            region=region,
+            workspace=workspace,
+        )
+
+    result = await http_client.patch(
+        region=region,
+        workspace=workspace,
+        endpoint=f'/api/servers/notes/{note_id}/',
+        token=token,
+        data=update_data,
     )
 
     return success_response(

@@ -464,6 +464,70 @@ class TestServerNoteCRUD:
             token='test-token',
         )
 
+    @pytest.mark.asyncio
+    async def test_update_server_note_success(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Updates fields and returns updated note."""
+        from tools.server_tools import update_server_note
+
+        mock_http_client.patch.return_value = {
+            'id': 'note-1',
+            'title': 'New title',
+            'content': 'New content',
+        }
+
+        result = await update_server_note(
+            note_id='note-1',
+            workspace='testworkspace',
+            region='ap1',
+            title='New title',
+            content='New content',
+        )
+
+        assert result['status'] == 'success'
+        mock_http_client.patch.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/servers/notes/note-1/',
+            token='test-token',
+            data={'title': 'New title', 'content': 'New content'},
+        )
+
+    @pytest.mark.asyncio
+    async def test_update_server_note_no_fields_returns_error(
+        self, mock_http_client, mock_token_manager
+    ):
+        """No update fields returns validation error and no API call."""
+        from tools.server_tools import update_server_note
+
+        result = await update_server_note(
+            note_id='note-1', workspace='testworkspace', region='ap1'
+        )
+
+        assert result['status'] == 'error'
+        assert 'no update data' in result['message'].lower()
+        mock_http_client.patch.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_update_server_note_partial(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Only non-None fields are sent in PATCH body."""
+        from tools.server_tools import update_server_note
+
+        mock_http_client.patch.return_value = {'id': 'note-1', 'title': 'Only title'}
+
+        await update_server_note(
+            note_id='note-1',
+            workspace='testworkspace',
+            region='ap1',
+            title='Only title',
+        )
+
+        _, kwargs = mock_http_client.patch.call_args
+        assert kwargs['data'] == {'title': 'Only title'}
+
 
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])
