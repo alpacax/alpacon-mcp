@@ -9,6 +9,7 @@ from tools.webhook_tools import (
     create_webhook,
     delete_event_subscription,
     delete_webhook,
+    get_webhook,
     list_event_subscriptions,
     list_webhooks,
     update_webhook,
@@ -245,8 +246,6 @@ class TestGetWebhook:
     @pytest.mark.asyncio
     async def test_get_webhook_success(self, mock_http_client, mock_token_manager):
         """Returns single webhook detail by ID."""
-        from tools.webhook_tools import get_webhook
-
         mock_http_client.get.return_value = {
             'id': 'wh-1',
             'name': 'deploy-hook',

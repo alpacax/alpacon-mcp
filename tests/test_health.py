@@ -1,8 +1,13 @@
 """Tests for health check functionality."""
 
+import ast
+import inspect
 from unittest.mock import MagicMock, patch
 
 import pytest
+
+import server
+from tools.health_tools import health_check
 
 
 @pytest.fixture
@@ -181,8 +186,6 @@ class TestHealthCheckTool:
     @pytest.mark.asyncio
     async def test_health_check_tool_returns_success(self, patched_health_local):
         """health_check tool must wrap health info in success response."""
-        from tools.health_tools import health_check
-
         result = await health_check()
 
         assert result['status'] == 'success'
@@ -193,8 +196,6 @@ class TestHealthCheckTool:
     @pytest.mark.asyncio
     async def test_health_check_tool_no_params_required(self, patched_health_local):
         """health_check tool must work with zero arguments."""
-        from tools.health_tools import health_check
-
         # Should not raise
         result = await health_check()
 
@@ -207,8 +208,6 @@ class TestHealthCheckRemoteMode:
     @pytest.mark.asyncio
     async def test_health_check_callable_in_remote_mode(self, patched_health_remote):
         """health_check tool must work even when ALPACON_MCP_AUTH_ENABLED=true."""
-        from tools.health_tools import health_check
-
         result = await health_check()
 
         assert result['status'] == 'success'
@@ -222,11 +221,6 @@ class TestHealthCheckRemoteMode:
         removed so the MCP tool is registered in all transports. Uses AST inspection
         so the assertion isn't sensitive to whitespace or comment changes.
         """
-        import ast
-        import inspect
-
-        import server
-
         tree = ast.parse(inspect.getsource(server.run))
         function_def = tree.body[0]
         assert isinstance(function_def, (ast.FunctionDef, ast.AsyncFunctionDef))

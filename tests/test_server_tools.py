@@ -10,9 +10,12 @@ import pytest
 
 from tools.server_tools import (
     create_server_note,
+    delete_server_note,
     get_server,
+    get_server_note,
     list_server_notes,
     list_servers,
+    update_server_note,
 )
 
 
@@ -443,8 +446,6 @@ class TestServerNoteCRUD:
     @pytest.mark.asyncio
     async def test_get_server_note_success(self, mock_http_client, mock_token_manager):
         """Returns single note detail by ID."""
-        from tools.server_tools import get_server_note
-
         mock_http_client.get.return_value = {
             'id': 'note-1',
             'title': 'Maintenance',
@@ -469,8 +470,6 @@ class TestServerNoteCRUD:
         self, mock_http_client, mock_token_manager
     ):
         """Updates fields and returns updated note."""
-        from tools.server_tools import update_server_note
-
         mock_http_client.patch.return_value = {
             'id': 'note-1',
             'title': 'New title',
@@ -499,8 +498,6 @@ class TestServerNoteCRUD:
         self, mock_http_client, mock_token_manager
     ):
         """No update fields returns validation error and no API call."""
-        from tools.server_tools import update_server_note
-
         result = await update_server_note(
             note_id='note-1', workspace='testworkspace', region='ap1'
         )
@@ -514,8 +511,6 @@ class TestServerNoteCRUD:
         self, mock_http_client, mock_token_manager
     ):
         """Only non-None fields are sent in PATCH body."""
-        from tools.server_tools import update_server_note
-
         mock_http_client.patch.return_value = {'id': 'note-1', 'title': 'Only title'}
 
         await update_server_note(
@@ -533,8 +528,6 @@ class TestServerNoteCRUD:
         self, mock_http_client, mock_token_manager
     ):
         """Deletes note by ID."""
-        from tools.server_tools import delete_server_note
-
         mock_http_client.delete.return_value = {}
 
         result = await delete_server_note(
