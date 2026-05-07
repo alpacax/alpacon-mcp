@@ -249,6 +249,9 @@ All validators are defined in `utils/error_handler.py` and return user-friendly 
 - `get_server_overview`: Get comprehensive server overview (system info + metrics)
 - `list_server_notes`: List server documentation
 - `create_server_note`: Create server notes
+- `get_server_note`: Get detailed information about a specific server note by ID
+- `update_server_note`: Update an existing server note (partial update of title/content)
+- `delete_server_note`: Permanently delete a server note by ID
 - `restart_agent`: Restart the Alpacon agent on a server
 - `shutdown_agent`: Shut down the Alpacon agent on a server
 - `upgrade_agent`: Upgrade the Alpacon agent to latest version
@@ -364,6 +367,7 @@ All validators are defined in `utils/error_handler.py` and return user-friendly 
 - `create_event_subscription`: Create an event subscription
 - `delete_event_subscription`: Delete an event subscription
 - `list_webhooks`: List configured webhooks
+- `get_webhook`: Get detailed information about a specific webhook by ID
 - `create_webhook`: Create a webhook endpoint
 - `update_webhook`: Update a webhook configuration
 - `delete_webhook`: Delete a webhook endpoint
@@ -386,6 +390,7 @@ All validators are defined in `utils/error_handler.py` and return user-friendly 
 
 ### ⚙️ Authentication & workspace
 - `list_workspaces`: List available workspaces
+- `get_current_user`: Get currently authenticated user info (username, email, role, UID, shell, home directory)
 
 **Note**: User settings and profile endpoints are not currently implemented in the Alpacon server. The following tools have been removed:
 - ~~`get_user_settings`~~: Not available (was using `/api/user/settings/`)
@@ -396,6 +401,8 @@ Alternative endpoints available in the server:
 - `/api/profiles/preferences/` (profiles app)
 - `/api/workspaces/preferences/` (workspaces app)
 - `/api/auth0/users/` (auth0 app)
+
+**Health check** (`health_check` tool) is now registered in all transports (stdio, SSE, streamable-http). Previously it was only registered in stdio mode.
 
 ## Dependencies
 
