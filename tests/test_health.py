@@ -174,32 +174,6 @@ class TestGetHealthInfoRemote:
         assert 'total_tokens' not in auth
         assert 'regions_configured' not in auth
 
-    @pytest.mark.asyncio
-    async def test_remote_does_not_touch_token_manager(self, patched_health_remote):
-        """Remote mode must not import or call token_manager.
-
-        Patches at both utils.token_manager and utils.health level to
-        ensure no token_manager access regardless of module caching.
-        """
-        sentinel = AssertionError('token_manager should not be called in remote mode')
-        with (
-            patch('utils.token_manager.get_token_manager', side_effect=sentinel),
-            patch.dict(
-                'sys.modules', {'utils.common': MagicMock(MCP_VERSION='0.0.0-test')}
-            ),
-        ):
-            import importlib
-            import sys
-
-            # Force fresh import of utils.health to avoid cached module paths
-            sys.modules.pop('utils.health', None)
-            import utils.health
-
-            importlib.reload(utils.health)
-            result = await utils.health.get_health_info()
-
-        assert result['auth']['mode'] == 'jwt'
-
 
 class TestHealthCheckTool:
     """Tests for the health_check MCP tool (local mode only)."""

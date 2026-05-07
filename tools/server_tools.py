@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from utils.common import error_response, success_response
+from utils.common import error_response, success_response, unwrap_http_result
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ_ONLY
@@ -244,19 +244,15 @@ async def get_server_note(
         token=token,
     )
 
-    if isinstance(result, dict) and 'error' in result:
-        error_kwargs: dict[str, Any] = {
-            'note_id': note_id,
-            'region': region,
-            'workspace': workspace,
-        }
-        status_code = result.get('status_code')
-        if status_code is not None:
-            error_kwargs['status_code'] = status_code
-        return error_response(
-            result.get('message', 'Failed to get server note details'),
-            **error_kwargs,
-        )
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to get server note details',
+        note_id=note_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
 
     return success_response(
         data=result, note_id=note_id, region=region, workspace=workspace
@@ -316,19 +312,15 @@ async def update_server_note(
         data=update_data,
     )
 
-    if isinstance(result, dict) and 'error' in result:
-        error_kwargs: dict[str, Any] = {
-            'note_id': note_id,
-            'region': region,
-            'workspace': workspace,
-        }
-        status_code = result.get('status_code')
-        if status_code is not None:
-            error_kwargs['status_code'] = status_code
-        return error_response(
-            result.get('message', 'Failed to update server note'),
-            **error_kwargs,
-        )
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to update server note',
+        note_id=note_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
 
     return success_response(
         data=result, note_id=note_id, region=region, workspace=workspace
@@ -365,19 +357,15 @@ async def delete_server_note(
         token=token,
     )
 
-    if isinstance(result, dict) and 'error' in result:
-        error_kwargs: dict[str, Any] = {
-            'note_id': note_id,
-            'region': region,
-            'workspace': workspace,
-        }
-        status_code = result.get('status_code')
-        if status_code is not None:
-            error_kwargs['status_code'] = status_code
-        return error_response(
-            result.get('message', 'Failed to delete server note'),
-            **error_kwargs,
-        )
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to delete server note',
+        note_id=note_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
 
     return success_response(
         data=result, note_id=note_id, region=region, workspace=workspace

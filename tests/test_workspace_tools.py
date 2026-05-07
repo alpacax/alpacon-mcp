@@ -161,18 +161,17 @@ class TestGetCurrentUser:
 
     @pytest.fixture
     def mock_http_client(self):
-        from unittest.mock import AsyncMock
-        from unittest.mock import patch as patch_
+        from unittest.mock import AsyncMock, patch
 
-        with patch_('tools.workspace_tools.http_client', create=True) as mock_client:
+        with patch('tools.workspace_tools.http_client') as mock_client:
             mock_client.get = AsyncMock()
             yield mock_client
 
     @pytest.fixture
     def mock_token(self):
-        from unittest.mock import patch as patch_
+        from unittest.mock import patch
 
-        with patch_('utils.common.token_manager') as mock_manager:
+        with patch('utils.common.token_manager') as mock_manager:
             mock_manager.get_token.return_value = 'test-token'
             yield mock_manager
 
