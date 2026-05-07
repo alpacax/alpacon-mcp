@@ -227,5 +227,36 @@ class TestHealthCheckTool:
         assert result['status'] == 'success'
 
 
+class TestHealthCheckRemoteMode:
+    """Tests verifying health_check tool works in remote (streamable-http) mode."""
+
+    @pytest.mark.asyncio
+    async def test_health_check_callable_in_remote_mode(self, patched_health_remote):
+        """health_check tool must work even when ALPACON_MCP_AUTH_ENABLED=true."""
+        from tools.health_tools import health_check
+
+        result = await health_check()
+
+        assert result['status'] == 'success'
+        assert result['data']['status'] == 'ok'
+        assert result['data']['auth']['mode'] == 'jwt'
+
+    def test_server_module_imports_health_tools_unconditionally(self):
+        """server.run() must import tools.health_tools regardless of remote_mode.
+
+        Verifies the guard `if not remote_mode: import tools.health_tools` has been
+        removed so the MCP tool is registered in all transports.
+        """
+        import inspect
+
+        import server
+
+        source = inspect.getsource(server.run)
+        # The unconditional import line should exist
+        assert 'import tools.health_tools' in source
+        # The previous guarded form should NOT exist
+        assert 'if not remote_mode:\n        import tools.health_tools' not in source
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])

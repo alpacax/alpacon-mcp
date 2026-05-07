@@ -267,11 +267,10 @@ def run(
         _register_http_health_endpoint()
         logger.info('HTTP /health endpoint registered for transport: %s', transport)
 
-    if not remote_mode:
-        # Local (stdio/SSE) mode: register health_check MCP tool
-        import tools.health_tools  # noqa: F401
+    # Register health_check MCP tool in all transports (stdio, SSE, streamable-http)
+    import tools.health_tools  # noqa: F401
 
-        logger.info('Local mode: health_check MCP tool registered')
+    logger.info('health_check MCP tool registered')
 
     # Import all tool modules to register MCP tools via decorators
     import tools.alert_tools  # noqa: F401
