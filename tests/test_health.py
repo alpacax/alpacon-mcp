@@ -245,17 +245,36 @@ class TestHealthCheckRemoteMode:
         """server.run() must import tools.health_tools regardless of remote_mode.
 
         Verifies the guard `if not remote_mode: import tools.health_tools` has been
-        removed so the MCP tool is registered in all transports.
+        removed so the MCP tool is registered in all transports. Uses AST inspection
+        so the assertion isn't sensitive to whitespace or comment changes.
         """
+        import ast
         import inspect
 
         import server
 
-        source = inspect.getsource(server.run)
-        # The unconditional import line should exist
-        assert 'import tools.health_tools' in source
-        # The previous guarded form should NOT exist
-        assert 'if not remote_mode:\n        import tools.health_tools' not in source
+        tree = ast.parse(inspect.getsource(server.run))
+        function_def = tree.body[0]
+        assert isinstance(function_def, (ast.FunctionDef, ast.AsyncFunctionDef))
+
+        def imports_health_tools(node: ast.AST) -> bool:
+            return isinstance(node, ast.Import) and any(
+                alias.name == 'tools.health_tools' for alias in node.names
+            )
+
+        # The import must appear at the top level of run(), not nested inside any
+        # conditional or other compound statement.
+        assert any(imports_health_tools(stmt) for stmt in function_def.body), (
+            'tools.health_tools must be imported unconditionally inside server.run()'
+        )
+
+        # No If/Try/With block inside run() may guard the import.
+        for node in ast.walk(function_def):
+            if isinstance(node, (ast.If, ast.Try, ast.With, ast.AsyncWith)):
+                for child in ast.walk(node):
+                    assert not imports_health_tools(child), (
+                        'tools.health_tools import must not be guarded by a control-flow block'
+                    )
 
 
 if __name__ == '__main__':

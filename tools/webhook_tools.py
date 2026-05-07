@@ -214,6 +214,20 @@ async def get_webhook(
         token=token,
     )
 
+    if isinstance(result, dict) and 'error' in result:
+        error_kwargs: dict[str, Any] = {
+            'webhook_id': webhook_id,
+            'region': region,
+            'workspace': workspace,
+        }
+        status_code = result.get('status_code')
+        if status_code is not None:
+            error_kwargs['status_code'] = status_code
+        return error_response(
+            result.get('message', 'Failed to get webhook details'),
+            **error_kwargs,
+        )
+
     return success_response(
         data=result, webhook_id=webhook_id, region=region, workspace=workspace
     )
