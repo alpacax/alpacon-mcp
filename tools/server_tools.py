@@ -216,7 +216,7 @@ async def create_server_note(
     description=(
         'Get detailed information about a specific server note by its ID. '
         'Returns the note title, content, server, author, timestamps, and privacy settings. '
-        'Use this when you need full details about one note rather than the summary list. '
+        'Use this when you need full details about one note. '
         'Related: list_server_notes (find note ID first), update_server_note, delete_server_note.'
     ),
     annotations=READ_ONLY,

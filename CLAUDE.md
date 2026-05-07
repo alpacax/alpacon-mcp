@@ -402,8 +402,6 @@ Alternative endpoints available in the server:
 - `/api/workspaces/preferences/` (workspaces app)
 - `/api/auth0/users/` (auth0 app)
 
-**Health check** (`health_check` tool) is now registered in all transports (stdio, SSE, streamable-http). Previously it was only registered in stdio mode.
-
 ## Dependencies
 
 **Runtime dependencies** (from `pyproject.toml`):

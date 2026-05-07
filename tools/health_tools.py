@@ -1,4 +1,4 @@
-"""Health check tool for MCP clients (all transports)."""
+"""Health check tool for MCP clients."""
 
 from typing import Any
 
@@ -18,11 +18,6 @@ from utils.common import success_response
 )
 async def health_check() -> dict[str, Any]:
     """Check MCP server health and return status information.
-
-    Registered for all transports (stdio, SSE, streamable-http) so MCP
-    clients can verify connectivity through the same channel they use
-    for other tools, regardless of whether the HTTP /health endpoint is
-    reachable.
 
     No parameters required - returns server health metrics including
     version, uptime, authentication status, and connection pool info.
