@@ -175,17 +175,3 @@ async def get_current_user(
         )
 
     return success_response(data=result, region=region, workspace=workspace)
-
-
-# ===============================
-# NOTE: User settings and profile endpoints are not implemented in the server
-# The following functions have been removed:
-# - get_user_settings (was using /api/user/settings/)
-# - update_user_settings (was using /api/user/settings/)
-# - get_user_profile (was using /api/user/profile/)
-#
-# Alternative endpoints available in the server:
-# - /api/profiles/preferences/ (profiles app)
-# - /api/workspaces/preferences/ (workspaces app)
-# - /api/auth0/users/ (auth0 app)
-# ===============================
