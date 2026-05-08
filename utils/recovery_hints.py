@@ -2,43 +2,6 @@
 
 from typing import Any
 
-
-def _detect_error_domain(
-    status_code: int | None,
-    message: str,
-    tool_name: str | None = None,
-    endpoint: str | None = None,
-) -> str:
-    """Detect the error domain from context clues."""
-    msg_lower = message.lower()
-    tool_lower = (tool_name or '').lower()
-    ep_lower = (endpoint or '').lower()
-
-    if 'command' in msg_lower or 'command' in tool_lower:
-        return 'command'
-    if (
-        any(k in msg_lower for k in ('webftp', 'upload', 'download', 'file'))
-        or 'webftp' in tool_lower
-    ):
-        return 'file'
-    if any(k in msg_lower for k in ('server',)) or 'server' in tool_lower:
-        return 'server'
-    if 'user' in msg_lower or 'iam' in tool_lower:
-        return 'user'
-    if 'alert' in msg_lower or 'alert' in tool_lower:
-        return 'alert'
-    if '/api/events/commands/' in ep_lower:
-        return 'command'
-    if '/api/webftp/' in ep_lower:
-        return 'file'
-    if '/api/servers/' in ep_lower:
-        return 'server'
-    if '/api/iam/' in ep_lower:
-        return 'user'
-
-    return 'general'
-
-
 # Hint registry: (status_code, domain) -> {recovery_hints, related_tools}
 _HINT_REGISTRY: dict[tuple[int, str], dict[str, list[str]]] = {
     # 401 - Authentication
@@ -129,15 +92,43 @@ _HINT_REGISTRY: dict[tuple[int, str], dict[str, list[str]]] = {
         ],
         'related_tools': [],
     },
-    # Timeout
-    (0, 'general'): {
-        'recovery_hints': [
-            'The request timed out. The server may be under heavy load.',
-            'Try again or check server connectivity.',
-        ],
-        'related_tools': [],
-    },
 }
+
+
+def _detect_error_domain(
+    status_code: int | None,
+    message: str,
+    tool_name: str | None = None,
+    endpoint: str | None = None,
+) -> str:
+    """Detect the error domain from context clues."""
+    msg_lower = message.lower()
+    tool_lower = (tool_name or '').lower()
+    ep_lower = (endpoint or '').lower()
+
+    if 'command' in msg_lower or 'command' in tool_lower:
+        return 'command'
+    if (
+        any(k in msg_lower for k in ('webftp', 'upload', 'download', 'file'))
+        or 'webftp' in tool_lower
+    ):
+        return 'file'
+    if any(k in msg_lower for k in ('server',)) or 'server' in tool_lower:
+        return 'server'
+    if 'user' in msg_lower or 'iam' in tool_lower:
+        return 'user'
+    if 'alert' in msg_lower or 'alert' in tool_lower:
+        return 'alert'
+    if '/api/events/commands/' in ep_lower:
+        return 'command'
+    if '/api/webftp/' in ep_lower:
+        return 'file'
+    if '/api/servers/' in ep_lower:
+        return 'server'
+    if '/api/iam/' in ep_lower:
+        return 'user'
+
+    return 'general'
 
 
 def _parse_status_code(raw: int | str | None) -> int | None:
