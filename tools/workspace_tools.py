@@ -134,7 +134,7 @@ async def list_workspaces(region: str = '') -> dict[str, Any]:
 @mcp_tool_handler(
     description=(
         'Get the current authenticated user info (username, email, role, UID, shell, home directory). '
-        'In stdio mode returns the API token owner; in streamable-http mode returns the JWT subject. '
+        'Returns info about the user authenticated for this call. '
         'Use this to verify identity before performing privileged actions. '
         'Related: list_workspaces (find configured workspaces).'
     ),

@@ -4,6 +4,7 @@ from typing import Any
 
 from utils.common import error_response, success_response, unwrap_http_result
 from utils.decorators import mcp_tool_handler
+from utils.error_handler import format_validation_error
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ_ONLY
 
@@ -297,11 +298,10 @@ async def update_server_note(
         update_data['content'] = content
 
     if not update_data:
-        return error_response(
-            'No update data provided',
-            note_id=note_id,
-            region=region,
-            workspace=workspace,
+        return format_validation_error(
+            'title or content',
+            None,
+            'At least one of title or content must be provided.',
         )
 
     result = await http_client.patch(
