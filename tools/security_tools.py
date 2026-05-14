@@ -428,3 +428,237 @@ async def create_file_acl(
     )
 
     return success_response(data=result, region=region, workspace=workspace)
+
+
+@mcp_tool_handler(
+    description='Update an existing server ACL rule. Related: list_server_acls (find rule ID), delete_server_acl (remove rule).',
+    annotations=IDEMPOTENT_WRITE,
+    meta={'anthropic/searchHint': 'server acl update modify'},
+)
+async def update_server_acl(
+    acl_id: str,
+    workspace: str,
+    effect: str | None = None,
+    users: list[str] | None = None,
+    groups: list[str] | None = None,
+    servers: list[str] | None = None,
+    description: str | None = None,
+    priority: int | None = None,
+    region: str = '',
+    **kwargs,
+) -> dict[str, Any]:
+    """Update an existing server ACL rule.
+
+    Args:
+        acl_id: Server ACL rule ID to update
+        workspace: Workspace name. Required parameter
+        effect: ACL effect - 'allow' or 'deny' (optional)
+        users: List of user IDs this rule applies to (optional)
+        groups: List of group IDs this rule applies to (optional)
+        servers: List of server IDs this rule applies to (optional)
+        description: Description of the ACL rule (optional)
+        priority: Rule priority (optional)
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
+
+    Returns:
+        Server ACL update response
+    """
+    token = kwargs.get('token')
+
+    update_data: dict[str, Any] = {}
+    if effect is not None:
+        update_data['effect'] = effect
+    if users is not None:
+        update_data['users'] = users
+    if groups is not None:
+        update_data['groups'] = groups
+    if servers is not None:
+        update_data['servers'] = servers
+    if description is not None:
+        update_data['description'] = description
+    if priority is not None:
+        update_data['priority'] = priority
+
+    if not update_data:
+        return error_response('No update data provided')
+
+    result = await http_client.patch(
+        region=region,
+        workspace=workspace,
+        endpoint=f'/api/security/server-acl/{acl_id}/',
+        token=token,
+        data=update_data,
+    )
+
+    return success_response(
+        data=result, acl_id=acl_id, region=region, workspace=workspace
+    )
+
+
+@mcp_tool_handler(
+    description='Delete a server ACL rule permanently. Related: list_server_acls (find rule ID), update_server_acl (modify instead). Note: Cannot be undone.',
+    annotations=DESTRUCTIVE,
+    meta={'anthropic/searchHint': 'server acl delete remove'},
+)
+async def delete_server_acl(
+    acl_id: str, workspace: str, region: str = '', **kwargs
+) -> dict[str, Any]:
+    """Delete a server ACL rule.
+
+    Args:
+        acl_id: Server ACL rule ID to delete
+        workspace: Workspace name. Required parameter
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
+
+    Returns:
+        Server ACL deletion response
+    """
+    token = kwargs.get('token')
+
+    result = await http_client.delete(
+        region=region,
+        workspace=workspace,
+        endpoint=f'/api/security/server-acl/{acl_id}/',
+        token=token,
+    )
+
+    return success_response(
+        data=result, acl_id=acl_id, region=region, workspace=workspace
+    )
+
+
+@mcp_tool_handler(
+    description='Bulk add or remove server ACL entries in a single operation. When to use: applying multiple server ACL changes at once. Related: list_server_acls (view existing), create_server_acl (single create).',
+    annotations=ADDITIVE,
+    meta={'anthropic/searchHint': 'server acl bulk add remove multiple'},
+)
+async def bulk_server_acl(
+    workspace: str,
+    action: str,
+    acl_list: list[dict],
+    region: str = '',
+    **kwargs,
+) -> dict[str, Any]:
+    """Bulk add or remove server ACL entries.
+
+    Args:
+        workspace: Workspace name. Required parameter
+        action: Bulk action - 'add' or 'remove'
+        acl_list: List of ACL entry dicts to add or remove
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
+
+    Returns:
+        Bulk server ACL operation response
+    """
+    token = kwargs.get('token')
+
+    result = await http_client.post(
+        region=region,
+        workspace=workspace,
+        endpoint='/api/security/server-acl/bulk/',
+        token=token,
+        data={'action': action, 'acls': acl_list},
+    )
+
+    return success_response(data=result, action=action, region=region, workspace=workspace)
+
+
+@mcp_tool_handler(
+    description='Update an existing file ACL rule. Related: list_file_acls (find rule ID), delete_file_acl (remove rule).',
+    annotations=IDEMPOTENT_WRITE,
+    meta={'anthropic/searchHint': 'file acl update modify'},
+)
+async def update_file_acl(
+    acl_id: str,
+    workspace: str,
+    effect: str | None = None,
+    file_pattern: str | None = None,
+    users: list[str] | None = None,
+    groups: list[str] | None = None,
+    servers: list[str] | None = None,
+    description: str | None = None,
+    priority: int | None = None,
+    region: str = '',
+    **kwargs,
+) -> dict[str, Any]:
+    """Update an existing file ACL rule.
+
+    Args:
+        acl_id: File ACL rule ID to update
+        workspace: Workspace name. Required parameter
+        effect: ACL effect - 'allow' or 'deny' (optional)
+        file_pattern: File path pattern to match (optional)
+        users: List of user IDs this rule applies to (optional)
+        groups: List of group IDs this rule applies to (optional)
+        servers: List of server IDs this rule applies to (optional)
+        description: Description of the ACL rule (optional)
+        priority: Rule priority (optional)
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
+
+    Returns:
+        File ACL update response
+    """
+    token = kwargs.get('token')
+
+    update_data: dict[str, Any] = {}
+    if effect is not None:
+        update_data['effect'] = effect
+    if file_pattern is not None:
+        update_data['file_pattern'] = file_pattern
+    if users is not None:
+        update_data['users'] = users
+    if groups is not None:
+        update_data['groups'] = groups
+    if servers is not None:
+        update_data['servers'] = servers
+    if description is not None:
+        update_data['description'] = description
+    if priority is not None:
+        update_data['priority'] = priority
+
+    if not update_data:
+        return error_response('No update data provided')
+
+    result = await http_client.patch(
+        region=region,
+        workspace=workspace,
+        endpoint=f'/api/security/file-acl/{acl_id}/',
+        token=token,
+        data=update_data,
+    )
+
+    return success_response(
+        data=result, acl_id=acl_id, region=region, workspace=workspace
+    )
+
+
+@mcp_tool_handler(
+    description='Delete a file ACL rule permanently. Related: list_file_acls (find rule ID), update_file_acl (modify instead). Note: Cannot be undone.',
+    annotations=DESTRUCTIVE,
+    meta={'anthropic/searchHint': 'file acl delete remove'},
+)
+async def delete_file_acl(
+    acl_id: str, workspace: str, region: str = '', **kwargs
+) -> dict[str, Any]:
+    """Delete a file ACL rule.
+
+    Args:
+        acl_id: File ACL rule ID to delete
+        workspace: Workspace name. Required parameter
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
+
+    Returns:
+        File ACL deletion response
+    """
+    token = kwargs.get('token')
+
+    result = await http_client.delete(
+        region=region,
+        workspace=workspace,
+        endpoint=f'/api/security/file-acl/{acl_id}/',
+        token=token,
+    )
+
+    return success_response(
+        data=result, acl_id=acl_id, region=region, workspace=workspace
+    )
