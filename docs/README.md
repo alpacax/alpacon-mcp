@@ -17,7 +17,7 @@ Welcome to the Alpacon MCP Server documentation. Alpacon provides browser-based,
 1. **Install dependencies**
    ```bash
    uv venv && source .venv/bin/activate
-   uv pip install mcp httpx
+   uv pip install mcp httpx "PyJWT[crypto]"
    ```
 
 2. **Configure tokens**
