@@ -830,7 +830,6 @@ class TestIAMApplicationManagement:
             workspace='testworkspace',
             endpoint='/api/iam/applications/app-123/provision-account/',
             token='test-token',
-            data={},
         )
 
 

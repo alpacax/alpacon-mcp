@@ -40,9 +40,9 @@ async def list_iam_users(
 
     # Prepare query parameters
     params = {}
-    if page:
+    if page is not None:
         params['page'] = page
-    if page_size:
+    if page_size is not None:
         params['page_size'] = page_size
 
     # Make async call to IAM users endpoint
@@ -275,9 +275,9 @@ async def list_iam_groups(
 
     # Prepare query parameters
     params = {}
-    if page:
+    if page is not None:
         params['page'] = page
-    if page_size:
+    if page_size is not None:
         params['page_size'] = page_size
 
     # Make async call to IAM groups endpoint
@@ -322,9 +322,9 @@ async def create_iam_group(
     # Prepare group data
     group_data: dict[str, Any] = {'name': name}
 
-    if description:
+    if description is not None:
         group_data['description'] = description
-    if permissions:
+    if permissions is not None:
         group_data['permissions'] = permissions
 
     # Make async call to create IAM group
@@ -592,7 +592,13 @@ async def add_iam_member(
         token=token,
         data={'group': group_id, 'user': user_id},
     )
-    return success_response(data=result, group_id=group_id, user_id=user_id, region=region, workspace=workspace)
+    return success_response(
+        data=result,
+        group_id=group_id,
+        user_id=user_id,
+        region=region,
+        workspace=workspace,
+    )
 
 
 @mcp_tool_handler(
@@ -623,7 +629,12 @@ async def remove_iam_member(
         endpoint=f'/api/iam/memberships/{membership_id}/',
         token=token,
     )
-    return success_response(data=result, membership_id=membership_id, region=region, workspace=workspace)
+    return success_response(
+        data=result,
+        membership_id=membership_id,
+        region=region,
+        workspace=workspace,
+    )
 
 
 # ===============================
@@ -643,7 +654,10 @@ async def invite_iam_user(
     region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
-    """Invite an IAM user by email.
+    """Send an invitation email to an existing IAM user.
+
+    The user must already have a record in the system.
+    Use create_iam_user first if the user does not exist yet.
 
     Args:
         user_id: IAM user ID to invite
@@ -885,6 +899,5 @@ async def provision_service_account(
         workspace=workspace,
         endpoint=f'/api/iam/applications/{app_id}/provision-account/',
         token=token,
-        data={},
     )
     return success_response(data=result, app_id=app_id, region=region, workspace=workspace)
