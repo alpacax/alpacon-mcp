@@ -15,7 +15,6 @@ from utils.error_handler import format_validation_error, validate_file_path
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, READ_ONLY
 
-# Error message returned when file transfer tools are called in remote mode.
 _REMOTE_MODE_ERROR = (
     'WebFTP file transfer is not supported in remote mode. '
     'The MCP server cannot access your local filesystem from a remote container. '
