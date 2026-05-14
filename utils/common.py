@@ -86,54 +86,35 @@ def token_error_response(region: str, workspace: str) -> dict[str, Any]:
     )
 
 
-async def handle_api_call(
-    http_client,
-    method: str,
-    region: str,
-    workspace: str,
-    endpoint: str,
-    token: str,
-    **kwargs,
-) -> dict[str, Any]:
-    """Handle API calls with consistent error handling.
+def unwrap_http_result(
+    result: Any,
+    *,
+    default_message: str,
+    **id_context: Any,
+) -> dict[str, Any] | None:
+    """Convert an http_client error-dict into an error_response.
+
+    Returns the error_response dict if `result` is the error envelope produced
+    by `utils.http_client` on 4xx/5xx; otherwise returns None so the caller
+    can wrap the payload with `success_response`.
 
     Args:
-        http_client: HTTP client instance
-        method: HTTP method (get, post, put, delete)
-        region: Region
-        workspace: Workspace name
-        endpoint: API endpoint
-        token: Authentication token
-        **kwargs: Additional arguments for the API call
+        result: Raw value returned by an http_client method.
+        default_message: Fallback message when the upstream response has none.
+        **id_context: Extra identifiers (e.g. note_id, region, workspace) merged
+            into the error response for caller debugging.
 
     Returns:
-        API response or error response
+        error_response dict if result is an error envelope, else None.
     """
-    try:
-        # Get the method function
-        api_method = getattr(http_client, method.lower())
+    if not (isinstance(result, dict) and 'error' in result):
+        return None
 
-        # Make the API call
-        result = await api_method(
-            region=region, workspace=workspace, endpoint=endpoint, token=token, **kwargs
-        )
-
-        # Check for HTTP client errors
-        if isinstance(result, dict) and 'error' in result:
-            error_kwargs: dict[str, Any] = {
-                'region': region,
-                'workspace': workspace,
-            }
-            status_code = result.get('status_code')
-            if status_code is not None:
-                error_kwargs['status_code'] = status_code
-            return error_response(
-                result.get('message', str(result.get('error', 'Unknown error'))),
-                **error_kwargs,
-            )
-
-        return result
-
-    except Exception as e:
-        logger.error(f'API call failed: {e}', exc_info=True)
-        raise
+    error_kwargs: dict[str, Any] = dict(id_context)
+    status_code = result.get('status_code')
+    if status_code is not None:
+        error_kwargs['status_code'] = status_code
+    return error_response(
+        result.get('message', default_message),
+        **error_kwargs,
+    )

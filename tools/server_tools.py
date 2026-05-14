@@ -2,10 +2,11 @@
 
 from typing import Any
 
-from utils.common import error_response, success_response
+from utils.common import error_response, success_response, unwrap_http_result
 from utils.decorators import mcp_tool_handler
+from utils.error_handler import format_validation_error
 from utils.http_client import http_client
-from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, READ_ONLY
+from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ_ONLY
 
 
 @mcp_tool_handler(
@@ -209,6 +210,165 @@ async def create_server_note(
         note_title=title,
         region=region,
         workspace=workspace,
+    )
+
+
+@mcp_tool_handler(
+    description=(
+        'Get detailed information about a specific server note by its ID. '
+        'Returns the note title, content, server, author, timestamps, and privacy settings. '
+        'Use this when you need full details about one note. '
+        'Related: list_server_notes (find note ID first), update_server_note, delete_server_note.'
+    ),
+    annotations=READ_ONLY,
+    meta={'anthropic/searchHint': 'server note detail describe single get'},
+)
+async def get_server_note(
+    note_id: str, workspace: str, region: str = '', **kwargs
+) -> dict[str, Any]:
+    """Get a single server note by ID.
+
+    Args:
+        note_id: Note ID
+        workspace: Workspace name. Required parameter
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
+
+    Returns:
+        Server note detail response
+    """
+    token = kwargs.get('token')
+
+    result = await http_client.get(
+        region=region,
+        workspace=workspace,
+        endpoint=f'/api/servers/notes/{note_id}/',
+        token=token,
+    )
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to get server note details',
+        note_id=note_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
+
+    return success_response(
+        data=result, note_id=note_id, region=region, workspace=workspace
+    )
+
+
+@mcp_tool_handler(
+    description=(
+        'Update an existing server note by its ID. Can change title or content. '
+        'Only the fields you provide will be updated (partial update). '
+        'Related: get_server_note (view existing note), delete_server_note.'
+    ),
+    annotations=IDEMPOTENT_WRITE,
+    meta={'anthropic/searchHint': 'server note update edit modify'},
+)
+async def update_server_note(
+    note_id: str,
+    workspace: str,
+    title: str | None = None,
+    content: str | None = None,
+    region: str = '',
+    **kwargs,
+) -> dict[str, Any]:
+    """Update an existing server note.
+
+    Args:
+        note_id: Note ID
+        workspace: Workspace name. Required parameter
+        title: New title (optional)
+        content: New content (optional)
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
+
+    Returns:
+        Server note update response
+    """
+    token = kwargs.get('token')
+
+    update_data: dict[str, Any] = {}
+    if title is not None:
+        update_data['title'] = title
+    if content is not None:
+        update_data['content'] = content
+
+    if not update_data:
+        return format_validation_error(
+            'title or content',
+            None,
+            'At least one of title or content must be provided.',
+        )
+
+    result = await http_client.patch(
+        region=region,
+        workspace=workspace,
+        endpoint=f'/api/servers/notes/{note_id}/',
+        token=token,
+        data=update_data,
+    )
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to update server note',
+        note_id=note_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
+
+    return success_response(
+        data=result, note_id=note_id, region=region, workspace=workspace
+    )
+
+
+@mcp_tool_handler(
+    description=(
+        'Permanently delete a server note by its ID. This action cannot be undone. '
+        'Use with caution. Related: get_server_note (verify note before deleting), update_server_note.'
+    ),
+    annotations=DESTRUCTIVE,
+    meta={'anthropic/searchHint': 'server note delete remove'},
+)
+async def delete_server_note(
+    note_id: str, workspace: str, region: str = '', **kwargs
+) -> dict[str, Any]:
+    """Delete a server note.
+
+    Args:
+        note_id: Note ID
+        workspace: Workspace name. Required parameter
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
+
+    Returns:
+        Server note delete response
+    """
+    token = kwargs.get('token')
+
+    result = await http_client.delete(
+        region=region,
+        workspace=workspace,
+        endpoint=f'/api/servers/notes/{note_id}/',
+        token=token,
+    )
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to delete server note',
+        note_id=note_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
+
+    return success_response(
+        data=result, note_id=note_id, region=region, workspace=workspace
     )
 
 

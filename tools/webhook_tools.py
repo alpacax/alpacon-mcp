@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from utils.common import error_response, success_response
+from utils.common import error_response, success_response, unwrap_http_result
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ_ONLY
@@ -180,6 +180,53 @@ async def list_webhooks(
     )
 
     return success_response(data=result, region=region, workspace=workspace)
+
+
+@mcp_tool_handler(
+    description=(
+        'Get detailed information about a specific webhook by its ID. '
+        'Returns webhook ID, name, URL, SSL verification setting, enabled status, and owner. '
+        'Use this when you need full details about one webhook rather than the summary list. '
+        'Related: list_webhooks (find webhook ID first), update_webhook, delete_webhook.'
+    ),
+    annotations=READ_ONLY,
+    meta={'anthropic/searchHint': 'webhook detail describe single get'},
+)
+async def get_webhook(
+    webhook_id: str, workspace: str, region: str = '', **kwargs
+) -> dict[str, Any]:
+    """Get a single webhook by ID.
+
+    Args:
+        webhook_id: Webhook ID
+        workspace: Workspace name. Required parameter
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
+
+    Returns:
+        Webhook detail response
+    """
+    token = kwargs.get('token')
+
+    result = await http_client.get(
+        region=region,
+        workspace=workspace,
+        endpoint=f'/api/notifications/webhooks/{webhook_id}/',
+        token=token,
+    )
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to get webhook details',
+        webhook_id=webhook_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
+
+    return success_response(
+        data=result, webhook_id=webhook_id, region=region, workspace=workspace
+    )
 
 
 @mcp_tool_handler(

@@ -5,9 +5,11 @@ Tests workspace management functionality including workspace listing.
 Note: User settings and profile endpoints have been removed from the server.
 """
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
+from tools.workspace_tools import get_current_user
 
 
 @pytest.fixture
@@ -154,6 +156,51 @@ class TestListWorkspaces:
         workspaces = result['data']['workspaces']
         # Should include all workspaces from all regions (3 + 2 + 1 = 6)
         assert len(workspaces) == 6
+
+
+class TestGetCurrentUser:
+    """Test get_current_user function."""
+
+    @pytest.fixture
+    def mock_http_client(self):
+        with patch('tools.workspace_tools.http_client') as mock_client:
+            mock_client.get = AsyncMock()
+            yield mock_client
+
+    @pytest.fixture
+    def mock_token(self):
+        with patch('utils.common.token_manager') as mock_manager:
+            mock_manager.get_token.return_value = 'test-token'
+            yield mock_manager
+
+    @pytest.mark.asyncio
+    async def test_get_current_user_success(self, mock_http_client, mock_token):
+        """Returns current user info from /api/iam/users/-/."""
+        mock_http_client.get.return_value = {
+            'id': 'user-1',
+            'username': 'alice',
+            'email': 'alice@example.com',
+            'role': 'staff',
+        }
+
+        result = await get_current_user(workspace='production', region='ap1')
+
+        assert result['status'] == 'success'
+        assert result['data']['username'] == 'alice'
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='production',
+            endpoint='/api/iam/users/-/',
+            token='test-token',
+        )
+
+    @pytest.mark.asyncio
+    async def test_get_current_user_missing_workspace(self):
+        """Missing workspace returns validation error."""
+        result = await get_current_user(workspace='', region='ap1')
+
+        assert result['status'] == 'error'
+        assert 'workspace' in result['message'].lower()
 
 
 if __name__ == '__main__':

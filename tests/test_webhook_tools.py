@@ -9,6 +9,7 @@ from tools.webhook_tools import (
     create_webhook,
     delete_event_subscription,
     delete_webhook,
+    get_webhook,
     list_event_subscriptions,
     list_webhooks,
     update_webhook,
@@ -232,6 +233,33 @@ class TestWebhooks:
         assert result['status'] == 'success'
         assert result['webhook_id'] == 'wh-1'
         mock_http_client.delete.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/notifications/webhooks/wh-1/',
+            token='test-token',
+        )
+
+
+class TestGetWebhook:
+    """Test get_webhook function."""
+
+    @pytest.mark.asyncio
+    async def test_get_webhook_success(self, mock_http_client, mock_token_manager):
+        """Returns single webhook detail by ID."""
+        mock_http_client.get.return_value = {
+            'id': 'wh-1',
+            'name': 'deploy-hook',
+            'url': 'https://example.com/hook',
+            'enabled': True,
+        }
+
+        result = await get_webhook(
+            webhook_id='wh-1', workspace='testworkspace', region='ap1'
+        )
+
+        assert result['status'] == 'success'
+        assert result['data']['id'] == 'wh-1'
+        mock_http_client.get.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
             endpoint='/api/notifications/webhooks/wh-1/',

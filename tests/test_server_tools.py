@@ -10,9 +10,12 @@ import pytest
 
 from tools.server_tools import (
     create_server_note,
+    delete_server_note,
     get_server,
+    get_server_note,
     list_server_notes,
     list_servers,
+    update_server_note,
 )
 
 
@@ -433,6 +436,110 @@ class TestRegionHandling:
             region='dev',
             workspace='testworkspace',
             endpoint='/api/servers/servers/',
+            token='test-token',
+        )
+
+
+class TestServerNoteCRUD:
+    """Tests for get_server_note, update_server_note, delete_server_note."""
+
+    @pytest.mark.asyncio
+    async def test_get_server_note_success(self, mock_http_client, mock_token_manager):
+        """Returns single note detail by ID."""
+        mock_http_client.get.return_value = {
+            'id': 'note-1',
+            'title': 'Maintenance',
+            'content': 'Sundays 2 AM UTC',
+        }
+
+        result = await get_server_note(
+            note_id='note-1', workspace='testworkspace', region='ap1'
+        )
+
+        assert result['status'] == 'success'
+        assert result['data']['id'] == 'note-1'
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/servers/notes/note-1/',
+            token='test-token',
+        )
+
+    @pytest.mark.asyncio
+    async def test_update_server_note_success(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Updates fields and returns updated note."""
+        mock_http_client.patch.return_value = {
+            'id': 'note-1',
+            'title': 'New title',
+            'content': 'New content',
+        }
+
+        result = await update_server_note(
+            note_id='note-1',
+            workspace='testworkspace',
+            region='ap1',
+            title='New title',
+            content='New content',
+        )
+
+        assert result['status'] == 'success'
+        mock_http_client.patch.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/servers/notes/note-1/',
+            token='test-token',
+            data={'title': 'New title', 'content': 'New content'},
+        )
+
+    @pytest.mark.asyncio
+    async def test_update_server_note_no_fields_returns_error(
+        self, mock_http_client, mock_token_manager
+    ):
+        """No update fields returns validation error and no API call."""
+        result = await update_server_note(
+            note_id='note-1', workspace='testworkspace', region='ap1'
+        )
+
+        assert result['status'] == 'error'
+        assert result.get('error_code') == 'validation'
+        assert result.get('field') == 'title or content'
+        mock_http_client.patch.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_update_server_note_partial(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Only non-None fields are sent in PATCH body."""
+        mock_http_client.patch.return_value = {'id': 'note-1', 'title': 'Only title'}
+
+        await update_server_note(
+            note_id='note-1',
+            workspace='testworkspace',
+            region='ap1',
+            title='Only title',
+        )
+
+        _, kwargs = mock_http_client.patch.call_args
+        assert kwargs['data'] == {'title': 'Only title'}
+
+    @pytest.mark.asyncio
+    async def test_delete_server_note_success(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Deletes note by ID."""
+        mock_http_client.delete.return_value = {}
+
+        result = await delete_server_note(
+            note_id='note-1', workspace='testworkspace', region='ap1'
+        )
+
+        assert result['status'] == 'success'
+        mock_http_client.delete.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/servers/notes/note-1/',
             token='test-token',
         )
 

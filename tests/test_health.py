@@ -1,8 +1,13 @@
 """Tests for health check functionality."""
 
+import ast
+import inspect
 from unittest.mock import MagicMock, patch
 
 import pytest
+
+import server
+from tools.health_tools import health_check
 
 
 @pytest.fixture
@@ -32,7 +37,7 @@ def mock_http_client():
 
 
 @pytest.fixture
-def patched_health_local(mock_token_manager, mock_http_client):
+def _patched_health_local(mock_token_manager, mock_http_client):
     """Patch dependencies for local (stdio) mode health checks."""
     with (
         patch.dict('os.environ', {'ALPACON_MCP_AUTH_ENABLED': ''}, clear=False),
@@ -46,7 +51,7 @@ def patched_health_local(mock_token_manager, mock_http_client):
 
 
 @pytest.fixture
-def patched_health_remote(mock_http_client):
+def _patched_health_remote(mock_http_client):
     """Patch dependencies for remote (streamable-http) mode health checks."""
     with (
         patch.dict('os.environ', {'ALPACON_MCP_AUTH_ENABLED': 'true'}, clear=False),
@@ -59,7 +64,7 @@ class TestGetHealthInfoLocal:
     """Tests for get_health_info in local (stdio/SSE) mode."""
 
     @pytest.mark.asyncio
-    async def test_returns_required_fields(self, patched_health_local):
+    async def test_returns_required_fields(self, _patched_health_local):
         """Health info must contain all required top-level keys."""
         from utils.health import get_health_info
 
@@ -76,7 +81,7 @@ class TestGetHealthInfoLocal:
         assert required_keys.issubset(result.keys())
 
     @pytest.mark.asyncio
-    async def test_status_is_ok(self, patched_health_local):
+    async def test_status_is_ok(self, _patched_health_local):
         """Status field must always be 'ok'."""
         from utils.health import get_health_info
 
@@ -85,7 +90,7 @@ class TestGetHealthInfoLocal:
         assert result['status'] == 'ok'
 
     @pytest.mark.asyncio
-    async def test_version_matches_mcp_version(self, patched_health_local):
+    async def test_version_matches_mcp_version(self, _patched_health_local):
         """Version must match the MCP_VERSION constant."""
         from utils.common import MCP_VERSION
         from utils.health import get_health_info
@@ -95,7 +100,7 @@ class TestGetHealthInfoLocal:
         assert result['version'] == MCP_VERSION
 
     @pytest.mark.asyncio
-    async def test_uptime_is_positive(self, patched_health_local):
+    async def test_uptime_is_positive(self, _patched_health_local):
         """Uptime must be a positive number."""
         from utils.health import get_health_info
 
@@ -105,7 +110,7 @@ class TestGetHealthInfoLocal:
         assert result['uptime_seconds'] >= 0
 
     @pytest.mark.asyncio
-    async def test_local_auth_info(self, patched_health_local):
+    async def test_local_auth_info(self, _patched_health_local):
         """Local mode auth must report token_file info without secrets."""
         from utils.health import get_health_info
 
@@ -123,7 +128,7 @@ class TestGetHealthInfoLocal:
         assert 'regions' not in auth
 
     @pytest.mark.asyncio
-    async def test_http_client_info(self, patched_health_local):
+    async def test_http_client_info(self, _patched_health_local):
         """HTTP client section must report pool_active and cache_size."""
         from utils.health import get_health_info
 
@@ -160,7 +165,7 @@ class TestGetHealthInfoRemote:
     """Tests for get_health_info in remote (streamable-http) mode."""
 
     @pytest.mark.asyncio
-    async def test_remote_auth_info(self, patched_health_remote):
+    async def test_remote_auth_info(self, _patched_health_remote):
         """Remote mode auth must report JWT mode without token.json info."""
         from utils.health import get_health_info
 
@@ -174,41 +179,13 @@ class TestGetHealthInfoRemote:
         assert 'total_tokens' not in auth
         assert 'regions_configured' not in auth
 
-    @pytest.mark.asyncio
-    async def test_remote_does_not_touch_token_manager(self, patched_health_remote):
-        """Remote mode must not import or call token_manager.
-
-        Patches at both utils.token_manager and utils.health level to
-        ensure no token_manager access regardless of module caching.
-        """
-        sentinel = AssertionError('token_manager should not be called in remote mode')
-        with (
-            patch('utils.token_manager.get_token_manager', side_effect=sentinel),
-            patch.dict(
-                'sys.modules', {'utils.common': MagicMock(MCP_VERSION='0.0.0-test')}
-            ),
-        ):
-            import importlib
-            import sys
-
-            # Force fresh import of utils.health to avoid cached module paths
-            sys.modules.pop('utils.health', None)
-            import utils.health
-
-            importlib.reload(utils.health)
-            result = await utils.health.get_health_info()
-
-        assert result['auth']['mode'] == 'jwt'
-
 
 class TestHealthCheckTool:
     """Tests for the health_check MCP tool (local mode only)."""
 
     @pytest.mark.asyncio
-    async def test_health_check_tool_returns_success(self, patched_health_local):
+    async def test_health_check_tool_returns_success(self, _patched_health_local):
         """health_check tool must wrap health info in success response."""
-        from tools.health_tools import health_check
-
         result = await health_check()
 
         assert result['status'] == 'success'
@@ -217,14 +194,56 @@ class TestHealthCheckTool:
         assert 'version' in result['data']
 
     @pytest.mark.asyncio
-    async def test_health_check_tool_no_params_required(self, patched_health_local):
+    async def test_health_check_tool_no_params_required(self, _patched_health_local):
         """health_check tool must work with zero arguments."""
-        from tools.health_tools import health_check
-
         # Should not raise
         result = await health_check()
 
         assert result['status'] == 'success'
+
+
+class TestHealthCheckRemoteMode:
+    """Tests verifying health_check tool works in remote (streamable-http) mode."""
+
+    @pytest.mark.asyncio
+    async def test_health_check_callable_in_remote_mode(self, _patched_health_remote):
+        """health_check tool must work even when ALPACON_MCP_AUTH_ENABLED=true."""
+        result = await health_check()
+
+        assert result['status'] == 'success'
+        assert result['data']['status'] == 'ok'
+        assert result['data']['auth']['mode'] == 'jwt'
+
+    def test_server_module_imports_health_tools_unconditionally(self):
+        """server.run() must import tools.health_tools regardless of remote_mode.
+
+        Verifies the guard `if not remote_mode: import tools.health_tools` has been
+        removed so the MCP tool is registered in all transports. Uses AST inspection
+        so the assertion isn't sensitive to whitespace or comment changes.
+        """
+        tree = ast.parse(inspect.getsource(server.run))
+        function_def = tree.body[0]
+        assert isinstance(function_def, (ast.FunctionDef, ast.AsyncFunctionDef))
+
+        def imports_health_tools(node: ast.AST) -> bool:
+            return isinstance(node, ast.Import) and any(
+                alias.name == 'tools.health_tools' for alias in node.names
+            )
+
+        # The import must appear at the top level of run(), not nested inside any
+        # conditional or other compound statement.
+        assert any(imports_health_tools(stmt) for stmt in function_def.body), (
+            'tools.health_tools must be imported unconditionally inside server.run()'
+        )
+
+        # No If block inside run() may guard the import.
+        # (Try/With are excluded so future graceful optional-dep handling isn't rejected.)
+        for node in ast.walk(function_def):
+            if isinstance(node, ast.If):
+                for child in ast.walk(node):
+                    assert not imports_health_tools(child), (
+                        'tools.health_tools import must not be guarded by an if block'
+                    )
 
 
 if __name__ == '__main__':

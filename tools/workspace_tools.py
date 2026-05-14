@@ -5,7 +5,10 @@ from typing import Any
 from mcp.types import ToolAnnotations
 
 from server import mcp
-from utils.common import success_response
+from utils.common import error_response, success_response, unwrap_http_result
+from utils.decorators import mcp_tool_handler
+from utils.http_client import http_client
+from utils.tool_annotations import READ_ONLY
 
 
 def _collect_workspaces_from_tokens(
@@ -82,8 +85,6 @@ async def list_workspaces(region: str = '') -> dict[str, Any]:
     if _is_auth_enabled():
         jwt_token = _get_jwt_token()
         if not jwt_token:
-            from utils.common import error_response
-
             return error_response(
                 'Authentication required. No JWT token found in request context.'
             )
@@ -130,15 +131,46 @@ async def list_workspaces(region: str = '') -> dict[str, Any]:
     )
 
 
-# ===============================
-# NOTE: User settings and profile endpoints are not implemented in the server
-# The following functions have been removed:
-# - get_user_settings (was using /api/user/settings/)
-# - update_user_settings (was using /api/user/settings/)
-# - get_user_profile (was using /api/user/profile/)
-#
-# Alternative endpoints available in the server:
-# - /api/profiles/preferences/ (profiles app)
-# - /api/workspaces/preferences/ (workspaces app)
-# - /api/auth0/users/ (auth0 app)
-# ===============================
+@mcp_tool_handler(
+    description=(
+        'Get the current authenticated user info (username, email, role, UID, shell, home directory). '
+        'Returns info about the user authenticated for this call. '
+        'Use this to verify identity before performing privileged actions. '
+        'Related: list_workspaces (find configured workspaces).'
+    ),
+    annotations=READ_ONLY,
+    meta={
+        'anthropic/searchHint': 'whoami current user identity me authenticated principal',
+    },
+)
+async def get_current_user(
+    workspace: str, region: str = '', **kwargs
+) -> dict[str, Any]:
+    """Get the currently authenticated user.
+
+    Args:
+        workspace: Workspace name. Required parameter
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
+
+    Returns:
+        Current user info response
+    """
+    token = kwargs.get('token')
+
+    result = await http_client.get(
+        region=region,
+        workspace=workspace,
+        endpoint='/api/iam/users/-/',
+        token=token,
+    )
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to get current user',
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
+
+    return success_response(data=result, region=region, workspace=workspace)
