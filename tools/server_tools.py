@@ -645,6 +645,26 @@ async def shutdown_system(
 VALID_PLATFORMS = frozenset({'debian', 'rhel', 'darwin', 'windows'})
 
 
+def _validate_platform(platform: str) -> dict[str, Any] | None:
+    if platform not in VALID_PLATFORMS:
+        return format_validation_error(
+            'platform',
+            platform,
+            f'Must be one of: {", ".join(sorted(VALID_PLATFORMS))}',
+        )
+    return None
+
+
+def _validate_token_id(token_id: str) -> dict[str, Any] | None:
+    if not validate_server_id_format(token_id):
+        return format_validation_error(
+            'token_id',
+            token_id,
+            'Must be a valid UUID. Example: 550e8400-e29b-41d4-a716-446655440000',
+        )
+    return None
+
+
 @mcp_tool_handler(
     description=(
         'Create a new server record in a workspace. '
@@ -677,12 +697,9 @@ async def create_server(
     """
     token = kwargs.get('token')
 
-    if platform not in VALID_PLATFORMS:
-        return format_validation_error(
-            'platform',
-            platform,
-            f'Must be one of: {", ".join(sorted(VALID_PLATFORMS))}',
-        )
+    err = _validate_platform(platform)
+    if err:
+        return err
 
     data: dict[str, Any] = {'name': name, 'platform': platform}
     if description is not None:
@@ -1097,12 +1114,9 @@ async def delete_registration_token(
     """
     token = kwargs.get('token')
 
-    if not validate_server_id_format(token_id):
-        return format_validation_error(
-            'token_id',
-            token_id,
-            'Must be a valid UUID. Example: 550e8400-e29b-41d4-a716-446655440000',
-        )
+    err = _validate_token_id(token_id)
+    if err:
+        return err
 
     result = await http_client.delete(
         region=region,
@@ -1155,18 +1169,12 @@ async def get_registration_guide(
     """
     token = kwargs.get('token')
 
-    if not validate_server_id_format(token_id):
-        return format_validation_error(
-            'token_id',
-            token_id,
-            'Must be a valid UUID. Example: 550e8400-e29b-41d4-a716-446655440000',
-        )
-    if platform not in VALID_PLATFORMS:
-        return format_validation_error(
-            'platform',
-            platform,
-            f'Must be one of: {", ".join(sorted(VALID_PLATFORMS))}',
-        )
+    err = _validate_token_id(token_id)
+    if err:
+        return err
+    err = _validate_platform(platform)
+    if err:
+        return err
 
     data: dict[str, Any] = {'platform': platform, 'token': token_id}
     if server_name is not None:
