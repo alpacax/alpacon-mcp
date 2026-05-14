@@ -190,11 +190,12 @@ async def _download_remote_mode(
                 return error_response(
                     f'Server failed to process download: {status.get("message", "unknown error")}',
                     file_id=file_id,
+                    code='download_failed',
                 )
         else:
             return error_response(
                 f'Download timed out waiting for server. '
-                f'Use webftp_check_status("{file_id}", "download") to poll manually.',
+                f'Use webftp_check_status("{file_id}", "download", workspace="{workspace}", region="{region}") to poll manually.',
                 file_id=file_id,
                 code='download_timeout',
             )
