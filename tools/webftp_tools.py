@@ -6,7 +6,7 @@ import binascii
 import os
 from http import HTTPStatus
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import httpx
 
@@ -175,10 +175,8 @@ async def _download_remote_mode(
     download_url = result.get('download_url')
 
     if not download_url:
-        elapsed = 0
-        while elapsed < _REMOTE_DOWNLOAD_TIMEOUT:
+        for _ in range(_REMOTE_DOWNLOAD_TIMEOUT):
             await asyncio.sleep(1)
-            elapsed += 1
             status = await http_client.get(
                 region=region,
                 workspace=workspace,
@@ -383,7 +381,7 @@ async def webftp_upload_file(
     )
 
     # Step 4: Upload file content to S3 using presigned URL
-    if 'upload_url' in result and result['upload_url']:
+    if result.get('upload_url'):
         err = await _upload_bytes_to_s3(result['upload_url'], file_content)
         if err:
             return error_response(err, upload_url=result['upload_url'])
@@ -404,7 +402,7 @@ async def webftp_upload_file(
             local_file_path=local_file_path,
             remote_file_path=remote_file_path,
             file_size=len(file_content),
-            upload_url=result.get('upload_url'),
+            upload_url=result['upload_url'],
             download_url=result.get('download_url'),
             region=region,
             workspace=workspace,
@@ -489,7 +487,7 @@ async def webftp_upload_content(
         data=upload_data,
     )
 
-    if 'upload_url' in result and result['upload_url']:
+    if result.get('upload_url'):
         err = await _upload_bytes_to_s3(result['upload_url'], raw_bytes)
         if err:
             return error_response(err, upload_url=result['upload_url'])
@@ -508,7 +506,7 @@ async def webftp_upload_content(
             server_id=server_id,
             remote_file_path=remote_file_path,
             file_size=len(raw_bytes),
-            upload_url=result.get('upload_url'),
+            upload_url=result['upload_url'],
             region=region,
             workspace=workspace,
         )
@@ -570,9 +568,10 @@ async def webftp_download_file(
     """
     token = kwargs.get('token')
 
+    if not validate_file_path(remote_file_path):
+        return format_validation_error('remote_file_path', remote_file_path)
+
     if _is_auth_enabled():
-        if not validate_file_path(remote_file_path):
-            return format_validation_error('remote_file_path', remote_file_path)
         return await _download_remote_mode(
             server_id=server_id,
             remote_file_path=remote_file_path,
@@ -583,9 +582,6 @@ async def webftp_download_file(
             token=token or '',
         )
 
-    # Validate file paths
-    if not validate_file_path(remote_file_path):
-        return format_validation_error('remote_file_path', remote_file_path)
     if local_file_path is None:
         return error_response('local_file_path is required in local mode')
     if not validate_file_path(local_file_path):
@@ -617,11 +613,11 @@ async def webftp_download_file(
     )
 
     # Step 3: Download file content from S3 using presigned URL
-    if 'download_url' in result and result['download_url']:
-        # local_file_path is guaranteed non-None by the guard above
-        local_path: str = local_file_path  # type: ignore[assignment]
+    if result.get('download_url'):
         try:
-            file_size = await _stream_s3_to_file(result['download_url'], local_path)
+            file_size = await _stream_s3_to_file(
+                result['download_url'], cast(str, local_file_path)
+            )
         except _S3DownloadError as e:
             return error_response(
                 f'Failed to download from S3: {e}',
