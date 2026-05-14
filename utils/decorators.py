@@ -357,6 +357,7 @@ def with_error_handling(func: Callable) -> Callable:
     1. Wraps the function in try-except
     2. Logs errors with context
     3. Returns standardized error responses
+    4. Enriches error responses with recovery hints for LLM self-recovery
 
     Args:
         func: The async function to decorate
@@ -367,12 +368,19 @@ def with_error_handling(func: Callable) -> Callable:
 
     @wraps(func)
     async def wrapper(*args, **kwargs):
+        from utils.recovery_hints import enrich_error_response
+
         # Extract function name for logging
         func_name = func.__name__
 
         try:
             # Call the original function
             result = await func(*args, **kwargs)
+
+            # Enrich error responses with recovery hints
+            if isinstance(result, dict):
+                result = enrich_error_response(result, tool_name=func_name)
+
             return result
 
         except UpstreamAuthError:
@@ -395,10 +403,11 @@ def with_error_handling(func: Callable) -> Callable:
                 f'{func_name} failed for {workspace}.{region}: {e}', exc_info=True
             )
 
-            # Return standardized error response
-            return error_response(
+            # Return standardized error response with recovery hints
+            resp = error_response(
                 f'Failed in {func_name}: {str(e)}', workspace=workspace, region=region
             )
+            return enrich_error_response(resp, tool_name=func_name)
 
     return wrapper
 
