@@ -228,6 +228,21 @@ class TestBulkServerAcl:
             data={'action': 'remove', 'acls': acl_entries},
         )
 
+    @pytest.mark.asyncio
+    async def test_bulk_server_acl_invalid_action_returns_error(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Test that an invalid action returns an error without calling the API."""
+        result = await bulk_server_acl(
+            workspace='testworkspace',
+            action='delete',
+            acl_list=[{'id': 'acl-1'}],
+            region='ap1',
+        )
+
+        assert result['status'] == 'error'
+        mock_http_client.post.assert_not_called()
+
 
 class TestUpdateFileAcl:
     """Test update_file_acl tool."""
