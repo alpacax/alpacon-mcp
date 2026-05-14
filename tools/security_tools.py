@@ -7,6 +7,31 @@ from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ_ONLY
 
+def _build_acl_patch_data(
+    effect: str | None,
+    users: list[str] | None,
+    groups: list[str] | None,
+    servers: list[str] | None,
+    description: str | None,
+    priority: int | None,
+) -> dict[str, Any]:
+    """Build partial-update payload for any ACL type from the six shared fields."""
+    data: dict[str, Any] = {}
+    if effect is not None:
+        data['effect'] = effect
+    if users is not None:
+        data['users'] = users
+    if groups is not None:
+        data['groups'] = groups
+    if servers is not None:
+        data['servers'] = servers
+    if description is not None:
+        data['description'] = description
+    if priority is not None:
+        data['priority'] = priority
+    return data
+
+
 # ===============================
 # COMMAND ACL TOOLS
 # ===============================
@@ -153,21 +178,9 @@ async def update_command_acl(
     """
     token = kwargs.get('token')
 
-    update_data: dict[str, Any] = {}
-    if effect is not None:
-        update_data['effect'] = effect
+    update_data = _build_acl_patch_data(effect, users, groups, servers, description, priority)
     if command_pattern is not None:
         update_data['command_pattern'] = command_pattern
-    if users is not None:
-        update_data['users'] = users
-    if groups is not None:
-        update_data['groups'] = groups
-    if servers is not None:
-        update_data['servers'] = servers
-    if description is not None:
-        update_data['description'] = description
-    if priority is not None:
-        update_data['priority'] = priority
 
     if not update_data:
         return error_response('No update data provided')
@@ -356,19 +369,7 @@ async def update_server_acl(
     """
     token = kwargs.get('token')
 
-    update_data: dict[str, Any] = {}
-    if effect is not None:
-        update_data['effect'] = effect
-    if users is not None:
-        update_data['users'] = users
-    if groups is not None:
-        update_data['groups'] = groups
-    if servers is not None:
-        update_data['servers'] = servers
-    if description is not None:
-        update_data['description'] = description
-    if priority is not None:
-        update_data['priority'] = priority
+    update_data = _build_acl_patch_data(effect, users, groups, servers, description, priority)
 
     if not update_data:
         return error_response('No update data provided')
@@ -605,21 +606,9 @@ async def update_file_acl(
     """
     token = kwargs.get('token')
 
-    update_data: dict[str, Any] = {}
-    if effect is not None:
-        update_data['effect'] = effect
+    update_data = _build_acl_patch_data(effect, users, groups, servers, description, priority)
     if file_pattern is not None:
         update_data['file_pattern'] = file_pattern
-    if users is not None:
-        update_data['users'] = users
-    if groups is not None:
-        update_data['groups'] = groups
-    if servers is not None:
-        update_data['servers'] = servers
-    if description is not None:
-        update_data['description'] = description
-    if priority is not None:
-        update_data['priority'] = priority
 
     if not update_data:
         return error_response('No update data provided')
