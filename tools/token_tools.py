@@ -2,8 +2,9 @@
 
 from typing import Any
 
-from utils.common import success_response
+from utils.common import error_response, success_response
 from utils.decorators import mcp_tool_handler
+from utils.error_handler import validate_server_id_format
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, READ_ONLY
 
@@ -119,6 +120,11 @@ async def delete_api_token(
     """
     token = kwargs.get('token')
 
+    if not validate_server_id_format(token_id):
+        return error_response(
+            f"Invalid token_id format: '{token_id}'. Must be a valid UUID."
+        )
+
     result = await http_client.delete(
         region=region,
         workspace=workspace,
@@ -141,6 +147,10 @@ async def duplicate_api_token(
 ) -> dict[str, Any]:
     """Duplicate an API token.
 
+    No additional parameters are accepted for duplication; the new token
+    inherits all configuration (name, scopes, description, expiry) from
+    the source token.
+
     Args:
         token_id: ID of the API token to duplicate
         workspace: Workspace name. Required parameter
@@ -150,6 +160,11 @@ async def duplicate_api_token(
         Duplicated API token response
     """
     token = kwargs.get('token')
+
+    if not validate_server_id_format(token_id):
+        return error_response(
+            f"Invalid token_id format: '{token_id}'. Must be a valid UUID."
+        )
 
     result = await http_client.post(
         region=region,

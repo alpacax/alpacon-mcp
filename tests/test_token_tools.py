@@ -165,14 +165,14 @@ class TestDeleteApiToken:
         mock_http_client.delete.return_value = {}
 
         result = await delete_api_token(
-            token_id='tok-123', workspace='testworkspace', region='ap1'
+            token_id='550e8400-e29b-41d4-a716-446655440001', workspace='testworkspace', region='ap1'
         )
 
         assert result['status'] == 'success'
         mock_http_client.delete.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/apitoken/tokens/tok-123/',
+            endpoint='/api/apitoken/tokens/550e8400-e29b-41d4-a716-446655440001/',
             token='test-token',
         )
 
@@ -184,11 +184,34 @@ class TestDeleteApiToken:
         mock_http_client.delete.return_value = {}
 
         result = await delete_api_token(
-            token_id='tok-abc', workspace='testworkspace', region='ap1'
+            token_id='550e8400-e29b-41d4-a716-446655440002', workspace='testworkspace', region='ap1'
         )
 
         assert result['status'] == 'success'
-        assert result['token_id'] == 'tok-abc'
+        assert result['token_id'] == '550e8400-e29b-41d4-a716-446655440002'
+
+    @pytest.mark.asyncio
+    async def test_delete_api_token_invalid_token_id(self, mock_http_client, mock_token_manager):
+        """Test that delete_api_token returns error for non-UUID token_id."""
+        result = await delete_api_token(
+            token_id='not-a-uuid', workspace='testworkspace', region='ap1'
+        )
+
+        assert result['status'] == 'error'
+        mock_http_client.delete.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_delete_api_token_http_exception(self, mock_http_client, mock_token_manager):
+        """Test that delete_api_token returns error when http_client raises an exception."""
+        mock_http_client.delete.side_effect = Exception('Network failure')
+
+        result = await delete_api_token(
+            token_id='550e8400-e29b-41d4-a716-446655440000',
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert result['status'] == 'error'
 
 
 class TestDuplicateApiToken:
@@ -204,7 +227,7 @@ class TestDuplicateApiToken:
         }
 
         result = await duplicate_api_token(
-            token_id='tok-original', workspace='testworkspace', region='ap1'
+            token_id='550e8400-e29b-41d4-a716-446655440003', workspace='testworkspace', region='ap1'
         )
 
         assert result['status'] == 'success'
@@ -212,7 +235,7 @@ class TestDuplicateApiToken:
         mock_http_client.post.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/apitoken/tokens/tok-original/duplicate/',
+            endpoint='/api/apitoken/tokens/550e8400-e29b-41d4-a716-446655440003/duplicate/',
             token='test-token',
             data={},
         )
@@ -225,11 +248,34 @@ class TestDuplicateApiToken:
         mock_http_client.post.return_value = {'id': 'tok-dup', 'name': 'Token (copy)'}
 
         result = await duplicate_api_token(
-            token_id='tok-source', workspace='testworkspace', region='ap1'
+            token_id='550e8400-e29b-41d4-a716-446655440004', workspace='testworkspace', region='ap1'
         )
 
         assert result['status'] == 'success'
-        assert result['token_id'] == 'tok-source'
+        assert result['token_id'] == '550e8400-e29b-41d4-a716-446655440004'
+
+    @pytest.mark.asyncio
+    async def test_duplicate_api_token_invalid_token_id(self, mock_http_client, mock_token_manager):
+        """Test that duplicate_api_token returns error for non-UUID token_id."""
+        result = await duplicate_api_token(
+            token_id='not-a-uuid', workspace='testworkspace', region='ap1'
+        )
+
+        assert result['status'] == 'error'
+        mock_http_client.post.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_duplicate_api_token_http_exception(self, mock_http_client, mock_token_manager):
+        """Test that duplicate_api_token returns error when http_client raises an exception."""
+        mock_http_client.post.side_effect = Exception('Network failure')
+
+        result = await duplicate_api_token(
+            token_id='550e8400-e29b-41d4-a716-446655440000',
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert result['status'] == 'error'
 
 
 class TestListApiTokenScopes:
