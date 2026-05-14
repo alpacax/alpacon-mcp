@@ -636,3 +636,420 @@ async def shutdown_system(
     return success_response(
         data=result, server_id=server_id, region=region, workspace=workspace
     )
+
+
+# ===============================
+# SERVER CRUD TOOLS
+# ===============================
+
+
+@mcp_tool_handler(
+    description=(
+        'Create a new server record in a workspace. '
+        'The platform must be one of: "debian", "rhel", "darwin", "windows". '
+        'After creation, use get_registration_guide to get the agent installation instructions. '
+        'Related: list_servers (view after creation), delete_server.'
+    ),
+    annotations=ADDITIVE,
+    meta={'anthropic/searchHint': 'server create add new register'},
+)
+async def create_server(
+    workspace: str,
+    name: str,
+    platform: str,
+    description: str | None = None,
+    region: str = '',
+    **kwargs,
+) -> dict[str, Any]:
+    """Create a new server in the workspace.
+
+    Args:
+        workspace: Workspace name. Required parameter
+        name: Server name
+        platform: Server platform ("debian" | "rhel" | "darwin" | "windows")
+        description: Optional server description
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
+
+    Returns:
+        Created server data
+    """
+    token = kwargs.get('token')
+
+    data: dict[str, Any] = {'name': name, 'platform': platform}
+    if description is not None:
+        data['description'] = description
+
+    result = await http_client.post(
+        region=region,
+        workspace=workspace,
+        endpoint='/api/servers/servers/',
+        token=token,
+        data=data,
+    )
+
+    return success_response(data=result, region=region, workspace=workspace)
+
+
+@mcp_tool_handler(
+    description=(
+        'Update an existing server record by its UUID. '
+        'Supports partial updates: only fields you provide will be changed. '
+        'Related: get_server (view current state), delete_server.'
+    ),
+    annotations=IDEMPOTENT_WRITE,
+    meta={'anthropic/searchHint': 'server update edit modify rename'},
+)
+async def update_server(
+    server_id: str,
+    workspace: str,
+    name: str | None = None,
+    description: str | None = None,
+    region: str = '',
+    **kwargs,
+) -> dict[str, Any]:
+    """Update an existing server record.
+
+    Args:
+        server_id: Server UUID
+        workspace: Workspace name. Required parameter
+        name: New server name (optional)
+        description: New server description (optional)
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
+
+    Returns:
+        Updated server data
+    """
+    token = kwargs.get('token')
+
+    update_data: dict[str, Any] = {}
+    if name is not None:
+        update_data['name'] = name
+    if description is not None:
+        update_data['description'] = description
+
+    result = await http_client.patch(
+        region=region,
+        workspace=workspace,
+        endpoint=f'/api/servers/servers/{server_id}/',
+        token=token,
+        data=update_data,
+    )
+
+    return success_response(
+        data=result, server_id=server_id, region=region, workspace=workspace
+    )
+
+
+@mcp_tool_handler(
+    description=(
+        'Permanently delete a server record from the workspace by its UUID. '
+        'This action cannot be undone. The server will be removed from all listings. '
+        'Related: list_servers (find server UUID first), get_server (confirm before deleting).'
+    ),
+    annotations=DESTRUCTIVE,
+    meta={'anthropic/searchHint': 'server delete remove permanently'},
+)
+async def delete_server(
+    server_id: str, workspace: str, region: str = '', **kwargs
+) -> dict[str, Any]:
+    """Delete a server from the workspace.
+
+    Args:
+        server_id: Server UUID
+        workspace: Workspace name. Required parameter
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
+
+    Returns:
+        Deletion confirmation
+    """
+    token = kwargs.get('token')
+
+    result = await http_client.delete(
+        region=region,
+        workspace=workspace,
+        endpoint=f'/api/servers/servers/{server_id}/',
+        token=token,
+    )
+
+    return success_response(
+        data=result, server_id=server_id, region=region, workspace=workspace
+    )
+
+
+@mcp_tool_handler(
+    description=(
+        'Toggle the starred/favorite status of a server. '
+        'Starred servers can be quickly accessed in the workspace dashboard. '
+        'Related: list_servers, get_server.'
+    ),
+    annotations=IDEMPOTENT_WRITE,
+    meta={'anthropic/searchHint': 'server star favorite bookmark'},
+)
+async def star_server(
+    server_id: str, workspace: str, region: str = '', **kwargs
+) -> dict[str, Any]:
+    """Toggle star status on a server.
+
+    Args:
+        server_id: Server UUID
+        workspace: Workspace name. Required parameter
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
+
+    Returns:
+        Star toggle response
+    """
+    token = kwargs.get('token')
+
+    result = await http_client.post(
+        region=region,
+        workspace=workspace,
+        endpoint=f'/api/servers/servers/{server_id}/star/',
+        token=token,
+        data={},
+    )
+
+    return success_response(
+        data=result, server_id=server_id, region=region, workspace=workspace
+    )
+
+
+@mcp_tool_handler(
+    description=(
+        'Get the sync status of a server, showing whether the agent data is up to date with the platform. '
+        'Use this to check if a server is in sync after configuration changes. '
+        'Related: update_information (trigger a resync), get_server.'
+    ),
+    annotations=READ_ONLY,
+    meta={'anthropic/searchHint': 'server sync status check drift'},
+)
+async def get_server_sync(
+    server_id: str, workspace: str, region: str = '', **kwargs
+) -> dict[str, Any]:
+    """Get sync status for a server.
+
+    Args:
+        server_id: Server UUID
+        workspace: Workspace name. Required parameter
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
+
+    Returns:
+        Server sync status
+    """
+    token = kwargs.get('token')
+
+    result = await http_client.get(
+        region=region,
+        workspace=workspace,
+        endpoint=f'/api/servers/servers/{server_id}/sync/',
+        token=token,
+    )
+
+    return success_response(
+        data=result, server_id=server_id, region=region, workspace=workspace
+    )
+
+
+@mcp_tool_handler(
+    description=(
+        'Get the access policy for a server, showing which users and groups have access and what permissions they hold. '
+        'Related: list_server_acls (command ACLs), list_servers.'
+    ),
+    annotations=READ_ONLY,
+    meta={'anthropic/searchHint': 'server access policy permissions who can access'},
+)
+async def get_server_access_policy(
+    server_id: str, workspace: str, region: str = '', **kwargs
+) -> dict[str, Any]:
+    """Get the access policy for a server.
+
+    Args:
+        server_id: Server UUID
+        workspace: Workspace name. Required parameter
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
+
+    Returns:
+        Server access policy
+    """
+    token = kwargs.get('token')
+
+    result = await http_client.get(
+        region=region,
+        workspace=workspace,
+        endpoint=f'/api/servers/servers/{server_id}/access-policy/',
+        token=token,
+    )
+
+    return success_response(
+        data=result, server_id=server_id, region=region, workspace=workspace
+    )
+
+
+# ===============================
+# REGISTRATION TOKEN TOOLS
+# ===============================
+
+
+@mcp_tool_handler(
+    description=(
+        'List all server registration tokens in a workspace. '
+        'Registration tokens are used to install the Alpacon agent on new servers. '
+        'Related: create_registration_token, delete_registration_token, get_registration_guide.'
+    ),
+    annotations=READ_ONLY,
+    meta={'anthropic/searchHint': 'registration token list agent install'},
+)
+async def list_registration_tokens(
+    workspace: str,
+    region: str = '',
+    page: int = 1,
+    page_size: int = 20,
+    **kwargs,
+) -> dict[str, Any]:
+    """List server registration tokens.
+
+    Args:
+        workspace: Workspace name. Required parameter
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        page: Page number for pagination (default: 1)
+        page_size: Number of results per page (default: 20)
+
+    Returns:
+        List of registration tokens
+    """
+    token = kwargs.get('token')
+
+    result = await http_client.get(
+        region=region,
+        workspace=workspace,
+        endpoint='/api/servers/registration-tokens/',
+        token=token,
+        params={'page': page, 'page_size': page_size},
+    )
+
+    return success_response(data=result, region=region, workspace=workspace)
+
+
+@mcp_tool_handler(
+    description=(
+        'Create a new server registration token. '
+        'The token is used to authenticate the Alpacon agent during installation on a new server. '
+        'After creating a token, use get_registration_guide to get the installation instructions. '
+        'Related: list_registration_tokens, delete_registration_token, get_registration_guide.'
+    ),
+    annotations=ADDITIVE,
+    meta={'anthropic/searchHint': 'registration token create new agent install'},
+)
+async def create_registration_token(
+    workspace: str,
+    name: str,
+    description: str | None = None,
+    region: str = '',
+    **kwargs,
+) -> dict[str, Any]:
+    """Create a server registration token.
+
+    Args:
+        workspace: Workspace name. Required parameter
+        name: Token name
+        description: Optional token description
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
+
+    Returns:
+        Created registration token data
+    """
+    token = kwargs.get('token')
+
+    data: dict[str, Any] = {'name': name}
+    if description is not None:
+        data['description'] = description
+
+    result = await http_client.post(
+        region=region,
+        workspace=workspace,
+        endpoint='/api/servers/registration-tokens/',
+        token=token,
+        data=data,
+    )
+
+    return success_response(data=result, region=region, workspace=workspace)
+
+
+@mcp_tool_handler(
+    description=(
+        'Delete a server registration token by its ID. '
+        'This invalidates the token and prevents any future agent installations using it. '
+        'Related: list_registration_tokens (find token ID first), create_registration_token.'
+    ),
+    annotations=DESTRUCTIVE,
+    meta={'anthropic/searchHint': 'registration token delete remove invalidate'},
+)
+async def delete_registration_token(
+    token_id: str, workspace: str, region: str = '', **kwargs
+) -> dict[str, Any]:
+    """Delete a server registration token.
+
+    Args:
+        token_id: Registration token UUID
+        workspace: Workspace name. Required parameter
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
+
+    Returns:
+        Deletion confirmation
+    """
+    token = kwargs.get('token')
+
+    result = await http_client.delete(
+        region=region,
+        workspace=workspace,
+        endpoint=f'/api/servers/registration-tokens/{token_id}/',
+        token=token,
+    )
+
+    return success_response(data=result, region=region, workspace=workspace)
+
+
+@mcp_tool_handler(
+    description=(
+        'Get the agent installation guide for a specific platform and registration token. '
+        'Returns shell commands or instructions to install the Alpacon agent on a new server. '
+        'The platform must be one of: "debian", "rhel", "darwin", "windows". '
+        'Related: list_registration_tokens (get token ID), create_registration_token.'
+    ),
+    annotations=ADDITIVE,
+    meta={'anthropic/searchHint': 'registration guide install agent setup script'},
+)
+async def get_registration_guide(
+    workspace: str,
+    platform: str,
+    token_id: str,
+    server_name: str | None = None,
+    region: str = '',
+    **kwargs,
+) -> dict[str, Any]:
+    """Get agent installation guide for a platform and registration token.
+
+    Args:
+        workspace: Workspace name. Required parameter
+        platform: Target platform ("debian" | "rhel" | "darwin" | "windows")
+        token_id: Registration token UUID to embed in the install script
+        server_name: Optional server name to pre-configure during installation
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
+
+    Returns:
+        Installation guide with commands/instructions
+    """
+    token = kwargs.get('token')
+
+    data: dict[str, Any] = {'platform': platform, 'token': token_id}
+    if server_name is not None:
+        data['server_name'] = server_name
+
+    result = await http_client.post(
+        region=region,
+        workspace=workspace,
+        endpoint='/api/servers/registration-methods/token-install/guide/?response_type=json',
+        token=token,
+        data=data,
+    )
+
+    return success_response(data=result, region=region, workspace=workspace)
