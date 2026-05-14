@@ -10,9 +10,8 @@ import httpx
 
 from server import mcp
 from utils.common import error_response, success_response
-from utils.decorators import mcp_tool_handler
+from utils.decorators import _is_auth_enabled, mcp_tool_handler
 from utils.error_handler import format_validation_error, validate_file_path
-from utils.health import _is_remote_mode
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, READ_ONLY
 
@@ -257,7 +256,7 @@ async def webftp_upload_file(
     """
     token = kwargs.get('token')
 
-    if _is_remote_mode():
+    if _is_auth_enabled():
         return error_response(_REMOTE_MODE_ERROR, code='remote_mode_unsupported')
 
     # Validate file paths
@@ -378,7 +377,7 @@ async def webftp_download_file(
     """
     token = kwargs.get('token')
 
-    if _is_remote_mode():
+    if _is_auth_enabled():
         return error_response(_REMOTE_MODE_ERROR, code='remote_mode_unsupported')
 
     # Validate file paths
@@ -565,7 +564,7 @@ async def webftp_bulk_upload(
     """
     token = kwargs.get('token')
 
-    if _is_remote_mode():
+    if _is_auth_enabled():
         return error_response(_REMOTE_MODE_ERROR, code='remote_mode_unsupported')
 
     # Validate non-empty file list
@@ -724,7 +723,7 @@ async def webftp_bulk_download(
     """
     token = kwargs.get('token')
 
-    if _is_remote_mode():
+    if _is_auth_enabled():
         return error_response(_REMOTE_MODE_ERROR, code='remote_mode_unsupported')
 
     # Validate non-empty paths list
