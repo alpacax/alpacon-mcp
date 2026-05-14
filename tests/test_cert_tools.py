@@ -389,6 +389,18 @@ class TestGetCertificateAuthority:
         )
 
     @pytest.mark.asyncio
+    async def test_update_certificate_authority_no_fields_returns_error(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Test that update with no optional fields returns an error."""
+        result = await update_certificate_authority(
+            ca_id='ca-1', workspace='testworkspace', region='ap1'
+        )
+
+        assert result['status'] == 'error'
+        mock_http_client.patch.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_delete_certificate_authority_success(
         self, mock_http_client, mock_token_manager
     ):

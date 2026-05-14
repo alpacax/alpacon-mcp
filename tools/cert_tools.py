@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from utils.common import success_response
+from utils.common import error_response, success_response
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ_ONLY
@@ -398,6 +398,9 @@ async def update_certificate_authority(
     if description is not None:
         patch_data['description'] = description
 
+    if not patch_data:
+        return error_response('No update data provided')
+
     result = await http_client.patch(
         region=region,
         workspace=workspace,
@@ -482,7 +485,7 @@ async def get_sign_request(
 
 @mcp_tool_handler(
     description='Approve a pending certificate signing request (CSR). The CA will then issue the certificate. Use list_sign_requests to find pending CSRs.',
-    annotations=IDEMPOTENT_WRITE,
+    annotations=ADDITIVE,
     meta={'anthropic/searchHint': 'certificate CSR signing request approve'},
 )
 async def approve_sign_request(
@@ -748,7 +751,7 @@ async def get_revoke_request(
 
 @mcp_tool_handler(
     description='Approve a pending certificate revocation request. The certificate will be revoked and added to the CRL (Certificate Revocation List) after approval.',
-    annotations=IDEMPOTENT_WRITE,
+    annotations=ADDITIVE,
     meta={'anthropic/searchHint': 'certificate revoke request approve'},
 )
 async def approve_revoke_request(
