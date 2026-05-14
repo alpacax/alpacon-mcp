@@ -503,7 +503,8 @@ class TestServerNoteCRUD:
         )
 
         assert result['status'] == 'error'
-        assert 'no update data' in result['message'].lower()
+        assert result.get('error_code') == 'validation'
+        assert result.get('field') == 'title or content'
         mock_http_client.patch.assert_not_called()
 
     @pytest.mark.asyncio
