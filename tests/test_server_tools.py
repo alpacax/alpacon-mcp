@@ -667,6 +667,21 @@ class TestUpdateServer:
         mock_http_client.patch.assert_not_called()
 
     @pytest.mark.asyncio
+    async def test_update_server_no_fields_returns_error(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Returns error when no update fields are provided and makes no API call."""
+        result = await update_server(
+            server_id='550e8400-e29b-41d4-a716-446655440123',
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert result['status'] == 'error'
+        assert 'No update data provided' in result['message']
+        mock_http_client.patch.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_update_server_partial_fields(
         self, mock_http_client, mock_token_manager
     ):

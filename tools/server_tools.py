@@ -727,6 +727,9 @@ async def update_server(
     if description is not None:
         update_data['description'] = description
 
+    if not update_data:
+        return error_response('No update data provided')
+
     result = await http_client.patch(
         region=region,
         workspace=workspace,
@@ -782,7 +785,7 @@ async def delete_server(
         'Starred servers can be quickly accessed in the workspace dashboard. '
         'Related: list_servers, get_server.'
     ),
-    annotations=IDEMPOTENT_WRITE,
+    annotations=ADDITIVE,
     meta={'anthropic/searchHint': 'server star favorite bookmark'},
 )
 async def star_server(
@@ -1015,7 +1018,7 @@ async def delete_registration_token(
         'The platform must be one of: "debian", "rhel", "darwin", "windows". '
         'Related: list_registration_tokens (get token ID), create_registration_token.'
     ),
-    annotations=ADDITIVE,
+    annotations=READ_ONLY,
     meta={'anthropic/searchHint': 'registration guide install agent setup script'},
 )
 async def get_registration_guide(
