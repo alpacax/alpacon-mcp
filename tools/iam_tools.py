@@ -38,14 +38,12 @@ async def list_iam_users(
     """
     token = kwargs.get('token')
 
-    # Prepare query parameters
     params = {}
     if page is not None:
         params['page'] = page
     if page_size is not None:
         params['page_size'] = page_size
 
-    # Make async call to IAM users endpoint
     result = await http_client.get(
         region=region,
         workspace=workspace,
@@ -77,7 +75,6 @@ async def get_iam_user(
     """
     token = kwargs.get('token')
 
-    # Make async call to specific IAM user endpoint
     result = await http_client.get(
         region=region,
         workspace=workspace,
@@ -123,17 +120,15 @@ async def create_iam_user(
     """
     token = kwargs.get('token')
 
-    # Prepare user data
     user_data = {'username': username, 'email': email, 'is_active': is_active}
 
-    if first_name:
+    if first_name is not None:
         user_data['first_name'] = first_name
-    if last_name:
+    if last_name is not None:
         user_data['last_name'] = last_name
-    if groups:
+    if groups is not None:
         user_data['groups'] = groups
 
-    # Make async call to create IAM user
     result = await http_client.post(
         region=region,
         workspace=workspace,
@@ -180,7 +175,6 @@ async def update_iam_user(
     """
     token = kwargs.get('token')
 
-    # Prepare update data (only include provided fields)
     update_data: dict[str, Any] = {}
     if email is not None:
         update_data['email'] = email
@@ -196,7 +190,6 @@ async def update_iam_user(
     if not update_data:
         return error_response('No update data provided')
 
-    # Make async call to update IAM user
     result = await http_client.patch(
         region=region,
         workspace=workspace,
@@ -230,7 +223,6 @@ async def delete_iam_user(
     """
     token = kwargs.get('token')
 
-    # Make async call to delete IAM user
     result = await http_client.delete(
         region=region,
         workspace=workspace,
@@ -273,14 +265,12 @@ async def list_iam_groups(
     """
     token = kwargs.get('token')
 
-    # Prepare query parameters
     params = {}
     if page is not None:
         params['page'] = page
     if page_size is not None:
         params['page_size'] = page_size
 
-    # Make async call to IAM groups endpoint
     result = await http_client.get(
         region=region,
         workspace=workspace,
@@ -319,7 +309,6 @@ async def create_iam_group(
     """
     token = kwargs.get('token')
 
-    # Prepare group data
     group_data: dict[str, Any] = {'name': name}
 
     if description is not None:
@@ -327,7 +316,6 @@ async def create_iam_group(
     if permissions is not None:
         group_data['permissions'] = permissions
 
-    # Make async call to create IAM group
     result = await http_client.post(
         region=region,
         workspace=workspace,
@@ -460,7 +448,6 @@ async def update_iam_group(
     """
     token = kwargs.get('token')
 
-    # Prepare update data (only include provided fields)
     update_data: dict[str, Any] = {}
     if name is not None:
         update_data['name'] = name
