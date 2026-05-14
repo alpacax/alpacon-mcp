@@ -467,7 +467,7 @@ echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"clientInfo":{"nam
 git pull origin main
 
 # Update dependencies
-uv pip install --upgrade mcp httpx
+uv pip install --upgrade mcp httpx "PyJWT[crypto]"
 
 # Restart service if running
 sudo systemctl restart alpacon-mcp  # Linux service
