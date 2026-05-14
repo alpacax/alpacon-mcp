@@ -1,6 +1,8 @@
 """WebFTP (Web FTP) management tools for Alpacon MCP server."""
 
 import asyncio
+import base64
+import binascii
 import os
 from http import HTTPStatus
 from pathlib import Path
@@ -337,6 +339,108 @@ async def webftp_upload_file(
             server_id=server_id,
             local_file_path=local_file_path,
             remote_file_path=remote_file_path,
+            region=region,
+            workspace=workspace,
+        )
+
+
+@mcp_tool_handler(
+    description=(
+        'Upload file content to a remote server using base64-encoded bytes. '
+        'Use this when you have the file content directly rather than a local file path. '
+        'Suitable for: remote mode (streamable-http), Claude Desktop file attachments, '
+        'or when Claude Code reads a file with its Read tool. '
+        'file_content must be base64-encoded bytes. '
+        'Related: webftp_upload_file (local path), webftp_download_file.'
+    ),
+    annotations=ADDITIVE,
+    meta={'anthropic/searchHint': 'file upload content base64 remote mode attach'},
+)
+async def webftp_upload_content(
+    server_id: str,
+    file_content: str,
+    remote_file_path: str,
+    workspace: str,
+    file_name: str | None = None,
+    username: str | None = None,
+    region: str = '',
+    allow_overwrite: bool = True,
+    **kwargs,
+) -> dict[str, Any]:
+    """Upload base64-encoded file content to a server via WebFTP.
+
+    Args:
+        server_id: Server ID to upload file to
+        file_content: Base64-encoded file bytes
+        remote_file_path: Absolute path on the server (e.g., "/home/user/file.txt")
+        workspace: Workspace name. Required parameter
+        file_name: File name to use on the server. Inferred from remote_file_path if omitted
+        username: Optional username (uses authenticated user if not provided)
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        allow_overwrite: Allow overwriting existing files (default: True)
+
+    Returns:
+        File upload response
+    """
+    token = kwargs.get('token')
+
+    try:
+        raw_bytes = base64.b64decode(file_content)
+    except binascii.Error as exc:
+        return error_response(f'Invalid base64 content: {exc}', code='invalid_content')
+
+    if not validate_file_path(remote_file_path):
+        return format_validation_error('remote_file_path', remote_file_path)
+
+    name = file_name or os.path.basename(remote_file_path)
+
+    upload_data: dict[str, Any] = {
+        'server': server_id,
+        'name': name,
+        'path': remote_file_path,
+        'allow_overwrite': allow_overwrite,
+    }
+    if username:
+        upload_data['username'] = username
+
+    result = await http_client.post(
+        region=region,
+        workspace=workspace,
+        endpoint=_API_UPLOADS,
+        token=token,
+        data=upload_data,
+    )
+
+    if 'upload_url' in result and result['upload_url']:
+        err = await _upload_bytes_to_s3(result['upload_url'], raw_bytes)
+        if err:
+            return error_response(err, upload_url=result['upload_url'])
+
+        upload_trigger = await http_client.get(
+            region=region,
+            workspace=workspace,
+            endpoint=f'{_API_UPLOADS}{result["id"]}/upload/',
+            token=token,
+        )
+
+        return success_response(
+            message='File content uploaded successfully and processed by server',
+            data=result,
+            upload_trigger=upload_trigger,
+            server_id=server_id,
+            remote_file_path=remote_file_path,
+            file_size=len(raw_bytes),
+            upload_url=result.get('upload_url'),
+            region=region,
+            workspace=workspace,
+        )
+    else:
+        return success_response(
+            message='File content uploaded successfully (direct upload)',
+            data=result,
+            server_id=server_id,
+            remote_file_path=remote_file_path,
+            file_size=len(raw_bytes),
             region=region,
             workspace=workspace,
         )

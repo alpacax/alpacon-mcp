@@ -5,6 +5,7 @@ Tests WebFTP functionality including session management, file uploads,
 file downloads, and file transfer history.
 """
 
+import base64
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -23,6 +24,7 @@ from tools.webftp_tools import (
     webftp_downloads_list,
     webftp_session_create,
     webftp_sessions_list,
+    webftp_upload_content,
     webftp_upload_file,
     webftp_uploads_list,
 )
@@ -1101,6 +1103,77 @@ class TestWebFtpBulkDownload:
         assert 'processing in progress' in result['message']
 
 
+class TestUploadContent:
+    """Test webftp_upload_content — content-based upload for remote and local modes."""
+
+    SERVER_ID = '550e8400-e29b-41d4-a716-446655440001'
+
+    @pytest.mark.asyncio
+    async def test_upload_content_success(
+        self, mock_http_client, mock_token_manager, mock_httpx
+    ):
+        """Happy path: base64 content is decoded, PUT to S3, server is triggered."""
+        file_bytes = b'hello remote world'
+        encoded = base64.b64encode(file_bytes).decode()
+
+        mock_http_client.post.return_value = {
+            'id': 'upload-abc',
+            'upload_url': 'https://s3.example.com/put?sig=abc',
+            'download_url': 'https://s3.example.com/get?sig=abc',
+        }
+        mock_http_client.get.return_value = {}
+
+        put_resp = AsyncMock()
+        put_resp.status_code = 200
+        mock_httpx.put.return_value = put_resp
+
+        result = await webftp_upload_content(
+            server_id=self.SERVER_ID,
+            file_content=encoded,
+            remote_file_path='/remote/hello.txt',
+            workspace='ws',
+            region='ap1',
+        )
+
+        assert result['status'] == 'success'
+        assert result['file_size'] == len(file_bytes)
+        mock_http_client.post.assert_called_once()
+        mock_httpx.put.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_upload_content_invalid_base64(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Invalid base64 input returns error with code='invalid_content' before any API call."""
+        result = await webftp_upload_content(
+            server_id=self.SERVER_ID,
+            file_content='not-valid-base64!!!',
+            remote_file_path='/remote/test.txt',
+            workspace='ws',
+            region='ap1',
+        )
+
+        assert result['status'] == 'error'
+        assert result.get('code') == 'invalid_content'
+        mock_http_client.post.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_upload_content_invalid_path(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Path traversal in remote_file_path returns validation error before any API call."""
+        result = await webftp_upload_content(
+            server_id=self.SERVER_ID,
+            file_content=base64.b64encode(b'data').decode(),
+            remote_file_path='../etc/passwd',
+            workspace='ws',
+            region='ap1',
+        )
+
+        assert result['status'] == 'error'
+        mock_http_client.post.assert_not_called()
+
+
 class TestRemoteModeUnsupported:
     """Test that file-transfer tools return a clear error in remote mode."""
 
@@ -1127,7 +1200,9 @@ class TestRemoteModeUnsupported:
         mock_http_client.post.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_download_file_remote_mode(self, mock_http_client, mock_token_manager):
+    async def test_download_file_remote_mode(
+        self, mock_http_client, mock_token_manager
+    ):
         """webftp_download_file returns remote_mode_unsupported error in remote mode."""
         with patch('tools.webftp_tools._is_auth_enabled', return_value=True):
             result = await webftp_download_file(
@@ -1159,7 +1234,9 @@ class TestRemoteModeUnsupported:
         mock_http_client.post.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_bulk_download_remote_mode(self, mock_http_client, mock_token_manager):
+    async def test_bulk_download_remote_mode(
+        self, mock_http_client, mock_token_manager
+    ):
         """webftp_bulk_download returns remote_mode_unsupported error in remote mode."""
         with patch('tools.webftp_tools._is_auth_enabled', return_value=True):
             result = await webftp_bulk_download(
