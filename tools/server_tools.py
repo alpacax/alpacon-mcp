@@ -4,7 +4,7 @@ from typing import Any
 
 from utils.common import error_response, success_response, unwrap_http_result
 from utils.decorators import mcp_tool_handler
-from utils.error_handler import format_validation_error
+from utils.error_handler import format_validation_error, validate_server_id_format
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ_ONLY
 
@@ -904,8 +904,8 @@ async def get_server_access_policy(
 async def list_registration_tokens(
     workspace: str,
     region: str = '',
-    page: int = 1,
-    page_size: int = 20,
+    page: int | None = None,
+    page_size: int | None = None,
     **kwargs,
 ) -> dict[str, Any]:
     """List server registration tokens.
@@ -913,20 +913,26 @@ async def list_registration_tokens(
     Args:
         workspace: Workspace name. Required parameter
         region: Region (ap1, us1, eu1). Auto-detected if not provided
-        page: Page number for pagination (default: 1)
-        page_size: Number of results per page (default: 20)
+        page: Page number for pagination (optional)
+        page_size: Number of results per page (optional)
 
     Returns:
         List of registration tokens
     """
     token = kwargs.get('token')
 
+    params: dict[str, Any] = {}
+    if page is not None:
+        params['page'] = page
+    if page_size is not None:
+        params['page_size'] = page_size
+
     result = await http_client.get(
         region=region,
         workspace=workspace,
         endpoint='/api/servers/registration-tokens/',
         token=token,
-        params={'page': page, 'page_size': page_size},
+        params=params,
     )
 
     return success_response(data=result, region=region, workspace=workspace)
@@ -1001,6 +1007,11 @@ async def delete_registration_token(
     """
     token = kwargs.get('token')
 
+    if not validate_server_id_format(token_id):
+        return error_response(
+            f"Invalid token_id format: '{token_id}'. Must be a valid UUID."
+        )
+
     result = await http_client.delete(
         region=region,
         workspace=workspace,
@@ -1050,9 +1061,10 @@ async def get_registration_guide(
     result = await http_client.post(
         region=region,
         workspace=workspace,
-        endpoint='/api/servers/registration-methods/token-install/guide/?response_type=json',
+        endpoint='/api/servers/registration-methods/token-install/guide/',
         token=token,
         data=data,
+        params={'response_type': 'json'},
     )
 
     return success_response(data=result, region=region, workspace=workspace)

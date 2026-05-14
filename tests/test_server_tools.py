@@ -887,7 +887,7 @@ class TestListRegistrationTokens:
             workspace='testworkspace',
             endpoint='/api/servers/registration-tokens/',
             token='test-token',
-            params={'page': 1, 'page_size': 20},
+            params={},
         )
 
     @pytest.mark.asyncio
@@ -992,14 +992,16 @@ class TestDeleteRegistrationToken:
         mock_http_client.delete.return_value = {}
 
         result = await delete_registration_token(
-            token_id='tok-123', workspace='testworkspace', region='ap1'
+            token_id='a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+            workspace='testworkspace',
+            region='ap1',
         )
 
         assert result['status'] == 'success'
         mock_http_client.delete.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/servers/registration-tokens/tok-123/',
+            endpoint='/api/servers/registration-tokens/a1b2c3d4-e5f6-7890-abcd-ef1234567890/',
             token='test-token',
         )
 
@@ -1011,7 +1013,7 @@ class TestDeleteRegistrationToken:
         mock_token_manager.get_token.return_value = None
 
         result = await delete_registration_token(
-            token_id='tok-123', workspace='testworkspace'
+            token_id='a1b2c3d4-e5f6-7890-abcd-ef1234567890', workspace='testworkspace'
         )
 
         assert result['status'] == 'error'
@@ -1042,9 +1044,10 @@ class TestGetRegistrationGuide:
         mock_http_client.post.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/servers/registration-methods/token-install/guide/?response_type=json',
+            endpoint='/api/servers/registration-methods/token-install/guide/',
             token='test-token',
             data={'platform': 'debian', 'token': 'tok-123'},
+            params={'response_type': 'json'},
         )
 
     @pytest.mark.asyncio
