@@ -42,7 +42,6 @@ classifiers = [
 dependencies = [
     "mcp[cli]>=1.9.4",
     "httpx>=0.25.0",
-    "websockets>=15.0.1",
     "PyJWT[crypto]>=2.8.0",
 ]
 
