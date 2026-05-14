@@ -41,8 +41,8 @@ classifiers = [
 ]
 dependencies = [
     "mcp[cli]>=1.9.4",
-    "httpx>=0.25.0",
-    "PyJWT[crypto]>=2.8.0",
+    "httpx>=0.27.1",
+    "PyJWT[crypto]>=2.10.1",
 ]
 
 [project.urls]
