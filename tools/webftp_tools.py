@@ -127,6 +127,15 @@ async def _aiter_file(path: str, chunk_size: int = _CHUNK_SIZE):
         await asyncio.to_thread(src_file.close)
 
 
+async def _upload_bytes_to_s3(upload_url: str, data: bytes) -> str | None:
+    """PUT bytes to a presigned S3 URL. Returns an error message on failure, None on success."""
+    async with httpx.AsyncClient() as client:
+        resp = await client.put(upload_url, content=data)
+    if resp.status_code not in _S3_SUCCESS_CODES:
+        return f'Failed to upload to S3: {resp.status_code} - {resp.text}'
+    return None
+
+
 @mcp_tool_handler(
     description='Create a new WebFTP file transfer session on a server. Returns session ID and connection details. When to use: advanced session management. For simple file transfers, use webftp_upload_file or webftp_download_file directly. Related: webftp_sessions_list (view sessions), webftp_upload_file, webftp_download_file.',
     annotations=ADDITIVE,
@@ -295,17 +304,9 @@ async def webftp_upload_file(
 
     # Step 4: Upload file content to S3 using presigned URL
     if 'upload_url' in result and result['upload_url']:
-        async with httpx.AsyncClient() as client:
-            upload_response = await client.put(
-                result['upload_url'],
-                content=file_content,
-            )
-
-            if upload_response.status_code not in _S3_SUCCESS_CODES:
-                return error_response(
-                    f'Failed to upload to S3: {upload_response.status_code} - {upload_response.text}',
-                    upload_url=result['upload_url'],
-                )
+        err = await _upload_bytes_to_s3(result['upload_url'], file_content)
+        if err:
+            return error_response(err, upload_url=result['upload_url'])
 
         # Step 5: Trigger server to process the uploaded file
         upload_trigger = await http_client.get(
