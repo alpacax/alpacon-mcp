@@ -1104,12 +1104,13 @@ class TestGetRegistrationGuide:
         mock_http_client.post.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/servers/registration-methods/token-install/guide/?response_type=json',
+            endpoint='/api/servers/registration-methods/token-install/guide/',
             token='test-token',
             data={
                 'platform': 'debian',
                 'token': 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
             },
+            params={'response_type': 'json'},
         )
 
     @pytest.mark.asyncio

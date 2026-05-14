@@ -556,6 +556,7 @@ class AlpaconHTTPClient:
         endpoint: str,
         token: str | None = None,
         data: dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Execute POST request.
 
@@ -565,6 +566,7 @@ class AlpaconHTTPClient:
             endpoint: API endpoint path
             token: API token
             data: Request body data
+            params: Query parameters
 
         Returns:
             Response data
@@ -573,7 +575,7 @@ class AlpaconHTTPClient:
         full_url = urljoin(base_url, endpoint)
 
         return await self.request(
-            method='POST', url=full_url, token=token, json_data=data
+            method='POST', url=full_url, token=token, json_data=data, params=params
         )
 
     async def put(
