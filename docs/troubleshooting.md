@@ -69,7 +69,7 @@ ImportError: No module named 'httpx'
 #### Solutions
 ```bash
 # Install missing dependencies
-uv pip install mcp[cli] httpx
+uv pip install mcp httpx
 
 # Or using pip
 pip install mcp httpx
@@ -585,7 +585,7 @@ When reporting issues, include:
 Before seeking help, verify:
 
 - [ ] Virtual environment is activated
-- [ ] All dependencies are installed (`mcp[cli]`, `httpx`)
+- [ ] All dependencies are installed (`mcp`, `httpx`)
 - [ ] Token configuration file exists and is properly formatted
 - [ ] Absolute paths are used in MCP client configuration
 - [ ] Server can be started manually with `python main.py`

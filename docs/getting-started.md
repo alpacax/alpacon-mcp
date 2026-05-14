@@ -70,7 +70,7 @@ source .venv/bin/activate  # Linux/macOS
 # .venv\Scripts\activate     # Windows
 
 # Install dependencies
-uv pip install mcp[cli] httpx
+uv pip install mcp httpx
 ```
 
 ### Step 3: Get API token from Alpacon
