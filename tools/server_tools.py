@@ -1061,10 +1061,9 @@ async def get_registration_guide(
     result = await http_client.post(
         region=region,
         workspace=workspace,
-        endpoint='/api/servers/registration-methods/token-install/guide/',
+        endpoint='/api/servers/registration-methods/token-install/guide/?response_type=json',
         token=token,
         data=data,
-        params={'response_type': 'json'},
     )
 
     return success_response(data=result, region=region, workspace=workspace)

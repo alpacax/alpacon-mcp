@@ -784,7 +784,10 @@ class TestGetServerSync:
     @pytest.mark.asyncio
     async def test_get_server_sync_success(self, mock_http_client, mock_token_manager):
         """Returns sync status for a server."""
-        mock_http_client.get.return_value = {'synced': True, 'last_sync': '2024-01-01T00:00:00Z'}
+        mock_http_client.get.return_value = {
+            'synced': True,
+            'last_sync': '2024-01-01T00:00:00Z',
+        }
 
         result = await get_server_sync(
             server_id='550e8400-e29b-41d4-a716-446655440123',
@@ -876,9 +879,7 @@ class TestListRegistrationTokens:
         }
         mock_http_client.get.return_value = token_list
 
-        result = await list_registration_tokens(
-            workspace='testworkspace', region='ap1'
-        )
+        result = await list_registration_tokens(workspace='testworkspace', region='ap1')
 
         assert result['status'] == 'success'
         assert result['data'] == token_list
@@ -1029,7 +1030,10 @@ class TestGetRegistrationGuide:
         self, mock_http_client, mock_token_manager
     ):
         """Returns installation guide for the specified platform and token."""
-        guide = {'platform': 'debian', 'commands': ['curl -s https://install.sh | bash']}
+        guide = {
+            'platform': 'debian',
+            'commands': ['curl -s https://install.sh | bash'],
+        }
         mock_http_client.post.return_value = guide
 
         result = await get_registration_guide(
@@ -1044,10 +1048,9 @@ class TestGetRegistrationGuide:
         mock_http_client.post.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/servers/registration-methods/token-install/guide/',
+            endpoint='/api/servers/registration-methods/token-install/guide/?response_type=json',
             token='test-token',
             data={'platform': 'debian', 'token': 'tok-123'},
-            params={'response_type': 'json'},
         )
 
     @pytest.mark.asyncio
