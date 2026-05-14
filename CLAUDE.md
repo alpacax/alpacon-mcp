@@ -486,6 +486,23 @@ Alternative endpoints available in the server:
 
 ## Development workflow
 
+### GitHub Actions workflow conventions
+
+Keep `permissions: contents: read` at the workflow level. Add extra scopes at the job level only:
+
+```yaml
+# ✅ job level
+jobs:
+  test:
+    permissions:
+      contents: read
+      pull-requests: write
+
+# ❌ workflow level
+permissions:
+  pull-requests: write
+```
+
 ### Adding new tools
 1. Create function in appropriate `tools/*.py` file
 2. Use `@mcp_tool_handler(description="...")` decorator

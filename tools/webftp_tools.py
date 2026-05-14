@@ -2,7 +2,11 @@
 
 import asyncio
 import os
+from http import HTTPStatus
+from pathlib import Path
 from typing import Any
+
+import httpx
 
 from server import mcp
 from utils.common import error_response, success_response
@@ -10,6 +14,111 @@ from utils.decorators import mcp_tool_handler
 from utils.error_handler import format_validation_error, validate_file_path
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, READ_ONLY
+
+# API endpoints
+_API_SESSIONS = '/api/webftp/sessions/'
+_API_UPLOADS = '/api/webftp/uploads/'
+_API_DOWNLOADS = '/api/webftp/downloads/'
+_API_BULK_UPLOADS = '/api/webftp/uploads/bulk/'
+_API_BULK_UPLOAD_TRIGGER = '/api/webftp/uploads/bulk-upload/'
+_API_BULK_DOWNLOADS = '/api/webftp/downloads/bulk/'
+_API_UPLOAD_STATUS = _API_UPLOADS + '{}/status/'
+_API_DOWNLOAD_STATUS = _API_DOWNLOADS + '{}/status/'
+
+# Transfer configuration
+_CHUNK_SIZE = 65536
+_UPLOAD_CONCURRENCY = 10
+_BULK_DOWNLOAD_TIMEOUT = 60.0
+_S3_SUCCESS_CODES = (HTTPStatus.OK, HTTPStatus.CREATED)
+
+# Result statuses
+_STATUS_ERROR = 'error'
+_UNKNOWN_FILE = 'unknown'
+
+# Type aliases
+type _UploadResult = dict[str, str | int | None]
+
+
+class _S3DownloadError(Exception):
+    pass
+
+
+class _LocalSaveError(Exception):
+    pass
+
+
+async def _stream_s3_to_file(
+    url: str,
+    local_path: str,
+    *,
+    timeout: float | None = None,
+) -> int:
+    """Stream a presigned S3 GET to a local file. Returns bytes written."""
+    await _ensure_parent_dir(local_path)
+    try:
+        async with (
+            httpx.AsyncClient() as client,
+            client.stream('GET', url, timeout=timeout) as response,
+        ):
+            if response.status_code != HTTPStatus.OK:
+                await response.aread()
+                raise _S3DownloadError(f'{response.status_code} - {response.text}')
+            return await _save_stream(response, local_path)
+    except httpx.HTTPError as e:
+        raise _S3DownloadError(str(e)) from e
+
+
+async def _ensure_parent_dir(local_path: str) -> None:
+    """Create parent directory for the destination file if needed."""
+    dir_name = os.path.dirname(local_path)
+    if not dir_name:
+        return
+    try:
+        await asyncio.to_thread(Path(dir_name).mkdir, parents=True, exist_ok=True)
+    except OSError as e:
+        raise _LocalSaveError(str(e)) from e
+
+
+async def _save_stream(response: httpx.Response, local_path: str) -> int:
+    """Save streaming response body to a local file. Returns bytes written.
+
+    On any failure during the write loop (network error, OSError), the
+    partially-written file is removed so retries do not see stale data.
+    """
+    try:
+        dest_file = await asyncio.to_thread(open, local_path, 'wb')
+    except OSError as e:
+        raise _LocalSaveError(str(e)) from e
+    file_size = 0
+    success = False
+    try:
+        async for chunk in response.aiter_bytes(chunk_size=_CHUNK_SIZE):
+            file_size += len(chunk)
+            await asyncio.to_thread(dest_file.write, chunk)
+        success = True
+    except OSError as e:
+        raise _LocalSaveError(str(e)) from e
+    finally:
+        try:
+            await asyncio.to_thread(dest_file.close)
+        except OSError:
+            pass  # don't shadow the original stream error
+        if not success:
+            try:
+                await asyncio.to_thread(os.unlink, local_path)
+            except OSError:
+                pass  # best-effort partial-file cleanup
+    return file_size
+
+
+async def _aiter_file(path: str, chunk_size: int = _CHUNK_SIZE):
+    """Yield file chunks for streaming uploads. Single-shot: not replayable on retry."""
+    src_file = await asyncio.to_thread(open, path, 'rb')
+    try:
+        while chunk := await asyncio.to_thread(src_file.read, chunk_size):
+            yield chunk
+    finally:
+        await asyncio.to_thread(src_file.close)
 
 
 @mcp_tool_handler(
@@ -48,7 +157,7 @@ async def webftp_session_create(
     result = await http_client.post(
         region=region,
         workspace=workspace,
-        endpoint='/api/webftp/sessions/',
+        endpoint=_API_SESSIONS,
         token=token,
         data=session_data,
     )
@@ -91,7 +200,7 @@ async def webftp_sessions_list(
     result = await http_client.get(
         region=region,
         workspace=workspace,
-        endpoint='/api/webftp/sessions/',
+        endpoint=_API_SESSIONS,
         token=token,
         params=params,
     )
@@ -148,8 +257,7 @@ async def webftp_upload_file(
 
     # Step 1: Read local file
     try:
-        with open(local_file_path, 'rb') as f:
-            file_content = f.read()
+        file_content = await asyncio.to_thread(Path(local_file_path).read_bytes)
     except FileNotFoundError:
         return error_response(f'Local file not found: {local_file_path}')
     except Exception as e:
@@ -171,23 +279,20 @@ async def webftp_upload_file(
     result = await http_client.post(
         region=region,
         workspace=workspace,
-        endpoint='/api/webftp/uploads/',
+        endpoint=_API_UPLOADS,
         token=token,
         data=upload_data,
     )
 
     # Step 4: Upload file content to S3 using presigned URL
     if 'upload_url' in result and result['upload_url']:
-        import httpx
-
         async with httpx.AsyncClient() as client:
             upload_response = await client.put(
                 result['upload_url'],
                 content=file_content,
-                headers={'Content-Type': 'application/octet-stream'},
             )
 
-            if upload_response.status_code not in [200, 201]:
+            if upload_response.status_code not in _S3_SUCCESS_CODES:
                 return error_response(
                     f'Failed to upload to S3: {upload_response.status_code} - {upload_response.text}',
                     upload_url=result['upload_url'],
@@ -197,7 +302,7 @@ async def webftp_upload_file(
         upload_trigger = await http_client.get(
             region=region,
             workspace=workspace,
-            endpoint=f'/api/webftp/uploads/{result["id"]}/upload/',
+            endpoint=f'{_API_UPLOADS}{result["id"]}/upload/',
             token=token,
         )
 
@@ -288,33 +393,24 @@ async def webftp_download_file(
     result = await http_client.post(
         region=region,
         workspace=workspace,
-        endpoint='/api/webftp/downloads/',
+        endpoint=_API_DOWNLOADS,
         token=token,
         data=download_data,
     )
 
     # Step 3: Download file content from S3 using presigned URL
     if 'download_url' in result and result['download_url']:
-        import httpx
-
-        async with httpx.AsyncClient() as client:
-            download_response = await client.get(result['download_url'])
-
-            if download_response.status_code != 200:
-                return error_response(
-                    f'Failed to download from S3: {download_response.status_code} - {download_response.text}',
-                    download_url=result['download_url'],
-                )
-
-            # Step 4: Save file content to local path
-            try:
-                # Create directory if it doesn't exist
-                os.makedirs(os.path.dirname(local_file_path), exist_ok=True)
-
-                with open(local_file_path, 'wb') as f:
-                    f.write(download_response.content)
-            except Exception as e:
-                return error_response(f'Failed to save file locally: {str(e)}')
+        try:
+            file_size = await _stream_s3_to_file(
+                result['download_url'], local_file_path
+            )
+        except _S3DownloadError as e:
+            return error_response(
+                f'Failed to download from S3: {e}',
+                download_url=result['download_url'],
+            )
+        except _LocalSaveError as e:
+            return error_response(f'Failed to save file locally: {e}')
 
         return success_response(
             message=f'File downloaded successfully from {resource_type}: {remote_file_path}',
@@ -323,7 +419,7 @@ async def webftp_download_file(
             remote_file_path=remote_file_path,
             local_file_path=local_file_path,
             resource_type=resource_type,
-            file_size=len(download_response.content),
+            file_size=file_size,
             download_url=result.get('download_url'),
             region=region,
             workspace=workspace,
@@ -370,7 +466,7 @@ async def webftp_uploads_list(
     result = await http_client.get(
         region=region,
         workspace=workspace,
-        endpoint='/api/webftp/uploads/',
+        endpoint=_API_UPLOADS,
         token=token,
         params=params,
     )
@@ -409,7 +505,7 @@ async def webftp_downloads_list(
     result = await http_client.get(
         region=region,
         workspace=workspace,
-        endpoint='/api/webftp/downloads/',
+        endpoint=_API_DOWNLOADS,
         token=token,
         params=params,
     )
@@ -463,9 +559,9 @@ async def webftp_bulk_upload(
     for path in local_file_paths:
         if not validate_file_path(path):
             return format_validation_error('local_file_paths', path)
-        if not os.path.isfile(path):
+        if not await asyncio.to_thread(Path(path).is_file):
             return error_response(f'Local file is not a regular file: {path}')
-        if not os.access(path, os.R_OK):
+        if not await asyncio.to_thread(os.access, path, os.R_OK):
             return error_response(f'Local file is not readable: {path}')
     if not validate_file_path(remote_directory):
         return format_validation_error('remote_directory', remote_directory)
@@ -484,14 +580,12 @@ async def webftp_bulk_upload(
     result = await http_client.post(
         region=region,
         workspace=workspace,
-        endpoint='/api/webftp/uploads/bulk/',
+        endpoint=_API_BULK_UPLOADS,
         token=token,
         data=bulk_data,
     )
 
     # Upload files to S3 concurrently using presigned URLs
-    import httpx
-
     file_ids = []
     upload_items = (
         result if isinstance(result, list) else result.get('results', [result])
@@ -503,7 +597,7 @@ async def webftp_bulk_upload(
         if file_id:
             file_ids.append(file_id)
 
-    semaphore = asyncio.Semaphore(10)
+    semaphore = asyncio.Semaphore(_UPLOAD_CONCURRENCY)
 
     async def _upload_one(
         client: httpx.AsyncClient,
@@ -512,42 +606,57 @@ async def webftp_bulk_upload(
     ) -> dict[str, Any]:
         upload_url = item.get('upload_url')
         file_id = item.get('id')
-        name = file_names[idx] if idx < len(file_names) else 'unknown'
+        name = file_names[idx] if idx < len(file_names) else _UNKNOWN_FILE
 
         if not upload_url or idx >= len(local_file_paths):
             return {'file': name, 'status': 'created', 'file_id': file_id}
 
         async with semaphore:
             try:
-                with open(local_file_paths[idx], 'rb') as f:
-                    resp = await client.put(
-                        upload_url,
-                        content=f,
-                        headers={'Content-Type': 'application/octet-stream'},
-                    )
+                resp = await client.put(
+                    upload_url,
+                    content=_aiter_file(local_file_paths[idx]),
+                )
+                file_size = (
+                    await asyncio.to_thread(os.stat, local_file_paths[idx])
+                ).st_size
                 return {
                     'file': name,
                     'status': 'uploaded'
-                    if resp.status_code in [200, 201]
+                    if resp.status_code in _S3_SUCCESS_CODES
                     else 'failed',
                     'file_id': file_id,
-                    'size': os.path.getsize(local_file_paths[idx]),
+                    'size': file_size,
                 }
             except Exception as e:
-                return {'file': name, 'status': 'error', 'message': str(e)}
+                return {'file': name, 'status': _STATUS_ERROR, 'message': str(e)}
 
     async with httpx.AsyncClient() as client:
-        upload_results = await asyncio.gather(
-            *[_upload_one(client, i, item) for i, item in enumerate(upload_items)]
+        raw_results = await asyncio.gather(
+            *[_upload_one(client, idx, item) for idx, item in enumerate(upload_items)],
+            return_exceptions=True,
         )
-    upload_results = list(upload_results)
+    upload_results: list[_UploadResult] = []
+    for idx, gathered in enumerate(raw_results):
+        if isinstance(gathered, BaseException):
+            if not isinstance(gathered, Exception):
+                raise gathered
+            upload_results.append(
+                {
+                    'file': file_names[idx] if idx < len(file_names) else _UNKNOWN_FILE,
+                    'status': _STATUS_ERROR,
+                    'message': str(gathered),
+                }
+            )
+        else:
+            upload_results.append(gathered)
 
     # Trigger bulk upload processing
     if file_ids:
         await http_client.post(
             region=region,
             workspace=workspace,
-            endpoint='/api/webftp/uploads/bulk-upload/',
+            endpoint=_API_BULK_UPLOAD_TRIGGER,
             token=token,
             data={'ids': file_ids},
         )
@@ -630,7 +739,7 @@ async def webftp_bulk_download(
     result = await http_client.post(
         region=region,
         workspace=workspace,
-        endpoint='/api/webftp/downloads/bulk/',
+        endpoint=_API_BULK_DOWNLOADS,
         token=token,
         data=download_data,
     )
@@ -638,33 +747,17 @@ async def webftp_bulk_download(
     # Download ZIP from S3 using streaming to avoid high memory usage
     download_url = result.get('download_url') if isinstance(result, dict) else None
     if download_url:
-        import httpx
-
-        file_size = 0
-        async with httpx.AsyncClient() as client:
-            try:
-                async with client.stream('GET', download_url, timeout=60.0) as response:
-                    if response.status_code != 200:
-                        return error_response(
-                            f'Failed to download from S3: {response.status_code}',
-                            download_url=download_url,
-                        )
-
-                    try:
-                        dir_name = os.path.dirname(local_file_path)
-                        if dir_name:
-                            os.makedirs(dir_name, exist_ok=True)
-                        with open(local_file_path, 'wb') as f:
-                            async for chunk in response.aiter_bytes(chunk_size=8192):
-                                file_size += len(chunk)
-                                f.write(chunk)
-                    except Exception as e:
-                        return error_response(f'Failed to save file locally: {str(e)}')
-            except httpx.HTTPError as exc:
-                return error_response(
-                    f'Failed to download from S3: {str(exc)}',
-                    download_url=download_url,
-                )
+        try:
+            file_size = await _stream_s3_to_file(
+                download_url, local_file_path, timeout=_BULK_DOWNLOAD_TIMEOUT
+            )
+        except _S3DownloadError as e:
+            return error_response(
+                f'Failed to download from S3: {e}',
+                download_url=download_url,
+            )
+        except _LocalSaveError as e:
+            return error_response(f'Failed to save file locally: {e}')
 
         return success_response(
             message=f'Bulk download completed: {len(remote_paths)} items saved as ZIP',
@@ -714,8 +807,8 @@ async def webftp_check_status(
     token = kwargs.get('token')
 
     endpoint_map = {
-        'upload': f'/api/webftp/uploads/{file_id}/status/',
-        'download': f'/api/webftp/downloads/{file_id}/status/',
+        'upload': _API_UPLOAD_STATUS.format(file_id),
+        'download': _API_DOWNLOAD_STATUS.format(file_id),
     }
 
     if transfer_type not in endpoint_map:
