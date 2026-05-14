@@ -1200,24 +1200,6 @@ class TestRemoteModeUnsupported:
         mock_http_client.post.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_download_file_remote_mode(
-        self, mock_http_client, mock_token_manager
-    ):
-        """webftp_download_file returns remote_mode_unsupported error in remote mode."""
-        with patch('tools.webftp_tools._is_auth_enabled', return_value=True):
-            result = await webftp_download_file(
-                server_id=self.SERVER_ID,
-                remote_file_path='/remote/test.txt',
-                local_file_path='/local/test.txt',
-                workspace='ws',
-                region='ap1',
-            )
-        assert result['status'] == 'error'
-        assert 'remote mode' in result['message']
-        assert result.get('code') == 'remote_mode_unsupported'
-        mock_http_client.post.assert_not_called()
-
-    @pytest.mark.asyncio
     async def test_bulk_upload_remote_mode(self, mock_http_client, mock_token_manager):
         """webftp_bulk_upload returns remote_mode_unsupported error in remote mode."""
         with patch('tools.webftp_tools._is_auth_enabled', return_value=True):
@@ -1250,6 +1232,110 @@ class TestRemoteModeUnsupported:
         assert 'remote mode' in result['message']
         assert result.get('code') == 'remote_mode_unsupported'
         mock_http_client.post.assert_not_called()
+
+
+class TestRemoteModeDownload:
+    """Test webftp_download_file remote mode — returns presigned URL instead of saving locally."""
+
+    SERVER_ID = '550e8400-e29b-41d4-a716-446655440001'
+
+    @pytest.mark.asyncio
+    async def test_download_remote_mode_immediate_url(
+        self, mock_http_client, mock_token_manager
+    ):
+        """When POST response already contains download_url, return it immediately."""
+        mock_http_client.post.return_value = {
+            'id': 'dl-abc',
+            'download_url': 'https://s3.example.com/file?sig=abc',
+        }
+
+        with patch('tools.webftp_tools._is_auth_enabled', return_value=True):
+            result = await webftp_download_file(
+                server_id=self.SERVER_ID,
+                remote_file_path='/remote/file.txt',
+                workspace='ws',
+                region='ap1',
+            )
+
+        assert result['status'] == 'success'
+        assert result['download_url'] == 'https://s3.example.com/file?sig=abc'
+        mock_http_client.post.assert_called_once()
+        mock_http_client.get.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_download_remote_mode_polling(
+        self, mock_http_client, mock_token_manager
+    ):
+        """When download_url is absent, poll status until success=True then return URL."""
+        mock_http_client.post.return_value = {'id': 'dl-abc', 'download_url': None}
+        mock_http_client.get.side_effect = [
+            {'success': None},
+            {'success': True, 'download_url': 'https://s3.example.com/file?sig=abc'},
+        ]
+
+        with (
+            patch('tools.webftp_tools._is_auth_enabled', return_value=True),
+            patch('asyncio.sleep', new_callable=AsyncMock),
+        ):
+            result = await webftp_download_file(
+                server_id=self.SERVER_ID,
+                remote_file_path='/remote/file.txt',
+                workspace='ws',
+                region='ap1',
+            )
+
+        assert result['status'] == 'success'
+        assert result['download_url'] == 'https://s3.example.com/file?sig=abc'
+        assert mock_http_client.get.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_download_remote_mode_timeout(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Polling that exceeds _REMOTE_DOWNLOAD_TIMEOUT returns download_timeout error."""
+        mock_http_client.post.return_value = {'id': 'dl-abc', 'download_url': None}
+        mock_http_client.get.return_value = {'success': None}
+
+        with (
+            patch('tools.webftp_tools._is_auth_enabled', return_value=True),
+            patch('asyncio.sleep', new_callable=AsyncMock),
+            patch('tools.webftp_tools._REMOTE_DOWNLOAD_TIMEOUT', 2),
+        ):
+            result = await webftp_download_file(
+                server_id=self.SERVER_ID,
+                remote_file_path='/remote/file.txt',
+                workspace='ws',
+                region='ap1',
+            )
+
+        assert result['status'] == 'error'
+        assert result.get('code') == 'download_timeout'
+        assert result.get('file_id') == 'dl-abc'
+
+    @pytest.mark.asyncio
+    async def test_download_remote_mode_server_failure(
+        self, mock_http_client, mock_token_manager
+    ):
+        """When server reports success=False, return error with the server message."""
+        mock_http_client.post.return_value = {'id': 'dl-abc', 'download_url': None}
+        mock_http_client.get.return_value = {
+            'success': False,
+            'message': 'file not found on server',
+        }
+
+        with (
+            patch('tools.webftp_tools._is_auth_enabled', return_value=True),
+            patch('asyncio.sleep', new_callable=AsyncMock),
+        ):
+            result = await webftp_download_file(
+                server_id=self.SERVER_ID,
+                remote_file_path='/remote/file.txt',
+                workspace='ws',
+                region='ap1',
+            )
+
+        assert result['status'] == 'error'
+        assert 'file not found' in result['message']
 
 
 class TestAiterFile:

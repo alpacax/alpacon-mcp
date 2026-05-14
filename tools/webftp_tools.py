@@ -37,6 +37,7 @@ _API_DOWNLOAD_STATUS = _API_DOWNLOADS + '{}/status/'
 _CHUNK_SIZE = 65536
 _UPLOAD_CONCURRENCY = 10
 _BULK_DOWNLOAD_TIMEOUT = 60.0
+_REMOTE_DOWNLOAD_TIMEOUT = 60
 _S3_SUCCESS_CODES = (HTTPStatus.OK, HTTPStatus.CREATED)
 
 # Result statuses
@@ -136,6 +137,83 @@ async def _upload_bytes_to_s3(upload_url: str, data: bytes) -> str | None:
     if resp.status_code not in _S3_SUCCESS_CODES:
         return f'Failed to upload to S3: {resp.status_code} - {resp.text}'
     return None
+
+
+async def _download_remote_mode(
+    *,
+    server_id: str,
+    remote_file_path: str,
+    resource_type: str,
+    workspace: str,
+    region: str,
+    username: str | None,
+    token: str,
+) -> dict[str, Any]:
+    """Handle webftp_download_file in remote mode: poll until ready, return presigned URL."""
+    file_name = os.path.basename(remote_file_path)
+    if resource_type == 'folder':
+        file_name += '.zip'
+
+    download_data: dict[str, Any] = {
+        'server': server_id,
+        'path': remote_file_path,
+        'name': file_name,
+        'resource_type': resource_type,
+    }
+    if username:
+        download_data['username'] = username
+
+    result = await http_client.post(
+        region=region,
+        workspace=workspace,
+        endpoint=_API_DOWNLOADS,
+        token=token,
+        data=download_data,
+    )
+
+    file_id = result.get('id')
+    download_url = result.get('download_url')
+
+    if not download_url:
+        elapsed = 0
+        while elapsed < _REMOTE_DOWNLOAD_TIMEOUT:
+            await asyncio.sleep(1)
+            elapsed += 1
+            status = await http_client.get(
+                region=region,
+                workspace=workspace,
+                endpoint=_API_DOWNLOAD_STATUS.format(file_id),
+                token=token,
+            )
+            if status.get('success') is True:
+                download_url = status.get('download_url')
+                break
+            elif status.get('success') is False:
+                return error_response(
+                    f'Server failed to process download: {status.get("message", "unknown error")}',
+                    file_id=file_id,
+                )
+        else:
+            return error_response(
+                f'Download timed out waiting for server. '
+                f'Use webftp_check_status("{file_id}", "download") to poll manually.',
+                file_id=file_id,
+                code='download_timeout',
+            )
+
+    display_name = os.path.basename(remote_file_path)
+    return success_response(
+        message=f'File ready for download: {display_name}',
+        data=result,
+        server_id=server_id,
+        remote_file_path=remote_file_path,
+        resource_type=resource_type,
+        download_url=download_url,
+        expires_in='24 hours',
+        tip=f"curl -o '{display_name}' '{download_url}'",
+        region=region,
+        workspace=workspace,
+    )
 
 
 @mcp_tool_handler(
@@ -447,15 +525,26 @@ async def webftp_upload_content(
 
 
 @mcp_tool_handler(
-    description='Download a file or folder from a remote server and save it to a local path. For folders, the content is automatically packaged as a ZIP archive. When to use: retrieving a single file or folder from a server. Related: webftp_bulk_download (multiple files as ZIP), webftp_upload_file (upload to server), webftp_downloads_list (check download history). Note: Set resource_type="folder" for directories.',
+    description=(
+        'Download a file or folder from a remote server. '
+        'In local mode: saves to local_file_path. '
+        'In remote mode (streamable-http): polls until the file is ready on S3, '
+        'then returns a presigned download URL valid for 24 hours — '
+        'open it in a browser or run the curl command in the response. '
+        'For folders, content is packaged as a ZIP archive. '
+        'Related: webftp_bulk_download (multiple files as ZIP), '
+        'webftp_upload_file (upload to server), '
+        'webftp_downloads_list (check download history). '
+        'Note: Set resource_type="folder" for directories.'
+    ),
     annotations=ADDITIVE,
     meta={'anthropic/searchHint': 'file download transfer get retrieve server'},
 )
 async def webftp_download_file(
     server_id: str,
     remote_file_path: str,
-    local_file_path: str,
     workspace: str,
+    local_file_path: str | None = None,
     resource_type: str = 'file',
     username: str | None = None,
     region: str = '',
@@ -482,11 +571,23 @@ async def webftp_download_file(
     token = kwargs.get('token')
 
     if _is_auth_enabled():
-        return error_response(_REMOTE_MODE_ERROR, code='remote_mode_unsupported')
+        if not validate_file_path(remote_file_path):
+            return format_validation_error('remote_file_path', remote_file_path)
+        return await _download_remote_mode(
+            server_id=server_id,
+            remote_file_path=remote_file_path,
+            resource_type=resource_type,
+            workspace=workspace,
+            region=region,
+            username=username,
+            token=token or '',
+        )
 
     # Validate file paths
     if not validate_file_path(remote_file_path):
         return format_validation_error('remote_file_path', remote_file_path)
+    if local_file_path is None:
+        return error_response('local_file_path is required in local mode')
     if not validate_file_path(local_file_path):
         return format_validation_error('local_file_path', local_file_path)
 
@@ -517,10 +618,10 @@ async def webftp_download_file(
 
     # Step 3: Download file content from S3 using presigned URL
     if 'download_url' in result and result['download_url']:
+        # local_file_path is guaranteed non-None by the guard above
+        local_path: str = local_file_path  # type: ignore[assignment]
         try:
-            file_size = await _stream_s3_to_file(
-                result['download_url'], local_file_path
-            )
+            file_size = await _stream_s3_to_file(result['download_url'], local_path)
         except _S3DownloadError as e:
             return error_response(
                 f'Failed to download from S3: {e}',
