@@ -642,6 +642,8 @@ async def shutdown_system(
 # SERVER CRUD TOOLS
 # ===============================
 
+VALID_PLATFORMS = frozenset({'debian', 'rhel', 'darwin', 'windows'})
+
 
 @mcp_tool_handler(
     description=(
@@ -675,6 +677,13 @@ async def create_server(
     """
     token = kwargs.get('token')
 
+    if platform not in VALID_PLATFORMS:
+        return format_validation_error(
+            'platform',
+            platform,
+            f'Must be one of: {", ".join(sorted(VALID_PLATFORMS))}',
+        )
+
     data: dict[str, Any] = {'name': name, 'platform': platform}
     if description is not None:
         data['description'] = description
@@ -686,6 +695,15 @@ async def create_server(
         token=token,
         data=data,
     )
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to create server',
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
 
     return success_response(data=result, region=region, workspace=workspace)
 
@@ -728,7 +746,11 @@ async def update_server(
         update_data['description'] = description
 
     if not update_data:
-        return error_response('No update data provided')
+        return format_validation_error(
+            'name or description',
+            None,
+            'At least one of name or description must be provided.',
+        )
 
     result = await http_client.patch(
         region=region,
@@ -737,6 +759,16 @@ async def update_server(
         token=token,
         data=update_data,
     )
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to update server',
+        server_id=server_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
 
     return success_response(
         data=result, server_id=server_id, region=region, workspace=workspace
@@ -773,6 +805,16 @@ async def delete_server(
         endpoint=f'/api/servers/servers/{server_id}/',
         token=token,
     )
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to delete server',
+        server_id=server_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
 
     return success_response(
         data=result, server_id=server_id, region=region, workspace=workspace
@@ -811,6 +853,16 @@ async def star_server(
         data={},
     )
 
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to toggle server star status',
+        server_id=server_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
+
     return success_response(
         data=result, server_id=server_id, region=region, workspace=workspace
     )
@@ -847,6 +899,16 @@ async def get_server_sync(
         token=token,
     )
 
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to get server sync status',
+        server_id=server_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
+
     return success_response(
         data=result, server_id=server_id, region=region, workspace=workspace
     )
@@ -881,6 +943,16 @@ async def get_server_access_policy(
         endpoint=f'/api/servers/servers/{server_id}/access-policy/',
         token=token,
     )
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to get server access policy',
+        server_id=server_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
 
     return success_response(
         data=result, server_id=server_id, region=region, workspace=workspace
@@ -935,6 +1007,15 @@ async def list_registration_tokens(
         params=params,
     )
 
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to list registration tokens',
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
+
     return success_response(data=result, region=region, workspace=workspace)
 
 
@@ -980,6 +1061,15 @@ async def create_registration_token(
         data=data,
     )
 
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to create registration token',
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
+
     return success_response(data=result, region=region, workspace=workspace)
 
 
@@ -1008,8 +1098,10 @@ async def delete_registration_token(
     token = kwargs.get('token')
 
     if not validate_server_id_format(token_id):
-        return error_response(
-            f"Invalid token_id format: '{token_id}'. Must be a valid UUID."
+        return format_validation_error(
+            'token_id',
+            token_id,
+            'Must be a valid UUID. Example: 550e8400-e29b-41d4-a716-446655440000',
         )
 
     result = await http_client.delete(
@@ -1018,6 +1110,15 @@ async def delete_registration_token(
         endpoint=f'/api/servers/registration-tokens/{token_id}/',
         token=token,
     )
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to delete registration token',
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
 
     return success_response(data=result, region=region, workspace=workspace)
 
@@ -1054,6 +1155,19 @@ async def get_registration_guide(
     """
     token = kwargs.get('token')
 
+    if not validate_server_id_format(token_id):
+        return format_validation_error(
+            'token_id',
+            token_id,
+            'Must be a valid UUID. Example: 550e8400-e29b-41d4-a716-446655440000',
+        )
+    if platform not in VALID_PLATFORMS:
+        return format_validation_error(
+            'platform',
+            platform,
+            f'Must be one of: {", ".join(sorted(VALID_PLATFORMS))}',
+        )
+
     data: dict[str, Any] = {'platform': platform, 'token': token_id}
     if server_name is not None:
         data['server_name'] = server_name
@@ -1065,5 +1179,14 @@ async def get_registration_guide(
         token=token,
         data=data,
     )
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to get registration guide',
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
 
     return success_response(data=result, region=region, workspace=workspace)

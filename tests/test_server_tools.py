@@ -621,6 +621,42 @@ class TestCreateServer:
         assert 'No token found' in result['message']
         mock_http_client.post.assert_not_called()
 
+    @pytest.mark.asyncio
+    async def test_create_server_invalid_platform(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Returns validation error when platform is not a valid value."""
+        result = await create_server(
+            workspace='testworkspace',
+            name='new-server',
+            platform='ubuntu',
+            region='ap1',
+        )
+
+        assert result['status'] == 'error'
+        assert result['error_code'] == 'validation'
+        assert result['field'] == 'platform'
+        mock_http_client.post.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_create_server_http_error(self, mock_http_client, mock_token_manager):
+        """Returns error when http_client returns an upstream error envelope."""
+        mock_http_client.post.return_value = {
+            'error': 'Bad Request',
+            'status_code': 400,
+            'message': 'Server name already exists',
+        }
+
+        result = await create_server(
+            workspace='testworkspace',
+            name='existing-server',
+            platform='debian',
+            region='ap1',
+        )
+
+        assert result['status'] == 'error'
+        assert result['message'] == 'Server name already exists'
+
 
 class TestUpdateServer:
     """Tests for update_server tool."""
@@ -678,7 +714,11 @@ class TestUpdateServer:
         )
 
         assert result['status'] == 'error'
-        assert 'No update data provided' in result['message']
+        assert result['error_code'] == 'validation'
+        assert (
+            'At least one of name or description must be provided.'
+            in result['suggestion']
+        )
         mock_http_client.patch.assert_not_called()
 
     @pytest.mark.asyncio
@@ -1021,6 +1061,22 @@ class TestDeleteRegistrationToken:
         assert 'No token found' in result['message']
         mock_http_client.delete.assert_not_called()
 
+    @pytest.mark.asyncio
+    async def test_delete_registration_token_invalid_token_id(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Returns validation error when token_id is not a valid UUID."""
+        result = await delete_registration_token(
+            token_id='not-a-uuid',
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert result['status'] == 'error'
+        assert result['error_code'] == 'validation'
+        assert result['field'] == 'token_id'
+        mock_http_client.delete.assert_not_called()
+
 
 class TestGetRegistrationGuide:
     """Tests for get_registration_guide tool."""
@@ -1039,7 +1095,7 @@ class TestGetRegistrationGuide:
         result = await get_registration_guide(
             workspace='testworkspace',
             platform='debian',
-            token_id='tok-123',
+            token_id='a1b2c3d4-e5f6-7890-abcd-ef1234567890',
             region='ap1',
         )
 
@@ -1050,7 +1106,10 @@ class TestGetRegistrationGuide:
             workspace='testworkspace',
             endpoint='/api/servers/registration-methods/token-install/guide/?response_type=json',
             token='test-token',
-            data={'platform': 'debian', 'token': 'tok-123'},
+            data={
+                'platform': 'debian',
+                'token': 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+            },
         )
 
     @pytest.mark.asyncio
@@ -1063,7 +1122,7 @@ class TestGetRegistrationGuide:
         await get_registration_guide(
             workspace='testworkspace',
             platform='rhel',
-            token_id='tok-123',
+            token_id='a1b2c3d4-e5f6-7890-abcd-ef1234567890',
             server_name='my-new-server',
             region='ap1',
         )
