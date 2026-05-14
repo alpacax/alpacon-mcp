@@ -12,8 +12,16 @@ from server import mcp
 from utils.common import error_response, success_response
 from utils.decorators import mcp_tool_handler
 from utils.error_handler import format_validation_error, validate_file_path
+from utils.health import _is_remote_mode
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, READ_ONLY
+
+# Error message returned when file transfer tools are called in remote mode.
+_REMOTE_MODE_ERROR = (
+    'WebFTP file transfer is not supported in remote mode. '
+    'The MCP server cannot access your local filesystem from a remote container. '
+    'Use local mode (stdio) for file transfers.'
+)
 
 # API endpoints
 _API_SESSIONS = '/api/webftp/sessions/'
@@ -249,6 +257,9 @@ async def webftp_upload_file(
     """
     token = kwargs.get('token')
 
+    if _is_remote_mode():
+        return error_response(_REMOTE_MODE_ERROR, code='remote_mode_unsupported')
+
     # Validate file paths
     if not validate_file_path(local_file_path):
         return format_validation_error('local_file_path', local_file_path)
@@ -366,6 +377,9 @@ async def webftp_download_file(
         Download response with file saved locally
     """
     token = kwargs.get('token')
+
+    if _is_remote_mode():
+        return error_response(_REMOTE_MODE_ERROR, code='remote_mode_unsupported')
 
     # Validate file paths
     if not validate_file_path(remote_file_path):
@@ -551,6 +565,9 @@ async def webftp_bulk_upload(
     """
     token = kwargs.get('token')
 
+    if _is_remote_mode():
+        return error_response(_REMOTE_MODE_ERROR, code='remote_mode_unsupported')
+
     # Validate non-empty file list
     if not local_file_paths:
         return error_response('local_file_paths must not be empty')
@@ -706,6 +723,9 @@ async def webftp_bulk_download(
         Bulk download response with file saved locally
     """
     token = kwargs.get('token')
+
+    if _is_remote_mode():
+        return error_response(_REMOTE_MODE_ERROR, code='remote_mode_unsupported')
 
     # Validate non-empty paths list
     if not remote_paths:

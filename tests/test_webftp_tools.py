@@ -1101,6 +1101,92 @@ class TestWebFtpBulkDownload:
         assert 'processing in progress' in result['message']
 
 
+class TestRemoteModeUnsupported:
+    """Test that file-transfer tools return a clear error in remote mode."""
+
+    SERVER_ID = '550e8400-e29b-41d4-a716-446655440001'
+
+    @pytest.mark.asyncio
+    async def test_upload_file_remote_mode(self, mock_http_client, mock_token_manager):
+        """webftp_upload_file returns remote_mode_unsupported error in remote mode.
+
+        The decorator's auth check is bypassed (auth disabled) so the function
+        body's _is_remote_mode check is what we're exercising here.
+        """
+        with (
+            patch('utils.decorators._is_auth_enabled', return_value=False),
+            patch('tools.webftp_tools._is_remote_mode', return_value=True),
+        ):
+            result = await webftp_upload_file(
+                server_id=self.SERVER_ID,
+                local_file_path='/local/test.txt',
+                remote_file_path='/remote/test.txt',
+                workspace='ws',
+                region='ap1',
+            )
+        assert result['status'] == 'error'
+        assert 'remote mode' in result['message']
+        assert result.get('code') == 'remote_mode_unsupported'
+        mock_http_client.post.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_download_file_remote_mode(self, mock_http_client, mock_token_manager):
+        """webftp_download_file returns remote_mode_unsupported error in remote mode."""
+        with (
+            patch('utils.decorators._is_auth_enabled', return_value=False),
+            patch('tools.webftp_tools._is_remote_mode', return_value=True),
+        ):
+            result = await webftp_download_file(
+                server_id=self.SERVER_ID,
+                remote_file_path='/remote/test.txt',
+                local_file_path='/local/test.txt',
+                workspace='ws',
+                region='ap1',
+            )
+        assert result['status'] == 'error'
+        assert 'remote mode' in result['message']
+        assert result.get('code') == 'remote_mode_unsupported'
+        mock_http_client.post.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_bulk_upload_remote_mode(self, mock_http_client, mock_token_manager):
+        """webftp_bulk_upload returns remote_mode_unsupported error in remote mode."""
+        with (
+            patch('utils.decorators._is_auth_enabled', return_value=False),
+            patch('tools.webftp_tools._is_remote_mode', return_value=True),
+        ):
+            result = await webftp_bulk_upload(
+                server_id=self.SERVER_ID,
+                local_file_paths=['/local/a.txt', '/local/b.txt'],
+                remote_directory='/remote/',
+                workspace='ws',
+                region='ap1',
+            )
+        assert result['status'] == 'error'
+        assert 'remote mode' in result['message']
+        assert result.get('code') == 'remote_mode_unsupported'
+        mock_http_client.post.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_bulk_download_remote_mode(self, mock_http_client, mock_token_manager):
+        """webftp_bulk_download returns remote_mode_unsupported error in remote mode."""
+        with (
+            patch('utils.decorators._is_auth_enabled', return_value=False),
+            patch('tools.webftp_tools._is_remote_mode', return_value=True),
+        ):
+            result = await webftp_bulk_download(
+                server_id=self.SERVER_ID,
+                remote_paths=['/remote/a.txt'],
+                local_file_path='/local/out.zip',
+                workspace='ws',
+                region='ap1',
+            )
+        assert result['status'] == 'error'
+        assert 'remote mode' in result['message']
+        assert result.get('code') == 'remote_mode_unsupported'
+        mock_http_client.post.assert_not_called()
+
+
 class TestAiterFile:
     """Test the _aiter_file streaming-upload helper."""
 
