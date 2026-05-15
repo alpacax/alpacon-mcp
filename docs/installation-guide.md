@@ -34,9 +34,9 @@ Comprehensive installation and setup guide for the Alpacon MCP Server across dif
 
 The following dependencies are automatically installed:
 
-- **mcp[cli]** ≥1.9.4: Model Context Protocol framework
-- **httpx** ≥0.25.0: Async HTTP client for API calls
-- **websockets** ≥15.0.1: WebSocket support for real-time features
+- **mcp** ≥1.9.4: Model Context Protocol framework
+- **httpx** ≥0.27.1: Async HTTP client for API calls
+- **PyJWT[crypto]** ≥2.10.1: JWT token verification for authentication
 
 ## Installation methods
 

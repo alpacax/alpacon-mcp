@@ -316,7 +316,7 @@ WORKDIR /app
 COPY . .
 
 RUN pip install uv
-RUN uv venv && uv pip install mcp[cli] httpx
+RUN uv venv && uv pip install mcp httpx "PyJWT[crypto]"
 
 # Use config volume for tokens
 VOLUME ["/app/config"]
