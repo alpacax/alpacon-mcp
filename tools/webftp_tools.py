@@ -200,16 +200,15 @@ async def _download_remote_mode(
                 code='download_timeout',
             )
 
-    display_name = os.path.basename(remote_file_path)
     return success_response(
-        message=f'File ready for download: {display_name}',
+        message=f'File ready for download: {file_name}',
         data=result,
         server_id=server_id,
         remote_file_path=remote_file_path,
         resource_type=resource_type,
         download_url=download_url,
         expires_in='24 hours',
-        tip=f"curl -o '{display_name}' '{download_url}'",
+        tip=f"curl -o '{file_name}' '{download_url}'",
         region=region,
         workspace=workspace,
     )
