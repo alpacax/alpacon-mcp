@@ -568,6 +568,7 @@ async def webftp_download_file(
         Download response with file saved locally
     """
     token = kwargs.get('token')
+    assert isinstance(token, str) and token, 'token must be injected by mcp_tool_handler'
 
     if not validate_file_path(remote_file_path):
         return format_validation_error('remote_file_path', remote_file_path)
@@ -580,7 +581,7 @@ async def webftp_download_file(
             workspace=workspace,
             region=region,
             username=username,
-            token=token or '',
+            token=token,
         )
 
     if local_file_path is None:
