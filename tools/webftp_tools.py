@@ -461,7 +461,7 @@ async def webftp_upload_content(
     token = kwargs.get('token')
 
     try:
-        raw_bytes = base64.b64decode(file_content)
+        raw_bytes = base64.b64decode(file_content, validate=True)
     except binascii.Error as exc:
         return error_response(f'Invalid base64 content: {exc}', code='invalid_content')
 
