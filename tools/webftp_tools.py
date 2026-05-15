@@ -4,6 +4,7 @@ import asyncio
 import base64
 import binascii
 import os
+import shlex
 from http import HTTPStatus
 from pathlib import Path
 from typing import Any, cast
@@ -208,7 +209,7 @@ async def _download_remote_mode(
         resource_type=resource_type,
         download_url=download_url,
         expires_in='24 hours',
-        tip=f"curl -o '{file_name}' '{download_url}'",
+        tip=f'curl -o {shlex.quote(file_name)} {shlex.quote(download_url)}',
         region=region,
         workspace=workspace,
     )
