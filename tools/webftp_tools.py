@@ -38,7 +38,7 @@ _API_DOWNLOAD_STATUS = _API_DOWNLOADS + '{}/status/'
 _CHUNK_SIZE = 65536
 _UPLOAD_CONCURRENCY = 10
 _BULK_DOWNLOAD_TIMEOUT = 60.0
-_REMOTE_DOWNLOAD_TIMEOUT = 60
+_REMOTE_DOWNLOAD_TIMEOUT = int(os.getenv('ALPACON_MCP_WEBFTP_DOWNLOAD_TIMEOUT', '60'))
 _S3_SUCCESS_CODES = (HTTPStatus.OK, HTTPStatus.CREATED)
 
 # Result statuses
@@ -209,7 +209,7 @@ async def _download_remote_mode(
         resource_type=resource_type,
         download_url=download_url,
         expires_in='24 hours',
-        tip=f'curl -o {shlex.quote(file_name)} {shlex.quote(download_url)}',
+        tip=f'curl -o {shlex.quote(file_name)} {shlex.quote(cast(str, download_url))}',
         region=region,
         workspace=workspace,
     )
@@ -568,7 +568,8 @@ async def webftp_download_file(
         Download response with file saved locally
     """
     token = kwargs.get('token')
-    assert isinstance(token, str) and token, 'token must be injected by mcp_tool_handler'
+    if not isinstance(token, str) or not token:
+        raise RuntimeError('token must be injected by mcp_tool_handler')
 
     if not validate_file_path(remote_file_path):
         return format_validation_error('remote_file_path', remote_file_path)
