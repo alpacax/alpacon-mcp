@@ -1171,6 +1171,7 @@ class TestUploadContent:
         )
 
         assert result['status'] == 'error'
+        assert result.get('field') == 'remote_file_path'
         mock_http_client.post.assert_not_called()
 
 
