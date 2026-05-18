@@ -11,7 +11,6 @@ on:
 
 permissions:
   contents: read
-  actions: write
 
 jobs:
   build-and-push:
@@ -61,13 +60,27 @@ jobs:
     runs-on: ubuntu-latest
     environment: dev
     steps:
+      # Inline App token mint instead of shared-ci wrapper:
+      # alpacon-mcp is public; shared-ci is Internal so public callers
+      # cannot resolve `uses: alpacax/shared-ci/...`. Mirror the wrapper
+      # logic here (App token + workflow-dispatch).
+      - name: Generate App token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.DEPLOY_DISPATCHER_APP_ID }}
+          private-key: ${{ secrets.DEPLOY_DISPATCHER_PRIVATE_KEY }}
+          owner: alpacax
+          repositories: alpacon-gitops
+          permission-actions: write
+
       - name: Trigger dev deployment
         uses: benc-uk/workflow-dispatch@v1.3.1
         with:
           workflow: image-tag-update-pr.yaml
           repo: alpacax/alpacon-gitops
           ref: main
-          token: ${{ secrets.DEPLOY_ACTIONS_TRIGGER_TOKEN }}
+          token: ${{ steps.app-token.outputs.token }}
           inputs: '{"tag": "${{ github.event.workflow_run.head_sha }}", "service": "alpacon-mcp", "env": "dev", "job": "update_image_tag"}'
 
   deploy-prod:
@@ -76,11 +89,21 @@ jobs:
     runs-on: ubuntu-latest
     environment: prod
     steps:
+      - name: Generate App token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.DEPLOY_DISPATCHER_APP_ID }}
+          private-key: ${{ secrets.DEPLOY_DISPATCHER_PRIVATE_KEY }}
+          owner: alpacax
+          repositories: alpacon-gitops
+          permission-actions: write
+
       - name: Trigger prod deployment
         uses: benc-uk/workflow-dispatch@v1.3.1
         with:
           workflow: image-tag-update-pr.yaml
           repo: alpacax/alpacon-gitops
           ref: main
-          token: ${{ secrets.DEPLOY_ACTIONS_TRIGGER_TOKEN }}
+          token: ${{ steps.app-token.outputs.token }}
           inputs: '{"tag": "${{ github.ref_name }}", "service": "alpacon-mcp", "env": "prod", "job": "update_image_tag"}'
