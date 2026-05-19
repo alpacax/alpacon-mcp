@@ -424,9 +424,7 @@ class TestSignRequestDetails:
     """Test get/approve/deny/delete/retry sign request tools."""
 
     @pytest.mark.asyncio
-    async def test_get_sign_request_success(
-        self, mock_http_client, mock_token_manager
-    ):
+    async def test_get_sign_request_success(self, mock_http_client, mock_token_manager):
         """Test successful CSR retrieval."""
         mock_http_client.get.return_value = {
             'id': 'csr-1',
@@ -557,9 +555,7 @@ class TestGetCertificate:
     """Test get certificate tool."""
 
     @pytest.mark.asyncio
-    async def test_get_certificate_success(
-        self, mock_http_client, mock_token_manager
-    ):
+    async def test_get_certificate_success(self, mock_http_client, mock_token_manager):
         """Test successful certificate retrieval."""
         mock_http_client.get.return_value = {
             'id': 'cert-1',
