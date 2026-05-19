@@ -26,7 +26,6 @@ async def _submit_command(
     *,
     token: str | None = None,
 ) -> dict[str, Any] | list[Any]:
-    """Submit a command to the Command API. Internal helper, not an MCP tool."""
     command_data: dict[str, Any] = {
         'server': server_id,
         'shell': shell,
@@ -63,7 +62,6 @@ async def _get_command_result(
     *,
     token: str | None = None,
 ) -> dict[str, Any]:
-    """Poll a command result by ID. Internal helper, not an MCP tool."""
     return await http_client.get(
         region=region,
         workspace=workspace,

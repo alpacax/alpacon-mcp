@@ -913,7 +913,6 @@ async def webftp_check_status(
     )
 
 
-# WebFTP sessions resource
 @mcp.resource(
     uri='webftp://sessions/{region}/{workspace}',
     name='WebFTP Sessions List',
@@ -926,7 +925,6 @@ async def webftp_sessions_resource(region: str, workspace: str) -> dict[str, Any
     return {'content': sessions_data}
 
 
-# WebFTP downloads resource
 @mcp.resource(
     uri='webftp://downloads/{region}/{workspace}',
     name='WebFTP Downloads List',
