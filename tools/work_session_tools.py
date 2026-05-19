@@ -12,16 +12,20 @@ _API_SESSIONS = '/api/work-sessions/sessions/'
 
 @mcp_tool_handler(
     description=(
-        'Create a WorkSession to scope infrastructure tool calls under an auditable, '
-        'approval-gated session. Required when using MCP OAuth (streamable-http mode). '
-        'Returns session ID to pass as session_id to execute_command and webftp tools. '
-        'scopes controls which operations are allowed: "command" for execute_command, '
-        '"webftp" for file transfers. servers is the list of target server UUIDs. '
+        'Create a Work Session to scope all infrastructure actions under an auditable, '
+        'approval-gated session. Every execute_command and file transfer must be linked '
+        'to a Work Session—there is no out-of-session execution path. '
+        'description is the declared intent: the WHY of the session '
+        '(e.g. "fix nginx 502 on prod-web-1"). '
+        'scopes declares which operations are allowed: '
+        '"command" (execute_command), "webftp" (file transfers), '
+        '"websh" (interactive terminal), "tunnel" (port forwarding), "sudo" (privilege elevation). '
+        'servers is the list of target server UUIDs. '
         'expires_at is an ISO 8601 datetime string. '
         'Related: work_session_close (end session), execute_command (pass session_id).'
     ),
     annotations=ADDITIVE,
-    meta={'anthropic/searchHint': 'work session create audit approval scope'},
+    meta={'anthropic/searchHint': 'work session create audit approval scope intent'},
 )
 async def work_session_create(
     workspace: str,
@@ -59,7 +63,7 @@ async def work_session_create(
 
 @mcp_tool_handler(
     description=(
-        'Mark a WorkSession as completed and trigger AI security analysis. '
+        'Mark a Work Session as completed and trigger AI security analysis (Pass 1–4). '
         'Call after all commands and file transfers for this session are done. '
         'Related: work_session_create (create session), work_session_get (check status).'
     ),
@@ -90,7 +94,7 @@ async def work_session_close(
 
 @mcp_tool_handler(
     description=(
-        'Get details of a WorkSession: status, scopes, servers, timeline, auth_method. '
+        'Get details of a Work Session: status, scopes, servers, timeline, auth_method. '
         'Related: work_session_list (list all sessions), work_session_close (end session).'
     ),
     annotations=READ_ONLY,
@@ -119,7 +123,7 @@ async def work_session_get(
 
 @mcp_tool_handler(
     description=(
-        'List WorkSessions in a workspace. Optional status filter: '
+        'List Work Sessions in a workspace. Optional status filter: '
         '"pending", "active", "completed", "rejected", "cancelled", "expired". '
         'Optional auth_method filter: "web", "cli", "service_token", "mcp_oauth". '
         'Related: work_session_create (create session), work_session_get (single session detail).'
