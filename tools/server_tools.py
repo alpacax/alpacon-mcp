@@ -811,25 +811,26 @@ async def delete_server(
 
 @mcp_tool_handler(
     description=(
-        'Toggle the starred/favorite status of a server. '
+        'Set the starred/favorite status of a server. '
         'Starred servers can be quickly accessed in the workspace dashboard. '
         'Related: list_servers, get_server.'
     ),
-    annotations=ADDITIVE,
+    annotations=IDEMPOTENT_WRITE,
     meta={'anthropic/searchHint': 'server star favorite bookmark'},
 )
 async def star_server(
-    server_id: str, workspace: str, region: str = '', **kwargs
+    server_id: str, status: bool, workspace: str, region: str = '', **kwargs
 ) -> dict[str, Any]:
-    """Toggle star status on a server.
+    """Set star status on a server.
 
     Args:
         server_id: Server UUID
+        status: True to star, False to unstar
         workspace: Workspace name. Required parameter
         region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
-        Star toggle response
+        Star update response
     """
     token = kwargs.get('token')
 
@@ -838,12 +839,12 @@ async def star_server(
         workspace=workspace,
         endpoint=f'/api/servers/servers/{server_id}/star/',
         token=token,
-        data={},
+        data={'status': status},
     )
 
     err = unwrap_http_result(
         result,
-        default_message='Failed to toggle server star status',
+        default_message='Failed to update server star status',
         server_id=server_id,
         region=region,
         workspace=workspace,

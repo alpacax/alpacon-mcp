@@ -785,11 +785,12 @@ class TestStarServer:
 
     @pytest.mark.asyncio
     async def test_star_server_success(self, mock_http_client, mock_token_manager):
-        """Posts to star endpoint with empty body and returns success."""
+        """Posts to star endpoint with starred flag and returns success."""
         mock_http_client.post.return_value = {'starred': True}
 
         result = await star_server(
             server_id='550e8400-e29b-41d4-a716-446655440123',
+            status=True,
             workspace='testworkspace',
             region='ap1',
         )
@@ -800,7 +801,7 @@ class TestStarServer:
             workspace='testworkspace',
             endpoint='/api/servers/servers/550e8400-e29b-41d4-a716-446655440123/star/',
             token='test-token',
-            data={},
+            data={'status': True},
         )
 
     @pytest.mark.asyncio
@@ -810,6 +811,7 @@ class TestStarServer:
 
         result = await star_server(
             server_id='550e8400-e29b-41d4-a716-446655440123',
+            status=True,
             workspace='testworkspace',
         )
 
