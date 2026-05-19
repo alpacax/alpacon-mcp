@@ -708,7 +708,9 @@ async def update_server(
     description=(
         'Unregister a host from this workspace by UUID. The host is removed from '
         'all listings and no new Work Sessions can target it, but the Alpamon agent '
-        'on the host keeps running until uninstalled. Irreversible from this API. '
+        'on the host keeps running until uninstalled. Cannot be undone by this '
+        'tool—re-enrolling the host requires running the install script with a '
+        'registration token again. '
         'Related: list_servers (find UUID), get_server (confirm before unregistering).'
     ),
     annotations=DESTRUCTIVE,
