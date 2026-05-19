@@ -152,6 +152,25 @@ class TestWorkSessionGet:
             token='test-token',
         )
 
+    @pytest.mark.asyncio
+    async def test_get_propagates_api_error(self, mock_http_client, mock_token_manager):
+        from tools.work_session_tools import work_session_get
+
+        mock_http_client.get.return_value = {
+            'error': 'Not found',
+            'message': 'Work Session not found',
+            'status_code': 404,
+        }
+
+        result = await work_session_get(
+            session_id='ws-nonexistent',
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert result['status'] == 'error'
+        assert 'Work Session not found' in result['message']
+
 
 class TestWorkSessionList:
     @pytest.mark.asyncio
@@ -206,3 +225,20 @@ class TestWorkSessionList:
         call_params = mock_http_client.get.call_args[1]['params']
         assert call_params['auth_method'] == 'mcp_oauth'
         assert 'status' not in call_params
+
+    @pytest.mark.asyncio
+    async def test_list_propagates_api_error(
+        self, mock_http_client, mock_token_manager
+    ):
+        from tools.work_session_tools import work_session_list
+
+        mock_http_client.get.return_value = {
+            'error': 'Forbidden',
+            'message': 'Permission denied',
+            'status_code': 403,
+        }
+
+        result = await work_session_list(workspace='testworkspace', region='ap1')
+
+        assert result['status'] == 'error'
+        assert 'Permission denied' in result['message']

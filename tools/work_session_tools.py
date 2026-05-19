@@ -133,6 +133,15 @@ async def work_session_get(
         token=token,
     )
 
+    if err := unwrap_http_result(
+        result,
+        default_message='Failed to get Work Session',
+        session_id=session_id,
+        region=region,
+        workspace=workspace,
+    ):
+        return err
+
     return success_response(
         data=result, session_id=session_id, region=region, workspace=workspace
     )
@@ -172,5 +181,13 @@ async def work_session_list(
         token=token,
         params=params,
     )
+
+    if err := unwrap_http_result(
+        result,
+        default_message='Failed to list Work Sessions',
+        region=region,
+        workspace=workspace,
+    ):
+        return err
 
     return success_response(data=result, region=region, workspace=workspace)
