@@ -1,7 +1,6 @@
 """Command execution tools for Alpacon MCP server."""
 
 import asyncio
-import os
 from typing import Any
 
 from utils.common import error_response, success_response
@@ -108,7 +107,7 @@ async def list_commands(
 
 
 @mcp_tool_handler(
-    description='Run a shell command on a server and wait for the result (up to 5 minutes by default). Returns stdout, stderr, and exit code in a single call. Requires ACL permission. The timeout resets when the command is actively running. Supports dependency chains (run_after), scheduled execution (scheduled_at), and stdin data. Pass session_id to link this command to a Work Session for audit—required when ALPACON_MCP_REQUIRE_SESSION=true. When to use: the recommended way to run a command on a server. Related: execute_command_multi_server (run on multiple servers), list_commands (browse history), work_session_create (create a Work Session). Note: Default timeout is 300 seconds (5 minutes).',
+    description='Run a shell command on a server and wait for the result (up to 5 minutes by default). Returns stdout, stderr, and exit code in a single call. Requires ACL permission. The timeout resets when the command is actively running. Supports dependency chains (run_after), scheduled execution (scheduled_at), and stdin data. Pass session_id to link this command to a Work Session for audit—the server enforces this for MCP OAuth and browser-based auth. When to use: the recommended way to run a command on a server. Related: execute_command_multi_server (run on multiple servers), list_commands (browse history), work_session_create (create a Work Session). Note: Default timeout is 300 seconds (5 minutes).',
     annotations=ADDITIVE,
     meta={
         'anthropic/alwaysLoad': True,
@@ -133,18 +132,6 @@ async def execute_command(
 ) -> dict[str, Any]:
     """Execute a command on a server and wait for the result (requires ACL permission)."""
     token = kwargs.get('token')
-
-    if (
-        os.getenv('ALPACON_MCP_REQUIRE_SESSION', '').lower() == 'true'
-        and not session_id
-    ):
-        return error_response(
-            'session_id is required when ALPACON_MCP_REQUIRE_SESSION=true. '
-            'Create a WorkSession first with work_session_create.',
-            code='session_required',
-            workspace=workspace,
-            region=region,
-        )
 
     exec_data = await _submit_command(
         server_id=server_id,

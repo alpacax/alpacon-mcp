@@ -381,8 +381,6 @@ class TestSubmitCommandWithSession:
 
 
 class TestExecuteCommandWithSession:
-    """Test execute_command session_id and ALPACON_MCP_REQUIRE_SESSION."""
-
     @pytest.mark.asyncio
     async def test_execute_command_passes_session_id(
         self, mock_http_client, mock_token_manager
@@ -406,49 +404,6 @@ class TestExecuteCommandWithSession:
 
         call_data = mock_http_client.post.call_args[1]['data']
         assert call_data['work_session'] == 'ws-uuid-abcd'
-
-    @pytest.mark.asyncio
-    async def test_execute_command_require_session_enforced(
-        self, mock_http_client, mock_token_manager, monkeypatch
-    ):
-        from tools.command_tools import execute_command
-
-        monkeypatch.setenv('ALPACON_MCP_REQUIRE_SESSION', 'true')
-
-        result = await execute_command(
-            server_id='550e8400-e29b-41d4-a716-446655440001',
-            command='ls',
-            workspace='testworkspace',
-            region='ap1',
-        )
-
-        assert result['status'] == 'error'
-        assert 'session_id' in result['message']
-        mock_http_client.post.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_execute_command_require_session_passes_when_provided(
-        self, mock_http_client, mock_token_manager, monkeypatch
-    ):
-        from tools.command_tools import execute_command
-
-        monkeypatch.setenv('ALPACON_MCP_REQUIRE_SESSION', 'true')
-        mock_http_client.post.return_value = {'id': 'cmd-999'}
-        mock_http_client.get.return_value = {
-            'id': 'cmd-999',
-            'finished_at': '2026-05-19T10:00:00Z',
-            'status': 'completed',
-        }
-
-        result = await execute_command(
-            server_id='550e8400-e29b-41d4-a716-446655440001',
-            command='ls',
-            workspace='testworkspace',
-            session_id='ws-uuid-abcd',
-            region='ap1',
-        )
-
-        assert result['status'] == 'success'
 
 
 class TestExecuteCommandMultiServerWithSession:
