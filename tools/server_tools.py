@@ -8,6 +8,9 @@ from utils.error_handler import format_validation_error, validate_server_id_form
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ_ONLY
 
+VALID_PLATFORMS = frozenset({'debian', 'rhel', 'darwin', 'windows'})
+_PLATFORM_LIST_STR = ', '.join(f'"{p}"' for p in sorted(VALID_PLATFORMS))
+
 
 @mcp_tool_handler(
     description=(
@@ -633,33 +636,10 @@ async def shutdown_system(
     )
 
 
-VALID_PLATFORMS = frozenset({'debian', 'rhel', 'darwin', 'windows'})
-
-
-def _validate_platform(platform: str) -> dict[str, Any] | None:
-    if platform not in VALID_PLATFORMS:
-        return format_validation_error(
-            'platform',
-            platform,
-            f'Must be one of: {", ".join(sorted(VALID_PLATFORMS))}',
-        )
-    return None
-
-
-def _validate_token_id(token_id: str) -> dict[str, Any] | None:
-    if not validate_server_id_format(token_id):
-        return format_validation_error(
-            'token_id',
-            token_id,
-            'Must be a valid UUID. Example: 550e8400-e29b-41d4-a716-446655440000',
-        )
-    return None
-
-
 @mcp_tool_handler(
     description=(
         'Create a new server record in a workspace. '
-        'The platform must be one of: "debian", "rhel", "darwin", "windows". '
+        f'The platform must be one of: {_PLATFORM_LIST_STR}. '
         'After creation, use get_registration_guide to get the agent installation instructions. '
         'Related: list_servers (view after creation), delete_server.'
     ),
@@ -1130,7 +1110,7 @@ async def delete_registration_token(
     description=(
         'Get the agent installation guide for a specific platform and registration token. '
         'Returns shell commands or instructions to install the Alpacon agent on a new server. '
-        'The platform must be one of: "debian", "rhel", "darwin", "windows". '
+        f'The platform must be one of: {_PLATFORM_LIST_STR}. '
         'Related: list_registration_tokens (get token ID), create_registration_token.'
     ),
     annotations=READ_ONLY,
@@ -1188,3 +1168,23 @@ async def get_registration_guide(
         return err
 
     return success_response(data=result, region=region, workspace=workspace)
+
+
+def _validate_platform(platform: str) -> dict[str, Any] | None:
+    if platform not in VALID_PLATFORMS:
+        return format_validation_error(
+            'platform',
+            platform,
+            f'Must be one of: {", ".join(sorted(VALID_PLATFORMS))}',
+        )
+    return None
+
+
+def _validate_token_id(token_id: str) -> dict[str, Any] | None:
+    if not validate_server_id_format(token_id):
+        return format_validation_error(
+            'token_id',
+            token_id,
+            'Must be a valid UUID. Example: 550e8400-e29b-41d4-a716-446655440000',
+        )
+    return None
