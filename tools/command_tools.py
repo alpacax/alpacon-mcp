@@ -1,6 +1,7 @@
 """Command execution tools for Alpacon MCP server."""
 
 import asyncio
+import os
 from typing import Any
 
 from utils.common import error_response, success_response
@@ -20,6 +21,7 @@ async def _submit_command(
     run_after: list[str] | None = None,
     scheduled_at: str | None = None,
     data: str | None = None,
+    work_session_id: str | None = None,
     region: str = '',
     *,
     token: str | None = None,
@@ -42,6 +44,8 @@ async def _submit_command(
         command_data['scheduled_at'] = scheduled_at
     if data:
         command_data['data'] = data
+    if work_session_id:
+        command_data['work_session'] = work_session_id
 
     return await http_client.post(
         region=region,
@@ -126,11 +130,24 @@ async def execute_command(
     scheduled_at: str | None = None,
     data: str | None = None,
     timeout: int = 300,
+    session_id: str | None = None,
     region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
     """Execute a command on a server and wait for the result (requires ACL permission)."""
     token = kwargs.get('token')
+
+    if (
+        os.getenv('ALPACON_MCP_REQUIRE_SESSION', '').lower() == 'true'
+        and not session_id
+    ):
+        return error_response(
+            'session_id is required when ALPACON_MCP_REQUIRE_SESSION=true. '
+            'Create a WorkSession first with work_session_create.',
+            code='session_required',
+            workspace=workspace,
+            region=region,
+        )
 
     # Submit the command
     exec_data = await _submit_command(
@@ -144,6 +161,7 @@ async def execute_command(
         run_after=run_after,
         scheduled_at=scheduled_at,
         data=data,
+        work_session_id=session_id,
         region=region,
         token=token,
     )
@@ -270,6 +288,7 @@ async def execute_command_multi_server(
     env: dict[str, str] | None = None,
     region: str = '',
     parallel: bool = True,
+    session_id: str | None = None,
     **kwargs,
 ) -> dict[str, Any]:
     """Execute a command on multiple servers using Command API (requires ACL permission)."""
@@ -287,6 +306,7 @@ async def execute_command_multi_server(
             username=username,
             groupname=groupname,
             env=env,
+            work_session_id=session_id,
             region=region,
             token=token,
         )

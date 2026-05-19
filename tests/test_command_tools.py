@@ -339,3 +339,134 @@ class TestExecuteCommand:
 
         assert result['status'] == 'error'
         assert 'No token found' in result['message']
+
+
+class TestSubmitCommandWithSession:
+    """Test _submit_command forwards work_session to API payload."""
+
+    @pytest.mark.asyncio
+    async def test_submit_includes_work_session_when_provided(self, mock_http_client):
+        from tools.command_tools import _submit_command
+
+        mock_http_client.post.return_value = {'id': 'cmd-ws-001'}
+
+        await _submit_command(
+            server_id='550e8400-e29b-41d4-a716-446655440001',
+            command='ls',
+            workspace='testworkspace',
+            work_session_id='ws-uuid-abcd',
+            region='ap1',
+            token='test-token',
+        )
+
+        call_data = mock_http_client.post.call_args[1]['data']
+        assert call_data['work_session'] == 'ws-uuid-abcd'
+
+    @pytest.mark.asyncio
+    async def test_submit_omits_work_session_when_none(self, mock_http_client):
+        from tools.command_tools import _submit_command
+
+        mock_http_client.post.return_value = {'id': 'cmd-ws-002'}
+
+        await _submit_command(
+            server_id='550e8400-e29b-41d4-a716-446655440001',
+            command='ls',
+            workspace='testworkspace',
+            region='ap1',
+            token='test-token',
+        )
+
+        call_data = mock_http_client.post.call_args[1]['data']
+        assert 'work_session' not in call_data
+
+
+class TestExecuteCommandWithSession:
+    """Test execute_command session_id and ALPACON_MCP_REQUIRE_SESSION."""
+
+    @pytest.mark.asyncio
+    async def test_execute_command_passes_session_id(
+        self, mock_http_client, mock_token_manager
+    ):
+        from tools.command_tools import execute_command
+
+        mock_http_client.post.return_value = {'id': 'cmd-123'}
+        mock_http_client.get.return_value = {
+            'id': 'cmd-123',
+            'finished_at': '2026-05-19T10:00:00Z',
+            'status': 'completed',
+        }
+
+        await execute_command(
+            server_id='550e8400-e29b-41d4-a716-446655440001',
+            command='ls',
+            workspace='testworkspace',
+            session_id='ws-uuid-abcd',
+            region='ap1',
+        )
+
+        call_data = mock_http_client.post.call_args[1]['data']
+        assert call_data['work_session'] == 'ws-uuid-abcd'
+
+    @pytest.mark.asyncio
+    async def test_execute_command_require_session_enforced(
+        self, mock_http_client, mock_token_manager, monkeypatch
+    ):
+        from tools.command_tools import execute_command
+
+        monkeypatch.setenv('ALPACON_MCP_REQUIRE_SESSION', 'true')
+
+        result = await execute_command(
+            server_id='550e8400-e29b-41d4-a716-446655440001',
+            command='ls',
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert result['status'] == 'error'
+        assert 'session_id' in result['message']
+        mock_http_client.post.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_execute_command_require_session_passes_when_provided(
+        self, mock_http_client, mock_token_manager, monkeypatch
+    ):
+        from tools.command_tools import execute_command
+
+        monkeypatch.setenv('ALPACON_MCP_REQUIRE_SESSION', 'true')
+        mock_http_client.post.return_value = {'id': 'cmd-999'}
+        mock_http_client.get.return_value = {
+            'id': 'cmd-999',
+            'finished_at': '2026-05-19T10:00:00Z',
+            'status': 'completed',
+        }
+
+        result = await execute_command(
+            server_id='550e8400-e29b-41d4-a716-446655440001',
+            command='ls',
+            workspace='testworkspace',
+            session_id='ws-uuid-abcd',
+            region='ap1',
+        )
+
+        assert result['status'] == 'success'
+
+
+class TestExecuteCommandMultiServerWithSession:
+    @pytest.mark.asyncio
+    async def test_multi_server_passes_session_id(
+        self, mock_http_client, mock_token_manager
+    ):
+        from tools.command_tools import execute_command_multi_server
+
+        mock_http_client.post.return_value = {'id': 'cmd-multi-1'}
+
+        await execute_command_multi_server(
+            server_ids=['550e8400-e29b-41d4-a716-446655440001'],
+            command='ls',
+            workspace='testworkspace',
+            session_id='ws-uuid-abcd',
+            region='ap1',
+        )
+
+        call_data = mock_http_client.post.call_args[1]['data']
+        assert call_data['work_session'] == 'ws-uuid-abcd'
