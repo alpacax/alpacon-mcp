@@ -486,6 +486,7 @@ class AlpaconHTTPClient:
                     endpoint=req['endpoint'],
                     token=req['token'],
                     data=req.get('data'),
+                    params=req.get('params'),
                 )
             else:
                 # For other methods, use the generic request method

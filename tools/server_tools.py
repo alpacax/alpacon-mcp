@@ -1151,9 +1151,9 @@ async def delete_registration_token(
     meta={'anthropic/searchHint': 'registration guide install agent setup script'},
 )
 async def get_registration_guide(
+    token_id: str,
     workspace: str,
     platform: str,
-    token_id: str,
     server_name: str | None = None,
     region: str = '',
     **kwargs,
@@ -1161,9 +1161,9 @@ async def get_registration_guide(
     """Get agent installation guide for a platform and registration token.
 
     Args:
+        token_id: Registration token UUID to embed in the install script
         workspace: Workspace name. Required parameter
         platform: Target platform ("debian" | "rhel" | "darwin" | "windows")
-        token_id: Registration token UUID to embed in the install script
         server_name: Optional server name to pre-configure during installation
         region: Region (ap1, us1, eu1). Auto-detected if not provided
 
