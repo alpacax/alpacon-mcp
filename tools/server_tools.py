@@ -1128,13 +1128,16 @@ async def delete_registration_token(
     err = unwrap_http_result(
         result,
         default_message='Failed to delete registration token',
+        token_id=token_id,
         region=region,
         workspace=workspace,
     )
     if err:
         return err
 
-    return success_response(data=result, region=region, workspace=workspace)
+    return success_response(
+        data=result, token_id=token_id, region=region, workspace=workspace
+    )
 
 
 @mcp_tool_handler(
