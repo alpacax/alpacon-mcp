@@ -156,6 +156,21 @@ class TestListCommands:
         assert result['status'] == 'error'
         assert 'No token found' in result['message']
 
+    @pytest.mark.asyncio
+    async def test_list_commands_http_error(self, mock_http_client, mock_token_manager):
+        from tools.command_tools import list_commands
+
+        mock_http_client.get.return_value = {
+            'error': 'Forbidden',
+            'message': 'Permission denied',
+            'status_code': 403,
+        }
+
+        result = await list_commands(workspace='testworkspace', region='ap1')
+
+        assert result['status'] == 'error'
+        assert 'Permission denied' in result['message']
+
 
 class TestExecuteCommand:
     """Test execute_command function (renamed from execute_command_sync)."""

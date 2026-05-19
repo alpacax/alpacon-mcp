@@ -20,6 +20,7 @@ from tools.webftp_tools import (
     _save_stream,
     webftp_bulk_download,
     webftp_bulk_upload,
+    webftp_check_status,
     webftp_download_file,
     webftp_downloads_list,
     webftp_session_create,
@@ -227,6 +228,19 @@ class TestWebFtpSessionsList:
         assert result['status'] == _STATUS_ERROR
         assert 'No token found' in result['message']
         mock_http_client.get.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_sessions_list_http_error(self, mock_http_client, mock_token_manager):
+        mock_http_client.get.return_value = {
+            'error': 'Forbidden',
+            'message': 'Permission denied',
+            'status_code': 403,
+        }
+
+        result = await webftp_sessions_list(workspace='testworkspace', region='ap1')
+
+        assert result['status'] == _STATUS_ERROR
+        assert 'Permission denied' in result['message']
 
 
 class TestWebFtpUploadFile:
@@ -716,6 +730,62 @@ class TestWebFtpDownloadsList:
 
         assert result['status'] == _STATUS_ERROR
         assert 'HTTP 500' in result['message']
+
+
+class TestWebFtpCheckStatus:
+    @pytest.mark.asyncio
+    async def test_check_status_upload_success(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.get.return_value = {
+            'id': 'file-123',
+            'status': 'completed',
+            'file_path': '/home/user/file.txt',
+        }
+
+        result = await webftp_check_status(
+            file_id='file-123',
+            transfer_type='upload',
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert result['status'] == 'success'
+        assert result['file_id'] == 'file-123'
+        assert result['transfer_type'] == 'upload'
+
+    @pytest.mark.asyncio
+    async def test_check_status_invalid_transfer_type(
+        self, mock_http_client, mock_token_manager
+    ):
+        result = await webftp_check_status(
+            file_id='file-123',
+            transfer_type='invalid',
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert result['status'] == _STATUS_ERROR
+        assert 'Invalid transfer_type' in result['message']
+        mock_http_client.get.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_check_status_http_error(self, mock_http_client, mock_token_manager):
+        mock_http_client.get.return_value = {
+            'error': 'Not found',
+            'message': 'File not found',
+            'status_code': 404,
+        }
+
+        result = await webftp_check_status(
+            file_id='file-nonexistent',
+            transfer_type='download',
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert result['status'] == _STATUS_ERROR
+        assert 'File not found' in result['message']
 
 
 class TestWebFtpBulkUpload:

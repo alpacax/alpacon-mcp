@@ -13,8 +13,9 @@ _API_SESSIONS = '/api/work-sessions/sessions/'
 @mcp_tool_handler(
     description=(
         'Create a Work Session to scope all infrastructure actions under an auditable, '
-        'approval-gated session. Every execute_command and file transfer must be linked '
-        'to a Work Session—there is no out-of-session execution path. '
+        'approval-gated session. Every execute_command and file transfer should be linked '
+        'to a Work Session—the server enforces this for MCP OAuth and browser-based auth '
+        '(session_id is optional for other auth methods such as service tokens). '
         'description is the declared intent: the WHY of the session '
         '(e.g. "fix nginx 502 on prod-web-1"). '
         'scopes declares which operations are allowed: '

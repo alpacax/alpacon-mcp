@@ -298,6 +298,15 @@ async def webftp_sessions_list(
         params=params,
     )
 
+    if err := unwrap_http_result(
+        result,
+        default_message='Failed to list WebFTP sessions',
+        server_id=server_id,
+        region=region,
+        workspace=workspace,
+    ):
+        return err
+
     return success_response(
         data=result, server_id=server_id, region=region, workspace=workspace
     )
@@ -650,6 +659,15 @@ async def webftp_uploads_list(
         params=params,
     )
 
+    if err := unwrap_http_result(
+        result,
+        default_message='Failed to list uploads',
+        server_id=server_id,
+        region=region,
+        workspace=workspace,
+    ):
+        return err
+
     return success_response(
         data=result, server_id=server_id, region=region, workspace=workspace
     )
@@ -677,6 +695,15 @@ async def webftp_downloads_list(
         token=token,
         params=params,
     )
+
+    if err := unwrap_http_result(
+        result,
+        default_message='Failed to list downloads',
+        server_id=server_id,
+        region=region,
+        workspace=workspace,
+    ):
+        return err
 
     return success_response(
         data=result, server_id=server_id, region=region, workspace=workspace
@@ -969,6 +996,15 @@ async def webftp_check_status(
         endpoint=endpoint_map[transfer_type],
         token=token,
     )
+
+    if err := unwrap_http_result(
+        result,
+        default_message='Failed to check transfer status',
+        file_id=file_id,
+        region=region,
+        workspace=workspace,
+    ):
+        return err
 
     return success_response(
         data=result,

@@ -3,7 +3,7 @@
 import asyncio
 from typing import Any
 
-from utils.common import error_response, success_response
+from utils.common import error_response, success_response, unwrap_http_result
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, READ_ONLY
@@ -96,6 +96,14 @@ async def list_commands(
         token=token,
         params=params,
     )
+
+    if err := unwrap_http_result(
+        result,
+        default_message='Failed to list commands',
+        region=region,
+        workspace=workspace,
+    ):
+        return err
 
     return success_response(
         data=result,
