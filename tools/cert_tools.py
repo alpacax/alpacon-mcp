@@ -861,39 +861,3 @@ async def retry_revoke_request(
     return success_response(
         data=result, revoke_id=revoke_id, region=region, workspace=workspace
     )
-
-
-@mcp_tool_handler(
-    description='Cancel a pending certificate revocation request that was initiated by the current user. This withdraws the revocation request before it is approved.',
-    annotations=IDEMPOTENT_WRITE,
-    meta={'anthropic/searchHint': 'certificate revoke request cancel withdraw'},
-)
-async def cancel_revoke_request(
-    revoke_id: str,
-    workspace: str,
-    region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
-    """Cancel a certificate revocation request.
-
-    Args:
-        revoke_id: Revocation request ID to cancel
-        workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
-
-    Returns:
-        Cancellation response
-    """
-    token = kwargs.get('token')
-
-    result = await http_client.post(
-        region=region,
-        workspace=workspace,
-        endpoint=f'/api/cert/revoke-requests/{revoke_id}/cancel/',
-        token=token,
-        data={},
-    )
-
-    return success_response(
-        data=result, revoke_id=revoke_id, region=region, workspace=workspace
-    )

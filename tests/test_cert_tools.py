@@ -7,7 +7,6 @@ import pytest
 from tools.cert_tools import (
     approve_revoke_request,
     approve_sign_request,
-    cancel_revoke_request,
     create_certificate_authority,
     create_sign_request,
     delete_certificate_authority,
@@ -731,27 +730,6 @@ class TestRevokeRequests:
             region='ap1',
             workspace='testworkspace',
             endpoint='/api/cert/revoke-requests/rev-1/retry/',
-            token='test-token',
-            data={},
-        )
-
-    @pytest.mark.asyncio
-    async def test_cancel_revoke_request_success(
-        self, mock_http_client, mock_token_manager
-    ):
-        """Test successful revoke request cancellation."""
-        mock_http_client.post.return_value = {'id': 'rev-1', 'status': 'cancelled'}
-
-        result = await cancel_revoke_request(
-            revoke_id='rev-1', workspace='testworkspace', region='ap1'
-        )
-
-        assert result['status'] == 'success'
-        assert result['revoke_id'] == 'rev-1'
-        mock_http_client.post.assert_called_once_with(
-            region='ap1',
-            workspace='testworkspace',
-            endpoint='/api/cert/revoke-requests/rev-1/cancel/',
             token='test-token',
             data={},
         )
