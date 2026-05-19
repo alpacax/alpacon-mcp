@@ -1,19 +1,28 @@
 """WebFTP (Web FTP) management tools for Alpacon MCP server."""
 
 import asyncio
+import base64
+import binascii
 import os
+import shlex
 from http import HTTPStatus
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import httpx
 
 from server import mcp
 from utils.common import error_response, success_response
-from utils.decorators import mcp_tool_handler
+from utils.decorators import _is_auth_enabled, mcp_tool_handler
 from utils.error_handler import format_validation_error, validate_file_path
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, READ_ONLY
+
+_REMOTE_MODE_ERROR = (
+    'WebFTP file transfer is not supported in remote mode. '
+    'The MCP server cannot access your local filesystem from a remote container. '
+    'Use local mode (stdio) for file transfers.'
+)
 
 # API endpoints
 _API_SESSIONS = '/api/webftp/sessions/'
@@ -29,6 +38,7 @@ _API_DOWNLOAD_STATUS = _API_DOWNLOADS + '{}/status/'
 _CHUNK_SIZE = 65536
 _UPLOAD_CONCURRENCY = 10
 _BULK_DOWNLOAD_TIMEOUT = 60.0
+_REMOTE_DOWNLOAD_TIMEOUT = int(os.getenv('ALPACON_MCP_WEBFTP_DOWNLOAD_TIMEOUT', '60'))
 _S3_SUCCESS_CODES = (HTTPStatus.OK, HTTPStatus.CREATED)
 
 # Result statuses
@@ -119,6 +129,90 @@ async def _aiter_file(path: str, chunk_size: int = _CHUNK_SIZE):
             yield chunk
     finally:
         await asyncio.to_thread(src_file.close)
+
+
+async def _upload_bytes_to_s3(upload_url: str, data: bytes) -> str | None:
+    """PUT bytes to a presigned S3 URL. Returns an error message on failure, None on success."""
+    async with httpx.AsyncClient() as client:
+        resp = await client.put(upload_url, content=data)
+    if resp.status_code not in _S3_SUCCESS_CODES:
+        return f'Failed to upload to S3: {resp.status_code} - {resp.text}'
+    return None
+
+
+async def _download_remote_mode(
+    *,
+    server_id: str,
+    remote_file_path: str,
+    resource_type: str,
+    workspace: str,
+    region: str,
+    username: str | None,
+    token: str,
+) -> dict[str, Any]:
+    """Handle webftp_download_file in remote mode: poll until ready, return presigned URL."""
+    file_name = os.path.basename(remote_file_path)
+    if resource_type == 'folder':
+        file_name += '.zip'
+
+    download_data: dict[str, Any] = {
+        'server': server_id,
+        'path': remote_file_path,
+        'name': file_name,
+        'resource_type': resource_type,
+    }
+    if username:
+        download_data['username'] = username
+
+    result = await http_client.post(
+        region=region,
+        workspace=workspace,
+        endpoint=_API_DOWNLOADS,
+        token=token,
+        data=download_data,
+    )
+
+    file_id = result.get('id')
+    download_url = result.get('download_url')
+
+    if not download_url:
+        for _ in range(_REMOTE_DOWNLOAD_TIMEOUT):
+            await asyncio.sleep(1)
+            status = await http_client.get(
+                region=region,
+                workspace=workspace,
+                endpoint=_API_DOWNLOAD_STATUS.format(file_id),
+                token=token,
+            )
+            if status.get('success') is True:
+                download_url = status.get('download_url')
+                break
+            elif status.get('success') is False:
+                return error_response(
+                    f'Server failed to process download: {status.get("message", "unknown error")}',
+                    file_id=file_id,
+                    code='download_failed',
+                )
+        else:
+            return error_response(
+                f'Download timed out waiting for server. '
+                f'Use webftp_check_status("{file_id}", "download", workspace="{workspace}", region="{region}") to poll manually.',
+                file_id=file_id,
+                code='download_timeout',
+            )
+
+    return success_response(
+        message=f'File ready for download: {file_name}',
+        data=result,
+        server_id=server_id,
+        remote_file_path=remote_file_path,
+        resource_type=resource_type,
+        download_url=download_url,
+        expires_in='24 hours',
+        tip=f'curl -o {shlex.quote(file_name)} {shlex.quote(cast(str, download_url))}',
+        region=region,
+        workspace=workspace,
+    )
 
 
 @mcp_tool_handler(
@@ -249,6 +343,9 @@ async def webftp_upload_file(
     """
     token = kwargs.get('token')
 
+    if _is_auth_enabled():
+        return error_response(_REMOTE_MODE_ERROR, code='remote_mode_unsupported')
+
     # Validate file paths
     if not validate_file_path(local_file_path):
         return format_validation_error('local_file_path', local_file_path)
@@ -285,18 +382,10 @@ async def webftp_upload_file(
     )
 
     # Step 4: Upload file content to S3 using presigned URL
-    if 'upload_url' in result and result['upload_url']:
-        async with httpx.AsyncClient() as client:
-            upload_response = await client.put(
-                result['upload_url'],
-                content=file_content,
-            )
-
-            if upload_response.status_code not in _S3_SUCCESS_CODES:
-                return error_response(
-                    f'Failed to upload to S3: {upload_response.status_code} - {upload_response.text}',
-                    upload_url=result['upload_url'],
-                )
+    if result.get('upload_url'):
+        err = await _upload_bytes_to_s3(result['upload_url'], file_content)
+        if err:
+            return error_response(err, upload_url=result['upload_url'])
 
         # Step 5: Trigger server to process the uploaded file
         upload_trigger = await http_client.get(
@@ -314,7 +403,7 @@ async def webftp_upload_file(
             local_file_path=local_file_path,
             remote_file_path=remote_file_path,
             file_size=len(file_content),
-            upload_url=result.get('upload_url'),
+            upload_url=result['upload_url'],
             download_url=result.get('download_url'),
             region=region,
             workspace=workspace,
@@ -333,15 +422,128 @@ async def webftp_upload_file(
 
 
 @mcp_tool_handler(
-    description='Download a file or folder from a remote server and save it to a local path. For folders, the content is automatically packaged as a ZIP archive. When to use: retrieving a single file or folder from a server. Related: webftp_bulk_download (multiple files as ZIP), webftp_upload_file (upload to server), webftp_downloads_list (check download history). Note: Set resource_type="folder" for directories.',
+    description=(
+        'Upload file content to a remote server using base64-encoded bytes. '
+        'Use this when you have the file content directly rather than a local file path. '
+        'Suitable for: remote mode (streamable-http), Claude Desktop file attachments, '
+        'or when Claude Code reads a file with its Read tool. '
+        'file_content must be base64-encoded bytes. '
+        'Related: webftp_upload_file (local path), webftp_download_file.'
+    ),
+    annotations=ADDITIVE,
+    meta={'anthropic/searchHint': 'file upload content base64 remote mode attach'},
+)
+async def webftp_upload_content(
+    server_id: str,
+    file_content: str,
+    remote_file_path: str,
+    workspace: str,
+    file_name: str | None = None,
+    username: str | None = None,
+    region: str = '',
+    allow_overwrite: bool = True,
+    **kwargs,
+) -> dict[str, Any]:
+    """Upload base64-encoded file content to a server via WebFTP.
+
+    Args:
+        server_id: Server ID to upload file to
+        file_content: Base64-encoded file bytes
+        remote_file_path: Absolute path on the server (e.g., "/home/user/file.txt")
+        workspace: Workspace name. Required parameter
+        file_name: File name to use on the server. Inferred from remote_file_path if omitted
+        username: Optional username (uses authenticated user if not provided)
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        allow_overwrite: Allow overwriting existing files (default: True)
+
+    Returns:
+        File upload response
+    """
+    token = kwargs.get('token')
+
+    try:
+        raw_bytes = base64.b64decode(file_content, validate=True)
+    except binascii.Error as exc:
+        return error_response(f'Invalid base64 content: {exc}', code='invalid_content')
+
+    if not validate_file_path(remote_file_path):
+        return format_validation_error('remote_file_path', remote_file_path)
+
+    name = file_name or os.path.basename(remote_file_path)
+
+    upload_data: dict[str, Any] = {
+        'server': server_id,
+        'name': name,
+        'path': remote_file_path,
+        'allow_overwrite': allow_overwrite,
+    }
+    if username:
+        upload_data['username'] = username
+
+    result = await http_client.post(
+        region=region,
+        workspace=workspace,
+        endpoint=_API_UPLOADS,
+        token=token,
+        data=upload_data,
+    )
+
+    if result.get('upload_url'):
+        err = await _upload_bytes_to_s3(result['upload_url'], raw_bytes)
+        if err:
+            return error_response(err, upload_url=result['upload_url'])
+
+        upload_trigger = await http_client.get(
+            region=region,
+            workspace=workspace,
+            endpoint=f'{_API_UPLOADS}{result["id"]}/upload/',
+            token=token,
+        )
+
+        return success_response(
+            message='File content uploaded successfully and processed by server',
+            data=result,
+            upload_trigger=upload_trigger,
+            server_id=server_id,
+            remote_file_path=remote_file_path,
+            file_size=len(raw_bytes),
+            upload_url=result['upload_url'],
+            region=region,
+            workspace=workspace,
+        )
+    else:
+        return success_response(
+            message='File content uploaded successfully (direct upload)',
+            data=result,
+            server_id=server_id,
+            remote_file_path=remote_file_path,
+            file_size=len(raw_bytes),
+            region=region,
+            workspace=workspace,
+        )
+
+
+@mcp_tool_handler(
+    description=(
+        'Download a file or folder from a remote server. '
+        'In local mode: saves to local_file_path. '
+        'In remote mode (streamable-http): polls until the file is ready on S3, '
+        'then returns a presigned download URL valid for 24 hours — '
+        'open it in a browser or run the curl command in the response. '
+        'For folders, content is packaged as a ZIP archive. '
+        'Related: webftp_bulk_download (multiple files as ZIP), '
+        'webftp_upload_file (upload to server), '
+        'webftp_downloads_list (check download history). '
+        'Note: Set resource_type="folder" for directories.'
+    ),
     annotations=ADDITIVE,
     meta={'anthropic/searchHint': 'file download transfer get retrieve server'},
 )
 async def webftp_download_file(
     server_id: str,
     remote_file_path: str,
-    local_file_path: str,
     workspace: str,
+    local_file_path: str | None = None,
     resource_type: str = 'file',
     username: str | None = None,
     region: str = '',
@@ -366,10 +568,25 @@ async def webftp_download_file(
         Download response with file saved locally
     """
     token = kwargs.get('token')
+    if not isinstance(token, str) or not token:
+        raise RuntimeError('token must be injected by mcp_tool_handler')
 
-    # Validate file paths
     if not validate_file_path(remote_file_path):
         return format_validation_error('remote_file_path', remote_file_path)
+
+    if _is_auth_enabled():
+        return await _download_remote_mode(
+            server_id=server_id,
+            remote_file_path=remote_file_path,
+            resource_type=resource_type,
+            workspace=workspace,
+            region=region,
+            username=username,
+            token=token,
+        )
+
+    if local_file_path is None:
+        return error_response('local_file_path is required in local mode')
     if not validate_file_path(local_file_path):
         return format_validation_error('local_file_path', local_file_path)
 
@@ -399,10 +616,10 @@ async def webftp_download_file(
     )
 
     # Step 3: Download file content from S3 using presigned URL
-    if 'download_url' in result and result['download_url']:
+    if result.get('download_url'):
         try:
             file_size = await _stream_s3_to_file(
-                result['download_url'], local_file_path
+                result['download_url'], cast(str, local_file_path)
             )
         except _S3DownloadError as e:
             return error_response(
@@ -550,6 +767,9 @@ async def webftp_bulk_upload(
         Bulk upload response with per-file status
     """
     token = kwargs.get('token')
+
+    if _is_auth_enabled():
+        return error_response(_REMOTE_MODE_ERROR, code='remote_mode_unsupported')
 
     # Validate non-empty file list
     if not local_file_paths:
@@ -706,6 +926,9 @@ async def webftp_bulk_download(
         Bulk download response with file saved locally
     """
     token = kwargs.get('token')
+
+    if _is_auth_enabled():
+        return error_response(_REMOTE_MODE_ERROR, code='remote_mode_unsupported')
 
     # Validate non-empty paths list
     if not remote_paths:

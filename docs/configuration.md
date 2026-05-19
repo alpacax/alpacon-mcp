@@ -227,6 +227,9 @@ export ALPACON_MCP_LOG_LEVEL=ERROR   # For production
 
 # Debug mode
 export DEBUG=true        # Enable debug logging
+
+# WebFTP configuration
+export ALPACON_MCP_WEBFTP_DOWNLOAD_TIMEOUT=60   # Seconds to poll for S3 staging in remote-mode downloads (default: 60). Raise for large folder ZIPs.
 ```
 
 #### Configuration examples
@@ -316,7 +319,7 @@ WORKDIR /app
 COPY . .
 
 RUN pip install uv
-RUN uv venv && uv pip install mcp[cli] httpx
+RUN uv venv && uv pip install mcp httpx "PyJWT[crypto]"
 
 # Use config volume for tokens
 VOLUME ["/app/config"]
