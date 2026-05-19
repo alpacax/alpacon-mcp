@@ -34,7 +34,7 @@ async def work_session_create(
     servers: list[str],
     expires_at: str,
     description: str,
-    title: str = '',
+    title: str | None = None,
     region: str = '',
     **kwargs,
 ) -> dict[str, Any]:

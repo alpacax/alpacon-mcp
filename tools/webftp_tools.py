@@ -184,10 +184,10 @@ async def _download_remote_mode(
     ):
         return err
 
-    file_id = result.get('id')
     download_url = result.get('download_url')
 
     if not download_url:
+        file_id = result.get('id')
         for _ in range(_REMOTE_DOWNLOAD_TIMEOUT):
             await asyncio.sleep(1)
             status = await http_client.get(
@@ -196,6 +196,12 @@ async def _download_remote_mode(
                 endpoint=_API_DOWNLOAD_STATUS.format(file_id),
                 token=token,
             )
+            if err := unwrap_http_result(
+                status,
+                default_message='Failed to poll download status',
+                file_id=file_id,
+            ):
+                return err
             if status.get('success') is True:
                 download_url = status.get('download_url')
                 break
@@ -228,7 +234,7 @@ async def _download_remote_mode(
 
 
 @mcp_tool_handler(
-    description='Create a new WebFTP file transfer session on a server. Returns session ID and connection details. Pass session_id (a Work Session ID from work_session_create) to link this WebFTP session to a Work Session for audit—note that session_id here refers to the Work Session, not the WebFTP session being created. When to use: advanced session management. For simple file transfers, use webftp_upload_file or webftp_download_file directly. Related: webftp_sessions_list (view sessions), webftp_upload_file, webftp_download_file, work_session_create (create a Work Session).',
+    description='Create a new WebFTP file transfer session on a server. Returns session ID and connection details. Pass work_session_id to link this WebFTP session to a Work Session for audit. When to use: advanced session management. For simple file transfers, use webftp_upload_file or webftp_download_file directly. Related: webftp_sessions_list (view sessions), webftp_upload_file, webftp_download_file, work_session_create (create a Work Session).',
     annotations=ADDITIVE,
     meta={'anthropic/searchHint': 'webftp session create file transfer'},
 )
@@ -236,7 +242,7 @@ async def webftp_session_create(
     server_id: str,
     workspace: str,
     username: str | None = None,
-    session_id: str | None = None,
+    work_session_id: str | None = None,
     region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
@@ -246,8 +252,8 @@ async def webftp_session_create(
     session_data = {'server': server_id}
     if username:
         session_data['username'] = username
-    if session_id:
-        session_data['work_session'] = session_id
+    if work_session_id:
+        session_data['work_session'] = work_session_id
 
     result = await http_client.post(
         region=region,
@@ -313,7 +319,7 @@ async def webftp_sessions_list(
 
 
 @mcp_tool_handler(
-    description='Upload a local file to a remote server. Reads the file from a local absolute path, transfers it via S3 presigned URL, and places it at the specified remote path on the server. Pass session_id to link this upload to a Work Session for audit—maps to the work_session field in the API payload; the server enforces this for MCP OAuth and browser-based auth. When to use: transferring a single file to a server. Related: webftp_bulk_upload (multiple files), webftp_download_file (download from server), webftp_uploads_list (check upload history), work_session_create (create a Work Session). Note: Both local and remote paths must be absolute.',
+    description='Upload a local file to a remote server. Reads the file from a local absolute path, transfers it via S3 presigned URL, and places it at the specified remote path on the server. Pass session_id to link this upload to a Work Session for audit; the server enforces this for MCP OAuth and browser-based auth. When to use: transferring a single file to a server. Related: webftp_bulk_upload (multiple files), webftp_download_file (download from server), webftp_uploads_list (check upload history), work_session_create (create a Work Session). Note: Both local and remote paths must be absolute.',
     annotations=ADDITIVE,
     meta={'anthropic/searchHint': 'file upload transfer scp sftp send server'},
 )
@@ -519,7 +525,7 @@ async def webftp_upload_content(
         'then returns a presigned download URL valid for 24 hours — '
         'open it in a browser or run the curl command in the response. '
         'For folders, content is packaged as a ZIP archive. '
-        'Pass session_id to link this download to a Work Session for audit—maps to the work_session field in the API payload; '
+        'Pass session_id to link this download to a Work Session for audit; '
         'the server enforces this for MCP OAuth and browser-based auth. '
         'Related: webftp_bulk_download (multiple files as ZIP), '
         'webftp_upload_file (upload to server), '
@@ -711,7 +717,7 @@ async def webftp_downloads_list(
 
 
 @mcp_tool_handler(
-    description='Upload multiple local files to a remote server in a single operation. All files are placed in the same destination directory. Uses S3 presigned URLs with concurrent uploads. Pass session_id to link this upload to a Work Session for audit—maps to the work_session field in the API payload; the server enforces this for MCP OAuth and browser-based auth. When to use: uploading several files at once (more efficient than repeated webftp_upload_file calls). Related: webftp_upload_file (single file), webftp_bulk_download (download multiple), work_session_create (create a Work Session). Note: All files go to the same remote directory.',
+    description='Upload multiple local files to a remote server in a single operation. All files are placed in the same destination directory. Uses S3 presigned URLs with concurrent uploads. Pass session_id to link this upload to a Work Session for audit; the server enforces this for MCP OAuth and browser-based auth. When to use: uploading several files at once (more efficient than repeated webftp_upload_file calls). Related: webftp_upload_file (single file), webftp_bulk_download (download multiple), work_session_create (create a Work Session). Note: All files go to the same remote directory.',
     annotations=ADDITIVE,
     meta={'anthropic/searchHint': 'bulk upload multiple files batch transfer'},
 )
@@ -865,7 +871,7 @@ async def webftp_bulk_upload(
 
 
 @mcp_tool_handler(
-    description='Download multiple files or folders from a remote server as a single ZIP archive. All paths must share the same parent directory. Pass session_id to link this download to a Work Session for audit—maps to the work_session field in the API payload; the server enforces this for MCP OAuth and browser-based auth. When to use: downloading several files at once. Related: webftp_download_file (single file), webftp_bulk_upload (upload multiple), webftp_check_status (poll if still processing), work_session_create (create a Work Session). Note: If ZIP is not ready, poll with webftp_check_status then retry.',
+    description='Download multiple files or folders from a remote server as a single ZIP archive. All paths must share the same parent directory. Pass session_id to link this download to a Work Session for audit; the server enforces this for MCP OAuth and browser-based auth. When to use: downloading several files at once. Related: webftp_download_file (single file), webftp_bulk_upload (upload multiple), webftp_check_status (poll if still processing), work_session_create (create a Work Session). Note: If ZIP is not ready, poll with webftp_check_status then retry.',
     annotations=ADDITIVE,
     meta={'anthropic/searchHint': 'bulk download multiple files zip archive batch'},
 )
