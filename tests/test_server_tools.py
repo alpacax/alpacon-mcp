@@ -10,7 +10,6 @@ import pytest
 
 from tools.server_tools import (
     create_registration_token,
-    create_server,
     create_server_note,
     delete_registration_token,
     delete_server,
@@ -19,7 +18,6 @@ from tools.server_tools import (
     get_server,
     get_server_access_policy,
     get_server_note,
-    get_server_sync,
     list_registration_tokens,
     list_server_notes,
     list_servers,
@@ -554,110 +552,6 @@ class TestServerNoteCRUD:
         )
 
 
-class TestCreateServer:
-    """Tests for create_server tool."""
-
-    @pytest.mark.asyncio
-    async def test_create_server_success(self, mock_http_client, mock_token_manager):
-        """Creates a server with required fields and returns success."""
-        created_server = {
-            'id': '550e8400-e29b-41d4-a716-446655440001',
-            'name': 'new-server',
-            'platform': 'debian',
-        }
-        mock_http_client.post.return_value = created_server
-
-        result = await create_server(
-            workspace='testworkspace',
-            name='new-server',
-            platform='debian',
-            region='ap1',
-        )
-
-        assert result['status'] == 'success'
-        assert result['data'] == created_server
-        mock_http_client.post.assert_called_once_with(
-            region='ap1',
-            workspace='testworkspace',
-            endpoint='/api/servers/servers/',
-            token='test-token',
-            data={'name': 'new-server', 'platform': 'debian'},
-        )
-
-    @pytest.mark.asyncio
-    async def test_create_server_with_description(
-        self, mock_http_client, mock_token_manager
-    ):
-        """Creates a server with optional description included in request body."""
-        mock_http_client.post.return_value = {
-            'id': '550e8400-e29b-41d4-a716-446655440001',
-            'name': 'new-server',
-            'platform': 'rhel',
-            'description': 'A production RHEL server',
-        }
-
-        result = await create_server(
-            workspace='testworkspace',
-            name='new-server',
-            platform='rhel',
-            description='A production RHEL server',
-            region='ap1',
-        )
-
-        assert result['status'] == 'success'
-        _, kwargs = mock_http_client.post.call_args
-        assert kwargs['data']['description'] == 'A production RHEL server'
-
-    @pytest.mark.asyncio
-    async def test_create_server_no_token(self, mock_http_client, mock_token_manager):
-        """Returns error when token is missing."""
-        mock_token_manager.get_token.return_value = None
-
-        result = await create_server(
-            workspace='testworkspace', name='new-server', platform='debian'
-        )
-
-        assert result['status'] == 'error'
-        assert 'No token found' in result['message']
-        mock_http_client.post.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_create_server_invalid_platform(
-        self, mock_http_client, mock_token_manager
-    ):
-        """Returns validation error when platform is not a valid value."""
-        result = await create_server(
-            workspace='testworkspace',
-            name='new-server',
-            platform='ubuntu',
-            region='ap1',
-        )
-
-        assert result['status'] == 'error'
-        assert result['error_code'] == 'validation'
-        assert result['field'] == 'platform'
-        mock_http_client.post.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_create_server_http_error(self, mock_http_client, mock_token_manager):
-        """Returns error when http_client returns an upstream error envelope."""
-        mock_http_client.post.return_value = {
-            'error': 'Bad Request',
-            'status_code': 400,
-            'message': 'Server name already exists',
-        }
-
-        result = await create_server(
-            workspace='testworkspace',
-            name='existing-server',
-            platform='debian',
-            region='ap1',
-        )
-
-        assert result['status'] == 'error'
-        assert result['message'] == 'Server name already exists'
-
-
 class TestUpdateServer:
     """Tests for update_server tool."""
 
@@ -785,8 +679,8 @@ class TestStarServer:
 
     @pytest.mark.asyncio
     async def test_star_server_success(self, mock_http_client, mock_token_manager):
-        """Posts to star endpoint with starred flag and returns success."""
-        mock_http_client.post.return_value = {'starred': True}
+        """Posts to star endpoint with status flag and returns success."""
+        mock_http_client.post.return_value = {'status': True}
 
         result = await star_server(
             server_id='550e8400-e29b-41d4-a716-446655440123',
@@ -818,46 +712,6 @@ class TestStarServer:
         assert result['status'] == 'error'
         assert 'No token found' in result['message']
         mock_http_client.post.assert_not_called()
-
-
-class TestGetServerSync:
-    """Tests for get_server_sync tool."""
-
-    @pytest.mark.asyncio
-    async def test_get_server_sync_success(self, mock_http_client, mock_token_manager):
-        """Returns sync status for a server."""
-        mock_http_client.get.return_value = {
-            'synced': True,
-            'last_sync': '2024-01-01T00:00:00Z',
-        }
-
-        result = await get_server_sync(
-            server_id='550e8400-e29b-41d4-a716-446655440123',
-            workspace='testworkspace',
-            region='ap1',
-        )
-
-        assert result['status'] == 'success'
-        mock_http_client.get.assert_called_once_with(
-            region='ap1',
-            workspace='testworkspace',
-            endpoint='/api/servers/servers/550e8400-e29b-41d4-a716-446655440123/sync/',
-            token='test-token',
-        )
-
-    @pytest.mark.asyncio
-    async def test_get_server_sync_no_token(self, mock_http_client, mock_token_manager):
-        """Returns error when token is missing."""
-        mock_token_manager.get_token.return_value = None
-
-        result = await get_server_sync(
-            server_id='550e8400-e29b-41d4-a716-446655440123',
-            workspace='testworkspace',
-        )
-
-        assert result['status'] == 'error'
-        assert 'No token found' in result['message']
-        mock_http_client.get.assert_not_called()
 
 
 class TestGetServerAccessPolicy:

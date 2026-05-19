@@ -638,66 +638,6 @@ async def shutdown_system(
 
 @mcp_tool_handler(
     description=(
-        'Create a new server record in a workspace. '
-        f'The platform must be one of: {_PLATFORM_LIST_STR}. '
-        'After creation, use get_registration_guide to get the agent installation instructions. '
-        'Related: list_servers (view after creation), delete_server.'
-    ),
-    annotations=ADDITIVE,
-    meta={'anthropic/searchHint': 'server create add new register'},
-)
-async def create_server(
-    workspace: str,
-    name: str,
-    platform: str,
-    description: str | None = None,
-    region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
-    """Create a new server in the workspace.
-
-    Args:
-        workspace: Workspace name. Required parameter
-        name: Server name
-        platform: Server platform ("debian" | "rhel" | "darwin" | "windows")
-        description: Optional server description
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
-
-    Returns:
-        Created server data
-    """
-    token = kwargs.get('token')
-
-    err = _validate_platform(platform)
-    if err:
-        return err
-
-    data: dict[str, Any] = {'name': name, 'platform': platform}
-    if description is not None:
-        data['description'] = description
-
-    result = await http_client.post(
-        region=region,
-        workspace=workspace,
-        endpoint='/api/servers/servers/',
-        token=token,
-        data=data,
-    )
-
-    err = unwrap_http_result(
-        result,
-        default_message='Failed to create server',
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(data=result, region=region, workspace=workspace)
-
-
-@mcp_tool_handler(
-    description=(
         'Update an existing server record by its UUID. '
         'Supports partial updates: only fields you provide will be changed. '
         'Related: get_server (view current state), delete_server.'
@@ -845,52 +785,6 @@ async def star_server(
     err = unwrap_http_result(
         result,
         default_message='Failed to update server star status',
-        server_id=server_id,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(
-        data=result, server_id=server_id, region=region, workspace=workspace
-    )
-
-
-@mcp_tool_handler(
-    description=(
-        'Get the sync status of a server, showing whether the agent data is up to date with the platform. '
-        'Use this to check if a server is in sync after configuration changes. '
-        'Related: update_information (trigger a resync), get_server.'
-    ),
-    annotations=READ_ONLY,
-    meta={'anthropic/searchHint': 'server sync status check drift'},
-)
-async def get_server_sync(
-    server_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
-    """Get sync status for a server.
-
-    Args:
-        server_id: Server UUID
-        workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
-
-    Returns:
-        Server sync status
-    """
-    token = kwargs.get('token')
-
-    result = await http_client.get(
-        region=region,
-        workspace=workspace,
-        endpoint=f'/api/servers/servers/{server_id}/sync/',
-        token=token,
-    )
-
-    err = unwrap_http_result(
-        result,
-        default_message='Failed to get server sync status',
         server_id=server_id,
         region=region,
         workspace=workspace,
