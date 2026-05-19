@@ -928,16 +928,12 @@ async def webftp_sessions_resource(region: str, workspace: str) -> dict[str, Any
 
 # WebFTP downloads resource
 @mcp.resource(
-    uri='webftp://downloads/{session_id}/{region}/{workspace}',
+    uri='webftp://downloads/{region}/{workspace}',
     name='WebFTP Downloads List',
-    description='Get list of downloadable files from WebFTP session',
+    description='Get list of WebFTP download history for a workspace',
     mime_type='application/json',
 )
-async def webftp_downloads_resource(
-    session_id: str, region: str, workspace: str
-) -> dict[str, Any]:
+async def webftp_downloads_resource(region: str, workspace: str) -> dict[str, Any]:
     """Get WebFTP downloads as a resource."""
-    downloads_data = await webftp_downloads_list(
-        session_id=session_id, region=region, workspace=workspace
-    )
+    downloads_data = await webftp_downloads_list(region=region, workspace=workspace)
     return {'content': downloads_data}

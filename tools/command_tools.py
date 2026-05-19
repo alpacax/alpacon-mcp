@@ -173,7 +173,7 @@ async def execute_command(
         )
 
     if isinstance(exec_data, list):
-        if len(exec_data) > 0:
+        if exec_data:
             command_id = exec_data[0].get('id')
         else:
             return error_response(
