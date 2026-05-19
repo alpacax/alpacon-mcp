@@ -251,7 +251,7 @@ async def execute_command(
 
 
 @mcp_tool_handler(
-    description='Run the same shell command on multiple servers simultaneously or sequentially. Returns per-server results with success/failure status. Requires ACL permission. When to use: batch operations like deploying configs, checking status, or running diagnostics across a fleet. Related: execute_command (single server). Note: Set parallel=false for sequential execution. This submits commands without waiting for results — use list_commands to check status.',
+    description='Run the same shell command on multiple servers simultaneously or sequentially. Returns per-server results with success/failure status. Requires ACL permission. Pass session_id to link commands to a Work Session for audit—the server enforces this for MCP OAuth and browser-based auth. When to use: batch operations like deploying configs, checking status, or running diagnostics across a fleet. Related: execute_command (single server), work_session_create (create a Work Session). Note: Set parallel=false for sequential execution. This submits commands without waiting for results — use list_commands to check status.',
     annotations=ADDITIVE,
     meta={'anthropic/searchHint': 'command multi server batch deploy fleet parallel'},
 )

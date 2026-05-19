@@ -1,8 +1,8 @@
-"""WorkSession management tools for Alpacon MCP server."""
+"""Work Session management tools for Alpacon MCP server."""
 
 from typing import Any
 
-from utils.common import success_response
+from utils.common import success_response, unwrap_http_result
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, READ_ONLY
@@ -37,7 +37,7 @@ async def work_session_create(
     region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
-    """Create a WorkSession for auditable, approval-gated infrastructure access."""
+    """Create a Work Session for auditable, approval-gated infrastructure access."""
     token = kwargs.get('token')
 
     data: dict[str, Any] = {
@@ -58,6 +58,14 @@ async def work_session_create(
         data=data,
     )
 
+    if err := unwrap_http_result(
+        result,
+        default_message='Failed to create Work Session',
+        region=region,
+        workspace=workspace,
+    ):
+        return err
+
     return success_response(data=result, region=region, workspace=workspace)
 
 
@@ -76,7 +84,7 @@ async def work_session_close(
     region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
-    """Complete a WorkSession."""
+    """Complete a Work Session."""
     token = kwargs.get('token')
 
     result = await http_client.post(
@@ -86,6 +94,15 @@ async def work_session_close(
         token=token,
         data={},
     )
+
+    if err := unwrap_http_result(
+        result,
+        default_message='Failed to close Work Session',
+        session_id=session_id,
+        region=region,
+        workspace=workspace,
+    ):
+        return err
 
     return success_response(
         data=result, session_id=session_id, region=region, workspace=workspace
@@ -106,7 +123,7 @@ async def work_session_get(
     region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
-    """Get detailed information about a specific WorkSession."""
+    """Get detailed information about a specific Work Session."""
     token = kwargs.get('token')
 
     result = await http_client.get(
@@ -139,7 +156,7 @@ async def work_session_list(
     region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
-    """List WorkSessions with optional status and auth_method filtering."""
+    """List Work Sessions with optional status and auth_method filtering."""
     token = kwargs.get('token')
 
     params: dict[str, Any] = {'page_size': limit}
