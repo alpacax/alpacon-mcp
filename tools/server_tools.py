@@ -372,11 +372,6 @@ async def delete_server_note(
     )
 
 
-# ===============================
-# AGENT ACTION TOOLS
-# ===============================
-
-
 @mcp_tool_handler(
     description=(
         'Restart the Alpacon agent process on a server. The agent will briefly go offline during restart. '
@@ -637,10 +632,6 @@ async def shutdown_system(
         data=result, server_id=server_id, region=region, workspace=workspace
     )
 
-
-# ===============================
-# SERVER CRUD TOOLS
-# ===============================
 
 VALID_PLATFORMS = frozenset({'debian', 'rhel', 'darwin', 'windows'})
 
@@ -974,11 +965,6 @@ async def get_server_access_policy(
     return success_response(
         data=result, server_id=server_id, region=region, workspace=workspace
     )
-
-
-# ===============================
-# REGISTRATION TOKEN TOOLS
-# ===============================
 
 
 @mcp_tool_handler(
