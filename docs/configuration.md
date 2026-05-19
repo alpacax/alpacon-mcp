@@ -227,6 +227,9 @@ export ALPACON_MCP_LOG_LEVEL=ERROR   # For production
 
 # Debug mode
 export DEBUG=true        # Enable debug logging
+
+# WebFTP configuration
+export ALPACON_MCP_WEBFTP_DOWNLOAD_TIMEOUT=60   # Seconds to poll for S3 staging in remote-mode downloads (default: 60). Raise for large folder ZIPs.
 ```
 
 #### Configuration examples
