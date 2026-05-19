@@ -1509,8 +1509,6 @@ class TestWebFtpUploadContentWithSession:
             'upload_url': None,
         }
 
-        import base64
-
         content_b64 = base64.b64encode(b'hello world').decode()
 
         await webftp_upload_content(
@@ -1532,8 +1530,6 @@ class TestWebFtpUploadContentWithSession:
         from tools.webftp_tools import webftp_upload_content
 
         mock_http_client.post.return_value = {'id': 'upload-002', 'upload_url': None}
-
-        import base64
 
         content_b64 = base64.b64encode(b'hello').decode()
 
