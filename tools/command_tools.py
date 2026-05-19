@@ -311,8 +311,7 @@ async def execute_command_multi_server(
         results = await asyncio.gather(
             *[_submit_one(sid) for sid in server_ids], return_exceptions=True
         )
-        for i, result in enumerate(results):
-            sid = server_ids[i]
+        for sid, result in zip(server_ids, results, strict=True):
             if isinstance(result, BaseException):
                 if not isinstance(result, Exception):
                     raise result
