@@ -28,7 +28,7 @@ async def work_session_create(
     scopes: list[str],
     servers: list[str],
     expires_at: str,
-    description: str = '',
+    description: str,
     title: str = '',
     region: str = '',
     **kwargs,
@@ -41,9 +41,8 @@ async def work_session_create(
         'scopes': scopes,
         'servers': servers,
         'expires_at': expires_at,
+        'description': description,
     }
-    if description:
-        data['description'] = description
     if title:
         data['title'] = title
 
@@ -122,6 +121,7 @@ async def work_session_get(
     description=(
         'List WorkSessions in a workspace. Optional status filter: '
         '"pending", "active", "completed", "rejected", "cancelled", "expired". '
+        'Optional auth_method filter: "web", "cli", "service_token", "mcp_oauth". '
         'Related: work_session_create (create session), work_session_get (single session detail).'
     ),
     annotations=READ_ONLY,
@@ -130,16 +130,19 @@ async def work_session_get(
 async def work_session_list(
     workspace: str,
     status: str | None = None,
+    auth_method: str | None = None,
     limit: int = 20,
     region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
-    """List WorkSessions with optional status filtering."""
+    """List WorkSessions with optional status and auth_method filtering."""
     token = kwargs.get('token')
 
     params: dict[str, Any] = {'page_size': limit}
     if status:
         params['status'] = status
+    if auth_method:
+        params['auth_method'] = auth_method
 
     result = await http_client.get(
         region=region,

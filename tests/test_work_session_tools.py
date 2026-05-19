@@ -36,6 +36,7 @@ class TestWorkSessionCreate:
             scopes=['command'],
             servers=['550e8400-e29b-41d4-a716-446655440001'],
             expires_at='2026-05-19T13:00:00+00:00',
+            description='Fix nginx config',
             region='ap1',
         )
 
@@ -51,6 +52,7 @@ class TestWorkSessionCreate:
                 'scopes': ['command'],
                 'servers': ['550e8400-e29b-41d4-a716-446655440001'],
                 'expires_at': '2026-05-19T13:00:00+00:00',
+                'description': 'Fix nginx config',
             },
         )
 
@@ -79,9 +81,7 @@ class TestWorkSessionCreate:
         assert 'auth_method' not in call_data
 
     @pytest.mark.asyncio
-    async def test_create_omits_empty_title_and_description(
-        self, mock_http_client, mock_token_manager
-    ):
+    async def test_create_omits_empty_title(self, mock_http_client, mock_token_manager):
         from tools.work_session_tools import work_session_create
 
         mock_http_client.post.return_value = {'id': 'ws-uuid-0000', 'status': 'pending'}
@@ -91,12 +91,13 @@ class TestWorkSessionCreate:
             scopes=['command'],
             servers=['550e8400-e29b-41d4-a716-446655440001'],
             expires_at='2026-05-19T13:00:00+00:00',
+            description='Routine maintenance',
             region='ap1',
         )
 
         call_data = mock_http_client.post.call_args[1]['data']
         assert 'title' not in call_data
-        assert 'description' not in call_data
+        assert call_data['description'] == 'Routine maintenance'
 
 
 class TestWorkSessionClose:
@@ -189,3 +190,19 @@ class TestWorkSessionList:
 
         call_params = mock_http_client.get.call_args[1]['params']
         assert call_params['status'] == 'active'
+
+    @pytest.mark.asyncio
+    async def test_list_with_auth_method_filter(
+        self, mock_http_client, mock_token_manager
+    ):
+        from tools.work_session_tools import work_session_list
+
+        mock_http_client.get.return_value = {'count': 1, 'results': []}
+
+        await work_session_list(
+            workspace='testworkspace', auth_method='mcp_oauth', region='ap1'
+        )
+
+        call_params = mock_http_client.get.call_args[1]['params']
+        assert call_params['auth_method'] == 'mcp_oauth'
+        assert 'status' not in call_params
