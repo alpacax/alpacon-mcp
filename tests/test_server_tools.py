@@ -12,7 +12,6 @@ from tools.server_tools import (
     create_registration_token,
     create_server_note,
     delete_registration_token,
-    delete_server,
     delete_server_note,
     get_registration_guide,
     get_server,
@@ -21,6 +20,7 @@ from tools.server_tools import (
     list_server_notes,
     list_servers,
     star_server,
+    unregister_server,
     update_server,
     update_server_note,
 )
@@ -636,15 +636,15 @@ class TestUpdateServer:
         assert 'name' not in kwargs['data']
 
 
-class TestDeleteServer:
-    """Tests for delete_server tool."""
+class TestUnregisterServer:
+    """Tests for unregister_server tool."""
 
     @pytest.mark.asyncio
-    async def test_delete_server_success(self, mock_http_client, mock_token_manager):
-        """Deletes server by UUID and returns success."""
+    async def test_unregister_server_success(self, mock_http_client, mock_token_manager):
+        """Unregisters server by UUID and returns success."""
         mock_http_client.delete.return_value = {}
 
-        result = await delete_server(
+        result = await unregister_server(
             server_id='550e8400-e29b-41d4-a716-446655440123',
             workspace='testworkspace',
             region='ap1',
@@ -659,11 +659,11 @@ class TestDeleteServer:
         )
 
     @pytest.mark.asyncio
-    async def test_delete_server_no_token(self, mock_http_client, mock_token_manager):
+    async def test_unregister_server_no_token(self, mock_http_client, mock_token_manager):
         """Returns error when token is missing."""
         mock_token_manager.get_token.return_value = None
 
-        result = await delete_server(
+        result = await unregister_server(
             server_id='550e8400-e29b-41d4-a716-446655440123',
             workspace='testworkspace',
         )

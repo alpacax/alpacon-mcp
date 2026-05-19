@@ -638,12 +638,13 @@ async def shutdown_system(
 
 @mcp_tool_handler(
     description=(
-        'Update an existing server record by its UUID. '
-        'Supports partial updates: only fields you provide will be changed. '
-        'Related: get_server (view current state), delete_server.'
+        "Rename or relabel a host's Alpacon entry (`name`, `description`) by UUID. "
+        'Use when a server is re-purposed or moved between teams—this updates the '
+        'fleet-inventory metadata only. '
+        'Related: get_server (view current state), unregister_server.'
     ),
     annotations=IDEMPOTENT_WRITE,
-    meta={'anthropic/searchHint': 'server update edit modify rename'},
+    meta={'anthropic/searchHint': 'server update edit modify rename relabel'},
 )
 async def update_server(
     server_id: str,
@@ -705,17 +706,18 @@ async def update_server(
 
 @mcp_tool_handler(
     description=(
-        'Permanently delete a server record from the workspace by its UUID. '
-        'This action cannot be undone. The server will be removed from all listings. '
-        'Related: list_servers (find server UUID first), get_server (confirm before deleting).'
+        'Unregister a host from this workspace by UUID. The host is removed from '
+        'all listings and no new Work Sessions can target it, but the Alpamon agent '
+        'on the host keeps running until uninstalled. Irreversible from this API. '
+        'Related: list_servers (find UUID), get_server (confirm before unregistering).'
     ),
     annotations=DESTRUCTIVE,
-    meta={'anthropic/searchHint': 'server delete remove permanently'},
+    meta={'anthropic/searchHint': 'server unregister deregister delete remove'},
 )
-async def delete_server(
+async def unregister_server(
     server_id: str, workspace: str, region: str = '', **kwargs
 ) -> dict[str, Any]:
-    """Delete a server from the workspace.
+    """Unregister a server from the workspace.
 
     Args:
         server_id: Server UUID
@@ -723,7 +725,7 @@ async def delete_server(
         region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
-        Deletion confirmation
+        Unregister confirmation
     """
     token = kwargs.get('token')
 
@@ -736,7 +738,7 @@ async def delete_server(
 
     err = unwrap_http_result(
         result,
-        default_message='Failed to delete server',
+        default_message='Failed to unregister server',
         server_id=server_id,
         region=region,
         workspace=workspace,
@@ -751,12 +753,13 @@ async def delete_server(
 
 @mcp_tool_handler(
     description=(
-        'Set the starred/favorite status of a server. '
-        'Starred servers can be quickly accessed in the workspace dashboard. '
-        'Related: list_servers, get_server.'
+        'Pin or unpin a server for the caller for faster access—a personal-preference '
+        'flag, not a fleet-wide setting. Does not change visibility, RBAC, or ACLs '
+        'for any other principal. Use `status=True` to pin, `False` to unpin. '
+        'Related: list_servers (the unfiltered inventory).'
     ),
     annotations=IDEMPOTENT_WRITE,
-    meta={'anthropic/searchHint': 'server star favorite bookmark'},
+    meta={'anthropic/searchHint': 'server star pin favorite bookmark personalization'},
 )
 async def star_server(
     server_id: str, status: bool, workspace: str, region: str = '', **kwargs
@@ -799,12 +802,14 @@ async def star_server(
 
 @mcp_tool_handler(
     description=(
-        'List all server registration tokens in a workspace. '
-        'Registration tokens are used to install the Alpacon agent on new servers. '
+        'List Alpamon registration tokens issued in this workspace—credentials '
+        'embedded in the install script to authenticate a host on first run. '
+        'Returns token IDs, names, and creation metadata. Use before issuing new '
+        'tokens or rotating compromised ones. '
         'Related: create_registration_token, delete_registration_token, get_registration_guide.'
     ),
     annotations=READ_ONLY,
-    meta={'anthropic/searchHint': 'registration token list agent install'},
+    meta={'anthropic/searchHint': 'registration token list alpamon install'},
 )
 async def list_registration_tokens(
     workspace: str,
@@ -854,13 +859,14 @@ async def list_registration_tokens(
 
 @mcp_tool_handler(
     description=(
-        'Create a new server registration token. '
-        'The token is used to authenticate the Alpacon agent during installation on a new server. '
-        'After creating a token, use get_registration_guide to get the installation instructions. '
+        'Mint a new Alpamon registration token for installing the agent on a new '
+        'host. The returned token is embedded in the install script '
+        '(get_registration_guide). Name the token per cohort/batch '
+        '(e.g., `prod-web-2026-q2`) for clean rotation later. '
         'Related: list_registration_tokens, delete_registration_token, get_registration_guide.'
     ),
     annotations=ADDITIVE,
-    meta={'anthropic/searchHint': 'registration token create new agent install'},
+    meta={'anthropic/searchHint': 'registration token create mint issue alpamon install new host'},
 )
 async def create_registration_token(
     workspace: str,
@@ -908,12 +914,13 @@ async def create_registration_token(
 
 @mcp_tool_handler(
     description=(
-        'Delete a server registration token by its ID. '
-        'This invalidates the token and prevents any future agent installations using it. '
+        'Revoke an Alpamon registration token by ID. Already-enrolled hosts keep '
+        'working—this only blocks future enrollments using the same token. Use to '
+        'rotate after a suspected token leak or when a rollout cohort is complete. '
         'Related: list_registration_tokens (find token ID first), create_registration_token.'
     ),
     annotations=DESTRUCTIVE,
-    meta={'anthropic/searchHint': 'registration token delete remove invalidate'},
+    meta={'anthropic/searchHint': 'registration token delete revoke rotate invalidate'},
 )
 async def delete_registration_token(
     token_id: str, workspace: str, region: str = '', **kwargs
@@ -958,13 +965,15 @@ async def delete_registration_token(
 
 @mcp_tool_handler(
     description=(
-        'Get the agent installation guide for a specific platform and registration token. '
-        'Returns shell commands or instructions to install the Alpacon agent on a new server. '
-        f'The platform must be one of: {_PLATFORM_LIST_STR}. '
+        'Get the platform-specific Alpamon install script for a registration token. '
+        'Returns the exact shell commands an Operator runs on the target host to '
+        "bring it under Alpacon's control plane. "
+        f'The `platform` must be one of: {_PLATFORM_LIST_STR}. '
+        'Optionally pre-name the host via `server_name`. '
         'Related: list_registration_tokens (get token ID), create_registration_token.'
     ),
     annotations=READ_ONLY,
-    meta={'anthropic/searchHint': 'registration guide install agent setup script'},
+    meta={'anthropic/searchHint': 'registration guide install script alpamon setup operator'},
 )
 async def get_registration_guide(
     token_id: str,
