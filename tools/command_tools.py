@@ -87,7 +87,6 @@ async def list_commands(
     """List recent commands executed on servers."""
     token = kwargs.get('token')
 
-    # Prepare query parameters
     params = {'page_size': limit, 'ordering': '-added_at'}
 
     if server_id:
@@ -149,7 +148,6 @@ async def execute_command(
             region=region,
         )
 
-    # Submit the command
     exec_data = await _submit_command(
         server_id=server_id,
         command=command,
@@ -166,7 +164,6 @@ async def execute_command(
         token=token,
     )
 
-    # Check if exec_data contains an error (like ACL permission denied)
     if isinstance(exec_data, dict) and 'error' in exec_data:
         return error_response(
             f'Command execution failed: {exec_data.get("error", "Unknown error")}',
@@ -175,7 +172,6 @@ async def execute_command(
             details=exec_data,
         )
 
-    # Extract command ID from response (API may return dict or list)
     if isinstance(exec_data, list):
         if len(exec_data) > 0:
             command_id = exec_data[0].get('id')
@@ -227,7 +223,6 @@ async def execute_command(
         if isinstance(result, dict):
             status = result.get('status', '')
 
-            # Command completed
             if result.get('finished_at') is not None:
                 return success_response(
                     data=result,
@@ -239,7 +234,6 @@ async def execute_command(
                     workspace=workspace,
                 )
 
-            # Command failed with terminal status
             if status in ('stuck', 'error'):
                 return error_response(
                     f'Command failed with status: {status}',
@@ -258,10 +252,8 @@ async def execute_command(
                     hard_deadline,
                 )
 
-        # Wait before next check
         await asyncio.sleep(1)
 
-    # Timeout reached
     return error_response(
         f'Command execution timed out after {timeout} seconds',
         error_type='timeout',
