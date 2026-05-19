@@ -635,12 +635,39 @@ class TestUpdateServer:
         assert kwargs['data'] == {'description': 'Updated description'}
         assert 'name' not in kwargs['data']
 
+    @pytest.mark.asyncio
+    async def test_update_server_both_fields(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Both name and description are sent in PATCH body when provided together."""
+        mock_http_client.patch.return_value = {
+            'id': '550e8400-e29b-41d4-a716-446655440123',
+            'name': 'renamed-server',
+            'description': 'Updated description',
+        }
+
+        await update_server(
+            server_id='550e8400-e29b-41d4-a716-446655440123',
+            workspace='testworkspace',
+            name='renamed-server',
+            description='Updated description',
+            region='ap1',
+        )
+
+        _, kwargs = mock_http_client.patch.call_args
+        assert kwargs['data'] == {
+            'name': 'renamed-server',
+            'description': 'Updated description',
+        }
+
 
 class TestUnregisterServer:
     """Tests for unregister_server tool."""
 
     @pytest.mark.asyncio
-    async def test_unregister_server_success(self, mock_http_client, mock_token_manager):
+    async def test_unregister_server_success(
+        self, mock_http_client, mock_token_manager
+    ):
         """Unregisters server by UUID and returns success."""
         mock_http_client.delete.return_value = {}
 
@@ -659,7 +686,9 @@ class TestUnregisterServer:
         )
 
     @pytest.mark.asyncio
-    async def test_unregister_server_no_token(self, mock_http_client, mock_token_manager):
+    async def test_unregister_server_no_token(
+        self, mock_http_client, mock_token_manager
+    ):
         """Returns error when token is missing."""
         mock_token_manager.get_token.return_value = None
 
@@ -950,7 +979,9 @@ class TestGetRegistrationGuide:
         mock_token_manager.get_token.return_value = None
 
         result = await get_registration_guide(
-            workspace='testworkspace', platform='debian', token_id='tok-123'
+            workspace='testworkspace',
+            platform='debian',
+            token_id='a1b2c3d4-e5f6-7890-abcd-ef1234567890',
         )
 
         assert result['status'] == 'error'

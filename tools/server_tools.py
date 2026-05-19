@@ -868,7 +868,9 @@ async def list_registration_tokens(
         'Related: list_registration_tokens, delete_registration_token, get_registration_guide.'
     ),
     annotations=ADDITIVE,
-    meta={'anthropic/searchHint': 'registration token create mint issue alpamon install new host'},
+    meta={
+        'anthropic/searchHint': 'registration token create mint issue alpamon install new host'
+    },
 )
 async def create_registration_token(
     workspace: str,
@@ -975,7 +977,9 @@ async def delete_registration_token(
         'Related: list_registration_tokens (get token ID), create_registration_token.'
     ),
     annotations=READ_ONLY,
-    meta={'anthropic/searchHint': 'registration guide install script alpamon setup operator'},
+    meta={
+        'anthropic/searchHint': 'registration guide install script alpamon setup operator'
+    },
 )
 async def get_registration_guide(
     token_id: str,
