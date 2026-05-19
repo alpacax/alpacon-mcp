@@ -1390,5 +1390,94 @@ class TestEnsureParentDir:
             mock_path_cls.assert_not_called()
 
 
+class TestWebFtpSessionCreateWithSession:
+    @pytest.mark.asyncio
+    async def test_session_create_includes_work_session(
+        self, mock_http_client, mock_token_manager
+    ):
+        from tools.webftp_tools import webftp_session_create
+
+        mock_http_client.post.return_value = {'id': 'ftp-sess-001', 'status': 'active'}
+
+        await webftp_session_create(
+            server_id='550e8400-e29b-41d4-a716-446655440001',
+            workspace='testworkspace',
+            session_id='ws-uuid-abcd',
+            region='ap1',
+        )
+
+        call_data = mock_http_client.post.call_args[1]['data']
+        assert call_data['work_session'] == 'ws-uuid-abcd'
+
+    @pytest.mark.asyncio
+    async def test_session_create_omits_work_session_when_none(
+        self, mock_http_client, mock_token_manager
+    ):
+        from tools.webftp_tools import webftp_session_create
+
+        mock_http_client.post.return_value = {'id': 'ftp-sess-002', 'status': 'active'}
+
+        await webftp_session_create(
+            server_id='550e8400-e29b-41d4-a716-446655440001',
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        call_data = mock_http_client.post.call_args[1]['data']
+        assert 'work_session' not in call_data
+
+
+class TestWebFtpUploadContentWithSession:
+    @pytest.mark.asyncio
+    async def test_upload_content_includes_work_session(
+        self, mock_http_client, mock_token_manager
+    ):
+        from tools.webftp_tools import webftp_upload_content
+
+        mock_http_client.post.return_value = {
+            'id': 'upload-001',
+            'upload_url': None,
+        }
+
+        import base64
+
+        content_b64 = base64.b64encode(b'hello world').decode()
+
+        await webftp_upload_content(
+            server_id='550e8400-e29b-41d4-a716-446655440001',
+            file_content=content_b64,
+            remote_file_path='/home/user/hello.txt',
+            workspace='testworkspace',
+            session_id='ws-uuid-abcd',
+            region='ap1',
+        )
+
+        call_data = mock_http_client.post.call_args[1]['data']
+        assert call_data['work_session'] == 'ws-uuid-abcd'
+
+    @pytest.mark.asyncio
+    async def test_upload_content_omits_work_session_when_none(
+        self, mock_http_client, mock_token_manager
+    ):
+        from tools.webftp_tools import webftp_upload_content
+
+        mock_http_client.post.return_value = {'id': 'upload-002', 'upload_url': None}
+
+        import base64
+
+        content_b64 = base64.b64encode(b'hello').decode()
+
+        await webftp_upload_content(
+            server_id='550e8400-e29b-41d4-a716-446655440001',
+            file_content=content_b64,
+            remote_file_path='/home/user/hello.txt',
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        call_data = mock_http_client.post.call_args[1]['data']
+        assert 'work_session' not in call_data
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])

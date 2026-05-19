@@ -148,6 +148,7 @@ async def _download_remote_mode(
     workspace: str,
     region: str,
     username: str | None,
+    session_id: str | None,
     token: str,
 ) -> dict[str, Any]:
     """Handle webftp_download_file in remote mode: poll until ready, return presigned URL."""
@@ -163,6 +164,8 @@ async def _download_remote_mode(
     }
     if username:
         download_data['username'] = username
+    if session_id:
+        download_data['work_session'] = session_id
 
     result = await http_client.post(
         region=region,
@@ -224,6 +227,7 @@ async def webftp_session_create(
     server_id: str,
     workspace: str,
     username: str | None = None,
+    session_id: str | None = None,
     region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
@@ -246,6 +250,8 @@ async def webftp_session_create(
     # Only include username if provided
     if username:
         session_data['username'] = username
+    if session_id:
+        session_data['work_session'] = session_id
 
     # Make async call to create FTP session
     result = await http_client.post(
@@ -315,6 +321,7 @@ async def webftp_upload_file(
     remote_file_path: str,
     workspace: str,
     username: str | None = None,
+    session_id: str | None = None,
     region: str = '',
     allow_overwrite: bool = True,
     **kwargs,
@@ -371,6 +378,8 @@ async def webftp_upload_file(
     # Only include username if provided
     if username:
         upload_data['username'] = username
+    if session_id:
+        upload_data['work_session'] = session_id
 
     # Step 3: Create UploadedFile object (this generates presigned URLs when USE_S3=True)
     result = await http_client.post(
@@ -440,6 +449,7 @@ async def webftp_upload_content(
     workspace: str,
     file_name: str | None = None,
     username: str | None = None,
+    session_id: str | None = None,
     region: str = '',
     allow_overwrite: bool = True,
     **kwargs,
@@ -479,6 +489,8 @@ async def webftp_upload_content(
     }
     if username:
         upload_data['username'] = username
+    if session_id:
+        upload_data['work_session'] = session_id
 
     result = await http_client.post(
         region=region,
@@ -546,6 +558,7 @@ async def webftp_download_file(
     local_file_path: str | None = None,
     resource_type: str = 'file',
     username: str | None = None,
+    session_id: str | None = None,
     region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
@@ -582,6 +595,7 @@ async def webftp_download_file(
             workspace=workspace,
             region=region,
             username=username,
+            session_id=session_id,
             token=token,
         )
 
@@ -605,6 +619,8 @@ async def webftp_download_file(
     # Only include username if provided
     if username:
         download_data['username'] = username
+    if session_id:
+        download_data['work_session'] = session_id
 
     # Step 2: Create DownloadedFile object (this generates presigned URLs when USE_S3=True)
     result = await http_client.post(
@@ -748,6 +764,7 @@ async def webftp_bulk_upload(
     remote_directory: str,
     workspace: str,
     username: str | None = None,
+    session_id: str | None = None,
     region: str = '',
     allow_overwrite: bool = True,
     **kwargs,
@@ -796,6 +813,8 @@ async def webftp_bulk_upload(
     }
     if username:
         bulk_data['username'] = username
+    if session_id:
+        bulk_data['work_session'] = session_id
 
     result = await http_client.post(
         region=region,
@@ -909,6 +928,7 @@ async def webftp_bulk_download(
     local_file_path: str,
     workspace: str,
     username: str | None = None,
+    session_id: str | None = None,
     region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
@@ -958,6 +978,8 @@ async def webftp_bulk_download(
     }
     if username:
         download_data['username'] = username
+    if session_id:
+        download_data['work_session'] = session_id
 
     result = await http_client.post(
         region=region,
