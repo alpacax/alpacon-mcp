@@ -392,10 +392,18 @@ async def webftp_upload_file(
             token=token,
         )
 
+        if trigger_err := unwrap_http_result(
+            upload_trigger,
+            default_message='File uploaded to S3 but server processing trigger failed',
+            server_id=server_id,
+            region=region,
+            workspace=workspace,
+        ):
+            return trigger_err
+
         return success_response(
             message='File uploaded successfully and processed by server',
             data=result,
-            upload_trigger=upload_trigger,
             server_id=server_id,
             local_file_path=local_file_path,
             remote_file_path=remote_file_path,
@@ -494,10 +502,18 @@ async def webftp_upload_content(
             token=token,
         )
 
+        if trigger_err := unwrap_http_result(
+            upload_trigger,
+            default_message='Content uploaded to S3 but server processing trigger failed',
+            server_id=server_id,
+            region=region,
+            workspace=workspace,
+        ):
+            return trigger_err
+
         return success_response(
             message='File content uploaded successfully and processed by server',
             data=result,
-            upload_trigger=upload_trigger,
             server_id=server_id,
             remote_file_path=remote_file_path,
             file_size=len(raw_bytes),
@@ -845,13 +861,21 @@ async def webftp_bulk_upload(
             upload_results.append(gathered)
 
     if file_ids:
-        await http_client.post(
+        trigger_result = await http_client.post(
             region=region,
             workspace=workspace,
             endpoint=_API_BULK_UPLOAD_TRIGGER,
             token=token,
             data={'ids': file_ids},
         )
+        if trigger_err := unwrap_http_result(
+            trigger_result,
+            default_message='Files uploaded but bulk processing trigger failed',
+            server_id=server_id,
+            region=region,
+            workspace=workspace,
+        ):
+            return trigger_err
 
     successful = sum(
         1 for r in upload_results if r['status'] in ['uploaded', 'created']
