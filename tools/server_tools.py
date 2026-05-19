@@ -799,51 +799,6 @@ async def star_server(
 
 @mcp_tool_handler(
     description=(
-        'Get the access policy for a server, showing which users and groups have access and what permissions they hold. '
-        'Related: list_server_acls (command ACLs), list_servers.'
-    ),
-    annotations=READ_ONLY,
-    meta={'anthropic/searchHint': 'server access policy permissions who can access'},
-)
-async def get_server_access_policy(
-    server_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
-    """Get the access policy for a server.
-
-    Args:
-        server_id: Server UUID
-        workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
-
-    Returns:
-        Server access policy
-    """
-    token = kwargs.get('token')
-
-    result = await http_client.get(
-        region=region,
-        workspace=workspace,
-        endpoint=f'/api/servers/servers/{server_id}/access-policy/',
-        token=token,
-    )
-
-    err = unwrap_http_result(
-        result,
-        default_message='Failed to get server access policy',
-        server_id=server_id,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(
-        data=result, server_id=server_id, region=region, workspace=workspace
-    )
-
-
-@mcp_tool_handler(
-    description=(
         'List all server registration tokens in a workspace. '
         'Registration tokens are used to install the Alpacon agent on new servers. '
         'Related: create_registration_token, delete_registration_token, get_registration_guide.'

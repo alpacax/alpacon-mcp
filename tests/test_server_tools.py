@@ -16,7 +16,6 @@ from tools.server_tools import (
     delete_server_note,
     get_registration_guide,
     get_server,
-    get_server_access_policy,
     get_server_note,
     list_registration_tokens,
     list_server_notes,
@@ -712,50 +711,6 @@ class TestStarServer:
         assert result['status'] == 'error'
         assert 'No token found' in result['message']
         mock_http_client.post.assert_not_called()
-
-
-class TestGetServerAccessPolicy:
-    """Tests for get_server_access_policy tool."""
-
-    @pytest.mark.asyncio
-    async def test_get_server_access_policy_success(
-        self, mock_http_client, mock_token_manager
-    ):
-        """Returns access policy for a server."""
-        mock_http_client.get.return_value = {
-            'users': ['alice', 'bob'],
-            'groups': ['admins'],
-        }
-
-        result = await get_server_access_policy(
-            server_id='550e8400-e29b-41d4-a716-446655440123',
-            workspace='testworkspace',
-            region='ap1',
-        )
-
-        assert result['status'] == 'success'
-        mock_http_client.get.assert_called_once_with(
-            region='ap1',
-            workspace='testworkspace',
-            endpoint='/api/servers/servers/550e8400-e29b-41d4-a716-446655440123/access-policy/',
-            token='test-token',
-        )
-
-    @pytest.mark.asyncio
-    async def test_get_server_access_policy_no_token(
-        self, mock_http_client, mock_token_manager
-    ):
-        """Returns error when token is missing."""
-        mock_token_manager.get_token.return_value = None
-
-        result = await get_server_access_policy(
-            server_id='550e8400-e29b-41d4-a716-446655440123',
-            workspace='testworkspace',
-        )
-
-        assert result['status'] == 'error'
-        assert 'No token found' in result['message']
-        mock_http_client.get.assert_not_called()
 
 
 class TestListRegistrationTokens:
