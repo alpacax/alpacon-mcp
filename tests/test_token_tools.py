@@ -49,6 +49,8 @@ class TestListApiTokens:
 
         assert result['status'] == 'success'
         assert result['data']['count'] == 2
+        assert result['region'] == 'ap1'
+        assert result['workspace'] == 'testworkspace'
         mock_http_client.get.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
@@ -224,6 +226,23 @@ class TestCreateApiToken:
         call_data = mock_http_client.post.call_args[1]['data']
         assert call_data['presets'] == ['file_upload']
         assert 'scopes' not in call_data
+
+    @pytest.mark.asyncio
+    async def test_create_api_token_empty_name_returns_server_error(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Test that create_api_token with empty name surfaces the server 400 as error."""
+        mock_http_client.post.return_value = {
+            'error': 'HTTP Error',
+            'status_code': 400,
+            'message': 'This field may not be blank.',
+        }
+
+        result = await create_api_token(
+            workspace='testworkspace', region='ap1', name=''
+        )
+
+        assert result['status'] == 'error'
 
     @pytest.mark.asyncio
     async def test_create_api_token_http_error(
@@ -471,6 +490,8 @@ class TestListApiTokenScopes:
         assert result['status'] == 'success'
         assert len(result['data']['resources']) == 2
         assert result['data']['wildcards'] == ['*']
+        assert result['region'] == 'ap1'
+        assert result['workspace'] == 'testworkspace'
         mock_http_client.get.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',

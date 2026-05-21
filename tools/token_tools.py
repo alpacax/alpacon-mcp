@@ -9,6 +9,16 @@ from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, READ_ONLY
 
 
+def _validate_token_id(token_id: str) -> dict[str, Any] | None:
+    if not validate_server_id_format(token_id):
+        return format_validation_error(
+            'token_id',
+            token_id,
+            'Must be a valid UUID. Example: 550e8400-e29b-41d4-a716-446655440000',
+        )
+    return None
+
+
 @mcp_tool_handler(
     description='List API tokens in the workspace. When to use: reviewing existing API tokens or auditing access. Related: create_api_token (create new), delete_api_token (remove), list_api_token_scopes (available scopes).',
     annotations=READ_ONLY,
@@ -145,12 +155,9 @@ async def delete_api_token(
     """
     token = kwargs.get('token')
 
-    if not validate_server_id_format(token_id):
-        return format_validation_error(
-            'token_id',
-            token_id,
-            'Must be a valid UUID. Example: 550e8400-e29b-41d4-a716-446655440000',
-        )
+    err = _validate_token_id(token_id)
+    if err:
+        return err
 
     result = await http_client.delete(
         region=region,
@@ -202,12 +209,9 @@ async def duplicate_api_token(
     """
     token = kwargs.get('token')
 
-    if not validate_server_id_format(token_id):
-        return format_validation_error(
-            'token_id',
-            token_id,
-            'Must be a valid UUID. Example: 550e8400-e29b-41d4-a716-446655440000',
-        )
+    err = _validate_token_id(token_id)
+    if err:
+        return err
 
     data: dict[str, Any] = {}
     if name is not None:
