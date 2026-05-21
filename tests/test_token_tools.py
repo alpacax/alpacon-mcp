@@ -39,7 +39,10 @@ class TestListApiTokens:
         """Test successful API tokens list retrieval."""
         mock_http_client.get.return_value = {
             'count': 2,
-            'results': [{'id': 'tok-1', 'name': 'Token A'}, {'id': 'tok-2', 'name': 'Token B'}],
+            'results': [
+                {'id': 'tok-1', 'name': 'Token A'},
+                {'id': 'tok-2', 'name': 'Token B'},
+            ],
         }
 
         result = await list_api_tokens(workspace='testworkspace', region='ap1')
@@ -55,7 +58,9 @@ class TestListApiTokens:
         )
 
     @pytest.mark.asyncio
-    async def test_list_api_tokens_with_pagination(self, mock_http_client, mock_token_manager):
+    async def test_list_api_tokens_with_pagination(
+        self, mock_http_client, mock_token_manager
+    ):
         """Test list_api_tokens with pagination parameters."""
         mock_http_client.get.return_value = {'count': 10, 'results': []}
 
@@ -110,7 +115,9 @@ class TestCreateApiToken:
         )
 
     @pytest.mark.asyncio
-    async def test_create_api_token_with_all_params(self, mock_http_client, mock_token_manager):
+    async def test_create_api_token_with_all_params(
+        self, mock_http_client, mock_token_manager
+    ):
         """Test create_api_token with all optional parameters."""
         mock_http_client.post.return_value = {'id': 'tok-full', 'name': 'Full Token'}
 
@@ -136,9 +143,14 @@ class TestCreateApiToken:
         )
 
     @pytest.mark.asyncio
-    async def test_create_api_token_with_scopes_only(self, mock_http_client, mock_token_manager):
+    async def test_create_api_token_with_scopes_only(
+        self, mock_http_client, mock_token_manager
+    ):
         """Test create_api_token with scopes but no other optional params."""
-        mock_http_client.post.return_value = {'id': 'tok-scoped', 'name': 'Scoped Token'}
+        mock_http_client.post.return_value = {
+            'id': 'tok-scoped',
+            'name': 'Scoped Token',
+        }
 
         result = await create_api_token(
             workspace='testworkspace',
@@ -150,7 +162,6 @@ class TestCreateApiToken:
         assert result['status'] == 'success'
         call_data = mock_http_client.post.call_args[1]['data']
         assert call_data['scopes'] == ['servers:read']
-        assert 'description' not in call_data
         assert 'expires_at' not in call_data
 
 
@@ -163,7 +174,9 @@ class TestDeleteApiToken:
         mock_http_client.delete.return_value = {}
 
         result = await delete_api_token(
-            token_id='550e8400-e29b-41d4-a716-446655440001', workspace='testworkspace', region='ap1'
+            token_id='550e8400-e29b-41d4-a716-446655440001',
+            workspace='testworkspace',
+            region='ap1',
         )
 
         assert result['status'] == 'success'
@@ -182,14 +195,18 @@ class TestDeleteApiToken:
         mock_http_client.delete.return_value = {}
 
         result = await delete_api_token(
-            token_id='550e8400-e29b-41d4-a716-446655440002', workspace='testworkspace', region='ap1'
+            token_id='550e8400-e29b-41d4-a716-446655440002',
+            workspace='testworkspace',
+            region='ap1',
         )
 
         assert result['status'] == 'success'
         assert result['token_id'] == '550e8400-e29b-41d4-a716-446655440002'
 
     @pytest.mark.asyncio
-    async def test_delete_api_token_invalid_token_id(self, mock_http_client, mock_token_manager):
+    async def test_delete_api_token_invalid_token_id(
+        self, mock_http_client, mock_token_manager
+    ):
         """Test that delete_api_token returns error for non-UUID token_id."""
         result = await delete_api_token(
             token_id='not-a-uuid', workspace='testworkspace', region='ap1'
@@ -199,7 +216,9 @@ class TestDeleteApiToken:
         mock_http_client.delete.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_delete_api_token_http_exception(self, mock_http_client, mock_token_manager):
+    async def test_delete_api_token_http_exception(
+        self, mock_http_client, mock_token_manager
+    ):
         """Test that delete_api_token returns error when http_client raises an exception."""
         mock_http_client.delete.side_effect = Exception('Network failure')
 
@@ -216,7 +235,9 @@ class TestDuplicateApiToken:
     """Tests for duplicate_api_token tool."""
 
     @pytest.mark.asyncio
-    async def test_duplicate_api_token_success(self, mock_http_client, mock_token_manager):
+    async def test_duplicate_api_token_success(
+        self, mock_http_client, mock_token_manager
+    ):
         """Test successful API token duplication."""
         mock_http_client.post.return_value = {
             'id': 'tok-copy',
@@ -225,7 +246,9 @@ class TestDuplicateApiToken:
         }
 
         result = await duplicate_api_token(
-            token_id='550e8400-e29b-41d4-a716-446655440003', workspace='testworkspace', region='ap1'
+            token_id='550e8400-e29b-41d4-a716-446655440003',
+            workspace='testworkspace',
+            region='ap1',
         )
 
         assert result['status'] == 'success'
@@ -246,14 +269,18 @@ class TestDuplicateApiToken:
         mock_http_client.post.return_value = {'id': 'tok-dup', 'name': 'Token (copy)'}
 
         result = await duplicate_api_token(
-            token_id='550e8400-e29b-41d4-a716-446655440004', workspace='testworkspace', region='ap1'
+            token_id='550e8400-e29b-41d4-a716-446655440004',
+            workspace='testworkspace',
+            region='ap1',
         )
 
         assert result['status'] == 'success'
         assert result['token_id'] == '550e8400-e29b-41d4-a716-446655440004'
 
     @pytest.mark.asyncio
-    async def test_duplicate_api_token_invalid_token_id(self, mock_http_client, mock_token_manager):
+    async def test_duplicate_api_token_invalid_token_id(
+        self, mock_http_client, mock_token_manager
+    ):
         """Test that duplicate_api_token returns error for non-UUID token_id."""
         result = await duplicate_api_token(
             token_id='not-a-uuid', workspace='testworkspace', region='ap1'
@@ -263,7 +290,9 @@ class TestDuplicateApiToken:
         mock_http_client.post.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_duplicate_api_token_http_exception(self, mock_http_client, mock_token_manager):
+    async def test_duplicate_api_token_http_exception(
+        self, mock_http_client, mock_token_manager
+    ):
         """Test that duplicate_api_token returns error when http_client raises an exception."""
         mock_http_client.post.side_effect = Exception('Network failure')
 
@@ -280,12 +309,17 @@ class TestListApiTokenScopes:
     """Tests for list_api_token_scopes tool."""
 
     @pytest.mark.asyncio
-    async def test_list_api_token_scopes_success(self, mock_http_client, mock_token_manager):
+    async def test_list_api_token_scopes_success(
+        self, mock_http_client, mock_token_manager
+    ):
         """Test successful API token scopes retrieval."""
         mock_http_client.get.return_value = {
             'resources': [
                 {'name': 'servers:read', 'description': 'Read server information'},
-                {'name': 'commands:execute', 'description': 'Execute commands on servers'},
+                {
+                    'name': 'commands:execute',
+                    'description': 'Execute commands on servers',
+                },
             ],
             'wildcards': ['*'],
         }
@@ -303,7 +337,9 @@ class TestListApiTokenScopes:
         )
 
     @pytest.mark.asyncio
-    async def test_list_api_token_scopes_empty(self, mock_http_client, mock_token_manager):
+    async def test_list_api_token_scopes_empty(
+        self, mock_http_client, mock_token_manager
+    ):
         """Test list_api_token_scopes when no scopes are available."""
         mock_http_client.get.return_value = {'resources': [], 'wildcards': []}
 

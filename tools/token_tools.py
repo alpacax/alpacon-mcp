@@ -2,9 +2,9 @@
 
 from typing import Any
 
-from utils.common import error_response, success_response
+from utils.common import success_response, unwrap_http_result
 from utils.decorators import mcp_tool_handler
-from utils.error_handler import validate_server_id_format
+from utils.error_handler import format_validation_error, validate_server_id_format
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, READ_ONLY
 
@@ -117,8 +117,10 @@ async def delete_api_token(
     token = kwargs.get('token')
 
     if not validate_server_id_format(token_id):
-        return error_response(
-            f"Invalid token_id format: '{token_id}'. Must be a valid UUID."
+        return format_validation_error(
+            'token_id',
+            token_id,
+            'Must be a valid UUID. Example: 550e8400-e29b-41d4-a716-446655440000',
         )
 
     result = await http_client.delete(
@@ -127,7 +129,20 @@ async def delete_api_token(
         endpoint=f'/api/auth/tokens/{token_id}/',
         token=token,
     )
-    return success_response(data=result, token_id=token_id, region=region, workspace=workspace)
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to delete API token',
+        token_id=token_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
+
+    return success_response(
+        data=result, token_id=token_id, region=region, workspace=workspace
+    )
 
 
 @mcp_tool_handler(
@@ -143,9 +158,8 @@ async def duplicate_api_token(
 ) -> dict[str, Any]:
     """Duplicate an API token.
 
-    No additional parameters are accepted for duplication; the new token
-    inherits all configuration (name, scopes, description, expiry) from
-    the source token.
+    The duplicate inherits all configuration (name, scopes, expiry) from the
+    source token; overrides are not supported.
 
     Args:
         token_id: ID of the API token to duplicate
@@ -158,8 +172,10 @@ async def duplicate_api_token(
     token = kwargs.get('token')
 
     if not validate_server_id_format(token_id):
-        return error_response(
-            f"Invalid token_id format: '{token_id}'. Must be a valid UUID."
+        return format_validation_error(
+            'token_id',
+            token_id,
+            'Must be a valid UUID. Example: 550e8400-e29b-41d4-a716-446655440000',
         )
 
     result = await http_client.post(
@@ -169,7 +185,20 @@ async def duplicate_api_token(
         token=token,
         data={},
     )
-    return success_response(data=result, token_id=token_id, region=region, workspace=workspace)
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to duplicate API token',
+        token_id=token_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
+
+    return success_response(
+        data=result, token_id=token_id, region=region, workspace=workspace
+    )
 
 
 @mcp_tool_handler(
