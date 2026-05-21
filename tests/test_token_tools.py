@@ -284,6 +284,25 @@ class TestDeleteApiToken:
 
         assert result['status'] == 'error'
 
+    @pytest.mark.asyncio
+    async def test_delete_api_token_not_found(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Test that delete_api_token returns error when token does not exist (404)."""
+        mock_http_client.delete.return_value = {
+            'error': 'HTTP Error',
+            'status_code': 404,
+            'message': 'Not found',
+        }
+
+        result = await delete_api_token(
+            token_id='550e8400-e29b-41d4-a716-446655440099',
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert result['status'] == 'error'
+
 
 class TestDuplicateApiToken:
     """Tests for duplicate_api_token tool."""
@@ -352,6 +371,25 @@ class TestDuplicateApiToken:
 
         result = await duplicate_api_token(
             token_id='550e8400-e29b-41d4-a716-446655440000',
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert result['status'] == 'error'
+
+    @pytest.mark.asyncio
+    async def test_duplicate_api_token_not_found(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Test that duplicate_api_token returns error when source token does not exist (404)."""
+        mock_http_client.post.return_value = {
+            'error': 'HTTP Error',
+            'status_code': 404,
+            'message': 'Not found',
+        }
+
+        result = await duplicate_api_token(
+            token_id='550e8400-e29b-41d4-a716-446655440099',
             workspace='testworkspace',
             region='ap1',
         )

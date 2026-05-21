@@ -71,6 +71,7 @@ async def create_api_token(
     scopes: list[str] | None = None,
     expires_at: str | None = None,
     enabled: bool | None = None,
+    presets: list[str] | None = None,
     region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
@@ -82,6 +83,8 @@ async def create_api_token(
         scopes: List of permission scopes for the token (optional)
         expires_at: Expiration datetime in ISO 8601 format (optional)
         enabled: Whether the token is active. Defaults to True on the server (optional)
+        presets: Preset scope keys resolved server-side (e.g. "file_upload"). Merged
+            with explicit scopes; stored as granular scope strings (optional)
         region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
@@ -96,6 +99,8 @@ async def create_api_token(
         token_data['expires_at'] = expires_at
     if enabled is not None:
         token_data['enabled'] = enabled
+    if presets is not None:
+        token_data['presets'] = presets
 
     result = await http_client.post(
         region=region,
