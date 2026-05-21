@@ -182,17 +182,19 @@ async def delete_api_token(
 async def duplicate_api_token(
     token_id: str,
     workspace: str,
+    name: str | None = None,
     region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
     """Duplicate an API token.
 
-    The duplicate inherits all configuration (name, scopes, expiry) from the
-    source token. The server auto-generates the copy name (e.g. "Token (copy)").
+    The duplicate inherits all configuration (scopes, expiry) from the source
+    token. If name is omitted, the server generates one (e.g. "Token (copy)").
 
     Args:
         token_id: ID of the API token to duplicate
         workspace: Workspace name. Required parameter
+        name: Name for the duplicated token (optional; server auto-generates if omitted)
         region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
@@ -207,12 +209,16 @@ async def duplicate_api_token(
             'Must be a valid UUID. Example: 550e8400-e29b-41d4-a716-446655440000',
         )
 
+    data: dict[str, Any] = {}
+    if name is not None:
+        data['name'] = name
+
     result = await http_client.post(
         region=region,
         workspace=workspace,
         endpoint=f'/api/auth/tokens/{token_id}/duplicate/',
         token=token,
-        data={},
+        data=data,
     )
 
     err = unwrap_http_result(

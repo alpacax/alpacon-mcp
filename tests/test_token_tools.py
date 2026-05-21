@@ -142,6 +142,7 @@ class TestCreateApiToken:
             name='Full Token',
             scopes=['read', 'write'],
             expires_at='2026-12-31T23:59:59Z',
+            presets=['file_upload'],
         )
 
         assert result['status'] == 'success'
@@ -154,6 +155,7 @@ class TestCreateApiToken:
                 'name': 'Full Token',
                 'scopes': ['read', 'write'],
                 'expires_at': '2026-12-31T23:59:59Z',
+                'presets': ['file_upload'],
             },
         )
 
@@ -200,6 +202,28 @@ class TestCreateApiToken:
         assert result['status'] == 'success'
         call_data = mock_http_client.post.call_args[1]['data']
         assert call_data['enabled'] is False
+
+    @pytest.mark.asyncio
+    async def test_create_api_token_with_presets_only(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Test create_api_token with presets but no explicit scopes."""
+        mock_http_client.post.return_value = {
+            'id': 'tok-preset',
+            'name': 'Preset Token',
+        }
+
+        result = await create_api_token(
+            workspace='testworkspace',
+            region='ap1',
+            name='Preset Token',
+            presets=['file_upload'],
+        )
+
+        assert result['status'] == 'success'
+        call_data = mock_http_client.post.call_args[1]['data']
+        assert call_data['presets'] == ['file_upload']
+        assert 'scopes' not in call_data
 
     @pytest.mark.asyncio
     async def test_create_api_token_http_error(
@@ -332,6 +356,32 @@ class TestDuplicateApiToken:
             endpoint='/api/auth/tokens/550e8400-e29b-41d4-a716-446655440003/duplicate/',
             token='test-token',
             data={},
+        )
+
+    @pytest.mark.asyncio
+    async def test_duplicate_api_token_with_custom_name(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Test duplicate_api_token forwards optional name to the API."""
+        mock_http_client.post.return_value = {
+            'id': 'tok-named',
+            'name': 'My Backup Token',
+        }
+
+        result = await duplicate_api_token(
+            token_id='550e8400-e29b-41d4-a716-446655440003',
+            workspace='testworkspace',
+            region='ap1',
+            name='My Backup Token',
+        )
+
+        assert result['status'] == 'success'
+        mock_http_client.post.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/auth/tokens/550e8400-e29b-41d4-a716-446655440003/duplicate/',
+            token='test-token',
+            data={'name': 'My Backup Token'},
         )
 
     @pytest.mark.asyncio
