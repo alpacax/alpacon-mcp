@@ -1465,7 +1465,6 @@ class TestWebFtpSessionCreateWithSession:
     async def test_session_create_includes_work_session(
         self, mock_http_client, mock_token_manager
     ):
-        from tools.webftp_tools import webftp_session_create
 
         mock_http_client.post.return_value = {'id': 'ftp-sess-001', 'status': 'active'}
 
@@ -1483,7 +1482,6 @@ class TestWebFtpSessionCreateWithSession:
     async def test_session_create_omits_work_session_when_none(
         self, mock_http_client, mock_token_manager
     ):
-        from tools.webftp_tools import webftp_session_create
 
         mock_http_client.post.return_value = {'id': 'ftp-sess-002', 'status': 'active'}
 
@@ -1502,7 +1500,6 @@ class TestWebFtpUploadContentWithSession:
     async def test_upload_content_includes_work_session(
         self, mock_http_client, mock_token_manager
     ):
-        from tools.webftp_tools import webftp_upload_content
 
         mock_http_client.post.return_value = {
             'id': 'upload-001',
@@ -1527,7 +1524,6 @@ class TestWebFtpUploadContentWithSession:
     async def test_upload_content_omits_work_session_when_none(
         self, mock_http_client, mock_token_manager
     ):
-        from tools.webftp_tools import webftp_upload_content
 
         mock_http_client.post.return_value = {'id': 'upload-002', 'upload_url': None}
 
