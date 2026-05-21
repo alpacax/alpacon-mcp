@@ -72,7 +72,7 @@ source .venv/bin/activate  # Linux/macOS
 # .venv\Scripts\activate     # Windows
 
 # Install dependencies
-uv pip install mcp[cli] httpx
+uv pip install mcp httpx "PyJWT[crypto]"
 
 # Configure tokens
 mkdir -p config
@@ -107,7 +107,7 @@ uv venv
 source .venv/bin/activate
 
 # Install dependencies
-uv pip install mcp[cli] httpx
+uv pip install mcp httpx "PyJWT[crypto]"
 ```
 
 #### Method 2: Using system Python
@@ -129,7 +129,7 @@ uv venv
 source .venv/bin/activate
 
 # Install dependencies
-uv pip install mcp[cli] httpx
+uv pip install mcp httpx "PyJWT[crypto]"
 ```
 
 #### macOS-specific configuration
@@ -170,7 +170,7 @@ uv venv
 source .venv/bin/activate
 
 # Install dependencies
-uv pip install mcp[cli] httpx
+uv pip install mcp httpx "PyJWT[crypto]"
 
 # Test installation
 python main.py --test
@@ -230,7 +230,7 @@ cd alpacon-mcp
 
 uv venv
 source .venv/bin/activate
-uv pip install mcp[cli] httpx
+uv pip install mcp httpx "PyJWT[crypto]"
 ```
 
 ### Windows
@@ -261,7 +261,7 @@ uv venv
 .venv\Scripts\Activate.ps1
 
 # Install dependencies
-uv pip install mcp[cli] httpx
+uv pip install mcp httpx "PyJWT[crypto]"
 
 # Test installation
 python main.py --test
@@ -467,7 +467,7 @@ echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"clientInfo":{"nam
 git pull origin main
 
 # Update dependencies
-uv pip install --upgrade mcp[cli] httpx
+uv pip install --upgrade mcp httpx "PyJWT[crypto]"
 
 # Restart service if running
 sudo systemctl restart alpacon-mcp  # Linux service
@@ -524,7 +524,7 @@ chmod +x ~/.local/bin/uv
 rm -rf .venv
 uv venv
 source .venv/bin/activate
-uv pip install mcp[cli] httpx
+uv pip install mcp httpx "PyJWT[crypto]"
 ```
 
 ### Platform-specific issues

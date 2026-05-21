@@ -405,8 +405,9 @@ Alternative endpoints available in the server:
 ## Dependencies
 
 **Runtime dependencies** (from `pyproject.toml`):
-- `mcp[cli]>=1.9.4`: Model Context Protocol framework
-- `httpx>=0.25.0`: Async HTTP client
+- `mcp>=1.9.4`: Model Context Protocol framework
+- `httpx>=0.27.1`: Async HTTP client
+- `PyJWT[crypto]>=2.10.1`: JWT token verification
 
 **Development dependencies**:
 - `pytest>=7.0.0`: Testing framework

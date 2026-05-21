@@ -1,6 +1,7 @@
 """Common utilities for all MCP tools."""
 
 import importlib.metadata
+import platform
 from typing import Any
 
 from utils.logger import get_logger
@@ -18,7 +19,7 @@ except importlib.metadata.PackageNotFoundError:
     MCP_VERSION = '0.4.2-dev'
 
 # MCP User-Agent for identification
-MCP_USER_AGENT = f'alpacon-mcp/{MCP_VERSION} (MCP-Server; persistent-pool) Python/3.12 websockets/15.0.1'
+MCP_USER_AGENT = f'alpacon-mcp/{MCP_VERSION} (MCP-Server; persistent-pool) Python/{platform.python_version()}'
 
 
 def validate_token(region: str, workspace: str) -> str | None:
