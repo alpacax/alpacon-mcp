@@ -41,7 +41,7 @@ async def work_session_create(
     """Create a Work Session for auditable, approval-gated infrastructure access."""
     token = kwargs.get('token')
 
-    data: dict[str, Any] = {
+    data: dict[str, str | list[str]] = {
         'requester_type': 'agent',
         'scopes': scopes,
         'servers': servers,
@@ -169,7 +169,7 @@ async def work_session_list(
     """List Work Sessions with optional status and auth_method filtering."""
     token = kwargs.get('token')
 
-    params: dict[str, Any] = {'page_size': limit}
+    params: dict[str, str | int] = {'page_size': limit}
     if status:
         params['status'] = status
     if auth_method:
