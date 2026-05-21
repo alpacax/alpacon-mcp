@@ -43,7 +43,7 @@ async def list_api_tokens(
     result = await http_client.get(
         region=region,
         workspace=workspace,
-        endpoint='/api/apitoken/tokens/',
+        endpoint='/api/auth/tokens/',
         token=token,
         params=params,
     )
@@ -59,7 +59,6 @@ async def create_api_token(
     workspace: str,
     name: str,
     scopes: list[str] | None = None,
-    description: str | None = None,
     expires_at: str | None = None,
     region: str = '',
     **kwargs,
@@ -70,7 +69,6 @@ async def create_api_token(
         workspace: Workspace name. Required parameter
         name: Name of the API token
         scopes: List of permission scopes for the token (optional)
-        description: Description of the API token (optional)
         expires_at: Expiration datetime in ISO 8601 format (optional)
         region: Region (ap1, us1, eu1). Auto-detected if not provided
 
@@ -82,15 +80,13 @@ async def create_api_token(
     token_data: dict[str, Any] = {'name': name}
     if scopes is not None:
         token_data['scopes'] = scopes
-    if description is not None:
-        token_data['description'] = description
     if expires_at is not None:
         token_data['expires_at'] = expires_at
 
     result = await http_client.post(
         region=region,
         workspace=workspace,
-        endpoint='/api/apitoken/tokens/',
+        endpoint='/api/auth/tokens/',
         token=token,
         data=token_data,
     )
@@ -128,7 +124,7 @@ async def delete_api_token(
     result = await http_client.delete(
         region=region,
         workspace=workspace,
-        endpoint=f'/api/apitoken/tokens/{token_id}/',
+        endpoint=f'/api/auth/tokens/{token_id}/',
         token=token,
     )
     return success_response(data=result, token_id=token_id, region=region, workspace=workspace)
@@ -169,7 +165,7 @@ async def duplicate_api_token(
     result = await http_client.post(
         region=region,
         workspace=workspace,
-        endpoint=f'/api/apitoken/tokens/{token_id}/duplicate/',
+        endpoint=f'/api/auth/tokens/{token_id}/duplicate/',
         token=token,
         data={},
     )
@@ -200,7 +196,7 @@ async def list_api_token_scopes(
     result = await http_client.get(
         region=region,
         workspace=workspace,
-        endpoint='/api/apitoken/tokens/scopes/',
+        endpoint='/api/auth/tokens/scopes/',
         token=token,
     )
     return success_response(data=result, region=region, workspace=workspace)

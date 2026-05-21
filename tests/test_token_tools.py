@@ -49,7 +49,7 @@ class TestListApiTokens:
         mock_http_client.get.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/apitoken/tokens/',
+            endpoint='/api/auth/tokens/',
             token='test-token',
             params={},
         )
@@ -67,7 +67,7 @@ class TestListApiTokens:
         mock_http_client.get.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/apitoken/tokens/',
+            endpoint='/api/auth/tokens/',
             token='test-token',
             params={'page': 2, 'page_size': 5},
         )
@@ -104,7 +104,7 @@ class TestCreateApiToken:
         mock_http_client.post.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/apitoken/tokens/',
+            endpoint='/api/auth/tokens/',
             token='test-token',
             data={'name': 'My Token'},
         )
@@ -119,7 +119,6 @@ class TestCreateApiToken:
             region='ap1',
             name='Full Token',
             scopes=['read', 'write'],
-            description='A fully configured token',
             expires_at='2026-12-31T23:59:59Z',
         )
 
@@ -127,12 +126,11 @@ class TestCreateApiToken:
         mock_http_client.post.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/apitoken/tokens/',
+            endpoint='/api/auth/tokens/',
             token='test-token',
             data={
                 'name': 'Full Token',
                 'scopes': ['read', 'write'],
-                'description': 'A fully configured token',
                 'expires_at': '2026-12-31T23:59:59Z',
             },
         )
@@ -172,7 +170,7 @@ class TestDeleteApiToken:
         mock_http_client.delete.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/apitoken/tokens/550e8400-e29b-41d4-a716-446655440001/',
+            endpoint='/api/auth/tokens/550e8400-e29b-41d4-a716-446655440001/',
             token='test-token',
         )
 
@@ -235,7 +233,7 @@ class TestDuplicateApiToken:
         mock_http_client.post.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/apitoken/tokens/550e8400-e29b-41d4-a716-446655440003/duplicate/',
+            endpoint='/api/auth/tokens/550e8400-e29b-41d4-a716-446655440003/duplicate/',
             token='test-token',
             data={},
         )
@@ -284,28 +282,32 @@ class TestListApiTokenScopes:
     @pytest.mark.asyncio
     async def test_list_api_token_scopes_success(self, mock_http_client, mock_token_manager):
         """Test successful API token scopes retrieval."""
-        mock_http_client.get.return_value = [
-            {'name': 'servers:read', 'description': 'Read server information'},
-            {'name': 'commands:execute', 'description': 'Execute commands on servers'},
-        ]
+        mock_http_client.get.return_value = {
+            'resources': [
+                {'name': 'servers:read', 'description': 'Read server information'},
+                {'name': 'commands:execute', 'description': 'Execute commands on servers'},
+            ],
+            'wildcards': ['*'],
+        }
 
         result = await list_api_token_scopes(workspace='testworkspace', region='ap1')
 
         assert result['status'] == 'success'
-        assert len(result['data']) == 2
+        assert len(result['data']['resources']) == 2
+        assert result['data']['wildcards'] == ['*']
         mock_http_client.get.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/apitoken/tokens/scopes/',
+            endpoint='/api/auth/tokens/scopes/',
             token='test-token',
         )
 
     @pytest.mark.asyncio
     async def test_list_api_token_scopes_empty(self, mock_http_client, mock_token_manager):
         """Test list_api_token_scopes when no scopes are available."""
-        mock_http_client.get.return_value = []
+        mock_http_client.get.return_value = {'resources': [], 'wildcards': []}
 
         result = await list_api_token_scopes(workspace='testworkspace', region='ap1')
 
         assert result['status'] == 'success'
-        assert result['data'] == []
+        assert result['data'] == {'resources': [], 'wildcards': []}
