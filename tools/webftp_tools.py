@@ -148,7 +148,7 @@ async def _download_remote_mode(
     workspace: str,
     region: str,
     username: str | None,
-    session_id: str | None,
+    work_session_id: str | None,
     token: str,
 ) -> dict[str, Any]:
     """Handle webftp_download_file in remote mode: poll until ready, return presigned URL."""
@@ -164,8 +164,8 @@ async def _download_remote_mode(
     }
     if username:
         download_data['username'] = username
-    if session_id:
-        download_data['work_session'] = session_id
+    if work_session_id:
+        download_data['work_session'] = work_session_id
 
     result = await http_client.post(
         region=region,
@@ -319,7 +319,7 @@ async def webftp_sessions_list(
 
 
 @mcp_tool_handler(
-    description='Upload a local file to a remote server. Reads the file from a local absolute path, transfers it via S3 presigned URL, and places it at the specified remote path on the server. Pass session_id to link this upload to a Work Session for audit; the server enforces this for MCP OAuth and browser-based auth. When to use: transferring a single file to a server. Related: webftp_bulk_upload (multiple files), webftp_download_file (download from server), webftp_uploads_list (check upload history), work_session_create (create a Work Session). Note: Both local and remote paths must be absolute.',
+    description='Upload a local file to a remote server. Reads the file from a local absolute path, transfers it via S3 presigned URL, and places it at the specified remote path on the server. Pass work_session_id to link this upload to a Work Session for audit; the server enforces this for MCP OAuth and browser-based auth. When to use: transferring a single file to a server. Related: webftp_bulk_upload (multiple files), webftp_download_file (download from server), webftp_uploads_list (check upload history), work_session_create (create a Work Session). Note: Both local and remote paths must be absolute.',
     annotations=ADDITIVE,
     meta={'anthropic/searchHint': 'file upload transfer scp sftp send server'},
 )
@@ -329,7 +329,7 @@ async def webftp_upload_file(
     remote_file_path: str,
     workspace: str,
     username: str | None = None,
-    session_id: str | None = None,
+    work_session_id: str | None = None,
     region: str = '',
     allow_overwrite: bool = True,
     **kwargs,
@@ -360,8 +360,8 @@ async def webftp_upload_file(
     }
     if username:
         upload_data['username'] = username
-    if session_id:
-        upload_data['work_session'] = session_id
+    if work_session_id:
+        upload_data['work_session'] = work_session_id
 
     result = await http_client.post(
         region=region,
@@ -444,7 +444,7 @@ async def webftp_upload_content(
     workspace: str,
     file_name: str | None = None,
     username: str | None = None,
-    session_id: str | None = None,
+    work_session_id: str | None = None,
     region: str = '',
     allow_overwrite: bool = True,
     **kwargs,
@@ -470,8 +470,8 @@ async def webftp_upload_content(
     }
     if username:
         upload_data['username'] = username
-    if session_id:
-        upload_data['work_session'] = session_id
+    if work_session_id:
+        upload_data['work_session'] = work_session_id
 
     result = await http_client.post(
         region=region,
@@ -541,7 +541,7 @@ async def webftp_upload_content(
         'then returns a presigned download URL valid for 24 hours — '
         'open it in a browser or run the curl command in the response. '
         'For folders, content is packaged as a ZIP archive. '
-        'Pass session_id to link this download to a Work Session for audit; '
+        'Pass work_session_id to link this download to a Work Session for audit; '
         'the server enforces this for MCP OAuth and browser-based auth. '
         'Related: webftp_bulk_download (multiple files as ZIP), '
         'webftp_upload_file (upload to server), '
@@ -559,7 +559,7 @@ async def webftp_download_file(
     local_file_path: str | None = None,
     resource_type: str = 'file',
     username: str | None = None,
-    session_id: str | None = None,
+    work_session_id: str | None = None,
     region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
@@ -579,7 +579,7 @@ async def webftp_download_file(
             workspace=workspace,
             region=region,
             username=username,
-            session_id=session_id,
+            work_session_id=work_session_id,
             token=token,
         )
 
@@ -601,8 +601,8 @@ async def webftp_download_file(
 
     if username:
         download_data['username'] = username
-    if session_id:
-        download_data['work_session'] = session_id
+    if work_session_id:
+        download_data['work_session'] = work_session_id
 
     result = await http_client.post(
         region=region,
@@ -733,7 +733,7 @@ async def webftp_downloads_list(
 
 
 @mcp_tool_handler(
-    description='Upload multiple local files to a remote server in a single operation. All files are placed in the same destination directory. Uses S3 presigned URLs with concurrent uploads. Pass session_id to link this upload to a Work Session for audit; the server enforces this for MCP OAuth and browser-based auth. When to use: uploading several files at once (more efficient than repeated webftp_upload_file calls). Related: webftp_upload_file (single file), webftp_bulk_download (download multiple), work_session_create (create a Work Session). Note: All files go to the same remote directory.',
+    description='Upload multiple local files to a remote server in a single operation. All files are placed in the same destination directory. Uses S3 presigned URLs with concurrent uploads. Pass work_session_id to link this upload to a Work Session for audit; the server enforces this for MCP OAuth and browser-based auth. When to use: uploading several files at once (more efficient than repeated webftp_upload_file calls). Related: webftp_upload_file (single file), webftp_bulk_download (download multiple), work_session_create (create a Work Session). Note: All files go to the same remote directory.',
     annotations=ADDITIVE,
     meta={'anthropic/searchHint': 'bulk upload multiple files batch transfer'},
 )
@@ -743,7 +743,7 @@ async def webftp_bulk_upload(
     remote_directory: str,
     workspace: str,
     username: str | None = None,
-    session_id: str | None = None,
+    work_session_id: str | None = None,
     region: str = '',
     allow_overwrite: bool = True,
     **kwargs,
@@ -776,8 +776,8 @@ async def webftp_bulk_upload(
     }
     if username:
         bulk_data['username'] = username
-    if session_id:
-        bulk_data['work_session'] = session_id
+    if work_session_id:
+        bulk_data['work_session'] = work_session_id
 
     result = await http_client.post(
         region=region,
@@ -895,7 +895,7 @@ async def webftp_bulk_upload(
 
 
 @mcp_tool_handler(
-    description='Download multiple files or folders from a remote server as a single ZIP archive. All paths must share the same parent directory. Pass session_id to link this download to a Work Session for audit; the server enforces this for MCP OAuth and browser-based auth. When to use: downloading several files at once. Related: webftp_download_file (single file), webftp_bulk_upload (upload multiple), webftp_check_status (poll if still processing), work_session_create (create a Work Session). Note: If ZIP is not ready, poll with webftp_check_status then retry.',
+    description='Download multiple files or folders from a remote server as a single ZIP archive. All paths must share the same parent directory. Pass work_session_id to link this download to a Work Session for audit; the server enforces this for MCP OAuth and browser-based auth. When to use: downloading several files at once. Related: webftp_download_file (single file), webftp_bulk_upload (upload multiple), webftp_check_status (poll if still processing), work_session_create (create a Work Session). Note: If ZIP is not ready, poll with webftp_check_status then retry.',
     annotations=ADDITIVE,
     meta={'anthropic/searchHint': 'bulk download multiple files zip archive batch'},
 )
@@ -905,7 +905,7 @@ async def webftp_bulk_download(
     local_file_path: str,
     workspace: str,
     username: str | None = None,
-    session_id: str | None = None,
+    work_session_id: str | None = None,
     region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
@@ -939,8 +939,8 @@ async def webftp_bulk_download(
     }
     if username:
         download_data['username'] = username
-    if session_id:
-        download_data['work_session'] = session_id
+    if work_session_id:
+        download_data['work_session'] = work_session_id
 
     result = await http_client.post(
         region=region,

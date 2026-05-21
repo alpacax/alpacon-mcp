@@ -1513,7 +1513,7 @@ class TestWebFtpUploadContentWithSession:
             file_content=content_b64,
             remote_file_path='/home/user/hello.txt',
             workspace='testworkspace',
-            session_id='ws-uuid-abcd',
+            work_session_id='ws-uuid-abcd',
             region='ap1',
         )
 
