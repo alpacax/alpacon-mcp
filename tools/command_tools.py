@@ -3,7 +3,7 @@
 import asyncio
 from typing import Any
 
-from utils.common import error_response, success_response
+from utils.common import error_response, success_response, unwrap_http_result
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, READ_ONLY
@@ -20,11 +20,11 @@ async def _submit_command(
     run_after: list[str] | None = None,
     scheduled_at: str | None = None,
     data: str | None = None,
+    work_session_id: str | None = None,
     region: str = '',
     *,
     token: str | None = None,
 ) -> dict[str, Any] | list[Any]:
-    """Submit a command to the Command API. Internal helper, not an MCP tool."""
     command_data: dict[str, Any] = {
         'server': server_id,
         'shell': shell,
@@ -42,6 +42,8 @@ async def _submit_command(
         command_data['scheduled_at'] = scheduled_at
     if data:
         command_data['data'] = data
+    if work_session_id:
+        command_data['work_session'] = work_session_id
 
     return await http_client.post(
         region=region,
@@ -59,7 +61,6 @@ async def _get_command_result(
     *,
     token: str | None = None,
 ) -> dict[str, Any]:
-    """Poll a command result by ID. Internal helper, not an MCP tool."""
     return await http_client.get(
         region=region,
         workspace=workspace,
@@ -83,7 +84,6 @@ async def list_commands(
     """List recent commands executed on servers."""
     token = kwargs.get('token')
 
-    # Prepare query parameters
     params = {'page_size': limit, 'ordering': '-added_at'}
 
     if server_id:
@@ -97,6 +97,14 @@ async def list_commands(
         params=params,
     )
 
+    if err := unwrap_http_result(
+        result,
+        default_message='Failed to list commands',
+        region=region,
+        workspace=workspace,
+    ):
+        return err
+
     return success_response(
         data=result,
         server_id=server_id,
@@ -107,7 +115,7 @@ async def list_commands(
 
 
 @mcp_tool_handler(
-    description='Run a shell command on a server and wait for the result (up to 5 minutes by default). Returns stdout, stderr, and exit code in a single call. Requires ACL permission. The timeout resets when the command is actively running. Supports dependency chains (run_after), scheduled execution (scheduled_at), and stdin data. When to use: the recommended way to run a command on a server. Related: execute_command_multi_server (run on multiple servers), list_commands (browse history). Note: Default timeout is 300 seconds (5 minutes).',
+    description='Run a shell command on a server and wait for the result (up to 5 minutes by default). Returns stdout, stderr, and exit code in a single call. Requires ACL permission. The timeout resets when the command is actively running. Supports dependency chains (run_after), scheduled execution (scheduled_at), and stdin data. Pass work_session_id to link this command to a Work Session for audit—the server enforces this for MCP OAuth and browser-based auth. When to use: the recommended way to run a command on a server. Related: execute_command_multi_server (run on multiple servers), list_commands (browse history), work_session_create (create a Work Session). Note: Default timeout is 300 seconds (5 minutes).',
     annotations=ADDITIVE,
     meta={
         'anthropic/alwaysLoad': True,
@@ -126,13 +134,13 @@ async def execute_command(
     scheduled_at: str | None = None,
     data: str | None = None,
     timeout: int = 300,
+    work_session_id: str | None = None,
     region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
     """Execute a command on a server and wait for the result (requires ACL permission)."""
     token = kwargs.get('token')
 
-    # Submit the command
     exec_data = await _submit_command(
         server_id=server_id,
         command=command,
@@ -144,11 +152,11 @@ async def execute_command(
         run_after=run_after,
         scheduled_at=scheduled_at,
         data=data,
+        work_session_id=work_session_id,
         region=region,
         token=token,
     )
 
-    # Check if exec_data contains an error (like ACL permission denied)
     if isinstance(exec_data, dict) and 'error' in exec_data:
         return error_response(
             f'Command execution failed: {exec_data.get("error", "Unknown error")}',
@@ -157,9 +165,8 @@ async def execute_command(
             details=exec_data,
         )
 
-    # Extract command ID from response (API may return dict or list)
     if isinstance(exec_data, list):
-        if len(exec_data) > 0:
+        if exec_data:
             command_id = exec_data[0].get('id')
         else:
             return error_response(
@@ -209,7 +216,6 @@ async def execute_command(
         if isinstance(result, dict):
             status = result.get('status', '')
 
-            # Command completed
             if result.get('finished_at') is not None:
                 return success_response(
                     data=result,
@@ -221,7 +227,6 @@ async def execute_command(
                     workspace=workspace,
                 )
 
-            # Command failed with terminal status
             if status in ('stuck', 'error'):
                 return error_response(
                     f'Command failed with status: {status}',
@@ -240,10 +245,8 @@ async def execute_command(
                     hard_deadline,
                 )
 
-        # Wait before next check
         await asyncio.sleep(1)
 
-    # Timeout reached
     return error_response(
         f'Command execution timed out after {timeout} seconds',
         error_type='timeout',
@@ -256,7 +259,7 @@ async def execute_command(
 
 
 @mcp_tool_handler(
-    description='Run the same shell command on multiple servers simultaneously or sequentially. Returns per-server results with success/failure status. Requires ACL permission. When to use: batch operations like deploying configs, checking status, or running diagnostics across a fleet. Related: execute_command (single server). Note: Set parallel=false for sequential execution. This submits commands without waiting for results — use list_commands to check status.',
+    description='Run the same shell command on multiple servers simultaneously or sequentially. Returns per-server results with success/failure status. Requires ACL permission. Pass work_session_id to link commands to a Work Session for audit—the server enforces this for MCP OAuth and browser-based auth. When to use: batch operations like deploying configs, checking status, or running diagnostics across a fleet. Related: execute_command (single server), work_session_create (create a Work Session). Note: Set parallel=false for sequential execution. This submits commands without waiting for results — use list_commands to check status.',
     annotations=ADDITIVE,
     meta={'anthropic/searchHint': 'command multi server batch deploy fleet parallel'},
 )
@@ -270,6 +273,7 @@ async def execute_command_multi_server(
     env: dict[str, str] | None = None,
     region: str = '',
     parallel: bool = True,
+    work_session_id: str | None = None,
     **kwargs,
 ) -> dict[str, Any]:
     """Execute a command on multiple servers using Command API (requires ACL permission)."""
@@ -287,6 +291,7 @@ async def execute_command_multi_server(
             username=username,
             groupname=groupname,
             env=env,
+            work_session_id=work_session_id,
             region=region,
             token=token,
         )
@@ -299,8 +304,7 @@ async def execute_command_multi_server(
         results = await asyncio.gather(
             *[_submit_one(sid) for sid in server_ids], return_exceptions=True
         )
-        for i, result in enumerate(results):
-            sid = server_ids[i]
+        for sid, result in zip(server_ids, results, strict=True):
             if isinstance(result, BaseException):
                 if not isinstance(result, Exception):
                     raise result

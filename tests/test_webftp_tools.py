@@ -20,6 +20,7 @@ from tools.webftp_tools import (
     _save_stream,
     webftp_bulk_download,
     webftp_bulk_upload,
+    webftp_check_status,
     webftp_download_file,
     webftp_downloads_list,
     webftp_session_create,
@@ -227,6 +228,19 @@ class TestWebFtpSessionsList:
         assert result['status'] == _STATUS_ERROR
         assert 'No token found' in result['message']
         mock_http_client.get.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_sessions_list_http_error(self, mock_http_client, mock_token_manager):
+        mock_http_client.get.return_value = {
+            'error': 'Forbidden',
+            'message': 'Permission denied',
+            'status_code': 403,
+        }
+
+        result = await webftp_sessions_list(workspace='testworkspace', region='ap1')
+
+        assert result['status'] == _STATUS_ERROR
+        assert 'Permission denied' in result['message']
 
 
 class TestWebFtpUploadFile:
@@ -716,6 +730,62 @@ class TestWebFtpDownloadsList:
 
         assert result['status'] == _STATUS_ERROR
         assert 'HTTP 500' in result['message']
+
+
+class TestWebFtpCheckStatus:
+    @pytest.mark.asyncio
+    async def test_check_status_upload_success(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.get.return_value = {
+            'id': 'file-123',
+            'status': 'completed',
+            'file_path': '/home/user/file.txt',
+        }
+
+        result = await webftp_check_status(
+            file_id='file-123',
+            transfer_type='upload',
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert result['status'] == 'success'
+        assert result['file_id'] == 'file-123'
+        assert result['transfer_type'] == 'upload'
+
+    @pytest.mark.asyncio
+    async def test_check_status_invalid_transfer_type(
+        self, mock_http_client, mock_token_manager
+    ):
+        result = await webftp_check_status(
+            file_id='file-123',
+            transfer_type='invalid',
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert result['status'] == _STATUS_ERROR
+        assert 'Invalid transfer_type' in result['message']
+        mock_http_client.get.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_check_status_http_error(self, mock_http_client, mock_token_manager):
+        mock_http_client.get.return_value = {
+            'error': 'Not found',
+            'message': 'File not found',
+            'status_code': 404,
+        }
+
+        result = await webftp_check_status(
+            file_id='file-nonexistent',
+            transfer_type='download',
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert result['status'] == _STATUS_ERROR
+        assert 'File not found' in result['message']
 
 
 class TestWebFtpBulkUpload:
@@ -1388,6 +1458,87 @@ class TestEnsureParentDir:
         with patch('tools.webftp_tools.Path') as mock_path_cls:
             await _ensure_parent_dir('file.txt')
             mock_path_cls.assert_not_called()
+
+
+class TestWebFtpSessionCreateWithSession:
+    @pytest.mark.asyncio
+    async def test_session_create_includes_work_session(
+        self, mock_http_client, mock_token_manager
+    ):
+
+        mock_http_client.post.return_value = {'id': 'ftp-sess-001', 'status': 'active'}
+
+        await webftp_session_create(
+            server_id='550e8400-e29b-41d4-a716-446655440001',
+            workspace='testworkspace',
+            work_session_id='ws-uuid-abcd',
+            region='ap1',
+        )
+
+        call_data = mock_http_client.post.call_args[1]['data']
+        assert call_data['work_session'] == 'ws-uuid-abcd'
+
+    @pytest.mark.asyncio
+    async def test_session_create_omits_work_session_when_none(
+        self, mock_http_client, mock_token_manager
+    ):
+
+        mock_http_client.post.return_value = {'id': 'ftp-sess-002', 'status': 'active'}
+
+        await webftp_session_create(
+            server_id='550e8400-e29b-41d4-a716-446655440001',
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        call_data = mock_http_client.post.call_args[1]['data']
+        assert 'work_session' not in call_data
+
+
+class TestWebFtpUploadContentWithSession:
+    @pytest.mark.asyncio
+    async def test_upload_content_includes_work_session(
+        self, mock_http_client, mock_token_manager
+    ):
+
+        mock_http_client.post.return_value = {
+            'id': 'upload-001',
+            'upload_url': None,
+        }
+
+        content_b64 = base64.b64encode(b'hello world').decode()
+
+        await webftp_upload_content(
+            server_id='550e8400-e29b-41d4-a716-446655440001',
+            file_content=content_b64,
+            remote_file_path='/home/user/hello.txt',
+            workspace='testworkspace',
+            work_session_id='ws-uuid-abcd',
+            region='ap1',
+        )
+
+        call_data = mock_http_client.post.call_args[1]['data']
+        assert call_data['work_session'] == 'ws-uuid-abcd'
+
+    @pytest.mark.asyncio
+    async def test_upload_content_omits_work_session_when_none(
+        self, mock_http_client, mock_token_manager
+    ):
+
+        mock_http_client.post.return_value = {'id': 'upload-002', 'upload_url': None}
+
+        content_b64 = base64.b64encode(b'hello').decode()
+
+        await webftp_upload_content(
+            server_id='550e8400-e29b-41d4-a716-446655440001',
+            file_content=content_b64,
+            remote_file_path='/home/user/hello.txt',
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        call_data = mock_http_client.post.call_args[1]['data']
+        assert 'work_session' not in call_data
 
 
 if __name__ == '__main__':
