@@ -87,6 +87,21 @@ class TestListApiTokens:
         assert result['status'] == 'success'
         assert result['data']['count'] == 0
 
+    @pytest.mark.asyncio
+    async def test_list_api_tokens_http_error(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Test that list_api_tokens surfaces API error responses as errors."""
+        mock_http_client.get.return_value = {
+            'error': 'HTTP Error',
+            'status_code': 403,
+            'message': 'Permission denied',
+        }
+
+        result = await list_api_tokens(workspace='testworkspace', region='ap1')
+
+        assert result['status'] == 'error'
+
 
 class TestCreateApiToken:
     """Tests for create_api_token tool."""
@@ -163,6 +178,45 @@ class TestCreateApiToken:
         call_data = mock_http_client.post.call_args[1]['data']
         assert call_data['scopes'] == ['servers:read']
         assert 'expires_at' not in call_data
+
+    @pytest.mark.asyncio
+    async def test_create_api_token_with_enabled_false(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Test create_api_token with enabled=False creates a disabled token."""
+        mock_http_client.post.return_value = {
+            'id': 'tok-disabled',
+            'name': 'Disabled Token',
+            'enabled': False,
+        }
+
+        result = await create_api_token(
+            workspace='testworkspace',
+            region='ap1',
+            name='Disabled Token',
+            enabled=False,
+        )
+
+        assert result['status'] == 'success'
+        call_data = mock_http_client.post.call_args[1]['data']
+        assert call_data['enabled'] is False
+
+    @pytest.mark.asyncio
+    async def test_create_api_token_http_error(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Test that create_api_token surfaces API error responses as errors."""
+        mock_http_client.post.return_value = {
+            'error': 'HTTP Error',
+            'status_code': 400,
+            'message': 'Token name already exists',
+        }
+
+        result = await create_api_token(
+            workspace='testworkspace', region='ap1', name='Duplicate Token'
+        )
+
+        assert result['status'] == 'error'
 
 
 class TestDeleteApiToken:
@@ -347,3 +401,18 @@ class TestListApiTokenScopes:
 
         assert result['status'] == 'success'
         assert result['data'] == {'resources': [], 'wildcards': []}
+
+    @pytest.mark.asyncio
+    async def test_list_api_token_scopes_http_error(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Test that list_api_token_scopes surfaces API error responses as errors."""
+        mock_http_client.get.return_value = {
+            'error': 'HTTP Error',
+            'status_code': 403,
+            'message': 'Permission denied',
+        }
+
+        result = await list_api_token_scopes(workspace='testworkspace', region='ap1')
+
+        assert result['status'] == 'error'

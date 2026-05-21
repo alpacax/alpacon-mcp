@@ -47,6 +47,16 @@ async def list_api_tokens(
         token=token,
         params=params,
     )
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to list API tokens',
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
+
     return success_response(data=result, region=region, workspace=workspace)
 
 
@@ -60,6 +70,7 @@ async def create_api_token(
     name: str,
     scopes: list[str] | None = None,
     expires_at: str | None = None,
+    enabled: bool | None = None,
     region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
@@ -70,6 +81,7 @@ async def create_api_token(
         name: Name of the API token
         scopes: List of permission scopes for the token (optional)
         expires_at: Expiration datetime in ISO 8601 format (optional)
+        enabled: Whether the token is active. Defaults to True on the server (optional)
         region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
@@ -82,6 +94,8 @@ async def create_api_token(
         token_data['scopes'] = scopes
     if expires_at is not None:
         token_data['expires_at'] = expires_at
+    if enabled is not None:
+        token_data['enabled'] = enabled
 
     result = await http_client.post(
         region=region,
@@ -90,6 +104,16 @@ async def create_api_token(
         token=token,
         data=token_data,
     )
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to create API token',
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
+
     return success_response(data=result, region=region, workspace=workspace)
 
 
@@ -159,7 +183,7 @@ async def duplicate_api_token(
     """Duplicate an API token.
 
     The duplicate inherits all configuration (name, scopes, expiry) from the
-    source token; overrides are not supported.
+    source token. The server auto-generates the copy name (e.g. "Token (copy)").
 
     Args:
         token_id: ID of the API token to duplicate
@@ -228,4 +252,14 @@ async def list_api_token_scopes(
         endpoint='/api/auth/tokens/scopes/',
         token=token,
     )
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to list API token scopes',
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
+
     return success_response(data=result, region=region, workspace=workspace)
