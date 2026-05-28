@@ -743,6 +743,63 @@ class TestUpdateApiToken:
         )
 
     @pytest.mark.asyncio
+    async def test_update_api_token_clear_expires_at(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Test clear_expires_at=True sends expires_at=null to remove the expiry."""
+        mock_http_client.patch.return_value = {
+            'id': '550e8400-e29b-41d4-a716-446655440024',
+            'expires_at': None,
+        }
+
+        result = await update_api_token(
+            token_id='550e8400-e29b-41d4-a716-446655440024',
+            workspace='testworkspace',
+            region='ap1',
+            clear_expires_at=True,
+        )
+
+        assert result['status'] == 'success'
+        call_data = mock_http_client.patch.call_args[1]['data']
+        assert call_data == {'expires_at': None}
+
+    @pytest.mark.asyncio
+    async def test_update_api_token_clear_and_set_expires_at_conflicts(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Test mutual exclusion of expires_at and clear_expires_at."""
+        result = await update_api_token(
+            token_id='550e8400-e29b-41d4-a716-446655440025',
+            workspace='testworkspace',
+            region='ap1',
+            expires_at='2027-01-01T00:00:00Z',
+            clear_expires_at=True,
+        )
+
+        assert result['status'] == 'error'
+        mock_http_client.patch.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_update_api_token_clear_expires_at_false_is_noop(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Test clear_expires_at=False (default) does not inject expires_at."""
+        mock_http_client.patch.return_value = {
+            'id': '550e8400-e29b-41d4-a716-446655440026',
+            'enabled': False,
+        }
+
+        await update_api_token(
+            token_id='550e8400-e29b-41d4-a716-446655440026',
+            workspace='testworkspace',
+            region='ap1',
+            enabled=False,
+        )
+
+        call_data = mock_http_client.patch.call_args[1]['data']
+        assert 'expires_at' not in call_data
+
+    @pytest.mark.asyncio
     async def test_update_api_token_no_fields_returns_error(
         self, mock_http_client, mock_token_manager
     ):

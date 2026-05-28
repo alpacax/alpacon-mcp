@@ -258,6 +258,7 @@ async def update_api_token(
     name: str | None = None,
     enabled: bool | None = None,
     expires_at: str | None = None,
+    clear_expires_at: bool = False,
     scopes: list[str] | None = None,
     region: str = '',
     **kwargs,
@@ -273,11 +274,10 @@ async def update_api_token(
         workspace: Workspace name. Required parameter
         name: New token name (optional)
         enabled: Toggle the token's enabled state (optional)
-        expires_at: New expiration datetime in ISO 8601 format. Omit to
-            leave unchanged. The server's model accepts null to clear
-            the expiry, but this tool's signature has no way to express
-            that distinctly from "omit"; call the API directly if you
-            need to remove an existing expiry (optional)
+        expires_at: New expiration datetime in ISO 8601 format. Mutually
+            exclusive with clear_expires_at (optional)
+        clear_expires_at: When True, remove the expiry so the token never
+            expires. Mutually exclusive with expires_at (optional)
         scopes: Replacement scope list. Re-validated against the caller's
             RBAC ceiling (optional)
         region: Region (ap1, us1, eu1). Auto-detected if not provided
@@ -291,6 +291,9 @@ async def update_api_token(
     if err:
         return err
 
+    if expires_at is not None and clear_expires_at:
+        return error_response('expires_at and clear_expires_at are mutually exclusive')
+
     update_data: dict[str, Any] = {}
     if name is not None:
         update_data['name'] = name
@@ -298,6 +301,8 @@ async def update_api_token(
         update_data['enabled'] = enabled
     if expires_at is not None:
         update_data['expires_at'] = expires_at
+    elif clear_expires_at:
+        update_data['expires_at'] = None
     if scopes is not None:
         update_data['scopes'] = scopes
 
