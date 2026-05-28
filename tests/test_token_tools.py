@@ -31,7 +31,7 @@ def mock_http_client():
 def mock_token_manager():
     """Mock token manager for testing."""
     with patch('utils.common.token_manager') as mock_manager:
-        mock_manager.get_token.return_value = 'test-token'
+        mock_manager.get_token.return_value = 'header.payload.signature'
         yield mock_manager
 
 
@@ -59,7 +59,7 @@ class TestListApiTokens:
             region='ap1',
             workspace='testworkspace',
             endpoint='/api/auth/tokens/',
-            token='test-token',
+            token='header.payload.signature',
             params={},
         )
 
@@ -79,7 +79,7 @@ class TestListApiTokens:
             region='ap1',
             workspace='testworkspace',
             endpoint='/api/auth/tokens/',
-            token='test-token',
+            token='header.payload.signature',
             params={'page': 2, 'page_size': 5},
         )
 
@@ -105,7 +105,7 @@ class TestListApiTokens:
             region='ap1',
             workspace='testworkspace',
             endpoint='/api/auth/tokens/',
-            token='test-token',
+            token='header.payload.signature',
             params={
                 'name': 'deploy-bot',
                 'enabled': True,
@@ -174,7 +174,7 @@ class TestCreateApiToken:
             region='ap1',
             workspace='testworkspace',
             endpoint='/api/auth/tokens/',
-            token='test-token',
+            token='header.payload.signature',
             data={'name': 'My Token'},
         )
 
@@ -199,7 +199,7 @@ class TestCreateApiToken:
             region='ap1',
             workspace='testworkspace',
             endpoint='/api/auth/tokens/',
-            token='test-token',
+            token='header.payload.signature',
             data={
                 'name': 'Full Token',
                 'scopes': ['read', 'write'],
@@ -349,7 +349,7 @@ class TestDeleteApiToken:
             region='ap1',
             workspace='testworkspace',
             endpoint='/api/auth/tokens/550e8400-e29b-41d4-a716-446655440001/',
-            token='test-token',
+            token='header.payload.signature',
         )
 
     @pytest.mark.asyncio
@@ -441,7 +441,7 @@ class TestDuplicateApiToken:
             region='ap1',
             workspace='testworkspace',
             endpoint='/api/auth/tokens/550e8400-e29b-41d4-a716-446655440003/duplicate/',
-            token='test-token',
+            token='header.payload.signature',
             data={},
         )
 
@@ -467,7 +467,7 @@ class TestDuplicateApiToken:
             region='ap1',
             workspace='testworkspace',
             endpoint='/api/auth/tokens/550e8400-e29b-41d4-a716-446655440003/duplicate/',
-            token='test-token',
+            token='header.payload.signature',
             data={'name': 'My Backup Token'},
         )
 
@@ -585,7 +585,7 @@ class TestListApiTokenScopes:
             region='ap1',
             workspace='testworkspace',
             endpoint='/api/auth/tokens/scopes/',
-            token='test-token',
+            token='header.payload.signature',
         )
 
     @pytest.mark.asyncio
@@ -642,7 +642,7 @@ class TestGetApiToken:
             region='ap1',
             workspace='testworkspace',
             endpoint='/api/auth/tokens/550e8400-e29b-41d4-a716-446655440010/',
-            token='test-token',
+            token='header.payload.signature',
         )
 
     @pytest.mark.asyncio
@@ -701,7 +701,7 @@ class TestUpdateApiToken:
             region='ap1',
             workspace='testworkspace',
             endpoint='/api/auth/tokens/550e8400-e29b-41d4-a716-446655440020/',
-            token='test-token',
+            token='header.payload.signature',
             data={'enabled': False},
         )
 
@@ -733,7 +733,7 @@ class TestUpdateApiToken:
             region='ap1',
             workspace='testworkspace',
             endpoint='/api/auth/tokens/550e8400-e29b-41d4-a716-446655440021/',
-            token='test-token',
+            token='header.payload.signature',
             data={
                 'name': 'Renamed',
                 'enabled': True,
@@ -918,7 +918,7 @@ class TestListApiTokenPresets:
             region='ap1',
             workspace='testworkspace',
             endpoint='/api/auth/tokens/presets/',
-            token='test-token',
+            token='header.payload.signature',
         )
 
     @pytest.mark.asyncio
@@ -947,3 +947,99 @@ class TestListApiTokenPresets:
         result = await list_api_token_presets(workspace='testworkspace', region='ap1')
 
         assert result['status'] == 'error'
+
+
+class TestApiTokenMutationAuthGuard:
+    """Preflight guard: the 4 mutation tools (create/update/duplicate/delete)
+    must short-circuit on the MCP side when the caller's resolved token is
+    not a JWT — because the server's APITokenObjectPermission would 403
+    every such request. The guard saves the round-trip and surfaces a
+    clearer error to the client.
+
+    Read-only tools (list/get/list_scopes/list_presets) are intentionally
+    NOT guarded — list/get because callers may legitimately enumerate
+    their own tokens with whichever auth they hold, and the catalog
+    endpoints because the server itself does not gate them with
+    APITokenObjectPermission.
+    """
+
+    @pytest.mark.asyncio
+    async def test_create_rejected_for_non_jwt_token(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_token_manager.get_token.return_value = 'opaque-api-token'
+
+        result = await create_api_token(
+            workspace='testworkspace', region='ap1', name='New token'
+        )
+
+        assert result['status'] == 'error'
+        assert 'JWT' in result['message']
+        mock_http_client.post.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_update_rejected_for_non_jwt_token(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_token_manager.get_token.return_value = 'opaque-api-token'
+
+        result = await update_api_token(
+            workspace='testworkspace',
+            region='ap1',
+            token_id='550e8400-e29b-41d4-a716-446655440000',
+            name='Renamed',
+        )
+
+        assert result['status'] == 'error'
+        assert 'JWT' in result['message']
+        mock_http_client.patch.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_duplicate_rejected_for_non_jwt_token(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_token_manager.get_token.return_value = 'opaque-api-token'
+
+        result = await duplicate_api_token(
+            workspace='testworkspace',
+            region='ap1',
+            token_id='550e8400-e29b-41d4-a716-446655440000',
+        )
+
+        assert result['status'] == 'error'
+        assert 'JWT' in result['message']
+        mock_http_client.post.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_delete_rejected_for_non_jwt_token(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_token_manager.get_token.return_value = 'opaque-api-token'
+
+        result = await delete_api_token(
+            workspace='testworkspace',
+            region='ap1',
+            token_id='550e8400-e29b-41d4-a716-446655440000',
+        )
+
+        assert result['status'] == 'error'
+        assert 'JWT' in result['message']
+        mock_http_client.delete.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_jwt_token_passes_guard(self, mock_http_client, mock_token_manager):
+        """JWT-shaped token (3 dotted non-empty parts) bypasses the guard
+        and reaches the underlying HTTP call."""
+        mock_token_manager.get_token.return_value = 'header.payload.signature'
+        mock_http_client.post.return_value = {
+            'id': 'tok-new',
+            'name': 'New token',
+            'key': 'alpat-secret',
+        }
+
+        result = await create_api_token(
+            workspace='testworkspace', region='ap1', name='New token'
+        )
+
+        assert result['status'] == 'success'
+        mock_http_client.post.assert_called_once()

@@ -14,7 +14,7 @@ this restriction.
 from typing import Any
 
 from utils.common import error_response, success_response, unwrap_http_result
-from utils.decorators import mcp_tool_handler
+from utils.decorators import mcp_tool_handler, require_jwt_auth
 from utils.error_handler import format_validation_error, validate_server_id_format
 from utils.http_client import http_client
 from utils.tool_annotations import (
@@ -182,6 +182,7 @@ async def get_api_token(
     annotations=ADDITIVE,
     meta={'anthropic/searchHint': 'api token create generate credentials'},
 )
+@require_jwt_auth
 async def create_api_token(
     workspace: str,
     name: str,
@@ -252,6 +253,7 @@ async def create_api_token(
         'anthropic/searchHint': 'api token update modify enable disable expire rename'
     },
 )
+@require_jwt_auth
 async def update_api_token(
     token_id: str,
     workspace: str,
@@ -341,6 +343,7 @@ async def update_api_token(
     annotations=DESTRUCTIVE,
     meta={'anthropic/searchHint': 'api token delete revoke remove'},
 )
+@require_jwt_auth
 async def delete_api_token(
     token_id: str,
     workspace: str,
@@ -395,6 +398,7 @@ async def delete_api_token(
     annotations=ADDITIVE,
     meta={'anthropic/searchHint': 'api token duplicate copy clone rotate'},
 )
+@require_jwt_auth
 async def duplicate_api_token(
     token_id: str,
     workspace: str,
