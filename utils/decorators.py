@@ -18,6 +18,7 @@ from utils.error_handler import (
     validate_server_id_format,
     validate_workspace_format,
 )
+from utils.http_client import AlpaconHTTPClient
 from utils.logger import get_logger
 
 logger = get_logger('decorators')
@@ -477,8 +478,6 @@ def require_jwt_auth(func: Callable) -> Callable:
 
     @wraps(func)
     async def wrapper(*args, **kwargs):
-        from utils.http_client import AlpaconHTTPClient
-
         token = kwargs.get('token')
         if token and not AlpaconHTTPClient._is_jwt(token):
             return error_response(
