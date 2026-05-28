@@ -5,6 +5,9 @@ on:
   release:
     types: [published]  # Only runs when release is published (not draft)
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
