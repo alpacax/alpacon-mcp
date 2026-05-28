@@ -253,6 +253,27 @@ class TestCreateApiToken:
         assert call_data['enabled'] is False
 
     @pytest.mark.asyncio
+    async def test_create_api_token_with_enabled_true(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Test create_api_token forwards enabled=True (guards against falsy bugs)."""
+        mock_http_client.post.return_value = {
+            'id': 'tok-enabled',
+            'name': 'Enabled Token',
+            'enabled': True,
+        }
+
+        await create_api_token(
+            workspace='testworkspace',
+            region='ap1',
+            name='Enabled Token',
+            enabled=True,
+        )
+
+        call_data = mock_http_client.post.call_args[1]['data']
+        assert call_data['enabled'] is True
+
+    @pytest.mark.asyncio
     async def test_create_api_token_with_presets_only(
         self, mock_http_client, mock_token_manager
     ):
@@ -449,6 +470,27 @@ class TestDuplicateApiToken:
             token='test-token',
             data={'name': 'My Backup Token'},
         )
+
+    @pytest.mark.asyncio
+    async def test_duplicate_api_token_with_empty_name_forwarded(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Test duplicate_api_token forwards empty string name (server treats it
+        as 'auto-generate' via APITokenDuplicateSerializer.allow_blank=True)."""
+        mock_http_client.post.return_value = {
+            'id': 'tok-blank',
+            'name': 'Source (copy)',
+        }
+
+        await duplicate_api_token(
+            token_id='550e8400-e29b-41d4-a716-446655440005',
+            workspace='testworkspace',
+            region='ap1',
+            name='',
+        )
+
+        call_data = mock_http_client.post.call_args[1]['data']
+        assert call_data == {'name': ''}
 
     @pytest.mark.asyncio
     async def test_duplicate_api_token_includes_token_id_in_response(

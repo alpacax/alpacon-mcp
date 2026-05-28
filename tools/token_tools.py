@@ -1,13 +1,14 @@
 """API token management tools for Alpacon MCP server.
 
-Authentication note: the server rejects API token mutating operations
-when the request is itself authenticated with a ``source='api'``
-APIToken (``api/apitoken/permissions.py:APITokenObjectPermission``).
-The list/retrieve/create/update/delete/duplicate tools below therefore
-require JWT/OAuth authentication (streamable-http remote mode) to
-succeed; stdio mode using a token from ``token.json`` will receive
-``403 Forbidden`` for those tools. The scopes and presets catalog
-endpoints are not subject to this restriction.
+Authentication note: ``api/apitoken/permissions.py:APITokenObjectPermission``
+rejects any request whose ``request.auth`` is an ``APIToken`` with
+``source='api'``. The list/retrieve/create/update/delete/duplicate
+tools below therefore return ``403 Forbidden`` when called from stdio
+mode using a token from ``token.json`` (which is a ``source='api'``
+token). Other authentication paths (JWT/OAuth in streamable-http
+remote mode, browser session, ``source='login'`` token) pass the
+check. The scopes and presets catalog endpoints are not subject to
+this restriction.
 """
 
 from typing import Any
@@ -24,8 +25,8 @@ from utils.tool_annotations import (
 )
 
 _JWT_REQUIRED_NOTE = (
-    'Requires JWT/OAuth authentication; calls authenticated with a '
-    "source='api' API token receive 403 Forbidden from the server."
+    "Returns 403 Forbidden when called with a source='api' API token; "
+    'use JWT/OAuth, a browser session, or a login-source token instead.'
 )
 
 
@@ -72,8 +73,10 @@ async def list_api_tokens(
         enabled: Filter by enabled status (optional)
         remote_ip: Filter by remote IP that last used the token (optional)
         search: Free-text search across name, user_agent, remote_ip (optional)
-        ordering: Sort field; one of "added_at", "-added_at", "updated_at",
-            "-updated_at" (optional)
+        ordering: Sort field, e.g. "-updated_at" (server default), "added_at".
+            Multiple fields may be comma-separated. Available fields:
+            updated_at, added_at. Not validated client-side - the server
+            rejects unknown fields (optional)
 
     Returns:
         API tokens list response
@@ -197,8 +200,8 @@ async def create_api_token(
         scopes: List of permission scopes for the token (optional)
         expires_at: Expiration datetime in ISO 8601 format (optional)
         enabled: Whether the token is active. Defaults to True on the server (optional)
-        presets: Preset scope keys resolved server-side (e.g. "file_upload"). Merged
-            with explicit scopes; stored as granular scope strings. Use
+        presets: Preset scope keys resolved server-side. Merged with explicit
+            scopes; stored as granular scope strings. Call
             list_api_token_presets to discover available keys (optional)
         region: Region (ap1, us1, eu1). Auto-detected if not provided
 
@@ -270,8 +273,11 @@ async def update_api_token(
         workspace: Workspace name. Required parameter
         name: New token name (optional)
         enabled: Toggle the token's enabled state (optional)
-        expires_at: New expiration datetime in ISO 8601 format. Pass null
-            is not supported; omit to leave unchanged (optional)
+        expires_at: New expiration datetime in ISO 8601 format. Omit to
+            leave unchanged. The server's model accepts null to clear
+            the expiry, but this tool's signature has no way to express
+            that distinctly from "omit"; call the API directly if you
+            need to remove an existing expiry (optional)
         scopes: Replacement scope list. Re-validated against the caller's
             RBAC ceiling (optional)
         region: Region (ap1, us1, eu1). Auto-detected if not provided
