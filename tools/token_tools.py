@@ -1,12 +1,32 @@
-"""API token management tools for Alpacon MCP server."""
+"""API token management tools for Alpacon MCP server.
+
+Authentication note: the server rejects API token mutating operations
+when the request is itself authenticated with a ``source='api'``
+APIToken (``api/apitoken/permissions.py:APITokenObjectPermission``).
+The list/retrieve/create/update/delete/duplicate tools below therefore
+require JWT/OAuth authentication (streamable-http remote mode) to
+succeed; stdio mode using a token from ``token.json`` will receive
+``403 Forbidden`` for those tools. The scopes and presets catalog
+endpoints are not subject to this restriction.
+"""
 
 from typing import Any
 
-from utils.common import success_response, unwrap_http_result
+from utils.common import error_response, success_response, unwrap_http_result
 from utils.decorators import mcp_tool_handler
 from utils.error_handler import format_validation_error, validate_server_id_format
 from utils.http_client import http_client
-from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, READ_ONLY
+from utils.tool_annotations import (
+    ADDITIVE,
+    DESTRUCTIVE,
+    IDEMPOTENT_WRITE,
+    READ_ONLY,
+)
+
+_JWT_REQUIRED_NOTE = (
+    'Requires JWT/OAuth authentication; calls authenticated with a '
+    "source='api' API token receive 403 Forbidden from the server."
+)
 
 
 def _validate_token_id(token_id: str) -> dict[str, Any] | None:
@@ -20,7 +40,12 @@ def _validate_token_id(token_id: str) -> dict[str, Any] | None:
 
 
 @mcp_tool_handler(
-    description='List API tokens in the workspace. When to use: reviewing existing API tokens or auditing access. Related: create_api_token (create new), delete_api_token (remove), list_api_token_scopes (available scopes).',
+    description=(
+        'List API tokens in the workspace. When to use: reviewing existing API tokens or auditing access. '
+        'Related: get_api_token (detail), create_api_token (create new), update_api_token (modify), '
+        'delete_api_token (remove), list_api_token_scopes (available scopes). '
+        f'{_JWT_REQUIRED_NOTE}'
+    ),
     annotations=READ_ONLY,
     meta={'anthropic/searchHint': 'api token list credentials access'},
 )
@@ -29,6 +54,11 @@ async def list_api_tokens(
     region: str = '',
     page: int | None = None,
     page_size: int | None = None,
+    name: str | None = None,
+    enabled: bool | None = None,
+    remote_ip: str | None = None,
+    search: str | None = None,
+    ordering: str | None = None,
     **kwargs,
 ) -> dict[str, Any]:
     """List API tokens.
@@ -38,6 +68,12 @@ async def list_api_tokens(
         region: Region (ap1, us1, eu1). Auto-detected if not provided
         page: Page number for pagination (optional)
         page_size: Number of items per page (optional)
+        name: Filter by exact token name (optional)
+        enabled: Filter by enabled status (optional)
+        remote_ip: Filter by remote IP that last used the token (optional)
+        search: Free-text search across name, user_agent, remote_ip (optional)
+        ordering: Sort field; one of "added_at", "-added_at", "updated_at",
+            "-updated_at" (optional)
 
     Returns:
         API tokens list response
@@ -49,6 +85,16 @@ async def list_api_tokens(
         params['page'] = page
     if page_size is not None:
         params['page_size'] = page_size
+    if name is not None:
+        params['name'] = name
+    if enabled is not None:
+        params['enabled'] = enabled
+    if remote_ip is not None:
+        params['remote_ip'] = remote_ip
+    if search is not None:
+        params['search'] = search
+    if ordering is not None:
+        params['ordering'] = ordering
 
     result = await http_client.get(
         region=region,
@@ -71,7 +117,65 @@ async def list_api_tokens(
 
 
 @mcp_tool_handler(
-    description='Create a new API token in the workspace. When to use: generating credentials for programmatic access or integrations. Related: list_api_tokens (view existing), delete_api_token (remove), list_api_token_scopes (check available scopes).',
+    description=(
+        "Get detailed information about a specific API token by ID. When to use: inspecting a token's "
+        'scopes, expiry, or enabled status. Related: list_api_tokens (find token ID), update_api_token '
+        f'(modify), delete_api_token (remove). {_JWT_REQUIRED_NOTE}'
+    ),
+    annotations=READ_ONLY,
+    meta={'anthropic/searchHint': 'api token get detail retrieve'},
+)
+async def get_api_token(
+    token_id: str,
+    workspace: str,
+    region: str = '',
+    **kwargs,
+) -> dict[str, Any]:
+    """Get a single API token.
+
+    Args:
+        token_id: ID of the API token to retrieve
+        workspace: Workspace name. Required parameter
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
+
+    Returns:
+        API token detail response
+    """
+    token = kwargs.get('token')
+
+    err = _validate_token_id(token_id)
+    if err:
+        return err
+
+    result = await http_client.get(
+        region=region,
+        workspace=workspace,
+        endpoint=f'/api/auth/tokens/{token_id}/',
+        token=token,
+    )
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to get API token',
+        token_id=token_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
+
+    return success_response(
+        data=result, token_id=token_id, region=region, workspace=workspace
+    )
+
+
+@mcp_tool_handler(
+    description=(
+        'Create a new API token in the workspace. When to use: generating credentials for programmatic '
+        'access or integrations. Related: list_api_tokens (view existing), update_api_token (modify), '
+        'delete_api_token (remove), list_api_token_scopes (check available scopes), '
+        f'list_api_token_presets (preset catalog). {_JWT_REQUIRED_NOTE}'
+    ),
     annotations=ADDITIVE,
     meta={'anthropic/searchHint': 'api token create generate credentials'},
 )
@@ -94,7 +198,8 @@ async def create_api_token(
         expires_at: Expiration datetime in ISO 8601 format (optional)
         enabled: Whether the token is active. Defaults to True on the server (optional)
         presets: Preset scope keys resolved server-side (e.g. "file_upload"). Merged
-            with explicit scopes; stored as granular scope strings (optional)
+            with explicit scopes; stored as granular scope strings. Use
+            list_api_token_presets to discover available keys (optional)
         region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
@@ -133,7 +238,95 @@ async def create_api_token(
 
 
 @mcp_tool_handler(
-    description='Delete an API token permanently. When to use: revoking access for a specific token. Related: list_api_tokens (find token ID), duplicate_api_token (create a copy before deleting). Note: This cannot be undone.',
+    description=(
+        'Update an existing API token. When to use: toggling enabled status, changing the expiration '
+        'time, renaming, or narrowing scopes without rotating the key. Related: get_api_token (read '
+        'current state), create_api_token (create new), delete_api_token (remove). '
+        f'Note: presets are create-only and rejected on update. {_JWT_REQUIRED_NOTE}'
+    ),
+    annotations=IDEMPOTENT_WRITE,
+    meta={
+        'anthropic/searchHint': 'api token update modify enable disable expire rename'
+    },
+)
+async def update_api_token(
+    token_id: str,
+    workspace: str,
+    name: str | None = None,
+    enabled: bool | None = None,
+    expires_at: str | None = None,
+    scopes: list[str] | None = None,
+    region: str = '',
+    **kwargs,
+) -> dict[str, Any]:
+    """Update an API token via PATCH.
+
+    Only the fields you pass are sent; everything else is left untouched
+    on the server. The server enforces the caller's RBAC scope ceiling
+    when ``scopes`` is included.
+
+    Args:
+        token_id: ID of the API token to update
+        workspace: Workspace name. Required parameter
+        name: New token name (optional)
+        enabled: Toggle the token's enabled state (optional)
+        expires_at: New expiration datetime in ISO 8601 format. Pass null
+            is not supported; omit to leave unchanged (optional)
+        scopes: Replacement scope list. Re-validated against the caller's
+            RBAC ceiling (optional)
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
+
+    Returns:
+        API token update response
+    """
+    token = kwargs.get('token')
+
+    err = _validate_token_id(token_id)
+    if err:
+        return err
+
+    update_data: dict[str, Any] = {}
+    if name is not None:
+        update_data['name'] = name
+    if enabled is not None:
+        update_data['enabled'] = enabled
+    if expires_at is not None:
+        update_data['expires_at'] = expires_at
+    if scopes is not None:
+        update_data['scopes'] = scopes
+
+    if not update_data:
+        return error_response('No update data provided')
+
+    result = await http_client.patch(
+        region=region,
+        workspace=workspace,
+        endpoint=f'/api/auth/tokens/{token_id}/',
+        token=token,
+        data=update_data,
+    )
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to update API token',
+        token_id=token_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
+
+    return success_response(
+        data=result, token_id=token_id, region=region, workspace=workspace
+    )
+
+
+@mcp_tool_handler(
+    description=(
+        'Delete an API token permanently. When to use: revoking access for a specific token. '
+        'Related: list_api_tokens (find token ID), update_api_token (disable instead of deleting), '
+        f'duplicate_api_token (create a copy before deleting). Note: This cannot be undone. {_JWT_REQUIRED_NOTE}'
+    ),
     annotations=DESTRUCTIVE,
     meta={'anthropic/searchHint': 'api token delete revoke remove'},
 )
@@ -182,7 +375,12 @@ async def delete_api_token(
 
 
 @mcp_tool_handler(
-    description='Duplicate an existing API token to create a copy with the same configuration. When to use: creating a backup token or rotating credentials. Related: list_api_tokens (find token ID), create_api_token (create from scratch), delete_api_token (remove old token after rotation).',
+    description=(
+        'Duplicate an existing API token to create a copy with the same configuration. When to use: '
+        'creating a backup token or rotating credentials. Related: list_api_tokens (find token ID), '
+        'create_api_token (create from scratch), delete_api_token (remove old token after rotation). '
+        f'{_JWT_REQUIRED_NOTE}'
+    ),
     annotations=ADDITIVE,
     meta={'anthropic/searchHint': 'api token duplicate copy clone rotate'},
 )
@@ -241,7 +439,7 @@ async def duplicate_api_token(
 
 
 @mcp_tool_handler(
-    description='List available API token scopes. When to use: before creating a token, to see which permission scopes can be assigned. Related: create_api_token (use scopes when creating), list_api_tokens (view tokens and their scopes).',
+    description='List available API token scopes. When to use: before creating a token, to see which permission scopes can be assigned. Related: create_api_token (use scopes when creating), list_api_token_presets (bundled preset keys), list_api_tokens (view tokens and their scopes).',
     annotations=READ_ONLY,
     meta={'anthropic/searchHint': 'api token scopes permissions available'},
 )
@@ -271,6 +469,46 @@ async def list_api_token_scopes(
     err = unwrap_http_result(
         result,
         default_message='Failed to list API token scopes',
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
+
+    return success_response(data=result, region=region, workspace=workspace)
+
+
+@mcp_tool_handler(
+    description='List available API token scope presets. When to use: before creating a token, to discover bundled scope shortcuts (e.g. "file_upload") that can be passed to create_api_token. Related: list_api_token_scopes (granular scopes), create_api_token (use presets when creating).',
+    annotations=READ_ONLY,
+    meta={'anthropic/searchHint': 'api token preset scopes bundle catalog'},
+)
+async def list_api_token_presets(
+    workspace: str,
+    region: str = '',
+    **kwargs,
+) -> dict[str, Any]:
+    """List available API token scope presets.
+
+    Args:
+        workspace: Workspace name. Required parameter
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
+
+    Returns:
+        Available API token presets response
+    """
+    token = kwargs.get('token')
+
+    result = await http_client.get(
+        region=region,
+        workspace=workspace,
+        endpoint='/api/auth/tokens/presets/',
+        token=token,
+    )
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to list API token presets',
         region=region,
         workspace=workspace,
     )

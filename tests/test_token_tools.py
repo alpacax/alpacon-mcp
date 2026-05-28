@@ -8,8 +8,11 @@ from tools.token_tools import (
     create_api_token,
     delete_api_token,
     duplicate_api_token,
+    get_api_token,
+    list_api_token_presets,
     list_api_token_scopes,
     list_api_tokens,
+    update_api_token,
 )
 
 
@@ -19,6 +22,7 @@ def mock_http_client():
     with patch('tools.token_tools.http_client') as mock_client:
         mock_client.get = AsyncMock()
         mock_client.post = AsyncMock()
+        mock_client.patch = AsyncMock()
         mock_client.delete = AsyncMock()
         yield mock_client
 
@@ -78,6 +82,49 @@ class TestListApiTokens:
             token='test-token',
             params={'page': 2, 'page_size': 5},
         )
+
+    @pytest.mark.asyncio
+    async def test_list_api_tokens_with_filters(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Test that filter/search/ordering params are forwarded to the API."""
+        mock_http_client.get.return_value = {'count': 0, 'results': []}
+
+        result = await list_api_tokens(
+            workspace='testworkspace',
+            region='ap1',
+            name='deploy-bot',
+            enabled=True,
+            remote_ip='10.0.0.5',
+            search='deploy',
+            ordering='-updated_at',
+        )
+
+        assert result['status'] == 'success'
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/auth/tokens/',
+            token='test-token',
+            params={
+                'name': 'deploy-bot',
+                'enabled': True,
+                'remote_ip': '10.0.0.5',
+                'search': 'deploy',
+                'ordering': '-updated_at',
+            },
+        )
+
+    @pytest.mark.asyncio
+    async def test_list_api_tokens_enabled_false_forwarded(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Test that enabled=False is still forwarded (not treated as missing)."""
+        mock_http_client.get.return_value = {'count': 0, 'results': []}
+
+        await list_api_tokens(workspace='testworkspace', region='ap1', enabled=False)
+
+        assert mock_http_client.get.call_args[1]['params'] == {'enabled': False}
 
     @pytest.mark.asyncio
     async def test_list_api_tokens_empty(self, mock_http_client, mock_token_manager):
@@ -523,5 +570,259 @@ class TestListApiTokenScopes:
         }
 
         result = await list_api_token_scopes(workspace='testworkspace', region='ap1')
+
+        assert result['status'] == 'error'
+
+
+class TestGetApiToken:
+    """Tests for get_api_token tool."""
+
+    @pytest.mark.asyncio
+    async def test_get_api_token_success(self, mock_http_client, mock_token_manager):
+        """Test successful single API token retrieval."""
+        mock_http_client.get.return_value = {
+            'id': '550e8400-e29b-41d4-a716-446655440010',
+            'name': 'Detail Token',
+            'enabled': True,
+            'scopes': ['*'],
+        }
+
+        result = await get_api_token(
+            token_id='550e8400-e29b-41d4-a716-446655440010',
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert result['status'] == 'success'
+        assert result['token_id'] == '550e8400-e29b-41d4-a716-446655440010'
+        assert result['data']['name'] == 'Detail Token'
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/auth/tokens/550e8400-e29b-41d4-a716-446655440010/',
+            token='test-token',
+        )
+
+    @pytest.mark.asyncio
+    async def test_get_api_token_invalid_token_id(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Test that get_api_token returns error for non-UUID token_id."""
+        result = await get_api_token(
+            token_id='not-a-uuid', workspace='testworkspace', region='ap1'
+        )
+
+        assert result['status'] == 'error'
+        mock_http_client.get.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_get_api_token_not_found(self, mock_http_client, mock_token_manager):
+        """Test that get_api_token returns error when token does not exist."""
+        mock_http_client.get.return_value = {
+            'error': 'HTTP Error',
+            'status_code': 404,
+            'message': 'Not found',
+        }
+
+        result = await get_api_token(
+            token_id='550e8400-e29b-41d4-a716-446655440099',
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert result['status'] == 'error'
+
+
+class TestUpdateApiToken:
+    """Tests for update_api_token tool."""
+
+    @pytest.mark.asyncio
+    async def test_update_api_token_toggle_enabled(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Test disabling a token via update_api_token (enabled=False)."""
+        mock_http_client.patch.return_value = {
+            'id': '550e8400-e29b-41d4-a716-446655440020',
+            'name': 'Active Token',
+            'enabled': False,
+        }
+
+        result = await update_api_token(
+            token_id='550e8400-e29b-41d4-a716-446655440020',
+            workspace='testworkspace',
+            region='ap1',
+            enabled=False,
+        )
+
+        assert result['status'] == 'success'
+        mock_http_client.patch.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/auth/tokens/550e8400-e29b-41d4-a716-446655440020/',
+            token='test-token',
+            data={'enabled': False},
+        )
+
+    @pytest.mark.asyncio
+    async def test_update_api_token_with_all_fields(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Test update_api_token forwards every supplied field."""
+        mock_http_client.patch.return_value = {
+            'id': '550e8400-e29b-41d4-a716-446655440021',
+            'name': 'Renamed',
+            'enabled': True,
+            'scopes': ['server:read'],
+            'expires_at': '2027-01-01T00:00:00Z',
+        }
+
+        result = await update_api_token(
+            token_id='550e8400-e29b-41d4-a716-446655440021',
+            workspace='testworkspace',
+            region='ap1',
+            name='Renamed',
+            enabled=True,
+            expires_at='2027-01-01T00:00:00Z',
+            scopes=['server:read'],
+        )
+
+        assert result['status'] == 'success'
+        mock_http_client.patch.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/auth/tokens/550e8400-e29b-41d4-a716-446655440021/',
+            token='test-token',
+            data={
+                'name': 'Renamed',
+                'enabled': True,
+                'expires_at': '2027-01-01T00:00:00Z',
+                'scopes': ['server:read'],
+            },
+        )
+
+    @pytest.mark.asyncio
+    async def test_update_api_token_no_fields_returns_error(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Test update_api_token returns error when no field is provided."""
+        result = await update_api_token(
+            token_id='550e8400-e29b-41d4-a716-446655440022',
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert result['status'] == 'error'
+        mock_http_client.patch.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_update_api_token_invalid_token_id(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Test update_api_token returns error for non-UUID token_id."""
+        result = await update_api_token(
+            token_id='not-a-uuid',
+            workspace='testworkspace',
+            region='ap1',
+            enabled=False,
+        )
+
+        assert result['status'] == 'error'
+        mock_http_client.patch.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_update_api_token_http_error(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Test update_api_token surfaces server error responses as errors.
+
+        Covers e.g. API_TOKEN_PRESETS_NOT_ALLOWED_ON_UPDATE / scope
+        ceiling rejection returned by the server.
+        """
+        mock_http_client.patch.return_value = {
+            'error': 'HTTP Error',
+            'status_code': 400,
+            'message': 'Presets are not allowed on update.',
+        }
+
+        result = await update_api_token(
+            token_id='550e8400-e29b-41d4-a716-446655440023',
+            workspace='testworkspace',
+            region='ap1',
+            scopes=['server:read'],
+        )
+
+        assert result['status'] == 'error'
+
+    @pytest.mark.asyncio
+    async def test_update_api_token_not_found(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Test update_api_token returns error when token does not exist."""
+        mock_http_client.patch.return_value = {
+            'error': 'HTTP Error',
+            'status_code': 404,
+            'message': 'Not found',
+        }
+
+        result = await update_api_token(
+            token_id='550e8400-e29b-41d4-a716-446655440099',
+            workspace='testworkspace',
+            region='ap1',
+            enabled=False,
+        )
+
+        assert result['status'] == 'error'
+
+
+class TestListApiTokenPresets:
+    """Tests for list_api_token_presets tool."""
+
+    @pytest.mark.asyncio
+    async def test_list_api_token_presets_success(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Test successful preset catalog retrieval."""
+        mock_http_client.get.return_value = {
+            'file_upload': {
+                'name': 'File upload',
+                'scopes': ['webftp:upload'],
+            },
+        }
+
+        result = await list_api_token_presets(workspace='testworkspace', region='ap1')
+
+        assert result['status'] == 'success'
+        assert 'file_upload' in result['data']
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/auth/tokens/presets/',
+            token='test-token',
+        )
+
+    @pytest.mark.asyncio
+    async def test_list_api_token_presets_empty(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Test preset catalog when workspace has no enabled presets."""
+        mock_http_client.get.return_value = {}
+
+        result = await list_api_token_presets(workspace='testworkspace', region='ap1')
+
+        assert result['status'] == 'success'
+        assert result['data'] == {}
+
+    @pytest.mark.asyncio
+    async def test_list_api_token_presets_http_error(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Test list_api_token_presets surfaces API error responses as errors."""
+        mock_http_client.get.return_value = {
+            'error': 'HTTP Error',
+            'status_code': 403,
+            'message': 'Permission denied',
+        }
+
+        result = await list_api_token_presets(workspace='testworkspace', region='ap1')
 
         assert result['status'] == 'error'
