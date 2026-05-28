@@ -12,7 +12,7 @@ from typing import Any, cast
 import httpx
 
 from server import mcp
-from utils.common import error_response, success_response
+from utils.common import error_response, success_response, unwrap_http_result
 from utils.decorators import _is_auth_enabled, mcp_tool_handler
 from utils.error_handler import format_validation_error, validate_file_path
 from utils.http_client import http_client
@@ -148,6 +148,7 @@ async def _download_remote_mode(
     workspace: str,
     region: str,
     username: str | None,
+    work_session_id: str | None,
     token: str,
 ) -> dict[str, Any]:
     """Handle webftp_download_file in remote mode: poll until ready, return presigned URL."""
@@ -163,6 +164,8 @@ async def _download_remote_mode(
     }
     if username:
         download_data['username'] = username
+    if work_session_id:
+        download_data['work_session'] = work_session_id
 
     result = await http_client.post(
         region=region,
@@ -172,10 +175,19 @@ async def _download_remote_mode(
         data=download_data,
     )
 
-    file_id = result.get('id')
+    if err := unwrap_http_result(
+        result,
+        default_message='Failed to create download request',
+        server_id=server_id,
+        region=region,
+        workspace=workspace,
+    ):
+        return err
+
     download_url = result.get('download_url')
 
     if not download_url:
+        file_id = result.get('id')
         for _ in range(_REMOTE_DOWNLOAD_TIMEOUT):
             await asyncio.sleep(1)
             status = await http_client.get(
@@ -184,6 +196,12 @@ async def _download_remote_mode(
                 endpoint=_API_DOWNLOAD_STATUS.format(file_id),
                 token=token,
             )
+            if err := unwrap_http_result(
+                status,
+                default_message='Failed to poll download status',
+                file_id=file_id,
+            ):
+                return err
             if status.get('success') is True:
                 download_url = status.get('download_url')
                 break
@@ -216,7 +234,7 @@ async def _download_remote_mode(
 
 
 @mcp_tool_handler(
-    description='Create a new WebFTP file transfer session on a server. Returns session ID and connection details. When to use: advanced session management. For simple file transfers, use webftp_upload_file or webftp_download_file directly. Related: webftp_sessions_list (view sessions), webftp_upload_file, webftp_download_file.',
+    description='Create a new WebFTP file transfer session on a server. Returns session ID and connection details. Pass work_session_id to link this WebFTP session to a Work Session for audit. When to use: advanced session management. For simple file transfers, use webftp_upload_file or webftp_download_file directly. Related: webftp_sessions_list (view sessions), webftp_upload_file, webftp_download_file, work_session_create (create a Work Session).',
     annotations=ADDITIVE,
     meta={'anthropic/searchHint': 'webftp session create file transfer'},
 )
@@ -224,30 +242,19 @@ async def webftp_session_create(
     server_id: str,
     workspace: str,
     username: str | None = None,
+    work_session_id: str | None = None,
     region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
-    """Create a new WebFTP session.
-
-    Args:
-        server_id: Server ID to create FTP session on
-        workspace: Workspace name. Required parameter
-        username: Optional username for the FTP session (uses authenticated user if not provided)
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
-
-    Returns:
-        FTP session creation response
-    """
+    """Create a new WebFTP session."""
     token = kwargs.get('token')
 
-    # Prepare FTP session data
     session_data = {'server': server_id}
-
-    # Only include username if provided
     if username:
         session_data['username'] = username
+    if work_session_id:
+        session_data['work_session'] = work_session_id
 
-    # Make async call to create FTP session
     result = await http_client.post(
         region=region,
         workspace=workspace,
@@ -255,6 +262,15 @@ async def webftp_session_create(
         token=token,
         data=session_data,
     )
+
+    if err := unwrap_http_result(
+        result,
+        default_message='Failed to create WebFTP session',
+        server_id=server_id,
+        region=region,
+        workspace=workspace,
+    ):
+        return err
 
     return success_response(
         data=result,
@@ -273,24 +289,13 @@ async def webftp_session_create(
 async def webftp_sessions_list(
     workspace: str, server_id: str | None = None, region: str = '', **kwargs
 ) -> dict[str, Any]:
-    """Get list of WebFTP sessions.
-
-    Args:
-        workspace: Workspace name. Required parameter
-        server_id: Optional server ID to filter sessions
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
-
-    Returns:
-        FTP sessions list response
-    """
+    """Get list of WebFTP sessions."""
     token = kwargs.get('token')
 
-    # Prepare query parameters
     params = {}
     if server_id:
         params['server'] = server_id
 
-    # Make async call to get FTP sessions
     result = await http_client.get(
         region=region,
         workspace=workspace,
@@ -299,13 +304,22 @@ async def webftp_sessions_list(
         params=params,
     )
 
+    if err := unwrap_http_result(
+        result,
+        default_message='Failed to list WebFTP sessions',
+        server_id=server_id,
+        region=region,
+        workspace=workspace,
+    ):
+        return err
+
     return success_response(
         data=result, server_id=server_id, region=region, workspace=workspace
     )
 
 
 @mcp_tool_handler(
-    description='Upload a local file to a remote server. Reads the file from a local absolute path, transfers it via S3 presigned URL, and places it at the specified remote path on the server. When to use: transferring a single file to a server. Related: webftp_bulk_upload (multiple files), webftp_download_file (download from server), webftp_uploads_list (check upload history). Note: Both local and remote paths must be absolute.',
+    description='Upload a local file to a remote server. Reads the file from a local absolute path, transfers it via S3 presigned URL, and places it at the specified remote path on the server. Pass work_session_id to link this upload to a Work Session for audit; the server enforces this for MCP OAuth and browser-based auth. When to use: transferring a single file to a server. Related: webftp_bulk_upload (multiple files), webftp_download_file (download from server), webftp_uploads_list (check upload history), work_session_create (create a Work Session). Note: Both local and remote paths must be absolute.',
     annotations=ADDITIVE,
     meta={'anthropic/searchHint': 'file upload transfer scp sftp send server'},
 )
@@ -315,44 +329,22 @@ async def webftp_upload_file(
     remote_file_path: str,
     workspace: str,
     username: str | None = None,
+    work_session_id: str | None = None,
     region: str = '',
     allow_overwrite: bool = True,
     **kwargs,
 ) -> dict[str, Any]:
-    """Upload a file using WebFTP uploads API with S3 presigned URLs.
-
-    This creates an UploadedFile object which generates presigned S3 URLs for upload.
-    The process:
-    1. Read file from local path
-    2. Create UploadedFile object with metadata
-    3. Get presigned upload URL from response
-    4. Upload file content to S3 using the presigned URL
-    5. File is automatically processed on the server
-
-    Args:
-        server_id: Server ID to upload file to
-        local_file_path: Local file path to read from (e.g., "/Users/user/file.txt")
-        remote_file_path: Remote path where the file should be uploaded on the server (e.g., "/home/user/file.txt")
-        workspace: Workspace name. Required parameter
-        username: Optional username for the upload (uses authenticated user if not provided)
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
-        allow_overwrite: Allow overwriting existing files (default: True)
-
-    Returns:
-        File upload response with presigned URLs
-    """
+    """Upload a local file to a server via S3 presigned URL."""
     token = kwargs.get('token')
 
     if _is_auth_enabled():
         return error_response(_REMOTE_MODE_ERROR, code='remote_mode_unsupported')
 
-    # Validate file paths
     if not validate_file_path(local_file_path):
         return format_validation_error('local_file_path', local_file_path)
     if not validate_file_path(remote_file_path):
         return format_validation_error('remote_file_path', remote_file_path)
 
-    # Step 1: Read local file
     try:
         file_content = await asyncio.to_thread(Path(local_file_path).read_bytes)
     except FileNotFoundError:
@@ -360,19 +352,17 @@ async def webftp_upload_file(
     except Exception as e:
         return error_response(f'Failed to read local file: {str(e)}')
 
-    # Step 2: Prepare upload data for UploadedFileCreateSerializer
     upload_data = {
         'server': server_id,
         'name': os.path.basename(remote_file_path),
         'path': remote_file_path,
         'allow_overwrite': allow_overwrite,
     }
-
-    # Only include username if provided
     if username:
         upload_data['username'] = username
+    if work_session_id:
+        upload_data['work_session'] = work_session_id
 
-    # Step 3: Create UploadedFile object (this generates presigned URLs when USE_S3=True)
     result = await http_client.post(
         region=region,
         workspace=workspace,
@@ -381,13 +371,20 @@ async def webftp_upload_file(
         data=upload_data,
     )
 
-    # Step 4: Upload file content to S3 using presigned URL
+    if http_err := unwrap_http_result(
+        result,
+        default_message='Failed to create upload request',
+        server_id=server_id,
+        region=region,
+        workspace=workspace,
+    ):
+        return http_err
+
     if result.get('upload_url'):
         err = await _upload_bytes_to_s3(result['upload_url'], file_content)
         if err:
             return error_response(err, upload_url=result['upload_url'])
 
-        # Step 5: Trigger server to process the uploaded file
         upload_trigger = await http_client.get(
             region=region,
             workspace=workspace,
@@ -395,10 +392,18 @@ async def webftp_upload_file(
             token=token,
         )
 
+        if trigger_err := unwrap_http_result(
+            upload_trigger,
+            default_message='File uploaded to S3 but server processing trigger failed',
+            server_id=server_id,
+            region=region,
+            workspace=workspace,
+        ):
+            return trigger_err
+
         return success_response(
             message='File uploaded successfully and processed by server',
             data=result,
-            upload_trigger=upload_trigger,
             server_id=server_id,
             local_file_path=local_file_path,
             remote_file_path=remote_file_path,
@@ -409,7 +414,6 @@ async def webftp_upload_file(
             workspace=workspace,
         )
     else:
-        # Fallback to direct upload (when USE_S3=False)
         return success_response(
             message='File uploaded successfully (direct upload)',
             data=result,
@@ -440,25 +444,12 @@ async def webftp_upload_content(
     workspace: str,
     file_name: str | None = None,
     username: str | None = None,
+    work_session_id: str | None = None,
     region: str = '',
     allow_overwrite: bool = True,
     **kwargs,
 ) -> dict[str, Any]:
-    """Upload base64-encoded file content to a server via WebFTP.
-
-    Args:
-        server_id: Server ID to upload file to
-        file_content: Base64-encoded file bytes
-        remote_file_path: Absolute path on the server (e.g., "/home/user/file.txt")
-        workspace: Workspace name. Required parameter
-        file_name: File name to use on the server. Inferred from remote_file_path if omitted
-        username: Optional username (uses authenticated user if not provided)
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
-        allow_overwrite: Allow overwriting existing files (default: True)
-
-    Returns:
-        File upload response
-    """
+    """Upload base64-encoded file content to a server via WebFTP."""
     token = kwargs.get('token')
 
     try:
@@ -479,6 +470,8 @@ async def webftp_upload_content(
     }
     if username:
         upload_data['username'] = username
+    if work_session_id:
+        upload_data['work_session'] = work_session_id
 
     result = await http_client.post(
         region=region,
@@ -487,6 +480,15 @@ async def webftp_upload_content(
         token=token,
         data=upload_data,
     )
+
+    if http_err := unwrap_http_result(
+        result,
+        default_message='Failed to create upload request',
+        server_id=server_id,
+        region=region,
+        workspace=workspace,
+    ):
+        return http_err
 
     if result.get('upload_url'):
         err = await _upload_bytes_to_s3(result['upload_url'], raw_bytes)
@@ -500,10 +502,18 @@ async def webftp_upload_content(
             token=token,
         )
 
+        if trigger_err := unwrap_http_result(
+            upload_trigger,
+            default_message='Content uploaded to S3 but server processing trigger failed',
+            server_id=server_id,
+            region=region,
+            workspace=workspace,
+        ):
+            return trigger_err
+
         return success_response(
             message='File content uploaded successfully and processed by server',
             data=result,
-            upload_trigger=upload_trigger,
             server_id=server_id,
             remote_file_path=remote_file_path,
             file_size=len(raw_bytes),
@@ -531,9 +541,12 @@ async def webftp_upload_content(
         'then returns a presigned download URL valid for 24 hours — '
         'open it in a browser or run the curl command in the response. '
         'For folders, content is packaged as a ZIP archive. '
+        'Pass work_session_id to link this download to a Work Session for audit; '
+        'the server enforces this for MCP OAuth and browser-based auth. '
         'Related: webftp_bulk_download (multiple files as ZIP), '
         'webftp_upload_file (upload to server), '
-        'webftp_downloads_list (check download history). '
+        'webftp_downloads_list (check download history), '
+        'work_session_create (create a Work Session). '
         'Note: Set resource_type="folder" for directories.'
     ),
     annotations=ADDITIVE,
@@ -546,27 +559,11 @@ async def webftp_download_file(
     local_file_path: str | None = None,
     resource_type: str = 'file',
     username: str | None = None,
+    work_session_id: str | None = None,
     region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
-    """Download a file or folder using WebFTP downloads API.
-
-    This creates a DownloadedFile object which generates presigned S3 URLs for download,
-    then downloads the file content and saves it to local path.
-    For folders, it creates a zip file automatically.
-
-    Args:
-        server_id: Server ID to download from
-        remote_file_path: Path of the file or folder to download from server
-        local_file_path: Local path where the file should be saved
-        workspace: Workspace name. Required parameter
-        resource_type: Type of resource - "file" or "folder" (default: "file")
-        username: Optional username for the download (uses authenticated user if not provided)
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
-
-    Returns:
-        Download response with file saved locally
-    """
+    """Download a file or folder from a server via S3 presigned URL."""
     token = kwargs.get('token')
     if not isinstance(token, str) or not token:
         raise RuntimeError('token must be injected by mcp_tool_handler')
@@ -582,6 +579,7 @@ async def webftp_download_file(
             workspace=workspace,
             region=region,
             username=username,
+            work_session_id=work_session_id,
             token=token,
         )
 
@@ -590,7 +588,6 @@ async def webftp_download_file(
     if not validate_file_path(local_file_path):
         return format_validation_error('local_file_path', local_file_path)
 
-    # Step 1: Prepare download data for DownloadedFileCreateSerializer
     file_name = os.path.basename(remote_file_path)
     if resource_type == 'folder':
         file_name += '.zip'
@@ -602,11 +599,11 @@ async def webftp_download_file(
         'resource_type': resource_type,
     }
 
-    # Only include username if provided
     if username:
         download_data['username'] = username
+    if work_session_id:
+        download_data['work_session'] = work_session_id
 
-    # Step 2: Create DownloadedFile object (this generates presigned URLs when USE_S3=True)
     result = await http_client.post(
         region=region,
         workspace=workspace,
@@ -615,7 +612,15 @@ async def webftp_download_file(
         data=download_data,
     )
 
-    # Step 3: Download file content from S3 using presigned URL
+    if err := unwrap_http_result(
+        result,
+        default_message='Failed to create download request',
+        server_id=server_id,
+        region=region,
+        workspace=workspace,
+    ):
+        return err
+
     if result.get('download_url'):
         try:
             file_size = await _stream_s3_to_file(
@@ -642,7 +647,6 @@ async def webftp_download_file(
             workspace=workspace,
         )
     else:
-        # Fallback for direct download (when USE_S3=False)
         return success_response(
             message=f'Download request created for {resource_type}: {remote_file_path}',
             data=result,
@@ -662,24 +666,13 @@ async def webftp_download_file(
 async def webftp_uploads_list(
     workspace: str, server_id: str | None = None, region: str = '', **kwargs
 ) -> dict[str, Any]:
-    """List uploaded files (upload history).
-
-    Args:
-        workspace: Workspace name. Required parameter
-        server_id: Optional server ID to filter uploads
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
-
-    Returns:
-        Uploads list response
-    """
+    """List uploaded files (upload history)."""
     token = kwargs.get('token')
 
-    # Prepare query parameters
     params = {}
     if server_id:
         params['server'] = server_id
 
-    # Make async call to get uploads list
     result = await http_client.get(
         region=region,
         workspace=workspace,
@@ -687,6 +680,15 @@ async def webftp_uploads_list(
         token=token,
         params=params,
     )
+
+    if err := unwrap_http_result(
+        result,
+        default_message='Failed to list uploads',
+        server_id=server_id,
+        region=region,
+        workspace=workspace,
+    ):
+        return err
 
     return success_response(
         data=result, server_id=server_id, region=region, workspace=workspace
@@ -701,24 +703,13 @@ async def webftp_uploads_list(
 async def webftp_downloads_list(
     workspace: str, server_id: str | None = None, region: str = '', **kwargs
 ) -> dict[str, Any]:
-    """List download requests (download history).
-
-    Args:
-        workspace: Workspace name. Required parameter
-        server_id: Optional server ID to filter downloads
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
-
-    Returns:
-        Downloads list response
-    """
+    """List download requests (download history)."""
     token = kwargs.get('token')
 
-    # Prepare query parameters
     params = {}
     if server_id:
         params['server'] = server_id
 
-    # Make async call to get downloads list
     result = await http_client.get(
         region=region,
         workspace=workspace,
@@ -727,18 +718,22 @@ async def webftp_downloads_list(
         params=params,
     )
 
+    if err := unwrap_http_result(
+        result,
+        default_message='Failed to list downloads',
+        server_id=server_id,
+        region=region,
+        workspace=workspace,
+    ):
+        return err
+
     return success_response(
         data=result, server_id=server_id, region=region, workspace=workspace
     )
 
 
-# ===============================
-# BULK WEBFTP TOOLS
-# ===============================
-
-
 @mcp_tool_handler(
-    description='Upload multiple local files to a remote server in a single operation. All files are placed in the same destination directory. Uses S3 presigned URLs with concurrent uploads. When to use: uploading several files at once (more efficient than repeated webftp_upload_file calls). Related: webftp_upload_file (single file), webftp_bulk_download (download multiple). Note: All files go to the same remote directory.',
+    description='Upload multiple local files to a remote server in a single operation. All files are placed in the same destination directory. Uses S3 presigned URLs with concurrent uploads. Pass work_session_id to link this upload to a Work Session for audit; the server enforces this for MCP OAuth and browser-based auth. When to use: uploading several files at once (more efficient than repeated webftp_upload_file calls). Related: webftp_upload_file (single file), webftp_bulk_download (download multiple), work_session_create (create a Work Session). Note: All files go to the same remote directory.',
     annotations=ADDITIVE,
     meta={'anthropic/searchHint': 'bulk upload multiple files batch transfer'},
 )
@@ -748,34 +743,20 @@ async def webftp_bulk_upload(
     remote_directory: str,
     workspace: str,
     username: str | None = None,
+    work_session_id: str | None = None,
     region: str = '',
     allow_overwrite: bool = True,
     **kwargs,
 ) -> dict[str, Any]:
-    """Upload multiple files to a server using bulk WebFTP API.
-
-    Args:
-        server_id: Server ID to upload files to
-        local_file_paths: List of local file paths to upload (must not be empty)
-        remote_directory: Remote directory to place all files (e.g., "/home/user/uploads/")
-        workspace: Workspace name. Required parameter
-        username: Optional username for the upload (uses authenticated user if not provided)
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
-        allow_overwrite: Allow overwriting existing files (default: True)
-
-    Returns:
-        Bulk upload response with per-file status
-    """
+    """Upload multiple files to a server using bulk WebFTP API."""
     token = kwargs.get('token')
 
     if _is_auth_enabled():
         return error_response(_REMOTE_MODE_ERROR, code='remote_mode_unsupported')
 
-    # Validate non-empty file list
     if not local_file_paths:
         return error_response('local_file_paths must not be empty')
 
-    # Validate all file paths and ensure they are regular, readable files
     for path in local_file_paths:
         if not validate_file_path(path):
             return format_validation_error('local_file_paths', path)
@@ -786,7 +767,6 @@ async def webftp_bulk_upload(
     if not validate_file_path(remote_directory):
         return format_validation_error('remote_directory', remote_directory)
 
-    # Create bulk upload records via API
     file_names = [os.path.basename(p) for p in local_file_paths]
     bulk_data: dict[str, Any] = {
         'server': server_id,
@@ -796,6 +776,8 @@ async def webftp_bulk_upload(
     }
     if username:
         bulk_data['username'] = username
+    if work_session_id:
+        bulk_data['work_session'] = work_session_id
 
     result = await http_client.post(
         region=region,
@@ -805,13 +787,20 @@ async def webftp_bulk_upload(
         data=bulk_data,
     )
 
-    # Upload files to S3 concurrently using presigned URLs
+    if err := unwrap_http_result(
+        result,
+        default_message='Failed to create bulk upload request',
+        server_id=server_id,
+        region=region,
+        workspace=workspace,
+    ):
+        return err
+
     file_ids = []
     upload_items = (
         result if isinstance(result, list) else result.get('results', [result])
     )
 
-    # Collect file IDs
     for item in upload_items:
         file_id = item.get('id')
         if file_id:
@@ -871,15 +860,22 @@ async def webftp_bulk_upload(
         else:
             upload_results.append(gathered)
 
-    # Trigger bulk upload processing
     if file_ids:
-        await http_client.post(
+        trigger_result = await http_client.post(
             region=region,
             workspace=workspace,
             endpoint=_API_BULK_UPLOAD_TRIGGER,
             token=token,
             data={'ids': file_ids},
         )
+        if trigger_err := unwrap_http_result(
+            trigger_result,
+            default_message='Files uploaded but bulk processing trigger failed',
+            server_id=server_id,
+            region=region,
+            workspace=workspace,
+        ):
+            return trigger_err
 
     successful = sum(
         1 for r in upload_results if r['status'] in ['uploaded', 'created']
@@ -899,7 +895,7 @@ async def webftp_bulk_upload(
 
 
 @mcp_tool_handler(
-    description='Download multiple files or folders from a remote server as a single ZIP archive. All paths must share the same parent directory. When to use: downloading several files at once. Related: webftp_download_file (single file), webftp_bulk_upload (upload multiple), webftp_check_status (poll if still processing). Note: If ZIP is not ready, poll with webftp_check_status then retry.',
+    description='Download multiple files or folders from a remote server as a single ZIP archive. All paths must share the same parent directory. Pass work_session_id to link this download to a Work Session for audit; the server enforces this for MCP OAuth and browser-based auth. When to use: downloading several files at once. Related: webftp_download_file (single file), webftp_bulk_upload (upload multiple), webftp_check_status (poll if still processing), work_session_create (create a Work Session). Note: If ZIP is not ready, poll with webftp_check_status then retry.',
     annotations=ADDITIVE,
     meta={'anthropic/searchHint': 'bulk download multiple files zip archive batch'},
 )
@@ -909,39 +905,25 @@ async def webftp_bulk_download(
     local_file_path: str,
     workspace: str,
     username: str | None = None,
+    work_session_id: str | None = None,
     region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
-    """Download multiple files/folders as a ZIP archive.
-
-    Args:
-        server_id: Server ID to download from
-        remote_paths: List of remote file/folder paths to download (must share same parent directory)
-        local_file_path: Local path to save the ZIP file (e.g., "/Users/user/downloads/files.zip")
-        workspace: Workspace name. Required parameter
-        username: Optional username for the download (uses authenticated user if not provided)
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
-
-    Returns:
-        Bulk download response with file saved locally
-    """
+    """Download multiple files/folders as a ZIP archive."""
     token = kwargs.get('token')
 
     if _is_auth_enabled():
         return error_response(_REMOTE_MODE_ERROR, code='remote_mode_unsupported')
 
-    # Validate non-empty paths list
     if not remote_paths:
         return error_response('remote_paths must not be empty')
 
-    # Validate paths
     for path in remote_paths:
         if not validate_file_path(path):
             return format_validation_error('remote_paths', path)
     if not validate_file_path(local_file_path):
         return format_validation_error('local_file_path', local_file_path)
 
-    # Ensure all remote paths share the same parent directory
     if len(remote_paths) > 1:
         base_dir = os.path.dirname(remote_paths[0])
         for path in remote_paths[1:]:
@@ -951,13 +933,14 @@ async def webftp_bulk_download(
                     remote_paths=remote_paths,
                 )
 
-    # Create bulk download record
     download_data: dict[str, Any] = {
         'server': server_id,
         'path': remote_paths,
     }
     if username:
         download_data['username'] = username
+    if work_session_id:
+        download_data['work_session'] = work_session_id
 
     result = await http_client.post(
         region=region,
@@ -967,7 +950,15 @@ async def webftp_bulk_download(
         data=download_data,
     )
 
-    # Download ZIP from S3 using streaming to avoid high memory usage
+    if err := unwrap_http_result(
+        result,
+        default_message='Failed to create bulk download request',
+        server_id=server_id,
+        region=region,
+        workspace=workspace,
+    ):
+        return err
+
     download_url = result.get('download_url') if isinstance(result, dict) else None
     if download_url:
         try:
@@ -1016,17 +1007,7 @@ async def webftp_check_status(
     region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
-    """Check status of a WebFTP file transfer.
-
-    Args:
-        file_id: File ID from upload or download operation
-        transfer_type: Type of transfer - "upload" or "download"
-        workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
-
-    Returns:
-        Transfer status (success, in_progress, or failed)
-    """
+    """Check status of a WebFTP file transfer."""
     token = kwargs.get('token')
 
     endpoint_map = {
@@ -1046,6 +1027,15 @@ async def webftp_check_status(
         token=token,
     )
 
+    if err := unwrap_http_result(
+        result,
+        default_message='Failed to check transfer status',
+        file_id=file_id,
+        region=region,
+        workspace=workspace,
+    ):
+        return err
+
     return success_response(
         data=result,
         file_id=file_id,
@@ -1055,7 +1045,6 @@ async def webftp_check_status(
     )
 
 
-# WebFTP sessions resource
 @mcp.resource(
     uri='webftp://sessions/{region}/{workspace}',
     name='WebFTP Sessions List',
@@ -1063,40 +1052,18 @@ async def webftp_check_status(
     mime_type='application/json',
 )
 async def webftp_sessions_resource(region: str, workspace: str) -> dict[str, Any]:
-    """Get WebFTP sessions as a resource.
-
-    Args:
-        region: Region (ap1, us1, eu1, etc.)
-        workspace: Workspace name
-
-    Returns:
-        WebFTP sessions information
-    """
+    """Get WebFTP sessions as a resource."""
     sessions_data = await webftp_sessions_list(region=region, workspace=workspace)
     return {'content': sessions_data}
 
 
-# WebFTP downloads resource
 @mcp.resource(
-    uri='webftp://downloads/{session_id}/{region}/{workspace}',
+    uri='webftp://downloads/{region}/{workspace}',
     name='WebFTP Downloads List',
-    description='Get list of downloadable files from WebFTP session',
+    description='Get list of WebFTP download history for a workspace',
     mime_type='application/json',
 )
-async def webftp_downloads_resource(
-    session_id: str, region: str, workspace: str
-) -> dict[str, Any]:
-    """Get WebFTP downloads as a resource.
-
-    Args:
-        session_id: WebFTP session ID
-        region: Region (ap1, us1, eu1, etc.)
-        workspace: Workspace name
-
-    Returns:
-        WebFTP downloads information
-    """
-    downloads_data = await webftp_downloads_list(
-        session_id=session_id, region=region, workspace=workspace
-    )
+async def webftp_downloads_resource(region: str, workspace: str) -> dict[str, Any]:
+    """Get WebFTP downloads as a resource."""
+    downloads_data = await webftp_downloads_list(region=region, workspace=workspace)
     return {'content': downloads_data}
