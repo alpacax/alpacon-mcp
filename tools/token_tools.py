@@ -24,6 +24,10 @@ from utils.tool_annotations import (
     READ_ONLY,
 )
 
+_API_TOKENS = '/api/auth/tokens/'
+_API_TOKEN_SCOPES = f'{_API_TOKENS}scopes/'
+_API_TOKEN_PRESETS = f'{_API_TOKENS}presets/'
+
 _JWT_REQUIRED_NOTE = (
     "Returns 403 Forbidden when called with a source='api' API token; "
     'use JWT/OAuth, a browser session, or a login-source token instead.'
@@ -102,7 +106,7 @@ async def list_api_tokens(
     result = await http_client.get(
         region=region,
         workspace=workspace,
-        endpoint='/api/auth/tokens/',
+        endpoint=_API_TOKENS,
         token=token,
         params=params,
     )
@@ -153,7 +157,7 @@ async def get_api_token(
     result = await http_client.get(
         region=region,
         workspace=workspace,
-        endpoint=f'/api/auth/tokens/{token_id}/',
+        endpoint=f'{_API_TOKENS}{token_id}/',
         token=token,
     )
 
@@ -224,7 +228,7 @@ async def create_api_token(
     result = await http_client.post(
         region=region,
         workspace=workspace,
-        endpoint='/api/auth/tokens/',
+        endpoint=_API_TOKENS,
         token=token,
         data=token_data,
     )
@@ -314,7 +318,7 @@ async def update_api_token(
     result = await http_client.patch(
         region=region,
         workspace=workspace,
-        endpoint=f'/api/auth/tokens/{token_id}/',
+        endpoint=f'{_API_TOKENS}{token_id}/',
         token=token,
         data=update_data,
     )
@@ -369,7 +373,7 @@ async def delete_api_token(
     result = await http_client.delete(
         region=region,
         workspace=workspace,
-        endpoint=f'/api/auth/tokens/{token_id}/',
+        endpoint=f'{_API_TOKENS}{token_id}/',
         token=token,
     )
 
@@ -433,7 +437,7 @@ async def duplicate_api_token(
     result = await http_client.post(
         region=region,
         workspace=workspace,
-        endpoint=f'/api/auth/tokens/{token_id}/duplicate/',
+        endpoint=f'{_API_TOKENS}{token_id}/duplicate/',
         token=token,
         data=data,
     )
@@ -477,7 +481,7 @@ async def list_api_token_scopes(
     result = await http_client.get(
         region=region,
         workspace=workspace,
-        endpoint='/api/auth/tokens/scopes/',
+        endpoint=_API_TOKEN_SCOPES,
         token=token,
     )
 
@@ -517,7 +521,7 @@ async def list_api_token_presets(
     result = await http_client.get(
         region=region,
         workspace=workspace,
-        endpoint='/api/auth/tokens/presets/',
+        endpoint=_API_TOKEN_PRESETS,
         token=token,
     )
 
