@@ -764,6 +764,28 @@ class TestUpdateApiToken:
         assert call_data == {'expires_at': None}
 
     @pytest.mark.asyncio
+    async def test_update_api_token_clear_expires_at_with_other_fields(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Test clear_expires_at combines with other fields in a single PATCH."""
+        mock_http_client.patch.return_value = {
+            'id': '550e8400-e29b-41d4-a716-446655440027',
+            'name': 'Renamed',
+            'expires_at': None,
+        }
+
+        await update_api_token(
+            token_id='550e8400-e29b-41d4-a716-446655440027',
+            workspace='testworkspace',
+            region='ap1',
+            name='Renamed',
+            clear_expires_at=True,
+        )
+
+        call_data = mock_http_client.patch.call_args[1]['data']
+        assert call_data == {'name': 'Renamed', 'expires_at': None}
+
+    @pytest.mark.asyncio
     async def test_update_api_token_clear_and_set_expires_at_conflicts(
         self, mock_http_client, mock_token_manager
     ):
