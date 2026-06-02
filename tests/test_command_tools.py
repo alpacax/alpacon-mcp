@@ -4,6 +4,13 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from tools.command_tools import (
+    _submit_command,
+    execute_command,
+    execute_command_multi_server,
+    list_commands,
+)
+
 
 @pytest.fixture
 def mock_http_client():
@@ -27,7 +34,6 @@ class TestSubmitCommand:
 
     @pytest.mark.asyncio
     async def test_submit_basic(self, mock_http_client):
-        from tools.command_tools import _submit_command
 
         mock_http_client.post.return_value = {'id': 'cmd-123', 'status': 'running'}
 
@@ -55,7 +61,6 @@ class TestSubmitCommand:
 
     @pytest.mark.asyncio
     async def test_submit_with_optional_params(self, mock_http_client):
-        from tools.command_tools import _submit_command
 
         mock_http_client.post.return_value = {'id': 'cmd-456'}
 
@@ -81,7 +86,6 @@ class TestSubmitCommand:
 
     @pytest.mark.asyncio
     async def test_submit_omits_none_params(self, mock_http_client):
-        from tools.command_tools import _submit_command
 
         mock_http_client.post.return_value = {'id': 'cmd-789'}
 
@@ -104,7 +108,6 @@ class TestListCommands:
 
     @pytest.mark.asyncio
     async def test_list_commands_success(self, mock_http_client, mock_token_manager):
-        from tools.command_tools import list_commands
 
         mock_http_client.get.return_value = {
             'count': 2,
@@ -130,7 +133,6 @@ class TestListCommands:
     async def test_list_commands_with_server_filter(
         self, mock_http_client, mock_token_manager
     ):
-        from tools.command_tools import list_commands
 
         mock_http_client.get.return_value = {'count': 1, 'results': []}
 
@@ -147,7 +149,6 @@ class TestListCommands:
 
     @pytest.mark.asyncio
     async def test_list_commands_no_token(self, mock_http_client, mock_token_manager):
-        from tools.command_tools import list_commands
 
         mock_token_manager.get_token.return_value = None
 
@@ -156,13 +157,26 @@ class TestListCommands:
         assert result['status'] == 'error'
         assert 'No token found' in result['message']
 
+    @pytest.mark.asyncio
+    async def test_list_commands_http_error(self, mock_http_client, mock_token_manager):
+
+        mock_http_client.get.return_value = {
+            'error': 'Forbidden',
+            'message': 'Permission denied',
+            'status_code': 403,
+        }
+
+        result = await list_commands(workspace='testworkspace', region='ap1')
+
+        assert result['status'] == 'error'
+        assert 'Permission denied' in result['message']
+
 
 class TestExecuteCommand:
     """Test execute_command function (renamed from execute_command_sync)."""
 
     @pytest.mark.asyncio
     async def test_success(self, mock_http_client, mock_token_manager):
-        from tools.command_tools import execute_command
 
         with (
             patch('tools.command_tools._submit_command') as mock_submit,
@@ -189,7 +203,6 @@ class TestExecuteCommand:
 
     @pytest.mark.asyncio
     async def test_array_response(self, mock_http_client, mock_token_manager):
-        from tools.command_tools import execute_command
 
         with (
             patch('tools.command_tools._submit_command') as mock_submit,
@@ -212,7 +225,6 @@ class TestExecuteCommand:
 
     @pytest.mark.asyncio
     async def test_timeout(self, mock_http_client, mock_token_manager):
-        from tools.command_tools import execute_command
 
         with (
             patch('tools.command_tools._submit_command') as mock_submit,
@@ -238,7 +250,6 @@ class TestExecuteCommand:
 
     @pytest.mark.asyncio
     async def test_acl_error(self, mock_http_client, mock_token_manager):
-        from tools.command_tools import execute_command
 
         with patch('tools.command_tools._submit_command') as mock_submit:
             mock_submit.return_value = {
@@ -257,7 +268,6 @@ class TestExecuteCommand:
 
     @pytest.mark.asyncio
     async def test_empty_data_array(self, mock_http_client, mock_token_manager):
-        from tools.command_tools import execute_command
 
         with patch('tools.command_tools._submit_command') as mock_submit:
             mock_submit.return_value = []
@@ -273,7 +283,6 @@ class TestExecuteCommand:
 
     @pytest.mark.asyncio
     async def test_stuck_status(self, mock_http_client, mock_token_manager):
-        from tools.command_tools import execute_command
 
         with (
             patch('tools.command_tools._submit_command') as mock_submit,
@@ -298,7 +307,6 @@ class TestExecuteCommand:
 
     @pytest.mark.asyncio
     async def test_forwards_all_params(self, mock_http_client, mock_token_manager):
-        from tools.command_tools import execute_command
 
         with (
             patch('tools.command_tools._submit_command') as mock_submit,
@@ -327,7 +335,6 @@ class TestExecuteCommand:
 
     @pytest.mark.asyncio
     async def test_no_token(self, mock_http_client, mock_token_manager):
-        from tools.command_tools import execute_command
 
         mock_token_manager.get_token.return_value = None
 
@@ -339,3 +346,85 @@ class TestExecuteCommand:
 
         assert result['status'] == 'error'
         assert 'No token found' in result['message']
+
+
+class TestSubmitCommandWithSession:
+    """Test _submit_command forwards work_session to API payload."""
+
+    @pytest.mark.asyncio
+    async def test_submit_includes_work_session_when_provided(self, mock_http_client):
+
+        mock_http_client.post.return_value = {'id': 'cmd-ws-001'}
+
+        await _submit_command(
+            server_id='550e8400-e29b-41d4-a716-446655440001',
+            command='ls',
+            workspace='testworkspace',
+            work_session_id='ws-uuid-abcd',
+            region='ap1',
+            token='test-token',
+        )
+
+        call_data = mock_http_client.post.call_args[1]['data']
+        assert call_data['work_session'] == 'ws-uuid-abcd'
+
+    @pytest.mark.asyncio
+    async def test_submit_omits_work_session_when_none(self, mock_http_client):
+
+        mock_http_client.post.return_value = {'id': 'cmd-ws-002'}
+
+        await _submit_command(
+            server_id='550e8400-e29b-41d4-a716-446655440001',
+            command='ls',
+            workspace='testworkspace',
+            region='ap1',
+            token='test-token',
+        )
+
+        call_data = mock_http_client.post.call_args[1]['data']
+        assert 'work_session' not in call_data
+
+
+class TestExecuteCommandWithSession:
+    @pytest.mark.asyncio
+    async def test_execute_command_passes_session_id(
+        self, mock_http_client, mock_token_manager
+    ):
+
+        mock_http_client.post.return_value = {'id': 'cmd-123'}
+        mock_http_client.get.return_value = {
+            'id': 'cmd-123',
+            'finished_at': '2026-05-19T10:00:00Z',
+            'status': 'completed',
+        }
+
+        await execute_command(
+            server_id='550e8400-e29b-41d4-a716-446655440001',
+            command='ls',
+            workspace='testworkspace',
+            work_session_id='ws-uuid-abcd',
+            region='ap1',
+        )
+
+        call_data = mock_http_client.post.call_args[1]['data']
+        assert call_data['work_session'] == 'ws-uuid-abcd'
+
+
+class TestExecuteCommandMultiServerWithSession:
+    @pytest.mark.asyncio
+    async def test_multi_server_passes_session_id(
+        self, mock_http_client, mock_token_manager
+    ):
+
+        mock_http_client.post.return_value = {'id': 'cmd-multi-1'}
+
+        await execute_command_multi_server(
+            server_ids=['550e8400-e29b-41d4-a716-446655440001'],
+            command='ls',
+            workspace='testworkspace',
+            work_session_id='ws-uuid-abcd',
+            region='ap1',
+        )
+
+        call_data = mock_http_client.post.call_args[1]['data']
+        assert call_data['work_session'] == 'ws-uuid-abcd'
