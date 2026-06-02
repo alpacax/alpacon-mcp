@@ -234,7 +234,6 @@ class TestSignRequests:
             domain_list=['api.example.com', 'api-internal.example.com'],
             ip_list=['10.0.0.1'],
             valid_days=365,
-            organization='ACME Corp',
             region='ap1',
         )
 
@@ -248,7 +247,6 @@ class TestSignRequests:
                 'domain_list': ['api.example.com', 'api-internal.example.com'],
                 'ip_list': ['10.0.0.1'],
                 'valid_days': 365,
-                'organization': 'ACME Corp',
             },
         )
 
@@ -449,7 +447,6 @@ class TestGetCertificateAuthority:
             default_valid_days=180,
             max_valid_days=365,
             owner='11111111-1111-1111-1111-111111111111',
-            server_id='7e3984de-49ab-4cc6-bcdf-21fbd35858b8',
             region='ap1',
         )
 
@@ -464,7 +461,6 @@ class TestGetCertificateAuthority:
                 'default_valid_days': 180,
                 'max_valid_days': 365,
                 'owner': '11111111-1111-1111-1111-111111111111',
-                'agent': '7e3984de-49ab-4cc6-bcdf-21fbd35858b8',
             },
         )
 
