@@ -752,7 +752,7 @@ async def get_revoke_request(
 
 @mcp_tool_handler(
     description='Approve a pending certificate revocation request. The certificate will be revoked and added to the CRL (Certificate Revocation List) after approval.',
-    annotations=ADDITIVE,
+    annotations=DESTRUCTIVE,
     meta={'anthropic/searchHint': 'certificate revoke request approve'},
 )
 async def approve_revoke_request(
@@ -855,6 +855,42 @@ async def retry_revoke_request(
         region=region,
         workspace=workspace,
         endpoint=f'/api/cert/revoke-requests/{revoke_id}/retry/',
+        token=token,
+        data={},
+    )
+
+    return success_response(
+        data=result, revoke_id=revoke_id, region=region, workspace=workspace
+    )
+
+
+@mcp_tool_handler(
+    description='Cancel a pending certificate revocation request. Use this to withdraw a revocation request before it is approved. The certificate remains valid.',
+    annotations=IDEMPOTENT_WRITE,
+    meta={'anthropic/searchHint': 'certificate revoke request cancel withdraw'},
+)
+async def cancel_revoke_request(
+    revoke_id: str,
+    workspace: str,
+    region: str = '',
+    **kwargs,
+) -> dict[str, Any]:
+    """Cancel a pending certificate revocation request.
+
+    Args:
+        revoke_id: Revocation request ID to cancel
+        workspace: Workspace name. Required parameter
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
+
+    Returns:
+        Cancellation response
+    """
+    token = kwargs.get('token')
+
+    result = await http_client.post(
+        region=region,
+        workspace=workspace,
+        endpoint=f'/api/cert/revoke-requests/{revoke_id}/cancel/',
         token=token,
         data={},
     )

@@ -409,6 +409,7 @@ All validators are defined in `utils/error_handler.py` and return user-friendly 
 - `approve_revoke_request`: Approve a pending revocation request (revokes the certificate)
 - `deny_revoke_request`: Deny a pending revocation request (optional reason)
 - `retry_revoke_request`: Retry a failed revocation request
+- `cancel_revoke_request`: Cancel a pending revocation request (certificate remains valid)
 
 ### ⚙️ Authentication & workspace
 - `list_workspaces`: List available workspaces
