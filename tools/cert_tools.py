@@ -165,7 +165,7 @@ async def get_certificate_authority(
 
 
 @mcp_tool_handler(
-    description='Update an existing certificate authority (CA) configuration. Allows partial updates—only provided fields will be changed. Updatable fields are default_valid_days, max_valid_days, and owner. The CA name, domain, hosting server (agent), and key parameters are immutable after creation.',
+    description='Update an existing certificate authority (CA) configuration. Allows partial updates—only provided fields will be changed. Updatable fields are default_valid_days, max_valid_days, and owner. The CA name, domain, hosting server (agent), and key parameters are immutable after creation. Requires admin or CA owner privileges.',
     annotations=IDEMPOTENT_WRITE,
     meta={'anthropic/searchHint': 'certificate CA authority update patch'},
 )
@@ -218,7 +218,7 @@ async def update_certificate_authority(
 
 
 @mcp_tool_handler(
-    description='Delete a certificate authority (CA) permanently. This is irreversible. All certificates issued by this CA will no longer be verifiable. Use with caution.',
+    description='Delete a certificate authority (CA) permanently. This is irreversible. All certificates issued by this CA will no longer be verifiable. Use with caution. Requires admin or CA owner privileges.',
     annotations=DESTRUCTIVE,
     meta={'anthropic/searchHint': 'certificate CA authority delete remove'},
 )
@@ -388,7 +388,7 @@ async def get_sign_request(
 
 
 @mcp_tool_handler(
-    description='Cancel a certificate signing request (CSR). Only requested (pending) CSRs can be canceled; the CSR transitions to the canceled state. CSRs already being processed or completed cannot be canceled.',
+    description='Cancel a certificate signing request (CSR). Only requested (pending) CSRs can be canceled; the CSR transitions to the canceled state. CSRs already being processed or completed cannot be canceled. Requires admin, CA owner, or the original requester.',
     annotations=DESTRUCTIVE,
     meta={'anthropic/searchHint': 'certificate CSR signing request delete remove'},
 )
@@ -423,7 +423,7 @@ async def delete_sign_request(
 
 
 @mcp_tool_handler(
-    description='Approve a pending certificate signing request (CSR). The CA will then issue the certificate. Use list_sign_requests to find pending CSRs.',
+    description='Approve a pending certificate signing request (CSR). The CA will then issue the certificate. Use list_sign_requests to find pending CSRs. Requires admin or CA owner privileges.',
     annotations=ADDITIVE,
     meta={'anthropic/searchHint': 'certificate CSR signing request approve'},
 )
@@ -459,7 +459,7 @@ async def approve_sign_request(
 
 
 @mcp_tool_handler(
-    description='Deny a certificate signing request (CSR). Unlike approve, there is no requested-only guard, so a CSR in any non-terminal state can be denied. The requester will be notified of the decision.',
+    description='Deny a certificate signing request (CSR). Unlike approve, there is no status guard, so a CSR in any state can be denied. The requester will be notified of the decision. Requires admin or CA owner privileges.',
     annotations=DESTRUCTIVE,
     meta={'anthropic/searchHint': 'certificate CSR signing request deny reject'},
 )
@@ -497,7 +497,7 @@ async def deny_sign_request(
 # IDEMPOTENT_WRITE: retrying converges to the same end state, but each call
 # re-dispatches a live sign-request command to the CA (not a no-op replay).
 @mcp_tool_handler(
-    description='Retry a certificate signing request (CSR) that is stuck in the signing (processing) state. This re-sends the request to the CA. Only CSRs in the signing state can be retried.',
+    description='Retry a certificate signing request (CSR) that is stuck in the signing (processing) state. This re-sends the request to the CA. Only CSRs in the signing state can be retried. Requires admin or CA owner privileges.',
     annotations=IDEMPOTENT_WRITE,
     meta={'anthropic/searchHint': 'certificate CSR signing request retry'},
 )
@@ -759,7 +759,7 @@ async def get_revoke_request(
 
 
 @mcp_tool_handler(
-    description='Approve a pending certificate revocation request. The certificate will be revoked and added to the CRL (Certificate Revocation List) after approval.',
+    description='Approve a pending certificate revocation request. The certificate will be revoked and added to the CRL (Certificate Revocation List) after approval. Requires admin or CA owner privileges.',
     annotations=DESTRUCTIVE,
     meta={'anthropic/searchHint': 'certificate revoke request approve'},
 )
@@ -795,7 +795,7 @@ async def approve_revoke_request(
 
 
 @mcp_tool_handler(
-    description='Deny a pending certificate revocation request. The certificate will remain valid.',
+    description='Deny a pending certificate revocation request. The certificate will remain valid. Requires admin or CA owner privileges.',
     annotations=DESTRUCTIVE,
     meta={'anthropic/searchHint': 'certificate revoke request deny reject'},
 )
@@ -833,7 +833,7 @@ async def deny_revoke_request(
 # IDEMPOTENT_WRITE: retrying converges to the same end state, but each call
 # re-dispatches a live revoke-certificate command to the CA (not a no-op replay).
 @mcp_tool_handler(
-    description='Retry a certificate revocation request that is stuck in the revoking state. This re-sends the request to the CA. Only requests in the revoking state can be retried.',
+    description='Retry a certificate revocation request that is stuck in the revoking state. This re-sends the request to the CA. Only requests in the revoking state can be retried. Requires admin or CA owner privileges.',
     annotations=IDEMPOTENT_WRITE,
     meta={'anthropic/searchHint': 'certificate revoke request retry'},
 )
@@ -869,7 +869,7 @@ async def retry_revoke_request(
 
 
 @mcp_tool_handler(
-    description='Cancel a pending certificate revocation request. Use this to withdraw a revocation request before it is approved; the request transitions to the canceled state and the certificate remains valid. Only requested (pending) revocation requests can be canceled.',
+    description='Cancel a pending certificate revocation request. Use this to withdraw a revocation request before it is approved; the request transitions to the canceled state and the certificate remains valid. Only requested (pending) revocation requests can be canceled. Requires admin, CA owner, or the original requester.',
     annotations=DESTRUCTIVE,
     meta={'anthropic/searchHint': 'certificate revoke request cancel withdraw'},
 )
