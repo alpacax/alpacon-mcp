@@ -674,7 +674,7 @@ async def revoke_certificate(
 
 
 @mcp_tool_handler(
-    description='List certificate revocation requests in the workspace. Returns revocation requests with their status (pending, approved, denied, failed). Use this to review pending revocation requests.',
+    description='List certificate revocation requests in the workspace. Returns revocation requests with their status (pending, approved, denied, failed, cancelled). Use this to review pending revocation requests.',
     annotations=READ_ONLY,
     meta={'anthropic/searchHint': 'certificate revoke request list'},
 )
