@@ -281,6 +281,7 @@ def run(
     import tools.security_tools  # noqa: F401
     import tools.server_tools  # noqa: F401
     import tools.system_info_tools  # noqa: F401
+    import tools.token_tools  # noqa: F401
     import tools.webftp_tools  # noqa: F401
     import tools.webhook_tools  # noqa: F401
     import tools.work_session_tools  # noqa: F401
