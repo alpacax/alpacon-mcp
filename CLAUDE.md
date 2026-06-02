@@ -381,12 +381,34 @@ All validators are defined in `utils/error_handler.py` and return user-friendly 
 - `remove_python_package`: Remove a Python package entry
 
 ### 📜 Certificate management
+
+**Certificate authorities (CAs)**:
 - `list_certificate_authorities`: List certificate authorities
 - `create_certificate_authority`: Create a certificate authority
+- `get_certificate_authority`: Get detailed information about a specific CA by ID
+- `update_certificate_authority`: Update an existing CA (partial update of name/common_name/description)
+- `delete_certificate_authority`: Permanently delete a CA by ID
+
+**Certificate signing requests (CSRs)**:
 - `list_sign_requests`: List certificate signing requests
 - `create_sign_request`: Create a certificate signing request
+- `get_sign_request`: Get detailed information about a specific CSR by ID
+- `approve_sign_request`: Approve a pending CSR so the CA issues the certificate
+- `deny_sign_request`: Deny a pending CSR (optional reason)
+- `retry_sign_request`: Retry a failed CSR
+- `delete_sign_request`: Permanently delete a CSR by ID
+
+**Certificates**:
 - `list_certificates`: List issued certificates
-- `revoke_certificate`: Revoke an issued certificate
+- `get_certificate`: Get detailed information about a specific issued certificate by ID
+- `revoke_certificate`: Create a revocation request for an issued certificate (goes through approval workflow)
+
+**Revocation requests**:
+- `list_revoke_requests`: List certificate revocation requests
+- `get_revoke_request`: Get detailed information about a specific revocation request by ID
+- `approve_revoke_request`: Approve a pending revocation request (revokes the certificate)
+- `deny_revoke_request`: Deny a pending revocation request (optional reason)
+- `retry_revoke_request`: Retry a failed revocation request
 
 ### ⚙️ Authentication & workspace
 - `list_workspaces`: List available workspaces
