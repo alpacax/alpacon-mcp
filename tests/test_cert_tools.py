@@ -110,6 +110,26 @@ class TestCertificateAuthorities:
         )
 
     @pytest.mark.asyncio
+    async def test_list_certificate_authorities_with_pagination(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Test CA listing with pagination."""
+        mock_http_client.get.return_value = {'count': 0, 'results': []}
+
+        result = await list_certificate_authorities(
+            workspace='testworkspace', region='ap1', page=2, page_size=10
+        )
+
+        assert result['status'] == 'success'
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/cert/authorities/',
+            token='test-token',
+            params={'page': 2, 'page_size': 10},
+        )
+
+    @pytest.mark.asyncio
     async def test_create_certificate_authority_minimal(
         self, mock_http_client, mock_token_manager
     ):
@@ -155,6 +175,26 @@ class TestSignRequests:
             endpoint='/api/cert/sign-requests/',
             token='test-token',
             params={},
+        )
+
+    @pytest.mark.asyncio
+    async def test_list_sign_requests_with_pagination(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Test CSR listing with pagination."""
+        mock_http_client.get.return_value = {'count': 0, 'results': []}
+
+        result = await list_sign_requests(
+            workspace='testworkspace', region='ap1', page=2, page_size=10
+        )
+
+        assert result['status'] == 'success'
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/cert/sign-requests/',
+            token='test-token',
+            params={'page': 2, 'page_size': 10},
         )
 
     @pytest.mark.asyncio
@@ -258,6 +298,26 @@ class TestCertificates:
             endpoint='/api/cert/certificates/',
             token='test-token',
             params={'authority': 'ca-1'},
+        )
+
+    @pytest.mark.asyncio
+    async def test_list_certificates_with_pagination(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Test certificates listing with pagination."""
+        mock_http_client.get.return_value = {'count': 0, 'results': []}
+
+        result = await list_certificates(
+            workspace='testworkspace', region='ap1', page=2, page_size=10
+        )
+
+        assert result['status'] == 'success'
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/cert/certificates/',
+            token='test-token',
+            params={'page': 2, 'page_size': 10},
         )
 
     @pytest.mark.asyncio
