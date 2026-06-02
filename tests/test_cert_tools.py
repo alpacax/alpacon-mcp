@@ -82,16 +82,22 @@ class TestCertificateAuthorities:
         mock_http_client.post.return_value = {
             'id': 'ca-1',
             'name': 'Internal CA',
-            'common_name': 'Internal Root CA',
+            'domain': 'internal.acme.com',
         }
 
         result = await create_certificate_authority(
             workspace='testworkspace',
             name='Internal CA',
-            common_name='Internal Root CA',
+            domain='internal.acme.com',
             organization='ACME Corp',
-            country='US',
-            validity_days=3650,
+            server_id='7e3984de-49ab-4cc6-bcdf-21fbd35858b8',
+            owner='11111111-1111-1111-1111-111111111111',
+            root_valid_days=3650,
+            default_valid_days=365,
+            max_valid_days=730,
+            key_algorithm='rsa',
+            key_size=4096,
+            install=True,
             region='ap1',
         )
 
@@ -103,10 +109,16 @@ class TestCertificateAuthorities:
             token='test-token',
             data={
                 'name': 'Internal CA',
-                'common_name': 'Internal Root CA',
+                'domain': 'internal.acme.com',
                 'organization': 'ACME Corp',
-                'country': 'US',
-                'validity_days': 3650,
+                'agent': '7e3984de-49ab-4cc6-bcdf-21fbd35858b8',
+                'owner': '11111111-1111-1111-1111-111111111111',
+                'root_valid_days': 3650,
+                'default_valid_days': 365,
+                'max_valid_days': 730,
+                'key_algorithm': 'rsa',
+                'key_size': 4096,
+                'install': True,
             },
         )
 
@@ -140,7 +152,10 @@ class TestCertificateAuthorities:
         result = await create_certificate_authority(
             workspace='testworkspace',
             name='Test CA',
-            common_name='Test Root CA',
+            domain='test.acme.com',
+            organization='ACME Corp',
+            server_id='7e3984de-49ab-4cc6-bcdf-21fbd35858b8',
+            owner='11111111-1111-1111-1111-111111111111',
             region='ap1',
         )
 
@@ -150,7 +165,13 @@ class TestCertificateAuthorities:
             workspace='testworkspace',
             endpoint='/api/cert/authorities/',
             token='test-token',
-            data={'name': 'Test CA', 'common_name': 'Test Root CA'},
+            data={
+                'name': 'Test CA',
+                'domain': 'test.acme.com',
+                'organization': 'ACME Corp',
+                'agent': '7e3984de-49ab-4cc6-bcdf-21fbd35858b8',
+                'owner': '11111111-1111-1111-1111-111111111111',
+            },
         )
 
 
@@ -210,11 +231,10 @@ class TestSignRequests:
 
         result = await create_sign_request(
             workspace='testworkspace',
-            authority_id='ca-1',
-            common_name='api.example.com',
-            san_dns=['api.example.com', 'api-internal.example.com'],
-            san_ip=['10.0.0.1'],
-            validity_days=365,
+            domain_list=['api.example.com', 'api-internal.example.com'],
+            ip_list=['10.0.0.1'],
+            valid_days=365,
+            organization='ACME Corp',
             region='ap1',
         )
 
@@ -225,11 +245,10 @@ class TestSignRequests:
             endpoint='/api/cert/sign-requests/',
             token='test-token',
             data={
-                'authority': 'ca-1',
-                'common_name': 'api.example.com',
-                'san_dns': ['api.example.com', 'api-internal.example.com'],
-                'san_ip': ['10.0.0.1'],
-                'validity_days': 365,
+                'domain_list': ['api.example.com', 'api-internal.example.com'],
+                'ip_list': ['10.0.0.1'],
+                'valid_days': 365,
+                'organization': 'ACME Corp',
             },
         )
 
@@ -237,13 +256,12 @@ class TestSignRequests:
     async def test_create_sign_request_minimal(
         self, mock_http_client, mock_token_manager
     ):
-        """Test CSR creation with minimal params."""
+        """Test CSR creation with minimal params (single DNS SAN)."""
         mock_http_client.post.return_value = {'id': 'csr-2'}
 
         result = await create_sign_request(
             workspace='testworkspace',
-            authority_id='ca-1',
-            common_name='web.example.com',
+            domain_list=['web.example.com'],
             region='ap1',
         )
 
@@ -253,8 +271,21 @@ class TestSignRequests:
             workspace='testworkspace',
             endpoint='/api/cert/sign-requests/',
             token='test-token',
-            data={'authority': 'ca-1', 'common_name': 'web.example.com'},
+            data={'domain_list': ['web.example.com'], 'ip_list': []},
         )
+
+    @pytest.mark.asyncio
+    async def test_create_sign_request_requires_san(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Test CSR creation without any SAN returns an error."""
+        result = await create_sign_request(
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert result['status'] == 'error'
+        mock_http_client.post.assert_not_called()
 
 
 class TestCertificates:
@@ -298,7 +329,7 @@ class TestCertificates:
             workspace='testworkspace',
             endpoint='/api/cert/certificates/',
             token='test-token',
-            params={'authority': 'ca-1'},
+            params={'csr__authority__id': 'ca-1'},
         )
 
     @pytest.mark.asyncio
@@ -349,13 +380,14 @@ class TestCertificates:
     async def test_revoke_certificate_with_reason(
         self, mock_http_client, mock_token_manager
     ):
-        """Test certificate revocation with reason."""
+        """Test certificate revocation with reason code and free-text reason."""
         mock_http_client.post.return_value = {'id': 'cert-1', 'status': 'revoked'}
 
         result = await revoke_certificate(
             certificate_id='cert-1',
             workspace='testworkspace',
-            reason='Key compromise',
+            reason=1,
+            requested_reason='Private key was exposed',
             region='ap1',
         )
 
@@ -365,7 +397,11 @@ class TestCertificates:
             workspace='testworkspace',
             endpoint='/api/cert/revoke-requests/',
             token='test-token',
-            data={'certificate': 'cert-1', 'reason': 'Key compromise'},
+            data={
+                'certificate': 'cert-1',
+                'reason': 1,
+                'requested_reason': 'Private key was exposed',
+            },
         )
 
 
@@ -403,15 +439,17 @@ class TestGetCertificateAuthority:
         """Test successful CA update."""
         mock_http_client.patch.return_value = {
             'id': 'ca-1',
-            'name': 'Updated CA',
-            'description': 'New description',
+            'default_valid_days': 180,
+            'max_valid_days': 365,
         }
 
         result = await update_certificate_authority(
             ca_id='ca-1',
             workspace='testworkspace',
-            name='Updated CA',
-            description='New description',
+            default_valid_days=180,
+            max_valid_days=365,
+            owner='11111111-1111-1111-1111-111111111111',
+            server_id='7e3984de-49ab-4cc6-bcdf-21fbd35858b8',
             region='ap1',
         )
 
@@ -422,7 +460,12 @@ class TestGetCertificateAuthority:
             workspace='testworkspace',
             endpoint='/api/cert/authorities/ca-1/',
             token='test-token',
-            data={'name': 'Updated CA', 'description': 'New description'},
+            data={
+                'default_valid_days': 180,
+                'max_valid_days': 365,
+                'owner': '11111111-1111-1111-1111-111111111111',
+                'agent': '7e3984de-49ab-4cc6-bcdf-21fbd35858b8',
+            },
         )
 
     @pytest.mark.asyncio
@@ -430,12 +473,15 @@ class TestGetCertificateAuthority:
         self, mock_http_client, mock_token_manager
     ):
         """Test partial CA update sends only provided fields."""
-        mock_http_client.patch.return_value = {'id': 'ca-1', 'description': 'Updated'}
+        mock_http_client.patch.return_value = {
+            'id': 'ca-1',
+            'default_valid_days': 90,
+        }
 
         result = await update_certificate_authority(
             ca_id='ca-1',
             workspace='testworkspace',
-            description='Updated',
+            default_valid_days=90,
             region='ap1',
         )
 
@@ -445,7 +491,7 @@ class TestGetCertificateAuthority:
             workspace='testworkspace',
             endpoint='/api/cert/authorities/ca-1/',
             token='test-token',
-            data={'description': 'Updated'},
+            data={'default_valid_days': 90},
         )
 
     @pytest.mark.asyncio
@@ -545,29 +591,6 @@ class TestSignRequestDetails:
             endpoint='/api/cert/sign-requests/csr-1/deny/',
             token='test-token',
             data={},
-        )
-
-    @pytest.mark.asyncio
-    async def test_deny_sign_request_with_reason(
-        self, mock_http_client, mock_token_manager
-    ):
-        """Test CSR denial with reason."""
-        mock_http_client.post.return_value = {'id': 'csr-1', 'status': 'denied'}
-
-        result = await deny_sign_request(
-            csr_id='csr-1',
-            workspace='testworkspace',
-            reason='Invalid SAN entries',
-            region='ap1',
-        )
-
-        assert result['status'] == 'success'
-        mock_http_client.post.assert_called_once_with(
-            region='ap1',
-            workspace='testworkspace',
-            endpoint='/api/cert/sign-requests/csr-1/deny/',
-            token='test-token',
-            data={'reason': 'Invalid SAN entries'},
         )
 
     @pytest.mark.asyncio
@@ -748,29 +771,6 @@ class TestRevokeRequests:
         )
 
     @pytest.mark.asyncio
-    async def test_deny_revoke_request_with_reason(
-        self, mock_http_client, mock_token_manager
-    ):
-        """Test revoke request denial with reason."""
-        mock_http_client.post.return_value = {'id': 'rev-1', 'status': 'denied'}
-
-        result = await deny_revoke_request(
-            revoke_id='rev-1',
-            workspace='testworkspace',
-            reason='Certificate still in use',
-            region='ap1',
-        )
-
-        assert result['status'] == 'success'
-        mock_http_client.post.assert_called_once_with(
-            region='ap1',
-            workspace='testworkspace',
-            endpoint='/api/cert/revoke-requests/rev-1/deny/',
-            token='test-token',
-            data={'reason': 'Certificate still in use'},
-        )
-
-    @pytest.mark.asyncio
     async def test_retry_revoke_request_success(
         self, mock_http_client, mock_token_manager
     ):
@@ -795,8 +795,8 @@ class TestRevokeRequests:
     async def test_cancel_revoke_request_success(
         self, mock_http_client, mock_token_manager
     ):
-        """Test successful revoke request cancellation."""
-        mock_http_client.post.return_value = {'id': 'rev-1', 'status': 'cancelled'}
+        """Test successful revoke request cancellation via DELETE."""
+        mock_http_client.delete.return_value = {'id': 'rev-1', 'status': 'canceled'}
 
         result = await cancel_revoke_request(
             revoke_id='rev-1', workspace='testworkspace', region='ap1'
@@ -804,10 +804,9 @@ class TestRevokeRequests:
 
         assert result['status'] == 'success'
         assert result['revoke_id'] == 'rev-1'
-        mock_http_client.post.assert_called_once_with(
+        mock_http_client.delete.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/cert/revoke-requests/rev-1/cancel/',
+            endpoint='/api/cert/revoke-requests/rev-1/',
             token='test-token',
-            data={},
         )

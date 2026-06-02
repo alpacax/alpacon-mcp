@@ -55,19 +55,23 @@ async def list_certificate_authorities(
 
 
 @mcp_tool_handler(
-    description='Create a new certificate authority (CA) for signing certificates within the workspace. Requires a name and common name (CN). Optionally specify organization, country, validity period, and key type (rsa2048, rsa4096, ec256). Related: list_certificate_authorities (view existing CAs), create_sign_request (request certificate from CA).',
+    description='Create a new certificate authority (CA) for signing certificates within the workspace. Requires a name, root domain, organization, the server (agent) that hosts the CA, and an owner user. Optionally specify validity periods (root/default/max valid days), key algorithm (rsa, ecdsa), key size (2048/4096 for RSA, 256/384 for ECDSA), and whether to install automatically. Related: list_certificate_authorities (view existing CAs), create_sign_request (request certificate from CA).',
     annotations=ADDITIVE,
     meta={'anthropic/searchHint': 'certificate CA authority create TLS SSL'},
 )
 async def create_certificate_authority(
     workspace: str,
     name: str,
-    common_name: str,
-    organization: str | None = None,
-    country: str | None = None,
-    validity_days: int | None = None,
-    key_type: str | None = None,
-    description: str | None = None,
+    domain: str,
+    organization: str,
+    server_id: str,
+    owner: str,
+    root_valid_days: int | None = None,
+    default_valid_days: int | None = None,
+    max_valid_days: int | None = None,
+    key_algorithm: str | None = None,
+    key_size: int | None = None,
+    install: bool | None = None,
     region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
@@ -75,13 +79,17 @@ async def create_certificate_authority(
 
     Args:
         workspace: Workspace name. Required parameter
-        name: Name of the certificate authority
-        common_name: Common name (CN) for the CA certificate
-        organization: Organization name (optional)
-        country: Country code (optional)
-        validity_days: CA certificate validity in days (optional)
-        key_type: Key type, e.g. 'rsa2048', 'rsa4096', 'ec256' (optional)
-        description: Description of the CA (optional)
+        name: Name of the certificate authority (e.g. 'AlpacaX Root CA')
+        domain: Root domain of the CA, must be unique (e.g. 'alpacax.com')
+        organization: Organization name that this CA belongs to
+        server_id: Server (agent) UUID that runs this CA
+        owner: Owner user UUID
+        root_valid_days: Validity of the root certificate in days (optional)
+        default_valid_days: Default validity for child certificates in days (optional)
+        max_valid_days: Maximum validity users can request in days (optional)
+        key_algorithm: Key algorithm, 'rsa' or 'ecdsa' (optional)
+        key_size: Key size in bits, 2048/4096 for RSA or 256/384 for ECDSA (optional)
+        install: Install the CA automatically on the agent (optional)
         region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
@@ -91,19 +99,24 @@ async def create_certificate_authority(
 
     ca_data: dict[str, Any] = {
         'name': name,
-        'common_name': common_name,
+        'domain': domain,
+        'organization': organization,
+        'agent': server_id,
+        'owner': owner,
     }
 
-    if organization is not None:
-        ca_data['organization'] = organization
-    if country is not None:
-        ca_data['country'] = country
-    if validity_days is not None:
-        ca_data['validity_days'] = validity_days
-    if key_type is not None:
-        ca_data['key_type'] = key_type
-    if description is not None:
-        ca_data['description'] = description
+    if root_valid_days is not None:
+        ca_data['root_valid_days'] = root_valid_days
+    if default_valid_days is not None:
+        ca_data['default_valid_days'] = default_valid_days
+    if max_valid_days is not None:
+        ca_data['max_valid_days'] = max_valid_days
+    if key_algorithm is not None:
+        ca_data['key_algorithm'] = key_algorithm
+    if key_size is not None:
+        ca_data['key_size'] = key_size
+    if install is not None:
+        ca_data['install'] = install
 
     result = await http_client.post(
         region=region,
@@ -152,16 +165,17 @@ async def get_certificate_authority(
 
 
 @mcp_tool_handler(
-    description='Update an existing certificate authority (CA) configuration. Allows partial updates—only provided fields will be changed. Updatable fields include name, common_name, and description.',
+    description='Update an existing certificate authority (CA) configuration. Allows partial updates—only provided fields will be changed. Updatable fields are default_valid_days, max_valid_days, owner, and the hosting server (agent). The CA name, domain, and key parameters are immutable after creation.',
     annotations=IDEMPOTENT_WRITE,
     meta={'anthropic/searchHint': 'certificate CA authority update patch'},
 )
 async def update_certificate_authority(
     ca_id: str,
     workspace: str,
-    name: str | None = None,
-    common_name: str | None = None,
-    description: str | None = None,
+    default_valid_days: int | None = None,
+    max_valid_days: int | None = None,
+    owner: str | None = None,
+    server_id: str | None = None,
     region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
@@ -170,9 +184,10 @@ async def update_certificate_authority(
     Args:
         ca_id: Certificate authority ID
         workspace: Workspace name. Required parameter
-        name: New name for the CA (optional)
-        common_name: New common name (CN) for the CA (optional)
-        description: New description for the CA (optional)
+        default_valid_days: New default validity for child certificates in days (optional)
+        max_valid_days: New maximum validity users can request in days (optional)
+        owner: New owner user UUID (optional)
+        server_id: New hosting server (agent) UUID (optional)
         region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
@@ -181,12 +196,14 @@ async def update_certificate_authority(
     token = kwargs.get('token')
 
     patch_data: dict[str, Any] = {}
-    if name is not None:
-        patch_data['name'] = name
-    if common_name is not None:
-        patch_data['common_name'] = common_name
-    if description is not None:
-        patch_data['description'] = description
+    if default_valid_days is not None:
+        patch_data['default_valid_days'] = default_valid_days
+    if max_valid_days is not None:
+        patch_data['max_valid_days'] = max_valid_days
+    if owner is not None:
+        patch_data['owner'] = owner
+    if server_id is not None:
+        patch_data['agent'] = server_id
 
     if not patch_data:
         return error_response('No update data provided')
@@ -245,7 +262,7 @@ async def delete_certificate_authority(
 
 
 @mcp_tool_handler(
-    description='List certificate signing requests (CSRs) in the workspace. Returns CSR details, status, common names, and associated CAs. CSRs can be in pending, approved, denied, or failed states. Use this to review pending certificate requests.',
+    description='List certificate signing requests (CSRs) in the workspace. Returns CSR details, status, common names, and associated CAs. CSRs can be in requested, signing, signed, failed, canceled, or denied states. Use this to review pending certificate requests.',
     annotations=READ_ONLY,
     meta={'anthropic/searchHint': 'certificate CSR signing request'},
 )
@@ -287,19 +304,16 @@ async def list_sign_requests(
 
 
 @mcp_tool_handler(
-    description='Create a certificate signing request (CSR) to request a new certificate from a certificate authority. Requires the CA ID and common name (CN). Optionally specify Subject Alternative Names (DNS/IP), validity period, key type, and target server. Related: list_certificate_authorities (find CA ID first), list_certificates (view issued certs).',
+    description='Create a certificate signing request (CSR) to request a new certificate. Provide at least one Subject Alternative Name via domain_list (DNS names) or ip_list (IP addresses); at least one entry across the two is required. The certificate authority is selected automatically by matching the SAN against each CA root domain, and the common name is derived from the first SAN entry. Optionally specify the validity period and organization. Related: list_certificate_authorities (view CAs), list_certificates (view issued certs).',
     annotations=ADDITIVE,
     meta={'anthropic/searchHint': 'certificate CSR signing request create'},
 )
 async def create_sign_request(
     workspace: str,
-    authority_id: str,
-    common_name: str,
-    server_id: str | None = None,
-    san_dns: list[str] | None = None,
-    san_ip: list[str] | None = None,
-    validity_days: int | None = None,
-    key_type: str | None = None,
+    domain_list: list[str] | None = None,
+    ip_list: list[str] | None = None,
+    valid_days: int | None = None,
+    organization: str | None = None,
     region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
@@ -307,13 +321,10 @@ async def create_sign_request(
 
     Args:
         workspace: Workspace name. Required parameter
-        authority_id: Certificate authority ID to sign the certificate
-        common_name: Common name (CN) for the certificate
-        server_id: Server ID to associate the certificate with (optional)
-        san_dns: Subject Alternative Names - DNS entries (optional)
-        san_ip: Subject Alternative Names - IP addresses (optional)
-        validity_days: Certificate validity in days (optional)
-        key_type: Key type, e.g. 'rsa2048', 'rsa4096', 'ec256' (optional)
+        domain_list: Subject Alternative Names - DNS entries (optional)
+        ip_list: Subject Alternative Names - IP addresses (optional)
+        valid_days: Certificate validity in days (optional)
+        organization: Organization name for the certificate subject (optional)
         region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
@@ -321,21 +332,22 @@ async def create_sign_request(
     """
     token = kwargs.get('token')
 
+    domains = domain_list or []
+    ips = ip_list or []
+    if not domains and not ips:
+        return error_response(
+            'At least one entry in domain_list or ip_list is required'
+        )
+
     csr_data: dict[str, Any] = {
-        'authority': authority_id,
-        'common_name': common_name,
+        'domain_list': domains,
+        'ip_list': ips,
     }
 
-    if server_id is not None:
-        csr_data['server'] = server_id
-    if san_dns is not None:
-        csr_data['san_dns'] = san_dns
-    if san_ip is not None:
-        csr_data['san_ip'] = san_ip
-    if validity_days is not None:
-        csr_data['validity_days'] = validity_days
-    if key_type is not None:
-        csr_data['key_type'] = key_type
+    if valid_days is not None:
+        csr_data['valid_days'] = valid_days
+    if organization is not None:
+        csr_data['organization'] = organization
 
     result = await http_client.post(
         region=region,
@@ -384,7 +396,7 @@ async def get_sign_request(
 
 
 @mcp_tool_handler(
-    description='Delete a certificate signing request (CSR) permanently. Only pending or denied CSRs can typically be deleted.',
+    description='Cancel a certificate signing request (CSR). Only requested (pending) CSRs can be canceled; the CSR transitions to the canceled state. CSRs already being processed or completed cannot be canceled.',
     annotations=DESTRUCTIVE,
     meta={'anthropic/searchHint': 'certificate CSR signing request delete remove'},
 )
@@ -455,14 +467,13 @@ async def approve_sign_request(
 
 
 @mcp_tool_handler(
-    description='Deny a pending certificate signing request (CSR). Optionally provide a reason for the denial. The requester will be notified of the decision.',
+    description='Deny a pending certificate signing request (CSR). The requester will be notified of the decision.',
     annotations=DESTRUCTIVE,
     meta={'anthropic/searchHint': 'certificate CSR signing request deny reject'},
 )
 async def deny_sign_request(
     csr_id: str,
     workspace: str,
-    reason: str | None = None,
     region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
@@ -471,7 +482,6 @@ async def deny_sign_request(
     Args:
         csr_id: Certificate signing request ID to deny
         workspace: Workspace name. Required parameter
-        reason: Reason for denying the request (optional)
         region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
@@ -479,16 +489,12 @@ async def deny_sign_request(
     """
     token = kwargs.get('token')
 
-    data: dict[str, Any] = {}
-    if reason is not None:
-        data['reason'] = reason
-
     result = await http_client.post(
         region=region,
         workspace=workspace,
         endpoint=f'/api/cert/sign-requests/{csr_id}/deny/',
         token=token,
-        data=data,
+        data={},
     )
 
     return success_response(
@@ -497,7 +503,7 @@ async def deny_sign_request(
 
 
 @mcp_tool_handler(
-    description='Retry a failed certificate signing request (CSR). Use this when a CSR previously failed due to a transient error and you want to attempt processing it again.',
+    description='Retry a certificate signing request (CSR) that is stuck in the signing (processing) state. This re-sends the request to the CA. Only CSRs in the signing state can be retried.',
     annotations=IDEMPOTENT_WRITE,
     meta={'anthropic/searchHint': 'certificate CSR signing request retry'},
 )
@@ -566,7 +572,7 @@ async def list_certificates(
 
     params: dict[str, Any] = {}
     if authority_id is not None:
-        params['authority'] = authority_id
+        params['csr__authority__id'] = authority_id
     if page is not None:
         params['page'] = page
     if page_size is not None:
@@ -622,14 +628,15 @@ async def get_certificate(
 
 
 @mcp_tool_handler(
-    description='Create a certificate revocation request to invalidate an issued certificate. Requires the certificate ID. Optionally include a reason for revocation. The request goes through an approval workflow before the certificate is actually revoked. Note: Goes through approval workflow before actual revocation.',
+    description='Create a certificate revocation request to invalidate an issued certificate. Requires the certificate ID. Optionally include a reason code (RFC 5280: 0=unspecified, 1=key compromise, 2=CA compromise, 3=affiliation changed, 4=superseded, 5=cessation of operation, 6=certificate hold, 9=privilege withdrawn, 10=AA compromise) and a free-text requested_reason. The request goes through an approval workflow before the certificate is actually revoked.',
     annotations=DESTRUCTIVE,
     meta={'anthropic/searchHint': 'certificate revoke invalidate'},
 )
 async def revoke_certificate(
     certificate_id: str,
     workspace: str,
-    reason: str | None = None,
+    reason: int | None = None,
+    requested_reason: str | None = None,
     region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
@@ -638,7 +645,9 @@ async def revoke_certificate(
     Args:
         certificate_id: Certificate ID to revoke
         workspace: Workspace name. Required parameter
-        reason: Reason for revocation (optional)
+        reason: RFC 5280 revocation reason code (optional, default 0=unspecified).
+            One of 0,1,2,3,4,5,6,9,10
+        requested_reason: Free-text explanation for the revocation (optional)
         region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
@@ -651,6 +660,8 @@ async def revoke_certificate(
     }
     if reason is not None:
         data['reason'] = reason
+    if requested_reason is not None:
+        data['requested_reason'] = requested_reason
 
     result = await http_client.post(
         region=region,
@@ -674,7 +685,7 @@ async def revoke_certificate(
 
 
 @mcp_tool_handler(
-    description='List certificate revocation requests in the workspace. Returns revocation requests with their status (pending, approved, denied, failed, cancelled). Use this to review pending revocation requests.',
+    description='List certificate revocation requests in the workspace. Returns revocation requests with their status (requested, revoking, revoked, failed, denied, canceled). Use this to review pending revocation requests.',
     annotations=READ_ONLY,
     meta={'anthropic/searchHint': 'certificate revoke request list'},
 )
@@ -787,14 +798,13 @@ async def approve_revoke_request(
 
 
 @mcp_tool_handler(
-    description='Deny a pending certificate revocation request. Optionally provide a reason for the denial. The certificate will remain valid.',
+    description='Deny a pending certificate revocation request. The certificate will remain valid.',
     annotations=DESTRUCTIVE,
     meta={'anthropic/searchHint': 'certificate revoke request deny reject'},
 )
 async def deny_revoke_request(
     revoke_id: str,
     workspace: str,
-    reason: str | None = None,
     region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
@@ -803,7 +813,6 @@ async def deny_revoke_request(
     Args:
         revoke_id: Revocation request ID to deny
         workspace: Workspace name. Required parameter
-        reason: Reason for denying the revocation request (optional)
         region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
@@ -811,16 +820,12 @@ async def deny_revoke_request(
     """
     token = kwargs.get('token')
 
-    data: dict[str, Any] = {}
-    if reason is not None:
-        data['reason'] = reason
-
     result = await http_client.post(
         region=region,
         workspace=workspace,
         endpoint=f'/api/cert/revoke-requests/{revoke_id}/deny/',
         token=token,
-        data=data,
+        data={},
     )
 
     return success_response(
@@ -829,7 +834,7 @@ async def deny_revoke_request(
 
 
 @mcp_tool_handler(
-    description='Retry a failed certificate revocation request. Use this when a revocation request previously failed due to a transient error.',
+    description='Retry a certificate revocation request that is stuck in the revoking state. This re-sends the request to the CA. Only requests in the revoking state can be retried.',
     annotations=IDEMPOTENT_WRITE,
     meta={'anthropic/searchHint': 'certificate revoke request retry'},
 )
@@ -865,8 +870,8 @@ async def retry_revoke_request(
 
 
 @mcp_tool_handler(
-    description='Cancel a pending certificate revocation request. Use this to withdraw a revocation request before it is approved. The certificate remains valid.',
-    annotations=IDEMPOTENT_WRITE,
+    description='Cancel a pending certificate revocation request. Use this to withdraw a revocation request before it is approved; the request transitions to the canceled state and the certificate remains valid. Only requested (pending) revocation requests can be canceled.',
+    annotations=DESTRUCTIVE,
     meta={'anthropic/searchHint': 'certificate revoke request cancel withdraw'},
 )
 async def cancel_revoke_request(
@@ -887,12 +892,11 @@ async def cancel_revoke_request(
     """
     token = kwargs.get('token')
 
-    result = await http_client.post(
+    result = await http_client.delete(
         region=region,
         workspace=workspace,
-        endpoint=f'/api/cert/revoke-requests/{revoke_id}/cancel/',
+        endpoint=f'/api/cert/revoke-requests/{revoke_id}/',
         token=token,
-        data={},
     )
 
     return success_response(
