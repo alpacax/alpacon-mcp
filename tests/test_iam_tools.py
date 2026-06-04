@@ -692,6 +692,18 @@ class TestIAMMembershipManagement:
             token='test-token',
         )
 
+    @pytest.mark.asyncio
+    async def test_remove_iam_member_invalid_id(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Test member removal rejects a non-UUID membership ID locally."""
+        result = await remove_iam_member(
+            membership_id='not-a-uuid', workspace='testworkspace'
+        )
+
+        assert result['status'] == 'error'
+        mock_http_client.delete.assert_not_called()
+
 
 class TestWorkspaceUserInvitation:
     """Test workspace user invitation function."""
@@ -906,11 +918,35 @@ class TestIAMApplicationManagement:
         )
 
     @pytest.mark.asyncio
+    async def test_get_iam_application_invalid_id(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Test application retrieval rejects a non-UUID app ID locally."""
+        result = await get_iam_application(
+            app_id='not-a-uuid', workspace='testworkspace'
+        )
+
+        assert result['status'] == 'error'
+        mock_http_client.get.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_update_iam_application_no_data(
         self, mock_http_client, mock_token_manager
     ):
         """Test update application with no fields returns error."""
         result = await update_iam_application(app_id=APP_ID, workspace='testworkspace')
+
+        assert result['status'] == 'error'
+        mock_http_client.patch.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_update_iam_application_invalid_id(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Test application update rejects a non-UUID app ID locally."""
+        result = await update_iam_application(
+            app_id='not-a-uuid', workspace='testworkspace', name='new-name'
+        )
 
         assert result['status'] == 'error'
         mock_http_client.patch.assert_not_called()
@@ -933,6 +969,18 @@ class TestIAMApplicationManagement:
             endpoint=f'/api/iam/applications/{APP_ID}/',
             token='test-token',
         )
+
+    @pytest.mark.asyncio
+    async def test_delete_iam_application_invalid_id(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Test application deletion rejects a non-UUID app ID locally."""
+        result = await delete_iam_application(
+            app_id='not-a-uuid', workspace='testworkspace'
+        )
+
+        assert result['status'] == 'error'
+        mock_http_client.delete.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_assign_application_system_users_success(
