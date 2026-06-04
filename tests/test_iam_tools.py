@@ -356,6 +356,20 @@ class TestIAMGroupsManagement:
             data=expected_data,
         )
 
+    @pytest.mark.asyncio
+    async def test_create_iam_group_invalid_name(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Test group creation rejects an invalid name locally."""
+        for invalid_name in ('Developers', 'dev team', 'dev.team', ''):
+            result = await create_iam_group(
+                name=invalid_name, workspace='testworkspace'
+            )
+
+            assert result['status'] == 'error'
+
+        mock_http_client.post.assert_not_called()
+
 
 class TestErrorHandling:
     """Test error handling across IAM functions."""

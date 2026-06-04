@@ -1,5 +1,6 @@
 """IAM (Identity and Access Management) tools for Alpacon MCP server."""
 
+import re
 from typing import Any
 
 from server import mcp
@@ -11,6 +12,7 @@ from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ
 
 VALID_MEMBERSHIP_ROLES = frozenset({'member', 'manager', 'owner'})
 VALID_SERVICE_TYPES = frozenset({'ci_cd', 'monitoring', 'automation', 'integration'})
+GROUP_NAME_PATTERN = re.compile(r'^[a-z0-9_-]+$')
 
 
 def _validate_uuid(field: str, value: str) -> dict[str, Any] | None:
@@ -332,6 +334,13 @@ async def create_iam_group(
     Returns:
         Group creation response
     """
+    if not GROUP_NAME_PATTERN.match(name):
+        return format_validation_error(
+            'name',
+            name,
+            'Must contain only lowercase letters, digits, hyphens, and underscores',
+        )
+
     token = kwargs.get('token')
 
     group_data: dict[str, Any] = {'name': name}
