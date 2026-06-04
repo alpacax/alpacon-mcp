@@ -37,6 +37,7 @@ GROUP_ID = '11111111-1111-1111-1111-111111111111'
 USER_ID = '22222222-2222-2222-2222-222222222222'
 USER_ID_2 = '33333333-3333-3333-3333-333333333333'
 MEMBERSHIP_ID = '44444444-4444-4444-4444-444444444444'
+MEMBERSHIP_ID_2 = '77777777-7777-7777-7777-777777777777'
 APP_ID = '55555555-5555-5555-5555-555555555555'
 SYSTEM_USER_ID = '66666666-6666-6666-6666-666666666666'
 
@@ -587,8 +588,8 @@ class TestIAMMembershipManagement:
         memberships_data = {
             'count': 2,
             'results': [
-                {'id': 'mem-1', 'group': GROUP_ID, 'user': 'user-1'},
-                {'id': 'mem-2', 'group': GROUP_ID, 'user': 'user-2'},
+                {'id': MEMBERSHIP_ID, 'group': GROUP_ID, 'user': USER_ID},
+                {'id': MEMBERSHIP_ID_2, 'group': GROUP_ID, 'user': USER_ID_2},
             ],
         }
         mock_http_client.get.return_value = memberships_data
@@ -641,7 +642,7 @@ class TestIAMMembershipManagement:
     @pytest.mark.asyncio
     async def test_add_iam_member_success(self, mock_http_client, mock_token_manager):
         """Test successful member addition to group."""
-        membership_data = {'id': 'mem-1', 'group': GROUP_ID, 'user': USER_ID}
+        membership_data = {'id': MEMBERSHIP_ID, 'group': GROUP_ID, 'user': USER_ID}
         mock_http_client.post.return_value = membership_data
 
         result = await add_iam_member(
@@ -664,7 +665,7 @@ class TestIAMMembershipManagement:
     @pytest.mark.asyncio
     async def test_add_iam_member_with_role(self, mock_http_client, mock_token_manager):
         """Test member addition with an explicit role."""
-        mock_http_client.post.return_value = {'id': 'mem-2', 'role': 'manager'}
+        mock_http_client.post.return_value = {'id': MEMBERSHIP_ID_2, 'role': 'manager'}
 
         result = await add_iam_member(
             group_id=GROUP_ID,
