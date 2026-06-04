@@ -338,15 +338,33 @@ All validators are defined in `utils/error_handler.py` and return user-friendly 
 **User management**:
 - `list_iam_users`: List all IAM users in workspace with pagination support
 - `get_iam_user`: Get detailed information about a specific IAM user
-- `create_iam_user`: Create new IAM user with groups assignment
-- `update_iam_user`: Update existing IAM user (email, name, active status, groups)
+- `create_iam_user`: Create new IAM user (username, email, name, active status)
+- `update_iam_user`: Update existing IAM user (email, name, active status)
 - `delete_iam_user`: Delete IAM user from workspace
+- `invite_workspace_user`: Send an email invitation to join the workspace (Auth0-enabled deployments only)
 
 **Group management**:
 - `list_iam_groups`: List all IAM groups in workspace with pagination support
-- `create_iam_group`: Create new IAM group
+- `create_iam_group`: Create new IAM group (name, display name, description)
+- `get_iam_group`: Get detailed information about a specific IAM group
+- `update_iam_group`: Update an IAM group (display name, description; group name is immutable)
+- `delete_iam_group`: Permanently delete an IAM group
 
-**IAM architecture**: Basic identity management supporting users and groups with workspace-level isolation. Group-based permission management.
+**Membership management**:
+- `list_iam_memberships`: List group memberships, optionally filtered by group
+- `add_iam_member`: Add a user to a group with a role (member, manager, or owner)
+- `remove_iam_member`: Remove a membership by membership ID
+
+**Application management** (machine service accounts):
+- `list_iam_applications`: List IAM applications with pagination support
+- `create_iam_application`: Create an IAM application (name, description, service type)
+- `get_iam_application`: Get detailed information about a specific application
+- `update_iam_application`: Update an application (name, description)
+- `delete_iam_application`: Permanently delete an application
+- `assign_application_system_users`: Bind system users to an application as service accounts
+- `unassign_application_system_users`: Release system users from an application
+
+**IAM architecture**: Identity management supporting users, groups, memberships, and machine applications with workspace-level isolation. Group membership is managed through the memberships API (users have no writable groups field).
 
 **Note**: Role and permission management endpoints are not currently implemented in the Alpacon server. The following tools have been removed:
 - ~~`list_iam_roles`~~: Not available

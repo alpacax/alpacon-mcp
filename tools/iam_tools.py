@@ -5,8 +5,23 @@ from typing import Any
 from server import mcp
 from utils.common import error_response, success_response
 from utils.decorators import mcp_tool_handler
+from utils.error_handler import format_validation_error, validate_server_id_format
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ_ONLY
+
+VALID_MEMBERSHIP_ROLES = frozenset({'member', 'manager', 'owner'})
+VALID_SERVICE_TYPES = frozenset({'ci_cd', 'monitoring', 'automation', 'integration'})
+
+
+def _validate_uuid(field: str, value: str) -> dict[str, Any] | None:
+    if not validate_server_id_format(value):
+        return format_validation_error(
+            field,
+            value,
+            'Must be a valid UUID. Example: 550e8400-e29b-41d4-a716-446655440000',
+        )
+    return None
+
 
 # ===============================
 # USER MANAGEMENT TOOLS
@@ -14,7 +29,7 @@ from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ
 
 
 @mcp_tool_handler(
-    description='List all IAM users in a workspace. Returns username, email, active status, and group memberships for each user. Supports pagination for large user lists. Related: get_iam_user (details), create_iam_user, list_system_users (OS-level users, not IAM).',
+    description='List all IAM users in a workspace. Returns username, email, active status, and group count (num_groups) for each user. Supports pagination for large user lists. Related: get_iam_user (details), create_iam_user, list_system_users (OS-level users, not IAM).',
     annotations=READ_ONLY,
     meta={'anthropic/searchHint': 'iam users list workspace identity access'},
 )
@@ -88,7 +103,7 @@ async def get_iam_user(
 
 
 @mcp_tool_handler(
-    description='Create a new IAM user account in the workspace. Requires username and email. Optionally assign the user to groups and set first/last name. The user is active by default. Related: list_iam_groups (find groups to assign), update_iam_user, delete_iam_user.',
+    description='Create a new IAM user account in the workspace. Requires username and email. Optionally set first/last name. The user is active by default. Use add_iam_member to assign the user to groups after creation. Related: update_iam_user, delete_iam_user, add_iam_member.',
     annotations=ADDITIVE,
     meta={'anthropic/searchHint': 'iam user create add new account'},
 )
@@ -99,11 +114,13 @@ async def create_iam_user(
     first_name: str | None = None,
     last_name: str | None = None,
     is_active: bool = True,
-    groups: list[str] | None = None,
     region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
     """Create a new IAM user.
+
+    Group assignment is handled separately via add_iam_member
+    (the user serializer has no groups field).
 
     Args:
         username: Username for the new user
@@ -112,7 +129,6 @@ async def create_iam_user(
         first_name: First name (optional)
         last_name: Last name (optional)
         is_active: Whether user is active (default: True)
-        groups: List of group IDs to assign to user (optional)
         region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
@@ -126,8 +142,6 @@ async def create_iam_user(
         user_data['first_name'] = first_name
     if last_name is not None:
         user_data['last_name'] = last_name
-    if groups is not None:
-        user_data['groups'] = groups
 
     result = await http_client.post(
         region=region,
@@ -143,7 +157,7 @@ async def create_iam_user(
 
 
 @mcp_tool_handler(
-    description='Update an existing IAM user profile. Can change email, first/last name, active/inactive status, or group memberships. Only the fields you provide will be updated (partial update).',
+    description='Update an existing IAM user profile. Can change email, first/last name, or active/inactive status. Only the fields you provide will be updated (partial update). Use add_iam_member/remove_iam_member to change group memberships.',
     annotations=IDEMPOTENT_WRITE,
     meta={'anthropic/searchHint': 'iam user update modify edit'},
 )
@@ -154,11 +168,13 @@ async def update_iam_user(
     first_name: str | None = None,
     last_name: str | None = None,
     is_active: bool | None = None,
-    groups: list[str] | None = None,
     region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
     """Update an existing IAM user.
+
+    Group membership changes are handled separately via
+    add_iam_member/remove_iam_member (the user serializer has no groups field).
 
     Args:
         user_id: IAM user ID to update
@@ -167,7 +183,6 @@ async def update_iam_user(
         first_name: New first name (optional)
         last_name: New last name (optional)
         is_active: New active status (optional)
-        groups: New list of group IDs (optional)
         region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
@@ -184,8 +199,6 @@ async def update_iam_user(
         update_data['last_name'] = last_name
     if is_active is not None:
         update_data['is_active'] = is_active
-    if groups is not None:
-        update_data['groups'] = groups
 
     if not update_data:
         return error_response('No update data provided')
@@ -283,25 +296,25 @@ async def list_iam_groups(
 
 
 @mcp_tool_handler(
-    description='Create a new IAM permission group in the workspace. Requires a group name. Optionally set a description and assign permissions. Users can then be added to this group via create_iam_user or update_iam_user.',
+    description='Create a new IAM permission group in the workspace. Requires a group name (lowercase letters, digits, -/_ only). Optionally set a display name and description. Users can then be added to this group via add_iam_member.',
     annotations=ADDITIVE,
     meta={'anthropic/searchHint': 'iam group create add new'},
 )
 async def create_iam_group(
     name: str,
     workspace: str,
+    display_name: str | None = None,
     description: str | None = None,
-    permissions: list[str] | None = None,
     region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
     """Create a new IAM group.
 
     Args:
-        name: Name for the new group
+        name: Name for the new group (lowercase letters, digits, -/_ only)
         workspace: Workspace name. Required parameter
+        display_name: Human-readable display name (optional)
         description: Description of the group (optional)
-        permissions: List of permission IDs to assign to group (optional)
         region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
@@ -311,10 +324,10 @@ async def create_iam_group(
 
     group_data: dict[str, Any] = {'name': name}
 
+    if display_name is not None:
+        group_data['display_name'] = display_name
     if description is not None:
         group_data['description'] = description
-    if permissions is not None:
-        group_data['permissions'] = permissions
 
     result = await http_client.post(
         region=region,
@@ -391,7 +404,7 @@ async def iam_groups_resource(region: str, workspace: str) -> dict[str, Any]:
 
 
 @mcp_tool_handler(
-    description='Get detailed information about a specific IAM group by its group ID. Returns group name, description, and member information. Related: list_iam_groups (all groups), update_iam_group, delete_iam_group.',
+    description='Get detailed information about a specific IAM group by its group ID. Returns group name, display name, description, member count (num_members), and member names. Related: list_iam_groups (all groups), update_iam_group, delete_iam_group.',
     annotations=READ_ONLY,
     meta={'anthropic/searchHint': 'iam group detail get'},
 )
@@ -411,6 +424,10 @@ async def get_iam_group(
     Returns:
         IAM group detail response
     """
+    err = _validate_uuid('group_id', group_id)
+    if err:
+        return err
+
     token = kwargs.get('token')
     result = await http_client.get(
         region=region,
@@ -418,39 +435,48 @@ async def get_iam_group(
         endpoint=f'/api/iam/groups/{group_id}/',
         token=token,
     )
-    return success_response(data=result, group_id=group_id, region=region, workspace=workspace)
+    return success_response(
+        data=result, group_id=group_id, region=region, workspace=workspace
+    )
 
 
 @mcp_tool_handler(
-    description='Update an existing IAM group. Can change the group name or description. Only the fields you provide will be updated (partial update). Related: get_iam_group, delete_iam_group.',
+    description='Update an existing IAM group. Can change the display name or description (the group name itself is immutable on the server). Only the fields you provide will be updated (partial update). Related: get_iam_group, delete_iam_group.',
     annotations=IDEMPOTENT_WRITE,
     meta={'anthropic/searchHint': 'iam group update modify edit'},
 )
 async def update_iam_group(
     group_id: str,
     workspace: str,
-    name: str | None = None,
+    display_name: str | None = None,
     description: str | None = None,
     region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
     """Update an existing IAM group.
 
+    The group name is read-only on the server (GroupUpdateSerializer);
+    only display_name and description are exposed here.
+
     Args:
         group_id: Group ID to update
         workspace: Workspace name. Required parameter
-        name: New group name (optional)
+        display_name: New display name (optional)
         description: New group description (optional)
         region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
         IAM group update response
     """
+    err = _validate_uuid('group_id', group_id)
+    if err:
+        return err
+
     token = kwargs.get('token')
 
     update_data: dict[str, Any] = {}
-    if name is not None:
-        update_data['name'] = name
+    if display_name is not None:
+        update_data['display_name'] = display_name
     if description is not None:
         update_data['description'] = description
 
@@ -464,7 +490,9 @@ async def update_iam_group(
         token=token,
         data=update_data,
     )
-    return success_response(data=result, group_id=group_id, region=region, workspace=workspace)
+    return success_response(
+        data=result, group_id=group_id, region=region, workspace=workspace
+    )
 
 
 @mcp_tool_handler(
@@ -488,6 +516,10 @@ async def delete_iam_group(
     Returns:
         IAM group deletion response
     """
+    err = _validate_uuid('group_id', group_id)
+    if err:
+        return err
+
     token = kwargs.get('token')
     result = await http_client.delete(
         region=region,
@@ -495,7 +527,9 @@ async def delete_iam_group(
         endpoint=f'/api/iam/groups/{group_id}/',
         token=token,
     )
-    return success_response(data=result, group_id=group_id, region=region, workspace=workspace)
+    return success_response(
+        data=result, group_id=group_id, region=region, workspace=workspace
+    )
 
 
 # ===============================
@@ -549,7 +583,7 @@ async def list_iam_memberships(
 
 
 @mcp_tool_handler(
-    description='Add a user to an IAM group by creating a membership. Requires both group ID and user ID. Related: remove_iam_member, list_iam_memberships.',
+    description='Add a user to an IAM group by creating a membership. Requires both group ID and user ID. Optionally set the role (member, manager, or owner; default member). Related: remove_iam_member, list_iam_memberships.',
     annotations=ADDITIVE,
     meta={'anthropic/searchHint': 'iam member add group user membership'},
 )
@@ -557,6 +591,7 @@ async def add_iam_member(
     group_id: str,
     user_id: str,
     workspace: str,
+    role: str = 'member',
     region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
@@ -566,18 +601,27 @@ async def add_iam_member(
         group_id: Group ID to add the user to
         user_id: User ID to add to the group
         workspace: Workspace name. Required parameter
+        role: Role in the group: member, manager, or owner (default: member)
         region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
         IAM membership creation response
     """
+    err = _validate_uuid('group_id', group_id) or _validate_uuid('user_id', user_id)
+    if err:
+        return err
+    if role not in VALID_MEMBERSHIP_ROLES:
+        return format_validation_error(
+            'role', role, f'Must be one of: {", ".join(sorted(VALID_MEMBERSHIP_ROLES))}'
+        )
+
     token = kwargs.get('token')
     result = await http_client.post(
         region=region,
         workspace=workspace,
         endpoint='/api/iam/memberships/',
         token=token,
-        data={'group': group_id, 'user': user_id},
+        data={'group': group_id, 'user': user_id, 'role': role},
     )
     return success_response(
         data=result,
@@ -609,6 +653,10 @@ async def remove_iam_member(
     Returns:
         IAM membership deletion response
     """
+    err = _validate_uuid('membership_id', membership_id)
+    if err:
+        return err
+
     token = kwargs.get('token')
     result = await http_client.delete(
         region=region,
@@ -625,29 +673,27 @@ async def remove_iam_member(
 
 
 # ===============================
-# USER INVITATION TOOLS
+# WORKSPACE INVITATION TOOLS
 # ===============================
 
 
 @mcp_tool_handler(
-    description='Send an email invitation to a user to join the workspace. Requires the user ID and the target email address. The user must already exist in IAM. Related: create_iam_user, get_iam_user.',
+    description='Send an email invitation to join the workspace. Requires only the target email address; the invitee does not need an existing IAM user record. Available on Auth0-enabled (cloud) deployments only. Related: list_iam_users, create_iam_user.',
     annotations=ADDITIVE,
-    meta={'anthropic/searchHint': 'iam user invite email send'},
+    meta={'anthropic/searchHint': 'workspace user invite email send'},
 )
-async def invite_iam_user(
-    user_id: str,
+async def invite_workspace_user(
     email: str,
     workspace: str,
     region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
-    """Send an invitation email to an existing IAM user.
+    """Invite a user to the workspace by email.
 
-    The user must already have a record in the system.
-    Use create_iam_user first if the user does not exist yet.
+    Sends an Auth0 organization invitation and records a pending
+    InvitedUser entry. The invitee is identified by email only.
 
     Args:
-        user_id: IAM user ID to invite
         email: Email address to send the invitation to
         workspace: Workspace name. Required parameter
         region: Region (ap1, us1, eu1). Auto-detected if not provided
@@ -659,11 +705,13 @@ async def invite_iam_user(
     result = await http_client.post(
         region=region,
         workspace=workspace,
-        endpoint=f'/api/iam/users/{user_id}/invite/',
+        endpoint='/api/workspaces/users/invite/',
         token=token,
         data={'email': email},
     )
-    return success_response(data=result, user_id=user_id, region=region, workspace=workspace)
+    return success_response(
+        data=result, email=email, region=region, workspace=workspace
+    )
 
 
 # ===============================
@@ -672,7 +720,7 @@ async def invite_iam_user(
 
 
 @mcp_tool_handler(
-    description='List all IAM applications (service accounts / OAuth apps) in the workspace. Supports pagination. Related: create_iam_application, get_iam_application.',
+    description='List all IAM applications (machine service accounts for CI/CD, monitoring, automation, or external integrations) in the workspace. Supports pagination. Related: create_iam_application, get_iam_application.',
     annotations=READ_ONLY,
     meta={'anthropic/searchHint': 'iam applications list service accounts oauth'},
 )
@@ -713,14 +761,15 @@ async def list_iam_applications(
 
 
 @mcp_tool_handler(
-    description='Create a new IAM application (service account / OAuth app) in the workspace. Requires a name. Optionally set a description. Related: list_iam_applications, get_iam_application, provision_service_account.',
+    description='Create a new IAM application (machine service account) in the workspace. Requires a name. Optionally set a description and service type (ci_cd, monitoring, automation, or integration; default integration). Related: list_iam_applications, get_iam_application, assign_application_system_users.',
     annotations=ADDITIVE,
-    meta={'anthropic/searchHint': 'iam application create new service account oauth'},
+    meta={'anthropic/searchHint': 'iam application create new service account'},
 )
 async def create_iam_application(
     name: str,
     workspace: str,
     description: str | None = None,
+    service_type: str | None = None,
     region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
@@ -730,16 +779,27 @@ async def create_iam_application(
         name: Name of the new application
         workspace: Workspace name. Required parameter
         description: Description of the application (optional)
+        service_type: ci_cd, monitoring, automation, or integration
+            (optional; server defaults to integration)
         region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
         IAM application creation response
     """
+    if service_type is not None and service_type not in VALID_SERVICE_TYPES:
+        return format_validation_error(
+            'service_type',
+            service_type,
+            f'Must be one of: {", ".join(sorted(VALID_SERVICE_TYPES))}',
+        )
+
     token = kwargs.get('token')
 
     app_data: dict[str, Any] = {'name': name}
     if description is not None:
         app_data['description'] = description
+    if service_type is not None:
+        app_data['service_type'] = service_type
 
     result = await http_client.post(
         region=region,
@@ -748,7 +808,9 @@ async def create_iam_application(
         token=token,
         data=app_data,
     )
-    return success_response(data=result, app_name=name, region=region, workspace=workspace)
+    return success_response(
+        data=result, app_name=name, region=region, workspace=workspace
+    )
 
 
 @mcp_tool_handler(
@@ -772,6 +834,10 @@ async def get_iam_application(
     Returns:
         IAM application detail response
     """
+    err = _validate_uuid('app_id', app_id)
+    if err:
+        return err
+
     token = kwargs.get('token')
     result = await http_client.get(
         region=region,
@@ -779,7 +845,9 @@ async def get_iam_application(
         endpoint=f'/api/iam/applications/{app_id}/',
         token=token,
     )
-    return success_response(data=result, app_id=app_id, region=region, workspace=workspace)
+    return success_response(
+        data=result, app_id=app_id, region=region, workspace=workspace
+    )
 
 
 @mcp_tool_handler(
@@ -807,6 +875,10 @@ async def update_iam_application(
     Returns:
         IAM application update response
     """
+    err = _validate_uuid('app_id', app_id)
+    if err:
+        return err
+
     token = kwargs.get('token')
 
     update_data: dict[str, Any] = {}
@@ -825,7 +897,9 @@ async def update_iam_application(
         token=token,
         data=update_data,
     )
-    return success_response(data=result, app_id=app_id, region=region, workspace=workspace)
+    return success_response(
+        data=result, app_id=app_id, region=region, workspace=workspace
+    )
 
 
 @mcp_tool_handler(
@@ -849,6 +923,10 @@ async def delete_iam_application(
     Returns:
         IAM application deletion response
     """
+    err = _validate_uuid('app_id', app_id)
+    if err:
+        return err
+
     token = kwargs.get('token')
     result = await http_client.delete(
         region=region,
@@ -856,35 +934,110 @@ async def delete_iam_application(
         endpoint=f'/api/iam/applications/{app_id}/',
         token=token,
     )
-    return success_response(data=result, app_id=app_id, region=region, workspace=workspace)
+    return success_response(
+        data=result, app_id=app_id, region=region, workspace=workspace
+    )
 
 
 @mcp_tool_handler(
-    description='Provision a service account for an IAM application. This creates a system-level account linked to the application for machine-to-machine authentication. Related: create_iam_application, get_iam_application.',
-    annotations=ADDITIVE,
-    meta={'anthropic/searchHint': 'iam application provision service account machine'},
+    description='Assign existing system users (OS-level accounts on servers) to an IAM application, binding them as the application service accounts. Requires the application ID and a list of system user IDs. Related: unassign_application_system_users, get_iam_application, list_system_users.',
+    annotations=IDEMPOTENT_WRITE,
+    meta={
+        'anthropic/searchHint': 'iam application assign system users service account bind'
+    },
 )
-async def provision_service_account(
+async def assign_application_system_users(
     app_id: str,
+    system_user_ids: list[str],
     workspace: str,
     region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
-    """Provision a service account for an IAM application.
+    """Assign system users to an IAM application.
 
     Args:
-        app_id: Application ID to provision a service account for
+        app_id: Application ID to assign system users to
+        system_user_ids: List of system user IDs (UUIDs) to bind
         workspace: Workspace name. Required parameter
         region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
-        Service account provisioning response
+        Assigned system users response
     """
+    err = _validate_uuid('app_id', app_id)
+    if err:
+        return err
+    if not system_user_ids:
+        return format_validation_error(
+            'system_user_ids',
+            system_user_ids,
+            'Must contain at least one system user ID',
+        )
+    for su_id in system_user_ids:
+        err = _validate_uuid('system_user_ids', su_id)
+        if err:
+            return err
+
     token = kwargs.get('token')
     result = await http_client.post(
         region=region,
         workspace=workspace,
-        endpoint=f'/api/iam/applications/{app_id}/provision-account/',
+        endpoint=f'/api/iam/applications/{app_id}/system-users/',
         token=token,
+        data={'system_user_ids': system_user_ids},
     )
-    return success_response(data=result, app_id=app_id, region=region, workspace=workspace)
+    return success_response(
+        data=result, app_id=app_id, region=region, workspace=workspace
+    )
+
+
+@mcp_tool_handler(
+    description='Unassign system users from an IAM application, releasing them as application service accounts. Requires the application ID and a list of system user IDs. Related: assign_application_system_users, get_iam_application.',
+    annotations=IDEMPOTENT_WRITE,
+    meta={
+        'anthropic/searchHint': 'iam application unassign system users service account release'
+    },
+)
+async def unassign_application_system_users(
+    app_id: str,
+    system_user_ids: list[str],
+    workspace: str,
+    region: str = '',
+    **kwargs,
+) -> dict[str, Any]:
+    """Unassign system users from an IAM application.
+
+    Args:
+        app_id: Application ID to unassign system users from
+        system_user_ids: List of system user IDs (UUIDs) to release
+        workspace: Workspace name. Required parameter
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
+
+    Returns:
+        Unassigned system users response
+    """
+    err = _validate_uuid('app_id', app_id)
+    if err:
+        return err
+    if not system_user_ids:
+        return format_validation_error(
+            'system_user_ids',
+            system_user_ids,
+            'Must contain at least one system user ID',
+        )
+    for su_id in system_user_ids:
+        err = _validate_uuid('system_user_ids', su_id)
+        if err:
+            return err
+
+    token = kwargs.get('token')
+    result = await http_client.post(
+        region=region,
+        workspace=workspace,
+        endpoint=f'/api/iam/applications/{app_id}/system-users/unassign/',
+        token=token,
+        data={'system_user_ids': system_user_ids},
+    )
+    return success_response(
+        data=result, app_id=app_id, region=region, workspace=workspace
+    )
