@@ -699,6 +699,34 @@ class TestIAMMembershipManagement:
         mock_http_client.post.assert_not_called()
 
     @pytest.mark.asyncio
+    async def test_add_iam_member_invalid_group_id(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Test member addition rejects a non-UUID group ID locally."""
+        result = await add_iam_member(
+            group_id='not-a-uuid',
+            user_id=USER_ID,
+            workspace='testworkspace',
+        )
+
+        assert result['status'] == 'error'
+        mock_http_client.post.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_add_iam_member_invalid_user_id(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Test member addition rejects a non-UUID user ID locally."""
+        result = await add_iam_member(
+            group_id=GROUP_ID,
+            user_id='not-a-uuid',
+            workspace='testworkspace',
+        )
+
+        assert result['status'] == 'error'
+        mock_http_client.post.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_remove_iam_member_success(
         self, mock_http_client, mock_token_manager
     ):
@@ -1097,6 +1125,34 @@ class TestIAMApplicationManagement:
         result = await unassign_application_system_users(
             app_id=APP_ID,
             system_user_ids=['not-a-uuid'],
+            workspace='testworkspace',
+        )
+
+        assert result['status'] == 'error'
+        mock_http_client.post.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_assign_application_system_users_invalid_app_id(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Test assignment rejects a non-UUID application ID locally."""
+        result = await assign_application_system_users(
+            app_id='not-a-uuid',
+            system_user_ids=[SYSTEM_USER_ID],
+            workspace='testworkspace',
+        )
+
+        assert result['status'] == 'error'
+        mock_http_client.post.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_unassign_application_system_users_invalid_app_id(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Test unassignment rejects a non-UUID application ID locally."""
+        result = await unassign_application_system_users(
+            app_id='not-a-uuid',
+            system_user_ids=[SYSTEM_USER_ID],
             workspace='testworkspace',
         )
 
