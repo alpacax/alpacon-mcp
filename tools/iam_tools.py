@@ -310,7 +310,7 @@ async def list_iam_groups(
 
 
 @mcp_tool_handler(
-    description='Create a new IAM permission group in the workspace. Requires a group name (lowercase letters, digits, -/_ only). Optionally set a display name and description. Users can then be added to this group via add_iam_member.',
+    description='Create a new IAM permission group in the workspace. Requires a group name (lowercase letters, digits, hyphens, and underscores only). Optionally set a display name and description. Users can then be added to this group via add_iam_member.',
     annotations=ADDITIVE,
     meta={'anthropic/searchHint': 'iam group create add new'},
 )
@@ -325,7 +325,7 @@ async def create_iam_group(
     """Create a new IAM group.
 
     Args:
-        name: Name for the new group (lowercase letters, digits, -/_ only)
+        name: Name for the new group (lowercase letters, digits, hyphens, and underscores only)
         workspace: Workspace name. Required parameter
         display_name: Human-readable display name (optional)
         description: Description of the group (optional)
