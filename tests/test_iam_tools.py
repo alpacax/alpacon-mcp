@@ -533,6 +533,20 @@ class TestIAMGroupExtendedManagement:
         mock_http_client.patch.assert_not_called()
 
     @pytest.mark.asyncio
+    async def test_update_iam_group_invalid_id(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Test group update rejects a non-UUID group ID locally."""
+        result = await update_iam_group(
+            group_id='not-a-uuid',
+            display_name='Senior Admins',
+            workspace='testworkspace',
+        )
+
+        assert result['status'] == 'error'
+        mock_http_client.patch.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_delete_iam_group_success(self, mock_http_client, mock_token_manager):
         """Test successful group deletion."""
         mock_http_client.delete.return_value = {'message': 'Group deleted successfully'}
@@ -548,6 +562,18 @@ class TestIAMGroupExtendedManagement:
             endpoint=f'/api/iam/groups/{GROUP_ID}/',
             token='test-token',
         )
+
+    @pytest.mark.asyncio
+    async def test_delete_iam_group_invalid_id(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Test group deletion rejects a non-UUID group ID locally."""
+        result = await delete_iam_group(
+            group_id='not-a-uuid', workspace='testworkspace'
+        )
+
+        assert result['status'] == 'error'
+        mock_http_client.delete.assert_not_called()
 
 
 class TestIAMMembershipManagement:
@@ -1042,6 +1068,34 @@ class TestIAMApplicationManagement:
         result = await assign_application_system_users(
             app_id=APP_ID,
             system_user_ids=[],
+            workspace='testworkspace',
+        )
+
+        assert result['status'] == 'error'
+        mock_http_client.post.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_assign_application_system_users_invalid_system_user_id(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Test assignment rejects a non-UUID system user ID locally."""
+        result = await assign_application_system_users(
+            app_id=APP_ID,
+            system_user_ids=['not-a-uuid'],
+            workspace='testworkspace',
+        )
+
+        assert result['status'] == 'error'
+        mock_http_client.post.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_unassign_application_system_users_invalid_system_user_id(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Test unassignment rejects a non-UUID system user ID locally."""
+        result = await unassign_application_system_users(
+            app_id=APP_ID,
+            system_user_ids=['not-a-uuid'],
             workspace='testworkspace',
         )
 
