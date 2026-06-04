@@ -73,7 +73,7 @@ async def list_iam_users(
 
 
 @mcp_tool_handler(
-    description='Get detailed information about a specific IAM user by their user ID. Returns email, first/last name, active status, and assigned groups. Use this when you need full profile details for a single user.',
+    description='Get detailed information about a specific IAM user by their user ID. Returns email, first/last name, active status, and group count (num_groups). Use list_iam_memberships to see which groups the user belongs to. Use this when you need full profile details for a single user.',
     annotations=READ_ONLY,
     meta={'anthropic/searchHint': 'iam user detail profile'},
 )
@@ -81,6 +81,10 @@ async def get_iam_user(
     user_id: str, workspace: str, region: str = '', **kwargs
 ) -> dict[str, Any]:
     """Get detailed information about a specific IAM user.
+
+    Group memberships are not included in the user payload (the user
+    serializer has no groups field); use list_iam_memberships to look up
+    the groups a user belongs to.
 
     Args:
         user_id: IAM user ID
