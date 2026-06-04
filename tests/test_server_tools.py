@@ -9,12 +9,19 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from tools.server_tools import (
+    create_registration_token,
     create_server_note,
+    delete_registration_token,
     delete_server_note,
+    get_registration_guide,
     get_server,
     get_server_note,
+    list_registration_tokens,
     list_server_notes,
     list_servers,
+    star_server,
+    unregister_server,
+    update_server,
     update_server_note,
 )
 
@@ -542,6 +549,478 @@ class TestServerNoteCRUD:
             endpoint='/api/servers/notes/note-1/',
             token='test-token',
         )
+
+
+class TestUpdateServer:
+    """Tests for update_server tool."""
+
+    @pytest.mark.asyncio
+    async def test_update_server_success(self, mock_http_client, mock_token_manager):
+        """Updates server fields via PATCH and returns updated data."""
+        updated_server = {
+            'id': '550e8400-e29b-41d4-a716-446655440123',
+            'name': 'renamed-server',
+        }
+        mock_http_client.patch.return_value = updated_server
+
+        result = await update_server(
+            server_id='550e8400-e29b-41d4-a716-446655440123',
+            workspace='testworkspace',
+            name='renamed-server',
+            region='ap1',
+        )
+
+        assert result['status'] == 'success'
+        assert result['data'] == updated_server
+        mock_http_client.patch.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/servers/servers/550e8400-e29b-41d4-a716-446655440123/',
+            token='test-token',
+            data={'name': 'renamed-server'},
+        )
+
+    @pytest.mark.asyncio
+    async def test_update_server_no_token(self, mock_http_client, mock_token_manager):
+        """Returns error when token is missing."""
+        mock_token_manager.get_token.return_value = None
+
+        result = await update_server(
+            server_id='550e8400-e29b-41d4-a716-446655440123',
+            workspace='testworkspace',
+            name='renamed-server',
+        )
+
+        assert result['status'] == 'error'
+        assert 'No token found' in result['message']
+        mock_http_client.patch.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_update_server_no_fields_returns_error(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Returns error when no update fields are provided and makes no API call."""
+        result = await update_server(
+            server_id='550e8400-e29b-41d4-a716-446655440123',
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert result['status'] == 'error'
+        assert result['error_code'] == 'validation'
+        assert (
+            'At least one of name or description must be provided.'
+            in result['suggestion']
+        )
+        mock_http_client.patch.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_update_server_partial_fields(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Only provided fields are sent in PATCH body."""
+        mock_http_client.patch.return_value = {
+            'id': '550e8400-e29b-41d4-a716-446655440123',
+            'description': 'Updated description',
+        }
+
+        await update_server(
+            server_id='550e8400-e29b-41d4-a716-446655440123',
+            workspace='testworkspace',
+            description='Updated description',
+            region='ap1',
+        )
+
+        _, kwargs = mock_http_client.patch.call_args
+        assert kwargs['data'] == {'description': 'Updated description'}
+        assert 'name' not in kwargs['data']
+
+    @pytest.mark.asyncio
+    async def test_update_server_both_fields(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Both name and description are sent in PATCH body when provided together."""
+        mock_http_client.patch.return_value = {
+            'id': '550e8400-e29b-41d4-a716-446655440123',
+            'name': 'renamed-server',
+            'description': 'Updated description',
+        }
+
+        await update_server(
+            server_id='550e8400-e29b-41d4-a716-446655440123',
+            workspace='testworkspace',
+            name='renamed-server',
+            description='Updated description',
+            region='ap1',
+        )
+
+        _, kwargs = mock_http_client.patch.call_args
+        assert kwargs['data'] == {
+            'name': 'renamed-server',
+            'description': 'Updated description',
+        }
+
+
+class TestUnregisterServer:
+    """Tests for unregister_server tool."""
+
+    @pytest.mark.asyncio
+    async def test_unregister_server_success(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Unregisters server by UUID and returns success."""
+        mock_http_client.delete.return_value = {}
+
+        result = await unregister_server(
+            server_id='550e8400-e29b-41d4-a716-446655440123',
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert result['status'] == 'success'
+        mock_http_client.delete.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/servers/servers/550e8400-e29b-41d4-a716-446655440123/',
+            token='test-token',
+        )
+
+    @pytest.mark.asyncio
+    async def test_unregister_server_no_token(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Returns error when token is missing."""
+        mock_token_manager.get_token.return_value = None
+
+        result = await unregister_server(
+            server_id='550e8400-e29b-41d4-a716-446655440123',
+            workspace='testworkspace',
+        )
+
+        assert result['status'] == 'error'
+        assert 'No token found' in result['message']
+        mock_http_client.delete.assert_not_called()
+
+
+class TestStarServer:
+    """Tests for star_server tool."""
+
+    @pytest.mark.asyncio
+    async def test_star_server_success(self, mock_http_client, mock_token_manager):
+        """Posts to star endpoint with status flag and returns success."""
+        mock_http_client.post.return_value = {'status': True}
+
+        result = await star_server(
+            server_id='550e8400-e29b-41d4-a716-446655440123',
+            status=True,
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert result['status'] == 'success'
+        mock_http_client.post.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/servers/servers/550e8400-e29b-41d4-a716-446655440123/star/',
+            token='test-token',
+            data={'status': True},
+        )
+
+    @pytest.mark.asyncio
+    async def test_star_server_no_token(self, mock_http_client, mock_token_manager):
+        """Returns error when token is missing."""
+        mock_token_manager.get_token.return_value = None
+
+        result = await star_server(
+            server_id='550e8400-e29b-41d4-a716-446655440123',
+            status=True,
+            workspace='testworkspace',
+        )
+
+        assert result['status'] == 'error'
+        assert 'No token found' in result['message']
+        mock_http_client.post.assert_not_called()
+
+
+class TestListRegistrationTokens:
+    """Tests for list_registration_tokens tool."""
+
+    @pytest.mark.asyncio
+    async def test_list_registration_tokens_success(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Returns paginated list of registration tokens."""
+        token_list = {
+            'count': 2,
+            'results': [
+                {'id': 'tok-1', 'name': 'prod-token'},
+                {'id': 'tok-2', 'name': 'staging-token'},
+            ],
+        }
+        mock_http_client.get.return_value = token_list
+
+        result = await list_registration_tokens(workspace='testworkspace', region='ap1')
+
+        assert result['status'] == 'success'
+        assert result['data'] == token_list
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/servers/registration-tokens/',
+            token='test-token',
+            params={},
+        )
+
+    @pytest.mark.asyncio
+    async def test_list_registration_tokens_pagination(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Passes page and page_size params to the API."""
+        mock_http_client.get.return_value = {'count': 0, 'results': []}
+
+        await list_registration_tokens(
+            workspace='testworkspace', region='ap1', page=2, page_size=5
+        )
+
+        _, kwargs = mock_http_client.get.call_args
+        assert kwargs['params'] == {'page': 2, 'page_size': 5}
+
+    @pytest.mark.asyncio
+    async def test_list_registration_tokens_no_token(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Returns error when token is missing."""
+        mock_token_manager.get_token.return_value = None
+
+        result = await list_registration_tokens(workspace='testworkspace')
+
+        assert result['status'] == 'error'
+        assert 'No token found' in result['message']
+        mock_http_client.get.assert_not_called()
+
+
+class TestCreateRegistrationToken:
+    """Tests for create_registration_token tool."""
+
+    @pytest.mark.asyncio
+    async def test_create_registration_token_success(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Creates a registration token with required name."""
+        created_token = {'id': 'tok-123', 'name': 'my-token', 'token': 'abc123xyz'}
+        mock_http_client.post.return_value = created_token
+
+        result = await create_registration_token(
+            workspace='testworkspace', name='my-token', region='ap1'
+        )
+
+        assert result['status'] == 'success'
+        assert result['data'] == created_token
+        mock_http_client.post.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/servers/registration-tokens/',
+            token='test-token',
+            data={'name': 'my-token'},
+        )
+
+    @pytest.mark.asyncio
+    async def test_create_registration_token_with_description(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Includes description in POST body when provided."""
+        mock_http_client.post.return_value = {
+            'id': 'tok-123',
+            'name': 'my-token',
+            'description': 'For production servers',
+        }
+
+        result = await create_registration_token(
+            workspace='testworkspace',
+            name='my-token',
+            description='For production servers',
+            region='ap1',
+        )
+
+        assert result['status'] == 'success'
+        _, kwargs = mock_http_client.post.call_args
+        assert kwargs['data']['description'] == 'For production servers'
+
+    @pytest.mark.asyncio
+    async def test_create_registration_token_no_token(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Returns error when auth token is missing."""
+        mock_token_manager.get_token.return_value = None
+
+        result = await create_registration_token(
+            workspace='testworkspace', name='my-token'
+        )
+
+        assert result['status'] == 'error'
+        assert 'No token found' in result['message']
+        mock_http_client.post.assert_not_called()
+
+
+class TestDeleteRegistrationToken:
+    """Tests for delete_registration_token tool."""
+
+    @pytest.mark.asyncio
+    async def test_delete_registration_token_success(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Deletes registration token by ID."""
+        mock_http_client.delete.return_value = {}
+
+        result = await delete_registration_token(
+            token_id='a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert result['status'] == 'success'
+        mock_http_client.delete.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/servers/registration-tokens/a1b2c3d4-e5f6-7890-abcd-ef1234567890/',
+            token='test-token',
+        )
+
+    @pytest.mark.asyncio
+    async def test_delete_registration_token_no_token(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Returns error when auth token is missing."""
+        mock_token_manager.get_token.return_value = None
+
+        result = await delete_registration_token(
+            token_id='a1b2c3d4-e5f6-7890-abcd-ef1234567890', workspace='testworkspace'
+        )
+
+        assert result['status'] == 'error'
+        assert 'No token found' in result['message']
+        mock_http_client.delete.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_delete_registration_token_invalid_token_id(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Returns validation error when token_id is not a valid UUID."""
+        result = await delete_registration_token(
+            token_id='not-a-uuid',
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert result['status'] == 'error'
+        assert result['error_code'] == 'validation'
+        assert result['field'] == 'token_id'
+        mock_http_client.delete.assert_not_called()
+
+
+class TestGetRegistrationGuide:
+    """Tests for get_registration_guide tool."""
+
+    @pytest.mark.asyncio
+    async def test_get_registration_guide_success(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Returns installation guide for the specified platform and token."""
+        guide = {
+            'platform': 'debian',
+            'commands': ['curl -s https://install.sh | bash'],
+        }
+        mock_http_client.post.return_value = guide
+
+        result = await get_registration_guide(
+            workspace='testworkspace',
+            platform='debian',
+            token_id='a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+            region='ap1',
+        )
+
+        assert result['status'] == 'success'
+        assert result['data'] == guide
+        mock_http_client.post.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/servers/registration-methods/token-install/guide/',
+            token='test-token',
+            data={
+                'platform': 'debian',
+                'token': 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+            },
+            params={'response_type': 'json'},
+        )
+
+    @pytest.mark.asyncio
+    async def test_get_registration_guide_with_server_name(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Includes server_name in POST body when provided."""
+        mock_http_client.post.return_value = {'platform': 'rhel', 'commands': []}
+
+        await get_registration_guide(
+            workspace='testworkspace',
+            platform='rhel',
+            token_id='a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+            server_name='my-new-server',
+            region='ap1',
+        )
+
+        _, kwargs = mock_http_client.post.call_args
+        assert kwargs['data']['server_name'] == 'my-new-server'
+
+    @pytest.mark.asyncio
+    async def test_get_registration_guide_no_token(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Returns error when auth token is missing."""
+        mock_token_manager.get_token.return_value = None
+
+        result = await get_registration_guide(
+            workspace='testworkspace',
+            platform='debian',
+            token_id='a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+        )
+
+        assert result['status'] == 'error'
+        assert 'No token found' in result['message']
+        mock_http_client.post.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_get_registration_guide_invalid_token_id(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Returns validation error when token_id is not a valid UUID."""
+        result = await get_registration_guide(
+            workspace='testworkspace',
+            platform='debian',
+            token_id='not-a-uuid',
+            region='ap1',
+        )
+
+        assert result['status'] == 'error'
+        assert result['error_code'] == 'validation'
+        assert result['field'] == 'token_id'
+        mock_http_client.post.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_get_registration_guide_invalid_platform(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Returns validation error when platform is unsupported."""
+        result = await get_registration_guide(
+            workspace='testworkspace',
+            platform='solaris',
+            token_id='a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+            region='ap1',
+        )
+
+        assert result['status'] == 'error'
+        assert result['error_code'] == 'validation'
+        assert result['field'] == 'platform'
+        mock_http_client.post.assert_not_called()
 
 
 if __name__ == '__main__':
