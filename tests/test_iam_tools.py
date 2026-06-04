@@ -167,7 +167,7 @@ class TestIAMUsersManagement:
         """Test successful user retrieval."""
         mock_http_client.get.return_value = sample_user
 
-        result = await get_iam_user(user_id='user-123', workspace='testworkspace')
+        result = await get_iam_user(user_id=USER_ID, workspace='testworkspace')
 
         assert result['status'] == 'success'
         assert result['data'] == sample_user
@@ -175,9 +175,17 @@ class TestIAMUsersManagement:
         mock_http_client.get.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/iam/users/user-123/',
+            endpoint=f'/api/iam/users/{USER_ID}/',
             token='test-token',
         )
+
+    @pytest.mark.asyncio
+    async def test_get_iam_user_invalid_id(self, mock_http_client, mock_token_manager):
+        """Test user retrieval rejects a non-UUID user ID locally."""
+        result = await get_iam_user(user_id='not-a-uuid', workspace='testworkspace')
+
+        assert result['status'] == 'error'
+        mock_http_client.get.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_create_iam_user_success(
@@ -223,7 +231,7 @@ class TestIAMUsersManagement:
         mock_http_client.patch.return_value = updated_user
 
         result = await update_iam_user(
-            user_id='user-123',
+            user_id=USER_ID,
             workspace='testworkspace',
             first_name='Updated',
             is_active=True,
@@ -237,28 +245,50 @@ class TestIAMUsersManagement:
         mock_http_client.patch.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/iam/users/user-123/',
+            endpoint=f'/api/iam/users/{USER_ID}/',
             token='test-token',
             data=expected_data,
         )
+
+    @pytest.mark.asyncio
+    async def test_update_iam_user_invalid_id(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Test user update rejects a non-UUID user ID locally."""
+        result = await update_iam_user(
+            user_id='not-a-uuid', workspace='testworkspace', first_name='Updated'
+        )
+
+        assert result['status'] == 'error'
+        mock_http_client.patch.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_delete_iam_user_success(self, mock_http_client, mock_token_manager):
         """Test successful user deletion."""
         mock_http_client.delete.return_value = {'message': 'User deleted successfully'}
 
-        result = await delete_iam_user(user_id='user-123', workspace='testworkspace')
+        result = await delete_iam_user(user_id=USER_ID, workspace='testworkspace')
 
         assert result['status'] == 'success'
         assert result['data']['message'] == 'User deleted successfully'
-        assert result['user_id'] == 'user-123'
+        assert result['user_id'] == USER_ID
 
         mock_http_client.delete.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/iam/users/user-123/',
+            endpoint=f'/api/iam/users/{USER_ID}/',
             token='test-token',
         )
+
+    @pytest.mark.asyncio
+    async def test_delete_iam_user_invalid_id(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Test user deletion rejects a non-UUID user ID locally."""
+        result = await delete_iam_user(user_id='not-a-uuid', workspace='testworkspace')
+
+        assert result['status'] == 'error'
+        mock_http_client.delete.assert_not_called()
 
 
 class TestIAMGroupsManagement:
@@ -335,7 +365,7 @@ class TestErrorHandling:
         """Test HTTP error handling."""
         mock_http_client.get.side_effect = Exception('HTTP 404: Not Found')
 
-        result = await get_iam_user(user_id='nonexistent', workspace='testworkspace')
+        result = await get_iam_user(user_id=USER_ID, workspace='testworkspace')
 
         assert result['status'] == 'error'
         assert 'HTTP 404' in result['message']
@@ -555,6 +585,18 @@ class TestIAMMembershipManagement:
             token='test-token',
             params={'group': GROUP_ID, 'page': 1, 'page_size': 10},
         )
+
+    @pytest.mark.asyncio
+    async def test_list_iam_memberships_invalid_group_filter(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Test membership listing rejects a non-UUID group filter locally."""
+        result = await list_iam_memberships(
+            workspace='testworkspace', group_id='not-a-uuid'
+        )
+
+        assert result['status'] == 'error'
+        mock_http_client.get.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_add_iam_member_success(self, mock_http_client, mock_token_manager):

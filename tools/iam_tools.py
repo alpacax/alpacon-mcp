@@ -88,6 +88,10 @@ async def get_iam_user(
     Returns:
         IAM user details response
     """
+    err = _validate_uuid('user_id', user_id)
+    if err:
+        return err
+
     token = kwargs.get('token')
 
     result = await http_client.get(
@@ -188,6 +192,10 @@ async def update_iam_user(
     Returns:
         User update response
     """
+    err = _validate_uuid('user_id', user_id)
+    if err:
+        return err
+
     token = kwargs.get('token')
 
     update_data: dict[str, Any] = {}
@@ -234,6 +242,10 @@ async def delete_iam_user(
     Returns:
         User deletion response
     """
+    err = _validate_uuid('user_id', user_id)
+    if err:
+        return err
+
     token = kwargs.get('token')
 
     result = await http_client.delete(
@@ -562,6 +574,11 @@ async def list_iam_memberships(
     Returns:
         IAM memberships list response
     """
+    if group_id is not None:
+        err = _validate_uuid('group_id', group_id)
+        if err:
+            return err
+
     token = kwargs.get('token')
 
     params: dict[str, Any] = {}
