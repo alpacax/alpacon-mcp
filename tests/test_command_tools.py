@@ -42,6 +42,10 @@ class TestSudoDenialHint:
         assert _sudo_denial_hint({'result': None}) is None
         assert _sudo_denial_hint({}) is None
 
+    def test_bare_code_is_not_a_false_positive(self):
+        # A command that merely prints the code (no "(CODE)" token) is not a hit.
+        assert _sudo_denial_hint({'result': 'echo SUDO_RISK_DENIED\n'}) is None
+
 
 @pytest.fixture
 def mock_http_client():

@@ -46,7 +46,10 @@ def _sudo_denial_hint(result: dict[str, Any]) -> str | None:
     if not isinstance(output, str):
         return None
     for code, hint in _SUDO_DENIAL_HINTS:
-        if code in output:
+        # Match the parenthesized denial token '(CODE)'—the form
+        # alpacon_approval.c emits—not the bare code, so a command that merely
+        # prints the code string in its own output is not a false positive.
+        if f'({code})' in output:
             return hint
     return None
 
