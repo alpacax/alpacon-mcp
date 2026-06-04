@@ -6,10 +6,41 @@ import pytest
 
 from tools.command_tools import (
     _submit_command,
+    _sudo_denial_hint,
     execute_command,
     execute_command_multi_server,
     list_commands,
 )
+
+
+class TestSudoDenialHint:
+    """The exec-sudo denial code -> agent guidance mapping."""
+
+    def test_presence_required(self):
+        out = {'result': 'sudo: Permission denied (SUDO_PRESENCE_REQUIRED)\n'}
+        hint = _sudo_denial_hint(out)
+        assert hint is not None
+        assert 'step-up' in hint
+
+    def test_approval_required(self):
+        out = {'result': 'sudo: Permission denied (SUDO_APPROVAL_REQUIRED)\n'}
+        hint = _sudo_denial_hint(out)
+        assert hint is not None
+        assert 'approv' in hint
+
+    def test_risk_denied_no_score_disclosed(self):
+        out = {'result': 'sudo: Permission denied (SUDO_RISK_DENIED)\n'}
+        hint = _sudo_denial_hint(out)
+        assert hint is not None
+        assert 'risk' in hint
+        # Disclosure: never echo a score / reasoning, only the category.
+        assert 'score' not in hint
+
+    def test_no_denial(self):
+        assert _sudo_denial_hint({'result': 'uid=0(root)\n'}) is None
+        assert _sudo_denial_hint({'result': ''}) is None
+        assert _sudo_denial_hint({'result': None}) is None
+        assert _sudo_denial_hint({}) is None
 
 
 @pytest.fixture

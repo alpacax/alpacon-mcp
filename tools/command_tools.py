@@ -8,6 +8,48 @@ from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, READ_ONLY
 
+# Non-interactive sudo denial codes, as they reach the command output via
+# alpacon_approval.c's [A-Z0-9_] sanitizer (UPPERCASE). Kept in sync with
+# alpacon-server utils/error_codes.py. Surfaced to the agent as category-level
+# guidance only—the server never sends the risk score or reasoning to a client.
+_SUDO_DENIAL_HINTS: tuple[tuple[str, str], ...] = (
+    (
+        'SUDO_NO_WORKSESSION_POLICY',
+        'sudo was denied: this command is not covered by an MFA-bypass policy '
+        'in the Work Session. Add it (work_session update with the sudo command) '
+        'and re-run.',
+    ),
+    (
+        'SUDO_PRESENCE_REQUIRED',
+        'sudo needs a recent human MFA: a human must complete a step-up, then '
+        're-run. An agent cannot satisfy this.',
+    ),
+    (
+        'SUDO_APPROVAL_REQUIRED',
+        'sudo needs human approval: an approval request was created. Re-run '
+        'after a reviewer approves it.',
+    ),
+    (
+        'SUDO_RISK_DENIED',
+        'sudo was denied by runtime risk assessment; this command is not '
+        'permitted in this Work Session.',
+    ),
+)
+
+
+def _sudo_denial_hint(result: dict[str, Any]) -> str | None:
+    """Return category-level guidance when a non-interactive sudo was denied in
+    the command output, so an agent can act (have a human step up / request
+    approval / stop) without parsing free text. None when no denial is present.
+    """
+    output = result.get('result') or ''
+    if not isinstance(output, str):
+        return None
+    for code, hint in _SUDO_DENIAL_HINTS:
+        if code in output:
+            return hint
+    return None
+
 
 async def _submit_command(
     server_id: str,
@@ -217,7 +259,7 @@ async def execute_command(
             status = result.get('status', '')
 
             if result.get('finished_at') is not None:
-                return success_response(
+                response = success_response(
                     data=result,
                     command_id=command_id,
                     server_id=server_id,
@@ -226,6 +268,10 @@ async def execute_command(
                     region=region,
                     workspace=workspace,
                 )
+                hint = _sudo_denial_hint(result)
+                if hint:
+                    response['sudo_hint'] = hint
+                return response
 
             if status in ('stuck', 'error'):
                 return error_response(
