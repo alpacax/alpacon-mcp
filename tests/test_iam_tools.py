@@ -65,7 +65,7 @@ def mock_token_manager():
 def sample_user():
     """Sample user data for testing."""
     return {
-        'id': 'user-123',
+        'id': USER_ID,
         'username': 'testuser',
         'email': 'test@example.com',
         'first_name': 'Test',
@@ -85,7 +85,7 @@ def sample_users_list():
         'previous': None,
         'results': [
             {
-                'id': 'user-123',
+                'id': USER_ID,
                 'username': 'testuser1',
                 'email': 'test1@example.com',
                 'first_name': 'Test',
@@ -94,7 +94,7 @@ def sample_users_list():
                 'num_groups': 1,
             },
             {
-                'id': 'user-456',
+                'id': USER_ID_2,
                 'username': 'testuser2',
                 'email': 'test2@example.com',
                 'first_name': 'Test',
