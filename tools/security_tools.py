@@ -7,7 +7,8 @@ from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ_ONLY
 
-VALID_BULK_ACTIONS = frozenset({'add', 'remove'})
+VALID_BULK_ACTIONS = ('add', 'remove')
+_BULK_ACTIONS_STR = ', '.join(f"'{a}'" for a in VALID_BULK_ACTIONS)
 VALID_FILE_ACL_ACTIONS = ('upload', 'download', '*')
 _FILE_ACL_ACTIONS_STR = ', '.join(f"'{a}'" for a in VALID_FILE_ACL_ACTIONS)
 
@@ -163,8 +164,8 @@ async def update_command_acl(
         acl_id: Command ACL rule ID to update
         workspace: Workspace name. Required parameter
         command: Command pattern to allow (optional)
-        username: System username restriction (optional)
-        groupname: System groupname restriction (optional)
+        username: System username restriction. Pass '' explicitly to clear an existing restriction; omit to leave unchanged (optional)
+        groupname: System groupname restriction. Pass '' explicitly to clear an existing restriction; omit to leave unchanged (optional)
         region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
@@ -434,6 +435,7 @@ async def delete_server_acl(
 
 @mcp_tool_handler(
     description='Bulk add or remove server ACL entries for multiple servers in a single operation. When to use: applying the same token access to many servers at once. Related: list_server_acls (view existing), create_server_acl (single create).',
+    # Annotations are fixed at decorator-time; the destructive 'remove' path dominates.
     annotations=DESTRUCTIVE,
     meta={'anthropic/searchHint': 'server acl bulk add remove multiple'},
 )
@@ -462,7 +464,9 @@ async def bulk_server_acl(
         Bulk server ACL operation response
     """
     if action not in VALID_BULK_ACTIONS:
-        return error_response(f"Invalid action '{action}'. Must be 'add' or 'remove'.")
+        return error_response(
+            f"Invalid action '{action}'. Must be one of: {_BULK_ACTIONS_STR}."
+        )
     if not server_ids:
         return error_response('server_ids must not be empty')
     if len(server_ids) > _BULK_MAX_SERVERS:
@@ -647,8 +651,8 @@ async def update_file_acl(
         workspace: Workspace name. Required parameter
         path: New file path pattern (optional)
         action: New allowed action - 'upload', 'download', or '*' (optional)
-        username: System username restriction (optional)
-        groupname: System groupname restriction (optional)
+        username: System username restriction. Pass '' explicitly to clear an existing restriction; omit to leave unchanged (optional)
+        groupname: System groupname restriction. Pass '' explicitly to clear an existing restriction; omit to leave unchanged (optional)
         region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:

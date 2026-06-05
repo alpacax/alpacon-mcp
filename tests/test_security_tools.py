@@ -719,6 +719,30 @@ class TestBulkServerAcl:
         mock_http_client.post.assert_not_called()
 
     @pytest.mark.asyncio
+    async def test_bulk_exactly_100_server_ids_succeeds(
+        self, mock_http_client, mock_token_manager
+    ):
+        server_ids = [f'00000000-0000-4000-8000-{i:012d}' for i in range(100)]
+        mock_http_client.post.return_value = []
+
+        result = await bulk_server_acl(
+            workspace='testworkspace',
+            action='add',
+            server_ids=server_ids,
+            api_token_id='token-uuid',
+            region='ap1',
+        )
+
+        assert result['status'] == 'success'
+        mock_http_client.post.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/security/server-acl/bulk/',
+            token='test-token',
+            data={'servers': server_ids, 'token': 'token-uuid'},
+        )
+
+    @pytest.mark.asyncio
     async def test_bulk_over_100_server_ids_returns_error(
         self, mock_http_client, mock_token_manager
     ):
