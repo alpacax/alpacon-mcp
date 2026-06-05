@@ -262,3 +262,46 @@ async def work_session_update(
     return success_response(
         data=result, session_id=session_id, region=region, workspace=workspace
     )
+
+
+@mcp_tool_handler(
+    description=(
+        'Extend the expiry time of a Work Session. Only approved or active sessions '
+        'can be extended, and the new expires_at must be later than the current one. '
+        'Bound sudo policies are extended together. '
+        'expires_at is an ISO 8601 datetime string. '
+        'Related: work_session_update (modify other fields), work_session_get (check current expiry).'
+    ),
+    annotations=IDEMPOTENT_WRITE,
+    meta={'anthropic/searchHint': 'work session extend expiry expires prolong'},
+)
+async def work_session_extend(
+    session_id: str,
+    workspace: str,
+    expires_at: str,
+    region: str = '',
+    **kwargs,
+) -> dict[str, Any]:
+    """Extend a Work Session's expiry time."""
+    token = kwargs.get('token')
+
+    result = await http_client.post(
+        region=region,
+        workspace=workspace,
+        endpoint=f'{_API_SESSIONS}{session_id}/extend/',
+        token=token,
+        data={'expires_at': expires_at},
+    )
+
+    if err := unwrap_http_result(
+        result,
+        default_message='Failed to extend Work Session',
+        session_id=session_id,
+        region=region,
+        workspace=workspace,
+    ):
+        return err
+
+    return success_response(
+        data=result, session_id=session_id, region=region, workspace=workspace
+    )

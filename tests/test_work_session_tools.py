@@ -337,3 +337,53 @@ class TestWorkSessionUpdate:
 
         assert result['status'] == 'error'
         assert 'not modifiable' in result['message']
+
+
+class TestWorkSessionExtend:
+    @pytest.mark.asyncio
+    async def test_extend_success(self, mock_http_client, mock_token_manager):
+        from tools.work_session_tools import work_session_extend
+
+        mock_http_client.post.return_value = {
+            'id': 'ws-uuid-1234',
+            'status': 'active',
+            'expires_at': '2026-06-06T18:00:00+00:00',
+        }
+
+        result = await work_session_extend(
+            session_id='ws-uuid-1234',
+            workspace='testworkspace',
+            expires_at='2026-06-06T18:00:00+00:00',
+            region='ap1',
+        )
+
+        assert result['status'] == 'success'
+        mock_http_client.post.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/work-sessions/sessions/ws-uuid-1234/extend/',
+            token='test-token',
+            data={'expires_at': '2026-06-06T18:00:00+00:00'},
+        )
+
+    @pytest.mark.asyncio
+    async def test_extend_propagates_api_error(
+        self, mock_http_client, mock_token_manager
+    ):
+        from tools.work_session_tools import work_session_extend
+
+        mock_http_client.post.return_value = {
+            'error': 'Validation error',
+            'message': 'New expiry must be later than current expiry',
+            'status_code': 400,
+        }
+
+        result = await work_session_extend(
+            session_id='ws-uuid-1234',
+            workspace='testworkspace',
+            expires_at='2026-06-05T00:00:00+00:00',
+            region='ap1',
+        )
+
+        assert result['status'] == 'error'
+        assert 'later than current' in result['message']
