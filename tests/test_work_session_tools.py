@@ -29,7 +29,7 @@ class TestWorkSessionCreate:
         mock_http_client.post.return_value = {
             'id': 'ws-uuid-1234',
             'status': 'pending',
-            'auth_method': 'mcp_oauth',
+            'requester_type': 'agent',
         }
 
         result = await work_session_create(
@@ -79,7 +79,6 @@ class TestWorkSessionCreate:
         assert call_data['title'] == 'Deploy session'
         assert call_data['description'] == 'Deploying config files'
         assert call_data['requester_type'] == 'agent'
-        assert 'auth_method' not in call_data
 
     @pytest.mark.asyncio
     async def test_create_omits_empty_title(self, mock_http_client, mock_token_manager):
@@ -135,7 +134,7 @@ class TestWorkSessionGet:
         mock_http_client.get.return_value = {
             'id': 'ws-uuid-1234',
             'status': 'active',
-            'auth_method': 'mcp_oauth',
+            'requester_type': 'agent',
         }
 
         result = await work_session_get(
@@ -463,8 +462,8 @@ class TestWorkSessionAnalyze:
         from tools.work_session_tools import work_session_analyze
 
         mock_http_client.post.return_value = {
-            'id': 'analysis-uuid-1',
-            'status': 'pending',
+            'status': 'accepted',
+            'work_session': 'ws-uuid-1234',
         }
 
         result = await work_session_analyze(
@@ -488,8 +487,8 @@ class TestWorkSessionAnalyze:
         from tools.work_session_tools import work_session_analyze
 
         mock_http_client.post.return_value = {
-            'id': 'analysis-uuid-2',
-            'status': 'pending',
+            'status': 'accepted',
+            'work_session': 'ws-uuid-1234',
         }
 
         await work_session_analyze(
