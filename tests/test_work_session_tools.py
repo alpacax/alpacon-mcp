@@ -212,7 +212,7 @@ class TestWorkSessionList:
         assert call_params['status'] == 'active'
 
     @pytest.mark.asyncio
-    async def test_list_with_auth_method_filter(
+    async def test_list_with_requester_type_filter(
         self, mock_http_client, mock_token_manager
     ):
         from tools.work_session_tools import work_session_list
@@ -220,11 +220,11 @@ class TestWorkSessionList:
         mock_http_client.get.return_value = {'count': 1, 'results': []}
 
         await work_session_list(
-            workspace='testworkspace', auth_method='mcp_oauth', region='ap1'
+            workspace='testworkspace', requester_type='agent', region='ap1'
         )
 
         call_params = mock_http_client.get.call_args[1]['params']
-        assert call_params['auth_method'] == 'mcp_oauth'
+        assert call_params['requester_type'] == 'agent'
         assert 'status' not in call_params
 
     @pytest.mark.asyncio

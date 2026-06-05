@@ -152,7 +152,7 @@ async def work_session_get(
     description=(
         'List Work Sessions in a workspace. Optional status filter: '
         '"pending", "active", "completed", "rejected", "cancelled", "expired". '
-        'Optional auth_method filter: "web", "cli", "service_token", "mcp_oauth". '
+        'Optional requester_type filter: "user" (human) or "agent" (AI agent). '
         'Related: work_session_create (create session), work_session_get (single session detail).'
     ),
     annotations=READ_ONLY,
@@ -161,19 +161,19 @@ async def work_session_get(
 async def work_session_list(
     workspace: str,
     status: str | None = None,
-    auth_method: str | None = None,
+    requester_type: str | None = None,
     limit: int = 20,
     region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
-    """List Work Sessions with optional status and auth_method filtering."""
+    """List Work Sessions with optional status and requester_type filtering."""
     token = kwargs.get('token')
 
     params: dict[str, str | int] = {'page_size': limit}
     if status:
         params['status'] = status
-    if auth_method:
-        params['auth_method'] = auth_method
+    if requester_type:
+        params['requester_type'] = requester_type
 
     result = await http_client.get(
         region=region,
