@@ -112,8 +112,9 @@ async def work_session_close(
 
 @mcp_tool_handler(
     description=(
-        'Get details of a Work Session: status, scopes, servers, timeline, auth_method. '
-        'Related: work_session_list (list all sessions), work_session_close (end session).'
+        'Get details of a Work Session: status, scopes, servers, requester_type, expires_at. '
+        'Related: work_session_list (list all sessions), work_session_timeline '
+        '(chronological activity), work_session_close (end session).'
     ),
     annotations=READ_ONLY,
     meta={'anthropic/searchHint': 'work session get detail status timeline'},
@@ -151,7 +152,8 @@ async def work_session_get(
 @mcp_tool_handler(
     description=(
         'List Work Sessions in a workspace. Optional status filter: '
-        '"pending", "active", "completed", "rejected", "cancelled", "expired". '
+        '"pending", "approved", "active", "completed", "rejected", "cancelled", '
+        '"expired", "revoked". '
         'Optional requester_type filter: "user" (human) or "agent" (AI agent). '
         'Related: work_session_create (create session), work_session_get (single session detail).'
     ),
@@ -199,7 +201,9 @@ async def work_session_list(
         'Update a Work Session (partial update). Only provided fields are sent. '
         'Pending sessions update immediately; approved/active sessions go through '
         'the modification flow and may return HTTP 202 when an approval request is queued. '
-        'Terminal sessions (completed/rejected/cancelled/expired) cannot be updated. '
+        'expires_at is only honored for pending sessions—for approved/active sessions '
+        'it is ignored, so use work_session_extend instead. '
+        'Terminal sessions (completed/rejected/cancelled/expired/revoked) cannot be updated. '
         'Related: work_session_get (check status), work_session_extend (extend expiry only).'
     ),
     annotations=IDEMPOTENT_WRITE,
