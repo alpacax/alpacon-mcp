@@ -6,10 +6,59 @@ import pytest
 
 from tools.command_tools import (
     _submit_command,
+    _sudo_denial_hint,
     execute_command,
     execute_command_multi_server,
     list_commands,
 )
+
+
+class TestSudoDenialHint:
+    """The exec-sudo denial code -> agent guidance mapping."""
+
+    def test_presence_required(self):
+        out = {
+            'result': 'Alpacon denied this sudo command '
+            '(SUDO_PRESENCE_REQUIRED).\n'
+        }
+        hint = _sudo_denial_hint(out)
+        assert hint is not None
+        assert 'step-up' in hint
+
+    def test_approval_required(self):
+        out = {
+            'result': 'Alpacon denied this sudo command '
+            '(SUDO_APPROVAL_REQUIRED).\n'
+        }
+        hint = _sudo_denial_hint(out)
+        assert hint is not None
+        assert 'approv' in hint
+
+    def test_risk_denied_no_score_disclosed(self):
+        out = {
+            'result': 'Alpacon denied this sudo command (SUDO_RISK_DENIED).\n'
+        }
+        hint = _sudo_denial_hint(out)
+        assert hint is not None
+        assert 'risk' in hint
+        # Disclosure: never echo a score / reasoning, only the category.
+        assert 'score' not in hint
+
+    def test_no_denial(self):
+        assert _sudo_denial_hint({'result': 'uid=0(root)\n'}) is None
+        assert _sudo_denial_hint({'result': ''}) is None
+        assert _sudo_denial_hint({'result': None}) is None
+        assert _sudo_denial_hint({}) is None
+
+    def test_bare_code_is_not_a_false_positive(self):
+        # A command that merely prints the code (no denial line) is not a hit.
+        assert _sudo_denial_hint({'result': 'echo SUDO_RISK_DENIED\n'}) is None
+
+    def test_forged_parenthesized_token_is_not_a_false_positive(self):
+        # A command whose own output prints the parenthesized token, without the
+        # plugin's denial line, must not forge a hint (the command succeeded).
+        forged = {'result': 'echo "(SUDO_RISK_DENIED)"\n(SUDO_RISK_DENIED)\n'}
+        assert _sudo_denial_hint(forged) is None
 
 
 @pytest.fixture
@@ -346,6 +395,67 @@ class TestExecuteCommand:
 
         assert result['status'] == 'error'
         assert 'No token found' in result['message']
+
+    @pytest.mark.asyncio
+    async def test_surfaces_sudo_hint_on_denial(
+        self, mock_http_client, mock_token_manager
+    ):
+        # A finished command whose output carries a parenthesized denial code
+        # must get a category-level sudo_hint attached to the response.
+        with (
+            patch('tools.command_tools._submit_command') as mock_submit,
+            patch('tools.command_tools._get_command_result') as mock_poll,
+        ):
+            mock_submit.return_value = {'id': 'cmd-789'}
+            mock_poll.return_value = {
+                'id': 'cmd-789',
+                'status': 'completed',
+                'exit_code': 1,
+                'result': 'Alpacon denied this sudo command '
+                '(SUDO_PRESENCE_REQUIRED).\n',
+                'finished_at': '2024-01-01T00:00:01Z',
+            }
+
+            result = await execute_command(
+                server_id='550e8400-e29b-41d4-a716-446655440001',
+                command='sudo systemctl restart nginx',
+                workspace='testworkspace',
+                timeout=10,
+            )
+
+            assert result['status'] == 'success'
+            assert 'sudo_hint' in result
+            assert 'step-up' in result['sudo_hint']
+            # Disclosure guard: never echo a score/reasoning, only the category.
+            assert 'score' not in result['sudo_hint']
+
+    @pytest.mark.asyncio
+    async def test_no_sudo_hint_when_no_denial(
+        self, mock_http_client, mock_token_manager
+    ):
+        # A clean command must not carry a sudo_hint field.
+        with (
+            patch('tools.command_tools._submit_command') as mock_submit,
+            patch('tools.command_tools._get_command_result') as mock_poll,
+        ):
+            mock_submit.return_value = {'id': 'cmd-790'}
+            mock_poll.return_value = {
+                'id': 'cmd-790',
+                'status': 'completed',
+                'exit_code': 0,
+                'result': 'uid=0(root)\n',
+                'finished_at': '2024-01-01T00:00:01Z',
+            }
+
+            result = await execute_command(
+                server_id='550e8400-e29b-41d4-a716-446655440001',
+                command='id',
+                workspace='testworkspace',
+                timeout=10,
+            )
+
+            assert result['status'] == 'success'
+            assert 'sudo_hint' not in result
 
 
 class TestSubmitCommandWithSession:
