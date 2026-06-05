@@ -382,6 +382,66 @@ class TestExecuteCommand:
         assert result['status'] == 'error'
         assert 'No token found' in result['message']
 
+    @pytest.mark.asyncio
+    async def test_surfaces_sudo_hint_on_denial(
+        self, mock_http_client, mock_token_manager
+    ):
+        # A finished command whose output carries a parenthesized denial code
+        # must get a category-level sudo_hint attached to the response.
+        with (
+            patch('tools.command_tools._submit_command') as mock_submit,
+            patch('tools.command_tools._get_command_result') as mock_poll,
+        ):
+            mock_submit.return_value = {'id': 'cmd-789'}
+            mock_poll.return_value = {
+                'id': 'cmd-789',
+                'status': 'completed',
+                'exit_code': 1,
+                'result': 'sudo: Permission denied (SUDO_PRESENCE_REQUIRED)\n',
+                'finished_at': '2024-01-01T00:00:01Z',
+            }
+
+            result = await execute_command(
+                server_id='550e8400-e29b-41d4-a716-446655440001',
+                command='sudo systemctl restart nginx',
+                workspace='testworkspace',
+                timeout=10,
+            )
+
+            assert result['status'] == 'success'
+            assert 'sudo_hint' in result
+            assert 'step-up' in result['sudo_hint']
+            # Disclosure guard: never echo a score/reasoning, only the category.
+            assert 'score' not in result['sudo_hint']
+
+    @pytest.mark.asyncio
+    async def test_no_sudo_hint_when_no_denial(
+        self, mock_http_client, mock_token_manager
+    ):
+        # A clean command must not carry a sudo_hint field.
+        with (
+            patch('tools.command_tools._submit_command') as mock_submit,
+            patch('tools.command_tools._get_command_result') as mock_poll,
+        ):
+            mock_submit.return_value = {'id': 'cmd-790'}
+            mock_poll.return_value = {
+                'id': 'cmd-790',
+                'status': 'completed',
+                'exit_code': 0,
+                'result': 'uid=0(root)\n',
+                'finished_at': '2024-01-01T00:00:01Z',
+            }
+
+            result = await execute_command(
+                server_id='550e8400-e29b-41d4-a716-446655440001',
+                command='id',
+                workspace='testworkspace',
+                timeout=10,
+            )
+
+            assert result['status'] == 'success'
+            assert 'sudo_hint' not in result
+
 
 class TestSubmitCommandWithSession:
     """Test _submit_command forwards work_session to API payload."""

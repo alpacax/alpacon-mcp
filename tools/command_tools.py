@@ -16,8 +16,10 @@ _SUDO_DENIAL_HINTS: tuple[tuple[str, str], ...] = (
     (
         'SUDO_NO_WORKSESSION_POLICY',
         'sudo was denied: this command is not covered by an MFA-bypass policy '
-        'in the Work Session. Add it (work_session update with the sudo command) '
-        'and re-run.',
+        'in the Work Session. There is no MCP tool to add one—a human must add '
+        'the command to the Work Session sudo policy (via the Alpacon web '
+        "console or the CLI's 'work-session update --sudo'). Re-run once it is "
+        'added.',
     ),
     (
         'SUDO_PRESENCE_REQUIRED',
