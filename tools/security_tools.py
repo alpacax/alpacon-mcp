@@ -7,29 +7,21 @@ from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ_ONLY
 
-def _build_acl_patch_data(
-    effect: str | None,
-    users: list[str] | None,
-    groups: list[str] | None,
-    servers: list[str] | None,
-    description: str | None,
-    priority: int | None,
-) -> dict[str, Any]:
-    """Build partial-update payload for any ACL type from the six shared fields."""
-    data: dict[str, Any] = {}
-    if effect is not None:
-        data['effect'] = effect
-    if users is not None:
-        data['users'] = users
-    if groups is not None:
-        data['groups'] = groups
-    if servers is not None:
-        data['servers'] = servers
-    if description is not None:
-        data['description'] = description
-    if priority is not None:
-        data['priority'] = priority
-    return data
+VALID_BULK_ACTIONS = frozenset({'add', 'remove'})
+VALID_FILE_ACL_ACTIONS = ('upload', 'download', '*')
+_FILE_ACL_ACTIONS_STR = ', '.join(f"'{a}'" for a in VALID_FILE_ACL_ACTIONS)
+
+_API_COMMAND_ACL = '/api/security/command-acl/'
+_API_SERVER_ACL = '/api/security/server-acl/'
+_API_FILE_ACL = '/api/security/file-acl/'
+_API_SERVER_ACL_BULK = f'{_API_SERVER_ACL}bulk/'
+_API_SERVER_ACL_BULK_DELETE = f'{_API_SERVER_ACL}bulk/delete/'
+
+# Mirrors the server-side bulk serializer cap (servers list max_length=100)
+_BULK_MAX_SERVERS = 100
+
+_BOTH_TOKENS_ERROR = 'Provide either api_token_id or service_token_id, not both'
+_TOKEN_REQUIRED_ERROR = 'Either api_token_id or service_token_id must be provided'
 
 
 # ===============================
@@ -45,6 +37,8 @@ def _build_acl_patch_data(
 async def list_command_acls(
     workspace: str,
     region: str = '',
+    api_token_id: str | None = None,
+    service_token_id: str | None = None,
     page: int | None = None,
     page_size: int | None = None,
     **kwargs,
@@ -54,15 +48,24 @@ async def list_command_acls(
     Args:
         workspace: Workspace name. Required parameter
         region: Region (ap1, us1, eu1). Auto-detected if not provided
+        api_token_id: Filter by API token ID (optional)
+        service_token_id: Filter by service token ID (optional)
         page: Page number for pagination (optional)
         page_size: Number of items per page (optional)
 
     Returns:
         Command ACL rules list response
     """
+    if api_token_id is not None and service_token_id is not None:
+        return error_response(_BOTH_TOKENS_ERROR)
+
     token = kwargs.get('token')
 
-    params = {}
+    params: dict[str, Any] = {}
+    if api_token_id is not None:
+        params['api_token'] = api_token_id
+    if service_token_id is not None:
+        params['service_token'] = service_token_id
     if page is not None:
         params['page'] = page
     if page_size is not None:
@@ -71,7 +74,7 @@ async def list_command_acls(
     result = await http_client.get(
         region=region,
         workspace=workspace,
-        endpoint='/api/security/command-acl/',
+        endpoint=_API_COMMAND_ACL,
         token=token,
         params=params,
     )
@@ -80,60 +83,57 @@ async def list_command_acls(
 
 
 @mcp_tool_handler(
-    description='Create a command ACL rule to allow or deny command execution. When to use: granting or restricting command execution permissions. Related: list_command_acls (view existing), update_command_acl (modify), delete_command_acl (remove). Note: Higher priority values take precedence.',
+    description='Create a command ACL rule to allow a token to execute specific commands. When to use: granting command execution permissions to an API or service token. Related: list_command_acls (view existing), update_command_acl (modify), delete_command_acl (remove).',
     annotations=ADDITIVE,
     meta={'anthropic/searchHint': 'command acl create permission allow deny'},
 )
 async def create_command_acl(
     workspace: str,
-    effect: str,
-    command_pattern: str,
-    users: list[str] | None = None,
-    groups: list[str] | None = None,
-    servers: list[str] | None = None,
-    description: str | None = None,
-    priority: int | None = None,
+    command: str,
+    api_token_id: str | None = None,
+    service_token_id: str | None = None,
+    username: str = '',
+    groupname: str = '',
     region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
     """Create a command ACL rule.
 
+    Exactly one of api_token_id or service_token_id must be provided.
+
     Args:
         workspace: Workspace name. Required parameter
-        effect: ACL effect - 'allow' or 'deny'
-        command_pattern: Command pattern to match (e.g., 'rm -rf *', 'sudo *')
-        users: List of user IDs this rule applies to (optional)
-        groups: List of group IDs this rule applies to (optional)
-        servers: List of server IDs this rule applies to (optional)
-        description: Description of the ACL rule (optional)
-        priority: Rule priority - higher values take precedence (optional)
+        command: Command pattern to allow (e.g., 'docker *', 'ls -la'). Wildcards (*) supported
+        api_token_id: API token ID this rule applies to (mutually exclusive with service_token_id)
+        service_token_id: Service token ID this rule applies to (mutually exclusive with api_token_id)
+        username: System username restriction. Empty = token owner only, '*' = any user (optional)
+        groupname: System groupname restriction. Empty = no restriction (any group), exact name to restrict (optional)
         region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
         Command ACL creation response
     """
+    if api_token_id is None and service_token_id is None:
+        return error_response(_TOKEN_REQUIRED_ERROR)
+    if api_token_id is not None and service_token_id is not None:
+        return error_response(_BOTH_TOKENS_ERROR)
+
     token = kwargs.get('token')
 
     acl_data: dict[str, Any] = {
-        'effect': effect,
-        'command_pattern': command_pattern,
+        'command': command,
+        'username': username,
+        'groupname': groupname,
     }
-
-    if users is not None:
-        acl_data['users'] = users
-    if groups is not None:
-        acl_data['groups'] = groups
-    if servers is not None:
-        acl_data['servers'] = servers
-    if description is not None:
-        acl_data['description'] = description
-    if priority is not None:
-        acl_data['priority'] = priority
+    if api_token_id is not None:
+        acl_data['token'] = api_token_id
+    else:
+        acl_data['service_token'] = service_token_id
 
     result = await http_client.post(
         region=region,
         workspace=workspace,
-        endpoint='/api/security/command-acl/',
+        endpoint=_API_COMMAND_ACL,
         token=token,
         data=acl_data,
     )
@@ -142,35 +142,29 @@ async def create_command_acl(
 
 
 @mcp_tool_handler(
-    description='Update an existing command ACL rule. Related: list_command_acls (find rule ID).',
+    description='Update an existing command ACL rule. Related: list_command_acls (find rule ID), delete_command_acl (remove rule).',
     annotations=IDEMPOTENT_WRITE,
     meta={'anthropic/searchHint': 'command acl update modify'},
 )
 async def update_command_acl(
     acl_id: str,
     workspace: str,
-    effect: str | None = None,
-    command_pattern: str | None = None,
-    users: list[str] | None = None,
-    groups: list[str] | None = None,
-    servers: list[str] | None = None,
-    description: str | None = None,
-    priority: int | None = None,
+    command: str | None = None,
+    username: str | None = None,
+    groupname: str | None = None,
     region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
     """Update an existing command ACL rule.
 
+    Note: This tool does not support changing the token binding. Delete and recreate to rebind to a different token.
+
     Args:
         acl_id: Command ACL rule ID to update
         workspace: Workspace name. Required parameter
-        effect: ACL effect - 'allow' or 'deny' (optional)
-        command_pattern: Command pattern to match (optional)
-        users: List of user IDs this rule applies to (optional)
-        groups: List of group IDs this rule applies to (optional)
-        servers: List of server IDs this rule applies to (optional)
-        description: Description of the ACL rule (optional)
-        priority: Rule priority (optional)
+        command: Command pattern to allow (optional)
+        username: System username restriction (optional)
+        groupname: System groupname restriction (optional)
         region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
@@ -178,9 +172,13 @@ async def update_command_acl(
     """
     token = kwargs.get('token')
 
-    update_data = _build_acl_patch_data(effect, users, groups, servers, description, priority)
-    if command_pattern is not None:
-        update_data['command_pattern'] = command_pattern
+    update_data: dict[str, Any] = {}
+    if command is not None:
+        update_data['command'] = command
+    if username is not None:
+        update_data['username'] = username
+    if groupname is not None:
+        update_data['groupname'] = groupname
 
     if not update_data:
         return error_response('No update data provided')
@@ -188,7 +186,7 @@ async def update_command_acl(
     result = await http_client.patch(
         region=region,
         workspace=workspace,
-        endpoint=f'/api/security/command-acl/{acl_id}/',
+        endpoint=f'{_API_COMMAND_ACL}{acl_id}/',
         token=token,
         data=update_data,
     )
@@ -221,7 +219,7 @@ async def delete_command_acl(
     result = await http_client.delete(
         region=region,
         workspace=workspace,
-        endpoint=f'/api/security/command-acl/{acl_id}/',
+        endpoint=f'{_API_COMMAND_ACL}{acl_id}/',
         token=token,
     )
 
@@ -236,13 +234,15 @@ async def delete_command_acl(
 
 
 @mcp_tool_handler(
-    description='List server ACL rules that control which users can access which servers. When to use: checking server access permissions. Related: create_server_acl, list_command_acls (command permissions), list_file_acls (file permissions).',
+    description='List server ACL rules that control which servers a token can access. When to use: checking server access permissions. Related: create_server_acl, list_command_acls (command permissions), list_file_acls (file permissions).',
     annotations=READ_ONLY,
     meta={'anthropic/searchHint': 'server acl access permission rules'},
 )
 async def list_server_acls(
     workspace: str,
     region: str = '',
+    api_token_id: str | None = None,
+    service_token_id: str | None = None,
     page: int | None = None,
     page_size: int | None = None,
     **kwargs,
@@ -252,15 +252,24 @@ async def list_server_acls(
     Args:
         workspace: Workspace name. Required parameter
         region: Region (ap1, us1, eu1). Auto-detected if not provided
+        api_token_id: Filter by API token ID (optional)
+        service_token_id: Filter by service token ID (optional)
         page: Page number for pagination (optional)
         page_size: Number of items per page (optional)
 
     Returns:
         Server ACL rules list response
     """
+    if api_token_id is not None and service_token_id is not None:
+        return error_response(_BOTH_TOKENS_ERROR)
+
     token = kwargs.get('token')
 
-    params = {}
+    params: dict[str, Any] = {}
+    if api_token_id is not None:
+        params['api_token'] = api_token_id
+    if service_token_id is not None:
+        params['service_token'] = service_token_id
     if page is not None:
         params['page'] = page
     if page_size is not None:
@@ -269,7 +278,7 @@ async def list_server_acls(
     result = await http_client.get(
         region=region,
         workspace=workspace,
-        endpoint='/api/security/server-acl/',
+        endpoint=_API_SERVER_ACL,
         token=token,
         params=params,
     )
@@ -278,55 +287,50 @@ async def list_server_acls(
 
 
 @mcp_tool_handler(
-    description='Create a server ACL rule to control server access. When to use: granting or restricting server access for users or groups. Related: list_server_acls (view existing). Note: Higher priority values take precedence.',
+    description='Create a server ACL rule granting a token access to a specific server. When to use: allowing an API or service token to execute commands on a server. Related: list_server_acls (view existing), bulk_server_acl (add multiple at once).',
     annotations=ADDITIVE,
-    meta={'anthropic/searchHint': 'server acl create permission allow deny'},
+    meta={'anthropic/searchHint': 'server acl create permission allow access'},
 )
 async def create_server_acl(
     workspace: str,
-    effect: str,
-    users: list[str] | None = None,
-    groups: list[str] | None = None,
-    servers: list[str] | None = None,
-    description: str | None = None,
-    priority: int | None = None,
+    server_id: str,
+    api_token_id: str | None = None,
+    service_token_id: str | None = None,
     region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
     """Create a server ACL rule.
 
+    Exactly one of api_token_id or service_token_id must be provided.
+    Each rule grants the token access to exactly one server.
+
     Args:
         workspace: Workspace name. Required parameter
-        effect: ACL effect - 'allow' or 'deny'
-        users: List of user IDs this rule applies to (optional)
-        groups: List of group IDs this rule applies to (optional)
-        servers: List of server IDs this rule applies to (optional)
-        description: Description of the ACL rule (optional)
-        priority: Rule priority - higher values take precedence (optional)
+        server_id: Server UUID to grant access to
+        api_token_id: API token ID to grant access (mutually exclusive with service_token_id)
+        service_token_id: Service token ID to grant access (mutually exclusive with api_token_id)
         region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
         Server ACL creation response
     """
+    if api_token_id is None and service_token_id is None:
+        return error_response(_TOKEN_REQUIRED_ERROR)
+    if api_token_id is not None and service_token_id is not None:
+        return error_response(_BOTH_TOKENS_ERROR)
+
     token = kwargs.get('token')
 
-    acl_data: dict[str, Any] = {'effect': effect}
-
-    if users is not None:
-        acl_data['users'] = users
-    if groups is not None:
-        acl_data['groups'] = groups
-    if servers is not None:
-        acl_data['servers'] = servers
-    if description is not None:
-        acl_data['description'] = description
-    if priority is not None:
-        acl_data['priority'] = priority
+    acl_data: dict[str, Any] = {'server': server_id}
+    if api_token_id is not None:
+        acl_data['token'] = api_token_id
+    else:
+        acl_data['service_token'] = service_token_id
 
     result = await http_client.post(
         region=region,
         workspace=workspace,
-        endpoint='/api/security/server-acl/',
+        endpoint=_API_SERVER_ACL,
         token=token,
         data=acl_data,
     )
@@ -335,41 +339,50 @@ async def create_server_acl(
 
 
 @mcp_tool_handler(
-    description='Update an existing server ACL rule. Related: list_server_acls (find rule ID), delete_server_acl (remove rule). Note: Higher priority values take precedence.',
+    description='Update an existing server ACL rule. Related: list_server_acls (find rule ID), delete_server_acl (remove rule).',
     annotations=IDEMPOTENT_WRITE,
     meta={'anthropic/searchHint': 'server acl update modify'},
 )
 async def update_server_acl(
     acl_id: str,
     workspace: str,
-    effect: str | None = None,
-    users: list[str] | None = None,
-    groups: list[str] | None = None,
-    servers: list[str] | None = None,
-    description: str | None = None,
-    priority: int | None = None,
+    server_id: str | None = None,
+    api_token_id: str | None = None,
+    service_token_id: str | None = None,
     region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
     """Update an existing server ACL rule.
 
+    Note: Token binding can be updated by providing api_token_id or service_token_id.
+
     Args:
         acl_id: Server ACL rule ID to update
         workspace: Workspace name. Required parameter
-        effect: ACL effect - 'allow' or 'deny' (optional)
-        users: List of user IDs this rule applies to (optional)
-        groups: List of group IDs this rule applies to (optional)
-        servers: List of server IDs this rule applies to (optional)
-        description: Description of the ACL rule (optional)
-        priority: Rule priority (optional)
+        server_id: New server UUID (optional)
+        api_token_id: New API token ID to rebind this rule to (optional)
+        service_token_id: New service token ID to rebind this rule to (optional)
         region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
         Server ACL update response
     """
+    if api_token_id is not None and service_token_id is not None:
+        return error_response(_BOTH_TOKENS_ERROR)
+
     token = kwargs.get('token')
 
-    update_data = _build_acl_patch_data(effect, users, groups, servers, description, priority)
+    update_data: dict[str, Any] = {}
+    if server_id is not None:
+        update_data['server'] = server_id
+    # When rebinding, null the opposing field explicitly: the server enforces
+    # exactly-one-token-type, and PATCH keeps the old binding otherwise.
+    if api_token_id is not None:
+        update_data['token'] = api_token_id
+        update_data['service_token'] = None
+    if service_token_id is not None:
+        update_data['service_token'] = service_token_id
+        update_data['token'] = None
 
     if not update_data:
         return error_response('No update data provided')
@@ -377,7 +390,7 @@ async def update_server_acl(
     result = await http_client.patch(
         region=region,
         workspace=workspace,
-        endpoint=f'/api/security/server-acl/{acl_id}/',
+        endpoint=f'{_API_SERVER_ACL}{acl_id}/',
         token=token,
         data=update_data,
     )
@@ -410,7 +423,7 @@ async def delete_server_acl(
     result = await http_client.delete(
         region=region,
         workspace=workspace,
-        endpoint=f'/api/security/server-acl/{acl_id}/',
+        endpoint=f'{_API_SERVER_ACL}{acl_id}/',
         token=token,
     )
 
@@ -420,44 +433,68 @@ async def delete_server_acl(
 
 
 @mcp_tool_handler(
-    description='Bulk add or remove server ACL entries in a single operation. When to use: applying multiple server ACL changes at once. Related: list_server_acls (view existing), create_server_acl (single create).',
+    description='Bulk add or remove server ACL entries for multiple servers in a single operation. When to use: applying the same token access to many servers at once. Related: list_server_acls (view existing), create_server_acl (single create).',
     annotations=DESTRUCTIVE,
     meta={'anthropic/searchHint': 'server acl bulk add remove multiple'},
 )
 async def bulk_server_acl(
     workspace: str,
     action: str,
-    acl_list: list[dict],
+    server_ids: list[str],
+    api_token_id: str | None = None,
+    service_token_id: str | None = None,
     region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
     """Bulk add or remove server ACL entries.
 
+    Exactly one of api_token_id or service_token_id must be provided.
+
     Args:
         workspace: Workspace name. Required parameter
-        action: Bulk action - 'add' or 'remove'
-        acl_list: List of ACL entry dicts.
-                  For action='add': each dict should contain keys matching create_server_acl fields (effect, users, groups, servers, etc.).
-                  For action='remove': each dict should contain key 'id' (ACL rule ID to remove).
+        action: Bulk action - 'add' (grant access) or 'remove' (revoke access)
+        server_ids: List of server UUIDs to add or remove access for (1-100 items)
+        api_token_id: API token ID to operate on (mutually exclusive with service_token_id)
+        service_token_id: Service token ID to operate on (mutually exclusive with api_token_id)
         region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
         Bulk server ACL operation response
     """
-    if action not in ('add', 'remove'):
+    if action not in VALID_BULK_ACTIONS:
         return error_response(f"Invalid action '{action}'. Must be 'add' or 'remove'.")
+    if not server_ids:
+        return error_response('server_ids must not be empty')
+    if len(server_ids) > _BULK_MAX_SERVERS:
+        return error_response(
+            f'server_ids must contain at most {_BULK_MAX_SERVERS} items'
+        )
+    if api_token_id is None and service_token_id is None:
+        return error_response(_TOKEN_REQUIRED_ERROR)
+    if api_token_id is not None and service_token_id is not None:
+        return error_response(_BOTH_TOKENS_ERROR)
 
     token = kwargs.get('token')
+
+    body: dict[str, Any] = {'servers': server_ids}
+    if api_token_id is not None:
+        body['token'] = api_token_id
+    else:
+        body['service_token'] = service_token_id
+
+    endpoint = _API_SERVER_ACL_BULK if action == 'add' else _API_SERVER_ACL_BULK_DELETE
 
     result = await http_client.post(
         region=region,
         workspace=workspace,
-        endpoint='/api/security/server-acl/bulk/',
+        endpoint=endpoint,
         token=token,
-        data={'action': action, 'acls': acl_list},
+        data=body,
     )
 
-    return success_response(data=result, action=action, region=region, workspace=workspace)
+    return success_response(
+        data=result, action=action, region=region, workspace=workspace
+    )
 
 
 # ===============================
@@ -473,6 +510,8 @@ async def bulk_server_acl(
 async def list_file_acls(
     workspace: str,
     region: str = '',
+    api_token_id: str | None = None,
+    service_token_id: str | None = None,
     page: int | None = None,
     page_size: int | None = None,
     **kwargs,
@@ -482,15 +521,24 @@ async def list_file_acls(
     Args:
         workspace: Workspace name. Required parameter
         region: Region (ap1, us1, eu1). Auto-detected if not provided
+        api_token_id: Filter by API token ID (optional)
+        service_token_id: Filter by service token ID (optional)
         page: Page number for pagination (optional)
         page_size: Number of items per page (optional)
 
     Returns:
         File ACL rules list response
     """
+    if api_token_id is not None and service_token_id is not None:
+        return error_response(_BOTH_TOKENS_ERROR)
+
     token = kwargs.get('token')
 
-    params = {}
+    params: dict[str, Any] = {}
+    if api_token_id is not None:
+        params['api_token'] = api_token_id
+    if service_token_id is not None:
+        params['service_token'] = service_token_id
     if page is not None:
         params['page'] = page
     if page_size is not None:
@@ -499,7 +547,7 @@ async def list_file_acls(
     result = await http_client.get(
         region=region,
         workspace=workspace,
-        endpoint='/api/security/file-acl/',
+        endpoint=_API_FILE_ACL,
         token=token,
         params=params,
     )
@@ -508,60 +556,66 @@ async def list_file_acls(
 
 
 @mcp_tool_handler(
-    description='Create a file ACL rule to control file access. When to use: granting or restricting file transfer permissions for specific paths. Related: list_file_acls (view existing). Note: Higher priority values take precedence.',
+    description='Create a file ACL rule to control file upload/download access. When to use: granting or restricting file transfer permissions for specific paths. Related: list_file_acls (view existing), update_file_acl (modify), delete_file_acl (remove).',
     annotations=ADDITIVE,
-    meta={'anthropic/searchHint': 'file acl create permission allow deny'},
+    meta={
+        'anthropic/searchHint': 'file acl create permission allow deny path upload download'
+    },
 )
 async def create_file_acl(
     workspace: str,
-    effect: str,
-    file_pattern: str,
-    users: list[str] | None = None,
-    groups: list[str] | None = None,
-    servers: list[str] | None = None,
-    description: str | None = None,
-    priority: int | None = None,
+    path: str,
+    action: str,
+    api_token_id: str | None = None,
+    service_token_id: str | None = None,
+    username: str = '',
+    groupname: str = '',
     region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
     """Create a file ACL rule.
 
+    Exactly one of api_token_id or service_token_id must be provided.
+
     Args:
         workspace: Workspace name. Required parameter
-        effect: ACL effect - 'allow' or 'deny'
-        file_pattern: File path pattern to match (e.g., '/etc/passwd', '/var/log/*')
-        users: List of user IDs this rule applies to (optional)
-        groups: List of group IDs this rule applies to (optional)
-        servers: List of server IDs this rule applies to (optional)
-        description: Description of the ACL rule (optional)
-        priority: Rule priority - higher values take precedence (optional)
+        path: File path pattern to match (e.g., '/etc/nginx/*', '/var/log/*.log'). Wildcards (*) supported
+        action: Allowed action - 'upload', 'download', or '*' (both)
+        api_token_id: API token ID this rule applies to (mutually exclusive with service_token_id)
+        service_token_id: Service token ID this rule applies to (mutually exclusive with api_token_id)
+        username: System username restriction. Empty = token owner only, '*' = any user (optional)
+        groupname: System groupname restriction. Empty = no restriction (any group), exact name to restrict (optional)
         region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
         File ACL creation response
     """
+    if action not in VALID_FILE_ACL_ACTIONS:
+        return error_response(
+            f"Invalid action '{action}'. Must be one of: {_FILE_ACL_ACTIONS_STR}."
+        )
+    if api_token_id is None and service_token_id is None:
+        return error_response(_TOKEN_REQUIRED_ERROR)
+    if api_token_id is not None and service_token_id is not None:
+        return error_response(_BOTH_TOKENS_ERROR)
+
     token = kwargs.get('token')
 
     acl_data: dict[str, Any] = {
-        'effect': effect,
-        'file_pattern': file_pattern,
+        'path': path,
+        'action': action,
+        'username': username,
+        'groupname': groupname,
     }
-
-    if users is not None:
-        acl_data['users'] = users
-    if groups is not None:
-        acl_data['groups'] = groups
-    if servers is not None:
-        acl_data['servers'] = servers
-    if description is not None:
-        acl_data['description'] = description
-    if priority is not None:
-        acl_data['priority'] = priority
+    if api_token_id is not None:
+        acl_data['token'] = api_token_id
+    else:
+        acl_data['service_token'] = service_token_id
 
     result = await http_client.post(
         region=region,
         workspace=workspace,
-        endpoint='/api/security/file-acl/',
+        endpoint=_API_FILE_ACL,
         token=token,
         data=acl_data,
     )
@@ -570,45 +624,52 @@ async def create_file_acl(
 
 
 @mcp_tool_handler(
-    description='Update an existing file ACL rule. Related: list_file_acls (find rule ID), delete_file_acl (remove rule). Note: Higher priority values take precedence.',
+    description='Update an existing file ACL rule. Related: list_file_acls (find rule ID), delete_file_acl (remove rule).',
     annotations=IDEMPOTENT_WRITE,
-    meta={'anthropic/searchHint': 'file acl update modify'},
+    meta={'anthropic/searchHint': 'file acl update modify path action'},
 )
 async def update_file_acl(
     acl_id: str,
     workspace: str,
-    effect: str | None = None,
-    file_pattern: str | None = None,
-    users: list[str] | None = None,
-    groups: list[str] | None = None,
-    servers: list[str] | None = None,
-    description: str | None = None,
-    priority: int | None = None,
+    path: str | None = None,
+    action: str | None = None,
+    username: str | None = None,
+    groupname: str | None = None,
     region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
     """Update an existing file ACL rule.
 
+    Note: This tool does not support changing the token binding. Delete and recreate to rebind to a different token.
+
     Args:
         acl_id: File ACL rule ID to update
         workspace: Workspace name. Required parameter
-        effect: ACL effect - 'allow' or 'deny' (optional)
-        file_pattern: File path pattern to match (optional)
-        users: List of user IDs this rule applies to (optional)
-        groups: List of group IDs this rule applies to (optional)
-        servers: List of server IDs this rule applies to (optional)
-        description: Description of the ACL rule (optional)
-        priority: Rule priority (optional)
+        path: New file path pattern (optional)
+        action: New allowed action - 'upload', 'download', or '*' (optional)
+        username: System username restriction (optional)
+        groupname: System groupname restriction (optional)
         region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
         File ACL update response
     """
+    if action is not None and action not in VALID_FILE_ACL_ACTIONS:
+        return error_response(
+            f"Invalid action '{action}'. Must be one of: {_FILE_ACL_ACTIONS_STR}."
+        )
+
     token = kwargs.get('token')
 
-    update_data = _build_acl_patch_data(effect, users, groups, servers, description, priority)
-    if file_pattern is not None:
-        update_data['file_pattern'] = file_pattern
+    update_data: dict[str, Any] = {}
+    if path is not None:
+        update_data['path'] = path
+    if action is not None:
+        update_data['action'] = action
+    if username is not None:
+        update_data['username'] = username
+    if groupname is not None:
+        update_data['groupname'] = groupname
 
     if not update_data:
         return error_response('No update data provided')
@@ -616,7 +677,7 @@ async def update_file_acl(
     result = await http_client.patch(
         region=region,
         workspace=workspace,
-        endpoint=f'/api/security/file-acl/{acl_id}/',
+        endpoint=f'{_API_FILE_ACL}{acl_id}/',
         token=token,
         data=update_data,
     )
@@ -649,7 +710,7 @@ async def delete_file_acl(
     result = await http_client.delete(
         region=region,
         workspace=workspace,
-        endpoint=f'/api/security/file-acl/{acl_id}/',
+        endpoint=f'{_API_FILE_ACL}{acl_id}/',
         token=token,
     )
 

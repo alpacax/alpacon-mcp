@@ -306,9 +306,14 @@ All validators are defined in `utils/error_handler.py` and return user-friendly 
 - `update_command_acl`: Update an existing command ACL rule
 - `delete_command_acl`: Delete a command ACL rule
 - `list_server_acls`: List server ACL rules
-- `create_server_acl`: Create a server ACL rule (control server access)
+- `create_server_acl`: Create a server ACL rule granting a token access to a server
+- `update_server_acl`: Update an existing server ACL rule
+- `delete_server_acl`: Delete a server ACL rule
+- `bulk_server_acl`: Bulk add or remove server ACL entries for multiple servers
 - `list_file_acls`: List file ACL rules
-- `create_file_acl`: Create a file ACL rule (control file access)
+- `create_file_acl`: Create a file ACL rule (control file upload/download access)
+- `update_file_acl`: Update an existing file ACL rule
+- `delete_file_acl`: Delete a file ACL rule
 
 ### 📋 Events & logging
 - `list_events`: List server events
