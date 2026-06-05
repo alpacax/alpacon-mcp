@@ -27,6 +27,7 @@ from tools.server_tools import (
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
 SERVER_UUID = '550e8400-e29b-41d4-a716-446655440001'
+IAM_USER_UUID = '550e8400-e29b-41d4-a716-446655440002'
 
 
 class TestServerToolsEndToEnd:
@@ -187,7 +188,7 @@ class TestIAMToolsEndToEnd:
         patched_http_client.set_handler(handler)
 
         result = await update_iam_user(
-            user_id='user-001',
+            user_id=IAM_USER_UUID,
             workspace='production',
             email='updated@example.com',
             region='ap1',
@@ -206,13 +207,13 @@ class TestIAMToolsEndToEnd:
 
         def handler(request: httpx.Request) -> httpx.Response:
             captured_method.append(request.method)
-            assert '/api/iam/users/user-001/' in str(request.url)
+            assert f'/api/iam/users/{IAM_USER_UUID}/' in str(request.url)
             return httpx.Response(204, text='')
 
         patched_http_client.set_handler(handler)
 
         result = await delete_iam_user(
-            user_id='user-001', workspace='production', region='ap1'
+            user_id=IAM_USER_UUID, workspace='production', region='ap1'
         )
 
         assert result['status'] == 'success'

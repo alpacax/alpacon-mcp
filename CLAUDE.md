@@ -338,15 +338,33 @@ All validators are defined in `utils/error_handler.py` and return user-friendly 
 **User management**:
 - `list_iam_users`: List all IAM users in workspace with pagination support
 - `get_iam_user`: Get detailed information about a specific IAM user
-- `create_iam_user`: Create new IAM user with groups assignment
-- `update_iam_user`: Update existing IAM user (email, name, active status, groups)
+- `create_iam_user`: Create new IAM user (username, email, name, active status)
+- `update_iam_user`: Update existing IAM user (email, name, active status)
 - `delete_iam_user`: Delete IAM user from workspace
+- `invite_workspace_user`: Send an email invitation to join the workspace (Auth0-enabled deployments only)
 
 **Group management**:
 - `list_iam_groups`: List all IAM groups in workspace with pagination support
-- `create_iam_group`: Create new IAM group
+- `create_iam_group`: Create new IAM group (name, display name, description)
+- `get_iam_group`: Get detailed information about a specific IAM group
+- `update_iam_group`: Update an IAM group (display name, description; group name is immutable)
+- `delete_iam_group`: Permanently delete an IAM group
 
-**IAM architecture**: Basic identity management supporting users and groups with workspace-level isolation. Group-based permission management.
+**Membership management**:
+- `list_iam_memberships`: List group memberships, optionally filtered by group
+- `add_iam_member`: Add a user to a group with a role (member, manager, or owner)
+- `remove_iam_member`: Remove a membership by membership ID
+
+**Application management** (machine service accounts):
+- `list_iam_applications`: List IAM applications with pagination support
+- `create_iam_application`: Create an IAM application (name, description, service type)
+- `get_iam_application`: Get detailed information about a specific application
+- `update_iam_application`: Update an application (name, description)
+- `delete_iam_application`: Permanently delete an application
+- `assign_application_system_users`: Bind system users to an application as service accounts
+- `unassign_application_system_users`: Release system users from an application
+
+**IAM architecture**: Identity management supporting users, groups, memberships, and machine applications with workspace-level isolation. Group membership is managed through the memberships API (users have no writable groups field).
 
 **Note**: Role and permission management endpoints are not currently implemented in the Alpacon server. The following tools have been removed:
 - ~~`list_iam_roles`~~: Not available
@@ -381,12 +399,35 @@ All validators are defined in `utils/error_handler.py` and return user-friendly 
 - `remove_python_package`: Remove a Python package entry
 
 ### 📜 Certificate management
+
+**Certificate authorities (CAs)**:
 - `list_certificate_authorities`: List certificate authorities
 - `create_certificate_authority`: Create a certificate authority
+- `get_certificate_authority`: Get detailed information about a specific CA by ID
+- `update_certificate_authority`: Update an existing CA (partial update of default_valid_days/max_valid_days/owner)
+- `delete_certificate_authority`: Permanently delete a CA by ID
+
+**Certificate signing requests (CSRs)**:
 - `list_sign_requests`: List certificate signing requests
 - `create_sign_request`: Create a certificate signing request
+- `get_sign_request`: Get detailed information about a specific CSR by ID
+- `approve_sign_request`: Approve a pending CSR so the CA issues the certificate
+- `deny_sign_request`: Deny a CSR (no requested-only guard, so any non-terminal CSR can be denied)
+- `retry_sign_request`: Retry a CSR stuck in the signing state
+- `delete_sign_request`: Cancel a pending (requested) CSR; it transitions to the canceled state
+
+**Certificates**:
 - `list_certificates`: List issued certificates
-- `revoke_certificate`: Revoke an issued certificate
+- `get_certificate`: Get detailed information about a specific issued certificate by ID
+- `revoke_certificate`: Create a revocation request for an issued certificate (auto-approved and revoked immediately when the caller is the CA owner or an admin; otherwise waits for approval)
+
+**Revocation requests**:
+- `list_revoke_requests`: List certificate revocation requests
+- `get_revoke_request`: Get detailed information about a specific revocation request by ID
+- `approve_revoke_request`: Approve a pending revocation request (revokes the certificate)
+- `deny_revoke_request`: Deny a pending revocation request
+- `retry_revoke_request`: Retry a revocation request stuck in the revoking state
+- `cancel_revoke_request`: Cancel a pending revocation request (certificate remains valid)
 
 ### ⚙️ Authentication & workspace
 - `list_workspaces`: List available workspaces
@@ -405,8 +446,9 @@ Alternative endpoints available in the server:
 ## Dependencies
 
 **Runtime dependencies** (from `pyproject.toml`):
-- `mcp[cli]>=1.9.4`: Model Context Protocol framework
-- `httpx>=0.25.0`: Async HTTP client
+- `mcp>=1.9.4`: Model Context Protocol framework
+- `httpx>=0.27.1`: Async HTTP client
+- `PyJWT[crypto]>=2.10.1`: JWT token verification
 
 **Development dependencies**:
 - `pytest>=7.0.0`: Testing framework
