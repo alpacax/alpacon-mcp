@@ -356,6 +356,8 @@ async def work_session_timeline(
     )
 
 
+# IDEMPOTENT_WRITE: repeated triggers converge—the server replies
+# already_exists instead of re-running a healthy or completed analysis.
 @mcp_tool_handler(
     description=(
         'Manually trigger AI security analysis for a terminal Work Session '
@@ -365,7 +367,7 @@ async def work_session_timeline(
         '(the server enforces a minimum age guard and never discards completed results). '
         'Related: list_session_analyses / get_session_analysis_detail (view results).'
     ),
-    annotations=ADDITIVE,
+    annotations=IDEMPOTENT_WRITE,
     meta={'anthropic/searchHint': 'work session analyze AI security analysis retry'},
 )
 async def work_session_analyze(
