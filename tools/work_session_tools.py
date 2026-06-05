@@ -2,10 +2,10 @@
 
 from typing import Any
 
-from utils.common import success_response, unwrap_http_result
+from utils.common import error_response, success_response, unwrap_http_result
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
-from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, READ_ONLY
+from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ_ONLY
 
 _API_SESSIONS = '/api/work-sessions/sessions/'
 
@@ -192,3 +192,73 @@ async def work_session_list(
         return err
 
     return success_response(data=result, region=region, workspace=workspace)
+
+
+@mcp_tool_handler(
+    description=(
+        'Update a Work Session (partial update). Only provided fields are sent. '
+        'Pending sessions update immediately; approved/active sessions go through '
+        'the modification flow and may return HTTP 202 when an approval request is queued. '
+        'Terminal sessions (completed/rejected/cancelled/expired) cannot be updated. '
+        'Related: work_session_get (check status), work_session_extend (extend expiry only).'
+    ),
+    annotations=IDEMPOTENT_WRITE,
+    meta={
+        'anthropic/searchHint': 'work session update modify scopes servers description'
+    },
+)
+async def work_session_update(
+    session_id: str,
+    workspace: str,
+    title: str | None = None,
+    description: str | None = None,
+    scopes: list[str] | None = None,
+    servers: list[str] | None = None,
+    expires_at: str | None = None,
+    region: str = '',
+    **kwargs,
+) -> dict[str, Any]:
+    """Partially update a Work Session."""
+    token = kwargs.get('token')
+
+    data: dict[str, str | list[str]] = {}
+    if title is not None:
+        data['title'] = title
+    if description is not None:
+        data['description'] = description
+    if scopes is not None:
+        data['scopes'] = scopes
+    if servers is not None:
+        data['servers'] = servers
+    if expires_at is not None:
+        data['expires_at'] = expires_at
+
+    if not data:
+        return error_response(
+            'No fields to update. Provide at least one of: '
+            'title, description, scopes, servers, expires_at.',
+            session_id=session_id,
+            region=region,
+            workspace=workspace,
+        )
+
+    result = await http_client.patch(
+        region=region,
+        workspace=workspace,
+        endpoint=f'{_API_SESSIONS}{session_id}/',
+        token=token,
+        data=data,
+    )
+
+    if err := unwrap_http_result(
+        result,
+        default_message='Failed to update Work Session',
+        session_id=session_id,
+        region=region,
+        workspace=workspace,
+    ):
+        return err
+
+    return success_response(
+        data=result, session_id=session_id, region=region, workspace=workspace
+    )

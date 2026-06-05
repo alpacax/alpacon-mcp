@@ -10,6 +10,7 @@ def mock_http_client():
     with patch('tools.work_session_tools.http_client') as mock_client:
         mock_client.get = AsyncMock()
         mock_client.post = AsyncMock()
+        mock_client.patch = AsyncMock()
         yield mock_client
 
 
@@ -242,3 +243,97 @@ class TestWorkSessionList:
 
         assert result['status'] == 'error'
         assert 'Permission denied' in result['message']
+
+
+class TestWorkSessionUpdate:
+    @pytest.mark.asyncio
+    async def test_update_success(self, mock_http_client, mock_token_manager):
+        from tools.work_session_tools import work_session_update
+
+        mock_http_client.patch.return_value = {
+            'id': 'ws-uuid-1234',
+            'status': 'pending',
+            'description': 'Updated intent',
+        }
+
+        result = await work_session_update(
+            session_id='ws-uuid-1234',
+            workspace='testworkspace',
+            title='New title',
+            description='Updated intent',
+            scopes=['command', 'webftp'],
+            servers=['550e8400-e29b-41d4-a716-446655440001'],
+            expires_at='2026-06-06T13:00:00+00:00',
+            region='ap1',
+        )
+
+        assert result['status'] == 'success'
+        mock_http_client.patch.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/work-sessions/sessions/ws-uuid-1234/',
+            token='test-token',
+            data={
+                'title': 'New title',
+                'description': 'Updated intent',
+                'scopes': ['command', 'webftp'],
+                'servers': ['550e8400-e29b-41d4-a716-446655440001'],
+                'expires_at': '2026-06-06T13:00:00+00:00',
+            },
+        )
+
+    @pytest.mark.asyncio
+    async def test_update_sends_only_provided_fields(
+        self, mock_http_client, mock_token_manager
+    ):
+        from tools.work_session_tools import work_session_update
+
+        mock_http_client.patch.return_value = {'id': 'ws-uuid-1234'}
+
+        await work_session_update(
+            session_id='ws-uuid-1234',
+            workspace='testworkspace',
+            description='Only description changed',
+            region='ap1',
+        )
+
+        call_data = mock_http_client.patch.call_args[1]['data']
+        assert call_data == {'description': 'Only description changed'}
+
+    @pytest.mark.asyncio
+    async def test_update_rejects_empty_update(
+        self, mock_http_client, mock_token_manager
+    ):
+        from tools.work_session_tools import work_session_update
+
+        result = await work_session_update(
+            session_id='ws-uuid-1234',
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert result['status'] == 'error'
+        assert 'No fields to update' in result['message']
+        mock_http_client.patch.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_update_propagates_api_error(
+        self, mock_http_client, mock_token_manager
+    ):
+        from tools.work_session_tools import work_session_update
+
+        mock_http_client.patch.return_value = {
+            'error': 'Validation error',
+            'message': 'Work session is not modifiable',
+            'status_code': 400,
+        }
+
+        result = await work_session_update(
+            session_id='ws-uuid-1234',
+            workspace='testworkspace',
+            description='Too late',
+            region='ap1',
+        )
+
+        assert result['status'] == 'error'
+        assert 'not modifiable' in result['message']
