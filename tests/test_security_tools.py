@@ -42,11 +42,6 @@ SERVER_UUID = '7e3984de-49ab-4cc6-bcdf-21fbd35858b8'
 SERVER_UUID_2 = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890'
 
 
-# ===============================
-# CommandACL tests
-# ===============================
-
-
 class TestListCommandAcls:
     @pytest.mark.asyncio
     async def test_list_no_filter(self, mock_http_client, mock_token_manager):
@@ -291,11 +286,6 @@ class TestDeleteCommandAcl:
             endpoint='/api/security/command-acl/acl-1/',
             token='test-token',
         )
-
-
-# ===============================
-# ServerACL tests
-# ===============================
 
 
 class TestListServerAcls:
@@ -758,11 +748,6 @@ class TestBulkServerAcl:
 
         assert result['status'] == 'error'
         mock_http_client.post.assert_not_called()
-
-
-# ===============================
-# FileACL tests
-# ===============================
 
 
 class TestListFileAcls:

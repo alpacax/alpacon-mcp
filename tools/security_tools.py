@@ -25,11 +25,6 @@ _BOTH_TOKENS_ERROR = 'Provide either api_token_id or service_token_id, not both'
 _TOKEN_REQUIRED_ERROR = 'Either api_token_id or service_token_id must be provided'
 
 
-# ===============================
-# COMMAND ACL TOOLS
-# ===============================
-
-
 @mcp_tool_handler(
     description='List command ACL rules that control which commands can be executed. When to use: checking command execution permissions or debugging 403 errors from execute_command. Related: create_command_acl (add rules), list_server_acls (server access rules), list_file_acls (file access rules).',
     annotations=READ_ONLY,
@@ -227,11 +222,6 @@ async def delete_command_acl(
     return success_response(
         data=result, acl_id=acl_id, region=region, workspace=workspace
     )
-
-
-# ===============================
-# SERVER ACL TOOLS
-# ===============================
 
 
 @mcp_tool_handler(
@@ -499,11 +489,6 @@ async def bulk_server_acl(
     return success_response(
         data=result, action=action, region=region, workspace=workspace
     )
-
-
-# ===============================
-# FILE ACL TOOLS
-# ===============================
 
 
 @mcp_tool_handler(
