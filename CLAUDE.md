@@ -323,6 +323,16 @@ All validators are defined in `utils/error_handler.py` and return user-friendly 
 - `list_session_analyses`: List AI security analysis results across the workspace
 - `get_session_analysis_detail`: Get detailed AI security analysis with MITRE ATT&CK mapping
 
+### 🗂️ Work sessions
+- `work_session_create`: Create a Work Session for auditable, approval-gated infrastructure access
+- `work_session_get`: Get details of a Work Session (status, scopes, servers, auth method)
+- `work_session_list`: List Work Sessions with optional status and auth_method filters
+- `work_session_update`: Partially update a Work Session (title, description, scopes, servers, expires_at)
+- `work_session_extend`: Extend the expiry time of an approved or active Work Session
+- `work_session_timeline`: Get the unified chronological timeline of a Work Session
+- `work_session_analyze`: Manually trigger AI security analysis for a terminal Work Session
+- `work_session_close`: Mark a Work Session as completed and trigger AI security analysis
+
 ### 🔍 System information
 - `get_system_info`: Hardware and OS information
 - `get_os_version`: Operating system details
