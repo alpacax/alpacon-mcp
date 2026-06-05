@@ -13,7 +13,7 @@ from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, READ_ONLY
 
 
 @mcp_tool_handler(
-    description='List pending and historical approval requests in a workspace. Returns request ID, type, status, and requestor details. Filterable by status (pending, approved, rejected, cancelled, expired). Use this to review access requests that need approval or check approval history.',
+    description='List pending and historical approval requests in a workspace. Returns request ID, type, status, and requester details. Filterable by status (pending, approved, rejected, cancelled, expired). Use this to review access requests that need approval or check approval history.',
     annotations=READ_ONLY,
     meta={'anthropic/searchHint': 'approval requests pending review'},
 )
@@ -59,7 +59,7 @@ async def list_approval_requests(
 
 
 @mcp_tool_handler(
-    description='Get detailed information about a specific approval request by its ID. Returns requestor, request type, reason, status, and timestamps. Use this when you need full details about a single approval request.',
+    description='Get detailed information about a specific approval request by its ID. Returns requester, request type, reason, status, and timestamps. Use this when you need full details about a single approval request.',
     annotations=READ_ONLY,
     meta={'anthropic/searchHint': 'approval request detail'},
 )
