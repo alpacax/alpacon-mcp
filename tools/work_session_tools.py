@@ -350,3 +350,48 @@ async def work_session_timeline(
     return success_response(
         data=result, session_id=session_id, region=region, workspace=workspace
     )
+
+
+@mcp_tool_handler(
+    description=(
+        'Manually trigger AI security analysis for a terminal Work Session '
+        '(completed, expired, or revoked). Analysis runs automatically on '
+        'work_session_close; use this to re-run a failed analysis. '
+        'Set force=True to retry an analysis stuck in pending/processing '
+        '(the server enforces a minimum age guard and never discards completed results). '
+        'Related: list_session_analyses / get_session_analysis_detail (view results).'
+    ),
+    annotations=ADDITIVE,
+    meta={'anthropic/searchHint': 'work session analyze AI security analysis retry'},
+)
+async def work_session_analyze(
+    session_id: str,
+    workspace: str,
+    force: bool = False,
+    region: str = '',
+    **kwargs,
+) -> dict[str, Any]:
+    """Manually trigger AI analysis for a terminal Work Session."""
+    token = kwargs.get('token')
+
+    result = await http_client.post(
+        region=region,
+        workspace=workspace,
+        endpoint=f'{_API_SESSIONS}{session_id}/analyze/',
+        token=token,
+        data={},
+        params={'force': 'true'} if force else None,
+    )
+
+    if err := unwrap_http_result(
+        result,
+        default_message='Failed to trigger Work Session analysis',
+        session_id=session_id,
+        region=region,
+        workspace=workspace,
+    ):
+        return err
+
+    return success_response(
+        data=result, session_id=session_id, region=region, workspace=workspace
+    )

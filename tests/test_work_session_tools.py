@@ -455,3 +455,70 @@ class TestWorkSessionTimeline:
 
         assert result['status'] == 'error'
         assert 'not found' in result['message'].lower()
+
+
+class TestWorkSessionAnalyze:
+    @pytest.mark.asyncio
+    async def test_analyze_success(self, mock_http_client, mock_token_manager):
+        from tools.work_session_tools import work_session_analyze
+
+        mock_http_client.post.return_value = {
+            'id': 'analysis-uuid-1',
+            'status': 'pending',
+        }
+
+        result = await work_session_analyze(
+            session_id='ws-uuid-1234',
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert result['status'] == 'success'
+        mock_http_client.post.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/work-sessions/sessions/ws-uuid-1234/analyze/',
+            token='test-token',
+            data={},
+            params=None,
+        )
+
+    @pytest.mark.asyncio
+    async def test_analyze_with_force(self, mock_http_client, mock_token_manager):
+        from tools.work_session_tools import work_session_analyze
+
+        mock_http_client.post.return_value = {
+            'id': 'analysis-uuid-2',
+            'status': 'pending',
+        }
+
+        await work_session_analyze(
+            session_id='ws-uuid-1234',
+            workspace='testworkspace',
+            force=True,
+            region='ap1',
+        )
+
+        call_params = mock_http_client.post.call_args[1]['params']
+        assert call_params == {'force': 'true'}
+
+    @pytest.mark.asyncio
+    async def test_analyze_propagates_api_error(
+        self, mock_http_client, mock_token_manager
+    ):
+        from tools.work_session_tools import work_session_analyze
+
+        mock_http_client.post.return_value = {
+            'error': 'Validation error',
+            'message': 'Work session is not in a terminal state',
+            'status_code': 400,
+        }
+
+        result = await work_session_analyze(
+            session_id='ws-uuid-1234',
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert result['status'] == 'error'
+        assert 'terminal state' in result['message']
