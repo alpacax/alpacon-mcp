@@ -39,6 +39,13 @@ _SUDO_DENIAL_HINTS: tuple[tuple[str, str], ...] = (
 )
 
 
+# The exact terminal-facing denial line alpacon_approval.c emits via
+# g_plugin_printf ("Alpacon denied this sudo command (CODE)."). The other
+# "Permission denied (CODE)" form is assigned to *errstr, which only reaches the
+# audit log—not the invoking terminal—so it must not be matched here.
+_SUDO_DENIAL_LINE_PREFIX = 'Alpacon denied this sudo command'
+
+
 def _sudo_denial_hint(result: dict[str, Any]) -> str | None:
     """Return category-level guidance when a non-interactive sudo was denied in
     the command output, so an agent can act (have a human step up / request
@@ -48,10 +55,11 @@ def _sudo_denial_hint(result: dict[str, Any]) -> str | None:
     if not isinstance(output, str):
         return None
     for code, hint in _SUDO_DENIAL_HINTS:
-        # Match the parenthesized denial token '(CODE)'—the form
-        # alpacon_approval.c emits—not the bare code, so a command that merely
-        # prints the code string in its own output is not a false positive.
-        if f'({code})' in output:
+        # Anchor on the plugin's full denial line, not a bare '(CODE)' token:
+        # otherwise a command whose own output prints '(SUDO_RISK_DENIED)' could
+        # forge a hint on a command that actually succeeded and mislead the
+        # agent into a wrong action.
+        if f'{_SUDO_DENIAL_LINE_PREFIX} ({code})' in output:
             return hint
     return None
 

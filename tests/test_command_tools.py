@@ -17,19 +17,27 @@ class TestSudoDenialHint:
     """The exec-sudo denial code -> agent guidance mapping."""
 
     def test_presence_required(self):
-        out = {'result': 'sudo: Permission denied (SUDO_PRESENCE_REQUIRED)\n'}
+        out = {
+            'result': 'Alpacon denied this sudo command '
+            '(SUDO_PRESENCE_REQUIRED).\n'
+        }
         hint = _sudo_denial_hint(out)
         assert hint is not None
         assert 'step-up' in hint
 
     def test_approval_required(self):
-        out = {'result': 'sudo: Permission denied (SUDO_APPROVAL_REQUIRED)\n'}
+        out = {
+            'result': 'Alpacon denied this sudo command '
+            '(SUDO_APPROVAL_REQUIRED).\n'
+        }
         hint = _sudo_denial_hint(out)
         assert hint is not None
         assert 'approv' in hint
 
     def test_risk_denied_no_score_disclosed(self):
-        out = {'result': 'sudo: Permission denied (SUDO_RISK_DENIED)\n'}
+        out = {
+            'result': 'Alpacon denied this sudo command (SUDO_RISK_DENIED).\n'
+        }
         hint = _sudo_denial_hint(out)
         assert hint is not None
         assert 'risk' in hint
@@ -43,8 +51,14 @@ class TestSudoDenialHint:
         assert _sudo_denial_hint({}) is None
 
     def test_bare_code_is_not_a_false_positive(self):
-        # A command that merely prints the code (no "(CODE)" token) is not a hit.
+        # A command that merely prints the code (no denial line) is not a hit.
         assert _sudo_denial_hint({'result': 'echo SUDO_RISK_DENIED\n'}) is None
+
+    def test_forged_parenthesized_token_is_not_a_false_positive(self):
+        # A command whose own output prints the parenthesized token, without the
+        # plugin's denial line, must not forge a hint (the command succeeded).
+        forged = {'result': 'echo "(SUDO_RISK_DENIED)"\n(SUDO_RISK_DENIED)\n'}
+        assert _sudo_denial_hint(forged) is None
 
 
 @pytest.fixture
@@ -397,7 +411,8 @@ class TestExecuteCommand:
                 'id': 'cmd-789',
                 'status': 'completed',
                 'exit_code': 1,
-                'result': 'sudo: Permission denied (SUDO_PRESENCE_REQUIRED)\n',
+                'result': 'Alpacon denied this sudo command '
+                '(SUDO_PRESENCE_REQUIRED).\n',
                 'finished_at': '2024-01-01T00:00:01Z',
             }
 
