@@ -305,3 +305,48 @@ async def work_session_extend(
     return success_response(
         data=result, session_id=session_id, region=region, workspace=workspace
     )
+
+
+@mcp_tool_handler(
+    description=(
+        'Get the unified chronological timeline of a Work Session: commands, '
+        'file transfers, websh activity, and sudo grants in execution order. '
+        'Set include_records=False to omit websh terminal records for a lighter response. '
+        'Related: work_session_get (session detail), list_session_analyses / '
+        'get_session_analysis_detail (AI security analysis results).'
+    ),
+    annotations=READ_ONLY,
+    meta={
+        'anthropic/searchHint': 'work session timeline history commands chronological'
+    },
+)
+async def work_session_timeline(
+    session_id: str,
+    workspace: str,
+    include_records: bool = True,
+    region: str = '',
+    **kwargs,
+) -> dict[str, Any]:
+    """Get the unified timeline of a Work Session."""
+    token = kwargs.get('token')
+
+    result = await http_client.get(
+        region=region,
+        workspace=workspace,
+        endpoint=f'{_API_SESSIONS}{session_id}/timeline/',
+        token=token,
+        params={'include_records': 'true' if include_records else 'false'},
+    )
+
+    if err := unwrap_http_result(
+        result,
+        default_message='Failed to get Work Session timeline',
+        session_id=session_id,
+        region=region,
+        workspace=workspace,
+    ):
+        return err
+
+    return success_response(
+        data=result, session_id=session_id, region=region, workspace=workspace
+    )

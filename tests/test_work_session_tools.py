@@ -387,3 +387,71 @@ class TestWorkSessionExtend:
 
         assert result['status'] == 'error'
         assert 'later than current' in result['message']
+
+
+class TestWorkSessionTimeline:
+    @pytest.mark.asyncio
+    async def test_timeline_success_includes_records_by_default(
+        self, mock_http_client, mock_token_manager
+    ):
+        from tools.work_session_tools import work_session_timeline
+
+        mock_http_client.get.return_value = {
+            'results': [
+                {'type': 'command', 'added_at': '2026-06-05T10:00:00+00:00'},
+                {'type': 'websh_record', 'added_at': '2026-06-05T10:01:00+00:00'},
+            ],
+        }
+
+        result = await work_session_timeline(
+            session_id='ws-uuid-1234',
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert result['status'] == 'success'
+        assert len(result['data']['results']) == 2
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/work-sessions/sessions/ws-uuid-1234/timeline/',
+            token='test-token',
+            params={'include_records': 'true'},
+        )
+
+    @pytest.mark.asyncio
+    async def test_timeline_without_records(self, mock_http_client, mock_token_manager):
+        from tools.work_session_tools import work_session_timeline
+
+        mock_http_client.get.return_value = {'results': []}
+
+        await work_session_timeline(
+            session_id='ws-uuid-1234',
+            workspace='testworkspace',
+            include_records=False,
+            region='ap1',
+        )
+
+        call_params = mock_http_client.get.call_args[1]['params']
+        assert call_params == {'include_records': 'false'}
+
+    @pytest.mark.asyncio
+    async def test_timeline_propagates_api_error(
+        self, mock_http_client, mock_token_manager
+    ):
+        from tools.work_session_tools import work_session_timeline
+
+        mock_http_client.get.return_value = {
+            'error': 'Not found',
+            'message': 'Work Session not found',
+            'status_code': 404,
+        }
+
+        result = await work_session_timeline(
+            session_id='ws-nonexistent',
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert result['status'] == 'error'
+        assert 'not found' in result['message'].lower()
