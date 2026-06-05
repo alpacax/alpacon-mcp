@@ -20,6 +20,9 @@ from tools.security_tools import (
     update_server_acl,
 )
 
+SERVER_UUID = '7e3984de-49ab-4cc6-bcdf-21fbd35858b8'
+SERVER_UUID_2 = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890'
+
 
 @pytest.fixture
 def mock_http_client():
@@ -36,10 +39,6 @@ def mock_token_manager():
     with patch('utils.common.token_manager') as mock_manager:
         mock_manager.get_token.return_value = 'test-token'
         yield mock_manager
-
-
-SERVER_UUID = '7e3984de-49ab-4cc6-bcdf-21fbd35858b8'
-SERVER_UUID_2 = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890'
 
 
 class TestListCommandAcls:
