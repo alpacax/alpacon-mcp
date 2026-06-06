@@ -73,7 +73,8 @@ def success_response(data: Any = None, **kwargs) -> dict[str, Any]:
 # The human-resolvable next action differs by category: SUDO_APPROVAL_REQUIRED /
 # WORK_SESSION_PENDING need an out-of-band approval, while SUDO_PRESENCE_REQUIRED
 # is an MFA step-up and SUDO_NO_WORKSESSION_POLICY is a scope addition — none of
-# which the agent can perform itself.
+# which the agent can perform itself. APPROVAL_DECISION_HUMAN_ONLY is a pure
+# explanation that approving/rejecting is human-only; there is nothing to retry.
 _NEXT_ACTION_BY_CATEGORY: dict[str, str] = {
     'SUDO_APPROVAL_REQUIRED': (
         'A human must approve this out-of-band (Alpacon web console or Slack). '
@@ -93,6 +94,12 @@ _NEXT_ACTION_BY_CATEGORY: dict[str, str] = {
         'This command is not covered by the Work Session sudo policy. A human '
         'must add it to the session scope (which may itself require approval), '
         'then retry. You cannot grant it yourself.'
+    ),
+    'APPROVAL_DECISION_HUMAN_ONLY': (
+        'Surface this request to a human reviewer; only a human can approve or '
+        'reject it, out-of-band (Alpacon web console or Slack). You cannot make '
+        'this decision and no MCP tool does it for you. Wait for the human '
+        'decision — there is nothing for you to retry or resubmit.'
     ),
 }
 _DEFAULT_NEXT_ACTION = _NEXT_ACTION_BY_CATEGORY['SUDO_APPROVAL_REQUIRED']
@@ -140,9 +147,7 @@ def pending_approval_response(
             # Machine-actionable flags: the agent must wait/escalate, not act.
             'requires_human_approval': True,
             'approvable_by_agent': False,
-            'next_action': _NEXT_ACTION_BY_CATEGORY.get(
-                category, _DEFAULT_NEXT_ACTION
-            ),
+            'next_action': _NEXT_ACTION_BY_CATEGORY.get(category, _DEFAULT_NEXT_ACTION),
         }
     )
     return response
