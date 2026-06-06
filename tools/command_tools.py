@@ -3,7 +3,12 @@
 import asyncio
 from typing import Any
 
-from utils.common import error_response, success_response, unwrap_http_result
+from utils.common import (
+    error_response,
+    pending_approval_response,
+    success_response,
+    unwrap_http_result,
+)
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, READ_ONLY
@@ -46,10 +51,27 @@ _SUDO_DENIAL_HINTS: tuple[tuple[str, str], ...] = (
 _SUDO_DENIAL_LINE_PREFIX = 'Alpacon denied this sudo command'
 
 
-def _sudo_denial_hint(result: dict[str, Any]) -> str | None:
-    """Return category-level guidance when a non-interactive sudo was denied in
-    the command output, so an agent can act (have a human step up / request
-    approval / stop) without parsing free text. None when no denial is present.
+# Denial categories that a human can resolve out-of-band (approve / step-up).
+# For these we attach a machine-actionable pending-approval block (ADR 0015) in
+# addition to the free-text hint, so an agent can branch on stable flags instead
+# of parsing prose, and waits/escalates rather than retry-spamming. Risk-denied
+# is excluded: it is a hard policy denial, not a pending human approval.
+_SUDO_HUMAN_APPROVAL_CODES = frozenset(
+    {
+        'SUDO_NO_WORKSESSION_POLICY',
+        'SUDO_PRESENCE_REQUIRED',
+        'SUDO_APPROVAL_REQUIRED',
+    }
+)
+
+
+def _sudo_denial(result: dict[str, Any]) -> tuple[str, str] | None:
+    """Detect a non-interactive sudo denial in the command output.
+
+    Returns ``(code, hint)`` for the matched denial category so the caller can
+    surface category-level guidance—and, for human-resolvable categories, a
+    structured pending-approval signal—without the agent parsing free text.
+    Returns None when no denial is present.
     """
     output = result.get('result') or ''
     if not isinstance(output, str):
@@ -60,8 +82,18 @@ def _sudo_denial_hint(result: dict[str, Any]) -> str | None:
         # forge a hint on a command that actually succeeded and mislead the
         # agent into a wrong action.
         if f'{_SUDO_DENIAL_LINE_PREFIX} ({code})' in output:
-            return hint
+            return code, hint
     return None
+
+
+def _sudo_denial_hint(result: dict[str, Any]) -> str | None:
+    """Return the free-text denial hint for a sudo denial, or None.
+
+    Thin wrapper over :func:`_sudo_denial` kept for callers/tests that only need
+    the human-readable guidance string.
+    """
+    denial = _sudo_denial(result)
+    return denial[1] if denial else None
 
 
 async def _submit_command(
@@ -281,9 +313,20 @@ async def execute_command(
                     region=region,
                     workspace=workspace,
                 )
-                hint = _sudo_denial_hint(result)
-                if hint:
+                denial = _sudo_denial(result)
+                if denial:
+                    code, hint = denial
+                    # Backward-compatible free-text hint.
                     response['sudo_hint'] = hint
+                    # For human-resolvable denials, also attach a structured,
+                    # machine-actionable pending-approval block (ADR 0015): the
+                    # command did not run and a human must act out-of-band. Only
+                    # the category is disclosed—never the risk score/reasoning.
+                    if code in _SUDO_HUMAN_APPROVAL_CODES:
+                        response['sudo_denial'] = pending_approval_response(
+                            hint,
+                            category=code,
+                        )
                 return response
 
             if status in ('stuck', 'error'):

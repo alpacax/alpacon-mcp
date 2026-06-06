@@ -2,7 +2,11 @@
 
 from typing import Any
 
-from utils.common import success_response, unwrap_http_result
+from utils.common import (
+    pending_approval_response,
+    success_response,
+    unwrap_http_result,
+)
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, READ_ONLY
@@ -66,6 +70,25 @@ async def work_session_create(
         workspace=workspace,
     ):
         return err
+
+    # A Work Session created by an agent commonly lands in `pending`: it must be
+    # approved by a human out-of-band before any scoped action (command/file
+    # transfer) is allowed (ADR 0015). Surface that as a structured
+    # pending-approval signal so the agent waits/escalates instead of proceeding
+    # to run commands against a session that is not yet active.
+    if isinstance(result, dict) and result.get('status') == 'pending':
+        session_id = result.get('id')
+        return pending_approval_response(
+            'This Work Session was created but is pending human approval. A '
+            'human must approve it out-of-band (Alpacon web console or Slack) '
+            'before any command or file transfer in this session will run. Poll '
+            'work_session_get for status, and only proceed once it is active.',
+            category='WORK_SESSION_PENDING',
+            data=result,
+            session_id=session_id,
+            region=region,
+            workspace=workspace,
+        )
 
     return success_response(data=result, region=region, workspace=workspace)
 

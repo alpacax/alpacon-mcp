@@ -70,6 +70,54 @@ def success_response(data: Any = None, **kwargs) -> dict[str, Any]:
     return response
 
 
+def pending_approval_response(
+    message: str,
+    *,
+    category: str,
+    **kwargs: Any,
+) -> dict[str, Any]:
+    """Create a structured "pending human approval" result (ADR 0015).
+
+    AI agents reaching Alpacon through MCP are a request/execution surface and
+    cannot approve privileged-access requests. When an action needs human
+    approval (a sudo HITL denial such as ``SUDO_APPROVAL_REQUIRED``, or a Work
+    Session that lands ``pending``), the agent must be told—in a
+    machine-actionable way—that the request is pending, a human must approve it
+    out-of-band (web/Slack), and the agent cannot approve it itself. This keeps
+    the agent waiting/escalating instead of retry-spamming or hallucinating
+    success.
+
+    The result uses ``status='pending_approval'`` (distinct from ``success`` and
+    ``error``) plus stable boolean flags so a caller can branch without parsing
+    free text. Only the denial *category* and the next action are disclosed—
+    never internal risk scores or factors.
+
+    Args:
+        message: Human-readable explanation of what is pending and what to do.
+        category: Stable machine code for the denial/pending category
+            (e.g. ``SUDO_APPROVAL_REQUIRED``, ``WORK_SESSION_PENDING``).
+        **kwargs: Additional context fields (region, workspace, ids, raw data).
+
+    Returns:
+        Structured pending-approval response dict.
+    """
+    response: dict[str, Any] = {
+        'status': 'pending_approval',
+        'category': category,
+        'message': message,
+        # Machine-actionable flags: the agent must wait/escalate, not act.
+        'requires_human_approval': True,
+        'approvable_by_agent': False,
+        'next_action': (
+            'A human must approve this out-of-band (Alpacon web console or '
+            'Slack). You cannot approve it yourself. Wait for approval, then '
+            'retry; do not repeatedly resubmit.'
+        ),
+    }
+    response.update(kwargs)
+    return response
+
+
 def token_error_response(region: str, workspace: str) -> dict[str, Any]:
     """Create standardized token error response.
 
