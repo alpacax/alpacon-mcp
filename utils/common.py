@@ -70,6 +70,34 @@ def success_response(data: Any = None, **kwargs) -> dict[str, Any]:
     return response
 
 
+# The human-resolvable next action differs by category: SUDO_APPROVAL_REQUIRED /
+# WORK_SESSION_PENDING need an out-of-band approval, while SUDO_PRESENCE_REQUIRED
+# is an MFA step-up and SUDO_NO_WORKSESSION_POLICY is a scope addition — none of
+# which the agent can perform itself.
+_NEXT_ACTION_BY_CATEGORY: dict[str, str] = {
+    'SUDO_APPROVAL_REQUIRED': (
+        'A human must approve this out-of-band (Alpacon web console or Slack). '
+        'You cannot approve it yourself. Wait for approval, then retry; do not '
+        'repeatedly resubmit.'
+    ),
+    'WORK_SESSION_PENDING': (
+        'A human must approve this Work Session out-of-band (Alpacon web console '
+        'or Slack) before it activates. You cannot approve it yourself. Wait for '
+        'approval, then retry.'
+    ),
+    'SUDO_PRESENCE_REQUIRED': (
+        'A human must complete a fresh MFA step-up out-of-band, then retry. You '
+        'cannot complete MFA yourself.'
+    ),
+    'SUDO_NO_WORKSESSION_POLICY': (
+        'This command is not covered by the Work Session sudo policy. A human '
+        'must add it to the session scope (which may itself require approval), '
+        'then retry. You cannot grant it yourself.'
+    ),
+}
+_DEFAULT_NEXT_ACTION = _NEXT_ACTION_BY_CATEGORY['SUDO_APPROVAL_REQUIRED']
+
+
 def pending_approval_response(
     message: str,
     *,
@@ -101,20 +129,22 @@ def pending_approval_response(
     Returns:
         Structured pending-approval response dict.
     """
-    response: dict[str, Any] = {
-        'status': 'pending_approval',
-        'category': category,
-        'message': message,
-        # Machine-actionable flags: the agent must wait/escalate, not act.
-        'requires_human_approval': True,
-        'approvable_by_agent': False,
-        'next_action': (
-            'A human must approve this out-of-band (Alpacon web console or '
-            'Slack). You cannot approve it yourself. Wait for approval, then '
-            'retry; do not repeatedly resubmit.'
-        ),
-    }
-    response.update(kwargs)
+    # Apply caller context first so the fixed, security-relevant fields below
+    # (the flags and category) always win and cannot be overridden by a kwarg.
+    response: dict[str, Any] = {**kwargs}
+    response.update(
+        {
+            'status': 'pending_approval',
+            'category': category,
+            'message': message,
+            # Machine-actionable flags: the agent must wait/escalate, not act.
+            'requires_human_approval': True,
+            'approvable_by_agent': False,
+            'next_action': _NEXT_ACTION_BY_CATEGORY.get(
+                category, _DEFAULT_NEXT_ACTION
+            ),
+        }
+    )
     return response
 
 
