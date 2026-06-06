@@ -375,10 +375,11 @@ All validators are defined in `utils/error_handler.py` and return user-friendly 
 ### ✅ Approval management
 - `list_approval_requests`: List pending and historical approval requests
 - `get_approval_request`: Get detailed approval request information
-- `approve_request`: Approve a pending approval request
-- `reject_request`: Reject a pending approval request
+- `explain_approval_decision`: Explain that approving/rejecting a request is human-only and out-of-band (no mutation; returns ADR 0015 pending-approval guidance)
 - `list_sudo_policies`: List sudo privilege policies
 - `create_sudo_policy`: Create a sudo policy for elevated privileges
+
+**ADR 0015 (out-of-band approval channel)**: An AI agent reaching Alpacon through MCP is a request/execution surface and cannot approve or reject privileged-access requests. There is intentionally no `approve_request`/`reject_request` tool, and the Alpacon server refuses approve/reject from agent/token channels with HTTP 403. When an action needs approval (a sudo HITL denial `SUDO_APPROVAL_REQUIRED`, or a Work Session that lands `pending`), the relevant tool returns a structured `status="pending_approval"` result with `requires_human_approval`/`approvable_by_agent` flags and a `category` code—surface it to a human who approves out-of-band (Alpacon web console or Slack), then retry.
 
 ### 🔗 Webhooks & event subscriptions
 - `list_event_subscriptions`: List event subscriptions

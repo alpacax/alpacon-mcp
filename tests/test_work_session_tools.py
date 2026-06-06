@@ -25,9 +25,12 @@ class TestWorkSessionCreate:
     async def test_create_success(self, mock_http_client, mock_token_manager):
         from tools.work_session_tools import work_session_create
 
+        # Verifies the request payload sent to the server. Use an active session
+        # so the success path is exercised; the pending path is covered by
+        # test_create_pending_surfaces_approval_signal.
         mock_http_client.post.return_value = {
             'id': 'ws-uuid-1234',
-            'status': 'pending',
+            'status': 'active',
             'auth_method': 'mcp_oauth',
         }
 
@@ -55,6 +58,60 @@ class TestWorkSessionCreate:
                 'description': 'Fix nginx config',
             },
         )
+
+    @pytest.mark.asyncio
+    async def test_create_pending_surfaces_approval_signal(
+        self, mock_http_client, mock_token_manager
+    ):
+        """A pending Work Session is surfaced as a structured approval signal."""
+        from tools.work_session_tools import work_session_create
+
+        mock_http_client.post.return_value = {
+            'id': 'ws-uuid-pending',
+            'status': 'pending',
+            'auth_method': 'mcp_oauth',
+        }
+
+        result = await work_session_create(
+            workspace='testworkspace',
+            scopes=['command'],
+            servers=['550e8400-e29b-41d4-a716-446655440001'],
+            expires_at='2026-05-19T13:00:00+00:00',
+            description='Fix nginx config',
+            region='ap1',
+        )
+
+        assert result['status'] == 'pending_approval'
+        assert result['category'] == 'WORK_SESSION_PENDING'
+        assert result['requires_human_approval'] is True
+        assert result['approvable_by_agent'] is False
+        assert result['session_id'] == 'ws-uuid-pending'
+        assert result['data']['status'] == 'pending'
+        assert 'out-of-band' in result['next_action']
+
+    @pytest.mark.asyncio
+    async def test_create_active_returns_success(
+        self, mock_http_client, mock_token_manager
+    ):
+        """A non-pending session (e.g. auto-approved) returns a normal success."""
+        from tools.work_session_tools import work_session_create
+
+        mock_http_client.post.return_value = {
+            'id': 'ws-uuid-active',
+            'status': 'active',
+        }
+
+        result = await work_session_create(
+            workspace='testworkspace',
+            scopes=['command'],
+            servers=['550e8400-e29b-41d4-a716-446655440001'],
+            expires_at='2026-05-19T13:00:00+00:00',
+            description='Fix nginx config',
+            region='ap1',
+        )
+
+        assert result['status'] == 'success'
+        assert result['data']['id'] == 'ws-uuid-active'
 
     @pytest.mark.asyncio
     async def test_create_with_title_and_description(
