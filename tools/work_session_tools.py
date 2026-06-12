@@ -404,7 +404,8 @@ async def work_session_timeline(
 @mcp_tool_handler(
     description=(
         'Manually trigger AI security analysis for a terminal Work Session '
-        '(completed, expired, or revoked). Analysis runs automatically on '
+        '(completed, expired, or revoked—rejected and cancelled sessions never '
+        'activated, so there is nothing to analyze). Analysis runs automatically on '
         'work_session_close; use this to re-run a failed analysis. '
         'Set force=True to retry an analysis stuck in pending/processing '
         '(the server enforces a minimum age guard and never discards completed results). '
