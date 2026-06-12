@@ -66,9 +66,9 @@ jobs:
       # logic here (App token + workflow-dispatch).
       - name: Generate App token
         id: app-token
-        uses: actions/create-github-app-token@v1
+        uses: actions/create-github-app-token@v3
         with:
-          app-id: ${{ secrets.DEPLOY_DISPATCHER_APP_ID }}
+          client-id: ${{ secrets.DEPLOY_DISPATCHER_APP_CLIENT_ID }}
           private-key: ${{ secrets.DEPLOY_DISPATCHER_PRIVATE_KEY }}
           owner: alpacax
           repositories: alpacon-gitops
@@ -91,9 +91,9 @@ jobs:
     steps:
       - name: Generate App token
         id: app-token
-        uses: actions/create-github-app-token@v1
+        uses: actions/create-github-app-token@v3
         with:
-          app-id: ${{ secrets.DEPLOY_DISPATCHER_APP_ID }}
+          client-id: ${{ secrets.DEPLOY_DISPATCHER_APP_CLIENT_ID }}
           private-key: ${{ secrets.DEPLOY_DISPATCHER_PRIVATE_KEY }}
           owner: alpacax
           repositories: alpacon-gitops
