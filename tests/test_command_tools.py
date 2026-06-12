@@ -6,10 +6,52 @@ import pytest
 
 from tools.command_tools import (
     _submit_command,
+    _sudo_denial,
+    _sudo_denial_hint,
     execute_command,
     execute_command_multi_server,
     list_commands,
 )
+
+
+class TestSudoDenialHint:
+    """The exec-sudo denial code -> agent guidance mapping."""
+
+    def test_presence_required(self):
+        out = {'result': 'Alpacon denied this sudo command (SUDO_PRESENCE_REQUIRED).\n'}
+        hint = _sudo_denial_hint(out)
+        assert hint is not None
+        assert 'step-up' in hint
+
+    def test_approval_required(self):
+        out = {'result': 'Alpacon denied this sudo command (SUDO_APPROVAL_REQUIRED).\n'}
+        hint = _sudo_denial_hint(out)
+        assert hint is not None
+        assert 'approv' in hint
+
+    def test_risk_denied_no_score_disclosed(self):
+        out = {'result': 'Alpacon denied this sudo command (SUDO_RISK_DENIED).\n'}
+        hint = _sudo_denial_hint(out)
+        assert hint is not None
+        assert 'risk' in hint
+        # Disclosure: never echo a score / reasoning, only the category.
+        assert 'score' not in hint
+
+    def test_no_denial(self):
+        assert _sudo_denial_hint({'result': 'uid=0(root)\n'}) is None
+        assert _sudo_denial_hint({'result': ''}) is None
+        assert _sudo_denial_hint({'result': None}) is None
+        assert _sudo_denial_hint({}) is None
+
+    def test_bare_code_is_not_a_false_positive(self):
+        # A command that merely prints the code (no denial line) is not a hit.
+        assert _sudo_denial_hint({'result': 'echo SUDO_RISK_DENIED\n'}) is None
+
+    def test_forged_parenthesized_token_is_not_a_false_positive(self):
+        # A command whose own output prints the parenthesized token, without the
+        # plugin's denial line, must not forge a hint (the command succeeded).
+        forged = {'result': 'echo "(SUDO_RISK_DENIED)"\n(SUDO_RISK_DENIED)\n'}
+        assert _sudo_denial_hint(forged) is None
 
 
 @pytest.fixture
@@ -34,7 +76,6 @@ class TestSubmitCommand:
 
     @pytest.mark.asyncio
     async def test_submit_basic(self, mock_http_client):
-
         mock_http_client.post.return_value = {'id': 'cmd-123', 'status': 'running'}
 
         result = await _submit_command(
@@ -61,7 +102,6 @@ class TestSubmitCommand:
 
     @pytest.mark.asyncio
     async def test_submit_with_optional_params(self, mock_http_client):
-
         mock_http_client.post.return_value = {'id': 'cmd-456'}
 
         await _submit_command(
@@ -86,7 +126,6 @@ class TestSubmitCommand:
 
     @pytest.mark.asyncio
     async def test_submit_omits_none_params(self, mock_http_client):
-
         mock_http_client.post.return_value = {'id': 'cmd-789'}
 
         await _submit_command(
@@ -108,7 +147,6 @@ class TestListCommands:
 
     @pytest.mark.asyncio
     async def test_list_commands_success(self, mock_http_client, mock_token_manager):
-
         mock_http_client.get.return_value = {
             'count': 2,
             'results': [
@@ -133,7 +171,6 @@ class TestListCommands:
     async def test_list_commands_with_server_filter(
         self, mock_http_client, mock_token_manager
     ):
-
         mock_http_client.get.return_value = {'count': 1, 'results': []}
 
         result = await list_commands(
@@ -149,7 +186,6 @@ class TestListCommands:
 
     @pytest.mark.asyncio
     async def test_list_commands_no_token(self, mock_http_client, mock_token_manager):
-
         mock_token_manager.get_token.return_value = None
 
         result = await list_commands(workspace='testworkspace')
@@ -159,7 +195,6 @@ class TestListCommands:
 
     @pytest.mark.asyncio
     async def test_list_commands_http_error(self, mock_http_client, mock_token_manager):
-
         mock_http_client.get.return_value = {
             'error': 'Forbidden',
             'message': 'Permission denied',
@@ -177,7 +212,6 @@ class TestExecuteCommand:
 
     @pytest.mark.asyncio
     async def test_success(self, mock_http_client, mock_token_manager):
-
         with (
             patch('tools.command_tools._submit_command') as mock_submit,
             patch('tools.command_tools._get_command_result') as mock_poll,
@@ -203,7 +237,6 @@ class TestExecuteCommand:
 
     @pytest.mark.asyncio
     async def test_array_response(self, mock_http_client, mock_token_manager):
-
         with (
             patch('tools.command_tools._submit_command') as mock_submit,
             patch('tools.command_tools._get_command_result') as mock_poll,
@@ -225,7 +258,6 @@ class TestExecuteCommand:
 
     @pytest.mark.asyncio
     async def test_timeout(self, mock_http_client, mock_token_manager):
-
         with (
             patch('tools.command_tools._submit_command') as mock_submit,
             patch('tools.command_tools._get_command_result') as mock_poll,
@@ -250,7 +282,6 @@ class TestExecuteCommand:
 
     @pytest.mark.asyncio
     async def test_acl_error(self, mock_http_client, mock_token_manager):
-
         with patch('tools.command_tools._submit_command') as mock_submit:
             mock_submit.return_value = {
                 'error': 'Permission denied',
@@ -268,7 +299,6 @@ class TestExecuteCommand:
 
     @pytest.mark.asyncio
     async def test_empty_data_array(self, mock_http_client, mock_token_manager):
-
         with patch('tools.command_tools._submit_command') as mock_submit:
             mock_submit.return_value = []
 
@@ -283,7 +313,6 @@ class TestExecuteCommand:
 
     @pytest.mark.asyncio
     async def test_stuck_status(self, mock_http_client, mock_token_manager):
-
         with (
             patch('tools.command_tools._submit_command') as mock_submit,
             patch('tools.command_tools._get_command_result') as mock_poll,
@@ -307,7 +336,6 @@ class TestExecuteCommand:
 
     @pytest.mark.asyncio
     async def test_forwards_all_params(self, mock_http_client, mock_token_manager):
-
         with (
             patch('tools.command_tools._submit_command') as mock_submit,
             patch('tools.command_tools._get_command_result') as mock_poll,
@@ -335,7 +363,6 @@ class TestExecuteCommand:
 
     @pytest.mark.asyncio
     async def test_no_token(self, mock_http_client, mock_token_manager):
-
         mock_token_manager.get_token.return_value = None
 
         result = await execute_command(
@@ -347,13 +374,148 @@ class TestExecuteCommand:
         assert result['status'] == 'error'
         assert 'No token found' in result['message']
 
+    @pytest.mark.asyncio
+    async def test_surfaces_sudo_hint_on_denial(
+        self, mock_http_client, mock_token_manager
+    ):
+        # A finished command whose output carries a parenthesized denial code
+        # must get a category-level sudo_hint attached to the response.
+        with (
+            patch('tools.command_tools._submit_command') as mock_submit,
+            patch('tools.command_tools._get_command_result') as mock_poll,
+        ):
+            mock_submit.return_value = {'id': 'cmd-789'}
+            mock_poll.return_value = {
+                'id': 'cmd-789',
+                'status': 'completed',
+                'exit_code': 1,
+                'result': 'Alpacon denied this sudo command '
+                '(SUDO_PRESENCE_REQUIRED).\n',
+                'finished_at': '2024-01-01T00:00:01Z',
+            }
+
+            result = await execute_command(
+                server_id='550e8400-e29b-41d4-a716-446655440001',
+                command='sudo systemctl restart nginx',
+                workspace='testworkspace',
+                timeout=10,
+            )
+
+            assert result['status'] == 'success'
+            assert 'sudo_hint' in result
+            assert 'step-up' in result['sudo_hint']
+            # Disclosure guard: never echo a score/reasoning, only the category.
+            assert 'score' not in result['sudo_hint']
+            # Structured, machine-actionable pending-approval block (ADR 0015).
+            assert result['sudo_denial']['status'] == 'pending_approval'
+            assert result['sudo_denial']['category'] == 'SUDO_PRESENCE_REQUIRED'
+            assert result['sudo_denial']['requires_human_approval'] is True
+            assert result['sudo_denial']['approvable_by_agent'] is False
+
+    @pytest.mark.asyncio
+    async def test_approval_required_surfaces_structured_block(
+        self, mock_http_client, mock_token_manager
+    ):
+        # SUDO_APPROVAL_REQUIRED is the ADR 0015 case: a human must approve
+        # out-of-band, so a structured pending-approval block is attached.
+        with (
+            patch('tools.command_tools._submit_command') as mock_submit,
+            patch('tools.command_tools._get_command_result') as mock_poll,
+        ):
+            mock_submit.return_value = {'id': 'cmd-791'}
+            mock_poll.return_value = {
+                'id': 'cmd-791',
+                'status': 'completed',
+                'exit_code': 1,
+                'result': 'Alpacon denied this sudo command '
+                '(SUDO_APPROVAL_REQUIRED).\n',
+                'finished_at': '2024-01-01T00:00:01Z',
+            }
+
+            result = await execute_command(
+                server_id='550e8400-e29b-41d4-a716-446655440001',
+                command='sudo systemctl restart nginx',
+                workspace='testworkspace',
+                timeout=10,
+            )
+
+            assert result['sudo_denial']['category'] == 'SUDO_APPROVAL_REQUIRED'
+            assert result['sudo_denial']['approvable_by_agent'] is False
+
+    @pytest.mark.asyncio
+    async def test_risk_denied_has_hint_but_no_pending_block(
+        self, mock_http_client, mock_token_manager
+    ):
+        # A hard risk denial is not a pending human approval: it gets the
+        # free-text hint but no machine-actionable pending-approval block, so an
+        # agent does not wait for an approval that will never come.
+        with (
+            patch('tools.command_tools._submit_command') as mock_submit,
+            patch('tools.command_tools._get_command_result') as mock_poll,
+        ):
+            mock_submit.return_value = {'id': 'cmd-792'}
+            mock_poll.return_value = {
+                'id': 'cmd-792',
+                'status': 'completed',
+                'exit_code': 1,
+                'result': 'Alpacon denied this sudo command (SUDO_RISK_DENIED).\n',
+                'finished_at': '2024-01-01T00:00:01Z',
+            }
+
+            result = await execute_command(
+                server_id='550e8400-e29b-41d4-a716-446655440001',
+                command='sudo rm -rf /',
+                workspace='testworkspace',
+                timeout=10,
+            )
+
+            assert 'sudo_hint' in result
+            assert 'sudo_denial' not in result
+
+    def test_sudo_denial_returns_code_and_hint(self):
+        out = {'result': 'Alpacon denied this sudo command (SUDO_APPROVAL_REQUIRED).\n'}
+        denial = _sudo_denial(out)
+        assert denial is not None
+        code, hint = denial
+        assert code == 'SUDO_APPROVAL_REQUIRED'
+        assert 'approv' in hint
+        assert _sudo_denial({'result': 'uid=0(root)\n'}) is None
+
+    @pytest.mark.asyncio
+    async def test_no_sudo_hint_when_no_denial(
+        self, mock_http_client, mock_token_manager
+    ):
+        # A clean command must not carry a sudo_hint field.
+        with (
+            patch('tools.command_tools._submit_command') as mock_submit,
+            patch('tools.command_tools._get_command_result') as mock_poll,
+        ):
+            mock_submit.return_value = {'id': 'cmd-790'}
+            mock_poll.return_value = {
+                'id': 'cmd-790',
+                'status': 'completed',
+                'exit_code': 0,
+                'result': 'uid=0(root)\n',
+                'finished_at': '2024-01-01T00:00:01Z',
+            }
+
+            result = await execute_command(
+                server_id='550e8400-e29b-41d4-a716-446655440001',
+                command='id',
+                workspace='testworkspace',
+                timeout=10,
+            )
+
+            assert result['status'] == 'success'
+            assert 'sudo_hint' not in result
+            assert 'sudo_denial' not in result
+
 
 class TestSubmitCommandWithSession:
     """Test _submit_command forwards work_session to API payload."""
 
     @pytest.mark.asyncio
     async def test_submit_includes_work_session_when_provided(self, mock_http_client):
-
         mock_http_client.post.return_value = {'id': 'cmd-ws-001'}
 
         await _submit_command(
@@ -370,7 +532,6 @@ class TestSubmitCommandWithSession:
 
     @pytest.mark.asyncio
     async def test_submit_omits_work_session_when_none(self, mock_http_client):
-
         mock_http_client.post.return_value = {'id': 'cmd-ws-002'}
 
         await _submit_command(
@@ -390,7 +551,6 @@ class TestExecuteCommandWithSession:
     async def test_execute_command_passes_session_id(
         self, mock_http_client, mock_token_manager
     ):
-
         mock_http_client.post.return_value = {'id': 'cmd-123'}
         mock_http_client.get.return_value = {
             'id': 'cmd-123',
@@ -415,7 +575,6 @@ class TestExecuteCommandMultiServerWithSession:
     async def test_multi_server_passes_session_id(
         self, mock_http_client, mock_token_manager
     ):
-
         mock_http_client.post.return_value = {'id': 'cmd-multi-1'}
 
         await execute_command_multi_server(

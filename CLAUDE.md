@@ -306,9 +306,14 @@ All validators are defined in `utils/error_handler.py` and return user-friendly 
 - `update_command_acl`: Update an existing command ACL rule
 - `delete_command_acl`: Delete a command ACL rule
 - `list_server_acls`: List server ACL rules
-- `create_server_acl`: Create a server ACL rule (control server access)
+- `create_server_acl`: Create a server ACL rule granting a token access to a server
+- `update_server_acl`: Update an existing server ACL rule
+- `delete_server_acl`: Delete a server ACL rule
+- `bulk_server_acl`: Bulk add or remove server ACL entries for multiple servers
 - `list_file_acls`: List file ACL rules
-- `create_file_acl`: Create a file ACL rule (control file access)
+- `create_file_acl`: Create a file ACL rule (control file upload/download access)
+- `update_file_acl`: Update an existing file ACL rule
+- `delete_file_acl`: Delete a file ACL rule
 
 ### 📋 Events & logging
 - `list_events`: List server events
@@ -385,10 +390,11 @@ All validators are defined in `utils/error_handler.py` and return user-friendly 
 ### ✅ Approval management
 - `list_approval_requests`: List pending and historical approval requests
 - `get_approval_request`: Get detailed approval request information
-- `approve_request`: Approve a pending approval request
-- `reject_request`: Reject a pending approval request
+- `explain_approval_decision`: Explain that approving/rejecting a request is human-only and out-of-band (no mutation; returns ADR 0015 pending-approval guidance)
 - `list_sudo_policies`: List sudo privilege policies
 - `create_sudo_policy`: Create a sudo policy for elevated privileges
+
+**ADR 0015 (out-of-band approval channel)**: An AI agent reaching Alpacon through MCP is a request/execution surface and cannot approve or reject privileged-access requests. There is intentionally no `approve_request`/`reject_request` tool, and the Alpacon server refuses approve/reject from agent/token channels with HTTP 403. When an action needs approval (a sudo HITL denial `SUDO_APPROVAL_REQUIRED`, or a Work Session that lands `pending`), the relevant tool returns a structured `status="pending_approval"` result with `requires_human_approval`/`approvable_by_agent` flags and a `category` code—surface it to a human who approves out-of-band (Alpacon web console or Slack), then retry.
 
 ### 🔗 Webhooks & event subscriptions
 - `list_event_subscriptions`: List event subscriptions

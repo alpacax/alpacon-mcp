@@ -1,11 +1,20 @@
-"""Approval and sudo policy tools for Alpacon MCP server."""
+"""Approval and sudo policy tools for Alpacon MCP server.
+
+ADR 0015 (out-of-band approval channel): AI agents reach Alpacon through MCP and
+are a request/execution surface only. They CANNOT approve or reject
+privileged-access requests—the Alpacon server refuses approve/reject from
+agent/token channels with HTTP 403. These tools therefore expose approval
+requests read-only (list/get) so an agent can observe what is pending and tell a
+human, but provide no approve/reject mutation. The agent must escalate to a human
+who approves out-of-band (Alpacon web console or Slack).
+"""
 
 from typing import Any
 
-from utils.common import success_response
+from utils.common import pending_approval_response, success_response
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
-from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, READ_ONLY
+from utils.tool_annotations import ADDITIVE, READ_ONLY
 
 # ===============================
 # APPROVAL REQUEST TOOLS
@@ -90,87 +99,56 @@ async def get_approval_request(
     )
 
 
-@mcp_tool_handler(
-    description='Approve a pending approval request by its ID. Optionally include a comment explaining the approval decision. Only pending requests can be approved. Requires superuser or approval permission. Related: list_approval_requests (find pending requests), reject_request (deny instead).',
-    annotations=ADDITIVE,
-    meta={'anthropic/searchHint': 'approval approve accept grant'},
-)
-async def approve_request(
-    request_id: str,
-    workspace: str,
-    comment: str | None = None,
-    region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
-    """Approve a pending approval request.
-
-    Args:
-        request_id: Approval request ID to approve
-        workspace: Workspace name. Required parameter
-        comment: Comment explaining the approval decision (optional)
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
-
-    Returns:
-        Approval response
-    """
-    token = kwargs.get('token')
-
-    data: dict[str, Any] = {}
-    if comment is not None:
-        data['comment'] = comment
-
-    result = await http_client.post(
-        region=region,
-        workspace=workspace,
-        endpoint=f'/api/approvals/approvals/{request_id}/approve/',
-        token=token,
-        data=data,
-    )
-
-    return success_response(
-        data=result, request_id=request_id, region=region, workspace=workspace
-    )
+# ===============================
+# APPROVAL DECISION (HUMAN-ONLY, OUT-OF-BAND)
+# ===============================
+#
+# Per ADR 0015 there is intentionally NO approve_request / reject_request tool.
+# An AI agent is the requester/executor and must never be the approver:
+# approving its own (or any) privileged-access request would defeat the
+# human-in-the-loop control. The Alpacon server enforces this server-side by
+# refusing approve/reject from agent/token channels with HTTP 403, so even a
+# direct POST would fail; we do not expose such a tool here. To act on a pending
+# request, use list_approval_requests / get_approval_request to observe it, then
+# escalate to a human who approves it out-of-band (Alpacon web console or Slack).
 
 
 @mcp_tool_handler(
-    description='Reject a pending approval request by its ID. Optionally include a comment explaining the rejection reason. Only pending requests can be rejected. Requires superuser or approval permission. Related: list_approval_requests (find pending requests), approve_request (approve instead). Note: Rejection is irreversible.',
-    annotations=DESTRUCTIVE,
-    meta={'anthropic/searchHint': 'approval reject deny refuse'},
+    description='Explains how a pending approval request gets decided. Approval and rejection are human-only and happen out-of-band (Alpacon web console or Slack); an AI agent cannot approve or reject requests and there is no MCP tool to do so. Use this to understand what to tell a human, or after you hit SUDO_APPROVAL_REQUIRED or a pending Work Session. Related: list_approval_requests (observe pending requests), get_approval_request (single request detail).',
+    annotations=READ_ONLY,
+    meta={'anthropic/searchHint': 'approve reject approval decision human out-of-band'},
 )
-async def reject_request(
-    request_id: str,
+async def explain_approval_decision(
     workspace: str,
-    comment: str | None = None,
+    request_id: str | None = None,
     region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
-    """Reject a pending approval request.
+    """Explain that approving/rejecting a request is a human-only, out-of-band action.
+
+    This tool performs no mutation and contacts no server endpoint—an agent must
+    never be the approver. It returns the structured ADR 0015 pending-approval
+    guidance so the agent waits/escalates instead of attempting to self-approve.
 
     Args:
-        request_id: Approval request ID to reject
         workspace: Workspace name. Required parameter
-        comment: Reason for the rejection (optional)
+        request_id: Approval request ID this guidance refers to (optional)
         region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
-        Rejection response
+        Structured pending-approval guidance (no approve/reject is performed)
     """
-    token = kwargs.get('token')
+    context: dict[str, Any] = {'region': region, 'workspace': workspace}
+    if request_id is not None:
+        context['request_id'] = request_id
 
-    data: dict[str, Any] = {}
-    if comment is not None:
-        data['comment'] = comment
-
-    result = await http_client.post(
-        region=region,
-        workspace=workspace,
-        endpoint=f'/api/approvals/approvals/{request_id}/reject/',
-        token=token,
-        data=data,
-    )
-
-    return success_response(
-        data=result, request_id=request_id, region=region, workspace=workspace
+    return pending_approval_response(
+        'Approval requests can only be approved or rejected by a human, '
+        'out-of-band (Alpacon web console or Slack). As an AI agent you cannot '
+        'approve or reject this request, and no MCP tool can do it for you. '
+        'Surface the request to a human reviewer and wait for their decision.',
+        category='APPROVAL_DECISION_HUMAN_ONLY',
+        **context,
     )
 
 

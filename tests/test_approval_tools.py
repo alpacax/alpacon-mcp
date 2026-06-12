@@ -5,12 +5,11 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from tools.approval_tools import (
-    approve_request,
     create_sudo_policy,
+    explain_approval_decision,
     get_approval_request,
     list_approval_requests,
     list_sudo_policies,
-    reject_request,
 )
 
 
@@ -125,95 +124,53 @@ class TestGetApprovalRequest:
         )
 
 
-class TestApproveRequest:
-    """Test approval request approval."""
+class TestApprovalDecisionIsHumanOnly:
+    """ADR 0015: an agent cannot approve/reject; there is no mutation tool."""
+
+    def test_no_approve_or_reject_tool_exists(self):
+        """The approve/reject mutation tools must not be importable."""
+        import tools.approval_tools as approval_tools
+
+        assert not hasattr(approval_tools, 'approve_request')
+        assert not hasattr(approval_tools, 'reject_request')
 
     @pytest.mark.asyncio
-    async def test_approve_request_success(self, mock_http_client, mock_token_manager):
-        """Test successful request approval."""
-        mock_http_client.post.return_value = {'id': 'req-1', 'status': 'approved'}
-
-        result = await approve_request(
+    async def test_explain_returns_structured_pending_guidance(
+        self, mock_http_client, mock_token_manager
+    ):
+        """explain_approval_decision surfaces the human-only, out-of-band signal."""
+        result = await explain_approval_decision(
             request_id='req-1', workspace='testworkspace', region='ap1'
         )
 
-        assert result['status'] == 'success'
+        assert result['status'] == 'pending_approval'
+        assert result['category'] == 'APPROVAL_DECISION_HUMAN_ONLY'
+        assert result['requires_human_approval'] is True
+        assert result['approvable_by_agent'] is False
         assert result['request_id'] == 'req-1'
-        mock_http_client.post.assert_called_once_with(
-            region='ap1',
-            workspace='testworkspace',
-            endpoint='/api/approvals/approvals/req-1/approve/',
-            token='test-token',
-            data={},
-        )
+        assert 'out-of-band' in result['next_action']
 
     @pytest.mark.asyncio
-    async def test_approve_request_with_comment(
+    async def test_explain_never_calls_the_server(
         self, mock_http_client, mock_token_manager
     ):
-        """Test request approval with comment."""
-        mock_http_client.post.return_value = {'id': 'req-1', 'status': 'approved'}
+        """The agent must never be the actor: no approve/reject HTTP call is made."""
+        await explain_approval_decision(workspace='testworkspace', region='ap1')
 
-        result = await approve_request(
-            request_id='req-1',
-            workspace='testworkspace',
-            comment='Approved for production access',
-            region='ap1',
-        )
-
-        assert result['status'] == 'success'
-        mock_http_client.post.assert_called_once_with(
-            region='ap1',
-            workspace='testworkspace',
-            endpoint='/api/approvals/approvals/req-1/approve/',
-            token='test-token',
-            data={'comment': 'Approved for production access'},
-        )
-
-
-class TestRejectRequest:
-    """Test approval request rejection."""
+        mock_http_client.post.assert_not_called()
+        mock_http_client.get.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_reject_request_success(self, mock_http_client, mock_token_manager):
-        """Test successful request rejection."""
-        mock_http_client.post.return_value = {'id': 'req-1', 'status': 'rejected'}
-
-        result = await reject_request(
-            request_id='req-1', workspace='testworkspace', region='ap1'
-        )
-
-        assert result['status'] == 'success'
-        mock_http_client.post.assert_called_once_with(
-            region='ap1',
-            workspace='testworkspace',
-            endpoint='/api/approvals/approvals/req-1/reject/',
-            token='test-token',
-            data={},
-        )
-
-    @pytest.mark.asyncio
-    async def test_reject_request_with_comment(
+    async def test_explain_omits_request_id_when_absent(
         self, mock_http_client, mock_token_manager
     ):
-        """Test request rejection with reason."""
-        mock_http_client.post.return_value = {'id': 'req-1', 'status': 'rejected'}
-
-        result = await reject_request(
-            request_id='req-1',
-            workspace='testworkspace',
-            comment='Insufficient justification',
-            region='ap1',
+        """request_id is optional and omitted from the payload when not given."""
+        result = await explain_approval_decision(
+            workspace='testworkspace', region='ap1'
         )
 
-        assert result['status'] == 'success'
-        mock_http_client.post.assert_called_once_with(
-            region='ap1',
-            workspace='testworkspace',
-            endpoint='/api/approvals/approvals/req-1/reject/',
-            token='test-token',
-            data={'comment': 'Insufficient justification'},
-        )
+        assert 'request_id' not in result
+        assert result['status'] == 'pending_approval'
 
 
 class TestSudoPolicies:
