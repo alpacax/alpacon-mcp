@@ -21,7 +21,7 @@ def _make_decorated_func(extra_params=None):
     # Dynamically build the function signature string
     param_parts = ['workspace: str', "region: str = ''"]
     for p in extra_params:
-        if p == 'server_ids':
+        if p in ('server_ids', 'servers'):
             param_parts.append(f'{p}: list = None')
         else:
             param_parts.append(f'{p}: str = None')
@@ -289,6 +289,63 @@ class TestServerIdsValidation:
     async def test_none_server_ids_passes(self, mock_token):
         func = _make_decorated_func(extra_params=['server_ids'])
         result = await func(workspace='demo', region='ap1', server_ids=None)
+        assert result['status'] == 'success'
+
+
+# ---------------------------------------------------------------------------
+# servers list validation
+# ---------------------------------------------------------------------------
+
+
+class TestServersValidation:
+    """Tests that invalid servers list values (server UUIDs) are rejected early."""
+
+    @pytest.mark.asyncio
+    @patch('utils.decorators.validate_token', return_value='fake-token')
+    async def test_invalid_servers_rejected(self, mock_token):
+        func = _make_decorated_func(extra_params=['servers'])
+        result = await func(
+            workspace='demo',
+            region='ap1',
+            servers=['not-a-uuid', 'also-bad'],
+        )
+        assert result['status'] == 'error'
+        assert result['field'] == 'servers'
+
+    @pytest.mark.asyncio
+    @patch('utils.decorators.validate_token', return_value='fake-token')
+    async def test_mixed_servers_rejected(self, mock_token):
+        func = _make_decorated_func(extra_params=['servers'])
+        result = await func(
+            workspace='demo',
+            region='ap1',
+            servers=[
+                '550e8400-e29b-41d4-a716-446655440000',
+                'not-a-uuid',
+            ],
+        )
+        assert result['status'] == 'error'
+        assert result['field'] == 'servers'
+
+    @pytest.mark.asyncio
+    @patch('utils.decorators.validate_token', return_value='fake-token')
+    async def test_valid_servers_passes(self, mock_token):
+        func = _make_decorated_func(extra_params=['servers'])
+        result = await func(
+            workspace='demo',
+            region='ap1',
+            servers=[
+                '550e8400-e29b-41d4-a716-446655440000',
+                '660e8400-e29b-41d4-a716-446655440001',
+            ],
+        )
+        assert result['status'] == 'success'
+
+    @pytest.mark.asyncio
+    @patch('utils.decorators.validate_token', return_value='fake-token')
+    async def test_none_servers_passes(self, mock_token):
+        func = _make_decorated_func(extra_params=['servers'])
+        result = await func(workspace='demo', region='ap1', servers=None)
         assert result['status'] == 'success'
 
 

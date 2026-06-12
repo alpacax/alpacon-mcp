@@ -313,6 +313,19 @@ def with_token_validation(func: Callable) -> Callable:
                     'Each server ID must be in UUID format. (e.g., 550e8400-e29b-41d4-a716-446655440000)',
                 )
 
+        # Validate servers list if present (server UUIDs sent in request bodies)
+        servers = arguments.get('servers')
+        if servers is not None:
+            invalid_servers = [
+                sid for sid in servers if not validate_server_id_format(sid)
+            ]
+            if invalid_servers:
+                return format_validation_error(
+                    'servers',
+                    invalid_servers,
+                    'Each server ID must be in UUID format. (e.g., 550e8400-e29b-41d4-a716-446655440000)',
+                )
+
         # session_id is interpolated into URL paths, so reject non-UUID values that could retarget the request.
         session_id = arguments.get('session_id')
         if session_id is not None and not validate_server_id_format(session_id):
