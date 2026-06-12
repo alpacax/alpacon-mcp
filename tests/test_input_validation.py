@@ -21,7 +21,7 @@ def _make_decorated_func(extra_params=None):
     # Dynamically build the function signature string
     param_parts = ['workspace: str', "region: str = ''"]
     for p in extra_params:
-        if p == 'server_ids':
+        if p in ('server_ids', 'servers'):
             param_parts.append(f'{p}: list = None')
         else:
             param_parts.append(f'{p}: str = None')
@@ -289,6 +289,144 @@ class TestServerIdsValidation:
     async def test_none_server_ids_passes(self, mock_token):
         func = _make_decorated_func(extra_params=['server_ids'])
         result = await func(workspace='demo', region='ap1', server_ids=None)
+        assert result['status'] == 'success'
+
+    @pytest.mark.asyncio
+    @patch('utils.decorators.validate_token', return_value='fake-token')
+    async def test_string_server_ids_rejected(self, mock_token):
+        """A single string must fail fast, not be iterated character-by-character."""
+        func = _make_decorated_func(extra_params=['server_ids'])
+        result = await func(
+            workspace='demo',
+            region='ap1',
+            server_ids='550e8400-e29b-41d4-a716-446655440000',
+        )
+        assert result['status'] == 'error'
+        assert result['field'] == 'server_ids'
+        # The whole string is reported, not a confusing list of single characters.
+        assert result['value'] == '550e8400-e29b-41d4-a716-446655440000'
+
+
+# ---------------------------------------------------------------------------
+# servers list validation
+# ---------------------------------------------------------------------------
+
+
+class TestServersValidation:
+    """Tests that invalid servers list values (server UUIDs) are rejected early."""
+
+    @pytest.mark.asyncio
+    @patch('utils.decorators.validate_token', return_value='fake-token')
+    async def test_invalid_servers_rejected(self, mock_token):
+        func = _make_decorated_func(extra_params=['servers'])
+        result = await func(
+            workspace='demo',
+            region='ap1',
+            servers=['not-a-uuid', 'also-bad'],
+        )
+        assert result['status'] == 'error'
+        assert result['field'] == 'servers'
+
+    @pytest.mark.asyncio
+    @patch('utils.decorators.validate_token', return_value='fake-token')
+    async def test_mixed_servers_rejected(self, mock_token):
+        func = _make_decorated_func(extra_params=['servers'])
+        result = await func(
+            workspace='demo',
+            region='ap1',
+            servers=[
+                '550e8400-e29b-41d4-a716-446655440000',
+                'not-a-uuid',
+            ],
+        )
+        assert result['status'] == 'error'
+        assert result['field'] == 'servers'
+
+    @pytest.mark.asyncio
+    @patch('utils.decorators.validate_token', return_value='fake-token')
+    async def test_valid_servers_passes(self, mock_token):
+        func = _make_decorated_func(extra_params=['servers'])
+        result = await func(
+            workspace='demo',
+            region='ap1',
+            servers=[
+                '550e8400-e29b-41d4-a716-446655440000',
+                '660e8400-e29b-41d4-a716-446655440001',
+            ],
+        )
+        assert result['status'] == 'success'
+
+    @pytest.mark.asyncio
+    @patch('utils.decorators.validate_token', return_value='fake-token')
+    async def test_none_servers_passes(self, mock_token):
+        func = _make_decorated_func(extra_params=['servers'])
+        result = await func(workspace='demo', region='ap1', servers=None)
+        assert result['status'] == 'success'
+
+    @pytest.mark.asyncio
+    @patch('utils.decorators.validate_token', return_value='fake-token')
+    async def test_string_servers_rejected(self, mock_token):
+        """A single string must fail fast, not be iterated character-by-character."""
+        func = _make_decorated_func(extra_params=['servers'])
+        result = await func(
+            workspace='demo',
+            region='ap1',
+            servers='550e8400-e29b-41d4-a716-446655440000',
+        )
+        assert result['status'] == 'error'
+        assert result['field'] == 'servers'
+        # The whole string is reported, not a confusing list of single characters.
+        assert result['value'] == '550e8400-e29b-41d4-a716-446655440000'
+
+
+# ---------------------------------------------------------------------------
+# Session ID validation
+# ---------------------------------------------------------------------------
+
+
+class TestSessionIdValidation:
+    """Tests that invalid session_id values are rejected early.
+
+    session_id is interpolated into URL paths (work_session_tools), so a
+    non-UUID value (e.g. containing ``../`` or ``?``) must be rejected
+    before any HTTP request is built.
+    """
+
+    @pytest.mark.asyncio
+    @patch('utils.decorators.validate_token', return_value='fake-token')
+    async def test_invalid_session_id_rejected(self, mock_token):
+        func = _make_decorated_func(extra_params=['session_id'])
+        result = await func(workspace='demo', region='ap1', session_id='not-a-uuid')
+        assert result['status'] == 'error'
+        assert result['field'] == 'session_id'
+
+    @pytest.mark.asyncio
+    @patch('utils.decorators.validate_token', return_value='fake-token')
+    async def test_path_traversal_session_id_rejected(self, mock_token):
+        func = _make_decorated_func(extra_params=['session_id'])
+        result = await func(
+            workspace='demo', region='ap1', session_id='../other-endpoint'
+        )
+        assert result['status'] == 'error'
+        assert result['field'] == 'session_id'
+
+    @pytest.mark.asyncio
+    @patch('utils.decorators.validate_token', return_value='fake-token')
+    async def test_valid_session_id_passes(self, mock_token):
+        func = _make_decorated_func(extra_params=['session_id'])
+        result = await func(
+            workspace='demo',
+            region='ap1',
+            session_id='550e8400-e29b-41d4-a716-446655440000',
+        )
+        assert result['status'] == 'success'
+
+    @pytest.mark.asyncio
+    @patch('utils.decorators.validate_token', return_value='fake-token')
+    async def test_absent_session_id_passes(self, mock_token):
+        """Not providing session_id at all should pass (other tools)."""
+        func = _make_decorated_func(extra_params=['session_id'])
+        result = await func(workspace='demo', region='ap1')
         assert result['status'] == 'success'
 
 

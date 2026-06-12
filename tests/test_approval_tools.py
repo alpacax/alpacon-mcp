@@ -212,7 +212,7 @@ class TestSudoPolicies:
             name='deploy-sudo',
             commands=['/usr/bin/systemctl restart *'],
             users=['user-1'],
-            servers=['server-1'],
+            servers=['550e8400-e29b-41d4-a716-446655440000'],
             no_password=True,
             region='ap1',
         )
@@ -228,7 +228,7 @@ class TestSudoPolicies:
                 'commands': ['/usr/bin/systemctl restart *'],
                 'no_password': True,
                 'users': ['user-1'],
-                'servers': ['server-1'],
+                'servers': ['550e8400-e29b-41d4-a716-446655440000'],
             },
         )
 

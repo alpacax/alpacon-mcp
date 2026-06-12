@@ -303,6 +303,12 @@ def with_token_validation(func: Callable) -> Callable:
         # Validate server_ids list if present
         server_ids = arguments.get('server_ids')
         if server_ids is not None:
+            if not isinstance(server_ids, list):
+                return format_validation_error(
+                    'server_ids',
+                    server_ids,
+                    'Must be a list of server UUIDs.',
+                )
             invalid_ids = [
                 sid for sid in server_ids if not validate_server_id_format(sid)
             ]
@@ -312,6 +318,30 @@ def with_token_validation(func: Callable) -> Callable:
                     invalid_ids,
                     'Each server ID must be in UUID format. (e.g., 550e8400-e29b-41d4-a716-446655440000)',
                 )
+
+        # Validate servers list if present (server UUIDs sent in request bodies)
+        servers = arguments.get('servers')
+        if servers is not None:
+            if not isinstance(servers, list):
+                return format_validation_error(
+                    'servers',
+                    servers,
+                    'Must be a list of server UUIDs.',
+                )
+            invalid_servers = [
+                sid for sid in servers if not validate_server_id_format(sid)
+            ]
+            if invalid_servers:
+                return format_validation_error(
+                    'servers',
+                    invalid_servers,
+                    'Each server ID must be in UUID format. (e.g., 550e8400-e29b-41d4-a716-446655440000)',
+                )
+
+        # session_id is interpolated into URL paths, so reject non-UUID values that could retarget the request.
+        session_id = arguments.get('session_id')
+        if session_id is not None and not validate_server_id_format(session_id):
+            return format_validation_error('session_id', session_id)
 
         # Get the **kwargs dict from bound arguments to inject token
         extra_kwargs = bound_args.arguments.get('kwargs', {})

@@ -193,7 +193,7 @@ async def list_webftp_logs(
 
 
 @mcp_tool_handler(
-    description='List AI security analysis results for Websh sessions across the workspace. Filterable by server, risk score, or analysis status. Returns summary, risk scores, and analysis timestamps. Useful for security auditing and threat monitoring.',
+    description='List AI security analysis results for Websh sessions across the workspace. Filterable by server, risk score, or analysis status. Returns summary, risk scores, and analysis timestamps. Useful for security auditing and threat monitoring. Related: work_session_timeline (session command timeline), work_session_analyze (trigger analysis manually).',
     annotations=READ_ONLY,
     meta={'anthropic/searchHint': 'session analysis security risk threat'},
 )
@@ -249,7 +249,7 @@ async def list_session_analyses(
 
 
 @mcp_tool_handler(
-    description='Get detailed AI security analysis for a specific session analysis record. Returns full analysis including risk factors, MITRE ATT&CK mapping, attack chain analysis, threat indicators, timeline analysis, and recommended actions.',
+    description='Get detailed AI security analysis for a specific session analysis record. Returns full analysis including risk factors, MITRE ATT&CK mapping, attack chain analysis, threat indicators, timeline analysis, and recommended actions. Related: work_session_timeline (session command timeline), work_session_analyze (trigger analysis manually).',
     annotations=READ_ONLY,
     meta={'anthropic/searchHint': 'session analysis detail mitre attack threat'},
 )
