@@ -220,11 +220,15 @@ async def work_session_list(
     return success_response(data=result, region=region, workspace=workspace)
 
 
+# IDEMPOTENT_WRITE: repeated PATCH cannot stack approval requests (server WORK_SESSION_MOD_ALREADY_PENDING guard).
 @mcp_tool_handler(
     description=(
-        'Update a Work Session (partial update). Only provided fields are sent. '
+        'Update a Work Session (partial update). Only provided fields are sent; '
+        'pass an empty string to clear a text field such as title. '
         'Pending sessions update immediately; approved/active sessions go through '
-        'the modification flow and may return HTTP 202 when an approval request is queued. '
+        'the modification flow—when the server queues an approval request, this '
+        'tool returns status="pending_approval" and the changes only apply after '
+        'a human approves them out-of-band. '
         'expires_at is only honored for pending sessions—for approved/active sessions '
         'it is ignored, so use work_session_extend instead. '
         'Terminal sessions (completed/rejected/cancelled/expired/revoked) cannot be updated. '
@@ -286,6 +290,21 @@ async def work_session_update(
         workspace=workspace,
     ):
         return err
+
+    # Queued modification (server 202): http_client hides 2xx status codes, so branch on the body marker (ADR 0015).
+    if isinstance(result, dict) and result.get('pending_modification_request'):
+        return pending_approval_response(
+            'This update was queued as a modification request and is pending '
+            'human approval. A human must approve it out-of-band (Alpacon web '
+            'console or Slack) before the requested changes apply. Poll '
+            'work_session_get and only rely on the new scopes/servers once '
+            'pending_modification_request is cleared.',
+            category='WORK_SESSION_MOD_PENDING',
+            data=result,
+            session_id=session_id,
+            region=region,
+            workspace=workspace,
+        )
 
     return success_response(
         data=result, session_id=session_id, region=region, workspace=workspace

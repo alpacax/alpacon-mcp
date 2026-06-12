@@ -212,7 +212,7 @@ async def tool_function(
 ```
 
 **Key benefits**:
-- Automatic input validation (region, workspace, server_id, server_ids) before any API call
+- Automatic input validation (region, workspace, server_id, server_ids, session_id) before any API call
 - Automatic token injection via decorator
 - Unified error handling and response formatting
 - Reduced boilerplate code (~60% less per function)
@@ -226,6 +226,7 @@ The `with_token_validation` decorator (`utils/decorators.py`) validates inputs *
 2. **Workspace format**: Alphanumeric with hyphens/underscores, 1-63 characters
 3. **Server ID format**: Must be valid UUID (when present)
 4. **Server IDs list**: Each element must be valid UUID (when present)
+5. **Session ID format**: Must be valid UUID (when present); session_id is interpolated into URL paths
 
 File path validation is applied inline in `webftp_upload_file` and `webftp_download_file` using `validate_file_path()` from `utils/error_handler.py`. Rejects path traversal (`../`), relative paths, null bytes, and dangerous characters.
 
@@ -394,7 +395,7 @@ All validators are defined in `utils/error_handler.py` and return user-friendly 
 - `list_sudo_policies`: List sudo privilege policies
 - `create_sudo_policy`: Create a sudo policy for elevated privileges
 
-**ADR 0015 (out-of-band approval channel)**: An AI agent reaching Alpacon through MCP is a request/execution surface and cannot approve or reject privileged-access requests. There is intentionally no `approve_request`/`reject_request` tool, and the Alpacon server refuses approve/reject from agent/token channels with HTTP 403. When an action needs approval (a sudo HITL denial `SUDO_APPROVAL_REQUIRED`, or a Work Session that lands `pending`), the relevant tool returns a structured `status="pending_approval"` result with `requires_human_approval`/`approvable_by_agent` flags and a `category` code—surface it to a human who approves out-of-band (Alpacon web console or Slack), then retry.
+**ADR 0015 (out-of-band approval channel)**: An AI agent reaching Alpacon through MCP is a request/execution surface and cannot approve or reject privileged-access requests. There is intentionally no `approve_request`/`reject_request` tool, and the Alpacon server refuses approve/reject from agent/token channels with HTTP 403. When an action needs approval (a sudo HITL denial `SUDO_APPROVAL_REQUIRED`, a Work Session that lands `pending`, or a Work Session update queued as a modification request `WORK_SESSION_MOD_PENDING`), the relevant tool returns a structured `status="pending_approval"` result with `requires_human_approval`/`approvable_by_agent` flags and a `category` code—surface it to a human who approves out-of-band (Alpacon web console or Slack), then retry.
 
 ### 🔗 Webhooks & event subscriptions
 - `list_event_subscriptions`: List event subscriptions
@@ -568,7 +569,7 @@ permissions:
 4. Use `success_response()` and `error_response()` helpers
 5. Follow async/await pattern for HTTP calls
 6. For file path parameters, add inline `validate_file_path()` checks
-7. Common parameters (`region`, `workspace`, `server_id`) are validated automatically by the decorator
+7. Common parameters (`region`, `workspace`, `server_id`, `session_id`) are validated automatically by the decorator
 8. Update this documentation
 
 ### API token setup

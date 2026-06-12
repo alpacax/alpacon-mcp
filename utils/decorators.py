@@ -313,6 +313,11 @@ def with_token_validation(func: Callable) -> Callable:
                     'Each server ID must be in UUID format. (e.g., 550e8400-e29b-41d4-a716-446655440000)',
                 )
 
+        # session_id is interpolated into URL paths, so reject non-UUID values that could retarget the request.
+        session_id = arguments.get('session_id')
+        if session_id is not None and not validate_server_id_format(session_id):
+            return format_validation_error('session_id', session_id)
+
         # Get the **kwargs dict from bound arguments to inject token
         extra_kwargs = bound_args.arguments.get('kwargs', {})
 

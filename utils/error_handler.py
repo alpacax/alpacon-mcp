@@ -289,6 +289,7 @@ def format_validation_error(
             'workspace': 'Only alphanumeric characters, hyphens (-), and underscores (_) allowed. Length: 1-63 characters.',
             'region': 'Supported regions: ap1, us1, eu1',
             'server_id': 'Server ID must be in UUID format. (e.g., 550e8400-e29b-41d4-a716-446655440000)',
+            'session_id': 'Session ID must be in UUID format. (e.g., 550e8400-e29b-41d4-a716-446655440000)',
             'file_path': 'Use absolute paths and avoid dangerous characters (.., <, >, |, *, ?).',
         }
         suggestion = suggestions.get(field, 'Please enter in correct format.')

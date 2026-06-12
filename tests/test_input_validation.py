@@ -293,6 +293,57 @@ class TestServerIdsValidation:
 
 
 # ---------------------------------------------------------------------------
+# Session ID validation
+# ---------------------------------------------------------------------------
+
+
+class TestSessionIdValidation:
+    """Tests that invalid session_id values are rejected early.
+
+    session_id is interpolated into URL paths (work_session_tools), so a
+    non-UUID value (e.g. containing ``../`` or ``?``) must be rejected
+    before any HTTP request is built.
+    """
+
+    @pytest.mark.asyncio
+    @patch('utils.decorators.validate_token', return_value='fake-token')
+    async def test_invalid_session_id_rejected(self, mock_token):
+        func = _make_decorated_func(extra_params=['session_id'])
+        result = await func(workspace='demo', region='ap1', session_id='not-a-uuid')
+        assert result['status'] == 'error'
+        assert result['field'] == 'session_id'
+
+    @pytest.mark.asyncio
+    @patch('utils.decorators.validate_token', return_value='fake-token')
+    async def test_path_traversal_session_id_rejected(self, mock_token):
+        func = _make_decorated_func(extra_params=['session_id'])
+        result = await func(
+            workspace='demo', region='ap1', session_id='../other-endpoint'
+        )
+        assert result['status'] == 'error'
+        assert result['field'] == 'session_id'
+
+    @pytest.mark.asyncio
+    @patch('utils.decorators.validate_token', return_value='fake-token')
+    async def test_valid_session_id_passes(self, mock_token):
+        func = _make_decorated_func(extra_params=['session_id'])
+        result = await func(
+            workspace='demo',
+            region='ap1',
+            session_id='550e8400-e29b-41d4-a716-446655440000',
+        )
+        assert result['status'] == 'success'
+
+    @pytest.mark.asyncio
+    @patch('utils.decorators.validate_token', return_value='fake-token')
+    async def test_absent_session_id_passes(self, mock_token):
+        """Not providing session_id at all should pass (other tools)."""
+        func = _make_decorated_func(extra_params=['session_id'])
+        result = await func(workspace='demo', region='ap1')
+        assert result['status'] == 'success'
+
+
+# ---------------------------------------------------------------------------
 # File path validation (webftp_tools inline validation)
 # ---------------------------------------------------------------------------
 
