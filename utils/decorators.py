@@ -303,6 +303,12 @@ def with_token_validation(func: Callable) -> Callable:
         # Validate server_ids list if present
         server_ids = arguments.get('server_ids')
         if server_ids is not None:
+            if not isinstance(server_ids, list):
+                return format_validation_error(
+                    'server_ids',
+                    server_ids,
+                    'Must be a list of server UUIDs.',
+                )
             invalid_ids = [
                 sid for sid in server_ids if not validate_server_id_format(sid)
             ]
@@ -316,6 +322,12 @@ def with_token_validation(func: Callable) -> Callable:
         # Validate servers list if present (server UUIDs sent in request bodies)
         servers = arguments.get('servers')
         if servers is not None:
+            if not isinstance(servers, list):
+                return format_validation_error(
+                    'servers',
+                    servers,
+                    'Must be a list of server UUIDs.',
+                )
             invalid_servers = [
                 sid for sid in servers if not validate_server_id_format(sid)
             ]

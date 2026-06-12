@@ -225,8 +225,9 @@ The `with_token_validation` decorator (`utils/decorators.py`) validates inputs *
 1. **Region format**: Must be one of: `ap1`, `us1`, `eu1`
 2. **Workspace format**: Alphanumeric with hyphens/underscores, 1-63 characters
 3. **Server ID format**: Must be valid UUID (when present)
-4. **Server IDs list**: Each element must be valid UUID (when present)
-5. **Session ID format**: Must be valid UUID (when present); session_id is interpolated into URL paths
+4. **Server IDs list**: Must be a list; each element must be valid UUID (when present)
+5. **Servers list**: Must be a list; each element must be valid UUID (when present; server UUIDs sent in request bodies)
+6. **Session ID format**: Must be valid UUID (when present); session_id is interpolated into URL paths
 
 File path validation is applied inline in `webftp_upload_file` and `webftp_download_file` using `validate_file_path()` from `utils/error_handler.py`. Rejects path traversal (`../`), relative paths, null bytes, and dangerous characters.
 

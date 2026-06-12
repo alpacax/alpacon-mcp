@@ -291,6 +291,21 @@ class TestServerIdsValidation:
         result = await func(workspace='demo', region='ap1', server_ids=None)
         assert result['status'] == 'success'
 
+    @pytest.mark.asyncio
+    @patch('utils.decorators.validate_token', return_value='fake-token')
+    async def test_string_server_ids_rejected(self, mock_token):
+        """A single string must fail fast, not be iterated character-by-character."""
+        func = _make_decorated_func(extra_params=['server_ids'])
+        result = await func(
+            workspace='demo',
+            region='ap1',
+            server_ids='550e8400-e29b-41d4-a716-446655440000',
+        )
+        assert result['status'] == 'error'
+        assert result['field'] == 'server_ids'
+        # The whole string is reported, not a confusing list of single characters.
+        assert result['value'] == '550e8400-e29b-41d4-a716-446655440000'
+
 
 # ---------------------------------------------------------------------------
 # servers list validation
@@ -347,6 +362,21 @@ class TestServersValidation:
         func = _make_decorated_func(extra_params=['servers'])
         result = await func(workspace='demo', region='ap1', servers=None)
         assert result['status'] == 'success'
+
+    @pytest.mark.asyncio
+    @patch('utils.decorators.validate_token', return_value='fake-token')
+    async def test_string_servers_rejected(self, mock_token):
+        """A single string must fail fast, not be iterated character-by-character."""
+        func = _make_decorated_func(extra_params=['servers'])
+        result = await func(
+            workspace='demo',
+            region='ap1',
+            servers='550e8400-e29b-41d4-a716-446655440000',
+        )
+        assert result['status'] == 'error'
+        assert result['field'] == 'servers'
+        # The whole string is reported, not a confusing list of single characters.
+        assert result['value'] == '550e8400-e29b-41d4-a716-446655440000'
 
 
 # ---------------------------------------------------------------------------
