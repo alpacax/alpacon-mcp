@@ -3,7 +3,7 @@
 import asyncio
 from typing import Any
 
-from utils.common import success_response
+from utils.common import success_response, unwrap_http_result
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import READ_ONLY
@@ -38,6 +38,16 @@ async def get_system_info(
         params={'server': server_id},
     )
 
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to get system info',
+        server_id=server_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
+
     return success_response(
         data=result, server_id=server_id, region=region, workspace=workspace
     )
@@ -71,6 +81,16 @@ async def get_os_version(
         token=token,
         params={'server': server_id},
     )
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to get OS version',
+        server_id=server_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
 
     return success_response(
         data=result, server_id=server_id, region=region, workspace=workspace
@@ -120,6 +140,16 @@ async def list_system_users(
         params=params,
     )
 
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to list system users',
+        server_id=server_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
+
     return success_response(
         data=result,
         server_id=server_id,
@@ -168,6 +198,16 @@ async def list_system_groups(
         token=token,
         params=params,
     )
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to list system groups',
+        server_id=server_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
 
     return success_response(
         data=result,
@@ -223,6 +263,16 @@ async def list_system_packages(
         params=params,
     )
 
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to list system packages',
+        server_id=server_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
+
     return success_response(
         data=result,
         server_id=server_id,
@@ -262,6 +312,16 @@ async def get_network_interfaces(
         token=token,
         params={'server': server_id},
     )
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to get network interfaces',
+        server_id=server_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
 
     return success_response(
         data=result, server_id=server_id, region=region, workspace=workspace
@@ -360,6 +420,16 @@ async def get_system_time(
         token=token,
         params={'server': server_id},
     )
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to get system time',
+        server_id=server_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
 
     return success_response(
         data=result, server_id=server_id, region=region, workspace=workspace

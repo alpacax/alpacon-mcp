@@ -4,7 +4,7 @@ import re
 from typing import Any
 
 from server import mcp
-from utils.common import error_response, success_response
+from utils.common import error_response, success_response, unwrap_http_result
 from utils.decorators import mcp_tool_handler
 from utils.error_handler import format_validation_error, validate_server_id_format
 from utils.http_client import http_client
@@ -69,6 +69,15 @@ async def list_iam_users(
         params=params,
     )
 
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to list IAM users',
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
+
     return success_response(data=result, region=region, workspace=workspace)
 
 
@@ -106,6 +115,16 @@ async def get_iam_user(
         endpoint=f'/api/iam/users/{user_id}/',
         token=token,
     )
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to get IAM user',
+        user_id=user_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
 
     return success_response(
         data=result, user_id=user_id, region=region, workspace=workspace
@@ -160,6 +179,16 @@ async def create_iam_user(
         token=token,
         data=user_data,
     )
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to create IAM user',
+        username=username,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
 
     return success_response(
         data=result, username=username, region=region, workspace=workspace
@@ -225,6 +254,16 @@ async def update_iam_user(
         data=update_data,
     )
 
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to update IAM user',
+        user_id=user_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
+
     return success_response(
         data=result, user_id=user_id, region=region, workspace=workspace
     )
@@ -260,6 +299,16 @@ async def delete_iam_user(
         endpoint=f'/api/iam/users/{user_id}/',
         token=token,
     )
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to delete IAM user',
+        user_id=user_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
 
     return success_response(
         data=result, user_id=user_id, region=region, workspace=workspace
@@ -309,6 +358,15 @@ async def list_iam_groups(
         token=token,
         params=params,
     )
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to list IAM groups',
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
 
     return success_response(data=result, region=region, workspace=workspace)
 
@@ -361,6 +419,16 @@ async def create_iam_group(
         token=token,
         data=group_data,
     )
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to create IAM group',
+        group_name=name,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
 
     return success_response(
         data=result, group_name=name, region=region, workspace=workspace
@@ -460,6 +528,15 @@ async def get_iam_group(
         endpoint=f'/api/iam/groups/{group_id}/',
         token=token,
     )
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to get IAM group',
+        group_id=group_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
     return success_response(
         data=result, group_id=group_id, region=region, workspace=workspace
     )
@@ -515,6 +592,15 @@ async def update_iam_group(
         token=token,
         data=update_data,
     )
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to update IAM group',
+        group_id=group_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
     return success_response(
         data=result, group_id=group_id, region=region, workspace=workspace
     )
@@ -552,6 +638,15 @@ async def delete_iam_group(
         endpoint=f'/api/iam/groups/{group_id}/',
         token=token,
     )
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to delete IAM group',
+        group_id=group_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
     return success_response(
         data=result, group_id=group_id, region=region, workspace=workspace
     )
@@ -609,6 +704,14 @@ async def list_iam_memberships(
         token=token,
         params=params,
     )
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to list IAM memberships',
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
     return success_response(data=result, region=region, workspace=workspace)
 
 
@@ -653,6 +756,16 @@ async def add_iam_member(
         token=token,
         data={'group': group_id, 'user': user_id, 'role': role},
     )
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to add IAM member',
+        group_id=group_id,
+        user_id=user_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
     return success_response(
         data=result,
         group_id=group_id,
@@ -694,6 +807,15 @@ async def remove_iam_member(
         endpoint=f'/api/iam/memberships/{membership_id}/',
         token=token,
     )
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to remove IAM member',
+        membership_id=membership_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
     return success_response(
         data=result,
         membership_id=membership_id,
@@ -739,6 +861,15 @@ async def invite_workspace_user(
         token=token,
         data={'email': email},
     )
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to invite workspace user',
+        email=email,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
     return success_response(
         data=result, email=email, region=region, workspace=workspace
     )
@@ -787,6 +918,14 @@ async def list_iam_applications(
         token=token,
         params=params,
     )
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to list IAM applications',
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
     return success_response(data=result, region=region, workspace=workspace)
 
 
@@ -838,6 +977,15 @@ async def create_iam_application(
         token=token,
         data=app_data,
     )
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to create IAM application',
+        app_name=name,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
     return success_response(
         data=result, app_name=name, region=region, workspace=workspace
     )
@@ -875,6 +1023,15 @@ async def get_iam_application(
         endpoint=f'/api/iam/applications/{app_id}/',
         token=token,
     )
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to get IAM application',
+        app_id=app_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
     return success_response(
         data=result, app_id=app_id, region=region, workspace=workspace
     )
@@ -927,6 +1084,15 @@ async def update_iam_application(
         token=token,
         data=update_data,
     )
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to update IAM application',
+        app_id=app_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
     return success_response(
         data=result, app_id=app_id, region=region, workspace=workspace
     )
@@ -964,6 +1130,15 @@ async def delete_iam_application(
         endpoint=f'/api/iam/applications/{app_id}/',
         token=token,
     )
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to delete IAM application',
+        app_id=app_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
     return success_response(
         data=result, app_id=app_id, region=region, workspace=workspace
     )
@@ -1016,6 +1191,15 @@ async def assign_application_system_users(
         token=token,
         data={'system_user_ids': system_user_ids},
     )
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to assign system users to IAM application',
+        app_id=app_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
     return success_response(
         data=result, app_id=app_id, region=region, workspace=workspace
     )
@@ -1068,6 +1252,15 @@ async def unassign_application_system_users(
         token=token,
         data={'system_user_ids': system_user_ids},
     )
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to unassign system users from IAM application',
+        app_id=app_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
     return success_response(
         data=result, app_id=app_id, region=region, workspace=workspace
     )

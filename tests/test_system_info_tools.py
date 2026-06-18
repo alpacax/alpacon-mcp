@@ -9,6 +9,8 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from tests.conftest import HTTP_ERROR_ENVELOPE
+
 
 @pytest.fixture
 def mock_http_client():
@@ -98,6 +100,29 @@ class TestGetSystemInfo:
 
         assert result['status'] == 'error'
         assert 'Failed in get_system_info' in result['message']
+
+    @pytest.mark.asyncio
+    async def test_system_info_error_envelope(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Test that an http_client error envelope returns an error response."""
+        from tools.system_info_tools import get_system_info
+
+        mock_http_client.get.return_value = HTTP_ERROR_ENVELOPE
+
+        result = await get_system_info(
+            server_id='550e8400-e29b-41d4-a716-446655440001',
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert result['status'] == 'error'
+        assert result['message'] == 'Not found'
+        assert result['status_code'] == 404
+        assert result['server_id'] == '550e8400-e29b-41d4-a716-446655440001'
+        assert result['region'] == 'ap1'
+        assert result['workspace'] == 'testworkspace'
+        assert 'data' not in result
 
 
 class TestGetOsVersion:
@@ -261,6 +286,27 @@ class TestListSystemUsers:
 
         assert result['status'] == 'error'
         assert 'No token found' in result['message']
+
+    @pytest.mark.asyncio
+    async def test_list_users_error_envelope(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Test that an http_client error envelope returns an error response."""
+        from tools.system_info_tools import list_system_users
+
+        mock_http_client.get.return_value = HTTP_ERROR_ENVELOPE
+
+        result = await list_system_users(
+            server_id='550e8400-e29b-41d4-a716-446655440001',
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert result['status'] == 'error'
+        assert result['message'] == 'Not found'
+        assert result['status_code'] == 404
+        assert result['server_id'] == '550e8400-e29b-41d4-a716-446655440001'
+        assert 'data' not in result
 
 
 class TestListSystemGroups:
@@ -513,6 +559,27 @@ class TestGetNetworkInterfaces:
 
         assert result['status'] == 'error'
         assert 'No token found' in result['message']
+
+    @pytest.mark.asyncio
+    async def test_network_interfaces_error_envelope(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Test that an http_client error envelope returns an error response."""
+        from tools.system_info_tools import get_network_interfaces
+
+        mock_http_client.get.return_value = HTTP_ERROR_ENVELOPE
+
+        result = await get_network_interfaces(
+            server_id='550e8400-e29b-41d4-a716-446655440001',
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert result['status'] == 'error'
+        assert result['message'] == 'Not found'
+        assert result['status_code'] == 404
+        assert result['server_id'] == '550e8400-e29b-41d4-a716-446655440001'
+        assert 'data' not in result
 
 
 class TestGetDiskInfo:

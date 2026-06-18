@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from tests.conftest import HTTP_ERROR_ENVELOPE
 from tools.iam_tools import (
     add_iam_member,
     assign_application_system_users,
@@ -397,6 +398,43 @@ class TestErrorHandling:
         assert result['status'] == 'error'
         assert 'No token found' in result['message']
         mock_http_client.post.assert_not_called()
+
+
+class TestHTTPErrorEnvelope:
+    """Test that http_client error envelopes surface as error responses."""
+
+    @pytest.mark.asyncio
+    async def test_get_iam_user_http_error(self, mock_http_client, mock_token_manager):
+        """get_iam_user reports error when http_client returns an error envelope."""
+        mock_http_client.get.return_value = HTTP_ERROR_ENVELOPE
+
+        result = await get_iam_user(user_id=USER_ID, workspace='testworkspace')
+
+        assert result['status'] == 'error'
+
+    @pytest.mark.asyncio
+    async def test_create_iam_user_http_error(
+        self, mock_http_client, mock_token_manager
+    ):
+        """create_iam_user reports error when http_client returns an error envelope."""
+        mock_http_client.post.return_value = HTTP_ERROR_ENVELOPE
+
+        result = await create_iam_user(
+            username='testuser', email='test@example.com', workspace='testworkspace'
+        )
+
+        assert result['status'] == 'error'
+
+    @pytest.mark.asyncio
+    async def test_delete_iam_user_http_error(
+        self, mock_http_client, mock_token_manager
+    ):
+        """delete_iam_user reports error when http_client returns an error envelope."""
+        mock_http_client.delete.return_value = HTTP_ERROR_ENVELOPE
+
+        result = await delete_iam_user(user_id=USER_ID, workspace='testworkspace')
+
+        assert result['status'] == 'error'
 
 
 class TestParameterValidation:

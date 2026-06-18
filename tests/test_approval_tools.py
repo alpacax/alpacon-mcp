@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from tests.conftest import HTTP_ERROR_ENVELOPE
 from tools.approval_tools import (
     create_sudo_policy,
     explain_approval_decision,
@@ -123,6 +124,21 @@ class TestGetApprovalRequest:
             token='test-token',
         )
 
+    @pytest.mark.asyncio
+    async def test_get_approval_request_http_error(
+        self, mock_http_client, mock_token_manager
+    ):
+        """An http_client error envelope must surface as status='error'."""
+        mock_http_client.get.return_value = HTTP_ERROR_ENVELOPE
+
+        result = await get_approval_request(
+            request_id='req-1', workspace='testworkspace', region='ap1'
+        )
+
+        assert result['status'] == 'error'
+        assert result['status_code'] == 404
+        assert result['message'] == 'Not found'
+
 
 class TestApprovalDecisionIsHumanOnly:
     """ADR 0015: an agent cannot approve/reject; there is no mutation tool."""
@@ -198,6 +214,19 @@ class TestSudoPolicies:
         )
 
     @pytest.mark.asyncio
+    async def test_list_sudo_policies_http_error(
+        self, mock_http_client, mock_token_manager
+    ):
+        """An http_client error envelope must surface as status='error'."""
+        mock_http_client.get.return_value = HTTP_ERROR_ENVELOPE
+
+        result = await list_sudo_policies(workspace='testworkspace', region='ap1')
+
+        assert result['status'] == 'error'
+        assert result['status_code'] == 404
+        assert result['message'] == 'Not found'
+
+    @pytest.mark.asyncio
     async def test_create_sudo_policy_success(
         self, mock_http_client, mock_token_manager
     ):
@@ -258,3 +287,21 @@ class TestSudoPolicies:
                 'no_password': False,
             },
         )
+
+    @pytest.mark.asyncio
+    async def test_create_sudo_policy_http_error(
+        self, mock_http_client, mock_token_manager
+    ):
+        """An http_client error envelope must surface as status='error'."""
+        mock_http_client.post.return_value = HTTP_ERROR_ENVELOPE
+
+        result = await create_sudo_policy(
+            workspace='testworkspace',
+            name='basic',
+            commands=['/usr/bin/apt update'],
+            region='ap1',
+        )
+
+        assert result['status'] == 'error'
+        assert result['status_code'] == 404
+        assert result['message'] == 'Not found'

@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from utils.common import success_response
+from utils.common import success_response, unwrap_http_result
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, READ_ONLY
@@ -53,6 +53,16 @@ async def list_system_package_entries(
         params=params,
     )
 
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to list system package entries',
+        server_id=server_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
+
     return success_response(
         data=result, server_id=server_id, region=region, workspace=workspace
     )
@@ -101,6 +111,16 @@ async def install_system_package(
         data=package_data,
     )
 
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to install system package',
+        server_id=server_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
+
     return success_response(
         data=result, server_id=server_id, region=region, workspace=workspace
     )
@@ -132,6 +152,16 @@ async def remove_system_package(
         endpoint=f'/api/packages/system/entries/{entry_id}/',
         token=token,
     )
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to remove system package',
+        entry_id=entry_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
 
     return success_response(
         data=result, entry_id=entry_id, region=region, workspace=workspace
@@ -184,6 +214,16 @@ async def list_python_packages(
         params=params,
     )
 
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to list Python packages',
+        server_id=server_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
+
     return success_response(
         data=result, server_id=server_id, region=region, workspace=workspace
     )
@@ -232,6 +272,16 @@ async def install_python_package(
         data=package_data,
     )
 
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to install Python package',
+        server_id=server_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
+
     return success_response(
         data=result, server_id=server_id, region=region, workspace=workspace
     )
@@ -263,6 +313,16 @@ async def remove_python_package(
         endpoint=f'/api/packages/python/entries/{entry_id}/',
         token=token,
     )
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to remove Python package',
+        entry_id=entry_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
 
     return success_response(
         data=result, entry_id=entry_id, region=region, workspace=workspace

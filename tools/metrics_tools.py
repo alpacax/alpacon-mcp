@@ -4,7 +4,7 @@ import asyncio
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from utils.common import error_response, success_response
+from utils.common import error_response, success_response, unwrap_http_result
 from utils.decorators import mcp_tool_handler
 from utils.error_handler import UpstreamAuthError
 from utils.http_client import http_client
@@ -117,6 +117,16 @@ async def get_cpu_usage(
         token=token,
         params=params,
     )
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to get CPU usage metrics',
+        server_id=server_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
 
     # Parse metrics for better readability
     parsed_data = {
@@ -238,6 +248,16 @@ async def get_memory_usage(
         params=params,
     )
 
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to get memory usage metrics',
+        server_id=server_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
+
     # Parse metrics for better readability
     parsed_data = {
         'server_id': server_id,
@@ -348,6 +368,18 @@ async def get_disk_usage(
                 params={'server': server_id},
             )
 
+            # A 4xx/5xx here must surface as the real error, not be masked as
+            # "no devices found" by the empty-list fallback below.
+            err = unwrap_http_result(
+                devices_result,
+                default_message='Failed to fetch disk devices',
+                server_id=server_id,
+                region=region,
+                workspace=workspace,
+            )
+            if err:
+                return err
+
             # Extract device list from response
             available_devices = (
                 devices_result.get('devices', [])
@@ -397,6 +429,16 @@ async def get_disk_usage(
         token=token,
         params=params,
     )
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to get disk usage metrics',
+        server_id=server_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
 
     # Parse metrics for better readability
     parsed_data = {
@@ -556,6 +598,16 @@ async def get_disk_io(
         params=params,
     )
 
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to get disk I/O metrics',
+        server_id=server_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
+
     return success_response(
         data=result,
         server_id=server_id,
@@ -616,6 +668,16 @@ async def get_network_traffic(
         token=token,
         params=params,
     )
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to get network traffic metrics',
+        server_id=server_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
 
     # Parse metrics for better readability
     parsed_data = {
@@ -712,6 +774,15 @@ async def get_top_servers(
                 workspace=workspace,
             )
 
+        err = unwrap_http_result(
+            result,
+            default_message=f'Failed to fetch {metric} metrics',
+            region=region,
+            workspace=workspace,
+        )
+        if err:
+            return err
+
         return success_response(
             data=result, metric_type=f'{metric}_top', region=region, workspace=workspace
         )
@@ -724,7 +795,12 @@ async def get_top_servers(
                 raise result  # Re-raise CancelledError, KeyboardInterrupt, etc.
             combined_data[metric] = {'error': str(result), 'available': False}
         else:
-            combined_data[metric] = result
+            err = unwrap_http_result(
+                result, default_message=f'Failed to fetch {metric} metrics'
+            )
+            combined_data[metric] = (
+                {'error': err['message'], 'available': False} if err else result
+            )
 
     return success_response(
         data=combined_data,
@@ -769,6 +845,16 @@ async def get_alert_rules(
         token=token,
         params=params,
     )
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to get alert rules',
+        server_id=server_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
 
     return success_response(
         data=result, server_id=server_id, region=region, workspace=workspace

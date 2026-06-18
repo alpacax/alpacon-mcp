@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from utils.common import success_response
+from utils.common import success_response, unwrap_http_result
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import READ_ONLY
@@ -51,6 +51,15 @@ async def list_activity_logs(
         params=params,
     )
 
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to list activity logs',
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
+
     return success_response(data=result, region=region, workspace=workspace)
 
 
@@ -80,6 +89,16 @@ async def get_activity_log(
         endpoint=f'/api/audit/activity/{log_id}/',
         token=token,
     )
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to get activity log details',
+        log_id=log_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
 
     return success_response(
         data=result, log_id=log_id, region=region, workspace=workspace
@@ -134,6 +153,16 @@ async def list_server_logs(
         params=params,
     )
 
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to list server logs',
+        server_id=server_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
+
     return success_response(
         data=result, server_id=server_id, region=region, workspace=workspace
     )
@@ -181,6 +210,16 @@ async def list_webftp_logs(
         token=token,
         params=params,
     )
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to list WebFTP logs',
+        server_id=server_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
 
     return success_response(
         data=result, server_id=server_id, region=region, workspace=workspace
@@ -243,6 +282,16 @@ async def list_session_analyses(
         params=params,
     )
 
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to list session analyses',
+        server_id=server_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
+
     return success_response(
         data=result, server_id=server_id, region=region, workspace=workspace
     )
@@ -277,6 +326,16 @@ async def get_session_analysis_detail(
         endpoint=f'/api/history/session-analyses/{analysis_id}/',
         token=token,
     )
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to get session analysis details',
+        analysis_id=analysis_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
 
     return success_response(
         data=result, analysis_id=analysis_id, region=region, workspace=workspace

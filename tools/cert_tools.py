@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from utils.common import error_response, success_response
+from utils.common import error_response, success_response, unwrap_http_result
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ_ONLY
@@ -50,6 +50,15 @@ async def list_certificate_authorities(
         token=token,
         params=params,
     )
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to list certificate authorities',
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
 
     return success_response(data=result, region=region, workspace=workspace)
 
@@ -126,6 +135,15 @@ async def create_certificate_authority(
         data=ca_data,
     )
 
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to create certificate authority',
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
+
     return success_response(data=result, region=region, workspace=workspace)
 
 
@@ -158,6 +176,16 @@ async def get_certificate_authority(
         endpoint=f'/api/cert/authorities/{ca_id}/',
         token=token,
     )
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to get certificate authority details',
+        ca_id=ca_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
 
     return success_response(
         data=result, ca_id=ca_id, region=region, workspace=workspace
@@ -212,6 +240,16 @@ async def update_certificate_authority(
         data=patch_data,
     )
 
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to update certificate authority',
+        ca_id=ca_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
+
     return success_response(
         data=result, ca_id=ca_id, region=region, workspace=workspace
     )
@@ -246,6 +284,16 @@ async def delete_certificate_authority(
         endpoint=f'/api/cert/authorities/{ca_id}/',
         token=token,
     )
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to delete certificate authority',
+        ca_id=ca_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
 
     return success_response(
         data=result, ca_id=ca_id, region=region, workspace=workspace
@@ -295,6 +343,15 @@ async def list_sign_requests(
         token=token,
         params=params,
     )
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to list certificate signing requests',
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
 
     return success_response(data=result, region=region, workspace=workspace)
 
@@ -349,6 +406,15 @@ async def create_sign_request(
         data=csr_data,
     )
 
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to create certificate signing request',
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
+
     return success_response(data=result, region=region, workspace=workspace)
 
 
@@ -381,6 +447,16 @@ async def get_sign_request(
         endpoint=f'/api/cert/sign-requests/{csr_id}/',
         token=token,
     )
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to get certificate signing request details',
+        csr_id=csr_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
 
     return success_response(
         data=result, csr_id=csr_id, region=region, workspace=workspace
@@ -416,6 +492,16 @@ async def delete_sign_request(
         endpoint=f'/api/cert/sign-requests/{csr_id}/',
         token=token,
     )
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to cancel certificate signing request',
+        csr_id=csr_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
 
     return success_response(
         data=result, csr_id=csr_id, region=region, workspace=workspace
@@ -453,6 +539,16 @@ async def approve_sign_request(
         data={},
     )
 
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to approve certificate signing request',
+        csr_id=csr_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
+
     return success_response(
         data=result, csr_id=csr_id, region=region, workspace=workspace
     )
@@ -488,6 +584,16 @@ async def deny_sign_request(
         token=token,
         data={},
     )
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to deny certificate signing request',
+        csr_id=csr_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
 
     return success_response(
         data=result, csr_id=csr_id, region=region, workspace=workspace
@@ -526,6 +632,16 @@ async def retry_sign_request(
         token=token,
         data={},
     )
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to retry certificate signing request',
+        csr_id=csr_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
 
     return success_response(
         data=result, csr_id=csr_id, region=region, workspace=workspace
@@ -580,6 +696,15 @@ async def list_certificates(
         params=params,
     )
 
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to list certificates',
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
+
     return success_response(data=result, region=region, workspace=workspace)
 
 
@@ -612,6 +737,16 @@ async def get_certificate(
         endpoint=f'/api/cert/certificates/{certificate_id}/',
         token=token,
     )
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to get certificate details',
+        certificate_id=certificate_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
 
     return success_response(
         data=result,
@@ -668,6 +803,16 @@ async def revoke_certificate(
         data=data,
     )
 
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to revoke certificate',
+        certificate_id=certificate_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
+
     return success_response(
         data=result,
         certificate_id=certificate_id,
@@ -720,6 +865,15 @@ async def list_revoke_requests(
         params=params,
     )
 
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to list certificate revocation requests',
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
+
     return success_response(data=result, region=region, workspace=workspace)
 
 
@@ -752,6 +906,16 @@ async def get_revoke_request(
         endpoint=f'/api/cert/revoke-requests/{revoke_id}/',
         token=token,
     )
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to get certificate revocation request details',
+        revoke_id=revoke_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
 
     return success_response(
         data=result, revoke_id=revoke_id, region=region, workspace=workspace
@@ -789,6 +953,16 @@ async def approve_revoke_request(
         data={},
     )
 
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to approve certificate revocation request',
+        revoke_id=revoke_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
+
     return success_response(
         data=result, revoke_id=revoke_id, region=region, workspace=workspace
     )
@@ -824,6 +998,16 @@ async def deny_revoke_request(
         token=token,
         data={},
     )
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to deny certificate revocation request',
+        revoke_id=revoke_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
 
     return success_response(
         data=result, revoke_id=revoke_id, region=region, workspace=workspace
@@ -863,6 +1047,16 @@ async def retry_revoke_request(
         data={},
     )
 
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to retry certificate revocation request',
+        revoke_id=revoke_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
+
     return success_response(
         data=result, revoke_id=revoke_id, region=region, workspace=workspace
     )
@@ -897,6 +1091,16 @@ async def cancel_revoke_request(
         endpoint=f'/api/cert/revoke-requests/{revoke_id}/',
         token=token,
     )
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to cancel certificate revocation request',
+        revoke_id=revoke_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
 
     return success_response(
         data=result, revoke_id=revoke_id, region=region, workspace=workspace
