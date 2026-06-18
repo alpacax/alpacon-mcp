@@ -795,7 +795,12 @@ async def get_top_servers(
                 raise result  # Re-raise CancelledError, KeyboardInterrupt, etc.
             combined_data[metric] = {'error': str(result), 'available': False}
         else:
-            combined_data[metric] = result
+            err = unwrap_http_result(
+                result, default_message=f'Failed to fetch {metric} metrics'
+            )
+            combined_data[metric] = (
+                {'error': err['message'], 'available': False} if err else result
+            )
 
     return success_response(
         data=combined_data,
