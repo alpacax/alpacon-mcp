@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from utils.common import error_response, success_response
+from utils.common import error_response, success_response, unwrap_http_result
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ_ONLY
@@ -62,6 +62,16 @@ async def list_alerts(
         params=params,
     )
 
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to list alerts',
+        server_id=server_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
+
     return success_response(
         data=result, server_id=server_id, region=region, workspace=workspace
     )
@@ -93,6 +103,16 @@ async def get_alert(
         endpoint=f'/api/alerts/{alert_id}/',
         token=token,
     )
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to get alert',
+        alert_id=alert_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
 
     return success_response(
         data=result, alert_id=alert_id, region=region, workspace=workspace
@@ -135,6 +155,16 @@ async def mute_alert(
         token=token,
         data=mute_data,
     )
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to mute alert',
+        alert_id=alert_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
 
     return success_response(
         data=result, alert_id=alert_id, region=region, workspace=workspace
@@ -208,6 +238,15 @@ async def create_alert_rule(
         data=rule_data,
     )
 
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to create alert rule',
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
+
     return success_response(data=result, region=region, workspace=workspace)
 
 
@@ -279,6 +318,16 @@ async def update_alert_rule(
         data=update_data,
     )
 
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to update alert rule',
+        rule_id=rule_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
+
     return success_response(
         data=result, rule_id=rule_id, region=region, workspace=workspace
     )
@@ -310,6 +359,16 @@ async def delete_alert_rule(
         endpoint=f'/api/metrics/alert-rules/{rule_id}/',
         token=token,
     )
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to delete alert rule',
+        rule_id=rule_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
 
     return success_response(
         data=result, rule_id=rule_id, region=region, workspace=workspace

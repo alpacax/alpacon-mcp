@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from utils.common import success_response
+from utils.common import success_response, unwrap_http_result
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import READ_ONLY
@@ -39,6 +39,18 @@ async def list_events(
         params=params,
     )
 
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to list events',
+        server_id=server_id,
+        reporter=reporter,
+        limit=limit,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
+
     return success_response(
         data=result,
         server_id=server_id,
@@ -66,6 +78,16 @@ async def get_event(
         endpoint=f'/api/events/events/{event_id}/',
         token=token,
     )
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to get event',
+        event_id=event_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
 
     return success_response(
         data=result, event_id=event_id, region=region, workspace=workspace
@@ -100,6 +122,18 @@ async def search_events(
         token=token,
         params=params,
     )
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to search events',
+        search_query=search_query,
+        server_id=server_id,
+        limit=limit,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
 
     return success_response(
         data=result,

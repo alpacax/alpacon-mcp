@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from utils.common import error_response, success_response
+from utils.common import error_response, success_response, unwrap_http_result
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ_ONLY
@@ -75,6 +75,15 @@ async def list_command_acls(
         params=params,
     )
 
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to list command ACLs',
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
+
     return success_response(data=result, region=region, workspace=workspace)
 
 
@@ -134,6 +143,15 @@ async def create_command_acl(
         data=acl_data,
     )
 
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to create command ACL',
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
+
     return success_response(data=result, region=region, workspace=workspace)
 
 
@@ -187,6 +205,16 @@ async def update_command_acl(
         data=update_data,
     )
 
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to update command ACL',
+        acl_id=acl_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
+
     return success_response(
         data=result, acl_id=acl_id, region=region, workspace=workspace
     )
@@ -218,6 +246,16 @@ async def delete_command_acl(
         endpoint=f'{_API_COMMAND_ACL}{acl_id}/',
         token=token,
     )
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to delete command ACL',
+        acl_id=acl_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
 
     return success_response(
         data=result, acl_id=acl_id, region=region, workspace=workspace
@@ -274,6 +312,15 @@ async def list_server_acls(
         params=params,
     )
 
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to list server ACLs',
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
+
     return success_response(data=result, region=region, workspace=workspace)
 
 
@@ -325,6 +372,15 @@ async def create_server_acl(
         token=token,
         data=acl_data,
     )
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to create server ACL',
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
 
     return success_response(data=result, region=region, workspace=workspace)
 
@@ -386,6 +442,16 @@ async def update_server_acl(
         data=update_data,
     )
 
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to update server ACL',
+        acl_id=acl_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
+
     return success_response(
         data=result, acl_id=acl_id, region=region, workspace=workspace
     )
@@ -417,6 +483,16 @@ async def delete_server_acl(
         endpoint=f'{_API_SERVER_ACL}{acl_id}/',
         token=token,
     )
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to delete server ACL',
+        acl_id=acl_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
 
     return success_response(
         data=result, acl_id=acl_id, region=region, workspace=workspace
@@ -486,6 +562,16 @@ async def bulk_server_acl(
         data=body,
     )
 
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to bulk update server ACLs',
+        action=action,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
+
     return success_response(
         data=result, action=action, region=region, workspace=workspace
     )
@@ -540,6 +626,15 @@ async def list_file_acls(
         token=token,
         params=params,
     )
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to list file ACLs',
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
 
     return success_response(data=result, region=region, workspace=workspace)
 
@@ -609,6 +704,15 @@ async def create_file_acl(
         data=acl_data,
     )
 
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to create file ACL',
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
+
     return success_response(data=result, region=region, workspace=workspace)
 
 
@@ -671,6 +775,16 @@ async def update_file_acl(
         data=update_data,
     )
 
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to update file ACL',
+        acl_id=acl_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
+
     return success_response(
         data=result, acl_id=acl_id, region=region, workspace=workspace
     )
@@ -702,6 +816,16 @@ async def delete_file_acl(
         endpoint=f'{_API_FILE_ACL}{acl_id}/',
         token=token,
     )
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to delete file ACL',
+        acl_id=acl_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
 
     return success_response(
         data=result, acl_id=acl_id, region=region, workspace=workspace

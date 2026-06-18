@@ -11,7 +11,11 @@ who approves out-of-band (Alpacon web console or Slack).
 
 from typing import Any
 
-from utils.common import pending_approval_response, success_response
+from utils.common import (
+    pending_approval_response,
+    success_response,
+    unwrap_http_result,
+)
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, READ_ONLY
@@ -64,6 +68,15 @@ async def list_approval_requests(
         params=params,
     )
 
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to list approval requests',
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
+
     return success_response(data=result, region=region, workspace=workspace)
 
 
@@ -93,6 +106,16 @@ async def get_approval_request(
         endpoint=f'/api/approvals/approvals/{request_id}/',
         token=token,
     )
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to get approval request',
+        request_id=request_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
 
     return success_response(
         data=result, request_id=request_id, region=region, workspace=workspace
@@ -196,6 +219,15 @@ async def list_sudo_policies(
         params=params,
     )
 
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to list sudo policies',
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
+
     return success_response(data=result, region=region, workspace=workspace)
 
 
@@ -260,5 +292,14 @@ async def create_sudo_policy(
         token=token,
         data=policy_data,
     )
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to create sudo policy',
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
 
     return success_response(data=result, region=region, workspace=workspace)
