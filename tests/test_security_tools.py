@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from tests.conftest import HTTP_ERROR_ENVELOPE
 from tools.security_tools import (
     bulk_server_acl,
     create_command_acl,
@@ -205,6 +206,21 @@ class TestCreateCommandAcl:
 
         assert result['status'] == 'error'
         mock_http_client.post.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_create_http_error_returns_error(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = HTTP_ERROR_ENVELOPE
+
+        result = await create_command_acl(
+            workspace='testworkspace',
+            command='docker *',
+            api_token_id='token-uuid',
+            region='ap1',
+        )
+
+        assert result['status'] == 'error'
 
 
 class TestUpdateCommandAcl:
@@ -578,6 +594,20 @@ class TestDeleteServerAcl:
             token='test-token',
         )
 
+    @pytest.mark.asyncio
+    async def test_delete_http_error_returns_error(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.delete.return_value = HTTP_ERROR_ENVELOPE
+
+        result = await delete_server_acl(
+            acl_id='acl-1',
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert result['status'] == 'error'
+
 
 class TestBulkServerAcl:
     @pytest.mark.asyncio
@@ -764,6 +794,16 @@ class TestListFileAcls:
             token='test-token',
             params={},
         )
+
+    @pytest.mark.asyncio
+    async def test_list_http_error_returns_error(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.get.return_value = HTTP_ERROR_ENVELOPE
+
+        result = await list_file_acls(workspace='testworkspace', region='ap1')
+
+        assert result['status'] == 'error'
 
     @pytest.mark.asyncio
     async def test_list_filter_by_api_token(self, mock_http_client, mock_token_manager):

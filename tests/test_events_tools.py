@@ -9,6 +9,8 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from tests.conftest import HTTP_ERROR_ENVELOPE
+
 
 @pytest.fixture
 def mock_http_client():
@@ -146,6 +148,19 @@ class TestListEvents:
         assert result['status'] == 'error'
         assert 'HTTP 500' in result['message']
 
+    @pytest.mark.asyncio
+    async def test_list_events_error_envelope(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Test events listing surfaces http_client error envelope as error."""
+        from tools.events_tools import list_events
+
+        mock_http_client.get.return_value = HTTP_ERROR_ENVELOPE
+
+        result = await list_events(workspace='testworkspace')
+
+        assert result['status'] == 'error'
+
 
 class TestGetEvent:
     """Test get_event function."""
@@ -211,6 +226,17 @@ class TestGetEvent:
 
         assert result['status'] == 'error'
         assert '404' in result['message']
+
+    @pytest.mark.asyncio
+    async def test_get_event_error_envelope(self, mock_http_client, mock_token_manager):
+        """Test event retrieval surfaces http_client error envelope as error."""
+        from tools.events_tools import get_event
+
+        mock_http_client.get.return_value = HTTP_ERROR_ENVELOPE
+
+        result = await get_event(event_id='event-123', workspace='testworkspace')
+
+        assert result['status'] == 'error'
 
 
 class TestSearchEvents:
@@ -335,6 +361,19 @@ class TestSearchEvents:
 
         assert result['status'] == 'error'
         assert 'Search service unavailable' in result['message']
+
+    @pytest.mark.asyncio
+    async def test_search_events_error_envelope(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Test event search surfaces http_client error envelope as error."""
+        from tools.events_tools import search_events
+
+        mock_http_client.get.return_value = HTTP_ERROR_ENVELOPE
+
+        result = await search_events(search_query='test', workspace='testworkspace')
+
+        assert result['status'] == 'error'
 
 
 if __name__ == '__main__':

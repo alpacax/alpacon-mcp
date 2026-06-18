@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from tests.conftest import HTTP_ERROR_ENVELOPE
 from tools.package_tools import (
     install_python_package,
     install_system_package,
@@ -161,6 +162,37 @@ class TestSystemPackages:
             token='test-token',
         )
 
+    @pytest.mark.asyncio
+    async def test_list_system_package_entries_error(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Test system package entries listing surfaces an HTTP error."""
+        mock_http_client.get.return_value = HTTP_ERROR_ENVELOPE
+
+        result = await list_system_package_entries(
+            server_id=SERVER_ID, workspace='testworkspace', region='ap1'
+        )
+
+        assert result['status'] == 'error'
+        assert result['status_code'] == 404
+
+    @pytest.mark.asyncio
+    async def test_install_system_package_error(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Test system package installation surfaces an HTTP error."""
+        mock_http_client.post.return_value = HTTP_ERROR_ENVELOPE
+
+        result = await install_system_package(
+            server_id=SERVER_ID,
+            package_name='htop',
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert result['status'] == 'error'
+        assert result['status_code'] == 404
+
 
 class TestPythonPackages:
     """Test Python package tools."""
@@ -262,3 +294,17 @@ class TestPythonPackages:
             endpoint='/api/packages/python/entries/py-1/',
             token='test-token',
         )
+
+    @pytest.mark.asyncio
+    async def test_remove_python_package_error(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Test Python package removal surfaces an HTTP error."""
+        mock_http_client.delete.return_value = HTTP_ERROR_ENVELOPE
+
+        result = await remove_python_package(
+            entry_id='py-1', workspace='testworkspace', region='ap1'
+        )
+
+        assert result['status'] == 'error'
+        assert result['status_code'] == 404

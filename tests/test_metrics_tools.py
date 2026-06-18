@@ -9,6 +9,8 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from tests.conftest import HTTP_ERROR_ENVELOPE
+
 
 @pytest.fixture
 def mock_http_client():
@@ -92,6 +94,23 @@ class TestGetCpuUsage:
         params = call_args[1]['params']
         assert params['server'] == '550e8400-e29b-41d4-a716-446655440001'
         assert 'start' in params  # Default start date is auto-generated
+
+    @pytest.mark.asyncio
+    async def test_cpu_usage_http_error_envelope(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Test CPU usage returns error when http_client returns an error envelope."""
+        from tools.metrics_tools import get_cpu_usage
+
+        mock_http_client.get.return_value = HTTP_ERROR_ENVELOPE
+
+        result = await get_cpu_usage(
+            server_id='550e8400-e29b-41d4-a716-446655440001', workspace='testworkspace'
+        )
+
+        assert result['status'] == 'error'
+        assert result['status_code'] == 404
+        assert result['message'] == 'Not found'
 
     @pytest.mark.asyncio
     async def test_cpu_usage_no_token(self, mock_http_client, mock_token_manager):
@@ -389,6 +408,27 @@ class TestGetNetworkTraffic:
         assert 'No token found' in result['message']
 
 
+class TestGetDiskIo:
+    """Test get_disk_io function."""
+
+    @pytest.mark.asyncio
+    async def test_disk_io_http_error_envelope(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Test disk I/O returns error when http_client returns an error envelope."""
+        from tools.metrics_tools import get_disk_io
+
+        mock_http_client.get.return_value = HTTP_ERROR_ENVELOPE
+
+        result = await get_disk_io(
+            server_id='550e8400-e29b-41d4-a716-446655440001', workspace='testworkspace'
+        )
+
+        assert result['status'] == 'error'
+        assert result['status_code'] == 404
+        assert result['message'] == 'Not found'
+
+
 class TestGetTopServers:
     """Test get_top_servers function."""
 
@@ -572,6 +612,21 @@ class TestGetAlertRules:
         # Verify no server filter was applied
         call_args = mock_http_client.get.call_args
         assert call_args[1]['params'] == {}
+
+    @pytest.mark.asyncio
+    async def test_alert_rules_http_error_envelope(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Test alert rules returns error when http_client returns an error envelope."""
+        from tools.metrics_tools import get_alert_rules
+
+        mock_http_client.get.return_value = HTTP_ERROR_ENVELOPE
+
+        result = await get_alert_rules(workspace='testworkspace')
+
+        assert result['status'] == 'error'
+        assert result['status_code'] == 404
+        assert result['message'] == 'Not found'
 
     @pytest.mark.asyncio
     async def test_alert_rules_no_token(self, mock_http_client, mock_token_manager):

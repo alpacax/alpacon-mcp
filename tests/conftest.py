@@ -8,6 +8,14 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+# Canonical http_client error envelope (the shape utils/http_client returns on
+# 4xx/5xx). Shared across error-path tests so the envelope is defined once.
+HTTP_ERROR_ENVELOPE = {
+    'error': 'HTTP Error',
+    'status_code': 404,
+    'message': 'Not found',
+}
+
 
 @pytest.fixture(autouse=True)
 def mock_region_auto_detect():

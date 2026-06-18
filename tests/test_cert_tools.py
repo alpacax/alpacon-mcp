@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from tests.conftest import HTTP_ERROR_ENVELOPE
 from tools.cert_tools import (
     approve_revoke_request,
     approve_sign_request,
@@ -629,6 +630,45 @@ class TestSignRequestDetails:
             token='test-token',
             data={},
         )
+
+
+class TestErrorPropagation:
+    """Test that http_client error envelopes are reported as status='error'."""
+
+    @pytest.mark.asyncio
+    async def test_approve_sign_request_error(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Test approve sign request reports upstream 404 as an error."""
+        mock_http_client.post.return_value = HTTP_ERROR_ENVELOPE
+
+        result = await approve_sign_request(
+            csr_id='csr-1', workspace='testworkspace', region='ap1'
+        )
+
+        assert result['status'] == 'error'
+
+    @pytest.mark.asyncio
+    async def test_revoke_certificate_error(self, mock_http_client, mock_token_manager):
+        """Test revoke certificate reports upstream 404 as an error."""
+        mock_http_client.post.return_value = HTTP_ERROR_ENVELOPE
+
+        result = await revoke_certificate(
+            certificate_id='cert-1', workspace='testworkspace', region='ap1'
+        )
+
+        assert result['status'] == 'error'
+
+    @pytest.mark.asyncio
+    async def test_get_certificate_error(self, mock_http_client, mock_token_manager):
+        """Test get certificate reports upstream 404 as an error."""
+        mock_http_client.get.return_value = HTTP_ERROR_ENVELOPE
+
+        result = await get_certificate(
+            certificate_id='cert-1', workspace='testworkspace', region='ap1'
+        )
+
+        assert result['status'] == 'error'
 
 
 class TestGetCertificate:
