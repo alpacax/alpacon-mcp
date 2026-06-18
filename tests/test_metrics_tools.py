@@ -299,6 +299,25 @@ class TestGetDiskUsage:
         assert mock_http_client.get.call_count == 2
 
     @pytest.mark.asyncio
+    async def test_disk_usage_device_discovery_http_error(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Device-discovery 4xx/5xx must surface as an error, not 'no devices'."""
+        from tools.metrics_tools import get_disk_usage
+
+        mock_http_client.get.return_value = HTTP_ERROR_ENVELOPE
+
+        result = await get_disk_usage(
+            server_id='550e8400-e29b-41d4-a716-446655440001', workspace='testworkspace'
+        )
+
+        assert result['status'] == 'error'
+        assert result['status_code'] == 404
+        assert 'No disk devices found' not in result['message']
+        # The metrics call must be skipped once discovery fails.
+        assert mock_http_client.get.call_count == 1
+
+    @pytest.mark.asyncio
     async def test_disk_usage_no_token(self, mock_http_client, mock_token_manager):
         """Test disk usage when no token is available."""
         from tools.metrics_tools import get_disk_usage
@@ -497,6 +516,22 @@ class TestGetTopServers:
 
         # Multiple metrics - returns combined data
         assert 'data' in result
+
+    @pytest.mark.asyncio
+    async def test_top_servers_single_metric_http_error(
+        self, mock_http_client, mock_token_manager
+    ):
+        """A single-metric error envelope must not be wrapped as success."""
+        from tools.metrics_tools import get_top_servers
+
+        mock_http_client.get.return_value = HTTP_ERROR_ENVELOPE
+
+        result = await get_top_servers(
+            workspace='testworkspace', metric_types='cpu', region='ap1'
+        )
+
+        assert result['status'] == 'error'
+        assert result['status_code'] == 404
 
     @pytest.mark.asyncio
     async def test_top_servers_invalid_metric(

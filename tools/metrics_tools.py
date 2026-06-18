@@ -368,6 +368,18 @@ async def get_disk_usage(
                 params={'server': server_id},
             )
 
+            # A 4xx/5xx here must surface as the real error, not be masked as
+            # "no devices found" by the empty-list fallback below.
+            err = unwrap_http_result(
+                devices_result,
+                default_message='Failed to fetch disk devices',
+                server_id=server_id,
+                region=region,
+                workspace=workspace,
+            )
+            if err:
+                return err
+
             # Extract device list from response
             available_devices = (
                 devices_result.get('devices', [])
@@ -761,6 +773,15 @@ async def get_top_servers(
                 region=region,
                 workspace=workspace,
             )
+
+        err = unwrap_http_result(
+            result,
+            default_message=f'Failed to fetch {metric} metrics',
+            region=region,
+            workspace=workspace,
+        )
+        if err:
+            return err
 
         return success_response(
             data=result, metric_type=f'{metric}_top', region=region, workspace=workspace
