@@ -170,6 +170,76 @@ def token_error_response(region: str, workspace: str) -> dict[str, Any]:
     )
 
 
+# WorkSession gate error codes returned by alpacon-server
+# (utils/error_codes.py, enforced in work_sessions/services.py). The server
+# requires every interactive/OAuth caller to scope infrastructure actions under
+# a WorkSession; these codes tell the agent how to get inside a valid session.
+# Mirrors alpacon-cli's worksession_error.go reason/next-action mapping.
+_WORK_SESSION_GATE_NEXT_ACTION: dict[str, str] = {
+    'work_session_required': (
+        'No Work Session is attached. Create one with work_session_create '
+        '(scope covering this operation—"command" for command execution, '
+        '"webftp" for file transfers—plus the target server), have a human '
+        'approve it out-of-band, then retry passing its id as work_session_id.'
+    ),
+    'work_session_not_usable': (
+        'The attached Work Session is in a terminal state and cannot be used. '
+        'Create a new Work Session, get it approved, then retry.'
+    ),
+    'work_session_expired': (
+        'The attached Work Session has expired. Extend it with '
+        'work_session_extend, or create a new one, then retry.'
+    ),
+    'work_session_scope_not_allowed': (
+        'The attached Work Session does not include the scope for this '
+        'operation. Add the scope with work_session_update (may require '
+        'approval) or create a new session with the right scope, then retry.'
+    ),
+    'work_session_server_not_allowed': (
+        'The target server is not in the attached Work Session. Add it with '
+        'work_session_update, or create a new session including the server, '
+        'then retry.'
+    ),
+    'work_session_assignee_mismatch': (
+        'The attached Work Session is assigned to a different principal. Use a '
+        'session assigned to you, or create your own, then retry.'
+    ),
+}
+
+# Handled separately: the session exists but a human has not approved it yet,
+# so it maps to the existing pending-approval flow rather than an error.
+_WORK_SESSION_PENDING_CODE = 'work_session_not_active'
+
+_WORK_SESSION_GATE_CODES: frozenset[str] = frozenset(_WORK_SESSION_GATE_NEXT_ACTION) | {
+    _WORK_SESSION_PENDING_CODE
+}
+
+
+def work_session_gate_response(code: str, **kwargs: Any) -> dict[str, Any]:
+    """Translate a server WorkSession gate error code into an agent-actionable result.
+
+    ``work_session_not_active`` becomes a pending-approval result (a human must
+    approve the existing session). Every other gate code becomes an error result
+    carrying the gate ``code`` and a ``next_action`` describing how to get inside
+    a valid session. See ADR 0014 (zero standing privilege).
+    """
+    if code == _WORK_SESSION_PENDING_CODE:
+        return pending_approval_response(
+            'The attached Work Session is not active yet. A human must approve '
+            'it out-of-band (Alpacon web console or Slack) before this operation '
+            'will run. Poll work_session_get and retry once it is active.',
+            category='WORK_SESSION_PENDING',
+            **kwargs,
+        )
+    return error_response(
+        f'Operation blocked by the Work Session gate: {code}.',
+        code=code,
+        next_action=_WORK_SESSION_GATE_NEXT_ACTION[code],
+        requires_human_approval=False,
+        **kwargs,
+    )
+
+
 def unwrap_http_result(
     result: Any,
     *,
