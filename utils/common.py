@@ -309,6 +309,8 @@ def resolve_work_session_id(explicit: str | None) -> str | None:
 
     Mirrors alpacon-cli's resolve.go (flag > env). Returns None when neither is set.
     """
-    if explicit:
-        return explicit
-    return os.environ.get('ALPACON_WORK_SESSION', '').strip() or None
+    return (
+        (explicit or '').strip()
+        or os.environ.get('ALPACON_WORK_SESSION', '').strip()
+        or None
+    )
