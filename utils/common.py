@@ -172,11 +172,7 @@ def token_error_response(region: str, workspace: str) -> dict[str, Any]:
     )
 
 
-# WorkSession gate error codes returned by alpacon-server
-# (utils/error_codes.py, enforced in work_sessions/services.py). The server
-# requires every interactive/OAuth caller to scope infrastructure actions under
-# a WorkSession; these codes tell the agent how to get inside a valid session.
-# Mirrors alpacon-cli's worksession_error.go reason/next-action mapping.
+# Server WorkSession gate codes → next-action telling the agent how to get inside a valid session (mirrors alpacon-cli worksession_error.go).
 _WORK_SESSION_GATE_NEXT_ACTION: dict[str, str] = {
     'work_session_required': (
         'No Work Session is attached. Create one with work_session_create '
@@ -208,8 +204,7 @@ _WORK_SESSION_GATE_NEXT_ACTION: dict[str, str] = {
     ),
 }
 
-# Handled separately: the session exists but a human has not approved it yet,
-# so it maps to the existing pending-approval flow rather than an error.
+# Session exists but is unapproved; routes to pending-approval, not error.
 _WORK_SESSION_PENDING_CODE = 'work_session_not_active'
 
 _WORK_SESSION_GATE_CODES: frozenset[str] = frozenset(_WORK_SESSION_GATE_NEXT_ACTION) | {
