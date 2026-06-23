@@ -119,3 +119,7 @@ class TestResolveWorkSessionId:
     def test_empty_env_is_none(self, monkeypatch):
         monkeypatch.setenv('ALPACON_WORK_SESSION', '')
         assert resolve_work_session_id(None) is None
+
+    def test_whitespace_only_env_is_none(self, monkeypatch):
+        monkeypatch.setenv('ALPACON_WORK_SESSION', '   ')
+        assert resolve_work_session_id(None) is None

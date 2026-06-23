@@ -311,4 +311,4 @@ def resolve_work_session_id(explicit: str | None) -> str | None:
     """
     if explicit:
         return explicit
-    return os.environ.get('ALPACON_WORK_SESSION') or None
+    return os.environ.get('ALPACON_WORK_SESSION', '').strip() or None
