@@ -2,6 +2,7 @@
 
 import importlib.metadata
 import json
+import os
 import platform
 from typing import Any
 
@@ -301,3 +302,13 @@ def _extract_work_session_gate_code(result: dict[str, Any]) -> str | None:
     if isinstance(code, str) and code in _WORK_SESSION_GATE_CODES:
         return code
     return None
+
+
+def resolve_work_session_id(explicit: str | None) -> str | None:
+    """Resolve the effective Work Session id: explicit arg > ALPACON_WORK_SESSION env.
+
+    Mirrors alpacon-cli's resolve.go (flag > env). Returns None when neither is set.
+    """
+    if explicit:
+        return explicit
+    return os.environ.get('ALPACON_WORK_SESSION') or None

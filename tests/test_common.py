@@ -4,6 +4,7 @@ import pytest
 
 from utils.common import (
     _WORK_SESSION_GATE_CODES,
+    resolve_work_session_id,
     unwrap_http_result,
     work_session_gate_response,
 )
@@ -100,3 +101,21 @@ class TestUnwrapHttpResultGate:
 
     def test_success_envelope_returns_none(self):
         assert unwrap_http_result({'status': 'success'}, default_message='x') is None
+
+
+class TestResolveWorkSessionId:
+    def test_explicit_wins(self, monkeypatch):
+        monkeypatch.setenv('ALPACON_WORK_SESSION', 'from-env')
+        assert resolve_work_session_id('explicit-id') == 'explicit-id'
+
+    def test_env_fallback(self, monkeypatch):
+        monkeypatch.setenv('ALPACON_WORK_SESSION', 'from-env')
+        assert resolve_work_session_id(None) == 'from-env'
+
+    def test_none_when_neither_set(self, monkeypatch):
+        monkeypatch.delenv('ALPACON_WORK_SESSION', raising=False)
+        assert resolve_work_session_id(None) is None
+
+    def test_empty_env_is_none(self, monkeypatch):
+        monkeypatch.setenv('ALPACON_WORK_SESSION', '')
+        assert resolve_work_session_id(None) is None
