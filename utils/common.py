@@ -294,7 +294,7 @@ def _extract_work_session_gate_code(result: dict[str, Any]) -> str | None:
         return None
     try:
         body = json.loads(raw)
-    except (ValueError, TypeError):
+    except ValueError:
         return None
     if not isinstance(body, dict):
         return None
