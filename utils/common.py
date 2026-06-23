@@ -1,6 +1,7 @@
 """Common utilities for all MCP tools."""
 
 import importlib.metadata
+import json
 import platform
 from typing import Any
 
@@ -268,7 +269,35 @@ def unwrap_http_result(
     status_code = result.get('status_code')
     if status_code is not None:
         error_kwargs['status_code'] = status_code
+
+    gate_code = _extract_work_session_gate_code(result)
+    if gate_code is not None:
+        return work_session_gate_response(gate_code, **error_kwargs)
+
     return error_response(
         result.get('message', default_message),
         **error_kwargs,
     )
+
+
+def _extract_work_session_gate_code(result: dict[str, Any]) -> str | None:
+    """Return the WorkSession gate code carried by an http error envelope, if any.
+
+    alpacon-server's exception handler returns 4xx bodies shaped as
+    ``{"code": "<error_code>"}``; ``utils.http_client`` carries the raw body in
+    the ``response`` key. Returns None when the body is missing, not JSON, or not
+    a recognized gate code (so the caller falls back to a generic error).
+    """
+    raw = result.get('response')
+    if not isinstance(raw, str):
+        return None
+    try:
+        body = json.loads(raw)
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(body, dict):
+        return None
+    code = body.get('code')
+    if isinstance(code, str) and code in _WORK_SESSION_GATE_CODES:
+        return code
+    return None
