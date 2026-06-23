@@ -12,7 +12,12 @@ from typing import Any, cast
 import httpx
 
 from server import mcp
-from utils.common import error_response, success_response, unwrap_http_result
+from utils.common import (
+    error_response,
+    resolve_work_session_id,
+    success_response,
+    unwrap_http_result,
+)
 from utils.decorators import _is_auth_enabled, mcp_tool_handler
 from utils.error_handler import format_validation_error, validate_file_path
 from utils.http_client import http_client
@@ -164,8 +169,8 @@ async def _download_remote_mode(
     }
     if username:
         download_data['username'] = username
-    if work_session_id:
-        download_data['work_session'] = work_session_id
+    if ws_id := resolve_work_session_id(work_session_id):
+        download_data['work_session'] = ws_id
 
     result = await http_client.post(
         region=region,
@@ -252,8 +257,8 @@ async def webftp_session_create(
     session_data = {'server': server_id}
     if username:
         session_data['username'] = username
-    if work_session_id:
-        session_data['work_session'] = work_session_id
+    if ws_id := resolve_work_session_id(work_session_id):
+        session_data['work_session'] = ws_id
 
     result = await http_client.post(
         region=region,
@@ -360,8 +365,8 @@ async def webftp_upload_file(
     }
     if username:
         upload_data['username'] = username
-    if work_session_id:
-        upload_data['work_session'] = work_session_id
+    if ws_id := resolve_work_session_id(work_session_id):
+        upload_data['work_session'] = ws_id
 
     result = await http_client.post(
         region=region,
@@ -470,8 +475,8 @@ async def webftp_upload_content(
     }
     if username:
         upload_data['username'] = username
-    if work_session_id:
-        upload_data['work_session'] = work_session_id
+    if ws_id := resolve_work_session_id(work_session_id):
+        upload_data['work_session'] = ws_id
 
     result = await http_client.post(
         region=region,
@@ -601,8 +606,8 @@ async def webftp_download_file(
 
     if username:
         download_data['username'] = username
-    if work_session_id:
-        download_data['work_session'] = work_session_id
+    if ws_id := resolve_work_session_id(work_session_id):
+        download_data['work_session'] = ws_id
 
     result = await http_client.post(
         region=region,
@@ -776,8 +781,8 @@ async def webftp_bulk_upload(
     }
     if username:
         bulk_data['username'] = username
-    if work_session_id:
-        bulk_data['work_session'] = work_session_id
+    if ws_id := resolve_work_session_id(work_session_id):
+        bulk_data['work_session'] = ws_id
 
     result = await http_client.post(
         region=region,
@@ -939,8 +944,8 @@ async def webftp_bulk_download(
     }
     if username:
         download_data['username'] = username
-    if work_session_id:
-        download_data['work_session'] = work_session_id
+    if ws_id := resolve_work_session_id(work_session_id):
+        download_data['work_session'] = ws_id
 
     result = await http_client.post(
         region=region,

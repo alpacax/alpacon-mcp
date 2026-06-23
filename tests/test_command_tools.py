@@ -141,6 +141,43 @@ class TestSubmitCommand:
         assert 'scheduled_at' not in call_data
         assert 'data' not in call_data
 
+    @pytest.mark.asyncio
+    async def test_submit_uses_env_work_session_when_unset(
+        self, mock_http_client, monkeypatch
+    ):
+        monkeypatch.setenv('ALPACON_WORK_SESSION', 'ws-from-env')
+        mock_http_client.post.return_value = {'id': 'cmd-env'}
+
+        await _submit_command(
+            server_id='550e8400-e29b-41d4-a716-446655440001',
+            command='ls',
+            workspace='testworkspace',
+            region='ap1',
+            token='test-token',
+        )
+
+        call_data = mock_http_client.post.call_args[1]['data']
+        assert call_data['work_session'] == 'ws-from-env'
+
+    @pytest.mark.asyncio
+    async def test_submit_explicit_work_session_wins_over_env(
+        self, mock_http_client, monkeypatch
+    ):
+        monkeypatch.setenv('ALPACON_WORK_SESSION', 'ws-from-env')
+        mock_http_client.post.return_value = {'id': 'cmd-explicit'}
+
+        await _submit_command(
+            server_id='550e8400-e29b-41d4-a716-446655440001',
+            command='ls',
+            workspace='testworkspace',
+            work_session_id='explicit-ws',
+            region='ap1',
+            token='test-token',
+        )
+
+        call_data = mock_http_client.post.call_args[1]['data']
+        assert call_data['work_session'] == 'explicit-ws'
+
 
 class TestListCommands:
     """Test list_commands function."""

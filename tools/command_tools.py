@@ -6,6 +6,7 @@ from typing import Any
 from utils.common import (
     error_response,
     pending_approval_response,
+    resolve_work_session_id,
     success_response,
     unwrap_http_result,
 )
@@ -129,8 +130,8 @@ async def _submit_command(
         command_data['scheduled_at'] = scheduled_at
     if data:
         command_data['data'] = data
-    if work_session_id:
-        command_data['work_session'] = work_session_id
+    if ws_id := resolve_work_session_id(work_session_id):
+        command_data['work_session'] = ws_id
 
     return await http_client.post(
         region=region,
