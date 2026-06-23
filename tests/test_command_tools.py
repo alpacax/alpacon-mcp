@@ -13,6 +13,18 @@ from tools.command_tools import (
     list_commands,
 )
 
+_GATE_ENVELOPE_REQUIRED = {
+    'error': 'HTTP Error',
+    'status_code': 400,
+    'response': '{"code":"work_session_required"}',
+}
+
+_GATE_ENVELOPE_NOT_ACTIVE = {
+    'error': 'HTTP Error',
+    'status_code': 400,
+    'response': '{"code":"work_session_not_active"}',
+}
+
 
 class TestSudoDenialHint:
     """The exec-sudo denial code -> agent guidance mapping."""
@@ -625,19 +637,6 @@ class TestExecuteCommandMultiServerWithSession:
 
         call_data = mock_http_client.post.call_args[1]['data']
         assert call_data['work_session'] == 'ws-uuid-abcd'
-
-
-_GATE_ENVELOPE_REQUIRED = {
-    'error': 'HTTP Error',
-    'status_code': 400,
-    'response': '{"code":"work_session_required"}',
-}
-
-_GATE_ENVELOPE_NOT_ACTIVE = {
-    'error': 'HTTP Error',
-    'status_code': 400,
-    'response': '{"code":"work_session_not_active"}',
-}
 
 
 class TestExecuteCommandGateTranslation:
