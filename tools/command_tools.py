@@ -422,6 +422,7 @@ async def execute_command_multi_server(
                 }
                 failed_count += 1
             elif isinstance(result, dict) and 'error' in result:
+                # unwrap_http_result returns non-None whenever 'error' is in the dict
                 deploy_results[sid] = unwrap_http_result(
                     result,
                     default_message='Command execution failed',
@@ -438,6 +439,7 @@ async def execute_command_multi_server(
             try:
                 result = await _submit_one(sid)
                 if isinstance(result, dict) and 'error' in result:
+                    # unwrap_http_result returns non-None whenever 'error' is in the dict
                     deploy_results[sid] = unwrap_http_result(
                         result,
                         default_message='Command execution failed',
