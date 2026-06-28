@@ -461,6 +461,20 @@ Alternative endpoints available in the server:
 - `/api/workspaces/preferences/` (workspaces app)
 - `/api/auth0/users/` (auth0 app)
 
+### 🧩 MCP resources
+
+Read-only data exposed as `alpacon://` resources (one per read tool). URI convention: `alpacon://<domain>[/<sub>]/{region}/{workspace}[/{id}]`. Optional filters use tool defaults (no filter params in the URI).
+
+- `alpacon://servers/{region}/{workspace}`: server list (also `/{server_id}`, `/{server_id}/overview`, `/{server_id}/notes`)
+- `alpacon://alerts/{region}/{workspace}` and `alpacon://alerts/active/{region}/{workspace}`: all / active (unacknowledged) alerts
+- `alpacon://metrics/{region}/{workspace}/{server_id}/{cpu|memory|disk|disk-io|network|summary}`: server metrics
+- `alpacon://system/{region}/{workspace}/{server_id}/{info|users|groups|packages|...}`: system information
+- `alpacon://iam/{users|groups|applications}/{region}/{workspace}`: IAM
+- `alpacon://certs/...`, `alpacon://audit/...`, `alpacon://tokens/...`, `alpacon://webhooks/...`, `alpacon://acls/...`, `alpacon://webftp/...`, `alpacon://approvals/...`, `alpacon://events/...`, `alpacon://commands/...`, `alpacon://work-sessions/...`
+- `alpacon://workspaces/{region}`, `alpacon://current-user/{region}/{workspace}`
+
+Resources are generated from a registry table in `tools/resources.py`.
+
 ## Dependencies
 
 **Runtime dependencies** (from `pyproject.toml`):
