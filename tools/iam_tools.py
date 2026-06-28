@@ -3,7 +3,6 @@
 import re
 from typing import Any
 
-from server import mcp
 from utils.common import error_response, success_response, unwrap_http_result
 from utils.decorators import mcp_tool_handler
 from utils.error_handler import format_validation_error, validate_server_id_format
@@ -441,54 +440,6 @@ async def create_iam_group(
 # - ROLE MANAGEMENT TOOLS (list_iam_roles, assign_iam_user_role)
 # - PERMISSION MANAGEMENT TOOLS (list_iam_permissions, get_iam_user_permissions)
 # ===============================
-
-
-# ===============================
-# RESOURCE MANAGEMENT
-# ===============================
-
-
-@mcp.resource(
-    uri='iam://users/{region}/{workspace}',
-    name='IAM Users List',
-    description='Get list of IAM users',
-    mime_type='application/json',
-)
-async def iam_users_resource(region: str, workspace: str) -> dict[str, Any]:
-    """Get IAM users as a resource.
-
-    Args:
-        region: Region (ap1, us1, eu1, etc.)
-        workspace: Workspace name
-
-    Returns:
-        IAM users information
-    """
-    users_data = await list_iam_users(region=region, workspace=workspace)
-    return {'content': users_data}
-
-
-@mcp.resource(
-    uri='iam://groups/{region}/{workspace}',
-    name='IAM Groups List',
-    description='Get list of IAM groups',
-    mime_type='application/json',
-)
-async def iam_groups_resource(region: str, workspace: str) -> dict[str, Any]:
-    """Get IAM groups as a resource.
-
-    Args:
-        region: Region (ap1, us1, eu1, etc.)
-        workspace: Workspace name
-
-    Returns:
-        IAM groups information
-    """
-    groups_data = await list_iam_groups(region=region, workspace=workspace)
-    return {'content': groups_data}
-
-
-# NOTE: IAM roles resource removed - endpoint not implemented in server
 
 
 # ===============================

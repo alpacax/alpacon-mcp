@@ -11,7 +11,6 @@ from typing import Any, cast
 
 import httpx
 
-from server import mcp
 from utils.common import error_response, success_response, unwrap_http_result
 from utils.decorators import _is_auth_enabled, mcp_tool_handler
 from utils.error_handler import format_validation_error, validate_file_path
@@ -1043,27 +1042,3 @@ async def webftp_check_status(
         region=region,
         workspace=workspace,
     )
-
-
-@mcp.resource(
-    uri='webftp://sessions/{region}/{workspace}',
-    name='WebFTP Sessions List',
-    description='Get list of WebFTP sessions',
-    mime_type='application/json',
-)
-async def webftp_sessions_resource(region: str, workspace: str) -> dict[str, Any]:
-    """Get WebFTP sessions as a resource."""
-    sessions_data = await webftp_sessions_list(region=region, workspace=workspace)
-    return {'content': sessions_data}
-
-
-@mcp.resource(
-    uri='webftp://downloads/{region}/{workspace}',
-    name='WebFTP Downloads List',
-    description='Get list of WebFTP download history for a workspace',
-    mime_type='application/json',
-)
-async def webftp_downloads_resource(region: str, workspace: str) -> dict[str, Any]:
-    """Get WebFTP downloads as a resource."""
-    downloads_data = await webftp_downloads_list(region=region, workspace=workspace)
-    return {'content': downloads_data}

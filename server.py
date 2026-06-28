@@ -278,6 +278,7 @@ def run(
     import tools.iam_tools  # noqa: F401
     import tools.metrics_tools  # noqa: F401
     import tools.package_tools  # noqa: F401
+    import tools.resources  # noqa: F401
     import tools.security_tools  # noqa: F401
     import tools.server_tools  # noqa: F401
     import tools.system_info_tools  # noqa: F401
