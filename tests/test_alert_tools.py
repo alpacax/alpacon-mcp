@@ -51,6 +51,23 @@ class TestListAlerts:
             params={},
         )
 
+    @pytest.mark.asyncio
+    async def test_list_active_filter(self, mock_http_client, mock_token_manager):
+        mock_http_client.get.return_value = {'results': [], 'count': 0}
+
+        result = await list_alerts(
+            workspace='testworkspace', region='ap1', acknowledged=False
+        )
+
+        assert result['status'] == 'success'
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/alerts/',
+            token='test-token',
+            params={'acknowledged': False},
+        )
+
 
 class TestGetAlert:
     @pytest.mark.asyncio

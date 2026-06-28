@@ -27,6 +27,8 @@ async def list_alerts(
     region: str = '',
     page: int | None = None,
     page_size: int | None = None,
+    acknowledged: bool | None = None,
+    dismissed: bool | None = None,
     **kwargs,
 ) -> dict[str, Any]:
     """List alerts.
@@ -38,6 +40,8 @@ async def list_alerts(
         region: Region (ap1, us1, eu1). Auto-detected if not provided
         page: Page number for pagination (optional)
         page_size: Number of items per page (optional)
+        acknowledged: Filter by acknowledgement state (False = active/unacknowledged)
+        dismissed: Filter by dismissed state
 
     Returns:
         Alerts list response
@@ -53,6 +57,10 @@ async def list_alerts(
         params['page'] = page
     if page_size is not None:
         params['page_size'] = page_size
+    if acknowledged is not None:
+        params['acknowledged'] = acknowledged
+    if dismissed is not None:
+        params['dismissed'] = dismissed
 
     result = await http_client.get(
         region=region,
