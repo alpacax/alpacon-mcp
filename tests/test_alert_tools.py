@@ -68,6 +68,24 @@ class TestListAlerts:
             params={'acknowledged': False},
         )
 
+    @pytest.mark.asyncio
+    async def test_list_dismissed_filter(self, mock_http_client, mock_token_manager):
+        """dismissed=False must forward as a param, not be dropped by a truthy check."""
+        mock_http_client.get.return_value = {'results': [], 'count': 0}
+
+        result = await list_alerts(
+            workspace='testworkspace', region='ap1', dismissed=False
+        )
+
+        assert result['status'] == 'success'
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/alerts/',
+            token='test-token',
+            params={'dismissed': False},
+        )
+
 
 class TestGetAlert:
     @pytest.mark.asyncio
