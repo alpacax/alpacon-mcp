@@ -86,6 +86,25 @@ class TestResourceRegistration:
         assert 'alpacon://iam/users/{region}/{workspace}' in uris
         assert len(table_uris) == len(res.RESOURCES)
 
+    def test_uri_params_match_function_signatures(self):
+        """Every URI {param} and extra kwarg must be a real parameter of its
+        backing function — a typo breaks at read time, not import; catch it here."""
+        import inspect
+        import re
+
+        import tools.resources as res
+
+        for name, fn, uri, extra in res._REGISTRATIONS:
+            wanted = set(re.findall(r'\{(\w+)\}', uri)) | set(extra or {})
+            sig = inspect.signature(fn).parameters
+            accepted = {
+                p
+                for p, v in sig.items()
+                if v.kind not in (v.VAR_KEYWORD, v.VAR_POSITIONAL)
+            }
+            missing = wanted - accepted
+            assert not missing, f'{name}: {missing} not accepted by {fn.__name__}'
+
     @pytest.mark.asyncio
     async def test_literal_subresources_not_shadowed(self):
         """A literal sub-path (e.g. /active/) must not be captured by a sibling
