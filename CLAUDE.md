@@ -471,7 +471,7 @@ Read-only data exposed as `alpacon://` resources (one per read tool). URI conven
 - `alpacon://system/{region}/{workspace}/{server_id}/{info|users|groups|packages|...}`: system information
 - `alpacon://iam/{users|groups|applications}/{region}/{workspace}`: IAM
 - `alpacon://certs/...`, `alpacon://audit/...`, `alpacon://tokens/...`, `alpacon://webhooks/...`, `alpacon://acls/...`, `alpacon://webftp/...`, `alpacon://approvals/...`, `alpacon://events/...`, `alpacon://commands/...`, `alpacon://work-sessions/...`
-- `alpacon://workspaces/{region}`, `alpacon://current-user/{region}/{workspace}`
+- `alpacon://workspaces` (all regions) and `alpacon://workspaces/{region}`, `alpacon://current-user/{region}/{workspace}`
 
 Resources are generated from a registry table in `tools/resources.py`.
 

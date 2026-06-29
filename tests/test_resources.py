@@ -5,8 +5,11 @@ import pytest
 from server import mcp
 
 
-async def _template_uris():
-    return {t.uriTemplate for t in await mcp.list_resource_templates()}
+async def _registered_uris():
+    """All registered alpacon:// URIs — templated (with {params}) and static."""
+    templates = {t.uriTemplate for t in await mcp.list_resource_templates()}
+    static = {str(r.uri) for r in await mcp.list_resources()}
+    return templates | static
 
 
 class TestResourceRegistration:
@@ -51,11 +54,29 @@ class TestResourceRegistration:
         assert captured['ack'] is False
 
     @pytest.mark.asyncio
+    async def test_extra_kwargs_without_path_params(self):
+        """No path params + extra must not emit a leading-comma SyntaxError."""
+        import tools.resources as res
+
+        captured = {}
+
+        async def fake_fn(flag=None):
+            captured['flag'] = flag
+            return {'ok': True}
+
+        res.register_resource(
+            'alpacon://test-noparam', fake_fn, 'test_noparam_probe', {'flag': True}
+        )
+
+        await mcp.read_resource('alpacon://test-noparam')
+        assert captured['flag'] is True
+
+    @pytest.mark.asyncio
     async def test_all_resources_registered(self):
         """Every RESOURCES entry is registered, no dup, no legacy scheme."""
         import tools.resources as res
 
-        uris = await _template_uris()
+        uris = await _registered_uris()
         table_uris = {uri for _n, _f, uri in res.RESOURCES}
 
         assert table_uris <= uris
@@ -64,7 +85,7 @@ class TestResourceRegistration:
         assert 'alpacon://webftp/sessions/{region}/{workspace}' in uris
         assert 'alpacon://iam/users/{region}/{workspace}' in uris
         assert len(table_uris) == len(res.RESOURCES)
-        assert len(res.RESOURCES) == 70
+        assert len(res.RESOURCES) == 71
 
     @pytest.mark.asyncio
     async def test_literal_subresources_not_shadowed(self):

@@ -3,7 +3,7 @@
 Resources are generated from the RESOURCES registry table to avoid ~70 copies
 of identical boilerplate. Each wrapper is built via exec with real named
 parameters because FastMCP matches URI template params to the function
-signature by name (server.py:603).
+signature by name; a **kwargs wrapper fails its func_metadata check.
 """
 
 import inspect
@@ -106,9 +106,10 @@ def register_resource(
     """
     path_params = re.findall(r'\{(\w+)\}', uri)
     sig = ', '.join(f'{p}: str' for p in path_params)
-    call = ', '.join(f'{p}={p}' for p in path_params)
+    parts = [f'{p}={p}' for p in path_params]
     if extra:
-        call += ''.join(f', {k}={v!r}' for k, v in extra.items())
+        parts += [f'{k}={v!r}' for k, v in extra.items()]
+    call = ', '.join(parts)
     # exec: FastMCP requires a real named signature matching the URI template;
     # a **kwargs wrapper with a synthetic __signature__ fails func_metadata.
     src = f"async def _wrapper({sig}):\n    return {{'content': await _fn({call})}}\n"
@@ -390,6 +391,7 @@ RESOURCES: list[tuple[str, Callable, str]] = [
         work_session_get,
         'alpacon://work-sessions/{region}/{workspace}/{session_id}',
     ),
+    ('workspaces_all', list_workspaces, 'alpacon://workspaces'),
     ('workspaces_list', list_workspaces, 'alpacon://workspaces/{region}'),
     ('current_user', get_current_user, 'alpacon://current-user/{region}/{workspace}'),
 ]
