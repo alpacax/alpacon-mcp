@@ -113,8 +113,10 @@ def register_resource(
     # exec: FastMCP requires a real named signature matching the URI template;
     # a **kwargs wrapper with a synthetic __signature__ fails func_metadata.
     src = f"async def _wrapper({sig}):\n    return {{'content': await _fn({call})}}\n"
-    ns: dict = {'_fn': fn}
-    exec(src, ns)  # noqa: S102
+    # Compile against this module's file/name so the wrapper reports
+    # tools/resources.py (not '<string>') in tracebacks and a real __module__.
+    ns: dict = {'_fn': fn, '__name__': __name__}
+    exec(compile(src, __file__, 'exec'), ns)  # noqa: S102
     wrapper = ns['_wrapper']
     # Every wrapper is born '_wrapper'; rename it so stack traces and any
     # function-name-based diagnostics identify the resource, not the factory.

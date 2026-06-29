@@ -98,8 +98,9 @@ class TestResourceRegistration:
         assert 'acknowledged=False' in active.description
 
     def test_wrapper_named_after_resource(self):
-        """The exec'd wrapper must adopt the resource name, not stay '_wrapper',
-        so stack traces and name-based diagnostics stay legible."""
+        """The exec'd wrapper must adopt the resource name and this module's
+        identity, not stay '_wrapper' with a '<string>' traceback frame, so
+        stack traces and name-based diagnostics stay legible."""
         import tools.resources as res
 
         async def fake_fn(region, workspace):
@@ -113,6 +114,12 @@ class TestResourceRegistration:
         ].fn
         assert fn.__name__ == 'named_probe'
         assert fn.__qualname__ == 'named_probe'
+        assert fn.__module__ == 'tools.resources'
+        # FastMCP wraps fn with pydantic validate_call; co_filename lives on the
+        # underlying exec'd wrapper, reached through __wrapped__.
+        while hasattr(fn, '__wrapped__'):
+            fn = fn.__wrapped__
+        assert fn.__code__.co_filename == res.__file__
 
     def test_uri_params_match_function_signatures(self):
         """Every URI {param} and extra kwarg must be a real parameter of its
