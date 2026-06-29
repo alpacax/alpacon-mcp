@@ -97,6 +97,23 @@ class TestResourceRegistration:
         )
         assert 'acknowledged=False' in active.description
 
+    def test_wrapper_named_after_resource(self):
+        """The exec'd wrapper must adopt the resource name, not stay '_wrapper',
+        so stack traces and name-based diagnostics stay legible."""
+        import tools.resources as res
+
+        async def fake_fn(region, workspace):
+            return {'ok': True}
+
+        res.register_resource(
+            'alpacon://test-named/{region}/{workspace}', fake_fn, 'named_probe'
+        )
+        fn = mcp._resource_manager._templates[
+            'alpacon://test-named/{region}/{workspace}'
+        ].fn
+        assert fn.__name__ == 'named_probe'
+        assert fn.__qualname__ == 'named_probe'
+
     def test_uri_params_match_function_signatures(self):
         """Every URI {param} and extra kwarg must be a real parameter of its
         backing function — a typo breaks at read time, not import; catch it here."""

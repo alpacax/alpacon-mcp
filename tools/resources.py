@@ -116,6 +116,9 @@ def register_resource(
     ns: dict = {'_fn': fn}
     exec(src, ns)  # noqa: S102
     wrapper = ns['_wrapper']
+    # Every wrapper is born '_wrapper'; rename it so stack traces and any
+    # function-name-based diagnostics identify the resource, not the factory.
+    wrapper.__name__ = wrapper.__qualname__ = name
     doc = inspect.getdoc(fn) or name
     if extra:
         # The wrapper inherits the tool docstring verbatim; without this note a
