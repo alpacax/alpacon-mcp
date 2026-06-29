@@ -86,6 +86,17 @@ class TestResourceRegistration:
         assert 'alpacon://iam/users/{region}/{workspace}' in uris
         assert len(table_uris) == len(res.RESOURCES)
 
+    @pytest.mark.asyncio
+    async def test_filtered_resource_describes_its_pin(self):
+        """A resource registered with extra kwargs must surface the pinned
+        filter in its description, not just inherit the tool docstring."""
+        active = next(
+            t
+            for t in await mcp.list_resource_templates()
+            if t.uriTemplate == 'alpacon://alerts/active/{region}/{workspace}'
+        )
+        assert 'acknowledged=False' in active.description
+
     def test_uri_params_match_function_signatures(self):
         """Every URI {param} and extra kwarg must be a real parameter of its
         backing function — a typo breaks at read time, not import; catch it here."""

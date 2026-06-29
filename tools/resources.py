@@ -116,10 +116,14 @@ def register_resource(
     ns: dict = {'_fn': fn}
     exec(src, ns)  # noqa: S102
     wrapper = ns['_wrapper']
-    wrapper.__doc__ = inspect.getdoc(fn) or name
-    mcp.resource(
-        uri, name=name, description=wrapper.__doc__, mime_type='application/json'
-    )(wrapper)
+    doc = inspect.getdoc(fn) or name
+    if extra:
+        # The wrapper inherits the tool docstring verbatim; without this note a
+        # filtered resource looks identical to the unfiltered one to clients.
+        pinned = ', '.join(f'{k}={v!r}' for k, v in extra.items())
+        doc = f'{doc}\n\nThis resource pins: {pinned}.'
+    wrapper.__doc__ = doc
+    mcp.resource(uri, name=name, description=doc, mime_type='application/json')(wrapper)
 
 
 RESOURCES: list[tuple[str, Callable, str]] = [
