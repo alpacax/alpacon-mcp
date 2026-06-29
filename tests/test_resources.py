@@ -139,20 +139,35 @@ class TestResourceRegistration:
             missing = wanted - accepted
             assert not missing, f'{name}: {missing} not accepted by {fn.__name__}'
 
+            # Inverse: every required (no-default) param must be filled by the URI
+            # or an extra kwarg, else the read fails at runtime, not import.
+            required = {
+                p
+                for p, v in sig.items()
+                if v.default is v.empty
+                and v.kind not in (v.VAR_KEYWORD, v.VAR_POSITIONAL)
+            }
+            unfilled = required - wanted
+            assert not unfilled, f'{name}: {unfilled} required but not in URI/extra'
+
     @pytest.mark.asyncio
-    async def test_literal_subresources_not_shadowed(self):
-        """A literal sub-path (e.g. /active/) must not be captured by a sibling
-        {id} wildcard — resolve to the right tool, not the detail route."""
-        import tools.resources  # noqa: F401  # registers resources on import
+    async def test_no_resource_is_shadowed(self):
+        """Every registered template, filled with concrete values, must resolve to
+        its own handler — a general guard so a future literal/{id} sibling pair
+        can't silently shadow one another. Subsumes the specific /active/, /scopes/,
+        etc. cases without hard-coding them."""
+        import re
+
+        import tools.resources as res
 
         mgr = mcp._resource_manager
-        cases = {
-            'alpacon://alerts/active/ap1/ws': 'alerts_active',
-            'alpacon://certs/revoke-requests/ap1/ws': 'cert_revoke_requests_list',
-            'alpacon://tokens/scopes/ap1/ws': 'token_scopes',
-            'alpacon://tokens/presets/ap1/ws': 'token_presets',
-            'alpacon://alerts/ap1/ws/some-id': 'alert_detail',  # detail still works
-        }
-        for uri, want in cases.items():
-            resource = await mgr.get_resource(uri)
-            assert resource.name == want, f'{uri} -> {resource.name}, want {want}'
+
+        def concrete(uri: str) -> str:
+            # Sentinel placeholders never collide with a literal segment.
+            return re.sub(r'\{(\w+)\}', lambda m: f'_{m.group(1)}_', uri)
+
+        for name, _fn, uri, _extra in res._REGISTRATIONS:
+            resolved = await mgr.get_resource(concrete(uri))
+            assert resolved.name == name, (
+                f'{uri} -> {resolved.name}, want {name} (shadowed)'
+            )
