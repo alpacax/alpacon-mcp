@@ -340,6 +340,8 @@ All validators are defined in `utils/error_handler.py` and return user-friendly 
 - `work_session_analyze`: Manually trigger AI security analysis for a terminal Work Session
 - `work_session_close`: Mark a Work Session as completed and trigger AI security analysis
 
+**WorkSession gate (OAuth/browser auth only)**: alpacon-server requires every interactive/OAuth (MCP OAuth) caller to scope infrastructure actions (command execution, file transfers) under an active Work Session; static API tokens and service tokens bypass this. When the server blocks a call, the MCP server translates the gate error into a structured result: `work_session_not_active` returns `status="pending_approval"` (wait for human approval), and the other gate codes (`work_session_required`, `work_session_not_usable`, `work_session_expired`, `work_session_scope_not_allowed`, `work_session_server_not_allowed`, `work_session_assignee_mismatch`) return `status="error"` with a `code` and a `next_action` describing how to get inside a valid session. Set the `ALPACON_WORK_SESSION` environment variable to supply a default Work Session id when a tool's `work_session_id` argument is omitted (explicit argument wins).
+
 ### 🔍 System information
 - `get_system_info`: Hardware and OS information
 - `get_os_version`: Operating system details

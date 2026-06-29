@@ -1,11 +1,12 @@
 """Command execution tools for Alpacon MCP server."""
 
 import asyncio
-from typing import Any
+from typing import Any, cast
 
 from utils.common import (
     error_response,
     pending_approval_response,
+    resolve_work_session_id,
     success_response,
     unwrap_http_result,
 )
@@ -129,8 +130,8 @@ async def _submit_command(
         command_data['scheduled_at'] = scheduled_at
     if data:
         command_data['data'] = data
-    if work_session_id:
-        command_data['work_session'] = work_session_id
+    if ws_id := resolve_work_session_id(work_session_id):
+        command_data['work_session'] = ws_id
 
     return await http_client.post(
         region=region,
@@ -245,11 +246,16 @@ async def execute_command(
     )
 
     if isinstance(exec_data, dict) and 'error' in exec_data:
-        return error_response(
-            f'Command execution failed: {exec_data.get("error", "Unknown error")}',
-            workspace=workspace,
-            region=region,
-            details=exec_data,
+        # unwrap_http_result returns non-None whenever 'error' is in the dict
+        return cast(
+            dict[str, Any],
+            unwrap_http_result(
+                exec_data,
+                default_message='Command execution failed',
+                server_id=server_id,
+                region=region,
+                workspace=workspace,
+            ),
         )
 
     if isinstance(exec_data, list):
@@ -416,7 +422,14 @@ async def execute_command_multi_server(
                 }
                 failed_count += 1
             elif isinstance(result, dict) and 'error' in result:
-                deploy_results[sid] = {'status': 'error', **result}
+                # unwrap_http_result returns non-None whenever 'error' is in the dict
+                deploy_results[sid] = unwrap_http_result(
+                    result,
+                    default_message='Command execution failed',
+                    server_id=sid,
+                    region=region,
+                    workspace=workspace,
+                )
                 failed_count += 1
             else:
                 deploy_results[sid] = {'status': 'success', 'data': result}
@@ -426,7 +439,14 @@ async def execute_command_multi_server(
             try:
                 result = await _submit_one(sid)
                 if isinstance(result, dict) and 'error' in result:
-                    deploy_results[sid] = {'status': 'error', **result}
+                    # unwrap_http_result returns non-None whenever 'error' is in the dict
+                    deploy_results[sid] = unwrap_http_result(
+                        result,
+                        default_message='Command execution failed',
+                        server_id=sid,
+                        region=region,
+                        workspace=workspace,
+                    )
                     failed_count += 1
                 else:
                     deploy_results[sid] = {'status': 'success', 'data': result}

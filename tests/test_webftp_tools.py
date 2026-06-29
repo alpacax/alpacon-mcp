@@ -1541,5 +1541,28 @@ class TestWebFtpUploadContentWithSession:
         assert 'work_session' not in call_data
 
 
+class TestWebFtpSessionCreateGateTranslation:
+    """Gate-code envelopes from http_client must be translated through webftp tools."""
+
+    @pytest.mark.asyncio
+    async def test_work_session_required_translated_through_session_create(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = {
+            'error': 'HTTP Error',
+            'status_code': 400,
+            'response': '{"code":"work_session_required"}',
+        }
+
+        result = await webftp_session_create(
+            server_id='550e8400-e29b-41d4-a716-446655440001',
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert result.get('code') == 'work_session_required'
+        assert 'next_action' in result
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])
