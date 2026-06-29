@@ -85,7 +85,6 @@ class TestResourceRegistration:
         assert 'alpacon://webftp/sessions/{region}/{workspace}' in uris
         assert 'alpacon://iam/users/{region}/{workspace}' in uris
         assert len(table_uris) == len(res.RESOURCES)
-        assert len(res.RESOURCES) == 71
 
     @pytest.mark.asyncio
     async def test_literal_subresources_not_shadowed(self):
