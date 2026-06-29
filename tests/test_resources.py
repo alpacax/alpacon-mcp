@@ -115,8 +115,7 @@ class TestResourceRegistration:
         assert fn.__name__ == 'named_probe'
         assert fn.__qualname__ == 'named_probe'
         assert fn.__module__ == 'tools.resources'
-        # FastMCP wraps fn with pydantic validate_call; co_filename lives on the
-        # underlying exec'd wrapper, reached through __wrapped__.
+        # co_filename lives on the exec'd wrapper, under validate_call's wrapping.
         while hasattr(fn, '__wrapped__'):
             fn = fn.__wrapped__
         assert fn.__code__.co_filename == res.__file__

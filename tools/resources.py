@@ -110,21 +110,16 @@ def register_resource(
     if extra:
         parts += [f'{k}={v!r}' for k, v in extra.items()]
     call = ', '.join(parts)
-    # exec: FastMCP requires a real named signature matching the URI template;
-    # a **kwargs wrapper with a synthetic __signature__ fails func_metadata.
+    # FastMCP needs a real named signature; a **kwargs wrapper fails func_metadata.
     src = f"async def _wrapper({sig}):\n    return {{'content': await _fn({call})}}\n"
-    # Compile against this module's file/name so the wrapper reports
-    # tools/resources.py (not '<string>') in tracebacks and a real __module__.
+    # __name__/__file__ give the wrapper a real __module__ and traceback frame.
     ns: dict = {'_fn': fn, '__name__': __name__}
     exec(compile(src, __file__, 'exec'), ns)  # noqa: S102
     wrapper = ns['_wrapper']
-    # Every wrapper is born '_wrapper'; rename it so stack traces and any
-    # function-name-based diagnostics identify the resource, not the factory.
     wrapper.__name__ = wrapper.__qualname__ = name
     doc = inspect.getdoc(fn) or name
     if extra:
-        # The wrapper inherits the tool docstring verbatim; without this note a
-        # filtered resource looks identical to the unfiltered one to clients.
+        # Surface the pinned filter so a filtered resource isn't mistaken for the bare one.
         pinned = ', '.join(f'{k}={v!r}' for k, v in extra.items())
         doc = f'{doc}\n\nThis resource pins: {pinned}.'
     wrapper.__doc__ = doc
@@ -416,9 +411,7 @@ _REGISTRATIONS = [(n, f, u, None) for n, f, u in RESOURCES] + [
 ]
 
 
-# Register most-specific first: a literal path segment (e.g. /active/) must win
-# over a sibling {id} wildcard that would otherwise shadow it — FastMCP returns
-# the first registered template that matches. Fewer {placeholders} = more
-# literal segments (colliding templates share a segment count), so sort ascending.
+# Fewer placeholders first so a literal segment (/active/) wins over a sibling
+# {id} wildcard — FastMCP matches the first registered template.
 for _name, _fn, _uri, _extra in sorted(_REGISTRATIONS, key=lambda r: r[2].count('{')):
     register_resource(_uri, _fn, _name, _extra)
