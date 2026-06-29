@@ -5,6 +5,14 @@ All notable changes to the Alpacon MCP Server project will be documented in this
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Documentation
+- Documented the hosted remote MCP server (`https://mcp.alpacon.io/mcp`, streamable-http transport)
+  - Added a "Remote MCP server (hosted, no install)" section to `README.md` with per-client setup for Claude Code, Claude Desktop, Cursor, and VS Code
+  - Explained browser-based OAuth authentication (no API token, no `token.json`) and prompt-driven workspace selection
+  - Added a streamable-http transport mode entry to `docs/configuration.md`
+
 ## [0.4.3] - 2025-10-24
 
 ### Improved
