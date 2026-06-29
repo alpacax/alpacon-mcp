@@ -13,6 +13,18 @@ from tools.command_tools import (
     list_commands,
 )
 
+_GATE_ENVELOPE_REQUIRED = {
+    'error': 'HTTP Error',
+    'status_code': 400,
+    'response': '{"code":"work_session_required"}',
+}
+
+_GATE_ENVELOPE_NOT_ACTIVE = {
+    'error': 'HTTP Error',
+    'status_code': 400,
+    'response': '{"code":"work_session_not_active"}',
+}
+
 
 class TestSudoDenialHint:
     """The exec-sudo denial code -> agent guidance mapping."""
@@ -140,6 +152,43 @@ class TestSubmitCommand:
         assert 'run_after' not in call_data
         assert 'scheduled_at' not in call_data
         assert 'data' not in call_data
+
+    @pytest.mark.asyncio
+    async def test_submit_uses_env_work_session_when_unset(
+        self, mock_http_client, monkeypatch
+    ):
+        monkeypatch.setenv('ALPACON_WORK_SESSION', 'ws-from-env')
+        mock_http_client.post.return_value = {'id': 'cmd-env'}
+
+        await _submit_command(
+            server_id='550e8400-e29b-41d4-a716-446655440001',
+            command='ls',
+            workspace='testworkspace',
+            region='ap1',
+            token='test-token',
+        )
+
+        call_data = mock_http_client.post.call_args[1]['data']
+        assert call_data['work_session'] == 'ws-from-env'
+
+    @pytest.mark.asyncio
+    async def test_submit_explicit_work_session_wins_over_env(
+        self, mock_http_client, monkeypatch
+    ):
+        monkeypatch.setenv('ALPACON_WORK_SESSION', 'ws-from-env')
+        mock_http_client.post.return_value = {'id': 'cmd-explicit'}
+
+        await _submit_command(
+            server_id='550e8400-e29b-41d4-a716-446655440001',
+            command='ls',
+            workspace='testworkspace',
+            work_session_id='explicit-ws',
+            region='ap1',
+            token='test-token',
+        )
+
+        call_data = mock_http_client.post.call_args[1]['data']
+        assert call_data['work_session'] == 'explicit-ws'
 
 
 class TestListCommands:
@@ -285,6 +334,7 @@ class TestExecuteCommand:
         with patch('tools.command_tools._submit_command') as mock_submit:
             mock_submit.return_value = {
                 'error': 'Permission denied',
+                'message': 'Permission denied',
                 'status_code': 403,
             }
 
@@ -587,3 +637,79 @@ class TestExecuteCommandMultiServerWithSession:
 
         call_data = mock_http_client.post.call_args[1]['data']
         assert call_data['work_session'] == 'ws-uuid-abcd'
+
+
+class TestExecuteCommandGateTranslation:
+    """Gate-code envelopes from _submit_command must be translated through unwrap_http_result."""
+
+    @pytest.mark.asyncio
+    async def test_work_session_required_is_translated(
+        self, mock_http_client, mock_token_manager
+    ):
+        with patch('tools.command_tools._submit_command') as mock_submit:
+            mock_submit.return_value = _GATE_ENVELOPE_REQUIRED
+
+            result = await execute_command(
+                server_id='550e8400-e29b-41d4-a716-446655440001',
+                command='ls',
+                workspace='testworkspace',
+                region='ap1',
+            )
+
+        assert result.get('code') == 'work_session_required'
+        assert 'next_action' in result
+
+    @pytest.mark.asyncio
+    async def test_work_session_not_active_becomes_pending_approval(
+        self, mock_http_client, mock_token_manager
+    ):
+        with patch('tools.command_tools._submit_command') as mock_submit:
+            mock_submit.return_value = _GATE_ENVELOPE_NOT_ACTIVE
+
+            result = await execute_command(
+                server_id='550e8400-e29b-41d4-a716-446655440001',
+                command='ls',
+                workspace='testworkspace',
+                region='ap1',
+            )
+
+        assert result.get('status') == 'pending_approval'
+
+    @pytest.mark.asyncio
+    async def test_gate_response_does_not_leak_raw_envelope(
+        self, mock_http_client, mock_token_manager
+    ):
+        with patch('tools.command_tools._submit_command') as mock_submit:
+            mock_submit.return_value = _GATE_ENVELOPE_REQUIRED
+
+            result = await execute_command(
+                server_id='550e8400-e29b-41d4-a716-446655440001',
+                command='ls',
+                workspace='testworkspace',
+                region='ap1',
+            )
+
+        assert 'response' not in result
+        assert 'details' not in result
+
+
+class TestExecuteCommandMultiServerGateTranslation:
+    """Per-server gate envelopes must be translated in multi-server execution."""
+
+    @pytest.mark.asyncio
+    async def test_work_session_required_translated_in_parallel(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = _GATE_ENVELOPE_REQUIRED
+
+        result = await execute_command_multi_server(
+            server_ids=['550e8400-e29b-41d4-a716-446655440001'],
+            command='ls',
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        sid = '550e8400-e29b-41d4-a716-446655440001'
+        server_entry = result['deploy_shell_results'][sid]
+        assert server_entry.get('code') == 'work_session_required'
+        assert 'next_action' in server_entry

@@ -1,6 +1,8 @@
 """Common utilities for all MCP tools."""
 
 import importlib.metadata
+import json
+import os
 import platform
 from typing import Any
 
@@ -170,6 +172,71 @@ def token_error_response(region: str, workspace: str) -> dict[str, Any]:
     )
 
 
+# Server WorkSession gate codes → next-action telling the agent how to get inside a valid session (mirrors alpacon-cli worksession_error.go).
+_WORK_SESSION_GATE_NEXT_ACTION: dict[str, str] = {
+    'work_session_required': (
+        'No Work Session is attached. Create one with work_session_create '
+        '(scope covering this operation—"command" for command execution, '
+        '"webftp" for file transfers—plus the target server), have a human '
+        'approve it out-of-band, then retry passing its id as work_session_id.'
+    ),
+    'work_session_not_usable': (
+        'The attached Work Session is in a terminal state and cannot be used. '
+        'Create a new Work Session, get it approved, then retry.'
+    ),
+    'work_session_expired': (
+        'The attached Work Session has expired. Extend it with '
+        'work_session_extend, or create a new one, then retry.'
+    ),
+    'work_session_scope_not_allowed': (
+        'The attached Work Session does not include the scope for this '
+        'operation. Add the scope with work_session_update (may require '
+        'approval) or create a new session with the right scope, then retry.'
+    ),
+    'work_session_server_not_allowed': (
+        'The target server is not in the attached Work Session. Add it with '
+        'work_session_update, or create a new session including the server, '
+        'then retry.'
+    ),
+    'work_session_assignee_mismatch': (
+        'The attached Work Session is assigned to a different principal. Use a '
+        'session assigned to you, or create your own, then retry.'
+    ),
+}
+
+# Session exists but is unapproved; routes to pending-approval, not error.
+_WORK_SESSION_PENDING_CODE = 'work_session_not_active'
+
+_WORK_SESSION_GATE_CODES: frozenset[str] = frozenset(_WORK_SESSION_GATE_NEXT_ACTION) | {
+    _WORK_SESSION_PENDING_CODE
+}
+
+
+def work_session_gate_response(code: str, **kwargs: Any) -> dict[str, Any]:
+    """Translate a server WorkSession gate error code into an agent-actionable result.
+
+    ``work_session_not_active`` becomes a pending-approval result (a human must
+    approve the existing session). Every other gate code becomes an error result
+    carrying the gate ``code`` and a ``next_action`` describing how to get inside
+    a valid session. See ADR 0014 (zero standing privilege).
+    """
+    if code == _WORK_SESSION_PENDING_CODE:
+        return pending_approval_response(
+            'The attached Work Session is not active yet. A human must approve '
+            'it out-of-band (Alpacon web console or Slack) before this operation '
+            'will run. Poll work_session_get and retry once it is active.',
+            category='WORK_SESSION_PENDING',
+            **kwargs,
+        )
+    return error_response(
+        f'Operation blocked by the Work Session gate: {code}.',
+        code=code,
+        next_action=_WORK_SESSION_GATE_NEXT_ACTION[code],
+        requires_human_approval=False,
+        **kwargs,
+    )
+
+
 def unwrap_http_result(
     result: Any,
     *,
@@ -198,7 +265,47 @@ def unwrap_http_result(
     status_code = result.get('status_code')
     if status_code is not None:
         error_kwargs['status_code'] = status_code
+
+    gate_code = _extract_work_session_gate_code(result)
+    if gate_code is not None:
+        return work_session_gate_response(gate_code, **error_kwargs)
+
     return error_response(
         result.get('message', default_message),
         **error_kwargs,
+    )
+
+
+def _extract_work_session_gate_code(result: dict[str, Any]) -> str | None:
+    """Return the WorkSession gate code carried by an http error envelope, if any.
+
+    alpacon-server's exception handler returns 4xx bodies shaped as
+    ``{"code": "<error_code>"}``; ``utils.http_client`` carries the raw body in
+    the ``response`` key. Returns None when the body is missing, not JSON, or not
+    a recognized gate code (so the caller falls back to a generic error).
+    """
+    raw = result.get('response')
+    if not isinstance(raw, str):
+        return None
+    try:
+        body = json.loads(raw)
+    except ValueError:
+        return None
+    if not isinstance(body, dict):
+        return None
+    code = body.get('code')
+    if isinstance(code, str) and code in _WORK_SESSION_GATE_CODES:
+        return code
+    return None
+
+
+def resolve_work_session_id(explicit: str | None) -> str | None:
+    """Resolve the effective Work Session id: explicit arg > ALPACON_WORK_SESSION env.
+
+    Mirrors alpacon-cli's resolve.go (flag > env). Returns None when neither is set.
+    """
+    return (
+        (explicit or '').strip()
+        or os.environ.get('ALPACON_WORK_SESSION', '').strip()
+        or None
     )
