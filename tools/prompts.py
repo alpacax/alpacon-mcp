@@ -56,7 +56,8 @@ here is judged in real time and recorded. Follow this discipline.
 1. Confirm the session is `active` with `work_session_get` before any action. Read the
    session state from `data.status`, not the top-level `status` (that is just the
    tool-call result, always `success` on a good call). Any other state (`pending`,
-   `approved`, `rejected`, `expired`, `revoked`, `completed`) means stop — do not execute.
+   `approved`, `rejected`, `cancelled`, `expired`, `revoked`, `completed`) means stop —
+   do not execute.
 
 2. Run actions through the session. Pass `work_session_id` on every call (it falls back to
    the `ALPACON_WORK_SESSION` env var if omitted; without either the server rejects the
