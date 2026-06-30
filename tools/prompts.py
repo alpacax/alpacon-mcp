@@ -21,10 +21,11 @@ In Alpacon there is NO out-of-session path: every command, file transfer, or con
 must belong to an approved Work Session. Follow this order.
 
 1. Declare intent and minimal scope, then call `work_session_create`.
-   - Pass the goal above as the session intent.
-   - As an agent (MCP channel) you can scope `command` and `webftp`/`cp` directly; `sudo`
-     is available but every sudo invocation routes to human approval (HITL). `websh` and
-     `editor` require human presence (MFA) and are NOT available to you.
+   - Pass the goal above as the session `description` (the API has no `intent` field).
+   - Valid scopes are `command`, `webftp`, `tunnel`, and `sudo`. As an agent (MCP channel)
+     you can request `command`/`webftp`/`tunnel` directly; `sudo` is available but every
+     sudo invocation routes to human approval (HITL). Interactive `websh`/`editor` access
+     requires human presence (MFA) and is NOT available to you.
    - Scope to the specific target servers only — do not request workspace-wide access.
 
 2. Handle the result by status:
@@ -57,9 +58,12 @@ here is judged in real time and recorded. Follow this discipline.
    tool-call result, always `success` on a good call). Any other state (`pending`,
    `approved`, `rejected`, `expired`, `revoked`, `completed`) means stop — do not execute.
 
-2. Run actions through the session:
+2. Run actions through the session. Pass `work_session_id` on every call (it falls back to
+   the `ALPACON_WORK_SESSION` env var if omitted; without either the server rejects the
+   scoped action):
    - Commands: `execute_command` (single host) or `execute_command_multi_server` (fleet).
-   - File transfers: `webftp_upload_file` / `webftp_download_file`.
+   - File transfers: `webftp_download_file`. `webftp_upload_file` is local-mode only — in
+     remote/OAuth mode it returns `remote_mode_unsupported`.
 
 3. Expect risk verdicts. Each action is scored; a HIGH-risk command or any `sudo`
    invocation routes to human-in-the-loop. You cannot self-approve (an agent has no
