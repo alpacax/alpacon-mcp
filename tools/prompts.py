@@ -36,8 +36,10 @@ must belong to an approved Work Session. Follow this order.
      `work_session_server_not_allowed`, `work_session_expired`, ...): read `next_action`,
      narrow the scope or server set, and retry deliberately — never brute-force.
 
-3. Once the session is `active` (confirm with `work_session_get`), proceed to execution.
-   Follow the `guarded_execution` workflow for the running commands.
+3. Once the session is `active`, proceed to execution. Confirm with `work_session_get`
+   and read the session state from `data.status` (the top-level `status` is just the
+   tool-call result, always `success` on a good call). Follow the `guarded_execution`
+   workflow for the running commands.
 
 Read-only context needs no session: `alpacon://servers/{{region}}/{{workspace}}` lists
 servers and their UUIDs for the calls above.
@@ -50,9 +52,10 @@ def guarded_execution(work_session_id: str) -> str:
     return f"""You are executing work inside Work Session `{work_session_id}`. Every action
 here is judged in real time and recorded. Follow this discipline.
 
-1. Confirm the session is `active` with `work_session_get` before any action. Any other
-   state (`pending`, `approved`, `rejected`, `expired`, `revoked`, `completed`) means
-   stop — do not execute.
+1. Confirm the session is `active` with `work_session_get` before any action. Read the
+   session state from `data.status`, not the top-level `status` (that is just the
+   tool-call result, always `success` on a good call). Any other state (`pending`,
+   `approved`, `rejected`, `expired`, `revoked`, `completed`) means stop — do not execute.
 
 2. Run actions through the session:
    - Commands: `execute_command` (single host) or `execute_command_multi_server` (fleet).
