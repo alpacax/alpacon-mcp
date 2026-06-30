@@ -215,7 +215,7 @@ python main_sse.py
 #### Streamable-HTTP mode (remote deployment)
 - HTTP-based transport for hosting a remote MCP server
 - Authenticates clients with Auth0 JWT (browser OAuth)—no `token.json` or API token on the client
-- Requires `AUTH0_DOMAIN` and `AUTH0_CLIENT_ID` environment variables (see `main_http.py`)
+- `main_http.py` validates `AUTH0_DOMAIN` and `AUTH0_CLIENT_ID` at startup; the OAuth proxy endpoints additionally require `AUTH0_CLIENT_SECRET`, and accept an optional `AUTH0_AUDIENCE` (default `https://alpacon.io/access/`)
 - Alpacon operates a managed instance at `https://mcp.alpacon.io/mcp`
 
 ```bash

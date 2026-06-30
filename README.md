@@ -120,7 +120,7 @@ Don't want to run anything locally? Alpacon hosts a managed MCP server at **`htt
 
 The first time your client connects, it opens a browser window for you to log in to Alpacon (Auth0). After you sign in, the client receives a short-lived token and uses it for every request—the same identity, RBAC, and audit trail as the Alpacon web console. If your session needs multi-factor re-verification (for example after an MFA timeout), the client automatically reopens the browser to complete it.
 
-Because access is granted per login, you **do not** set `region`, `workspace`, or any API token in your client config. Region is resolved automatically from your authorized workspaces; you only name the **workspace** in your prompt when you have access to more than one.
+Because access is granted per login, you **do not** set `region`, `workspace`, or any API token in your client config. Instead, you name the **workspace** in your prompt (e.g. *"in the `production` workspace"*)—tools require it, and the AI passes it along. The **region** is resolved automatically from your authorized workspaces, so you rarely need to mention it.
 
 ### Add it to your AI client
 
