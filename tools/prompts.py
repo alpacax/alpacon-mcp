@@ -21,6 +21,8 @@ In Alpacon there is NO out-of-session path: every command, file transfer, or con
 must belong to an approved Work Session. Follow this order.
 
 1. Declare intent and minimal scope, then call `work_session_create`.
+   - Required arguments: `workspace`, `scopes` (list), `servers` (list of UUIDs),
+     `expires_at` (ISO 8601), and `description` — fill them all or the call is rejected.
    - Pass the goal above as the session `description` (the API has no `intent` field).
    - Valid scopes are `command`, `webftp`, `tunnel`, and `sudo`. As an agent (MCP channel)
      you can request `command`/`webftp`/`tunnel` directly; `sudo` is available but every
@@ -32,7 +34,8 @@ must belong to an approved Work Session. Follow this order.
    - `pending_approval`: you cannot approve your own work — an agent has no presence (MFA),
      so the session routes to a human approver. Surface the request to a human and WAIT.
      Do not retry-spam.
-     Use `explain_approval_decision` to relay why a human must act out-of-band.
+     Use `explain_approval_decision` (pass `workspace`) to relay why a human must
+     act out-of-band.
    - `error` with a gate `code` (`work_session_required`, `work_session_scope_not_allowed`,
      `work_session_server_not_allowed`, `work_session_expired`, ...): read `next_action`,
      narrow the scope or server set, and retry deliberately — never brute-force.
