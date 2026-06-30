@@ -104,6 +104,81 @@ After setup completes, add the configuration to your MCP client:
 
 ---
 
+## 🌐 Remote MCP server (hosted, no install)
+
+Don't want to run anything locally? Alpacon hosts a managed MCP server at **`https://mcp.alpacon.io/mcp`** using the streamable-http transport. Just point your AI client at the URL and sign in through your browser.
+
+### Why use the hosted server?
+
+- **No install**: No `uvx`, no Python, no local process to keep running
+- **No API token**: You authenticate through your browser (OAuth), not by pasting a token into a config file
+- **No `token.json`**: Nothing to create, store, or rotate on your machine
+- **No region/workspace config**: The workspaces you can access come from your login—you just say which one to use in your prompt (e.g. *"list servers in the `production` workspace"*)
+- **Always up to date**: Run the latest tools without upgrading anything
+
+### How authentication works
+
+The first time your client connects, it opens a browser window for you to log in to Alpacon (Auth0). After you sign in, the client receives a short-lived token and uses it for every request—the same identity, RBAC, and audit trail as the Alpacon web console. If your session needs multi-factor re-verification (for example after an MFA timeout), the client automatically reopens the browser to complete it.
+
+Because access is granted per login, you **do not** set `region`, `workspace`, or any API token in your client config. Instead, you name the **workspace** in your prompt (e.g. *"in the `production` workspace"*)—tools require it, and the AI passes it along. The **region** is resolved automatically from your authorized workspaces, so you rarely need to mention it.
+
+### Add it to your AI client
+
+**Claude Code** (CLI):
+```bash
+claude mcp add --transport http alpacon https://mcp.alpacon.io/mcp
+```
+On first use, Claude Code opens your browser to sign in. Verify with `claude mcp list`.
+
+**Claude Desktop**—add a custom connector (Settings → Connectors → Add custom connector) with the URL `https://mcp.alpacon.io/mcp`, or use the `mcp-remote` bridge in `claude_desktop_config.json`:
+```json
+{
+  "mcpServers": {
+    "alpacon": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "https://mcp.alpacon.io/mcp"]
+    }
+  }
+}
+```
+
+**Cursor**—add to `.cursor/mcp.json`:
+```json
+{
+  "mcpServers": {
+    "alpacon": {
+      "url": "https://mcp.alpacon.io/mcp"
+    }
+  }
+}
+```
+
+**VS Code** (native MCP)—add to `.vscode/mcp.json`:
+```json
+{
+  "servers": {
+    "alpacon": {
+      "type": "http",
+      "url": "https://mcp.alpacon.io/mcp"
+    }
+  }
+}
+```
+
+> **Tip**: Any MCP client that supports remote/streamable-http servers can connect—just give it the URL `https://mcp.alpacon.io/mcp`. Clients that only support local (stdio) servers should use the `mcp-remote` bridge shown above for Claude Desktop.
+
+### Hosted vs. local—which should I use?
+
+| | Hosted (remote MCP) | Local (`uvx alpacon-mcp`) |
+|---|---|---|
+| Setup | Add a URL, sign in via browser | Install + configure token |
+| Authentication | Browser OAuth (Auth0) | API token in `token.json`/env |
+| Region/workspace | Resolved from login; named in prompt | Configured per token |
+| Maintenance | None (managed) | Self-managed upgrades |
+| Best for | Quick start, most users | Air-gapped/custom deployments, self-hosting |
+
+---
+
 ## 📋 CLI commands reference
 
 ```bash
@@ -168,6 +243,8 @@ python main.py
 ---
 
 ## 🔌 Connect to other AI tools
+
+> Prefer not to install anything? Skip this section and use the [hosted remote MCP server](#-remote-mcp-server-hosted-no-install) instead—just point your client at `https://mcp.alpacon.io/mcp` and sign in via browser.
 
 ### Cursor IDE
 
