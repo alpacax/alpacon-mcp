@@ -27,3 +27,13 @@ async def test_prompt_renders_nonempty_text(name, args):
     assert text.strip()
     for arg_value in args.values():
         assert arg_value in text  # argument is interpolated into the guidance
+
+
+@pytest.mark.asyncio
+async def test_work_session_workflow_renders_servers():
+    result = await mcp.get_prompt(
+        'work_session_workflow',
+        {'intent': 'restart nginx', 'servers': 'uuid-a, uuid-b'},
+    )
+    text = result.messages[0].content.text
+    assert 'Target servers (UUIDs): uuid-a, uuid-b' in text
