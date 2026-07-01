@@ -477,6 +477,15 @@ Read-only data exposed as `alpacon://` resources (one per read tool). URI conven
 
 Resources are generated from a registry table in `tools/resources.py`.
 
+### MCP prompts
+
+Workflow guides that teach an agent the Alpacon operating discipline (Work Session as the single primitive, human-gated approval, structured-denial self-correction). Defined in `tools/prompts.py` and aligned to the handbook's ACCESS→EXECUTION→AUDIT model.
+
+- `work_session_workflow`: ACCESS—how to scope and open a Work Session (minimal scope, agent-requestable `command`/`webftp`/`tunnel`, handle `pending_approval`) before any infrastructure action
+- `guarded_execution`: EXECUTION—run commands and transfers inside an approved session, handling HITL approval and structured denials
+- `incident_response`: Scenario—read-only triage first, then bounded remediation inside a scoped Work Session
+- `security_audit`: AUDIT—pick the right one of Alpacon's five audit lenses (session forensic, event forensic, decision, mutation, AI/MITRE) for the question
+
 ## Dependencies
 
 **Runtime dependencies** (from `pyproject.toml`):
