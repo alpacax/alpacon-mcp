@@ -3,7 +3,7 @@
 import asyncio
 from typing import Any
 
-from utils.common import success_response, unwrap_http_result
+from utils.common import error_response, success_response, unwrap_http_result
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import READ_ONLY
@@ -376,15 +376,31 @@ async def get_disk_info(
         if isinstance(r, BaseException) and not isinstance(r, Exception):
             raise r
 
-    # Prepare response
+    for result, default_message in (
+        (disks_result, 'Failed to get disk info'),
+        (partitions_result, 'Failed to get partition info'),
+    ):
+        if isinstance(result, Exception):
+            return error_response(
+                f'{default_message}: {result}',
+                server_id=server_id,
+                region=region,
+                workspace=workspace,
+            )
+        err = unwrap_http_result(
+            result,
+            default_message=default_message,
+            server_id=server_id,
+            region=region,
+            workspace=workspace,
+        )
+        if err:
+            return err
+
     disk_info = {
         'server_id': server_id,
-        'disks': disks_result
-        if not isinstance(disks_result, Exception)
-        else {'error': str(disks_result)},
-        'partitions': partitions_result
-        if not isinstance(partitions_result, Exception)
-        else {'error': str(partitions_result)},
+        'disks': disks_result,
+        'partitions': partitions_result,
         'region': region,
         'workspace': workspace,
     }
