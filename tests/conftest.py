@@ -17,6 +17,14 @@ HTTP_ERROR_ENVELOPE = {
 }
 
 
+@pytest.fixture
+def mock_token_manager():
+    """Mock token manager so tests never read a real ~/.alpacon-mcp/token.json."""
+    with patch('utils.common.token_manager') as mock_manager:
+        mock_manager.get_token.return_value = 'test-token'
+        yield mock_manager
+
+
 @pytest.fixture(autouse=True)
 def mock_region_auto_detect():
     """Prevent _resolve_region from accessing real token.json in all tests.

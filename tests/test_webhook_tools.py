@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from tests.conftest import HTTP_ERROR_ENVELOPE
 from tools.webhook_tools import (
     create_event_subscription,
     create_webhook,
@@ -27,12 +28,111 @@ def mock_http_client():
         yield mock_client
 
 
-@pytest.fixture
-def mock_token_manager():
-    """Mock token manager for testing."""
-    with patch('utils.common.token_manager') as mock_manager:
-        mock_manager.get_token.return_value = 'test-token'
-        yield mock_manager
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ('tool', 'tool_kwargs', 'method_name', 'expected_context'),
+    [
+        pytest.param(
+            list_event_subscriptions,
+            {'workspace': 'testworkspace', 'region': 'ap1'},
+            'get',
+            {},
+            id='list_event_subscriptions',
+        ),
+        pytest.param(
+            create_event_subscription,
+            {
+                'workspace': 'testworkspace',
+                'channel': 'ch-1',
+                'event_type': 'command_fin',
+                'target_id': 'server-1',
+                'region': 'ap1',
+            },
+            'post',
+            {},
+            id='create_event_subscription',
+        ),
+        pytest.param(
+            delete_event_subscription,
+            {
+                'subscription_id': 'sub-1',
+                'workspace': 'testworkspace',
+                'region': 'ap1',
+            },
+            'delete',
+            {'subscription_id': 'sub-1'},
+            id='delete_event_subscription',
+        ),
+        pytest.param(
+            list_webhooks,
+            {'workspace': 'testworkspace', 'region': 'ap1'},
+            'get',
+            {},
+            id='list_webhooks',
+        ),
+        pytest.param(
+            get_webhook,
+            {'webhook_id': 'wh-1', 'workspace': 'testworkspace', 'region': 'ap1'},
+            'get',
+            {'webhook_id': 'wh-1'},
+            id='get_webhook',
+        ),
+        pytest.param(
+            create_webhook,
+            {
+                'workspace': 'testworkspace',
+                'name': 'alerts',
+                'url': 'https://example.com/webhook',
+                'region': 'ap1',
+            },
+            'post',
+            {},
+            id='create_webhook',
+        ),
+        pytest.param(
+            update_webhook,
+            {
+                'webhook_id': 'wh-1',
+                'workspace': 'testworkspace',
+                'name': 'updated-alerts',
+                'region': 'ap1',
+            },
+            'patch',
+            {'webhook_id': 'wh-1'},
+            id='update_webhook',
+        ),
+        pytest.param(
+            delete_webhook,
+            {
+                'webhook_id': 'wh-1',
+                'workspace': 'testworkspace',
+                'region': 'ap1',
+            },
+            'delete',
+            {'webhook_id': 'wh-1'},
+            id='delete_webhook',
+        ),
+    ],
+)
+async def test_webhook_http_error_envelope_returns_error(
+    tool,
+    tool_kwargs,
+    method_name,
+    expected_context,
+    mock_http_client,
+    mock_token_manager,
+):
+    getattr(mock_http_client, method_name).return_value = HTTP_ERROR_ENVELOPE
+
+    result = await tool(**tool_kwargs)
+
+    assert result['status'] == 'error'
+    assert result['message'] == HTTP_ERROR_ENVELOPE['message']
+    assert result['status_code'] == HTTP_ERROR_ENVELOPE['status_code']
+    assert result['region'] == 'ap1'
+    assert result['workspace'] == 'testworkspace'
+    for key, value in expected_context.items():
+        assert result[key] == value
 
 
 class TestEventSubscriptions:
