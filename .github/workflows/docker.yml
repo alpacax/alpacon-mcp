@@ -49,6 +49,7 @@ jobs:
           context: .
           push: true
           platforms: linux/amd64
+          # Dev builds (workflow_run) have no release tag, so fall back to a placeholder version
           build-args: |
             VERSION=${{ github.event_name == 'push' && github.ref_name || '0.0.0' }}
           tags: ${{ steps.meta.outputs.tags }}
