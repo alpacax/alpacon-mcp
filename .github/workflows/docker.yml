@@ -25,9 +25,17 @@ jobs:
           ref: ${{ github.event.workflow_run.head_sha || github.ref }}
           fetch-depth: 0  # hatch-vcs derives the version from git tags
 
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
       - name: Resolve package version
         id: version
-        run: echo "value=$(pipx run hatch version)" >> "$GITHUB_OUTPUT"
+        # Install hatch-vcs explicitly so the vcs version source resolves without relying on runtime bootstrap
+        run: |
+          pip install hatchling hatch-vcs
+          echo "value=$(hatchling version)" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
