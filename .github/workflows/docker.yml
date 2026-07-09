@@ -23,6 +23,26 @@ jobs:
       - uses: actions/checkout@v6
         with:
           ref: ${{ github.event.workflow_run.head_sha || github.ref }}
+          fetch-depth: 0  # hatch-vcs derives the version from git tags
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Resolve package version
+        id: version
+        # Install hatch-vcs explicitly so the vcs version source resolves without relying on runtime bootstrap
+        run: |
+          pip install hatchling hatch-vcs
+          # Assign first so a hatchling failure trips `set -e` here with its own
+          # error, instead of leaking an empty version into a cryptic Docker build failure
+          version="$(hatchling version)"
+          if [ -z "$version" ] || [ "$version" = "0.0.0" ]; then
+            echo "::error::Failed to resolve package version from git tags" >&2
+            exit 1
+          fi
+          echo "value=$version" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -49,6 +69,9 @@ jobs:
           context: .
           push: true
           platforms: linux/amd64
+          # Build context excludes .git, so the version is resolved on the runner and passed in
+          build-args: |
+            VERSION=${{ steps.version.outputs.value }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha

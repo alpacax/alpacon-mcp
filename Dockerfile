@@ -8,8 +8,12 @@ WORKDIR /app
 
 # Copy full source and install (hatchling needs source for metadata)
 COPY . .
-RUN pip install --no-cache-dir . && \
-    rm -rf /root/.cache
+# CI resolves the version and passes it as VERSION (.git is excluded from the build context)
+ARG VERSION=0.0.0
+# Scope the global pretend-version to our own wheel build so it can't leak into a dependency's sdist build
+RUN SETUPTOOLS_SCM_PRETEND_VERSION="${VERSION#v}" pip wheel --no-cache-dir --no-deps --wheel-dir /tmp/wheels . && \
+    pip install --no-cache-dir /tmp/wheels/*.whl && \
+    rm -rf /tmp/wheels /root/.cache
 
 # Default port (MCAR - MCP Alpacon Remote)
 EXPOSE 8237
