@@ -8,7 +8,7 @@ WORKDIR /app
 
 # Copy full source and install (hatchling needs source for metadata)
 COPY . .
-# Build context excludes .git; CI passes the tag as VERSION (hatch-vcs reads it via setuptools-scm's PRETEND_VERSION)
+# Build context excludes .git; CI resolves the version and passes it as VERSION (fed to setuptools-scm's PRETEND_VERSION)
 ARG VERSION=0.0.0
 RUN SETUPTOOLS_SCM_PRETEND_VERSION="${VERSION#v}" pip install --no-cache-dir . && \
     rm -rf /root/.cache
