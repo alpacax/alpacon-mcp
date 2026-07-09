@@ -8,7 +8,9 @@ WORKDIR /app
 
 # Copy full source and install (hatchling needs source for metadata)
 COPY . .
-RUN pip install --no-cache-dir . && \
+# Build context excludes .git, so hatch-vcs cannot derive the version; CI passes the release tag
+ARG VERSION=0.0.0
+RUN SETUPTOOLS_SCM_PRETEND_VERSION="${VERSION#v}" pip install --no-cache-dir . && \
     rm -rf /root/.cache
 
 # Default port (MCAR - MCP Alpacon Remote)

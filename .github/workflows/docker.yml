@@ -49,6 +49,8 @@ jobs:
           context: .
           push: true
           platforms: linux/amd64
+          build-args: |
+            VERSION=${{ github.event_name == 'push' && github.ref_name || '0.0.0' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
