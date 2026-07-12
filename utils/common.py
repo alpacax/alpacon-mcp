@@ -4,8 +4,17 @@ import importlib.metadata
 import json
 import os
 import platform
-from typing import Any
+from typing import Unpack, cast
 
+from utils.api_types import (
+    ApiErrorEnvelope,
+    ApiResult,
+    ErrorResponse,
+    PendingApprovalResponse,
+    ResponseContext,
+    SuccessResponse,
+    is_api_error,
+)
 from utils.logger import get_logger
 from utils.token_manager import get_token_manager
 
@@ -40,7 +49,7 @@ def validate_token(region: str, workspace: str) -> str | None:
     return token
 
 
-def error_response(message: str, **kwargs) -> dict[str, Any]:
+def error_response(message: str, **kwargs: Unpack[ResponseContext]) -> ErrorResponse:
     """Create standardized error response.
 
     Args:
@@ -50,26 +59,35 @@ def error_response(message: str, **kwargs) -> dict[str, Any]:
     Returns:
         Standardized error response dict
     """
-    response = {'status': 'error', 'message': message}
-    response.update(kwargs)
-    return response
+    return {'status': 'error', 'message': message, **kwargs}
 
 
-def success_response(data: Any = None, **kwargs) -> dict[str, Any]:
+def success_response(
+    data: object = None,
+    message: str | None = None,
+    **kwargs: Unpack[ResponseContext],
+) -> SuccessResponse:
     """Create standardized success response.
 
     Args:
         data: Response data
+        message: Optional human-readable message to attach
         **kwargs: Additional fields to include in response
 
     Returns:
         Standardized success response dict
     """
-    response = {'status': 'success'}
+    # Plain dict[str, object] intermediate: SuccessResponse declares its own
+    # NotRequired fields (data, message) beyond ResponseContext, and mypy's
+    # TypedDict construction requires every NotRequired key of the target to
+    # be accounted for in a **-spread literal, which a bare ResponseContext
+    # kwargs can't satisfy. Cast back once fully assembled.
+    response: dict[str, object] = {'status': 'success', **kwargs}
     if data is not None:
         response['data'] = data
-    response.update(kwargs)
-    return response
+    if message is not None:
+        response['message'] = message
+    return cast(SuccessResponse, response)
 
 
 # The human-resolvable next action differs by category: SUDO_APPROVAL_REQUIRED /
@@ -111,8 +129,9 @@ def pending_approval_response(
     message: str,
     *,
     category: str,
-    **kwargs: Any,
-) -> dict[str, Any]:
+    data: object = None,
+    **kwargs: Unpack[ResponseContext],
+) -> PendingApprovalResponse:
     """Create a structured "pending human approval" result (ADR 0015).
 
     AI agents reaching Alpacon through MCP are a request/execution surface and
@@ -133,29 +152,32 @@ def pending_approval_response(
         message: Human-readable explanation of what is pending and what to do.
         category: Stable machine code for the denial/pending category
             (e.g. ``SUDO_APPROVAL_REQUIRED``, ``WORK_SESSION_PENDING``).
-        **kwargs: Additional context fields (region, workspace, ids, raw data).
+        data: Optional raw payload to attach (e.g. the pending Work Session).
+        **kwargs: Additional context fields (region, workspace, ids).
 
     Returns:
         Structured pending-approval response dict.
     """
     # Apply caller context first so the fixed, security-relevant fields below
     # (the flags and category) always win and cannot be overridden by a kwarg.
-    response: dict[str, Any] = {**kwargs}
-    response.update(
-        {
-            'status': 'pending_approval',
-            'category': category,
-            'message': message,
-            # Machine-actionable flags: the agent must wait/escalate, not act.
-            'requires_human_approval': True,
-            'approvable_by_agent': False,
-            'next_action': _NEXT_ACTION_BY_CATEGORY.get(category, _DEFAULT_NEXT_ACTION),
-        }
-    )
-    return response
+    # Plain dict[str, object] intermediate: see success_response for why (own
+    # NotRequired 'data' field beyond ResponseContext). Cast back once assembled.
+    response: dict[str, object] = {
+        **kwargs,
+        'status': 'pending_approval',
+        'category': category,
+        'message': message,
+        # Machine-actionable flags: the agent must wait/escalate, not act.
+        'requires_human_approval': True,
+        'approvable_by_agent': False,
+        'next_action': _NEXT_ACTION_BY_CATEGORY.get(category, _DEFAULT_NEXT_ACTION),
+    }
+    if data is not None:
+        response['data'] = data
+    return cast(PendingApprovalResponse, response)
 
 
-def token_error_response(region: str, workspace: str) -> dict[str, Any]:
+def token_error_response(region: str, workspace: str) -> ErrorResponse:
     """Create standardized token error response.
 
     Args:
@@ -212,15 +234,22 @@ _WORK_SESSION_GATE_CODES: frozenset[str] = frozenset(_WORK_SESSION_GATE_NEXT_ACT
 }
 
 
-def work_session_gate_response(code: str, **kwargs: Any) -> dict[str, Any]:
+def work_session_gate_response(
+    gate_code: str, **kwargs: Unpack[ResponseContext]
+) -> ErrorResponse | PendingApprovalResponse:
     """Translate a server WorkSession gate error code into an agent-actionable result.
 
     ``work_session_not_active`` becomes a pending-approval result (a human must
     approve the existing session). Every other gate code becomes an error result
     carrying the gate ``code`` and a ``next_action`` describing how to get inside
     a valid session. See ADR 0014 (zero standing privilege).
+
+    Note: the parameter is named ``gate_code`` (not ``code``) because ``code``
+    is itself a ``ResponseContext`` field attached via ``**kwargs``—mypy's
+    Unpack machinery rejects a function whose own parameter name overlaps
+    with a key of its ``**kwargs: Unpack[ResponseContext]`` type.
     """
-    if code == _WORK_SESSION_PENDING_CODE:
+    if gate_code == _WORK_SESSION_PENDING_CODE:
         return pending_approval_response(
             'The attached Work Session is not active yet. A human must approve '
             'it out-of-band (Alpacon web console or Slack) before this operation '
@@ -228,21 +257,30 @@ def work_session_gate_response(code: str, **kwargs: Any) -> dict[str, Any]:
             category='WORK_SESSION_PENDING',
             **kwargs,
         )
-    return error_response(
-        f'Operation blocked by the Work Session gate: {code}.',
-        code=code,
-        next_action=_WORK_SESSION_GATE_NEXT_ACTION[code],
-        requires_human_approval=False,
+    # Built as a literal (not via error_response(**kwargs)) because kwargs is
+    # typed Unpack[ResponseContext], which structurally may already contain
+    # code/next_action/requires_human_approval—mypy rejects passing those as
+    # both explicit keywords and part of a forwarded **kwargs of that type.
+    # Annotated as ErrorResponse (not the function's ErrorResponse |
+    # PendingApprovalResponse return type) so mypy doesn't also require
+    # PendingApprovalResponse's own NotRequired 'data' key to be accounted for.
+    gate_error: ErrorResponse = {
+        'status': 'error',
+        'message': f'Operation blocked by the Work Session gate: {gate_code}.',
         **kwargs,
-    )
+        'code': gate_code,
+        'next_action': _WORK_SESSION_GATE_NEXT_ACTION[gate_code],
+        'requires_human_approval': False,
+    }
+    return gate_error
 
 
 def unwrap_http_result(
-    result: Any,
+    result: ApiResult,
     *,
     default_message: str,
-    **id_context: Any,
-) -> dict[str, Any] | None:
+    **id_context: Unpack[ResponseContext],
+) -> ErrorResponse | PendingApprovalResponse | None:
     """Convert an http_client error-dict into an error_response.
 
     Returns the error_response dict if `result` is the error envelope produced
@@ -256,12 +294,14 @@ def unwrap_http_result(
             into the error response for caller debugging.
 
     Returns:
-        error_response dict if result is an error envelope, else None.
+        error_response dict if result is an error envelope, else None. Can also
+        be a pending_approval_response dict when the gate code is the
+        WorkSession-pending code (see work_session_gate_response).
     """
-    if not (isinstance(result, dict) and 'error' in result):
+    if not is_api_error(result):
         return None
 
-    error_kwargs: dict[str, Any] = dict(id_context)
+    error_kwargs: ResponseContext = {**id_context}
     status_code = result.get('status_code')
     if status_code is not None:
         error_kwargs['status_code'] = status_code
@@ -276,7 +316,7 @@ def unwrap_http_result(
     )
 
 
-def _extract_work_session_gate_code(result: dict[str, Any]) -> str | None:
+def _extract_work_session_gate_code(result: ApiErrorEnvelope) -> str | None:
     """Return the WorkSession gate code carried by an http error envelope, if any.
 
     alpacon-server's exception handler returns 4xx bodies shaped as
