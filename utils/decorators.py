@@ -373,9 +373,16 @@ def with_token_validation(func: Callable) -> Callable:
         # both positional and keyword region correctly
         return await func(*bound_args.args, **bound_args.kwargs)
 
-    # Remove _token parameter from the wrapper signature
+    # Strip internal params from the exposed signature: _token is an
+    # internal marker (MCP forbids leading underscores) and VAR_KEYWORD
+    # would otherwise surface as a bogus required "kwargs" field in the
+    # FastMCP-generated JSON schema (func_metadata ignores param.kind).
     original_sig = inspect.signature(func)
-    new_params = [p for p in original_sig.parameters.values() if p.name != '_token']
+    new_params = [
+        p
+        for p in original_sig.parameters.values()
+        if p.name != '_token' and p.kind is not inspect.Parameter.VAR_KEYWORD
+    ]
     wrapper.__signature__ = original_sig.replace(parameters=new_params)  # type: ignore[attr-defined]
 
     return wrapper
