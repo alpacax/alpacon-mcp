@@ -1,7 +1,8 @@
 """Alert management tools for Alpacon MCP server."""
 
-from typing import Any
+from typing import Unpack
 
+from utils.api_types import ToolKwargs, ToolResponse
 from utils.common import error_response, success_response, unwrap_http_result
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
@@ -29,8 +30,8 @@ async def list_alerts(
     page_size: int | None = None,
     acknowledged: bool | None = None,
     dismissed: bool | None = None,
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """List alerts.
 
     Args:
@@ -48,7 +49,7 @@ async def list_alerts(
     """
     token = kwargs.get('token')
 
-    params: dict[str, Any] = {}
+    params: dict[str, object] = {}
     if server_id:
         params['server'] = server_id
     if status:
@@ -91,8 +92,8 @@ async def list_alerts(
     meta={'anthropic/searchHint': 'alert detail info specific'},
 )
 async def get_alert(
-    alert_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+    alert_id: str, workspace: str, region: str = '', **kwargs: Unpack[ToolKwargs]
+) -> ToolResponse:
     """Get alert details by ID.
 
     Args:
@@ -137,8 +138,8 @@ async def mute_alert(
     workspace: str,
     duration: int | None = None,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Mute an alert.
 
     Args:
@@ -152,7 +153,7 @@ async def mute_alert(
     """
     token = kwargs.get('token')
 
-    mute_data: dict[str, Any] = {}
+    mute_data: dict[str, object] = {}
     if duration is not None:
         mute_data['duration'] = duration
 
@@ -202,8 +203,8 @@ async def create_alert_rule(
     description: str | None = None,
     enabled: bool = True,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Create an alert rule.
 
     Args:
@@ -223,7 +224,7 @@ async def create_alert_rule(
     """
     token = kwargs.get('token')
 
-    rule_data: dict[str, Any] = {
+    rule_data: dict[str, object] = {
         'name': name,
         'metric_type': metric_type,
         'condition': condition,
@@ -275,8 +276,8 @@ async def update_alert_rule(
     description: str | None = None,
     enabled: bool | None = None,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Update an existing alert rule.
 
     Args:
@@ -297,7 +298,7 @@ async def update_alert_rule(
     """
     token = kwargs.get('token')
 
-    update_data: dict[str, Any] = {}
+    update_data: dict[str, object] = {}
     if name is not None:
         update_data['name'] = name
     if metric_type is not None:
@@ -347,8 +348,8 @@ async def update_alert_rule(
     meta={'anthropic/searchHint': 'alert rule delete remove'},
 )
 async def delete_alert_rule(
-    rule_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+    rule_id: str, workspace: str, region: str = '', **kwargs: Unpack[ToolKwargs]
+) -> ToolResponse:
     """Delete an alert rule.
 
     Args:

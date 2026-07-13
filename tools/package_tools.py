@@ -1,7 +1,8 @@
 """Package management tools for Alpacon MCP server."""
 
-from typing import Any
+from typing import Unpack
 
+from utils.api_types import ToolKwargs, ToolResponse
 from utils.common import success_response, unwrap_http_result
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
@@ -23,8 +24,8 @@ async def list_system_package_entries(
     region: str = '',
     page: int | None = None,
     page_size: int | None = None,
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """List system package entries on a server.
 
     Args:
@@ -39,7 +40,7 @@ async def list_system_package_entries(
     """
     token = kwargs.get('token')
 
-    params: dict[str, Any] = {'server': server_id}
+    params: dict[str, object] = {'server': server_id}
     if page is not None:
         params['page'] = page
     if page_size is not None:
@@ -79,8 +80,8 @@ async def install_system_package(
     workspace: str,
     version: str | None = None,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Install a system package on a server.
 
     Args:
@@ -95,7 +96,7 @@ async def install_system_package(
     """
     token = kwargs.get('token')
 
-    package_data: dict[str, Any] = {
+    package_data: dict[str, object] = {
         'server': server_id,
         'name': package_name,
     }
@@ -132,8 +133,8 @@ async def install_system_package(
     meta={'anthropic/searchHint': 'system package remove uninstall delete'},
 )
 async def remove_system_package(
-    entry_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+    entry_id: str, workspace: str, region: str = '', **kwargs: Unpack[ToolKwargs]
+) -> ToolResponse:
     """Remove a system package entry.
 
     Args:
@@ -184,8 +185,8 @@ async def list_python_packages(
     region: str = '',
     page: int | None = None,
     page_size: int | None = None,
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """List Python packages on a server.
 
     Args:
@@ -200,7 +201,7 @@ async def list_python_packages(
     """
     token = kwargs.get('token')
 
-    params: dict[str, Any] = {'server': server_id}
+    params: dict[str, object] = {'server': server_id}
     if page is not None:
         params['page'] = page
     if page_size is not None:
@@ -240,8 +241,8 @@ async def install_python_package(
     workspace: str,
     version: str | None = None,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Install a Python package on a server.
 
     Args:
@@ -256,7 +257,7 @@ async def install_python_package(
     """
     token = kwargs.get('token')
 
-    package_data: dict[str, Any] = {
+    package_data: dict[str, object] = {
         'server': server_id,
         'name': package_name,
     }
@@ -293,8 +294,8 @@ async def install_python_package(
     meta={'anthropic/searchHint': 'python package pip remove uninstall'},
 )
 async def remove_python_package(
-    entry_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+    entry_id: str, workspace: str, region: str = '', **kwargs: Unpack[ToolKwargs]
+) -> ToolResponse:
     """Remove a Python package entry.
 
     Args:

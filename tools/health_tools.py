@@ -1,10 +1,9 @@
 """Health check tool for MCP clients."""
 
-from typing import Any
-
 from mcp.types import ToolAnnotations
 
 from server import mcp
+from utils.api_types import ToolResponse
 from utils.common import success_response
 
 
@@ -16,7 +15,7 @@ from utils.common import success_response
         'anthropic/searchHint': 'health check status ping connectivity',
     },
 )
-async def health_check() -> dict[str, Any]:
+async def health_check() -> ToolResponse:
     """Check MCP server health and return status information.
 
     No parameters required - returns server health metrics including

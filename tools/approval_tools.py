@@ -9,8 +9,9 @@ human, but provide no approve/reject mutation. The agent must escalate to a huma
 who approves out-of-band (Alpacon web console or Slack).
 """
 
-from typing import Any
+from typing import Unpack
 
+from utils.api_types import ResponseContext, ToolKwargs, ToolResponse
 from utils.common import (
     pending_approval_response,
     success_response,
@@ -36,8 +37,8 @@ async def list_approval_requests(
     region: str = '',
     page: int | None = None,
     page_size: int | None = None,
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """List approval requests.
 
     Args:
@@ -52,7 +53,7 @@ async def list_approval_requests(
     """
     token = kwargs.get('token')
 
-    params: dict[str, Any] = {}
+    params: dict[str, object] = {}
     if status:
         params['status'] = status
     if page is not None:
@@ -86,8 +87,8 @@ async def list_approval_requests(
     meta={'anthropic/searchHint': 'approval request detail'},
 )
 async def get_approval_request(
-    request_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+    request_id: str, workspace: str, region: str = '', **kwargs: Unpack[ToolKwargs]
+) -> ToolResponse:
     """Get approval request details by ID.
 
     Args:
@@ -145,8 +146,8 @@ async def explain_approval_decision(
     workspace: str,
     request_id: str | None = None,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Explain that approving/rejecting a request is a human-only, out-of-band action.
 
     This tool performs no mutation and contacts no server endpoint—an agent must
@@ -161,7 +162,7 @@ async def explain_approval_decision(
     Returns:
         Structured pending-approval guidance (no approve/reject is performed)
     """
-    context: dict[str, Any] = {'region': region, 'workspace': workspace}
+    context: ResponseContext = {'region': region, 'workspace': workspace}
     if request_id is not None:
         context['request_id'] = request_id
 
@@ -190,8 +191,8 @@ async def list_sudo_policies(
     region: str = '',
     page: int | None = None,
     page_size: int | None = None,
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """List sudo policies.
 
     Args:
@@ -205,7 +206,7 @@ async def list_sudo_policies(
     """
     token = kwargs.get('token')
 
-    params: dict[str, Any] = {}
+    params: dict[str, object] = {}
     if page is not None:
         params['page'] = page
     if page_size is not None:
@@ -247,8 +248,8 @@ async def create_sudo_policy(
     no_password: bool = False,
     description: str | None = None,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Create a sudo policy.
 
     Args:
@@ -268,7 +269,7 @@ async def create_sudo_policy(
     """
     token = kwargs.get('token')
 
-    policy_data: dict[str, Any] = {
+    policy_data: dict[str, object] = {
         'name': name,
         'commands': commands,
         'no_password': no_password,

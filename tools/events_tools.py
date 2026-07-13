@@ -1,7 +1,8 @@
 """Event management tools for Alpacon MCP server - Refactored version."""
 
-from typing import Any
+from typing import Unpack
 
+from utils.api_types import ToolKwargs, ToolResponse
 from utils.common import success_response, unwrap_http_result
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
@@ -19,12 +20,12 @@ async def list_events(
     reporter: str | None = None,
     limit: int = 50,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """List events from servers."""
     token = kwargs.get('token')
 
-    params = {'page_size': limit, 'ordering': '-added_at'}
+    params: dict[str, object] = {'page_size': limit, 'ordering': '-added_at'}
 
     if server_id:
         params['server'] = server_id
@@ -67,8 +68,8 @@ async def list_events(
     meta={'anthropic/searchHint': 'event detail specific'},
 )
 async def get_event(
-    event_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+    event_id: str, workspace: str, region: str = '', **kwargs: Unpack[ToolKwargs]
+) -> ToolResponse:
     """Get detailed information about a specific event."""
     token = kwargs.get('token')
 
@@ -105,12 +106,16 @@ async def search_events(
     server_id: str | None = None,
     limit: int = 20,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Search events by server name, reporter, record, or description."""
     token = kwargs.get('token')
 
-    params = {'search': search_query, 'page_size': limit, 'ordering': '-added_at'}
+    params: dict[str, object] = {
+        'search': search_query,
+        'page_size': limit,
+        'ordering': '-added_at',
+    }
 
     if server_id:
         params['server'] = server_id

@@ -1,20 +1,30 @@
 """Workspace management tools for Alpacon MCP server."""
 
-from typing import Any
+from typing import TypedDict, Unpack
 
 from mcp.types import ToolAnnotations
 
 from server import mcp
+from utils.api_types import ToolKwargs, ToolResponse
 from utils.common import error_response, success_response, unwrap_http_result
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import READ_ONLY
 
 
+class WorkspaceEntry(TypedDict):
+    """Single workspace entry derived from token.json data."""
+
+    workspace: str
+    region: str
+    has_token: bool
+    domain: str
+
+
 def _collect_workspaces_from_tokens(
-    all_tokens: dict[str, Any],
+    all_tokens: dict[str, object],
     target_region: str = '',
-) -> list[dict[str, Any]]:
+) -> list[WorkspaceEntry]:
     """Collect workspace info from token.json data.
 
     Args:
@@ -24,7 +34,7 @@ def _collect_workspaces_from_tokens(
     Returns:
         List of workspace info dicts
     """
-    workspaces = []
+    workspaces: list[WorkspaceEntry] = []
     for region_key, region_data in all_tokens.items():
         if target_region and region_key != target_region:
             continue
@@ -64,7 +74,7 @@ def _collect_workspaces_from_tokens(
         'anthropic/searchHint': 'workspace list regions configured available',
     },
 )
-async def list_workspaces(region: str = '') -> dict[str, Any]:
+async def list_workspaces(region: str = '') -> ToolResponse:
     """Get list of available workspaces.
 
     In local (stdio/SSE) mode, reads from token.json. If region is not specified,
@@ -90,13 +100,13 @@ async def list_workspaces(region: str = '') -> dict[str, Any]:
             )
         # Server mode: extract workspaces from JWT claims
         jwt_workspaces = _get_jwt_workspaces(jwt_token)
-        workspaces = []
+        jwt_ws_list: list[dict[str, str]] = []
         for ws in jwt_workspaces:
             ws_name = ws.get('schema_name', '')
             ws_region = ws.get('region', '')
             if region and ws_region != region:
                 continue
-            workspaces.append(
+            jwt_ws_list.append(
                 {
                     'workspace': ws_name,
                     'region': ws_region,
@@ -107,7 +117,7 @@ async def list_workspaces(region: str = '') -> dict[str, Any]:
 
         return success_response(
             data={
-                'workspaces': workspaces,
+                'workspaces': jwt_ws_list,
                 'source': 'jwt',
                 'region': region or 'all',
             },
@@ -144,8 +154,8 @@ async def list_workspaces(region: str = '') -> dict[str, Any]:
     },
 )
 async def get_current_user(
-    workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+    workspace: str, region: str = '', **kwargs: Unpack[ToolKwargs]
+) -> ToolResponse:
     """Get the currently authenticated user.
 
     Args:

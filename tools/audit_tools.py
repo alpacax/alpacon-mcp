@@ -1,7 +1,8 @@
 """Audit and logging tools for Alpacon MCP server."""
 
-from typing import Any
+from typing import Unpack
 
+from utils.api_types import ToolKwargs, ToolResponse
 from utils.common import success_response, unwrap_http_result
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
@@ -22,8 +23,8 @@ async def list_activity_logs(
     region: str = '',
     page: int | None = None,
     page_size: int | None = None,
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """List activity logs.
 
     Args:
@@ -37,7 +38,7 @@ async def list_activity_logs(
     """
     token = kwargs.get('token')
 
-    params = {}
+    params: dict[str, object] = {}
     if page is not None:
         params['page'] = page
     if page_size is not None:
@@ -69,8 +70,8 @@ async def list_activity_logs(
     meta={'anthropic/searchHint': 'audit activity log detail'},
 )
 async def get_activity_log(
-    log_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+    log_id: str, workspace: str, region: str = '', **kwargs: Unpack[ToolKwargs]
+) -> ToolResponse:
     """Get activity log details by ID.
 
     Args:
@@ -121,8 +122,8 @@ async def list_server_logs(
     region: str = '',
     page: int | None = None,
     page_size: int | None = None,
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """List server command execution logs.
 
     Args:
@@ -137,7 +138,7 @@ async def list_server_logs(
     """
     token = kwargs.get('token')
 
-    params: dict[str, Any] = {}
+    params: dict[str, object] = {}
     if server_id:
         params['server'] = server_id
     if page is not None:
@@ -179,8 +180,8 @@ async def list_webftp_logs(
     region: str = '',
     page: int | None = None,
     page_size: int | None = None,
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """List WebFTP file transfer logs.
 
     Args:
@@ -195,7 +196,7 @@ async def list_webftp_logs(
     """
     token = kwargs.get('token')
 
-    params: dict[str, Any] = {}
+    params: dict[str, object] = {}
     if server_id:
         params['server'] = server_id
     if page is not None:
@@ -244,8 +245,8 @@ async def list_session_analyses(
     region: str = '',
     page: int | None = None,
     page_size: int | None = None,
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """List session security analyses.
 
     Args:
@@ -262,7 +263,7 @@ async def list_session_analyses(
     """
     token = kwargs.get('token')
 
-    params: dict[str, Any] = {}
+    params: dict[str, object] = {}
     if server_id:
         params['server'] = server_id
     if status:
@@ -306,8 +307,8 @@ async def get_session_analysis_detail(
     analysis_id: str,
     workspace: str,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Get detailed session analysis by ID.
 
     Args:

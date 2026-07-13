@@ -9,6 +9,7 @@ signature by name; a **kwargs wrapper fails its func_metadata check.
 import inspect
 import re
 from collections.abc import Callable
+from typing import cast
 
 from server import mcp
 from tools.alert_tools import get_alert, list_alerts
@@ -97,7 +98,10 @@ from tools.workspace_tools import get_current_user, list_workspaces
 
 
 def register_resource(
-    uri: str, fn: Callable, name: str, extra: dict | None = None
+    uri: str,
+    fn: Callable[..., object],
+    name: str,
+    extra: dict[str, object] | None = None,
 ) -> None:
     """Register an alpacon:// resource that proxies a read-only tool.
 
@@ -113,9 +117,11 @@ def register_resource(
     # FastMCP needs a real named signature; a **kwargs wrapper fails func_metadata.
     src = f"async def _wrapper({sig}):\n    return {{'content': await _fn({call})}}\n"
     # __name__/__file__ give the wrapper a real __module__ and traceback frame.
-    ns: dict = {'_fn': fn, '__name__': __name__}
+    ns: dict[str, object] = {'_fn': fn, '__name__': __name__}
     exec(compile(src, __file__, 'exec'), ns)  # noqa: S102
-    wrapper = ns['_wrapper']
+    # exec() builds `wrapper` dynamically; cast the exec namespace lookup back
+    # to a callable so downstream attribute access and registration type-check.
+    wrapper = cast(Callable[..., object], ns['_wrapper'])
     wrapper.__name__ = wrapper.__qualname__ = name
     doc = inspect.getdoc(fn) or name
     if extra:
@@ -126,7 +132,7 @@ def register_resource(
     mcp.resource(uri, name=name, description=doc, mime_type='application/json')(wrapper)
 
 
-RESOURCES: list[tuple[str, Callable, str]] = [
+RESOURCES: list[tuple[str, Callable[..., object], str]] = [
     ('servers_list', list_servers, 'alpacon://servers/{region}/{workspace}'),
     ('server_detail', get_server, 'alpacon://servers/{region}/{workspace}/{server_id}'),
     (
@@ -401,7 +407,8 @@ RESOURCES: list[tuple[str, Callable, str]] = [
 ]
 
 # (name, fn, uri, extra) — extra pins fixed kwargs for the few filtered resources.
-_REGISTRATIONS = [(n, f, u, None) for n, f, u in RESOURCES] + [
+_Registration = tuple[str, Callable[..., object], str, dict[str, object] | None]
+_REGISTRATIONS: list[_Registration] = [(n, f, u, None) for n, f, u in RESOURCES] + [
     (
         'alerts_active',
         list_alerts,

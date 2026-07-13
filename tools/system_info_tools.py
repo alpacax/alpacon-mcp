@@ -1,8 +1,9 @@
 """System information tools for Alpacon MCP server."""
 
 import asyncio
-from typing import Any
+from typing import Unpack
 
+from utils.api_types import ApiResult, ToolKwargs, ToolResponse
 from utils.common import success_response, unwrap_http_result
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
@@ -15,8 +16,8 @@ from utils.tool_annotations import READ_ONLY
     meta={'anthropic/searchHint': 'system hardware cpu cores ram architecture specs'},
 )
 async def get_system_info(
-    server_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+    server_id: str, workspace: str, region: str = '', **kwargs: Unpack[ToolKwargs]
+) -> ToolResponse:
     """Get detailed system information for a server.
 
     Args:
@@ -59,8 +60,8 @@ async def get_system_info(
     meta={'anthropic/searchHint': 'os operating system version kernel distribution'},
 )
 async def get_os_version(
-    server_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+    server_id: str, workspace: str, region: str = '', **kwargs: Unpack[ToolKwargs]
+) -> ToolResponse:
     """Get operating system version information for a server.
 
     Args:
@@ -108,8 +109,8 @@ async def list_system_users(
     username_filter: str | None = None,
     login_enabled_only: bool = False,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """List system users on a server.
 
     Args:
@@ -125,7 +126,7 @@ async def list_system_users(
     token = kwargs.get('token')
 
     # Prepare query parameters
-    params = {'server': server_id}
+    params: dict[str, object] = {'server': server_id}
     if username_filter:
         params['search'] = username_filter
     if login_enabled_only:
@@ -170,8 +171,8 @@ async def list_system_groups(
     workspace: str,
     groupname_filter: str | None = None,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """List system groups on a server.
 
     Args:
@@ -186,7 +187,7 @@ async def list_system_groups(
     token = kwargs.get('token')
 
     # Prepare query parameters
-    params = {'server': server_id}
+    params: dict[str, object] = {'server': server_id}
     if groupname_filter:
         params['search'] = groupname_filter
 
@@ -230,8 +231,8 @@ async def list_system_packages(
     architecture: str | None = None,
     limit: int = 100,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """List installed system packages on a server.
 
     Args:
@@ -248,7 +249,7 @@ async def list_system_packages(
     token = kwargs.get('token')
 
     # Prepare query parameters
-    params = {'server': server_id, 'page_size': limit}
+    params: dict[str, object] = {'server': server_id, 'page_size': limit}
     if package_name:
         params['search'] = package_name
     if architecture:
@@ -290,8 +291,8 @@ async def list_system_packages(
     meta={'anthropic/searchHint': 'network interfaces ip mac address mtu'},
 )
 async def get_network_interfaces(
-    server_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+    server_id: str, workspace: str, region: str = '', **kwargs: Unpack[ToolKwargs]
+) -> ToolResponse:
     """Get network interfaces information for a server.
 
     Args:
@@ -334,8 +335,8 @@ async def get_network_interfaces(
     meta={'anthropic/searchHint': 'disk partition mount filesystem storage layout'},
 )
 async def get_disk_info(
-    server_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+    server_id: str, workspace: str, region: str = '', **kwargs: Unpack[ToolKwargs]
+) -> ToolResponse:
     """Get disk and partition information for a server.
 
     Args:
@@ -366,9 +367,9 @@ async def get_disk_info(
     )
 
     # Wait for both requests
-    gather_results = await asyncio.gather(
-        disks_task, partitions_task, return_exceptions=True
-    )
+    gather_results: tuple[
+        ApiResult | BaseException, ApiResult | BaseException
+    ] = await asyncio.gather(disks_task, partitions_task, return_exceptions=True)
     disks_result, partitions_result = gather_results
 
     # Re-raise BaseExceptions that are not regular Exceptions (e.g. CancelledError)
@@ -377,7 +378,7 @@ async def get_disk_info(
             raise r
 
     # Prepare response
-    disk_info = {
+    disk_info: dict[str, object] = {
         'server_id': server_id,
         'disks': disks_result
         if not isinstance(disks_result, Exception)
@@ -398,8 +399,8 @@ async def get_disk_info(
     meta={'anthropic/searchHint': 'time timezone uptime clock ntp'},
 )
 async def get_system_time(
-    server_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+    server_id: str, workspace: str, region: str = '', **kwargs: Unpack[ToolKwargs]
+) -> ToolResponse:
     """Get system time and uptime information for a server.
 
     Args:
@@ -445,8 +446,8 @@ async def get_system_time(
     },
 )
 async def get_server_overview(
-    server_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+    server_id: str, workspace: str, region: str = '', **kwargs: Unpack[ToolKwargs]
+) -> ToolResponse:
     """Get comprehensive overview of server system information.
 
     Args:
@@ -470,7 +471,7 @@ async def get_server_overview(
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
     # Prepare overview
-    overview = {
+    overview: dict[str, object] = {
         'server_id': server_id,
         'region': region,
         'workspace': workspace,
