@@ -499,7 +499,9 @@ async def get_server_overview(
     for i, result in enumerate(results):
         key = task_keys[i]
         if isinstance(result, dict) and result.get('status') == 'success':
-            overview[key] = result['data']
+            # .get(), not ['data']: 'data' is NotRequired on SuccessResponse,
+            # and ErrorResponse (a union member) doesn't declare it at all.
+            overview[key] = result.get('data')
         else:
             overview[key] = {
                 'error': str(result)

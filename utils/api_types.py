@@ -19,6 +19,15 @@ type JwtClaims = dict[str, Any]
 # ASGI protocol messages (key set varies by message type).
 type AsgiMessage = MutableMapping[str, Any]
 
+# FastMCP's own `mcp.tool(meta=...)` parameter is typed `dict[str, Any] | None`
+# upstream; mirrored here so callers never need to import `Any` themselves.
+type ToolMeta = dict[str, Any] | None
+
+# Arbitrary externally sourced JSON object whose schema isn't ours to define
+# (Auth0 JWKS documents, account-service security-settings payloads). Narrower
+# than ApiPayload: always a dict, never a top-level list.
+type JsonObject = dict[str, Any]
+
 
 class ApiErrorEnvelope(TypedDict):
     """Standardized error shape AlpaconHTTPClient returns on failure."""
@@ -105,6 +114,8 @@ class ResponseContext(TypedDict, total=False):
     remote_directory: str
     remote_file_path: str
     remote_paths: list[str]
+    recovery_hints: list[str]
+    related_tools: list[str]
     reporter: str | None
     request_id: str
     requires_human_approval: bool

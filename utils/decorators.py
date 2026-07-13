@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import inspect
 import os
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from functools import wraps
-from typing import Any
+from typing import ParamSpec, TypeVar, cast
 
 from mcp.types import ToolAnnotations
 
+from utils.api_types import JwtClaims, ToolMeta, ToolResponse
 from utils.common import error_response, token_error_response, validate_token
 from utils.error_handler import (
     UpstreamAuthError,
@@ -22,6 +23,9 @@ from utils.http_client import AlpaconHTTPClient
 from utils.logger import get_logger
 
 logger = get_logger('decorators')
+
+P = ParamSpec('P')
+R = TypeVar('R')
 
 
 def _is_auth_enabled() -> bool:
@@ -50,7 +54,7 @@ def _get_jwt_token() -> str | None:
     return None
 
 
-def _decode_jwt_claims(jwt_token: str) -> dict | None:
+def _decode_jwt_claims(jwt_token: str) -> JwtClaims | None:
     """Decode JWT claims without verification (already verified by middleware)."""
     try:
         import jwt as pyjwt
@@ -229,7 +233,9 @@ async def _check_mfa_requirement(
         logger.debug('MFA pre-check failed (non-fatal): %s', e)
 
 
-def with_token_validation(func: Callable) -> Callable:
+def with_token_validation[R, **P](
+    func: Callable[P, Awaitable[R]],
+) -> Callable[P, Awaitable[R]]:
     """Decorator to add automatic token validation to MCP tools.
 
     Transport mode is determined by ALPACON_MCP_AUTH_ENABLED env var:
@@ -246,7 +252,7 @@ def with_token_validation(func: Callable) -> Callable:
     """
 
     @wraps(func)
-    async def wrapper(*args, **kwargs):
+    async def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
         # Remove _token from kwargs if present (MCP doesn't allow _ prefix)
         kwargs.pop('_token', None)
 
@@ -262,11 +268,11 @@ def with_token_validation(func: Callable) -> Callable:
 
         # Validate workspace is present
         if not workspace:
-            return error_response('workspace parameter is required')
+            return cast(R, error_response('workspace parameter is required'))
 
         # Validate workspace format
         if not validate_workspace_format(workspace):
-            return format_validation_error('workspace', workspace)
+            return cast(R, format_validation_error('workspace', workspace))
 
         auth_enabled = _is_auth_enabled()
 
@@ -275,96 +281,118 @@ def with_token_validation(func: Callable) -> Callable:
         if auth_enabled:
             jwt_token = _get_jwt_token()
             if not jwt_token:
-                return error_response(
-                    'Authentication required. No JWT token found in request context.'
+                return cast(
+                    R,
+                    error_response(
+                        'Authentication required. No JWT token found in request context.'
+                    ),
                 )
 
         # Auto-detect region if not provided
         if not region:
             if auth_enabled:
-                resolved_region, err_msg = _resolve_region_jwt(jwt_token, workspace)
+                # jwt_token is narrowed to str above, but mypy can't carry
+                # that across the unrelated statements in between.
+                resolved_region, err_msg = _resolve_region_jwt(
+                    cast(str, jwt_token), workspace
+                )
             else:
                 resolved_region, err_msg = _resolve_region_local(workspace)
 
             if err_msg:
-                return error_response(err_msg)
+                return cast(R, error_response(err_msg))
             region = resolved_region
             bound_args.arguments['region'] = region
 
         # Validate region format
         if not validate_region_format(region):
-            return format_validation_error('region', region)
+            return cast(R, format_validation_error('region', region))
 
         # Validate server_id format if present
         server_id = arguments.get('server_id')
         if server_id is not None and not validate_server_id_format(server_id):
-            return format_validation_error('server_id', server_id)
+            return cast(R, format_validation_error('server_id', server_id))
 
         # Validate server_ids list if present
         server_ids = arguments.get('server_ids')
         if server_ids is not None:
             if not isinstance(server_ids, list):
-                return format_validation_error(
-                    'server_ids',
-                    server_ids,
-                    'Must be a list of server UUIDs.',
+                return cast(
+                    R,
+                    format_validation_error(
+                        'server_ids',
+                        server_ids,
+                        'Must be a list of server UUIDs.',
+                    ),
                 )
             invalid_ids = [
                 sid for sid in server_ids if not validate_server_id_format(sid)
             ]
             if invalid_ids:
-                return format_validation_error(
-                    'server_ids',
-                    invalid_ids,
-                    'Each server ID must be in UUID format. (e.g., 550e8400-e29b-41d4-a716-446655440000)',
+                return cast(
+                    R,
+                    format_validation_error(
+                        'server_ids',
+                        invalid_ids,
+                        'Each server ID must be in UUID format. (e.g., 550e8400-e29b-41d4-a716-446655440000)',
+                    ),
                 )
 
         # Validate servers list if present (server UUIDs sent in request bodies)
         servers = arguments.get('servers')
         if servers is not None:
             if not isinstance(servers, list):
-                return format_validation_error(
-                    'servers',
-                    servers,
-                    'Must be a list of server UUIDs.',
+                return cast(
+                    R,
+                    format_validation_error(
+                        'servers',
+                        servers,
+                        'Must be a list of server UUIDs.',
+                    ),
                 )
             invalid_servers = [
                 sid for sid in servers if not validate_server_id_format(sid)
             ]
             if invalid_servers:
-                return format_validation_error(
-                    'servers',
-                    invalid_servers,
-                    'Each server ID must be in UUID format. (e.g., 550e8400-e29b-41d4-a716-446655440000)',
+                return cast(
+                    R,
+                    format_validation_error(
+                        'servers',
+                        invalid_servers,
+                        'Each server ID must be in UUID format. (e.g., 550e8400-e29b-41d4-a716-446655440000)',
+                    ),
                 )
 
         # session_id is interpolated into URL paths, so reject non-UUID values that could retarget the request.
         session_id = arguments.get('session_id')
         if session_id is not None and not validate_server_id_format(session_id):
-            return format_validation_error('session_id', session_id)
+            return cast(R, format_validation_error('session_id', session_id))
 
         # Get the **kwargs dict from bound arguments to inject token
         extra_kwargs = bound_args.arguments.get('kwargs', {})
 
         if auth_enabled:
             # Streamable-HTTP mode — JWT auth only
-            if not _validate_jwt_workspace(jwt_token, region, workspace):
-                return error_response(
-                    f'Workspace {workspace}.{region} not authorized by JWT',
-                    region=region,
-                    workspace=workspace,
+            if not _validate_jwt_workspace(cast(str, jwt_token), region, workspace):
+                return cast(
+                    R,
+                    error_response(
+                        f'Workspace {workspace}.{region} not authorized by JWT',
+                        region=region,
+                        workspace=workspace,
+                    ),
                 )
             extra_kwargs['token'] = jwt_token
 
             # MFA pre-check: verify MFA completion for actions that require it.
             # Raises UpstreamAuthError if MFA is required but not satisfied.
             # The ASGI middleware catches this and returns HTTP 401.
-            await _check_mfa_requirement(func.__name__, jwt_token, workspace)
+            await _check_mfa_requirement(func.__name__, cast(str, jwt_token), workspace)
         else:
             # stdio mode — token.json only
             token = validate_token(region, workspace)
             if not token:
-                return token_error_response(region, workspace)
+                return cast(R, token_error_response(region, workspace))
             extra_kwargs['token'] = token
 
         bound_args.arguments['kwargs'] = extra_kwargs
@@ -388,7 +416,9 @@ def with_token_validation(func: Callable) -> Callable:
     return wrapper
 
 
-def with_error_handling(func: Callable) -> Callable:
+def with_error_handling[R, **P](
+    func: Callable[P, Awaitable[R]],
+) -> Callable[P, Awaitable[R]]:
     """Decorator to add consistent error handling to MCP tools.
 
     This decorator:
@@ -405,7 +435,7 @@ def with_error_handling(func: Callable) -> Callable:
     """
 
     @wraps(func)
-    async def wrapper(*args, **kwargs):
+    async def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
         from utils.recovery_hints import enrich_error_response
 
         # Extract function name for logging
@@ -415,9 +445,14 @@ def with_error_handling(func: Callable) -> Callable:
             # Call the original function
             result = await func(*args, **kwargs)
 
-            # Enrich error responses with recovery hints
+            # Enrich error responses with recovery hints. `result` is
+            # statically R (the tool's own ToolResponse), so the enrich
+            # call and its result both need a boundary cast.
             if isinstance(result, dict):
-                result = enrich_error_response(result, tool_name=func_name)
+                enriched = enrich_error_response(
+                    cast(ToolResponse, result), tool_name=func_name
+                )
+                result = cast(R, enriched)
 
             return result
 
@@ -445,12 +480,14 @@ def with_error_handling(func: Callable) -> Callable:
             resp = error_response(
                 f'Failed in {func_name}: {str(e)}', workspace=workspace, region=region
             )
-            return enrich_error_response(resp, tool_name=func_name)
+            # resp is ErrorResponse; func's actual return is ToolResponse at
+            # runtime, but the decorator's static type is the generic R.
+            return cast(R, enrich_error_response(resp, tool_name=func_name))
 
     return wrapper
 
 
-def with_logging(func: Callable) -> Callable:
+def with_logging[R, **P](func: Callable[P, Awaitable[R]]) -> Callable[P, Awaitable[R]]:
     """Decorator to add automatic logging to MCP tools.
 
     This decorator:
@@ -466,7 +503,7 @@ def with_logging(func: Callable) -> Callable:
     """
 
     @wraps(func)
-    async def wrapper(*args, **kwargs):
+    async def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
         func_name = func.__name__
 
         # Get function arguments for logging
@@ -497,7 +534,9 @@ def with_logging(func: Callable) -> Callable:
     return wrapper
 
 
-def require_jwt_auth(func: Callable) -> Callable:
+def require_jwt_auth[R, **P](
+    func: Callable[P, Awaitable[R]],
+) -> Callable[P, Awaitable[R]]:
     """Reject non-JWT (API) tokens before any upstream call.
 
     Stack INSIDE ``@mcp_tool_handler`` so the resolved token is already
@@ -514,13 +553,16 @@ def require_jwt_auth(func: Callable) -> Callable:
     """
 
     @wraps(func)
-    async def wrapper(*args, **kwargs):
+    async def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
         token = kwargs.get('token')
-        if token and not AlpaconHTTPClient._is_jwt(token):
-            return error_response(
-                f'{func.__name__} requires JWT (OAuth/SSO) authentication; '
-                'API tokens cannot manage other API tokens. '
-                'Re-authenticate via browser-based SSO and retry.'
+        if token and not AlpaconHTTPClient._is_jwt(cast(str, token)):
+            return cast(
+                R,
+                error_response(
+                    f'{func.__name__} requires JWT (OAuth/SSO) authentication; '
+                    'API tokens cannot manage other API tokens. '
+                    'Re-authenticate via browser-based SSO and retry.'
+                ),
             )
         return await func(*args, **kwargs)
 
@@ -530,8 +572,8 @@ def require_jwt_auth(func: Callable) -> Callable:
 def mcp_tool_handler(
     description: str,
     annotations: ToolAnnotations | None = None,
-    meta: dict[str, Any] | None = None,
-):
+    meta: ToolMeta = None,
+) -> Callable[[Callable[P, Awaitable[R]]], Callable[P, Awaitable[R]]]:
     """Combined decorator for MCP tools that adds all common functionality.
 
     This decorator combines:
@@ -549,7 +591,7 @@ def mcp_tool_handler(
         Decorator function
     """
 
-    def decorator(func: Callable) -> Callable:
+    def decorator(func: Callable[P, Awaitable[R]]) -> Callable[P, Awaitable[R]]:
         # Apply decorators in order (innermost first)
         func = with_error_handling(func)
         func = with_token_validation(func)
@@ -558,10 +600,14 @@ def mcp_tool_handler(
         # Register with MCP
         from server import mcp
 
-        return mcp.tool(
+        registered = mcp.tool(
             description=description,
             annotations=annotations,
             meta=meta,
         )(func)
+        # FastMCP's decorator is typed Callable[[Callable[..., Any]], Callable[..., Any]]
+        # (an external library boundary), so the specific P/R is lost statically
+        # even though add_tool() returns the same object unchanged at runtime.
+        return cast(Callable[P, Awaitable[R]], registered)
 
     return decorator

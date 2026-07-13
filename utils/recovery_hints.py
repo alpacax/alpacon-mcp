@@ -1,6 +1,8 @@
 """Recovery hints for error responses to help LLM self-recover."""
 
-from typing import Any
+from typing import cast
+
+from utils.api_types import ToolResponse
 
 # Hint registry: (status_code, domain) -> {recovery_hints, related_tools}
 _HINT_REGISTRY: dict[tuple[int, str], dict[str, list[str]]] = {
@@ -188,10 +190,10 @@ def get_recovery_hints(
 
 
 def enrich_error_response(
-    response: dict[str, Any],
+    response: ToolResponse,
     tool_name: str | None = None,
     endpoint: str | None = None,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Add recovery hints to an error response dict.
 
     Only modifies dicts that look like error responses (have status='error'
@@ -217,8 +219,14 @@ def enrich_error_response(
     if 'recovery_hints' in response:
         return response
 
-    status_code = response.get('status_code') or response.get('error_code')
-    message = response.get('message', '')
+    # Some callers (format_validation_error) produce a legacy 'error_code'
+    # key outside the ToolResponse schema; read through a dict[str, object]
+    # view of the same underlying dict rather than widening ToolResponse.
+    raw = cast(dict[str, object], response)
+    status_code = cast(
+        'int | str | None', raw.get('status_code') or raw.get('error_code')
+    )
+    message = cast(str, raw.get('message', ''))
 
     hints = get_recovery_hints(
         status_code=status_code,
