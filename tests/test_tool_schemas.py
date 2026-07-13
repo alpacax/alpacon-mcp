@@ -1,7 +1,7 @@
 """Regression tests for FastMCP-generated tool input schemas.
 
 The token-injection **kwargs on tool functions must never surface in the
-MCP inputSchema — FastMCP's func_metadata() does not special-case
+MCP inputSchema—FastMCP's func_metadata() does not special-case
 VAR_KEYWORD parameters, so the decorator has to strip them from the
 exposed signature.
 """
@@ -31,6 +31,6 @@ async def test_call_tool_without_kwargs_argument():
     # Before the fix this raises ToolError: "kwargs Field required".
     with patch('utils.decorators.validate_token', return_value=None):
         result = await mcp.call_tool('list_servers', {'workspace': 'testws'})
-    # Reaching here proves pydantic validation passed without a kwargs arg;
-    # the call itself short-circuits at token lookup (no network).
+    # Reaching here proves validation passed without kwargs; the call itself
+    # short-circuits at token lookup (no network).
     assert result is not None

@@ -128,6 +128,7 @@ This MCP server provides a **pure HTTP API bridge** to Alpacon's infrastructure 
 - `cert_tools.py`: Certificate authority, signing requests, and certificate management
 
 **Utilities** (all in `utils/` directory):
+- `api_types.py`: Shared TypedDicts and type aliases for tool responses and API-boundary payloads (the sole sanctioned use of `Any`)
 - `http_client.py`: Async HTTP client for Alpacon API
 - `token_manager.py`: Secure token storage and management
 - `decorators.py`: MCP tool decorators (token validation, input validation, error handling, logging)
@@ -182,6 +183,9 @@ A 60-second cooldown prevents infinite re-auth loops when 401s are not fixable b
 All tools use the unified `@mcp_tool_handler` decorator pattern for consistent error handling and token management:
 
 ```python
+from typing import Unpack
+
+from utils.api_types import ToolKwargs, ToolResponse
 from utils.http_client import http_client
 from utils.common import success_response, error_response
 from utils.decorators import mcp_tool_handler
@@ -191,8 +195,8 @@ async def tool_function(
     server_id: str,
     workspace: str,  # Required parameter (no default)
     region: str = "ap1",
-    **kwargs  # Receives token from decorator
-) -> Dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],  # Receives token from decorator
+) -> ToolResponse:
     """Tool implementation using HTTP API."""
     token = kwargs.get('token')
 
@@ -591,7 +595,7 @@ permissions:
 ### Adding new tools
 1. Create function in appropriate `tools/*.py` file
 2. Use `@mcp_tool_handler(description="...")` decorator
-3. Add `**kwargs` parameter to receive token from decorator
+3. Add `**kwargs: Unpack[ToolKwargs]` parameter to receive token from decorator, and declare the return type as `ToolResponse` (both from `utils.api_types`)
 4. Use `success_response()` and `error_response()` helpers
 5. Follow async/await pattern for HTTP calls
 6. For file path parameters, add inline `validate_file_path()` checks

@@ -1,7 +1,7 @@
 """IAM (Identity and Access Management) tools for Alpacon MCP server."""
 
 import re
-from typing import Unpack, cast
+from typing import Unpack
 
 from utils.api_types import ToolKwargs, ToolResponse
 from utils.common import error_response, success_response, unwrap_http_result
@@ -17,13 +17,10 @@ GROUP_NAME_PATTERN = re.compile(r'^[a-z0-9_-]+$')
 
 def _validate_uuid(field: str, value: str) -> ToolResponse | None:
     if not validate_server_id_format(value):
-        return cast(
-            ToolResponse,
-            format_validation_error(
-                field,
-                value,
-                'Must be a valid UUID. Example: 550e8400-e29b-41d4-a716-446655440000',
-            ),
+        return format_validation_error(
+            field,
+            value,
+            'Must be a valid UUID. Example: 550e8400-e29b-41d4-a716-446655440000',
         )
     return None
 
@@ -404,13 +401,10 @@ async def create_iam_group(
         Group creation response
     """
     if not GROUP_NAME_PATTERN.match(name):
-        return cast(
-            ToolResponse,
-            format_validation_error(
-                'name',
-                name,
-                'Must contain only lowercase letters, digits, hyphens, and underscores',
-            ),
+        return format_validation_error(
+            'name',
+            name,
+            'Must contain only lowercase letters, digits, hyphens, and underscores',
         )
 
     token = kwargs.get('token')
@@ -706,13 +700,10 @@ async def add_iam_member(
     if err:
         return err
     if role not in VALID_MEMBERSHIP_ROLES:
-        return cast(
-            ToolResponse,
-            format_validation_error(
-                'role',
-                role,
-                f'Must be one of: {", ".join(sorted(VALID_MEMBERSHIP_ROLES))}',
-            ),
+        return format_validation_error(
+            'role',
+            role,
+            f'Must be one of: {", ".join(sorted(VALID_MEMBERSHIP_ROLES))}',
         )
 
     token = kwargs.get('token')
@@ -923,13 +914,10 @@ async def create_iam_application(
         IAM application creation response
     """
     if service_type is not None and service_type not in VALID_SERVICE_TYPES:
-        return cast(
-            ToolResponse,
-            format_validation_error(
-                'service_type',
-                service_type,
-                f'Must be one of: {", ".join(sorted(VALID_SERVICE_TYPES))}',
-            ),
+        return format_validation_error(
+            'service_type',
+            service_type,
+            f'Must be one of: {", ".join(sorted(VALID_SERVICE_TYPES))}',
         )
 
     token = kwargs.get('token')
@@ -1143,13 +1131,10 @@ async def assign_application_system_users(
     if err:
         return err
     if not system_user_ids:
-        return cast(
-            ToolResponse,
-            format_validation_error(
-                'system_user_ids',
-                system_user_ids,
-                'Must contain at least one system user ID',
-            ),
+        return format_validation_error(
+            'system_user_ids',
+            system_user_ids,
+            'Must contain at least one system user ID',
         )
     for su_id in system_user_ids:
         err = _validate_uuid('system_user_ids', su_id)
@@ -1207,13 +1192,10 @@ async def unassign_application_system_users(
     if err:
         return err
     if not system_user_ids:
-        return cast(
-            ToolResponse,
-            format_validation_error(
-                'system_user_ids',
-                system_user_ids,
-                'Must contain at least one system user ID',
-            ),
+        return format_validation_error(
+            'system_user_ids',
+            system_user_ids,
+            'Must contain at least one system user ID',
         )
     for su_id in system_user_ids:
         err = _validate_uuid('system_user_ids', su_id)

@@ -110,12 +110,12 @@ class ResponseContext(TypedDict, total=False):
     note_id: str
     note_title: str
     package_name: str | None
+    recovery_hints: list[str]
     region: str
+    related_tools: list[str]
     remote_directory: str
     remote_file_path: str
     remote_paths: list[str]
-    recovery_hints: list[str]
-    related_tools: list[str]
     reporter: str | None
     request_id: str
     requires_human_approval: bool
@@ -156,16 +156,28 @@ class ErrorResponse(ResponseContext):
     message: str
 
 
+class ValidationErrorResponse(ErrorResponse):
+    """Error envelope produced by format_validation_error().
+
+    A structural subtype of ErrorResponse, so it satisfies ToolResponse;
+    kept separate so ErrorResponse literals built from **ResponseContext
+    spreads don't have to account for these keys.
+    """
+
+    error_code: NotRequired[str]
+    field: NotRequired[str]
+    value: NotRequired[str]
+    suggestion: NotRequired[str]
+
+
 class PendingApprovalResponse(ResponseContext):
     status: Literal['pending_approval']
     category: str
     message: str
     approvable_by_agent: bool
     data: NotRequired[object]
-    # requires_human_approval / next_action are inherited (NotRequired) from
-    # ResponseContext rather than re-declared here: mypy rejects narrowing an
-    # inherited field from NotRequired to Required in a TypedDict subclass.
-    # pending_approval_response() always sets both at runtime regardless.
+    # requires_human_approval / next_action stay inherited (NotRequired): mypy
+    # rejects narrowing them to Required here; the builder always sets both.
 
 
 type ToolResponse = SuccessResponse | ErrorResponse | PendingApprovalResponse

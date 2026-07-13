@@ -63,11 +63,6 @@ class _LocalSaveError(Exception):
     pass
 
 
-def _validation_error(field: str, value: object) -> ToolResponse:
-    """Thin typed wrapper over format_validation_error (declared dict[str, object])."""
-    return cast(ToolResponse, format_validation_error(field, value))
-
-
 async def _stream_s3_to_file(
     url: str,
     local_path: str,
@@ -132,9 +127,7 @@ async def _save_stream(response: httpx.Response, local_path: str) -> int:
     return file_size
 
 
-async def _aiter_file(
-    path: str, chunk_size: int = _CHUNK_SIZE
-) -> AsyncIterator[bytes]:
+async def _aiter_file(path: str, chunk_size: int = _CHUNK_SIZE) -> AsyncIterator[bytes]:
     """Yield file chunks for streaming uploads. Single-shot: not replayable on retry."""
     src_file = await asyncio.to_thread(open, path, 'rb')
     try:
@@ -359,9 +352,9 @@ async def webftp_upload_file(
         return error_response(_REMOTE_MODE_ERROR, code='remote_mode_unsupported')
 
     if not validate_file_path(local_file_path):
-        return _validation_error('local_file_path', local_file_path)
+        return format_validation_error('local_file_path', local_file_path)
     if not validate_file_path(remote_file_path):
-        return _validation_error('remote_file_path', remote_file_path)
+        return format_validation_error('remote_file_path', remote_file_path)
 
     try:
         file_content = await asyncio.to_thread(Path(local_file_path).read_bytes)
@@ -478,7 +471,7 @@ async def webftp_upload_content(
         return error_response(f'Invalid base64 content: {exc}', code='invalid_content')
 
     if not validate_file_path(remote_file_path):
-        return _validation_error('remote_file_path', remote_file_path)
+        return format_validation_error('remote_file_path', remote_file_path)
 
     name = file_name or os.path.basename(remote_file_path)
 
@@ -591,7 +584,7 @@ async def webftp_download_file(
         raise RuntimeError('token must be injected by mcp_tool_handler')
 
     if not validate_file_path(remote_file_path):
-        return _validation_error('remote_file_path', remote_file_path)
+        return format_validation_error('remote_file_path', remote_file_path)
 
     if _is_auth_enabled():
         return await _download_remote_mode(
@@ -608,7 +601,7 @@ async def webftp_download_file(
     if local_file_path is None:
         return error_response('local_file_path is required in local mode')
     if not validate_file_path(local_file_path):
-        return _validation_error('local_file_path', local_file_path)
+        return format_validation_error('local_file_path', local_file_path)
 
     file_name = os.path.basename(remote_file_path)
     if resource_type == 'folder':
@@ -787,13 +780,13 @@ async def webftp_bulk_upload(
 
     for path in local_file_paths:
         if not validate_file_path(path):
-            return _validation_error('local_file_paths', path)
+            return format_validation_error('local_file_paths', path)
         if not await asyncio.to_thread(Path(path).is_file):
             return error_response(f'Local file is not a regular file: {path}')
         if not await asyncio.to_thread(os.access, path, os.R_OK):
             return error_response(f'Local file is not readable: {path}')
     if not validate_file_path(remote_directory):
-        return _validation_error('remote_directory', remote_directory)
+        return format_validation_error('remote_directory', remote_directory)
 
     file_names = [os.path.basename(p) for p in local_file_paths]
     bulk_data: dict[str, object] = {
@@ -826,7 +819,9 @@ async def webftp_bulk_upload(
 
     file_ids: list[object] = []
     payload = cast(ApiPayload, result)
-    upload_items = payload if isinstance(payload, list) else payload.get('results', [payload])
+    upload_items = (
+        payload if isinstance(payload, list) else payload.get('results', [payload])
+    )
 
     for item in upload_items:
         file_id = item.get('id')
@@ -947,9 +942,9 @@ async def webftp_bulk_download(
 
     for path in remote_paths:
         if not validate_file_path(path):
-            return _validation_error('remote_paths', path)
+            return format_validation_error('remote_paths', path)
     if not validate_file_path(local_file_path):
-        return _validation_error('local_file_path', local_file_path)
+        return format_validation_error('local_file_path', local_file_path)
 
     if len(remote_paths) > 1:
         base_dir = os.path.dirname(remote_paths[0])
@@ -986,7 +981,7 @@ async def webftp_bulk_download(
     ):
         return err
 
-    payload = cast(dict[str, object], result)
+    payload = cast(ApiPayload, result)
     download_url = (
         cast(str | None, payload.get('download_url'))
         if isinstance(payload, dict)

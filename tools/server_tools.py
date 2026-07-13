@@ -123,7 +123,11 @@ async def get_server(
 
     # Extract the first result from the list if results exist
     payload = cast(ApiPayload, result)
-    if isinstance(payload, dict) and 'results' in payload and len(payload['results']) > 0:
+    if (
+        isinstance(payload, dict)
+        and 'results' in payload
+        and len(payload['results']) > 0
+    ):
         server_data = payload['results'][0]
     else:
         return error_response(
@@ -315,13 +319,10 @@ async def update_server_note(
         update_data['content'] = content
 
     if not update_data:
-        return cast(
-            ToolResponse,
-            format_validation_error(
-                'title or content',
-                None,
-                'At least one of title or content must be provided.',
-            ),
+        return format_validation_error(
+            'title or content',
+            None,
+            'At least one of title or content must be provided.',
         )
 
     result = await http_client.patch(
@@ -692,13 +693,10 @@ async def update_server(
         update_data['description'] = description
 
     if not update_data:
-        return cast(
-            ToolResponse,
-            format_validation_error(
-                'name or description',
-                None,
-                'At least one of name or description must be provided.',
-            ),
+        return format_validation_error(
+            'name or description',
+            None,
+            'At least one of name or description must be provided.',
         )
 
     result = await http_client.patch(
@@ -784,7 +782,11 @@ async def unregister_server(
     meta={'anthropic/searchHint': 'server star pin favorite bookmark personalization'},
 )
 async def star_server(
-    server_id: str, status: bool, workspace: str, region: str = '', **kwargs: Unpack[ToolKwargs]
+    server_id: str,
+    status: bool,
+    workspace: str,
+    region: str = '',
+    **kwargs: Unpack[ToolKwargs],
 ) -> ToolResponse:
     """Set star status on a server.
 
@@ -1057,25 +1059,19 @@ async def get_registration_guide(
 
 def _validate_platform(platform: str) -> ToolResponse | None:
     if platform not in VALID_PLATFORMS:
-        return cast(
-            ToolResponse,
-            format_validation_error(
-                'platform',
-                platform,
-                f'Must be one of: {", ".join(sorted(VALID_PLATFORMS))}',
-            ),
+        return format_validation_error(
+            'platform',
+            platform,
+            f'Must be one of: {", ".join(sorted(VALID_PLATFORMS))}',
         )
     return None
 
 
 def _validate_token_id(token_id: str) -> ToolResponse | None:
     if not validate_server_id_format(token_id):
-        return cast(
-            ToolResponse,
-            format_validation_error(
-                'token_id',
-                token_id,
-                'Must be a valid UUID. Example: 550e8400-e29b-41d4-a716-446655440000',
-            ),
+        return format_validation_error(
+            'token_id',
+            token_id,
+            'Must be a valid UUID. Example: 550e8400-e29b-41d4-a716-446655440000',
         )
     return None

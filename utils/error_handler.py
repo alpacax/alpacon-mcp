@@ -6,6 +6,7 @@ import threading
 import uuid
 from typing import TypedDict
 
+from utils.api_types import ValidationErrorResponse
 from utils.logger import get_logger
 
 logger = get_logger('error_handler')
@@ -279,7 +280,7 @@ def format_user_friendly_error(
 
 def format_validation_error(
     field: str, value: object, expected_format: str | None = None
-) -> dict[str, object]:
+) -> ValidationErrorResponse:
     """Format validation error with helpful message.
 
     Args:

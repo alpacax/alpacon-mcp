@@ -11,7 +11,7 @@ check. The scopes and presets catalog endpoints are not subject to
 this restriction.
 """
 
-from typing import Unpack, cast
+from typing import Unpack
 
 from utils.api_types import ToolKwargs, ToolResponse
 from utils.common import error_response, success_response, unwrap_http_result
@@ -37,13 +37,10 @@ _JWT_REQUIRED_NOTE = (
 
 def _validate_token_id(token_id: str) -> ToolResponse | None:
     if not validate_server_id_format(token_id):
-        return cast(
-            ToolResponse,
-            format_validation_error(
-                'token_id',
-                token_id,
-                'Must be a valid UUID. Example: 550e8400-e29b-41d4-a716-446655440000',
-            ),
+        return format_validation_error(
+            'token_id',
+            token_id,
+            'Must be a valid UUID. Example: 550e8400-e29b-41d4-a716-446655440000',
         )
     return None
 

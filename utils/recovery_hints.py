@@ -219,12 +219,11 @@ def enrich_error_response(
     if 'recovery_hints' in response:
         return response
 
-    # Some callers (format_validation_error) produce a legacy 'error_code'
-    # key outside the ToolResponse schema; read through a dict[str, object]
-    # view of the same underlying dict rather than widening ToolResponse.
+    # 'error_code' comes from ValidationErrorResponse, which this function's
+    # ToolResponse parameter type doesn't declare; read via an untyped view.
     raw = cast(dict[str, object], response)
     status_code = cast(
-        'int | str | None', raw.get('status_code') or raw.get('error_code')
+        int | str | None, raw.get('status_code') or raw.get('error_code')
     )
     message = cast(str, raw.get('message', ''))
 

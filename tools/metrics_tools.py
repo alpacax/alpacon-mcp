@@ -72,20 +72,16 @@ class DiskUsageStats(TypedDict, total=False):
     time_range: _TimeRange
 
 
-class _NetworkCurrent(TypedDict):
-    peak_input_bps: str
-    peak_output_bps: str
-    avg_input_bps: str
-    avg_output_bps: str
-    peak_input_pps: str
-    peak_output_pps: str
-
-
 class _NetworkAverages(TypedDict):
     peak_input_bps: str
     peak_output_bps: str
     avg_input_bps: str
     avg_output_bps: str
+
+
+class _NetworkCurrent(_NetworkAverages):
+    peak_input_pps: str
+    peak_output_pps: str
 
 
 class _NetworkPeaks(TypedDict):
@@ -106,6 +102,21 @@ class NetworkTrafficStats(TypedDict, total=False):
     peaks: _NetworkPeaks
     data_points: int
     time_range: _TimeRange
+
+
+def _results_of(payload: ApiPayload) -> list[dict[str, object]]:
+    """Normalize a metrics API payload (paginated dict or bare list) to its entries."""
+    if isinstance(payload, dict):
+        return cast(list[dict[str, object]], payload.get('results', []))
+    return payload
+
+
+def _time_range(results: list[dict[str, object]]) -> _TimeRange:
+    """First/last entry timestamps echoed back by every parser below."""
+    return {
+        'start': cast(str | None, results[0].get('timestamp')) if results else None,
+        'end': cast(str | None, results[-1].get('timestamp')) if results else None,
+    }
 
 
 def parse_cpu_metrics(results: list[dict[str, object]]) -> UsagePercentStats:
@@ -158,14 +169,7 @@ def parse_cpu_metrics(results: list[dict[str, object]]) -> UsagePercentStats:
         if current < 95
         else 'critical',
         'data_points': len(usage_values),
-        'time_range': {
-            'start': cast(str | None, results[0].get('timestamp'))
-            if results
-            else None,
-            'end': cast(str | None, results[-1].get('timestamp'))
-            if results
-            else None,
-        },
+        'time_range': _time_range(results),
         'raw_values': {
             'current': current,
             'average': average,
@@ -236,9 +240,7 @@ async def get_cpu_usage(
     parsed_data = {
         'server_id': server_id,
         'metric_type': 'cpu_usage',
-        'statistics': parse_cpu_metrics(payload.get('results', []))
-        if isinstance(payload, dict)
-        else parse_cpu_metrics(payload if isinstance(payload, list) else []),
+        'statistics': parse_cpu_metrics(_results_of(payload)),
         'raw_data_available': True,
     }
 
@@ -295,14 +297,7 @@ def parse_memory_metrics(results: list[dict[str, object]]) -> UsagePercentStats:
         if current < 95
         else 'critical',
         'data_points': len(usage_values),
-        'time_range': {
-            'start': cast(str | None, results[0].get('timestamp'))
-            if results
-            else None,
-            'end': cast(str | None, results[-1].get('timestamp'))
-            if results
-            else None,
-        },
+        'time_range': _time_range(results),
         'raw_values': {
             'current': current,
             'average': average,
@@ -373,9 +368,7 @@ async def get_memory_usage(
     parsed_data = {
         'server_id': server_id,
         'metric_type': 'memory_usage',
-        'statistics': parse_memory_metrics(payload.get('results', []))
-        if isinstance(payload, dict)
-        else parse_memory_metrics(payload if isinstance(payload, list) else []),
+        'statistics': parse_memory_metrics(_results_of(payload)),
         'raw_data_available': True,
     }
 
@@ -429,14 +422,7 @@ def parse_disk_metrics(results: list[dict[str, object]]) -> DiskUsageStats:
             'mount_point': cast(str | None, latest_entry.get('mount_point')),
         },
         'data_points': len(usage_values),
-        'time_range': {
-            'start': cast(str | None, results[0].get('timestamp'))
-            if results
-            else None,
-            'end': cast(str | None, results[-1].get('timestamp'))
-            if results
-            else None,
-        },
+        'time_range': _time_range(results),
     }
 
 
@@ -565,9 +551,7 @@ async def get_disk_usage(
         'metric_type': 'disk_usage',
         'device': device,
         'partition': partition,
-        'statistics': parse_disk_metrics(payload.get('results', []))
-        if isinstance(payload, dict)
-        else parse_disk_metrics(payload if isinstance(payload, list) else []),
+        'statistics': parse_disk_metrics(_results_of(payload)),
         'raw_data_available': True,
     }
 
@@ -660,14 +644,7 @@ def parse_network_metrics(results: list[dict[str, object]]) -> NetworkTrafficSta
             else '0 pps',
         },
         'data_points': len(results),
-        'time_range': {
-            'start': cast(str | None, results[0].get('timestamp'))
-            if results
-            else None,
-            'end': cast(str | None, results[-1].get('timestamp'))
-            if results
-            else None,
-        },
+        'time_range': _time_range(results),
     }
 
 
@@ -812,9 +789,7 @@ async def get_network_traffic(
         'server_id': server_id,
         'metric_type': 'network_traffic',
         'interface': interface,
-        'statistics': parse_network_metrics(payload.get('results', []))
-        if isinstance(payload, dict)
-        else parse_network_metrics(payload if isinstance(payload, list) else []),
+        'statistics': parse_network_metrics(_results_of(payload)),
         'raw_data_available': True,
     }
 
@@ -906,9 +881,8 @@ async def get_top_servers(
             )
 
         err = unwrap_http_result(
-            # Not an Exception per the check above; the only other BaseException
-            # members (CancelledError etc.) would already have propagated out of
-            # asyncio.gather rather than landing here as a value.
+            # Non-Exception BaseExceptions (CancelledError etc.) propagate out
+            # of asyncio.gather instead of landing here as values.
             cast(ApiResult, result),
             default_message=f'Failed to fetch {metric} metrics',
             region=region,
@@ -1055,9 +1029,8 @@ async def get_server_metrics_summary(
 
         # http_client.get returns raw API response (paginated list format)
         if isinstance(partitions_result, dict) and 'results' in partitions_result:
-            partitions_payload = cast(dict[str, object], partitions_result)
             partitions = cast(
-                list[dict[str, object]], partitions_payload.get('results', [])
+                list[dict[str, object]], partitions_result.get('results', [])
             )
             # Find the root partition (mounted at /)
             for partition in partitions:
@@ -1082,9 +1055,8 @@ async def get_server_metrics_summary(
 
         # http_client.get returns raw API response (paginated list format)
         if isinstance(interfaces_result, dict) and 'results' in interfaces_result:
-            interfaces_payload = cast(dict[str, object], interfaces_result)
             interfaces = cast(
-                list[dict[str, object]], interfaces_payload.get('results', [])
+                list[dict[str, object]], interfaces_result.get('results', [])
             )
             # Find first non-loopback, active interface
             for iface in interfaces:

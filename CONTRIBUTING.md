@@ -192,7 +192,9 @@ async def test_list_servers_success():
 1. **Create Tool File**
    ```python
    # tools/your_feature_tools.py
-   from typing import Dict, Any, Optional
+   from typing import Unpack
+
+   from utils.api_types import ToolKwargs, ToolResponse
    from utils.http_client import http_client
    from utils.common import success_response, error_response
    from utils.decorators import mcp_tool_handler
@@ -202,8 +204,8 @@ async def test_list_servers_success():
        parameter: str,
        workspace: str,
        region: str = "ap1",
-       **kwargs  # Receives token from decorator
-   ) -> Dict[str, Any]:
+       **kwargs: Unpack[ToolKwargs],  # Receives token from decorator
+   ) -> ToolResponse:
        """Your tool documentation.
 
        Args:

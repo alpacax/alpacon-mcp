@@ -119,8 +119,7 @@ def register_resource(
     # __name__/__file__ give the wrapper a real __module__ and traceback frame.
     ns: dict[str, object] = {'_fn': fn, '__name__': __name__}
     exec(compile(src, __file__, 'exec'), ns)  # noqa: S102
-    # exec() builds `wrapper` dynamically; cast the exec namespace lookup back
-    # to a callable so downstream attribute access and registration type-check.
+    # The exec namespace is untyped; restore the wrapper's callable type.
     wrapper = cast(Callable[..., object], ns['_wrapper'])
     wrapper.__name__ = wrapper.__qualname__ = name
     doc = inspect.getdoc(fn) or name

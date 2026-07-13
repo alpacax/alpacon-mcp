@@ -251,6 +251,11 @@ def with_token_validation[R, **P](
         Decorated async function with modified signature (removes _token parameter)
     """
 
+    def _fail(resp: ToolResponse) -> R:
+        # Concrete R is always ToolResponse, which the generic decorator
+        # can't express; every validation early-exit shares this one cast.
+        return cast(R, resp)
+
     @wraps(func)
     async def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
         # Remove _token from kwargs if present (MCP doesn't allow _ prefix)
@@ -268,11 +273,11 @@ def with_token_validation[R, **P](
 
         # Validate workspace is present
         if not workspace:
-            return cast(R, error_response('workspace parameter is required'))
+            return _fail(error_response('workspace parameter is required'))
 
         # Validate workspace format
         if not validate_workspace_format(workspace):
-            return cast(R, format_validation_error('workspace', workspace))
+            return _fail(format_validation_error('workspace', workspace))
 
         auth_enabled = _is_auth_enabled()
 
@@ -281,8 +286,7 @@ def with_token_validation[R, **P](
         if auth_enabled:
             jwt_token = _get_jwt_token()
             if not jwt_token:
-                return cast(
-                    R,
+                return _fail(
                     error_response(
                         'Authentication required. No JWT token found in request context.'
                     ),
@@ -291,8 +295,7 @@ def with_token_validation[R, **P](
         # Auto-detect region if not provided
         if not region:
             if auth_enabled:
-                # jwt_token is narrowed to str above, but mypy can't carry
-                # that across the unrelated statements in between.
+                # jwt_token was narrowed to str above; mypy can't carry it here.
                 resolved_region, err_msg = _resolve_region_jwt(
                     cast(str, jwt_token), workspace
                 )
@@ -300,25 +303,24 @@ def with_token_validation[R, **P](
                 resolved_region, err_msg = _resolve_region_local(workspace)
 
             if err_msg:
-                return cast(R, error_response(err_msg))
+                return _fail(error_response(err_msg))
             region = resolved_region
             bound_args.arguments['region'] = region
 
         # Validate region format
         if not validate_region_format(region):
-            return cast(R, format_validation_error('region', region))
+            return _fail(format_validation_error('region', region))
 
         # Validate server_id format if present
         server_id = arguments.get('server_id')
         if server_id is not None and not validate_server_id_format(server_id):
-            return cast(R, format_validation_error('server_id', server_id))
+            return _fail(format_validation_error('server_id', server_id))
 
         # Validate server_ids list if present
         server_ids = arguments.get('server_ids')
         if server_ids is not None:
             if not isinstance(server_ids, list):
-                return cast(
-                    R,
+                return _fail(
                     format_validation_error(
                         'server_ids',
                         server_ids,
@@ -329,8 +331,7 @@ def with_token_validation[R, **P](
                 sid for sid in server_ids if not validate_server_id_format(sid)
             ]
             if invalid_ids:
-                return cast(
-                    R,
+                return _fail(
                     format_validation_error(
                         'server_ids',
                         invalid_ids,
@@ -342,8 +343,7 @@ def with_token_validation[R, **P](
         servers = arguments.get('servers')
         if servers is not None:
             if not isinstance(servers, list):
-                return cast(
-                    R,
+                return _fail(
                     format_validation_error(
                         'servers',
                         servers,
@@ -354,8 +354,7 @@ def with_token_validation[R, **P](
                 sid for sid in servers if not validate_server_id_format(sid)
             ]
             if invalid_servers:
-                return cast(
-                    R,
+                return _fail(
                     format_validation_error(
                         'servers',
                         invalid_servers,
@@ -366,7 +365,7 @@ def with_token_validation[R, **P](
         # session_id is interpolated into URL paths, so reject non-UUID values that could retarget the request.
         session_id = arguments.get('session_id')
         if session_id is not None and not validate_server_id_format(session_id):
-            return cast(R, format_validation_error('session_id', session_id))
+            return _fail(format_validation_error('session_id', session_id))
 
         # Get the **kwargs dict from bound arguments to inject token
         extra_kwargs = bound_args.arguments.get('kwargs', {})
@@ -374,8 +373,7 @@ def with_token_validation[R, **P](
         if auth_enabled:
             # Streamable-HTTP mode — JWT auth only
             if not _validate_jwt_workspace(cast(str, jwt_token), region, workspace):
-                return cast(
-                    R,
+                return _fail(
                     error_response(
                         f'Workspace {workspace}.{region} not authorized by JWT',
                         region=region,
@@ -392,7 +390,7 @@ def with_token_validation[R, **P](
             # stdio mode — token.json only
             token = validate_token(region, workspace)
             if not token:
-                return cast(R, token_error_response(region, workspace))
+                return _fail(token_error_response(region, workspace))
             extra_kwargs['token'] = token
 
         bound_args.arguments['kwargs'] = extra_kwargs
@@ -445,9 +443,8 @@ def with_error_handling[R, **P](
             # Call the original function
             result = await func(*args, **kwargs)
 
-            # Enrich error responses with recovery hints. `result` is
-            # statically R (the tool's own ToolResponse), so the enrich
-            # call and its result both need a boundary cast.
+            # result is statically the generic R, so the enrich call and
+            # its result both need boundary casts.
             if isinstance(result, dict):
                 enriched = enrich_error_response(
                     cast(ToolResponse, result), tool_name=func_name
@@ -480,8 +477,7 @@ def with_error_handling[R, **P](
             resp = error_response(
                 f'Failed in {func_name}: {str(e)}', workspace=workspace, region=region
             )
-            # resp is ErrorResponse; func's actual return is ToolResponse at
-            # runtime, but the decorator's static type is the generic R.
+            # resp is ErrorResponse; the decorator's static return is the generic R.
             return cast(R, enrich_error_response(resp, tool_name=func_name))
 
     return wrapper
@@ -605,9 +601,8 @@ def mcp_tool_handler(
             annotations=annotations,
             meta=meta,
         )(func)
-        # FastMCP's decorator is typed Callable[[Callable[..., Any]], Callable[..., Any]]
-        # (an external library boundary), so the specific P/R is lost statically
-        # even though add_tool() returns the same object unchanged at runtime.
+        # mcp.tool() is typed with bare Callables upstream, dropping P/R even
+        # though it returns the same object unchanged at runtime.
         return cast(Callable[P, Awaitable[R]], registered)
 
     return decorator

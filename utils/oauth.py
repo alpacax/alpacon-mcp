@@ -153,7 +153,9 @@ def register_oauth_routes(mcp_server: FastMCP) -> None:
         mcp_server: FastMCP server instance
     """
 
-    @typed_custom_route(mcp_server, '/.well-known/oauth-authorization-server', methods=['GET'])
+    @typed_custom_route(
+        mcp_server, '/.well-known/oauth-authorization-server', methods=['GET']
+    )
     async def oauth_metadata(request: Request) -> Response:
         """OAuth 2.0 Authorization Server Metadata (RFC 8414).
 

@@ -77,11 +77,9 @@ def success_response(
     Returns:
         Standardized success response dict
     """
-    # Plain dict[str, object] intermediate: SuccessResponse declares its own
-    # NotRequired fields (data, message) beyond ResponseContext, and mypy's
-    # TypedDict construction requires every NotRequired key of the target to
-    # be accounted for in a **-spread literal, which a bare ResponseContext
-    # kwargs can't satisfy. Cast back once fully assembled.
+    # mypy requires a **-spread TypedDict literal to account for every
+    # NotRequired key of the target (here: data/message), which bare
+    # ResponseContext kwargs can't; build untyped, cast once assembled.
     response: dict[str, object] = {'status': 'success', **kwargs}
     if data is not None:
         response['data'] = data
@@ -257,13 +255,10 @@ def work_session_gate_response(
             category='WORK_SESSION_PENDING',
             **kwargs,
         )
-    # Built as a literal (not via error_response(**kwargs)) because kwargs is
-    # typed Unpack[ResponseContext], which structurally may already contain
-    # code/next_action/requires_human_approval—mypy rejects passing those as
-    # both explicit keywords and part of a forwarded **kwargs of that type.
-    # Annotated as ErrorResponse (not the function's ErrorResponse |
-    # PendingApprovalResponse return type) so mypy doesn't also require
-    # PendingApprovalResponse's own NotRequired 'data' key to be accounted for.
+    # A literal, not error_response(**kwargs): kwargs may structurally already
+    # contain code/next_action/requires_human_approval, and mypy rejects keys
+    # passed both explicitly and via a forwarded **kwargs. Annotated as plain
+    # ErrorResponse so the union's other member isn't demanded in the spread.
     gate_error: ErrorResponse = {
         'status': 'error',
         'message': f'Operation blocked by the Work Session gate: {gate_code}.',

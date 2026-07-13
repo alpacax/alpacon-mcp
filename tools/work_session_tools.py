@@ -81,7 +81,7 @@ async def work_session_create(
     # to run commands against a session that is not yet active.
     payload = cast(ApiPayload, result)
     if isinstance(payload, dict) and payload.get('status') == 'pending':
-        session_id = cast('str | None', payload.get('id'))
+        session_id = cast(str | None, payload.get('id'))
         return pending_approval_response(
             'This Work Session was created but is pending human approval. A '
             'human must approve it out-of-band (Alpacon web console or Slack) '
