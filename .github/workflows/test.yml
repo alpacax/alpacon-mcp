@@ -51,8 +51,7 @@ jobs:
     - name: Type check with mypy
       run: |
         uv pip install mypy
-        uv run --no-sync mypy --ignore-missing-imports --no-strict-optional .
-      continue-on-error: true
+        uv run --no-sync mypy
 
     - name: Test with pytest
       run: |

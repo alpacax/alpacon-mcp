@@ -21,7 +21,7 @@ from utils.logger import get_logger
 logger = get_logger('main_http')
 
 
-def main():
+def main() -> None:
     """Main entry point for HTTP transport mode."""
     # Validate required Auth0 configuration (fail fast on missing env vars)
     missing = []

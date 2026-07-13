@@ -9,14 +9,37 @@ which bypasses MCP authentication — appropriate for OAuth flow endpoints.
 """
 
 import base64
+import binascii
 import json
 import os
+from collections.abc import Awaitable, Callable
+from typing import cast
 
 import httpx
+from mcp.server.fastmcp import FastMCP
+from starlette.requests import Request
+from starlette.responses import Response
 
 from utils.logger import get_logger
 
 logger = get_logger('oauth')
+
+RouteHandler = Callable[[Request], Awaitable[Response]]
+
+
+def typed_custom_route(
+    mcp_server: FastMCP, path: str, methods: list[str]
+) -> Callable[[RouteHandler], RouteHandler]:
+    """Type-safe wrapper around FastMCP.custom_route.
+
+    FastMCP.custom_route has no return type annotation upstream, so mypy
+    infers the decorator (and anything decorated by it) as Any. This wrapper
+    restores the real Callable[[Request], Awaitable[Response]] signature.
+    """
+    return cast(
+        Callable[[RouteHandler], RouteHandler],
+        mcp_server.custom_route(path, methods=methods),
+    )
 
 
 _ALLOWED_LOOPBACK_HOSTS = ('localhost', '127.0.0.1', '::1')
@@ -30,7 +53,7 @@ _DEFAULT_REDIRECT_DOMAINS = (
 )
 
 
-def _get_server_url(request) -> str:
+def _get_server_url(request: Request) -> str:
     """Build the MCP server's base URL from config or request.
 
     Prefers ALPACON_MCP_RESOURCE_URL env var to avoid relying on
@@ -82,7 +105,7 @@ def _is_allowed_redirect_url(url: str) -> bool:
     return hostname in allowed_domains
 
 
-def _build_redirect_url(base_url: str, extra_params: dict) -> str:
+def _build_redirect_url(base_url: str, extra_params: dict[str, str]) -> str:
     """Safely merge query params into a URL, preserving existing params."""
     from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
@@ -123,15 +146,15 @@ def _get_oauth_config() -> dict[str, str]:
     }
 
 
-def register_oauth_routes(mcp_server):
+def register_oauth_routes(mcp_server: FastMCP) -> None:
     """Register OAuth proxy routes on the FastMCP server.
 
     Args:
         mcp_server: FastMCP server instance
     """
 
-    @mcp_server.custom_route('/.well-known/oauth-authorization-server', methods=['GET'])
-    async def oauth_metadata(request):
+    @typed_custom_route(mcp_server, '/.well-known/oauth-authorization-server', methods=['GET'])
+    async def oauth_metadata(request: Request) -> Response:
         """OAuth 2.0 Authorization Server Metadata (RFC 8414).
 
         Returns metadata advertising this MCP server as the OAuth
@@ -175,8 +198,8 @@ def register_oauth_routes(mcp_server):
             },
         )
 
-    @mcp_server.custom_route('/oauth/authorize', methods=['GET'])
-    async def oauth_authorize(request):
+    @typed_custom_route(mcp_server, '/oauth/authorize', methods=['GET'])
+    async def oauth_authorize(request: Request) -> Response:
         """Redirect to Auth0's authorization endpoint.
 
         Proxies the OAuth authorize request to Auth0, adding the
@@ -301,8 +324,8 @@ def register_oauth_routes(mcp_server):
             logger.info('Redirecting to Auth0 authorize endpoint')
         return RedirectResponse(url=auth0_url, status_code=302)
 
-    @mcp_server.custom_route('/oauth/token', methods=['POST'])
-    async def oauth_token(request):
+    @typed_custom_route(mcp_server, '/oauth/token', methods=['POST'])
+    async def oauth_token(request: Request) -> Response:
         """Proxy token exchange to Auth0.
 
         Forwards the token request to Auth0's /oauth/token endpoint.
@@ -474,8 +497,8 @@ def register_oauth_routes(mcp_server):
                 status_code=502,
             )
 
-    @mcp_server.custom_route('/oauth/register', methods=['POST'])
-    async def oauth_register(request):
+    @typed_custom_route(mcp_server, '/oauth/register', methods=['POST'])
+    async def oauth_register(request: Request) -> Response:
         """Dynamic Client Registration endpoint (RFC 7591).
 
         Auth0 does not support Dynamic Client Registration on non-Enterprise
@@ -564,8 +587,8 @@ def register_oauth_routes(mcp_server):
             },
         )
 
-    @mcp_server.custom_route('/oauth/callback', methods=['GET'])
-    async def oauth_callback(request):
+    @typed_custom_route(mcp_server, '/oauth/callback', methods=['GET'])
+    async def oauth_callback(request: Request) -> Response:
         """Handle Auth0 callback after authorization.
 
         Supports two-stage MFA flow:
@@ -588,7 +611,7 @@ def register_oauth_routes(mcp_server):
         original_state = ''
         stage = ''
         original_scope = ''
-        authorize_params: dict = {}
+        authorize_params: dict[str, str] = {}
         if composite_state:
             try:
                 state_data = json.loads(
@@ -602,7 +625,7 @@ def register_oauth_routes(mcp_server):
             except (
                 json.JSONDecodeError,
                 UnicodeDecodeError,
-                base64.binascii.Error,
+                binascii.Error,
             ) as e:
                 logger.warning(f'Failed to decode composite state: {e}')
                 # Fall back to treating the raw state as the original opaque state
@@ -748,8 +771,8 @@ def register_oauth_routes(mcp_server):
             result['state'] = original_state
         return JSONResponse(result)
 
-    @mcp_server.custom_route('/token', methods=['POST'])
-    async def oauth_token_fallback(request):
+    @typed_custom_route(mcp_server, '/token', methods=['POST'])
+    async def oauth_token_fallback(request: Request) -> Response:
         """Fallback token endpoint at /token.
 
         MCP SDK clients fall back to /token (instead of /oauth/token) when
@@ -760,8 +783,8 @@ def register_oauth_routes(mcp_server):
         logger.info('/token fallback hit — delegating to /oauth/token handler')
         return await oauth_token(request)
 
-    @mcp_server.custom_route('/authorize', methods=['GET'])
-    async def oauth_authorize_fallback(request):
+    @typed_custom_route(mcp_server, '/authorize', methods=['GET'])
+    async def oauth_authorize_fallback(request: Request) -> Response:
         """Fallback authorize endpoint at /authorize.
 
         MCP SDK clients fall back to /authorize when oauth_metadata
@@ -770,8 +793,8 @@ def register_oauth_routes(mcp_server):
         logger.info('/authorize fallback hit — delegating to /oauth/authorize handler')
         return await oauth_authorize(request)
 
-    @mcp_server.custom_route('/register', methods=['POST'])
-    async def oauth_register_fallback(request):
+    @typed_custom_route(mcp_server, '/register', methods=['POST'])
+    async def oauth_register_fallback(request: Request) -> Response:
         """Fallback register endpoint at /register.
 
         MCP SDK clients fall back to /register when oauth_metadata

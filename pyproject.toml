@@ -143,6 +143,8 @@ line-ending = "auto"
 
 [tool.mypy]
 python_version = "3.12"
+files = ["utils", "tools", "server.py", "main.py", "main_sse.py", "main_http.py"]
+strict = true
 ignore_missing_imports = true
 namespace_packages = true
 explicit_package_bases = true

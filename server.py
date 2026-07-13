@@ -3,11 +3,15 @@ import signal
 import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from types import FrameType
 from typing import Literal
 
 from mcp.server.fastmcp import FastMCP
+from starlette.requests import Request
+from starlette.responses import Response
 
 from utils.logger import get_logger
+from utils.oauth import typed_custom_route
 
 logger = get_logger('server')
 
@@ -52,7 +56,7 @@ async def app_lifespan(app: FastMCP) -> AsyncIterator[None]:
         logger.info('Graceful shutdown complete')
 
 
-def _sigterm_handler(signum, frame):
+def _sigterm_handler(signum: int, frame: FrameType | None) -> None:
     """Handle SIGTERM by raising KeyboardInterrupt for anyio's shutdown path."""
     raise KeyboardInterrupt
 
@@ -162,7 +166,7 @@ def _is_remote_mode() -> bool:
     return os.getenv('ALPACON_MCP_AUTH_ENABLED', '').lower() == 'true'
 
 
-def _install_upstream_auth_middleware():
+def _install_upstream_auth_middleware() -> None:
     """Override run_streamable_http_async to wrap app with auth error middleware.
 
     When the Alpacon API returns 401 (e.g., MFA timeout), the middleware
@@ -176,7 +180,7 @@ def _install_upstream_auth_middleware():
         f'{resource_url.rstrip("/")}/.well-known/oauth-protected-resource'
     )
 
-    async def patched_run():
+    async def patched_run() -> None:
         import uvicorn
 
         starlette_app = mcp.streamable_http_app()
@@ -195,19 +199,19 @@ def _install_upstream_auth_middleware():
         server = uvicorn.Server(config)
         await server.serve()
 
-    mcp.run_streamable_http_async = patched_run
+    mcp.run_streamable_http_async = patched_run  # type: ignore[method-assign]
     logger.info('Upstream auth error middleware installed for remote mode')
 
 
-def _register_http_health_endpoint():
+def _register_http_health_endpoint() -> None:
     """Register HTTP /health endpoint for HTTP transports (SSE, streamable-http).
 
     Bypasses auth for unauthenticated health probes
     (e.g., Kubernetes liveness/readiness checks, docker-compose).
     """
 
-    @mcp.custom_route('/health', methods=['GET'])
-    async def health_endpoint(request):
+    @typed_custom_route(mcp, '/health', methods=['GET'])
+    async def health_endpoint(request: Request) -> Response:
         from starlette.responses import JSONResponse
 
         from utils.health import get_health_info
@@ -226,7 +230,7 @@ def _register_http_health_endpoint():
 def run(
     transport: Literal['stdio', 'sse', 'streamable-http'] = 'stdio',
     config_file: str | None = None,
-):
+) -> None:
     """Run MCP server with optional config file path.
 
     Args:

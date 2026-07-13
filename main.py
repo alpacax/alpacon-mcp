@@ -15,7 +15,7 @@ def check_token_exists() -> bool:
     return global_path.exists() or local_path.exists()
 
 
-def main():
+def main() -> None:
     """Main entry point for the CLI."""
     parser = argparse.ArgumentParser(
         description='Alpacon MCP Server - AI-powered server management',

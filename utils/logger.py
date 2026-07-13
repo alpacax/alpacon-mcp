@@ -9,11 +9,11 @@ from pathlib import Path
 class AlpaconLogger:
     """Centralized logging configuration for Alpacon MCP Server."""
 
-    def __init__(self):
-        self._loggers: dict[str, logging.LoggerAdapter] = {}
+    def __init__(self) -> None:
+        self._loggers: dict[str, logging.LoggerAdapter[logging.Logger]] = {}
         self._setup_logging()
 
-    def _setup_logging(self):
+    def _setup_logging(self) -> None:
         """Setup logging configuration."""
         # Get log level from environment variable
         log_level = os.getenv('ALPACON_MCP_LOG_LEVEL', 'INFO').upper()
@@ -33,7 +33,7 @@ class AlpaconLogger:
             ],
         )
 
-    def get_logger(self, name: str) -> logging.LoggerAdapter:
+    def get_logger(self, name: str) -> logging.LoggerAdapter[logging.Logger]:
         """Get logger for specific module.
 
         Args:
@@ -56,7 +56,7 @@ class AlpaconLogger:
 logger_manager = AlpaconLogger()
 
 
-def get_logger(name: str) -> logging.LoggerAdapter:
+def get_logger(name: str) -> logging.LoggerAdapter[logging.Logger]:
     """Get logger for module.
 
     Args:
