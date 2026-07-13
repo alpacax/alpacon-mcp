@@ -395,6 +395,10 @@ async def get_disk_info(
             workspace=workspace,
         )
         if err:
+            # Work Session gate responses already carry a specific message; only
+            # plain upstream errors need the disks-vs-partitions label restored.
+            if err.get('status') == 'error' and 'code' not in err:
+                err['message'] = f'{default_message}: {err["message"]}'
             return err
 
     disk_info = {
