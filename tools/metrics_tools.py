@@ -1,9 +1,16 @@
 """Metrics and monitoring tools for Alpacon MCP server."""
 
 import asyncio
+from collections.abc import Awaitable
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Required, TypedDict, Unpack, cast
 
+from utils.api_types import (
+    ApiPayload,
+    ApiResult,
+    ToolKwargs,
+    ToolResponse,
+)
 from utils.common import error_response, success_response, unwrap_http_result
 from utils.decorators import mcp_tool_handler
 from utils.error_handler import UpstreamAuthError
@@ -11,7 +18,97 @@ from utils.http_client import http_client
 from utils.tool_annotations import READ_ONLY
 
 
-def parse_cpu_metrics(results: list) -> dict[str, Any]:
+class _TimeRange(TypedDict):
+    """Fixed ``{start, end}`` window echoed back by every parser below."""
+
+    start: str | None
+    end: str | None
+
+
+class _UsageRawValues(TypedDict):
+    """Unformatted current/average/min/max backing a ``*_usage_percent`` stat."""
+
+    current: float
+    average: float
+    min: float
+    max: float
+
+
+class UsagePercentStats(TypedDict, total=False):
+    """Return shape shared by :func:`parse_cpu_metrics` and :func:`parse_memory_metrics`."""
+
+    available: Required[bool]
+    message: str
+    current_usage_percent: str
+    average_usage_percent: str
+    min_usage_percent: str
+    max_usage_percent: str
+    status: str
+    health: str
+    data_points: int
+    time_range: _TimeRange
+    raw_values: _UsageRawValues
+
+
+class _DiskSpaceInfo(TypedDict):
+    total: str
+    used: str
+    free: str
+    device: str | None
+    mount_point: str | None
+
+
+class DiskUsageStats(TypedDict, total=False):
+    """Return shape of :func:`parse_disk_metrics`."""
+
+    available: Required[bool]
+    message: str
+    current_usage: float
+    average_usage: float
+    min_usage: float
+    max_usage: float
+    space_info: _DiskSpaceInfo
+    data_points: int
+    time_range: _TimeRange
+
+
+class _NetworkCurrent(TypedDict):
+    peak_input_bps: str
+    peak_output_bps: str
+    avg_input_bps: str
+    avg_output_bps: str
+    peak_input_pps: str
+    peak_output_pps: str
+
+
+class _NetworkAverages(TypedDict):
+    peak_input_bps: str
+    peak_output_bps: str
+    avg_input_bps: str
+    avg_output_bps: str
+
+
+class _NetworkPeaks(TypedDict):
+    max_input_bps: str
+    max_output_bps: str
+    max_input_pps: str
+    max_output_pps: str
+
+
+class NetworkTrafficStats(TypedDict, total=False):
+    """Return shape of :func:`parse_network_metrics`."""
+
+    available: Required[bool]
+    message: str
+    interface: str | None
+    current: _NetworkCurrent
+    averages: _NetworkAverages
+    peaks: _NetworkPeaks
+    data_points: int
+    time_range: _TimeRange
+
+
+def parse_cpu_metrics(results: list[dict[str, object]]) -> UsagePercentStats:
     """Parse CPU usage metrics to extract meaningful statistics.
 
     Args:
@@ -23,7 +120,9 @@ def parse_cpu_metrics(results: list) -> dict[str, Any]:
     if not results or len(results) == 0:
         return {'available': False, 'message': 'No CPU data available'}
 
-    usage_values = [entry.get('usage', 0) for entry in results if 'usage' in entry]
+    usage_values = [
+        cast(float, entry.get('usage', 0)) for entry in results if 'usage' in entry
+    ]
 
     if not usage_values:
         return {'available': False, 'message': 'No usage values found'}
@@ -34,7 +133,7 @@ def parse_cpu_metrics(results: list) -> dict[str, Any]:
     maximum = max(usage_values)
 
     # Determine usage status
-    def get_status(usage):
+    def get_status(usage: float) -> str:
         if usage < 20:
             return 'idle'
         elif usage < 50:
@@ -60,8 +159,12 @@ def parse_cpu_metrics(results: list) -> dict[str, Any]:
         else 'critical',
         'data_points': len(usage_values),
         'time_range': {
-            'start': results[0].get('timestamp') if results else None,
-            'end': results[-1].get('timestamp') if results else None,
+            'start': cast(str | None, results[0].get('timestamp'))
+            if results
+            else None,
+            'end': cast(str | None, results[-1].get('timestamp'))
+            if results
+            else None,
         },
         'raw_values': {
             'current': current,
@@ -83,8 +186,8 @@ async def get_cpu_usage(
     start_date: str | None = None,
     end_date: str | None = None,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Get CPU usage metrics for a server with parsed statistics.
 
     Args:
@@ -100,7 +203,7 @@ async def get_cpu_usage(
     token = kwargs.get('token')
 
     # Prepare query parameters with required start date
-    params = {'server': server_id}
+    params: dict[str, object] = {'server': server_id}
     if start_date:
         params['start'] = start_date
     else:
@@ -129,19 +232,20 @@ async def get_cpu_usage(
         return err
 
     # Parse metrics for better readability
+    payload = cast(ApiPayload, result)
     parsed_data = {
         'server_id': server_id,
         'metric_type': 'cpu_usage',
-        'statistics': parse_cpu_metrics(result.get('results', []))
-        if isinstance(result, dict)
-        else parse_cpu_metrics(result if isinstance(result, list) else []),
+        'statistics': parse_cpu_metrics(payload.get('results', []))
+        if isinstance(payload, dict)
+        else parse_cpu_metrics(payload if isinstance(payload, list) else []),
         'raw_data_available': True,
     }
 
     return success_response(data=parsed_data, region=region, workspace=workspace)
 
 
-def parse_memory_metrics(results: list) -> dict[str, Any]:
+def parse_memory_metrics(results: list[dict[str, object]]) -> UsagePercentStats:
     """Parse memory usage metrics to extract meaningful statistics.
 
     Args:
@@ -153,7 +257,9 @@ def parse_memory_metrics(results: list) -> dict[str, Any]:
     if not results or len(results) == 0:
         return {'available': False, 'message': 'No memory data available'}
 
-    usage_values = [entry.get('usage', 0) for entry in results if 'usage' in entry]
+    usage_values = [
+        cast(float, entry.get('usage', 0)) for entry in results if 'usage' in entry
+    ]
 
     if not usage_values:
         return {'available': False, 'message': 'No usage values found'}
@@ -164,7 +270,7 @@ def parse_memory_metrics(results: list) -> dict[str, Any]:
     maximum = max(usage_values)
 
     # Determine usage status
-    def get_status(usage):
+    def get_status(usage: float) -> str:
         if usage < 30:
             return 'idle'
         elif usage < 60:
@@ -190,8 +296,12 @@ def parse_memory_metrics(results: list) -> dict[str, Any]:
         else 'critical',
         'data_points': len(usage_values),
         'time_range': {
-            'start': results[0].get('timestamp') if results else None,
-            'end': results[-1].get('timestamp') if results else None,
+            'start': cast(str | None, results[0].get('timestamp'))
+            if results
+            else None,
+            'end': cast(str | None, results[-1].get('timestamp'))
+            if results
+            else None,
         },
         'raw_values': {
             'current': current,
@@ -213,8 +323,8 @@ async def get_memory_usage(
     start_date: str | None = None,
     end_date: str | None = None,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Get memory usage metrics for a server with parsed statistics.
 
     Args:
@@ -230,7 +340,7 @@ async def get_memory_usage(
     token = kwargs.get('token')
 
     # Prepare query parameters with required start date
-    params = {'server': server_id}
+    params: dict[str, object] = {'server': server_id}
     if start_date:
         params['start'] = start_date
     else:
@@ -259,19 +369,20 @@ async def get_memory_usage(
         return err
 
     # Parse metrics for better readability
+    payload = cast(ApiPayload, result)
     parsed_data = {
         'server_id': server_id,
         'metric_type': 'memory_usage',
-        'statistics': parse_memory_metrics(result.get('results', []))
-        if isinstance(result, dict)
-        else parse_memory_metrics(result if isinstance(result, list) else []),
+        'statistics': parse_memory_metrics(payload.get('results', []))
+        if isinstance(payload, dict)
+        else parse_memory_metrics(payload if isinstance(payload, list) else []),
         'raw_data_available': True,
     }
 
     return success_response(data=parsed_data, region=region, workspace=workspace)
 
 
-def parse_disk_metrics(results: list) -> dict[str, Any]:
+def parse_disk_metrics(results: list[dict[str, object]]) -> DiskUsageStats:
     """Parse disk usage metrics to extract meaningful statistics.
 
     Args:
@@ -283,19 +394,21 @@ def parse_disk_metrics(results: list) -> dict[str, Any]:
     if not results or len(results) == 0:
         return {'available': False, 'message': 'No disk data available'}
 
-    usage_values = [entry.get('usage', 0) for entry in results if 'usage' in entry]
+    usage_values = [
+        cast(float, entry.get('usage', 0)) for entry in results if 'usage' in entry
+    ]
 
     if not usage_values:
         return {'available': False, 'message': 'No usage values found'}
 
     # Get space information from the latest entry
     latest_entry = results[-1]
-    total_bytes = latest_entry.get('total', 0)
-    used_bytes = latest_entry.get('used', 0)
-    free_bytes = latest_entry.get('free', 0)
+    total_bytes = cast(float, latest_entry.get('total', 0))
+    used_bytes = cast(float, latest_entry.get('used', 0))
+    free_bytes = cast(float, latest_entry.get('free', 0))
 
     # Convert bytes to human-readable format
-    def bytes_to_human(bytes_value):
+    def bytes_to_human(bytes_value: float) -> str:
         for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
             if bytes_value < 1024.0:
                 return f'{bytes_value:.2f} {unit}'
@@ -312,13 +425,17 @@ def parse_disk_metrics(results: list) -> dict[str, Any]:
             'total': bytes_to_human(total_bytes),
             'used': bytes_to_human(used_bytes),
             'free': bytes_to_human(free_bytes),
-            'device': latest_entry.get('device'),
-            'mount_point': latest_entry.get('mount_point'),
+            'device': cast(str | None, latest_entry.get('device')),
+            'mount_point': cast(str | None, latest_entry.get('mount_point')),
         },
         'data_points': len(usage_values),
         'time_range': {
-            'start': results[0].get('timestamp') if results else None,
-            'end': results[-1].get('timestamp') if results else None,
+            'start': cast(str | None, results[0].get('timestamp'))
+            if results
+            else None,
+            'end': cast(str | None, results[-1].get('timestamp'))
+            if results
+            else None,
         },
     }
 
@@ -336,8 +453,8 @@ async def get_disk_usage(
     start_date: str | None = None,
     end_date: str | None = None,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Get disk usage metrics for a server with parsed statistics.
 
     Note: This endpoint requires either 'device' or 'partition' parameter.
@@ -381,9 +498,10 @@ async def get_disk_usage(
                 return err
 
             # Extract device list from response
+            devices_payload = cast(ApiPayload, devices_result)
             available_devices = (
-                devices_result.get('devices', [])
-                if isinstance(devices_result, dict)
+                devices_payload.get('devices', [])
+                if isinstance(devices_payload, dict)
                 else []
             )
 
@@ -408,7 +526,7 @@ async def get_disk_usage(
             )
 
     # Prepare query parameters with required start date
-    params = {'server': server_id}
+    params: dict[str, object] = {'server': server_id}
     if device:
         params['device'] = device
     if partition:
@@ -441,21 +559,22 @@ async def get_disk_usage(
         return err
 
     # Parse metrics for better readability
+    payload = cast(ApiPayload, result)
     parsed_data = {
         'server_id': server_id,
         'metric_type': 'disk_usage',
         'device': device,
         'partition': partition,
-        'statistics': parse_disk_metrics(result.get('results', []))
-        if isinstance(result, dict)
-        else parse_disk_metrics(result if isinstance(result, list) else []),
+        'statistics': parse_disk_metrics(payload.get('results', []))
+        if isinstance(payload, dict)
+        else parse_disk_metrics(payload if isinstance(payload, list) else []),
         'raw_data_available': True,
     }
 
     return success_response(data=parsed_data, region=region, workspace=workspace)
 
 
-def parse_network_metrics(results: list) -> dict[str, Any]:
+def parse_network_metrics(results: list[dict[str, object]]) -> NetworkTrafficStats:
     """Parse network traffic metrics to extract meaningful statistics.
 
     Args:
@@ -468,15 +587,19 @@ def parse_network_metrics(results: list) -> dict[str, Any]:
         return {'available': False, 'message': 'No network data available'}
 
     # Extract various metrics
-    peak_input_bps = [entry.get('peak_input_bps', 0) for entry in results]
-    peak_output_bps = [entry.get('peak_output_bps', 0) for entry in results]
-    avg_input_bps = [entry.get('avg_input_bps', 0) for entry in results]
-    avg_output_bps = [entry.get('avg_output_bps', 0) for entry in results]
-    peak_input_pps = [entry.get('peak_input_pps', 0) for entry in results]
-    peak_output_pps = [entry.get('peak_output_pps', 0) for entry in results]
+    peak_input_bps = [cast(float, entry.get('peak_input_bps', 0)) for entry in results]
+    peak_output_bps = [
+        cast(float, entry.get('peak_output_bps', 0)) for entry in results
+    ]
+    avg_input_bps = [cast(float, entry.get('avg_input_bps', 0)) for entry in results]
+    avg_output_bps = [cast(float, entry.get('avg_output_bps', 0)) for entry in results]
+    peak_input_pps = [cast(float, entry.get('peak_input_pps', 0)) for entry in results]
+    peak_output_pps = [
+        cast(float, entry.get('peak_output_pps', 0)) for entry in results
+    ]
 
     # Convert bps to human-readable format
-    def bps_to_human(bps_value):
+    def bps_to_human(bps_value: float) -> str:
         for unit in ['bps', 'Kbps', 'Mbps', 'Gbps']:
             if bps_value < 1024.0:
                 return f'{bps_value:.2f} {unit}'
@@ -487,7 +610,7 @@ def parse_network_metrics(results: list) -> dict[str, Any]:
 
     return {
         'available': True,
-        'interface': latest_entry.get('interface'),
+        'interface': cast(str | None, latest_entry.get('interface')),
         'current': {
             'peak_input_bps': bps_to_human(peak_input_bps[-1])
             if peak_input_bps
@@ -538,8 +661,12 @@ def parse_network_metrics(results: list) -> dict[str, Any]:
         },
         'data_points': len(results),
         'time_range': {
-            'start': results[0].get('timestamp') if results else None,
-            'end': results[-1].get('timestamp') if results else None,
+            'start': cast(str | None, results[0].get('timestamp'))
+            if results
+            else None,
+            'end': cast(str | None, results[-1].get('timestamp'))
+            if results
+            else None,
         },
     }
 
@@ -558,8 +685,8 @@ async def get_disk_io(
     start_date: str | None = None,
     end_date: str | None = None,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Get disk I/O performance metrics for a server.
 
     Returns disk read/write throughput metrics with peak and average values.
@@ -578,7 +705,7 @@ async def get_disk_io(
     token = kwargs.get('token')
 
     # Prepare query parameters with required start date
-    params = {'server': server_id}
+    params: dict[str, object] = {'server': server_id}
     if device:
         params['device'] = device
     if start_date:
@@ -631,8 +758,8 @@ async def get_network_traffic(
     start_date: str | None = None,
     end_date: str | None = None,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Get network traffic metrics for a server with parsed statistics.
 
     Args:
@@ -649,7 +776,7 @@ async def get_network_traffic(
     token = kwargs.get('token')
 
     # Prepare query parameters with required start date
-    params = {'server': server_id}
+    params: dict[str, object] = {'server': server_id}
     if interface:
         params['interface'] = interface
     if start_date:
@@ -680,13 +807,14 @@ async def get_network_traffic(
         return err
 
     # Parse metrics for better readability
+    payload = cast(ApiPayload, result)
     parsed_data = {
         'server_id': server_id,
         'metric_type': 'network_traffic',
         'interface': interface,
-        'statistics': parse_network_metrics(result.get('results', []))
-        if isinstance(result, dict)
-        else parse_network_metrics(result if isinstance(result, list) else []),
+        'statistics': parse_network_metrics(payload.get('results', []))
+        if isinstance(payload, dict)
+        else parse_network_metrics(payload if isinstance(payload, list) else []),
         'raw_data_available': True,
     }
 
@@ -701,8 +829,11 @@ async def get_network_traffic(
     },
 )
 async def get_top_servers(
-    workspace: str, metric_types: str = '', region: str = '', **kwargs
-) -> dict[str, Any]:
+    workspace: str,
+    metric_types: str = '',
+    region: str = '',
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Get top 5 servers by specified metric types in the last 24 hours.
 
     Supports querying multiple metrics simultaneously for efficiency.
@@ -749,7 +880,7 @@ async def get_top_servers(
         requested_metrics = list(metric_endpoints.keys())
 
     # Create async tasks for all requested metrics
-    tasks = {}
+    tasks: dict[str, Awaitable[ApiResult]] = {}
     for metric in requested_metrics:
         tasks[metric] = http_client.get(
             region=region,
@@ -775,7 +906,10 @@ async def get_top_servers(
             )
 
         err = unwrap_http_result(
-            result,
+            # Not an Exception per the check above; the only other BaseException
+            # members (CancelledError etc.) would already have propagated out of
+            # asyncio.gather rather than landing here as a value.
+            cast(ApiResult, result),
             default_message=f'Failed to fetch {metric} metrics',
             region=region,
             workspace=workspace,
@@ -788,7 +922,7 @@ async def get_top_servers(
         )
 
     # Multiple metrics - combine into dict
-    combined_data = {}
+    combined_data: dict[str, object] = {}
     for metric, result in zip(tasks.keys(), results, strict=False):
         if isinstance(result, BaseException):
             if not isinstance(result, Exception):
@@ -818,8 +952,11 @@ async def get_top_servers(
     },
 )
 async def get_alert_rules(
-    workspace: str, server_id: str | None = None, region: str = '', **kwargs
-) -> dict[str, Any]:
+    workspace: str,
+    server_id: str | None = None,
+    region: str = '',
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Get alert rules for servers.
 
     Args:
@@ -833,7 +970,7 @@ async def get_alert_rules(
     token = kwargs.get('token')
 
     # Prepare query parameters
-    params = {}
+    params: dict[str, object] = {}
     if server_id:
         params['server'] = server_id
 
@@ -870,8 +1007,12 @@ async def get_alert_rules(
     },
 )
 async def get_server_metrics_summary(
-    server_id: str, workspace: str, hours: int = 24, region: str = '', **kwargs
-) -> dict[str, Any]:
+    server_id: str,
+    workspace: str,
+    hours: int = 24,
+    region: str = '',
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Get comprehensive metrics summary for a server.
 
     Args:
@@ -899,8 +1040,8 @@ async def get_server_metrics_summary(
     # First, get disk and network interface information to satisfy API requirements
     # DiskUsage API requires: server + start + (device OR partition)
     # Traffic API accepts: server + start + interface (optional, but may have no data without it)
-    disk_device = None
-    network_interface = None
+    disk_device: str | None = None
+    network_interface: str | None = None
 
     try:
         # Get partition information using /api/proc/partitions/
@@ -914,12 +1055,15 @@ async def get_server_metrics_summary(
 
         # http_client.get returns raw API response (paginated list format)
         if isinstance(partitions_result, dict) and 'results' in partitions_result:
-            partitions = partitions_result.get('results', [])
+            partitions_payload = cast(dict[str, object], partitions_result)
+            partitions = cast(
+                list[dict[str, object]], partitions_payload.get('results', [])
+            )
             # Find the root partition (mounted at /)
             for partition in partitions:
-                mount_points = partition.get('mount_points', [])
+                mount_points = cast(list[str], partition.get('mount_points', []))
                 if '/' in mount_points:
-                    disk_device = partition.get('name')
+                    disk_device = cast(str | None, partition.get('name'))
                     break
     except UpstreamAuthError:
         raise
@@ -938,11 +1082,14 @@ async def get_server_metrics_summary(
 
         # http_client.get returns raw API response (paginated list format)
         if isinstance(interfaces_result, dict) and 'results' in interfaces_result:
-            interfaces = interfaces_result.get('results', [])
+            interfaces_payload = cast(dict[str, object], interfaces_result)
+            interfaces = cast(
+                list[dict[str, object]], interfaces_payload.get('results', [])
+            )
             # Find first non-loopback, active interface
             for iface in interfaces:
                 if not iface.get('is_loopback', False) and iface.get('is_up', False):
-                    network_interface = iface.get('name')
+                    network_interface = cast(str | None, iface.get('name'))
                     break
     except UpstreamAuthError:
         raise
@@ -950,10 +1097,26 @@ async def get_server_metrics_summary(
         pass  # Network metrics will show as unavailable
 
     # Prepare query parameters
-    cpu_params = {'server': server_id, 'start': start_date, 'end': end_date}
-    memory_params = {'server': server_id, 'start': start_date, 'end': end_date}
-    disk_params = {'server': server_id, 'start': start_date, 'end': end_date}
-    traffic_params = {'server': server_id, 'start': start_date, 'end': end_date}
+    cpu_params: dict[str, object] = {
+        'server': server_id,
+        'start': start_date,
+        'end': end_date,
+    }
+    memory_params: dict[str, object] = {
+        'server': server_id,
+        'start': start_date,
+        'end': end_date,
+    }
+    disk_params: dict[str, object] = {
+        'server': server_id,
+        'start': start_date,
+        'end': end_date,
+    }
+    traffic_params: dict[str, object] = {
+        'server': server_id,
+        'start': start_date,
+        'end': end_date,
+    }
 
     # Add device/interface to satisfy API requirements
     # DiskUsage API: requires device OR partition (at least one optional field)
@@ -999,7 +1162,7 @@ async def get_server_metrics_summary(
     cpu_result, memory_result, disk_result, traffic_result = gather_results
 
     # Helper function to extract summary from metric result (from http_client directly)
-    def extract_summary(result, metric_type):
+    def extract_summary(result: object, metric_type: str) -> dict[str, object]:
         # Handle exceptions first
         if isinstance(result, Exception):
             return {'available': False, 'error': str(result)}
@@ -1009,6 +1172,7 @@ async def get_server_metrics_summary(
             # Check for HTTP error
             if 'error' in result:
                 # Extract actual error message from response if available
+                error_info: dict[str, object]
                 if 'response' in result:
                     error_info = {
                         'available': False,

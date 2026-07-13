@@ -1,7 +1,14 @@
 """Server management tools for Alpacon MCP server - Refactored version."""
 
-from typing import Any
+from typing import Unpack, cast
 
+from utils.api_types import (
+    ApiPayload,
+    ResponseContext,
+    ToolKwargs,
+    ToolResponse,
+    is_api_error,
+)
 from utils.common import error_response, success_response, unwrap_http_result
 from utils.decorators import mcp_tool_handler
 from utils.error_handler import format_validation_error, validate_server_id_format
@@ -24,7 +31,9 @@ _PLATFORM_LIST_STR = ', '.join(f'"{p}"' for p in sorted(VALID_PLATFORMS))
         'anthropic/searchHint': 'server list inventory discover find all',
     },
 )
-async def list_servers(workspace: str, region: str = '', **kwargs) -> dict[str, Any]:
+async def list_servers(
+    workspace: str, region: str = '', **kwargs: Unpack[ToolKwargs]
+) -> ToolResponse:
     """Get list of servers.
 
     Args:
@@ -46,8 +55,8 @@ async def list_servers(workspace: str, region: str = '', **kwargs) -> dict[str, 
     )
 
     # Check if result is an error response from http_client
-    if isinstance(result, dict) and 'error' in result:
-        error_kwargs: dict[str, Any] = {'region': region, 'workspace': workspace}
+    if is_api_error(result):
+        error_kwargs: ResponseContext = {'region': region, 'workspace': workspace}
         status_code = result.get('status_code')
         if status_code is not None:
             error_kwargs['status_code'] = status_code
@@ -72,8 +81,8 @@ async def list_servers(workspace: str, region: str = '', **kwargs) -> dict[str, 
     },
 )
 async def get_server(
-    server_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+    server_id: str, workspace: str, region: str = '', **kwargs: Unpack[ToolKwargs]
+) -> ToolResponse:
     """Get detailed information about a specific server.
 
     Args:
@@ -98,8 +107,8 @@ async def get_server(
     )
 
     # Check if result is an error response from http_client
-    if isinstance(result, dict) and 'error' in result:
-        error_kwargs: dict[str, Any] = {
+    if is_api_error(result):
+        error_kwargs: ResponseContext = {
             'server_id': server_id,
             'region': region,
             'workspace': workspace,
@@ -113,8 +122,9 @@ async def get_server(
         )
 
     # Extract the first result from the list if results exist
-    if isinstance(result, dict) and 'results' in result and len(result['results']) > 0:
-        server_data = result['results'][0]
+    payload = cast(ApiPayload, result)
+    if isinstance(payload, dict) and 'results' in payload and len(payload['results']) > 0:
+        server_data = payload['results'][0]
     else:
         return error_response(
             'Server not found', server_id=server_id, region=region, workspace=workspace
@@ -135,8 +145,8 @@ async def get_server(
     meta={'anthropic/searchHint': 'server notes documentation'},
 )
 async def list_server_notes(
-    server_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+    server_id: str, workspace: str, region: str = '', **kwargs: Unpack[ToolKwargs]
+) -> ToolResponse:
     """Get list of notes for a specific server.
 
     Args:
@@ -178,8 +188,8 @@ async def create_server_note(
     content: str,
     workspace: str,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Create a new note for a specific server.
 
     Args:
@@ -196,7 +206,11 @@ async def create_server_note(
     token = kwargs.get('token')
 
     # Prepare note data with server field
-    note_data = {'server': server_id, 'title': title, 'content': content}
+    note_data: dict[str, object] = {
+        'server': server_id,
+        'title': title,
+        'content': content,
+    }
 
     # Make async call to create note
     result = await http_client.post(
@@ -227,8 +241,8 @@ async def create_server_note(
     meta={'anthropic/searchHint': 'server note detail describe single get'},
 )
 async def get_server_note(
-    note_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+    note_id: str, workspace: str, region: str = '', **kwargs: Unpack[ToolKwargs]
+) -> ToolResponse:
     """Get a single server note by ID.
 
     Args:
@@ -278,8 +292,8 @@ async def update_server_note(
     title: str | None = None,
     content: str | None = None,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Update an existing server note.
 
     Args:
@@ -294,17 +308,20 @@ async def update_server_note(
     """
     token = kwargs.get('token')
 
-    update_data: dict[str, Any] = {}
+    update_data: dict[str, object] = {}
     if title is not None:
         update_data['title'] = title
     if content is not None:
         update_data['content'] = content
 
     if not update_data:
-        return format_validation_error(
-            'title or content',
-            None,
-            'At least one of title or content must be provided.',
+        return cast(
+            ToolResponse,
+            format_validation_error(
+                'title or content',
+                None,
+                'At least one of title or content must be provided.',
+            ),
         )
 
     result = await http_client.patch(
@@ -339,8 +356,8 @@ async def update_server_note(
     meta={'anthropic/searchHint': 'server note delete remove'},
 )
 async def delete_server_note(
-    note_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+    note_id: str, workspace: str, region: str = '', **kwargs: Unpack[ToolKwargs]
+) -> ToolResponse:
     """Delete a server note.
 
     Args:
@@ -385,8 +402,8 @@ async def delete_server_note(
     meta={'anthropic/searchHint': 'agent restart alpacon process'},
 )
 async def restart_agent(
-    server_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+    server_id: str, workspace: str, region: str = '', **kwargs: Unpack[ToolKwargs]
+) -> ToolResponse:
     """Restart the Alpacon agent on a server.
 
     Args:
@@ -422,8 +439,8 @@ async def restart_agent(
     meta={'anthropic/searchHint': 'agent shutdown stop process'},
 )
 async def shutdown_agent(
-    server_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+    server_id: str, workspace: str, region: str = '', **kwargs: Unpack[ToolKwargs]
+) -> ToolResponse:
     """Shut down the Alpacon agent on a server.
 
     Args:
@@ -459,8 +476,8 @@ async def shutdown_agent(
     meta={'anthropic/searchHint': 'agent upgrade update version'},
 )
 async def upgrade_agent(
-    server_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+    server_id: str, workspace: str, region: str = '', **kwargs: Unpack[ToolKwargs]
+) -> ToolResponse:
     """Upgrade the Alpacon agent on a server to the latest version.
 
     Args:
@@ -496,8 +513,8 @@ async def upgrade_agent(
     meta={'anthropic/searchHint': 'refresh system info hardware OS rescan'},
 )
 async def update_information(
-    server_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+    server_id: str, workspace: str, region: str = '', **kwargs: Unpack[ToolKwargs]
+) -> ToolResponse:
     """Trigger system information update on a server.
 
     Args:
@@ -534,8 +551,8 @@ async def update_information(
     meta={'anthropic/searchHint': 'system packages upgrade apt yum update all'},
 )
 async def upgrade_system(
-    server_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+    server_id: str, workspace: str, region: str = '', **kwargs: Unpack[ToolKwargs]
+) -> ToolResponse:
     """Upgrade all system packages on a server.
 
     Args:
@@ -571,8 +588,8 @@ async def upgrade_system(
     meta={'anthropic/searchHint': 'server reboot restart machine'},
 )
 async def reboot_system(
-    server_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+    server_id: str, workspace: str, region: str = '', **kwargs: Unpack[ToolKwargs]
+) -> ToolResponse:
     """Reboot a server.
 
     Args:
@@ -609,8 +626,8 @@ async def reboot_system(
     meta={'anthropic/searchHint': 'server shutdown power off halt'},
 )
 async def shutdown_system(
-    server_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+    server_id: str, workspace: str, region: str = '', **kwargs: Unpack[ToolKwargs]
+) -> ToolResponse:
     """Shut down a server.
 
     Args:
@@ -652,8 +669,8 @@ async def update_server(
     name: str | None = None,
     description: str | None = None,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Update an existing server record.
 
     Args:
@@ -668,17 +685,20 @@ async def update_server(
     """
     token = kwargs.get('token')
 
-    update_data: dict[str, Any] = {}
+    update_data: dict[str, object] = {}
     if name is not None:
         update_data['name'] = name
     if description is not None:
         update_data['description'] = description
 
     if not update_data:
-        return format_validation_error(
-            'name or description',
-            None,
-            'At least one of name or description must be provided.',
+        return cast(
+            ToolResponse,
+            format_validation_error(
+                'name or description',
+                None,
+                'At least one of name or description must be provided.',
+            ),
         )
 
     result = await http_client.patch(
@@ -717,8 +737,8 @@ async def update_server(
     meta={'anthropic/searchHint': 'server unregister deregister delete remove'},
 )
 async def unregister_server(
-    server_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+    server_id: str, workspace: str, region: str = '', **kwargs: Unpack[ToolKwargs]
+) -> ToolResponse:
     """Unregister a server from the workspace.
 
     Args:
@@ -764,8 +784,8 @@ async def unregister_server(
     meta={'anthropic/searchHint': 'server star pin favorite bookmark personalization'},
 )
 async def star_server(
-    server_id: str, status: bool, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+    server_id: str, status: bool, workspace: str, region: str = '', **kwargs: Unpack[ToolKwargs]
+) -> ToolResponse:
     """Set star status on a server.
 
     Args:
@@ -818,8 +838,8 @@ async def list_registration_tokens(
     region: str = '',
     page: int | None = None,
     page_size: int | None = None,
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """List server registration tokens.
 
     Args:
@@ -833,7 +853,7 @@ async def list_registration_tokens(
     """
     token = kwargs.get('token')
 
-    params: dict[str, Any] = {}
+    params: dict[str, object] = {}
     if page is not None:
         params['page'] = page
     if page_size is not None:
@@ -877,8 +897,8 @@ async def create_registration_token(
     name: str,
     description: str | None = None,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Create a server registration token.
 
     Args:
@@ -892,7 +912,7 @@ async def create_registration_token(
     """
     token = kwargs.get('token')
 
-    data: dict[str, Any] = {'name': name}
+    data: dict[str, object] = {'name': name}
     if description is not None:
         data['description'] = description
 
@@ -927,8 +947,8 @@ async def create_registration_token(
     meta={'anthropic/searchHint': 'registration token delete revoke rotate invalidate'},
 )
 async def delete_registration_token(
-    token_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+    token_id: str, workspace: str, region: str = '', **kwargs: Unpack[ToolKwargs]
+) -> ToolResponse:
     """Delete a server registration token.
 
     Args:
@@ -987,8 +1007,8 @@ async def get_registration_guide(
     platform: str,
     server_name: str | None = None,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Get agent installation guide for a platform and registration token.
 
     Args:
@@ -1010,7 +1030,7 @@ async def get_registration_guide(
     if err:
         return err
 
-    data: dict[str, Any] = {'platform': platform, 'token': token_id}
+    data: dict[str, object] = {'platform': platform, 'token': token_id}
     if server_name is not None:
         data['server_name'] = server_name
 
@@ -1035,21 +1055,27 @@ async def get_registration_guide(
     return success_response(data=result, region=region, workspace=workspace)
 
 
-def _validate_platform(platform: str) -> dict[str, Any] | None:
+def _validate_platform(platform: str) -> ToolResponse | None:
     if platform not in VALID_PLATFORMS:
-        return format_validation_error(
-            'platform',
-            platform,
-            f'Must be one of: {", ".join(sorted(VALID_PLATFORMS))}',
+        return cast(
+            ToolResponse,
+            format_validation_error(
+                'platform',
+                platform,
+                f'Must be one of: {", ".join(sorted(VALID_PLATFORMS))}',
+            ),
         )
     return None
 
 
-def _validate_token_id(token_id: str) -> dict[str, Any] | None:
+def _validate_token_id(token_id: str) -> ToolResponse | None:
     if not validate_server_id_format(token_id):
-        return format_validation_error(
-            'token_id',
-            token_id,
-            'Must be a valid UUID. Example: 550e8400-e29b-41d4-a716-446655440000',
+        return cast(
+            ToolResponse,
+            format_validation_error(
+                'token_id',
+                token_id,
+                'Must be a valid UUID. Example: 550e8400-e29b-41d4-a716-446655440000',
+            ),
         )
     return None

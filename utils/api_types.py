@@ -119,6 +119,8 @@ class ResponseContext(TypedDict, total=False):
     status_code: int
     subscription_id: str
     successful_count: int
+    sudo_denial: object
+    sudo_hint: str
     tip: str
     token_id: str
     total_files: int

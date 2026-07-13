@@ -5,12 +5,14 @@ import base64
 import binascii
 import os
 import shlex
+from collections.abc import AsyncIterator
 from http import HTTPStatus
 from pathlib import Path
-from typing import Any, cast
+from typing import Unpack, cast
 
 import httpx
 
+from utils.api_types import ApiPayload, ToolKwargs, ToolResponse
 from utils.common import (
     error_response,
     resolve_work_session_id,
@@ -59,6 +61,11 @@ class _S3DownloadError(Exception):
 
 class _LocalSaveError(Exception):
     pass
+
+
+def _validation_error(field: str, value: object) -> ToolResponse:
+    """Thin typed wrapper over format_validation_error (declared dict[str, Any])."""
+    return cast(ToolResponse, format_validation_error(field, value))
 
 
 async def _stream_s3_to_file(
@@ -125,7 +132,9 @@ async def _save_stream(response: httpx.Response, local_path: str) -> int:
     return file_size
 
 
-async def _aiter_file(path: str, chunk_size: int = _CHUNK_SIZE):
+async def _aiter_file(
+    path: str, chunk_size: int = _CHUNK_SIZE
+) -> AsyncIterator[bytes]:
     """Yield file chunks for streaming uploads. Single-shot: not replayable on retry."""
     src_file = await asyncio.to_thread(open, path, 'rb')
     try:
@@ -154,13 +163,13 @@ async def _download_remote_mode(
     username: str | None,
     work_session_id: str | None,
     token: str,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Handle webftp_download_file in remote mode: poll until ready, return presigned URL."""
     file_name = os.path.basename(remote_file_path)
     if resource_type == 'folder':
         file_name += '.zip'
 
-    download_data: dict[str, Any] = {
+    download_data: dict[str, object] = {
         'server': server_id,
         'path': remote_file_path,
         'name': file_name,
@@ -188,10 +197,11 @@ async def _download_remote_mode(
     ):
         return err
 
-    download_url = result.get('download_url')
+    payload = cast(dict[str, object], result)
+    download_url = payload.get('download_url')
 
     if not download_url:
-        file_id = result.get('id')
+        file_id = cast(str, payload.get('id'))
         for _ in range(_REMOTE_DOWNLOAD_TIMEOUT):
             await asyncio.sleep(1)
             status = await http_client.get(
@@ -206,12 +216,13 @@ async def _download_remote_mode(
                 file_id=file_id,
             ):
                 return err
-            if status.get('success') is True:
-                download_url = status.get('download_url')
+            status_payload = cast(dict[str, object], status)
+            if status_payload.get('success') is True:
+                download_url = status_payload.get('download_url')
                 break
-            elif status.get('success') is False:
+            elif status_payload.get('success') is False:
                 return error_response(
-                    f'Server failed to process download: {status.get("message", "unknown error")}',
+                    f'Server failed to process download: {status_payload.get("message", "unknown error")}',
                     file_id=file_id,
                     code='download_failed',
                 )
@@ -229,7 +240,7 @@ async def _download_remote_mode(
         server_id=server_id,
         remote_file_path=remote_file_path,
         resource_type=resource_type,
-        download_url=download_url,
+        download_url=cast(str, download_url),
         expires_in='24 hours',
         tip=f'curl -o {shlex.quote(file_name)} {shlex.quote(cast(str, download_url))}',
         region=region,
@@ -248,12 +259,12 @@ async def webftp_session_create(
     username: str | None = None,
     work_session_id: str | None = None,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Create a new WebFTP session."""
     token = kwargs.get('token')
 
-    session_data = {'server': server_id}
+    session_data: dict[str, object] = {'server': server_id}
     if username:
         session_data['username'] = username
     if ws_id := resolve_work_session_id(work_session_id):
@@ -291,12 +302,15 @@ async def webftp_session_create(
     meta={'anthropic/searchHint': 'webftp sessions list active file transfer'},
 )
 async def webftp_sessions_list(
-    workspace: str, server_id: str | None = None, region: str = '', **kwargs
-) -> dict[str, Any]:
+    workspace: str,
+    server_id: str | None = None,
+    region: str = '',
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Get list of WebFTP sessions."""
     token = kwargs.get('token')
 
-    params = {}
+    params: dict[str, object] = {}
     if server_id:
         params['server'] = server_id
 
@@ -336,8 +350,8 @@ async def webftp_upload_file(
     work_session_id: str | None = None,
     region: str = '',
     allow_overwrite: bool = True,
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Upload a local file to a server via S3 presigned URL."""
     token = kwargs.get('token')
 
@@ -345,9 +359,9 @@ async def webftp_upload_file(
         return error_response(_REMOTE_MODE_ERROR, code='remote_mode_unsupported')
 
     if not validate_file_path(local_file_path):
-        return format_validation_error('local_file_path', local_file_path)
+        return _validation_error('local_file_path', local_file_path)
     if not validate_file_path(remote_file_path):
-        return format_validation_error('remote_file_path', remote_file_path)
+        return _validation_error('remote_file_path', remote_file_path)
 
     try:
         file_content = await asyncio.to_thread(Path(local_file_path).read_bytes)
@@ -356,7 +370,7 @@ async def webftp_upload_file(
     except Exception as e:
         return error_response(f'Failed to read local file: {str(e)}')
 
-    upload_data = {
+    upload_data: dict[str, object] = {
         'server': server_id,
         'name': os.path.basename(remote_file_path),
         'path': remote_file_path,
@@ -384,15 +398,17 @@ async def webftp_upload_file(
     ):
         return http_err
 
-    if result.get('upload_url'):
-        err = await _upload_bytes_to_s3(result['upload_url'], file_content)
+    payload = cast(dict[str, object], result)
+    if payload.get('upload_url'):
+        upload_url = cast(str, payload['upload_url'])
+        err = await _upload_bytes_to_s3(upload_url, file_content)
         if err:
-            return error_response(err, upload_url=result['upload_url'])
+            return error_response(err, upload_url=upload_url)
 
         upload_trigger = await http_client.get(
             region=region,
             workspace=workspace,
-            endpoint=f'{_API_UPLOADS}{result["id"]}/upload/',
+            endpoint=f'{_API_UPLOADS}{payload["id"]}/upload/',
             token=token,
         )
 
@@ -412,8 +428,8 @@ async def webftp_upload_file(
             local_file_path=local_file_path,
             remote_file_path=remote_file_path,
             file_size=len(file_content),
-            upload_url=result['upload_url'],
-            download_url=result.get('download_url'),
+            upload_url=upload_url,
+            download_url=cast(str | None, payload.get('download_url')),
             region=region,
             workspace=workspace,
         )
@@ -451,8 +467,8 @@ async def webftp_upload_content(
     work_session_id: str | None = None,
     region: str = '',
     allow_overwrite: bool = True,
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Upload base64-encoded file content to a server via WebFTP."""
     token = kwargs.get('token')
 
@@ -462,11 +478,11 @@ async def webftp_upload_content(
         return error_response(f'Invalid base64 content: {exc}', code='invalid_content')
 
     if not validate_file_path(remote_file_path):
-        return format_validation_error('remote_file_path', remote_file_path)
+        return _validation_error('remote_file_path', remote_file_path)
 
     name = file_name or os.path.basename(remote_file_path)
 
-    upload_data: dict[str, Any] = {
+    upload_data: dict[str, object] = {
         'server': server_id,
         'name': name,
         'path': remote_file_path,
@@ -494,15 +510,17 @@ async def webftp_upload_content(
     ):
         return http_err
 
-    if result.get('upload_url'):
-        err = await _upload_bytes_to_s3(result['upload_url'], raw_bytes)
+    payload = cast(dict[str, object], result)
+    if payload.get('upload_url'):
+        upload_url = cast(str, payload['upload_url'])
+        err = await _upload_bytes_to_s3(upload_url, raw_bytes)
         if err:
-            return error_response(err, upload_url=result['upload_url'])
+            return error_response(err, upload_url=upload_url)
 
         upload_trigger = await http_client.get(
             region=region,
             workspace=workspace,
-            endpoint=f'{_API_UPLOADS}{result["id"]}/upload/',
+            endpoint=f'{_API_UPLOADS}{payload["id"]}/upload/',
             token=token,
         )
 
@@ -521,7 +539,7 @@ async def webftp_upload_content(
             server_id=server_id,
             remote_file_path=remote_file_path,
             file_size=len(raw_bytes),
-            upload_url=result['upload_url'],
+            upload_url=upload_url,
             region=region,
             workspace=workspace,
         )
@@ -565,15 +583,15 @@ async def webftp_download_file(
     username: str | None = None,
     work_session_id: str | None = None,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Download a file or folder from a server via S3 presigned URL."""
     token = kwargs.get('token')
     if not isinstance(token, str) or not token:
         raise RuntimeError('token must be injected by mcp_tool_handler')
 
     if not validate_file_path(remote_file_path):
-        return format_validation_error('remote_file_path', remote_file_path)
+        return _validation_error('remote_file_path', remote_file_path)
 
     if _is_auth_enabled():
         return await _download_remote_mode(
@@ -590,13 +608,13 @@ async def webftp_download_file(
     if local_file_path is None:
         return error_response('local_file_path is required in local mode')
     if not validate_file_path(local_file_path):
-        return format_validation_error('local_file_path', local_file_path)
+        return _validation_error('local_file_path', local_file_path)
 
     file_name = os.path.basename(remote_file_path)
     if resource_type == 'folder':
         file_name += '.zip'
 
-    download_data = {
+    download_data: dict[str, object] = {
         'server': server_id,
         'path': remote_file_path,
         'name': file_name,
@@ -625,15 +643,15 @@ async def webftp_download_file(
     ):
         return err
 
-    if result.get('download_url'):
+    payload = cast(dict[str, object], result)
+    if payload.get('download_url'):
+        download_url = cast(str, payload['download_url'])
         try:
-            file_size = await _stream_s3_to_file(
-                result['download_url'], cast(str, local_file_path)
-            )
+            file_size = await _stream_s3_to_file(download_url, local_file_path)
         except _S3DownloadError as e:
             return error_response(
                 f'Failed to download from S3: {e}',
-                download_url=result['download_url'],
+                download_url=download_url,
             )
         except _LocalSaveError as e:
             return error_response(f'Failed to save file locally: {e}')
@@ -646,7 +664,7 @@ async def webftp_download_file(
             local_file_path=local_file_path,
             resource_type=resource_type,
             file_size=file_size,
-            download_url=result.get('download_url'),
+            download_url=download_url,
             region=region,
             workspace=workspace,
         )
@@ -668,12 +686,15 @@ async def webftp_download_file(
     meta={'anthropic/searchHint': 'webftp uploads history list files'},
 )
 async def webftp_uploads_list(
-    workspace: str, server_id: str | None = None, region: str = '', **kwargs
-) -> dict[str, Any]:
+    workspace: str,
+    server_id: str | None = None,
+    region: str = '',
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """List uploaded files (upload history)."""
     token = kwargs.get('token')
 
-    params = {}
+    params: dict[str, object] = {}
     if server_id:
         params['server'] = server_id
 
@@ -705,12 +726,15 @@ async def webftp_uploads_list(
     meta={'anthropic/searchHint': 'webftp downloads history list files'},
 )
 async def webftp_downloads_list(
-    workspace: str, server_id: str | None = None, region: str = '', **kwargs
-) -> dict[str, Any]:
+    workspace: str,
+    server_id: str | None = None,
+    region: str = '',
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """List download requests (download history)."""
     token = kwargs.get('token')
 
-    params = {}
+    params: dict[str, object] = {}
     if server_id:
         params['server'] = server_id
 
@@ -750,8 +774,8 @@ async def webftp_bulk_upload(
     work_session_id: str | None = None,
     region: str = '',
     allow_overwrite: bool = True,
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Upload multiple files to a server using bulk WebFTP API."""
     token = kwargs.get('token')
 
@@ -763,16 +787,16 @@ async def webftp_bulk_upload(
 
     for path in local_file_paths:
         if not validate_file_path(path):
-            return format_validation_error('local_file_paths', path)
+            return _validation_error('local_file_paths', path)
         if not await asyncio.to_thread(Path(path).is_file):
             return error_response(f'Local file is not a regular file: {path}')
         if not await asyncio.to_thread(os.access, path, os.R_OK):
             return error_response(f'Local file is not readable: {path}')
     if not validate_file_path(remote_directory):
-        return format_validation_error('remote_directory', remote_directory)
+        return _validation_error('remote_directory', remote_directory)
 
     file_names = [os.path.basename(p) for p in local_file_paths]
-    bulk_data: dict[str, Any] = {
+    bulk_data: dict[str, object] = {
         'server': server_id,
         'path': remote_directory,
         'names': file_names,
@@ -800,10 +824,9 @@ async def webftp_bulk_upload(
     ):
         return err
 
-    file_ids = []
-    upload_items = (
-        result if isinstance(result, list) else result.get('results', [result])
-    )
+    file_ids: list[object] = []
+    payload = cast(ApiPayload, result)
+    upload_items = payload if isinstance(payload, list) else payload.get('results', [payload])
 
     for item in upload_items:
         file_id = item.get('id')
@@ -815,10 +838,10 @@ async def webftp_bulk_upload(
     async def _upload_one(
         client: httpx.AsyncClient,
         idx: int,
-        item: dict,
-    ) -> dict[str, Any]:
+        item: dict[str, object],
+    ) -> _UploadResult:
         upload_url = item.get('upload_url')
-        file_id = item.get('id')
+        file_id = cast(str | int | None, item.get('id'))
         name = file_names[idx] if idx < len(file_names) else _UNKNOWN_FILE
 
         if not upload_url or idx >= len(local_file_paths):
@@ -827,7 +850,7 @@ async def webftp_bulk_upload(
         async with semaphore:
             try:
                 resp = await client.put(
-                    upload_url,
+                    cast(str, upload_url),
                     content=_aiter_file(local_file_paths[idx]),
                 )
                 file_size = (
@@ -911,8 +934,8 @@ async def webftp_bulk_download(
     username: str | None = None,
     work_session_id: str | None = None,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Download multiple files/folders as a ZIP archive."""
     token = kwargs.get('token')
 
@@ -924,9 +947,9 @@ async def webftp_bulk_download(
 
     for path in remote_paths:
         if not validate_file_path(path):
-            return format_validation_error('remote_paths', path)
+            return _validation_error('remote_paths', path)
     if not validate_file_path(local_file_path):
-        return format_validation_error('local_file_path', local_file_path)
+        return _validation_error('local_file_path', local_file_path)
 
     if len(remote_paths) > 1:
         base_dir = os.path.dirname(remote_paths[0])
@@ -937,7 +960,7 @@ async def webftp_bulk_download(
                     remote_paths=remote_paths,
                 )
 
-    download_data: dict[str, Any] = {
+    download_data: dict[str, object] = {
         'server': server_id,
         'path': remote_paths,
     }
@@ -963,7 +986,12 @@ async def webftp_bulk_download(
     ):
         return err
 
-    download_url = result.get('download_url') if isinstance(result, dict) else None
+    payload = cast(dict[str, object], result)
+    download_url = (
+        cast(str | None, payload.get('download_url'))
+        if isinstance(payload, dict)
+        else None
+    )
     if download_url:
         try:
             file_size = await _stream_s3_to_file(
@@ -1009,8 +1037,8 @@ async def webftp_check_status(
     transfer_type: str,
     workspace: str,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Check status of a WebFTP file transfer."""
     token = kwargs.get('token')
 

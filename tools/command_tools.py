@@ -1,8 +1,15 @@
 """Command execution tools for Alpacon MCP server."""
 
 import asyncio
-from typing import Any, cast
+from typing import Unpack, cast
 
+from utils.api_types import (
+    ApiPayload,
+    ApiResult,
+    ToolKwargs,
+    ToolResponse,
+    is_api_error,
+)
 from utils.common import (
     error_response,
     pending_approval_response,
@@ -66,7 +73,7 @@ _SUDO_HUMAN_APPROVAL_CODES = frozenset(
 )
 
 
-def _sudo_denial(result: dict[str, Any]) -> tuple[str, str] | None:
+def _sudo_denial(result: dict[str, object]) -> tuple[str, str] | None:
     """Detect a non-interactive sudo denial in the command output.
 
     Returns ``(code, hint)`` for the matched denial category so the caller can
@@ -87,7 +94,7 @@ def _sudo_denial(result: dict[str, Any]) -> tuple[str, str] | None:
     return None
 
 
-def _sudo_denial_hint(result: dict[str, Any]) -> str | None:
+def _sudo_denial_hint(result: dict[str, object]) -> str | None:
     """Return the free-text denial hint for a sudo denial, or None.
 
     Thin wrapper over :func:`_sudo_denial` kept for callers/tests that only need
@@ -112,8 +119,8 @@ async def _submit_command(
     region: str = '',
     *,
     token: str | None = None,
-) -> dict[str, Any] | list[Any]:
-    command_data: dict[str, Any] = {
+) -> ApiResult:
+    command_data: dict[str, object] = {
         'server': server_id,
         'shell': shell,
         'line': command,
@@ -148,7 +155,7 @@ async def _get_command_result(
     region: str = '',
     *,
     token: str | None = None,
-) -> dict[str, Any]:
+) -> ApiResult:
     return await http_client.get(
         region=region,
         workspace=workspace,
@@ -167,12 +174,12 @@ async def list_commands(
     server_id: str | None = None,
     limit: int = 20,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """List recent commands executed on servers."""
     token = kwargs.get('token')
 
-    params = {'page_size': limit, 'ordering': '-added_at'}
+    params: dict[str, object] = {'page_size': limit, 'ordering': '-added_at'}
 
     if server_id:
         params['server'] = server_id
@@ -224,8 +231,8 @@ async def execute_command(
     timeout: int = 300,
     work_session_id: str | None = None,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Execute a command on a server and wait for the result (requires ACL permission)."""
     token = kwargs.get('token')
 
@@ -245,31 +252,32 @@ async def execute_command(
         token=token,
     )
 
-    if isinstance(exec_data, dict) and 'error' in exec_data:
-        # unwrap_http_result returns non-None whenever 'error' is in the dict
-        return cast(
-            dict[str, Any],
-            unwrap_http_result(
-                exec_data,
-                default_message='Command execution failed',
-                server_id=server_id,
-                region=region,
-                workspace=workspace,
-            ),
+    if is_api_error(exec_data):
+        err = unwrap_http_result(
+            exec_data,
+            default_message='Command execution failed',
+            server_id=server_id,
+            region=region,
+            workspace=workspace,
         )
+        if err is None:
+            # is_api_error(exec_data) guarantees unwrap_http_result returns non-None.
+            raise AssertionError('unwrap_http_result returned None for an API error')
+        return err
 
-    if isinstance(exec_data, list):
-        if exec_data:
-            command_id = exec_data[0].get('id')
+    payload = cast(ApiPayload, exec_data)
+    if isinstance(payload, list):
+        if payload:
+            command_id = payload[0].get('id')
         else:
             return error_response(
                 'No command data returned', workspace=workspace, region=region
             )
-    elif isinstance(exec_data, dict):
-        command_id = exec_data.get('id')
+    elif isinstance(payload, dict):
+        command_id = payload.get('id')
     else:
         return error_response(
-            f'Unexpected response format: {type(exec_data).__name__}',
+            f'Unexpected response format: {type(payload).__name__}',
             workspace=workspace,
             region=region,
         )
@@ -295,7 +303,7 @@ async def execute_command(
             token=token,
         )
 
-        if isinstance(result, dict) and 'error' in result:
+        if is_api_error(result):
             return error_response(
                 f'Failed to poll command result: {result.get("error")}',
                 command_id=command_id,
@@ -306,12 +314,13 @@ async def execute_command(
                 details=result,
             )
 
-        if isinstance(result, dict):
-            status = result.get('status', '')
+        poll_payload = cast(ApiPayload, result)
+        if isinstance(poll_payload, dict):
+            status = poll_payload.get('status', '')
 
-            if result.get('finished_at') is not None:
+            if poll_payload.get('finished_at') is not None:
                 response = success_response(
-                    data=result,
+                    data=poll_payload,
                     command_id=command_id,
                     server_id=server_id,
                     command=command,
@@ -319,7 +328,7 @@ async def execute_command(
                     region=region,
                     workspace=workspace,
                 )
-                denial = _sudo_denial(result)
+                denial = _sudo_denial(poll_payload)
                 if denial:
                     code, hint = denial
                     # Backward-compatible free-text hint.
@@ -343,7 +352,7 @@ async def execute_command(
                     command=command,
                     region=region,
                     workspace=workspace,
-                    details=result,
+                    details=poll_payload,
                 )
 
             # Command still in progress — reset deadline (within hard cap)
@@ -382,15 +391,15 @@ async def execute_command_multi_server(
     region: str = '',
     parallel: bool = True,
     work_session_id: str | None = None,
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Execute a command on multiple servers using Command API (requires ACL permission)."""
     token = kwargs.get('token')
 
     if not server_ids:
         return error_response('server_ids cannot be empty')
 
-    async def _submit_one(sid: str) -> dict[str, Any] | list[Any]:
+    async def _submit_one(sid: str) -> ApiResult:
         return await _submit_command(
             server_id=sid,
             command=command,
@@ -404,7 +413,7 @@ async def execute_command_multi_server(
             token=token,
         )
 
-    deploy_results: dict[str, Any] = {}
+    deploy_results: dict[str, object] = {}
     successful_count = 0
     failed_count = 0
 
@@ -421,7 +430,7 @@ async def execute_command_multi_server(
                     'message': str(result),
                 }
                 failed_count += 1
-            elif isinstance(result, dict) and 'error' in result:
+            elif is_api_error(result):
                 # unwrap_http_result returns non-None whenever 'error' is in the dict
                 deploy_results[sid] = unwrap_http_result(
                     result,
@@ -438,7 +447,7 @@ async def execute_command_multi_server(
         for sid in server_ids:
             try:
                 result = await _submit_one(sid)
-                if isinstance(result, dict) and 'error' in result:
+                if is_api_error(result):
                     # unwrap_http_result returns non-None whenever 'error' is in the dict
                     deploy_results[sid] = unwrap_http_result(
                         result,
