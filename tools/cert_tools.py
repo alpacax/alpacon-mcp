@@ -1,7 +1,8 @@
 """Certificate and PKI management tools for Alpacon MCP server."""
 
-from typing import Any
+from typing import Unpack
 
+from utils.api_types import ToolKwargs, ToolResponse
 from utils.common import error_response, success_response, unwrap_http_result
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
@@ -22,8 +23,8 @@ async def list_certificate_authorities(
     region: str = '',
     page: int | None = None,
     page_size: int | None = None,
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """List certificate authorities.
 
     Args:
@@ -37,7 +38,7 @@ async def list_certificate_authorities(
     """
     token = kwargs.get('token')
 
-    params: dict[str, Any] = {}
+    params: dict[str, object] = {}
     if page is not None:
         params['page'] = page
     if page_size is not None:
@@ -82,8 +83,8 @@ async def create_certificate_authority(
     key_size: int | None = None,
     install: bool | None = None,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Create a certificate authority.
 
     Args:
@@ -106,7 +107,7 @@ async def create_certificate_authority(
     """
     token = kwargs.get('token')
 
-    ca_data: dict[str, Any] = {
+    ca_data: dict[str, object] = {
         'name': name,
         'domain': domain,
         'organization': organization,
@@ -156,8 +157,8 @@ async def get_certificate_authority(
     ca_id: str,
     workspace: str,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Get certificate authority details.
 
     Args:
@@ -204,8 +205,8 @@ async def update_certificate_authority(
     max_valid_days: int | None = None,
     owner: str | None = None,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Update a certificate authority (partial update).
 
     Args:
@@ -221,7 +222,7 @@ async def update_certificate_authority(
     """
     token = kwargs.get('token')
 
-    patch_data: dict[str, Any] = {}
+    patch_data: dict[str, object] = {}
     if default_valid_days is not None:
         patch_data['default_valid_days'] = default_valid_days
     if max_valid_days is not None:
@@ -264,8 +265,8 @@ async def delete_certificate_authority(
     ca_id: str,
     workspace: str,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Delete a certificate authority.
 
     Args:
@@ -315,8 +316,8 @@ async def list_sign_requests(
     region: str = '',
     page: int | None = None,
     page_size: int | None = None,
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """List certificate signing requests.
 
     Args:
@@ -330,7 +331,7 @@ async def list_sign_requests(
     """
     token = kwargs.get('token')
 
-    params: dict[str, Any] = {}
+    params: dict[str, object] = {}
     if page is not None:
         params['page'] = page
     if page_size is not None:
@@ -367,8 +368,8 @@ async def create_sign_request(
     ip_list: list[str] | None = None,
     valid_days: int | None = None,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Create a certificate signing request.
 
     Args:
@@ -390,7 +391,7 @@ async def create_sign_request(
             'At least one entry in domain_list or ip_list is required'
         )
 
-    csr_data: dict[str, Any] = {
+    csr_data: dict[str, object] = {
         'domain_list': domains,
         'ip_list': ips,
     }
@@ -427,8 +428,8 @@ async def get_sign_request(
     csr_id: str,
     workspace: str,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Get certificate signing request details.
 
     Args:
@@ -472,8 +473,8 @@ async def delete_sign_request(
     csr_id: str,
     workspace: str,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Cancel a certificate signing request.
 
     Args:
@@ -517,8 +518,8 @@ async def approve_sign_request(
     csr_id: str,
     workspace: str,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Approve a certificate signing request.
 
     Args:
@@ -563,8 +564,8 @@ async def deny_sign_request(
     csr_id: str,
     workspace: str,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Deny a certificate signing request.
 
     Args:
@@ -611,8 +612,8 @@ async def retry_sign_request(
     csr_id: str,
     workspace: str,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Retry a certificate signing request stuck in the signing state.
 
     Args:
@@ -664,8 +665,8 @@ async def list_certificates(
     region: str = '',
     page: int | None = None,
     page_size: int | None = None,
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """List issued certificates.
 
     Args:
@@ -680,7 +681,7 @@ async def list_certificates(
     """
     token = kwargs.get('token')
 
-    params: dict[str, Any] = {}
+    params: dict[str, object] = {}
     if authority_id is not None:
         params['csr__authority__id'] = authority_id
     if page is not None:
@@ -717,8 +718,8 @@ async def get_certificate(
     certificate_id: str,
     workspace: str,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Get certificate details.
 
     Args:
@@ -767,8 +768,8 @@ async def revoke_certificate(
     reason: int | None = None,
     requested_reason: str | None = None,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Create a certificate revocation request.
 
     If the caller is the CA owner or an admin the request is auto-approved and
@@ -787,7 +788,7 @@ async def revoke_certificate(
     """
     token = kwargs.get('token')
 
-    data: dict[str, Any] = {
+    data: dict[str, object] = {
         'certificate': certificate_id,
     }
     if reason is not None:
@@ -836,8 +837,8 @@ async def list_revoke_requests(
     region: str = '',
     page: int | None = None,
     page_size: int | None = None,
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """List certificate revocation requests.
 
     Args:
@@ -851,7 +852,7 @@ async def list_revoke_requests(
     """
     token = kwargs.get('token')
 
-    params: dict[str, Any] = {}
+    params: dict[str, object] = {}
     if page is not None:
         params['page'] = page
     if page_size is not None:
@@ -886,8 +887,8 @@ async def get_revoke_request(
     revoke_id: str,
     workspace: str,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Get certificate revocation request details.
 
     Args:
@@ -931,8 +932,8 @@ async def approve_revoke_request(
     revoke_id: str,
     workspace: str,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Approve a certificate revocation request.
 
     Args:
@@ -977,8 +978,8 @@ async def deny_revoke_request(
     revoke_id: str,
     workspace: str,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Deny a certificate revocation request.
 
     Args:
@@ -1025,8 +1026,8 @@ async def retry_revoke_request(
     revoke_id: str,
     workspace: str,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Retry a certificate revocation request stuck in the revoking state.
 
     Args:
@@ -1071,8 +1072,8 @@ async def cancel_revoke_request(
     revoke_id: str,
     workspace: str,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Cancel a pending certificate revocation request.
 
     Args:

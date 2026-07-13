@@ -1,7 +1,8 @@
 """Security ACL tools for Alpacon MCP server."""
 
-from typing import Any
+from typing import Unpack
 
+from utils.api_types import ToolKwargs, ToolResponse
 from utils.common import error_response, success_response, unwrap_http_result
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
@@ -37,8 +38,8 @@ async def list_command_acls(
     service_token_id: str | None = None,
     page: int | None = None,
     page_size: int | None = None,
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """List command ACL rules.
 
     Args:
@@ -57,7 +58,7 @@ async def list_command_acls(
 
     token = kwargs.get('token')
 
-    params: dict[str, Any] = {}
+    params: dict[str, object] = {}
     if api_token_id is not None:
         params['api_token'] = api_token_id
     if service_token_id is not None:
@@ -100,8 +101,8 @@ async def create_command_acl(
     username: str = '',
     groupname: str = '',
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Create a command ACL rule.
 
     Exactly one of api_token_id or service_token_id must be provided.
@@ -125,7 +126,7 @@ async def create_command_acl(
 
     token = kwargs.get('token')
 
-    acl_data: dict[str, Any] = {
+    acl_data: dict[str, object] = {
         'command': command,
         'username': username,
         'groupname': groupname,
@@ -167,8 +168,8 @@ async def update_command_acl(
     username: str | None = None,
     groupname: str | None = None,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Update an existing command ACL rule.
 
     Note: This tool does not support changing the token binding. Delete and recreate to rebind to a different token.
@@ -186,7 +187,7 @@ async def update_command_acl(
     """
     token = kwargs.get('token')
 
-    update_data: dict[str, Any] = {}
+    update_data: dict[str, object] = {}
     if command is not None:
         update_data['command'] = command
     if username is not None:
@@ -226,8 +227,8 @@ async def update_command_acl(
     meta={'anthropic/searchHint': 'command acl delete remove'},
 )
 async def delete_command_acl(
-    acl_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+    acl_id: str, workspace: str, region: str = '', **kwargs: Unpack[ToolKwargs]
+) -> ToolResponse:
     """Delete a command ACL rule.
 
     Args:
@@ -274,8 +275,8 @@ async def list_server_acls(
     service_token_id: str | None = None,
     page: int | None = None,
     page_size: int | None = None,
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """List server ACL rules.
 
     Args:
@@ -294,7 +295,7 @@ async def list_server_acls(
 
     token = kwargs.get('token')
 
-    params: dict[str, Any] = {}
+    params: dict[str, object] = {}
     if api_token_id is not None:
         params['api_token'] = api_token_id
     if service_token_id is not None:
@@ -335,8 +336,8 @@ async def create_server_acl(
     api_token_id: str | None = None,
     service_token_id: str | None = None,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Create a server ACL rule.
 
     Exactly one of api_token_id or service_token_id must be provided.
@@ -359,7 +360,7 @@ async def create_server_acl(
 
     token = kwargs.get('token')
 
-    acl_data: dict[str, Any] = {'server': server_id}
+    acl_data: dict[str, object] = {'server': server_id}
     if api_token_id is not None:
         acl_data['token'] = api_token_id
     else:
@@ -397,8 +398,8 @@ async def update_server_acl(
     api_token_id: str | None = None,
     service_token_id: str | None = None,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Update an existing server ACL rule.
 
     Note: Token binding can be updated by providing api_token_id or service_token_id.
@@ -419,7 +420,7 @@ async def update_server_acl(
 
     token = kwargs.get('token')
 
-    update_data: dict[str, Any] = {}
+    update_data: dict[str, object] = {}
     if server_id is not None:
         update_data['server'] = server_id
     # When rebinding, null the opposing field explicitly: the server enforces
@@ -463,8 +464,8 @@ async def update_server_acl(
     meta={'anthropic/searchHint': 'server acl delete remove'},
 )
 async def delete_server_acl(
-    acl_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+    acl_id: str, workspace: str, region: str = '', **kwargs: Unpack[ToolKwargs]
+) -> ToolResponse:
     """Delete a server ACL rule.
 
     Args:
@@ -512,8 +513,8 @@ async def bulk_server_acl(
     api_token_id: str | None = None,
     service_token_id: str | None = None,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Bulk add or remove server ACL entries.
 
     Exactly one of api_token_id or service_token_id must be provided.
@@ -546,7 +547,7 @@ async def bulk_server_acl(
 
     token = kwargs.get('token')
 
-    body: dict[str, Any] = {'servers': server_ids}
+    body: dict[str, object] = {'servers': server_ids}
     if api_token_id is not None:
         body['token'] = api_token_id
     else:
@@ -589,8 +590,8 @@ async def list_file_acls(
     service_token_id: str | None = None,
     page: int | None = None,
     page_size: int | None = None,
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """List file ACL rules.
 
     Args:
@@ -609,7 +610,7 @@ async def list_file_acls(
 
     token = kwargs.get('token')
 
-    params: dict[str, Any] = {}
+    params: dict[str, object] = {}
     if api_token_id is not None:
         params['api_token'] = api_token_id
     if service_token_id is not None:
@@ -655,8 +656,8 @@ async def create_file_acl(
     username: str = '',
     groupname: str = '',
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Create a file ACL rule.
 
     Exactly one of api_token_id or service_token_id must be provided.
@@ -685,7 +686,7 @@ async def create_file_acl(
 
     token = kwargs.get('token')
 
-    acl_data: dict[str, Any] = {
+    acl_data: dict[str, object] = {
         'path': path,
         'action': action,
         'username': username,
@@ -729,8 +730,8 @@ async def update_file_acl(
     username: str | None = None,
     groupname: str | None = None,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Update an existing file ACL rule.
 
     Note: This tool does not support changing the token binding. Delete and recreate to rebind to a different token.
@@ -754,7 +755,7 @@ async def update_file_acl(
 
     token = kwargs.get('token')
 
-    update_data: dict[str, Any] = {}
+    update_data: dict[str, object] = {}
     if path is not None:
         update_data['path'] = path
     if action is not None:
@@ -796,8 +797,8 @@ async def update_file_acl(
     meta={'anthropic/searchHint': 'file acl delete remove'},
 )
 async def delete_file_acl(
-    acl_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+    acl_id: str, workspace: str, region: str = '', **kwargs: Unpack[ToolKwargs]
+) -> ToolResponse:
     """Delete a file ACL rule.
 
     Args:

@@ -1,8 +1,9 @@
 """IAM (Identity and Access Management) tools for Alpacon MCP server."""
 
 import re
-from typing import Any
+from typing import Unpack, cast
 
+from utils.api_types import ToolKwargs, ToolResponse
 from utils.common import error_response, success_response, unwrap_http_result
 from utils.decorators import mcp_tool_handler
 from utils.error_handler import format_validation_error, validate_server_id_format
@@ -14,12 +15,15 @@ VALID_SERVICE_TYPES = frozenset({'ci_cd', 'monitoring', 'automation', 'integrati
 GROUP_NAME_PATTERN = re.compile(r'^[a-z0-9_-]+$')
 
 
-def _validate_uuid(field: str, value: str) -> dict[str, Any] | None:
+def _validate_uuid(field: str, value: str) -> ToolResponse | None:
     if not validate_server_id_format(value):
-        return format_validation_error(
-            field,
-            value,
-            'Must be a valid UUID. Example: 550e8400-e29b-41d4-a716-446655440000',
+        return cast(
+            ToolResponse,
+            format_validation_error(
+                field,
+                value,
+                'Must be a valid UUID. Example: 550e8400-e29b-41d4-a716-446655440000',
+            ),
         )
     return None
 
@@ -39,8 +43,8 @@ async def list_iam_users(
     region: str = '',
     page: int | None = None,
     page_size: int | None = None,
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """List all IAM users in workspace.
 
     Args:
@@ -54,7 +58,7 @@ async def list_iam_users(
     """
     token = kwargs.get('token')
 
-    params = {}
+    params: dict[str, object] = {}
     if page is not None:
         params['page'] = page
     if page_size is not None:
@@ -86,8 +90,8 @@ async def list_iam_users(
     meta={'anthropic/searchHint': 'iam user detail profile'},
 )
 async def get_iam_user(
-    user_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+    user_id: str, workspace: str, region: str = '', **kwargs: Unpack[ToolKwargs]
+) -> ToolResponse:
     """Get detailed information about a specific IAM user.
 
     Group memberships are not included in the user payload (the user
@@ -143,8 +147,8 @@ async def create_iam_user(
     last_name: str | None = None,
     is_active: bool = True,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Create a new IAM user.
 
     Group assignment is handled separately via add_iam_member
@@ -164,7 +168,11 @@ async def create_iam_user(
     """
     token = kwargs.get('token')
 
-    user_data = {'username': username, 'email': email, 'is_active': is_active}
+    user_data: dict[str, object] = {
+        'username': username,
+        'email': email,
+        'is_active': is_active,
+    }
 
     if first_name is not None:
         user_data['first_name'] = first_name
@@ -207,8 +215,8 @@ async def update_iam_user(
     last_name: str | None = None,
     is_active: bool | None = None,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Update an existing IAM user.
 
     Group membership changes are handled separately via
@@ -232,7 +240,7 @@ async def update_iam_user(
 
     token = kwargs.get('token')
 
-    update_data: dict[str, Any] = {}
+    update_data: dict[str, object] = {}
     if email is not None:
         update_data['email'] = email
     if first_name is not None:
@@ -274,8 +282,8 @@ async def update_iam_user(
     meta={'anthropic/searchHint': 'iam user delete remove'},
 )
 async def delete_iam_user(
-    user_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+    user_id: str, workspace: str, region: str = '', **kwargs: Unpack[ToolKwargs]
+) -> ToolResponse:
     """Delete an IAM user.
 
     Args:
@@ -329,8 +337,8 @@ async def list_iam_groups(
     region: str = '',
     page: int | None = None,
     page_size: int | None = None,
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """List all IAM groups in workspace.
 
     Args:
@@ -344,7 +352,7 @@ async def list_iam_groups(
     """
     token = kwargs.get('token')
 
-    params = {}
+    params: dict[str, object] = {}
     if page is not None:
         params['page'] = page
     if page_size is not None:
@@ -381,8 +389,8 @@ async def create_iam_group(
     display_name: str | None = None,
     description: str | None = None,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Create a new IAM group.
 
     Args:
@@ -396,15 +404,18 @@ async def create_iam_group(
         Group creation response
     """
     if not GROUP_NAME_PATTERN.match(name):
-        return format_validation_error(
-            'name',
-            name,
-            'Must contain only lowercase letters, digits, hyphens, and underscores',
+        return cast(
+            ToolResponse,
+            format_validation_error(
+                'name',
+                name,
+                'Must contain only lowercase letters, digits, hyphens, and underscores',
+            ),
         )
 
     token = kwargs.get('token')
 
-    group_data: dict[str, Any] = {'name': name}
+    group_data: dict[str, object] = {'name': name}
 
     if display_name is not None:
         group_data['display_name'] = display_name
@@ -456,8 +467,8 @@ async def get_iam_group(
     group_id: str,
     workspace: str,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Get IAM group details.
 
     Args:
@@ -504,8 +515,8 @@ async def update_iam_group(
     display_name: str | None = None,
     description: str | None = None,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Update an existing IAM group.
 
     The group name is read-only on the server (GroupUpdateSerializer);
@@ -527,7 +538,7 @@ async def update_iam_group(
 
     token = kwargs.get('token')
 
-    update_data: dict[str, Any] = {}
+    update_data: dict[str, object] = {}
     if display_name is not None:
         update_data['display_name'] = display_name
     if description is not None:
@@ -566,8 +577,8 @@ async def delete_iam_group(
     group_id: str,
     workspace: str,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Delete an IAM group.
 
     Args:
@@ -619,8 +630,8 @@ async def list_iam_memberships(
     region: str = '',
     page: int | None = None,
     page_size: int | None = None,
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """List IAM group memberships.
 
     Args:
@@ -640,7 +651,7 @@ async def list_iam_memberships(
 
     token = kwargs.get('token')
 
-    params: dict[str, Any] = {}
+    params: dict[str, object] = {}
     if group_id is not None:
         params['group'] = group_id
     if page is not None:
@@ -677,8 +688,8 @@ async def add_iam_member(
     workspace: str,
     role: str = 'member',
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Add a user to an IAM group.
 
     Args:
@@ -695,8 +706,13 @@ async def add_iam_member(
     if err:
         return err
     if role not in VALID_MEMBERSHIP_ROLES:
-        return format_validation_error(
-            'role', role, f'Must be one of: {", ".join(sorted(VALID_MEMBERSHIP_ROLES))}'
+        return cast(
+            ToolResponse,
+            format_validation_error(
+                'role',
+                role,
+                f'Must be one of: {", ".join(sorted(VALID_MEMBERSHIP_ROLES))}',
+            ),
         )
 
     token = kwargs.get('token')
@@ -735,8 +751,8 @@ async def remove_iam_member(
     membership_id: str,
     workspace: str,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Remove a user from an IAM group.
 
     Args:
@@ -789,8 +805,8 @@ async def invite_workspace_user(
     email: str,
     workspace: str,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Invite a user to the workspace by email.
 
     Sends an Auth0 organization invitation and records a pending
@@ -841,8 +857,8 @@ async def list_iam_applications(
     region: str = '',
     page: int | None = None,
     page_size: int | None = None,
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """List all IAM applications in the workspace.
 
     Args:
@@ -856,7 +872,7 @@ async def list_iam_applications(
     """
     token = kwargs.get('token')
 
-    params: dict[str, Any] = {}
+    params: dict[str, object] = {}
     if page is not None:
         params['page'] = page
     if page_size is not None:
@@ -891,8 +907,8 @@ async def create_iam_application(
     description: str | None = None,
     service_type: str | None = None,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Create a new IAM application.
 
     Args:
@@ -907,15 +923,18 @@ async def create_iam_application(
         IAM application creation response
     """
     if service_type is not None and service_type not in VALID_SERVICE_TYPES:
-        return format_validation_error(
-            'service_type',
-            service_type,
-            f'Must be one of: {", ".join(sorted(VALID_SERVICE_TYPES))}',
+        return cast(
+            ToolResponse,
+            format_validation_error(
+                'service_type',
+                service_type,
+                f'Must be one of: {", ".join(sorted(VALID_SERVICE_TYPES))}',
+            ),
         )
 
     token = kwargs.get('token')
 
-    app_data: dict[str, Any] = {'name': name}
+    app_data: dict[str, object] = {'name': name}
     if description is not None:
         app_data['description'] = description
     if service_type is not None:
@@ -951,8 +970,8 @@ async def get_iam_application(
     app_id: str,
     workspace: str,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Get IAM application details.
 
     Args:
@@ -999,8 +1018,8 @@ async def update_iam_application(
     name: str | None = None,
     description: str | None = None,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Update an existing IAM application.
 
     Args:
@@ -1019,7 +1038,7 @@ async def update_iam_application(
 
     token = kwargs.get('token')
 
-    update_data: dict[str, Any] = {}
+    update_data: dict[str, object] = {}
     if name is not None:
         update_data['name'] = name
     if description is not None:
@@ -1058,8 +1077,8 @@ async def delete_iam_application(
     app_id: str,
     workspace: str,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Delete an IAM application.
 
     Args:
@@ -1107,8 +1126,8 @@ async def assign_application_system_users(
     system_user_ids: list[str],
     workspace: str,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Assign system users to an IAM application.
 
     Args:
@@ -1124,10 +1143,13 @@ async def assign_application_system_users(
     if err:
         return err
     if not system_user_ids:
-        return format_validation_error(
-            'system_user_ids',
-            system_user_ids,
-            'Must contain at least one system user ID',
+        return cast(
+            ToolResponse,
+            format_validation_error(
+                'system_user_ids',
+                system_user_ids,
+                'Must contain at least one system user ID',
+            ),
         )
     for su_id in system_user_ids:
         err = _validate_uuid('system_user_ids', su_id)
@@ -1168,8 +1190,8 @@ async def unassign_application_system_users(
     system_user_ids: list[str],
     workspace: str,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Unassign system users from an IAM application.
 
     Args:
@@ -1185,10 +1207,13 @@ async def unassign_application_system_users(
     if err:
         return err
     if not system_user_ids:
-        return format_validation_error(
-            'system_user_ids',
-            system_user_ids,
-            'Must contain at least one system user ID',
+        return cast(
+            ToolResponse,
+            format_validation_error(
+                'system_user_ids',
+                system_user_ids,
+                'Must contain at least one system user ID',
+            ),
         )
     for su_id in system_user_ids:
         err = _validate_uuid('system_user_ids', su_id)

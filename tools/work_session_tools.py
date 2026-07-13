@@ -1,7 +1,8 @@
 """Work Session management tools for Alpacon MCP server."""
 
-from typing import Any
+from typing import Unpack, cast
 
+from utils.api_types import ApiPayload, ToolKwargs, ToolResponse
 from utils.common import (
     error_response,
     pending_approval_response,
@@ -42,12 +43,12 @@ async def work_session_create(
     description: str,
     title: str | None = None,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Create a Work Session for auditable, approval-gated infrastructure access."""
     token = kwargs.get('token')
 
-    data: dict[str, str | list[str]] = {
+    data: dict[str, object] = {
         'requester_type': 'agent',
         'scopes': scopes,
         'servers': servers,
@@ -78,8 +79,9 @@ async def work_session_create(
     # transfer) is allowed (ADR 0015). Surface that as a structured
     # pending-approval signal so the agent waits/escalates instead of proceeding
     # to run commands against a session that is not yet active.
-    if isinstance(result, dict) and result.get('status') == 'pending':
-        session_id = result.get('id')
+    payload = cast(ApiPayload, result)
+    if isinstance(payload, dict) and payload.get('status') == 'pending':
+        session_id = cast('str | None', payload.get('id'))
         return pending_approval_response(
             'This Work Session was created but is pending human approval. A '
             'human must approve it out-of-band (Alpacon web console or Slack) '
@@ -108,8 +110,8 @@ async def work_session_close(
     session_id: str,
     workspace: str,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Complete a Work Session."""
     token = kwargs.get('token')
 
@@ -148,8 +150,8 @@ async def work_session_get(
     session_id: str,
     workspace: str,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Get detailed information about a specific Work Session."""
     token = kwargs.get('token')
 
@@ -191,12 +193,12 @@ async def work_session_list(
     requester_type: str | None = None,
     limit: int = 20,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """List Work Sessions with optional status and requester_type filtering."""
     token = kwargs.get('token')
 
-    params: dict[str, str | int] = {'page_size': limit}
+    params: dict[str, object] = {'page_size': limit}
     if status:
         params['status'] = status
     if requester_type:
@@ -249,12 +251,12 @@ async def work_session_update(
     servers: list[str] | None = None,
     expires_at: str | None = None,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Partially update a Work Session."""
     token = kwargs.get('token')
 
-    data: dict[str, str | list[str]] = {}
+    data: dict[str, object] = {}
     if title is not None:
         data['title'] = title
     if description is not None:
@@ -293,7 +295,10 @@ async def work_session_update(
         return err
 
     # Queued modification (server 202): http_client hides 2xx status codes, so branch on the body marker (ADR 0015).
-    if isinstance(result, dict) and result.get('pending_modification_request'):
+    update_payload = cast(ApiPayload, result)
+    if isinstance(update_payload, dict) and update_payload.get(
+        'pending_modification_request'
+    ):
         return pending_approval_response(
             'This update was queued as a modification request and is pending '
             'human approval. A human must approve it out-of-band (Alpacon web '
@@ -328,8 +333,8 @@ async def work_session_extend(
     workspace: str,
     expires_at: str,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Extend a Work Session's expiry time."""
     token = kwargs.get('token')
 
@@ -373,8 +378,8 @@ async def work_session_timeline(
     workspace: str,
     include_records: bool = True,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Get the unified timeline of a Work Session."""
     token = kwargs.get('token')
 
@@ -420,8 +425,8 @@ async def work_session_analyze(
     workspace: str,
     force: bool = False,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Manually trigger AI analysis for a terminal Work Session."""
     token = kwargs.get('token')
 

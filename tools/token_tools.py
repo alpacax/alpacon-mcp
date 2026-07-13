@@ -11,8 +11,9 @@ check. The scopes and presets catalog endpoints are not subject to
 this restriction.
 """
 
-from typing import Any
+from typing import Unpack, cast
 
+from utils.api_types import ToolKwargs, ToolResponse
 from utils.common import error_response, success_response, unwrap_http_result
 from utils.decorators import mcp_tool_handler, require_jwt_auth
 from utils.error_handler import format_validation_error, validate_server_id_format
@@ -34,12 +35,15 @@ _JWT_REQUIRED_NOTE = (
 )
 
 
-def _validate_token_id(token_id: str) -> dict[str, Any] | None:
+def _validate_token_id(token_id: str) -> ToolResponse | None:
     if not validate_server_id_format(token_id):
-        return format_validation_error(
-            'token_id',
-            token_id,
-            'Must be a valid UUID. Example: 550e8400-e29b-41d4-a716-446655440000',
+        return cast(
+            ToolResponse,
+            format_validation_error(
+                'token_id',
+                token_id,
+                'Must be a valid UUID. Example: 550e8400-e29b-41d4-a716-446655440000',
+            ),
         )
     return None
 
@@ -64,8 +68,8 @@ async def list_api_tokens(
     remote_ip: str | None = None,
     search: str | None = None,
     ordering: str | None = None,
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """List API tokens.
 
     Args:
@@ -87,7 +91,7 @@ async def list_api_tokens(
     """
     token = kwargs.get('token')
 
-    params: dict[str, Any] = {}
+    params: dict[str, object] = {}
     if page is not None:
         params['page'] = page
     if page_size is not None:
@@ -136,8 +140,8 @@ async def get_api_token(
     token_id: str,
     workspace: str,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Get a single API token.
 
     Args:
@@ -195,8 +199,8 @@ async def create_api_token(
     enabled: bool | None = None,
     presets: list[str] | None = None,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Create a new API token.
 
     Args:
@@ -215,7 +219,7 @@ async def create_api_token(
     """
     token = kwargs.get('token')
 
-    token_data: dict[str, Any] = {'name': name}
+    token_data: dict[str, object] = {'name': name}
     if scopes is not None:
         token_data['scopes'] = scopes
     if expires_at is not None:
@@ -267,8 +271,8 @@ async def update_api_token(
     clear_expires_at: bool = False,
     scopes: list[str] | None = None,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Update an API token via PATCH.
 
     Only the fields you pass are sent; everything else is left untouched
@@ -300,7 +304,7 @@ async def update_api_token(
     if expires_at is not None and clear_expires_at:
         return error_response('expires_at and clear_expires_at are mutually exclusive')
 
-    update_data: dict[str, Any] = {}
+    update_data: dict[str, object] = {}
     if name is not None:
         update_data['name'] = name
     if enabled is not None:
@@ -352,8 +356,8 @@ async def delete_api_token(
     token_id: str,
     workspace: str,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Delete an API token.
 
     Args:
@@ -408,8 +412,8 @@ async def duplicate_api_token(
     workspace: str,
     name: str | None = None,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """Duplicate an API token.
 
     The duplicate inherits all configuration (scopes, expiry) from the source
@@ -430,7 +434,7 @@ async def duplicate_api_token(
     if err:
         return err
 
-    data: dict[str, Any] = {}
+    data: dict[str, object] = {}
     if name is not None:
         data['name'] = name
 
@@ -465,8 +469,8 @@ async def duplicate_api_token(
 async def list_api_token_scopes(
     workspace: str,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """List available API token scopes.
 
     Args:
@@ -505,8 +509,8 @@ async def list_api_token_scopes(
 async def list_api_token_presets(
     workspace: str,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: Unpack[ToolKwargs],
+) -> ToolResponse:
     """List available API token scope presets.
 
     Args:
