@@ -3,18 +3,19 @@
 import asyncio
 import os
 import time
-from typing import Any
 
 import httpx
 import jwt
+from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicKey
 from mcp.server.auth.provider import AccessToken
 
+from utils.api_types import JsonObject, JwtClaims
 from utils.logger import get_logger
 
 logger = get_logger('auth')
 
 # JWKS cache: stores fetched keys and expiry time
-_jwks_cache: dict[str, Any] = {}
+_jwks_cache: JsonObject = {}
 _jwks_cache_expiry: float = 0
 _JWKS_CACHE_TTL = 3600  # 1 hour
 _jwks_lock: asyncio.Lock | None = None
@@ -46,7 +47,7 @@ def _get_auth0_config() -> dict[str, str]:
     }
 
 
-async def _fetch_jwks(jwks_url: str) -> dict[str, Any]:
+async def _fetch_jwks(jwks_url: str) -> JsonObject:
     """Fetch JWKS from Auth0 endpoint with caching.
 
     Uses an async lock to prevent concurrent fetches from racing
@@ -75,7 +76,7 @@ async def _fetch_jwks(jwks_url: str) -> dict[str, Any]:
         return _jwks_cache
 
 
-def _get_signing_key(jwks: dict[str, Any], token: str) -> Any | None:
+def _get_signing_key(jwks: JsonObject, token: str) -> RSAPublicKey | None:
     """Extract the signing key from JWKS matching the token's kid."""
     try:
         unverified_header = jwt.get_unverified_header(token)
@@ -92,15 +93,21 @@ def _get_signing_key(jwks: dict[str, Any], token: str) -> Any | None:
         if key.get('kid') == kid:
             import json
 
-            return jwt.algorithms.RSAAlgorithm.from_jwk(json.dumps(key))
+            # from_jwk()'s declared return type also covers RSA private keys,
+            # but a JWKS document (public keyset) only ever yields public ones.
+            signing_key = jwt.algorithms.RSAAlgorithm.from_jwk(json.dumps(key))
+            if isinstance(signing_key, RSAPublicKey):
+                return signing_key
+            logger.error(f'JWKS key for kid {kid} is not an RSA public key')
+            return None
 
     logger.error(f'No matching key found for kid: {kid}')
     return None
 
 
 def decode_jwt(
-    token: str, public_key: Any, config: dict[str, str]
-) -> dict[str, Any] | None:
+    token: str, public_key: RSAPublicKey, config: dict[str, str]
+) -> JwtClaims | None:
     """Decode and verify a JWT token.
 
     Args:
@@ -131,7 +138,7 @@ def decode_jwt(
     return None
 
 
-def extract_workspaces(claims: dict[str, Any], namespace: str) -> list[dict[str, str]]:
+def extract_workspaces(claims: JwtClaims, namespace: str) -> list[dict[str, str]]:
     """Extract workspaces from JWT claims.
 
     Args:
@@ -178,7 +185,7 @@ class Auth0TokenVerifier:
     workspace claims for authorization.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize with Auth0 config from environment variables."""
         self._config = _get_auth0_config()
         logger.info(

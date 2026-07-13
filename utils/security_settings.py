@@ -10,10 +10,10 @@ import hashlib
 import os
 import time
 from datetime import UTC, datetime
-from typing import Any
 
 import httpx
 
+from utils.api_types import JsonObject, JwtClaims
 from utils.logger import get_logger
 
 logger = get_logger('security_settings')
@@ -24,7 +24,7 @@ _CACHE_TTL = 300  # 5 minutes
 class WorkspaceSecuritySettings:
     """Parsed security settings for a single workspace."""
 
-    def __init__(self, data: dict[str, Any]) -> None:
+    def __init__(self, data: JsonObject) -> None:
         self.mfa_required: bool = data.get('mfa_required', False)
         self.mfa_timeout: int = data.get('mfa_timeout', 3600)
         self.mfa_required_actions: list[str] = data.get('mfa_required_actions', [])
@@ -49,7 +49,9 @@ class SecuritySettingsCache:
         # {token_key: {workspace: (settings, expiry_time)}}
         self._cache: dict[str, dict[str, tuple[WorkspaceSecuritySettings, float]]] = {}
         # Per-token in-flight deduplication to prevent thundering herd
-        self._inflight: dict[str, asyncio.Task] = {}
+        self._inflight: dict[
+            str, asyncio.Task[dict[str, WorkspaceSecuritySettings]]
+        ] = {}
         # Timestamp of last global prune (max once per TTL period)
         self._last_prune: float = 0
 
@@ -199,7 +201,7 @@ class SecuritySettingsCache:
 
 
 def check_mfa_completed(
-    jwt_claims: dict[str, Any],
+    jwt_claims: JwtClaims,
     settings: WorkspaceSecuritySettings,
 ) -> bool:
     """Check if JWT has valid (non-expired) MFA completion.

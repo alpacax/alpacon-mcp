@@ -3,11 +3,32 @@
 import json
 import os
 from pathlib import Path
-from typing import Any
+from typing import TypedDict, cast
 
 from utils.logger import get_logger
 
 logger = get_logger('token_manager')
+
+# token.json structure: region -> workspace -> token (string only).
+type TokenStore = dict[str, dict[str, str]]
+
+
+class RegionTokenSummary(TypedDict):
+    """Per-region token count entry within AuthStatus."""
+
+    region: str
+    workspaces: list[str]
+    count: int
+
+
+class AuthStatus(TypedDict):
+    """Return shape of TokenManager.get_auth_status()."""
+
+    authenticated: bool
+    total_tokens: int
+    regions: list[RegionTokenSummary]
+    config_dir: str
+    token_file: str
 
 
 class TokenManager:
@@ -59,7 +80,7 @@ class TokenManager:
 
         self.tokens = self._load_tokens()
 
-    def _load_tokens(self) -> dict[str, Any]:
+    def _load_tokens(self) -> TokenStore:
         """Load tokens from configuration file.
 
         Returns:
@@ -72,7 +93,9 @@ class TokenManager:
                 logger.info(
                     f'Loaded tokens from {self.token_file}: {len(tokens)} regions'
                 )
-                return tokens
+                # json.load() returns Any; the on-disk shape is region ->
+                # workspace -> token, asserted here at the file-read boundary.
+                return cast(TokenStore, tokens)
             except json.JSONDecodeError as e:
                 logger.error(f'JSON decode error in {self.token_file}: {e}')
             except OSError as e:
@@ -83,7 +106,7 @@ class TokenManager:
         )
         return {}
 
-    def _save_tokens_to_file(self, tokens: dict[str, Any], file_path: Path) -> None:
+    def _save_tokens_to_file(self, tokens: TokenStore, file_path: Path) -> None:
         """Save tokens to specific file.
 
         Args:
@@ -154,13 +177,15 @@ class TokenManager:
         logger.warning(f'No token found for {workspace}.{region}')
         return None
 
-    def get_all_tokens(self) -> dict[str, Any]:
+    def get_all_tokens(self) -> dict[str, object]:
         """Get all stored tokens.
 
         Returns:
             All token data
         """
-        return self.tokens
+        # dict is invariant, so TokenStore (dict[str, dict[str, str]]) isn't
+        # directly a dict[str, object]; callers only ever read this generically.
+        return cast(dict[str, object], self.tokens)
 
     def get_available_regions(self) -> list[str]:
         """Get list of regions that have configured tokens.
@@ -228,7 +253,7 @@ class TokenManager:
             'message': f'No token found for {workspace}.{region}',
         }
 
-    def get_auth_status(self) -> dict[str, Any]:
+    def get_auth_status(self) -> AuthStatus:
         """Get authentication status for all stored tokens.
 
         Returns:
@@ -236,7 +261,7 @@ class TokenManager:
         """
         total_tokens = sum(len(workspaces) for workspaces in self.tokens.values())
 
-        regions = []
+        regions: list[RegionTokenSummary] = []
         for region, workspaces in self.tokens.items():
             regions.append(
                 {
@@ -254,7 +279,7 @@ class TokenManager:
             'token_file': str(self.token_file),
         }
 
-    def get_config_info(self) -> dict[str, Any]:
+    def get_config_info(self) -> dict[str, object]:
         """Get configuration directory information.
 
         Returns:

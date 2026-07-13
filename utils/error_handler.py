@@ -4,18 +4,26 @@ import hashlib
 import re
 import threading
 import uuid
-from typing import Any
+from typing import TypedDict
 
 from utils.logger import get_logger
 
 logger = get_logger('error_handler')
+
+
+class UpstreamAuthErrorInfo(TypedDict):
+    """Fixed-shape payload signaled between http_client and the ASGI middleware."""
+
+    mfa_required: bool
+    source: str
+
 
 # Module-level thread-safe dict for signaling upstream auth errors between
 # the ASGI middleware and MCP tool handlers. Uses a module-level dict
 # instead of contextvars because MCP streamable-http transport runs tool
 # handlers in a separate anyio task context where ContextVar mutations
 # are invisible to the middleware's parent context.
-_upstream_auth_errors: dict[str, dict] = {}
+_upstream_auth_errors: dict[str, UpstreamAuthErrorInfo] = {}
 _upstream_auth_lock = threading.Lock()
 
 
@@ -28,7 +36,9 @@ def make_auth_error_key(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()[:16]
 
 
-def signal_upstream_auth_error(token_key: str, error_info: dict) -> None:
+def signal_upstream_auth_error(
+    token_key: str, error_info: UpstreamAuthErrorInfo
+) -> None:
     """Signal that an upstream 401 was received for the given token.
 
     Called by http_client when the Alpacon API returns 401 in remote mode.
@@ -51,7 +61,7 @@ def signal_upstream_auth_error(token_key: str, error_info: dict) -> None:
         _upstream_auth_errors[token_key] = merged
 
 
-def consume_upstream_auth_error(token_key: str) -> dict | None:
+def consume_upstream_auth_error(token_key: str) -> UpstreamAuthErrorInfo | None:
     """Check and consume an upstream auth error for the given token.
 
     Called by the ASGI middleware after the request completes.
@@ -90,7 +100,7 @@ class UpstreamAuthError(Exception):
 class ValidationError(Exception):
     """Custom exception for input validation errors."""
 
-    def __init__(self, field: str, value: Any, message: str):
+    def __init__(self, field: str, value: object, message: str):
         self.field = field
         self.value = value
         self.message = message
@@ -182,8 +192,8 @@ def validate_file_path(file_path: str, allow_relative: bool = False) -> bool:
 
 
 def format_user_friendly_error(
-    error_code: str, context: dict[str, Any] | None = None
-) -> dict[str, Any]:
+    error_code: str, context: dict[str, object] | None = None
+) -> dict[str, object]:
     """Format technical errors into user-friendly messages.
 
     Args:
@@ -253,7 +263,7 @@ def format_user_friendly_error(
     elif error_code == '404' and context.get('workspace'):
         error_info['message'] = f"Workspace '{context['workspace']}' not found."
 
-    result: dict[str, Any] = {
+    result: dict[str, object] = {
         'status': 'error',
         'error_code': error_code,
         'message': error_info['message'],
@@ -268,8 +278,8 @@ def format_user_friendly_error(
 
 
 def format_validation_error(
-    field: str, value: Any, expected_format: str | None = None
-) -> dict[str, Any]:
+    field: str, value: object, expected_format: str | None = None
+) -> dict[str, object]:
     """Format validation error with helpful message.
 
     Args:

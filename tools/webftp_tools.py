@@ -64,7 +64,7 @@ class _LocalSaveError(Exception):
 
 
 def _validation_error(field: str, value: object) -> ToolResponse:
-    """Thin typed wrapper over format_validation_error (declared dict[str, Any])."""
+    """Thin typed wrapper over format_validation_error (declared dict[str, object])."""
     return cast(ToolResponse, format_validation_error(field, value))
 
 

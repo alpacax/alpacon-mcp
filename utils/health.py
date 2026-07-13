@@ -2,7 +2,6 @@
 
 import os
 import time
-from typing import Any
 
 from utils.logger import get_logger
 
@@ -17,7 +16,7 @@ def _is_remote_mode() -> bool:
     return os.getenv('ALPACON_MCP_AUTH_ENABLED', '').lower() == 'true'
 
 
-def _get_auth_info_remote() -> dict[str, Any]:
+def _get_auth_info_remote() -> dict[str, object]:
     """Get auth info for remote (JWT) mode."""
     return {
         'mode': 'jwt',
@@ -25,7 +24,7 @@ def _get_auth_info_remote() -> dict[str, Any]:
     }
 
 
-def _get_auth_info_local() -> dict[str, Any]:
+def _get_auth_info_local() -> dict[str, object]:
     """Get auth info for local (token.json) mode."""
     from utils.token_manager import get_token_manager
 
@@ -39,7 +38,7 @@ def _get_auth_info_local() -> dict[str, Any]:
     }
 
 
-async def get_health_info() -> dict[str, Any]:
+async def get_health_info() -> dict[str, object]:
     """Collect health information for the MCP server.
 
     Returns a sanitized health status dict that never exposes

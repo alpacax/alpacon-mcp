@@ -24,11 +24,10 @@ Only active in remote (streamable-http) mode where OAuth is enabled.
 
 import json
 import time
-from collections.abc import MutableMapping
-from typing import Any
 
 from starlette.types import ASGIApp, Receive, Scope, Send
 
+from utils.api_types import AsgiMessage
 from utils.error_handler import (
     UpstreamAuthError,
     consume_upstream_auth_error,
@@ -116,9 +115,9 @@ class UpstreamAuthErrorMiddleware:
         )
 
         # Buffer the response so we can replace it if needed
-        buffered: list[MutableMapping[str, Any]] = []
+        buffered: list[AsgiMessage] = []
 
-        async def buffer_send(message: MutableMapping[str, Any]) -> None:
+        async def buffer_send(message: AsgiMessage) -> None:
             buffered.append(message)
 
         try:
