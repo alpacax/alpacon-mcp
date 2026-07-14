@@ -388,11 +388,9 @@ class TestGetDiskInfoEdgeCases:
             server_id='550e8400-e29b-41d4-a716-446655440001', workspace='testworkspace'
         )
 
-        # get_disk_info uses asyncio.gather with return_exceptions=True
-        # so it returns success with error info in the data
-        assert result['status'] == 'success'
-        assert 'error' in result['data']['disks']
-        assert 'error' in result['data']['partitions']
+        # A failed sub-call must surface as an error, not a wrapped success.
+        assert result['status'] == 'error'
+        assert 'Disk service unavailable' in result['message']
 
 
 class TestCrossFunctionScenarios:

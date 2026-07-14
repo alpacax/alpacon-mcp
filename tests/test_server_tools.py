@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from tests.conftest import HTTP_ERROR_ENVELOPE
 from tools.server_tools import (
     create_registration_token,
     create_server_note,
@@ -35,14 +36,6 @@ def mock_http_client():
         mock_client.patch = AsyncMock()
         mock_client.delete = AsyncMock()
         yield mock_client
-
-
-@pytest.fixture
-def mock_token_manager():
-    """Mock token manager for testing."""
-    with patch('utils.common.token_manager') as mock_manager:
-        mock_manager.get_token.return_value = 'test-token'
-        yield mock_manager
 
 
 @pytest.fixture
@@ -288,6 +281,25 @@ class TestServerNotes:
         )
 
     @pytest.mark.asyncio
+    async def test_list_server_notes_http_error_envelope(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.get.return_value = HTTP_ERROR_ENVELOPE
+
+        result = await list_server_notes(
+            server_id='550e8400-e29b-41d4-a716-446655440123',
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert result['status'] == 'error'
+        assert result['message'] == HTTP_ERROR_ENVELOPE['message']
+        assert result['status_code'] == HTTP_ERROR_ENVELOPE['status_code']
+        assert result['server_id'] == '550e8400-e29b-41d4-a716-446655440123'
+        assert result['region'] == 'ap1'
+        assert result['workspace'] == 'testworkspace'
+
+    @pytest.mark.asyncio
     async def test_list_server_notes_no_token(
         self, mock_http_client, mock_token_manager
     ):
@@ -340,6 +352,27 @@ class TestServerNotes:
             token='test-token',
             data=expected_data,
         )
+
+    @pytest.mark.asyncio
+    async def test_create_server_note_http_error_envelope(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = HTTP_ERROR_ENVELOPE
+
+        result = await create_server_note(
+            server_id='550e8400-e29b-41d4-a716-446655440123',
+            title='',
+            content='This is a new note about the server',
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert result['status'] == 'error'
+        assert result['message'] == HTTP_ERROR_ENVELOPE['message']
+        assert result['status_code'] == HTTP_ERROR_ENVELOPE['status_code']
+        assert result['server_id'] == '550e8400-e29b-41d4-a716-446655440123'
+        assert result['region'] == 'ap1'
+        assert result['workspace'] == 'testworkspace'
 
     @pytest.mark.asyncio
     async def test_create_server_note_no_token(

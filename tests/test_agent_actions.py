@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from tests.conftest import HTTP_ERROR_ENVELOPE
 from tools.server_tools import (
     reboot_system,
     restart_agent,
@@ -23,15 +24,42 @@ def mock_http_client():
         yield mock_client
 
 
-@pytest.fixture
-def mock_token_manager():
-    """Mock token manager for testing."""
-    with patch('utils.common.token_manager') as mock_manager:
-        mock_manager.get_token.return_value = 'test-token'
-        yield mock_manager
-
-
 SERVER_ID = '550e8400-e29b-41d4-a716-446655440123'
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ('tool', 'action'),
+    [
+        (restart_agent, 'restart_agent'),
+        (shutdown_agent, 'shutdown_agent'),
+        (upgrade_agent, 'upgrade_agent'),
+        (update_information, 'update_information'),
+        (upgrade_system, 'upgrade_system'),
+        (reboot_system, 'reboot_system'),
+        (shutdown_system, 'shutdown_system'),
+    ],
+)
+async def test_agent_action_http_error_envelope_returns_error(
+    tool, action, mock_http_client, mock_token_manager
+):
+    mock_http_client.post.return_value = HTTP_ERROR_ENVELOPE
+
+    result = await tool(server_id=SERVER_ID, workspace='testworkspace', region='ap1')
+
+    assert result['status'] == 'error'
+    assert result['message'] == HTTP_ERROR_ENVELOPE['message']
+    assert result['status_code'] == HTTP_ERROR_ENVELOPE['status_code']
+    assert result['server_id'] == SERVER_ID
+    assert result['region'] == 'ap1'
+    assert result['workspace'] == 'testworkspace'
+    mock_http_client.post.assert_called_once_with(
+        region='ap1',
+        workspace='testworkspace',
+        endpoint=f'/api/servers/servers/{SERVER_ID}/actions/',
+        token='test-token',
+        data={'action': action},
+    )
 
 
 class TestRestartAgent:

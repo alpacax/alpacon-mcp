@@ -644,10 +644,10 @@ class TestGetDiskInfo:
         assert mock_http_client.get.call_count == 2
 
     @pytest.mark.asyncio
-    async def test_disk_info_partial_failure(
+    async def test_disk_info_sub_call_exception_fails(
         self, mock_http_client, mock_token_manager
     ):
-        """Test disk info with partial failure."""
+        """A raised exception in one sub-call fails the whole call, not partial success."""
         from tools.system_info_tools import get_disk_info
 
         disks_data = {'disks': [{'device': '/dev/sda'}]}
@@ -667,10 +667,30 @@ class TestGetDiskInfo:
             server_id='550e8400-e29b-41d4-a716-446655440001', workspace='testworkspace'
         )
 
-        assert result['status'] == 'success'
-        assert result['data']['disks'] == disks_data
-        assert 'error' in result['data']['partitions']
-        assert 'Partitions service unavailable' in result['data']['partitions']['error']
+        assert result['status'] == 'error'
+        assert 'Partitions service unavailable' in result['message']
+
+    @pytest.mark.asyncio
+    async def test_disk_info_error_envelope(self, mock_http_client, mock_token_manager):
+        """An http error envelope in a sub-call is not wrapped as success."""
+        from tools.system_info_tools import get_disk_info
+
+        disks_data = {'disks': [{'device': '/dev/sda'}]}
+
+        def mock_get_side_effect(*args, **kwargs):
+            endpoint = kwargs.get('endpoint', '')
+            if 'partitions' in endpoint:
+                return HTTP_ERROR_ENVELOPE
+            return disks_data
+
+        mock_http_client.get.side_effect = mock_get_side_effect
+
+        result = await get_disk_info(
+            server_id='550e8400-e29b-41d4-a716-446655440001', workspace='testworkspace'
+        )
+
+        assert result['status'] == 'error'
+        assert result['status_code'] == HTTP_ERROR_ENVELOPE['status_code']
 
     @pytest.mark.asyncio
     async def test_disk_info_no_token(self, mock_http_client, mock_token_manager):

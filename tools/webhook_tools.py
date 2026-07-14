@@ -51,6 +51,15 @@ async def list_event_subscriptions(
         params=params,
     )
 
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to list event subscriptions',
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
+
     return success_response(data=result, region=region, workspace=workspace)
 
 
@@ -97,6 +106,15 @@ async def create_event_subscription(
         data=subscription_data,
     )
 
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to create event subscription',
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
+
     return success_response(data=result, region=region, workspace=workspace)
 
 
@@ -126,6 +144,16 @@ async def delete_event_subscription(
         endpoint=f'/api/events/subscriptions/{subscription_id}/',
         token=token,
     )
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to delete event subscription',
+        subscription_id=subscription_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
 
     return success_response(
         data=result,
@@ -178,6 +206,15 @@ async def list_webhooks(
         token=token,
         params=params,
     )
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to list webhooks',
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
 
     return success_response(data=result, region=region, workspace=workspace)
 
@@ -273,6 +310,15 @@ async def create_webhook(
         data=webhook_data,
     )
 
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to create webhook',
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
+
     return success_response(data=result, region=region, workspace=workspace)
 
 
@@ -328,6 +374,16 @@ async def update_webhook(
         data=update_data,
     )
 
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to update webhook',
+        webhook_id=webhook_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
+
     return success_response(
         data=result, webhook_id=webhook_id, region=region, workspace=workspace
     )
@@ -359,6 +415,16 @@ async def delete_webhook(
         endpoint=f'/api/notifications/webhooks/{webhook_id}/',
         token=token,
     )
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to delete webhook',
+        webhook_id=webhook_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
 
     return success_response(
         data=result, webhook_id=webhook_id, region=region, workspace=workspace

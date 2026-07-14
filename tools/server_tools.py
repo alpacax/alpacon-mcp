@@ -158,6 +158,16 @@ async def list_server_notes(
         token=token,
     )
 
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to list server notes',
+        server_id=server_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
+
     return success_response(
         data=result, server_id=server_id, region=region, workspace=workspace
     )
@@ -206,6 +216,17 @@ async def create_server_note(
         token=token,
         data=note_data,
     )
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to create server note',
+        server_id=server_id,
+        note_title=title,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
 
     return success_response(
         data=result,
@@ -375,6 +396,38 @@ async def delete_server_note(
     )
 
 
+async def _server_action(
+    *,
+    server_id: str,
+    workspace: str,
+    region: str,
+    action: str,
+    default_message: str,
+    token: str | None,
+) -> dict[str, Any]:
+    result = await http_client.post(
+        region=region,
+        workspace=workspace,
+        endpoint=f'/api/servers/servers/{server_id}/actions/',
+        token=token,
+        data={'action': action},
+    )
+
+    err = unwrap_http_result(
+        result,
+        default_message=default_message,
+        server_id=server_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
+
+    return success_response(
+        data=result, server_id=server_id, region=region, workspace=workspace
+    )
+
+
 @mcp_tool_handler(
     description=(
         'Restart the Alpacon agent process on a server. The agent will briefly go offline during restart. '
@@ -399,16 +452,13 @@ async def restart_agent(
     """
     token = kwargs.get('token')
 
-    result = await http_client.post(
-        region=region,
+    return await _server_action(
+        server_id=server_id,
         workspace=workspace,
-        endpoint=f'/api/servers/servers/{server_id}/actions/',
+        region=region,
+        action='restart_agent',
+        default_message='Failed to restart agent',
         token=token,
-        data={'action': 'restart_agent'},
-    )
-
-    return success_response(
-        data=result, server_id=server_id, region=region, workspace=workspace
     )
 
 
@@ -436,16 +486,13 @@ async def shutdown_agent(
     """
     token = kwargs.get('token')
 
-    result = await http_client.post(
-        region=region,
+    return await _server_action(
+        server_id=server_id,
         workspace=workspace,
-        endpoint=f'/api/servers/servers/{server_id}/actions/',
+        region=region,
+        action='shutdown_agent',
+        default_message='Failed to shutdown agent',
         token=token,
-        data={'action': 'shutdown_agent'},
-    )
-
-    return success_response(
-        data=result, server_id=server_id, region=region, workspace=workspace
     )
 
 
@@ -473,16 +520,13 @@ async def upgrade_agent(
     """
     token = kwargs.get('token')
 
-    result = await http_client.post(
-        region=region,
+    return await _server_action(
+        server_id=server_id,
         workspace=workspace,
-        endpoint=f'/api/servers/servers/{server_id}/actions/',
+        region=region,
+        action='upgrade_agent',
+        default_message='Failed to upgrade agent',
         token=token,
-        data={'action': 'upgrade_agent'},
-    )
-
-    return success_response(
-        data=result, server_id=server_id, region=region, workspace=workspace
     )
 
 
@@ -510,16 +554,13 @@ async def update_information(
     """
     token = kwargs.get('token')
 
-    result = await http_client.post(
-        region=region,
+    return await _server_action(
+        server_id=server_id,
         workspace=workspace,
-        endpoint=f'/api/servers/servers/{server_id}/actions/',
+        region=region,
+        action='update_information',
+        default_message='Failed to update server information',
         token=token,
-        data={'action': 'update_information'},
-    )
-
-    return success_response(
-        data=result, server_id=server_id, region=region, workspace=workspace
     )
 
 
@@ -548,16 +589,13 @@ async def upgrade_system(
     """
     token = kwargs.get('token')
 
-    result = await http_client.post(
-        region=region,
+    return await _server_action(
+        server_id=server_id,
         workspace=workspace,
-        endpoint=f'/api/servers/servers/{server_id}/actions/',
+        region=region,
+        action='upgrade_system',
+        default_message='Failed to upgrade system',
         token=token,
-        data={'action': 'upgrade_system'},
-    )
-
-    return success_response(
-        data=result, server_id=server_id, region=region, workspace=workspace
     )
 
 
@@ -585,16 +623,13 @@ async def reboot_system(
     """
     token = kwargs.get('token')
 
-    result = await http_client.post(
-        region=region,
+    return await _server_action(
+        server_id=server_id,
         workspace=workspace,
-        endpoint=f'/api/servers/servers/{server_id}/actions/',
+        region=region,
+        action='reboot_system',
+        default_message='Failed to reboot system',
         token=token,
-        data={'action': 'reboot_system'},
-    )
-
-    return success_response(
-        data=result, server_id=server_id, region=region, workspace=workspace
     )
 
 
@@ -623,16 +658,13 @@ async def shutdown_system(
     """
     token = kwargs.get('token')
 
-    result = await http_client.post(
-        region=region,
+    return await _server_action(
+        server_id=server_id,
         workspace=workspace,
-        endpoint=f'/api/servers/servers/{server_id}/actions/',
+        region=region,
+        action='shutdown_system',
+        default_message='Failed to shutdown system',
         token=token,
-        data={'action': 'shutdown_system'},
-    )
-
-    return success_response(
-        data=result, server_id=server_id, region=region, workspace=workspace
     )
 
 
