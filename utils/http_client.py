@@ -245,6 +245,13 @@ class AlpaconHTTPClient:
     def get_base_url(self, region: str, workspace: str) -> str:
         """Get base URL for API calls.
 
+        Prefers an explicitly configured base URL (token.json object form or the
+        ``ALPACON_MCP_<REGION>_<WORKSPACE>_URL`` env var) so the host is a pinned,
+        persisted value rather than one re-derived from the workspace label on
+        every call. This keeps a workspace addressable across a URL slug change
+        (ADR 0027), where a freed slug can later be reused by another workspace.
+        Falls back to the default Alpacon Cloud host derivation.
+
         Args:
             region: Region (ap1, us1, eu1, etc.)
             workspace: Workspace name
@@ -252,6 +259,16 @@ class AlpaconHTTPClient:
         Returns:
             Base URL for API calls
         """
+        # Local import keeps the singleton lazy and lets tests patch
+        # get_token_manager; the isinstance guard tolerates a mocked manager
+        # whose override method returns a non-string sentinel.
+        from utils.token_manager import get_token_manager
+
+        override = get_token_manager().get_base_url_override(region, workspace)
+        if isinstance(override, str) and override:
+            logger.debug(f'Using configured base URL override: {override}')
+            return override
+
         base_url = f'https://{workspace}.{region}.alpacon.io'
         logger.debug(f'Generated base URL: {base_url}')
         return base_url

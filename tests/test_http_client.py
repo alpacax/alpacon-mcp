@@ -266,6 +266,80 @@ class TestURLConstruction:
         for i, expected_url in enumerate(expected_urls):
             assert calls[i][1]['url'] == expected_url
 
+    @pytest.mark.asyncio
+    async def test_configured_base_url_override_is_used(self, mock_httpx_client):
+        """A pinned base URL is used verbatim instead of the derived host.
+
+        This keeps a workspace addressable across a URL slug change (ADR 0027):
+        the host is a persisted value, not re-derived from the workspace label.
+        """
+        mock_response = create_mock_response(status_code=200, json_data={'ok': True})
+        mock_httpx_client.request.return_value = mock_response
+
+        fake_tm = MagicMock()
+        fake_tm.get_base_url_override.return_value = 'https://old-slug.us1.alpacon.io'
+        with patch(
+            'utils.token_manager.get_token_manager', return_value=fake_tm
+        ):
+            await http_client.get(
+                region='us1',
+                workspace='renamed-workspace',
+                endpoint='/api/test/',
+                token='test-token',
+            )
+
+        call = mock_httpx_client.request.call_args_list[-1]
+        assert call[1]['url'] == 'https://old-slug.us1.alpacon.io/api/test/'
+        fake_tm.get_base_url_override.assert_called_once_with(
+            'us1', 'renamed-workspace'
+        )
+
+    def test_get_base_url_default_derivation(self):
+        """With no override configured, the default Alpacon Cloud host is derived."""
+        fake_tm = MagicMock()
+        fake_tm.get_base_url_override.return_value = None
+        with patch(
+            'utils.token_manager.get_token_manager', return_value=fake_tm
+        ):
+            assert (
+                http_client.get_base_url('ap1', 'myws')
+                == 'https://myws.ap1.alpacon.io'
+            )
+
+    @pytest.mark.asyncio
+    async def test_pinned_base_url_override_used(self, mock_httpx_client):
+        """A configured base-URL override replaces the derived host (ADR 0027)."""
+        mock_response = create_mock_response(status_code=200, json_data={'ok': True})
+        mock_httpx_client.request.return_value = mock_response
+
+        mock_tm = MagicMock()
+        mock_tm.get_base_url_override.return_value = 'https://pinned.us1.alpacon.io'
+        with patch(
+            'utils.token_manager.get_token_manager', return_value=mock_tm
+        ):
+            await http_client.get(
+                region='ap1',
+                workspace='oldlabel',
+                endpoint='/api/test/',
+                token='test-token',
+            )
+
+        call = mock_httpx_client.request.call_args
+        # The stale workspace/region label is ignored in favor of the pinned host.
+        assert call[1]['url'] == 'https://pinned.us1.alpacon.io/api/test/'
+
+    def test_get_base_url_falls_back_when_no_override(self):
+        """With no override configured, the default Alpacon Cloud host is derived."""
+        mock_tm = MagicMock()
+        mock_tm.get_base_url_override.return_value = None
+        with patch(
+            'utils.token_manager.get_token_manager', return_value=mock_tm
+        ):
+            assert (
+                http_client.get_base_url('ap1', 'myws')
+                == 'https://myws.ap1.alpacon.io'
+            )
+
 
 class TestErrorHandling:
     """Test error handling scenarios."""

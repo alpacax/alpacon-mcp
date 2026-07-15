@@ -162,6 +162,34 @@ This MCP server provides a **pure HTTP API bridge** to Alpacon's infrastructure 
 }
 ```
 
+**Host derivation and pinning a base URL** (slug-change safety, ADR 0027):
+
+By default the API host is derived from the workspace label as
+`https://{workspace}.{region}.alpacon.io` on every call (`http_client.get_base_url`).
+Because a workspace's URL slug is a mutable label — a freed slug can later be
+reused by a different workspace — re-deriving the host from a stale label could
+resolve to the wrong host. To pin a workspace's resolved base URL, use the
+object form of a token entry (the old host stays alive as an alias, so the
+pinned URL keeps working across a slug change):
+
+```json
+{
+  "us1": {
+    "workspace-name": {
+      "token": "your-api-token-from-web-interface",
+      "url": "https://workspace-name.us1.alpacon.io"
+    }
+  }
+}
+```
+
+The bare-string form (`"workspace-name": "token"`) remains fully supported and
+derives the default host. A pinned URL can also be supplied via the
+`ALPACON_MCP_<REGION>_<WORKSPACE>_URL` env var (mirrors the token env override
+`ALPACON_MCP_<REGION>_<WORKSPACE>_TOKEN`); the env var wins over the config file.
+`TokenManager.get_base_url_override()` resolves the pinned URL and
+`get_base_url` falls back to derivation when none is configured.
+
 **MFA re-authentication flow** (remote/streamable-http mode only):
 
 When the Alpacon API returns 401 (e.g., MFA timeout with `code: "auth_mfa_required"`), the system triggers a two-stage OAuth re-authentication via the browser:

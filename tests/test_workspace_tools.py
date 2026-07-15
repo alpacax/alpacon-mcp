@@ -32,6 +32,9 @@ def mock_token_manager():
         },
         'eu1': {'compliance': {'token': 'token6'}},
     }
+    # No pinned host override by default; list_workspaces falls back to the
+    # derived {workspace}.{region}.alpacon.io host.
+    mock_manager.get_base_url_override.return_value = None
 
     with (
         patch('utils.token_manager.get_token_manager', return_value=mock_manager),
@@ -141,6 +144,55 @@ class TestListWorkspaces:
         assert production_ws['has_token'] is True
         assert staging_ws['has_token'] is False
         assert development_ws['has_token'] is False
+
+    @pytest.mark.asyncio
+    async def test_list_workspaces_reports_pinned_url_domain(
+        self, tmp_path, monkeypatch
+    ):
+        """The reported domain resolves through get_base_url_override.
+
+        Uses a real TokenManager so the displayed host gets the same
+        precedence (env var over config) and normalization (scheme added,
+        trailing slash dropped) as actual request routing.
+        """
+        import json
+
+        from tools.workspace_tools import list_workspaces
+        from utils.token_manager import TokenManager
+
+        config_path = tmp_path / 'token.json'
+        config_path.write_text(
+            json.dumps(
+                {
+                    'us1': {
+                        # Scheme-less with trailing slash: display must be normalized.
+                        'acme': {'token': 'token1', 'url': 'acme.us1.alpacon.io/'},
+                        # Bare string: derived host, unless the env var pins one.
+                        'plain': 'bare-token',
+                    }
+                }
+            )
+        )
+        monkeypatch.setenv(
+            'ALPACON_MCP_US1_PLAIN_URL', 'https://pinned-by-env.us1.alpacon.io'
+        )
+        real_manager = TokenManager(config_file=str(config_path))
+
+        with (
+            patch('utils.token_manager.get_token_manager', return_value=real_manager),
+            patch('utils.decorators._get_jwt_token', return_value=None),
+        ):
+            result = await list_workspaces(region='us1')
+
+        workspaces = result['data']['workspaces']
+        acme_ws = next(ws for ws in workspaces if ws['workspace'] == 'acme')
+        plain_ws = next(ws for ws in workspaces if ws['workspace'] == 'plain')
+
+        # Config URL is normalized exactly as http_client.get_base_url uses it.
+        assert acme_ws['domain'] == 'https://acme.us1.alpacon.io'
+        assert acme_ws['has_token'] is True
+        # Env-var override applies to display too, even for bare-string entries.
+        assert plain_ws['domain'] == 'https://pinned-by-env.us1.alpacon.io'
 
     @pytest.mark.asyncio
     async def test_list_workspaces_default_region(self, mock_token_manager):
