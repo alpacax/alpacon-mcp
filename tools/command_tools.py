@@ -342,8 +342,10 @@ async def execute_command(
                 # (ADR 0015); polling would only burn the timeout window.
                 return pending_approval_response(
                     'Command is awaiting human approval. A human must approve '
-                    'it out-of-band (Alpacon web console or Slack); then check '
-                    'the result via list_commands or re-run.',
+                    'it out-of-band (Alpacon web console or Slack); it then runs '
+                    'automatically. Wait, then retrieve the result via '
+                    'list_commands. Do not re-run: a resubmission needs its own '
+                    'approval and may double-execute the command.',
                     category='COMMAND_AWAITING_APPROVAL',
                     command_id=command_id,
                     server_id=server_id,
@@ -353,9 +355,11 @@ async def execute_command(
                 )
 
             # Terminal non-approval statuses: the command will not produce a
-            # result (denied/rejected never run; stuck/error gave up), so fail
-            # fast instead of polling until timeout.
-            if status in ('denied', 'rejected', 'stuck', 'error'):
+            # result (denied/rejected never run; stuck gave up), so fail fast
+            # instead of polling until timeout. ('error' is omitted: the
+            # server's compute_status never emits it given the scheduled_at
+            # default, so it is unreachable here.)
+            if status in ('denied', 'rejected', 'stuck'):
                 return error_response(
                     f'Command failed with status: {status}',
                     command_id=command_id,
@@ -366,8 +370,19 @@ async def execute_command(
                     details=result,
                 )
 
-            # Command still in progress — reset deadline (within hard cap)
-            if status in ('running', 'acked'):
+            # Command still in progress — reset deadline (within hard cap) so a
+            # slow AI verification or delayed delivery does not time out a
+            # command that is still advancing. Covers both pre-execution states
+            # (queued/scheduled/delivered/verifying) and execution (running).
+            # 'acked' is intentionally absent: compute_status returns 'running'
+            # once acked_at is set, so it is never emitted.
+            if status in (
+                'running',
+                'verifying',
+                'delivered',
+                'queued',
+                'scheduled',
+            ):
                 deadline = min(
                     loop.time() + timeout,
                     hard_deadline,

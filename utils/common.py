@@ -91,8 +91,10 @@ _NEXT_ACTION_BY_CATEGORY: dict[str, str] = {
     ),
     'COMMAND_AWAITING_APPROVAL': (
         'A human must approve this command out-of-band (Alpacon web console or '
-        'Slack). You cannot approve it yourself. Wait for approval, then check '
-        'the result via list_commands or re-run; do not repeatedly resubmit.'
+        'Slack); it then runs automatically. You cannot approve it yourself. '
+        'Wait for approval, then retrieve the result via list_commands. Do not '
+        're-run: a resubmission needs its own approval and may double-execute '
+        'the command.'
     ),
     'SUDO_PRESENCE_REQUIRED': (
         'A human must complete a fresh MFA step-up out-of-band, then retry. You '
