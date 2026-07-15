@@ -75,8 +75,9 @@ def success_response(data: Any = None, **kwargs) -> dict[str, Any]:
 # The human-resolvable next action differs by category: SUDO_APPROVAL_REQUIRED /
 # WORK_SESSION_PENDING need an out-of-band approval, while SUDO_PRESENCE_REQUIRED
 # is an MFA step-up and SUDO_NO_WORKSESSION_POLICY is a scope addition — none of
-# which the agent can perform itself. APPROVAL_DECISION_HUMAN_ONLY is a pure
-# explanation that approving/rejecting is human-only; there is nothing to retry.
+# which the agent can perform itself. COMMAND_AWAITING_APPROVAL is the
+# command-level analogue of WORK_SESSION_PENDING. APPROVAL_DECISION_HUMAN_ONLY is
+# a pure explanation that approving/rejecting is human-only; nothing to retry.
 _NEXT_ACTION_BY_CATEGORY: dict[str, str] = {
     'SUDO_APPROVAL_REQUIRED': (
         'A human must approve this out-of-band (Alpacon web console or Slack). '
@@ -87,6 +88,11 @@ _NEXT_ACTION_BY_CATEGORY: dict[str, str] = {
         'A human must approve this Work Session out-of-band (Alpacon web console '
         'or Slack) before it activates. You cannot approve it yourself. Wait for '
         'approval, then retry.'
+    ),
+    'COMMAND_AWAITING_APPROVAL': (
+        'A human must approve this command out-of-band (Alpacon web console or '
+        'Slack). You cannot approve it yourself. Wait for approval, then check '
+        'the result via list_commands or re-run; do not repeatedly resubmit.'
     ),
     'SUDO_PRESENCE_REQUIRED': (
         'A human must complete a fresh MFA step-up out-of-band, then retry. You '

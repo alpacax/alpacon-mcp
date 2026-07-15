@@ -266,11 +266,13 @@ class TestExecuteCommand:
             patch('tools.command_tools._get_command_result') as mock_poll,
         ):
             mock_submit.return_value = {'id': 'cmd-123'}
+            # Real Command API shape: handled_at signals completion, no 'finished_at'.
             mock_poll.return_value = {
                 'id': 'cmd-123',
-                'status': 'completed',
+                'status': 'success',
+                'success': True,
                 'exit_code': 0,
-                'finished_at': '2024-01-01T00:00:01Z',
+                'handled_at': '2024-01-01T00:00:01Z',
             }
 
             result = await execute_command(
@@ -293,7 +295,7 @@ class TestExecuteCommand:
             mock_submit.return_value = [{'id': 'cmd-123'}]
             mock_poll.return_value = {
                 'id': 'cmd-123',
-                'finished_at': '2024-01-01T00:00:01Z',
+                'handled_at': '2024-01-01T00:00:01Z',
             }
 
             result = await execute_command(
@@ -315,7 +317,7 @@ class TestExecuteCommand:
             mock_poll.return_value = {
                 'id': 'cmd-123',
                 'status': 'running',
-                'finished_at': None,
+                'handled_at': None,
             }
 
             result = await execute_command(
@@ -362,27 +364,92 @@ class TestExecuteCommand:
             assert 'No command data returned' in result['message']
 
     @pytest.mark.asyncio
-    async def test_stuck_status(self, mock_http_client, mock_token_manager):
+    async def test_failed_command_completes(
+        self, mock_http_client, mock_token_manager
+    ):
+        # A non-zero exit is a completed command ('failed'), not still-running.
         with (
             patch('tools.command_tools._submit_command') as mock_submit,
             patch('tools.command_tools._get_command_result') as mock_poll,
         ):
-            mock_submit.return_value = {'id': 'cmd-300'}
+            mock_submit.return_value = {'id': 'cmd-400'}
             mock_poll.return_value = {
-                'id': 'cmd-300',
-                'status': 'stuck',
-                'finished_at': None,
+                'id': 'cmd-400',
+                'status': 'failed',
+                'success': False,
+                'exit_code': 2,
+                'result': 'ls: cannot access',
+                'handled_at': '2024-01-01T00:00:01Z',
             }
 
             result = await execute_command(
                 server_id='550e8400-e29b-41d4-a716-446655440001',
-                command='bad command',
+                command='ls /nope',
                 workspace='testworkspace',
-                timeout=2,
+                timeout=10,
+            )
+
+            assert result['status'] == 'success'
+            assert result['data']['exit_code'] == 2
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('status', ['stuck', 'denied', 'rejected', 'error'])
+    async def test_terminal_failure_status(
+        self, status, mock_http_client, mock_token_manager
+    ):
+        # Terminal non-approval statuses: the command will not produce a result,
+        # so error out immediately instead of polling until timeout.
+        with (
+            patch('tools.command_tools._submit_command') as mock_submit,
+            patch('tools.command_tools._get_command_result') as mock_poll,
+        ):
+            mock_submit.return_value = {'id': 'cmd-401'}
+            mock_poll.return_value = {
+                'id': 'cmd-401',
+                'status': status,
+                'handled_at': None,
+            }
+
+            result = await execute_command(
+                server_id='550e8400-e29b-41d4-a716-446655440001',
+                command='rm -rf /',
+                workspace='testworkspace',
+                timeout=10,
             )
 
             assert result['status'] == 'error'
-            assert 'stuck' in result['message']
+            assert status in result['message']
+
+    @pytest.mark.asyncio
+    async def test_awaiting_approval_returns_pending(
+        self, mock_http_client, mock_token_manager
+    ):
+        # HITL verification: a human must approve out-of-band (ADR 0015), so
+        # return a structured pending result instead of burning the poll window.
+        with (
+            patch('tools.command_tools._submit_command') as mock_submit,
+            patch('tools.command_tools._get_command_result') as mock_poll,
+        ):
+            mock_submit.return_value = {'id': 'cmd-402'}
+            mock_poll.return_value = {
+                'id': 'cmd-402',
+                'status': 'awaiting_approval',
+                'handled_at': None,
+            }
+
+            result = await execute_command(
+                server_id='550e8400-e29b-41d4-a716-446655440001',
+                command='sudo reboot',
+                workspace='testworkspace',
+                timeout=10,
+            )
+
+            assert result['status'] == 'pending_approval'
+            assert result['category'] == 'COMMAND_AWAITING_APPROVAL'
+            assert result['requires_human_approval'] is True
+            assert result['command_id'] == 'cmd-402'
+            # Category has a registered next_action (not the generic fallback).
+            assert 'list_commands' in result['next_action']
 
     @pytest.mark.asyncio
     async def test_forwards_all_params(self, mock_http_client, mock_token_manager):
@@ -393,7 +460,7 @@ class TestExecuteCommand:
             mock_submit.return_value = {'id': 'cmd-200'}
             mock_poll.return_value = {
                 'id': 'cmd-200',
-                'finished_at': '2024-01-01T00:00:01Z',
+                'handled_at': '2024-01-01T00:00:01Z',
             }
 
             await execute_command(
@@ -437,11 +504,12 @@ class TestExecuteCommand:
             mock_submit.return_value = {'id': 'cmd-789'}
             mock_poll.return_value = {
                 'id': 'cmd-789',
-                'status': 'completed',
+                'status': 'failed',
+                'success': False,
                 'exit_code': 1,
                 'result': 'Alpacon denied this sudo command '
                 '(SUDO_PRESENCE_REQUIRED).\n',
-                'finished_at': '2024-01-01T00:00:01Z',
+                'handled_at': '2024-01-01T00:00:01Z',
             }
 
             result = await execute_command(
@@ -475,11 +543,12 @@ class TestExecuteCommand:
             mock_submit.return_value = {'id': 'cmd-791'}
             mock_poll.return_value = {
                 'id': 'cmd-791',
-                'status': 'completed',
+                'status': 'failed',
+                'success': False,
                 'exit_code': 1,
                 'result': 'Alpacon denied this sudo command '
                 '(SUDO_APPROVAL_REQUIRED).\n',
-                'finished_at': '2024-01-01T00:00:01Z',
+                'handled_at': '2024-01-01T00:00:01Z',
             }
 
             result = await execute_command(
@@ -506,10 +575,11 @@ class TestExecuteCommand:
             mock_submit.return_value = {'id': 'cmd-792'}
             mock_poll.return_value = {
                 'id': 'cmd-792',
-                'status': 'completed',
+                'status': 'failed',
+                'success': False,
                 'exit_code': 1,
                 'result': 'Alpacon denied this sudo command (SUDO_RISK_DENIED).\n',
-                'finished_at': '2024-01-01T00:00:01Z',
+                'handled_at': '2024-01-01T00:00:01Z',
             }
 
             result = await execute_command(
@@ -543,10 +613,11 @@ class TestExecuteCommand:
             mock_submit.return_value = {'id': 'cmd-790'}
             mock_poll.return_value = {
                 'id': 'cmd-790',
-                'status': 'completed',
+                'status': 'success',
+                'success': True,
                 'exit_code': 0,
                 'result': 'uid=0(root)\n',
-                'finished_at': '2024-01-01T00:00:01Z',
+                'handled_at': '2024-01-01T00:00:01Z',
             }
 
             result = await execute_command(
@@ -604,8 +675,8 @@ class TestExecuteCommandWithSession:
         mock_http_client.post.return_value = {'id': 'cmd-123'}
         mock_http_client.get.return_value = {
             'id': 'cmd-123',
-            'finished_at': '2026-05-19T10:00:00Z',
-            'status': 'completed',
+            'handled_at': '2026-05-19T10:00:00Z',
+            'status': 'success',
         }
 
         await execute_command(
