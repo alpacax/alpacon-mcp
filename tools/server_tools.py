@@ -114,13 +114,14 @@ async def get_server(
         token=token,
     )
 
-    if err := unwrap_http_result(
+    err = unwrap_http_result(
         result,
         default_message='Failed to get server details',
         server_id=server_id,
         region=region,
         workspace=workspace,
-    ):
+    )
+    if err:
         return err
 
     return success_response(
