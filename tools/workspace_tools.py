@@ -8,24 +8,25 @@ from server import mcp
 from utils.common import error_response, success_response, unwrap_http_result
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
+from utils.token_manager import TokenManager
 from utils.tool_annotations import READ_ONLY
 
 
 def _collect_workspaces_from_tokens(
-    all_tokens: dict[str, Any],
+    token_manager: TokenManager,
     target_region: str = '',
 ) -> list[dict[str, Any]]:
     """Collect workspace info from token.json data.
 
     Args:
-        all_tokens: Token data from TokenManager
+        token_manager: TokenManager to read entries and pinned URL overrides from.
         target_region: If provided, filter to this region only. Empty means all regions.
 
     Returns:
         List of workspace info dicts
     """
     workspaces = []
-    for region_key, region_data in all_tokens.items():
+    for region_key, region_data in token_manager.get_all_tokens().items():
         if target_region and region_key != target_region:
             continue
 
@@ -36,12 +37,20 @@ def _collect_workspaces_from_tokens(
                 else:
                     has_token = bool(workspace_data)
 
+                # Resolve the displayed host through the same helper request
+                # routing uses (env-var precedence + normalization), so the
+                # reported domain always matches http_client.get_base_url()
+                # (ADR 0027 slug safety).
+                pinned_url = token_manager.get_base_url_override(
+                    region_key, workspace_key
+                )
                 workspaces.append(
                     {
                         'workspace': workspace_key,
                         'region': region_key,
                         'has_token': has_token,
-                        'domain': f'{workspace_key}.{region_key}.alpacon.io',
+                        'domain': pinned_url
+                        or f'{workspace_key}.{region_key}.alpacon.io',
                     }
                 )
         else:
@@ -118,8 +127,7 @@ async def list_workspaces(region: str = '') -> dict[str, Any]:
     from utils.token_manager import get_token_manager
 
     token_manager = get_token_manager()
-    all_tokens = token_manager.get_all_tokens()
-    workspaces = _collect_workspaces_from_tokens(all_tokens, target_region=region)
+    workspaces = _collect_workspaces_from_tokens(token_manager, target_region=region)
 
     return success_response(
         data={

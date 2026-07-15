@@ -40,6 +40,10 @@ def mock_region_auto_detect():
     mock_tm.find_region_for_workspace.return_value = 'ap1'
     mock_tm.get_default_region.return_value = 'ap1'
     mock_tm.get_available_regions.return_value = ['ap1']
+    # No pinned host override by default: http_client.get_base_url derives the
+    # default Alpacon Cloud host. (get_base_url also type-guards this, but being
+    # explicit keeps the mock's behavior obvious.)
+    mock_tm.get_base_url_override.return_value = None
 
     with patch('utils.token_manager.get_token_manager', return_value=mock_tm):
         yield mock_tm
