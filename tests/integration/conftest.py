@@ -122,23 +122,15 @@ def sample_api_responses():
                 ],
             },
             'server_detail': {
-                'count': 1,
-                'results': [
-                    {
-                        'id': '550e8400-e29b-41d4-a716-446655440001',
-                        'name': 'web-server-01',
-                        'ip': '10.0.1.10',
-                        'status': 'running',
-                        'os': 'Ubuntu 22.04',
-                        'cpu': 4,
-                        'memory': 8192,
-                    },
-                ],
+                'id': '550e8400-e29b-41d4-a716-446655440001',
+                'name': 'web-server-01',
+                'ip': '10.0.1.10',
+                'status': 'running',
+                'os': 'Ubuntu 22.04',
+                'cpu': 4,
+                'memory': 8192,
             },
-            'server_not_found': {
-                'count': 0,
-                'results': [],
-            },
+            'server_not_found': {'detail': 'Not found.'},
             'server_note_created': {
                 'id': 'note-001',
                 'server': '550e8400-e29b-41d4-a716-446655440001',

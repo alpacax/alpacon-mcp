@@ -16,6 +16,9 @@ _PLATFORM_LIST_STR = ', '.join(f'"{p}"' for p in sorted(VALID_PLATFORMS))
     description=(
         'List all servers in a workspace. Returns server names, UUIDs, status, OS, and connection info. '
         'Use this to discover available servers and obtain server IDs required by other tools. '
+        'Results are paginated: 15 per page by default. Compare the response `count` against the '
+        'number of `results` and follow the `next` page number—or pass page_size (max 100)—to see '
+        'every server. '
         'Related: get_server (single server details), get_server_overview (full system info).'
     ),
     annotations=READ_ONLY,
@@ -24,12 +27,20 @@ _PLATFORM_LIST_STR = ', '.join(f'"{p}"' for p in sorted(VALID_PLATFORMS))
         'anthropic/searchHint': 'server list inventory discover find all',
     },
 )
-async def list_servers(workspace: str, region: str = '', **kwargs) -> dict[str, Any]:
+async def list_servers(
+    workspace: str,
+    region: str = '',
+    page: int | None = None,
+    page_size: int | None = None,
+    **kwargs,
+) -> dict[str, Any]:
     """Get list of servers.
 
     Args:
         workspace: Workspace name. Required parameter
         region: Region (ap1, us1, eu1). Auto-detected if not provided
+        page: Page number for pagination (optional)
+        page_size: Number of results per page, up to 100 (optional)
 
     Returns:
         Server list response
@@ -37,12 +48,19 @@ async def list_servers(workspace: str, region: str = '', **kwargs) -> dict[str, 
     # Get token (injected by decorator)
     token = kwargs.get('token')
 
+    params: dict[str, Any] = {}
+    if page is not None:
+        params['page'] = page
+    if page_size is not None:
+        params['page_size'] = page_size
+
     # Make async call to servers endpoint
     result = await http_client.get(
         region=region,
         workspace=workspace,
         endpoint='/api/servers/servers/',
         token=token,
+        params=params,
     )
 
     # Check if result is an error response from http_client
@@ -87,41 +105,27 @@ async def get_server(
     # Get token (injected by decorator)
     token = kwargs.get('token')
 
-    # Make async call to server detail endpoint
-    # Use servers/servers/ endpoint with ID filter instead of direct ID endpoint
+    # The list endpoint has no 'id' filter, so filtering there is silently ignored
+    # and returns the first server of the default ordering. Address the server directly.
     result = await http_client.get(
         region=region,
         workspace=workspace,
-        endpoint='/api/servers/servers/',
+        endpoint=f'/api/servers/servers/{server_id}/',
         token=token,
-        params={'id': server_id},
     )
 
-    # Check if result is an error response from http_client
-    if isinstance(result, dict) and 'error' in result:
-        error_kwargs: dict[str, Any] = {
-            'server_id': server_id,
-            'region': region,
-            'workspace': workspace,
-        }
-        status_code = result.get('status_code')
-        if status_code is not None:
-            error_kwargs['status_code'] = status_code
-        return error_response(
-            result.get('message', 'Failed to get server details'),
-            **error_kwargs,
-        )
-
-    # Extract the first result from the list if results exist
-    if isinstance(result, dict) and 'results' in result and len(result['results']) > 0:
-        server_data = result['results'][0]
-    else:
-        return error_response(
-            'Server not found', server_id=server_id, region=region, workspace=workspace
-        )
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to get server details',
+        server_id=server_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
 
     return success_response(
-        data=server_data, server_id=server_id, region=region, workspace=workspace
+        data=result, server_id=server_id, region=region, workspace=workspace
     )
 
 

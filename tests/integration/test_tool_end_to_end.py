@@ -59,8 +59,8 @@ class TestServerToolsEndToEnd:
         api_data = sample_api_responses()
 
         def handler(request: httpx.Request) -> httpx.Response:
-            # Verify the request has the server ID filter
-            assert 'id' in str(request.url)
+            # The server must be addressed by URL path, not a list filter
+            assert request.url.path.endswith(f'/api/servers/servers/{SERVER_UUID}/')
             return httpx.Response(200, json=api_data['server_detail'])
 
         patched_http_client.set_handler(handler)
@@ -80,7 +80,7 @@ class TestServerToolsEndToEnd:
         api_data = sample_api_responses()
 
         def handler(request: httpx.Request) -> httpx.Response:
-            return httpx.Response(200, json=api_data['server_not_found'])
+            return httpx.Response(404, json=api_data['server_not_found'])
 
         patched_http_client.set_handler(handler)
 
@@ -91,7 +91,8 @@ class TestServerToolsEndToEnd:
         )
 
         assert result['status'] == 'error'
-        assert 'Server not found' in result['message']
+        assert result['status_code'] == 404
+        assert result['server_id'] == '99999999-9999-9999-9999-999999999999'
 
     async def test_create_server_note_post_body(
         self, patched_http_client, mock_token_for_integration, sample_api_responses
