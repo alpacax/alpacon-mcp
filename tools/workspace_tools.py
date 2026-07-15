@@ -31,8 +31,13 @@ def _collect_workspaces_from_tokens(
 
         if isinstance(region_data, dict):
             for workspace_key, workspace_data in region_data.items():
+                pinned_url = None
                 if isinstance(workspace_data, dict):
                     has_token = bool(workspace_data.get('token'))
+                    # A pinned base URL (object form) is the authoritative host;
+                    # report it instead of the derived one for consistency with
+                    # how requests are actually routed (ADR 0027 slug safety).
+                    pinned_url = workspace_data.get('url')
                 else:
                     has_token = bool(workspace_data)
 
@@ -41,7 +46,8 @@ def _collect_workspaces_from_tokens(
                         'workspace': workspace_key,
                         'region': region_key,
                         'has_token': has_token,
-                        'domain': f'{workspace_key}.{region_key}.alpacon.io',
+                        'domain': pinned_url
+                        or f'{workspace_key}.{region_key}.alpacon.io',
                     }
                 )
         else:

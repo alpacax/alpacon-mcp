@@ -125,6 +125,21 @@ class TokenManager:
             'workspace': workspace,
         }
 
+    @staticmethod
+    def _entry_token(entry: Any) -> str | None:
+        """Extract the token string from a config entry.
+
+        An entry is either a bare token string (legacy form) or an object
+        ``{"token": "...", "url": "..."}`` (used to pin a workspace's API host;
+        see ``get_base_url_override``). Returns None when no token is present.
+        """
+        if isinstance(entry, dict):
+            token = entry.get('token')
+            return token if isinstance(token, str) and token else None
+        if isinstance(entry, str) and entry:
+            return entry
+        return None
+
     def get_token(self, region: str, workspace: str) -> str | None:
         """Get token for specific region and workspace.
 
@@ -146,12 +161,57 @@ class TokenManager:
             )
             return env_token
 
-        # Fall back to config file
+        # Fall back to config file. An entry may be a bare token string or an
+        # object ``{"token": "...", "url": "..."}``; unwrap either form.
         if region in self.tokens and workspace in self.tokens[region]:
-            logger.info(f'Found token for {workspace}.{region} from config file')
-            return self.tokens[region][workspace]
+            token = self._entry_token(self.tokens[region][workspace])
+            if token:
+                logger.info(f'Found token for {workspace}.{region} from config file')
+                return token
 
         logger.warning(f'No token found for {workspace}.{region}')
+        return None
+
+    @staticmethod
+    def _normalize_base_url(url: str) -> str:
+        """Normalize a configured base URL: add https:// if scheme-less, drop trailing '/'."""
+        url = url.strip().rstrip('/')
+        if url and '://' not in url:
+            url = 'https://' + url
+        return url
+
+    def get_base_url_override(self, region: str, workspace: str) -> str | None:
+        """Get an explicitly configured API base URL for a region/workspace.
+
+        Alpacon Cloud hosts are normally derived as
+        ``https://{workspace}.{region}.alpacon.io``. That derivation re-builds
+        the host from the workspace label on every call, which is unsafe once a
+        workspace's URL slug becomes mutable (ADR 0027): a freed slug can later
+        be reused by a different workspace, so a stale label could resolve to
+        the wrong host. Pinning the resolved base URL here keeps a workspace
+        addressable across a slug change (the old host stays alive as an alias)
+        without re-deriving it from a reusable label.
+
+        Resolution order (mirrors ``get_token``):
+        1. Environment variable ``ALPACON_MCP_<REGION>_<WORKSPACE>_URL``
+        2. Config-file object form ``{"token": "...", "url": "https://..."}``
+
+        Returns:
+            The normalized base URL if configured, otherwise None (caller derives
+            the default host).
+        """
+        env_var_name = f'ALPACON_MCP_{region.upper()}_{workspace.upper()}_URL'
+        env_url = os.getenv(env_var_name)
+        if env_url and env_url.strip():
+            return self._normalize_base_url(env_url)
+
+        if region in self.tokens and workspace in self.tokens[region]:
+            entry = self.tokens[region][workspace]
+            if isinstance(entry, dict):
+                url = entry.get('url')
+                if isinstance(url, str) and url.strip():
+                    return self._normalize_base_url(url)
+
         return None
 
     def get_all_tokens(self) -> dict[str, Any]:

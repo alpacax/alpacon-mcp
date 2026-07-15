@@ -231,6 +231,29 @@ export ALPACON_MCP_AP1_PRODUCTION_TOKEN="alpat-ABC123xyz789..."
 uvx alpacon-mcp
 ```
 
+**Pinning a workspace API host** (optional):
+
+By default the API host is derived from the workspace name as
+`https://{workspace}.{region}.alpacon.io`. To pin a fixed base URL instead —
+so a workspace stays reachable even if its URL label later changes — use the
+object form of a token entry:
+
+```bash
+echo '{
+  "us1": {
+    "production": {
+      "token": "alpat-ABC123xyz789...",
+      "url": "https://production.us1.alpacon.io"
+    }
+  }
+}' > ~/.alpacon-mcp/token.json
+```
+
+Or via environment variable (wins over the config file):
+```bash
+export ALPACON_MCP_US1_PRODUCTION_URL="https://production.us1.alpacon.io"
+```
+
 ### Option C: development installation
 ```bash
 git clone https://github.com/alpacax/alpacon-mcp.git

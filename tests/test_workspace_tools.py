@@ -143,6 +143,29 @@ class TestListWorkspaces:
         assert development_ws['has_token'] is False
 
     @pytest.mark.asyncio
+    async def test_list_workspaces_reports_pinned_url_domain(self, mock_token_manager):
+        """A pinned base URL (object form) is reported as the workspace domain."""
+        from tools.workspace_tools import list_workspaces
+
+        mock_token_manager.get_all_tokens.return_value = {
+            'us1': {
+                'acme': {'token': 'token1', 'url': 'https://acme.us1.alpacon.io'},
+                'plain': 'bare-token',
+            }
+        }
+
+        result = await list_workspaces(region='us1')
+
+        workspaces = result['data']['workspaces']
+        acme_ws = next(ws for ws in workspaces if ws['workspace'] == 'acme')
+        plain_ws = next(ws for ws in workspaces if ws['workspace'] == 'plain')
+
+        # Pinned URL wins; bare-string entry falls back to derived host.
+        assert acme_ws['domain'] == 'https://acme.us1.alpacon.io'
+        assert acme_ws['has_token'] is True
+        assert plain_ws['domain'] == 'plain.us1.alpacon.io'
+
+    @pytest.mark.asyncio
     async def test_list_workspaces_default_region(self, mock_token_manager):
         """Test workspace listing without region returns all regions."""
         from tools.workspace_tools import list_workspaces
