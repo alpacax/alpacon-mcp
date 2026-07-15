@@ -128,6 +128,27 @@ class TestListServers:
             workspace='testworkspace',
             endpoint='/api/servers/servers/',
             token='test-token',
+            params={},
+        )
+
+    @pytest.mark.asyncio
+    async def test_list_servers_pagination(
+        self, mock_http_client, mock_token_manager, sample_servers_list
+    ):
+        """Test servers list forwards pagination params to the API."""
+        mock_http_client.get.return_value = sample_servers_list
+
+        result = await list_servers(
+            workspace='testworkspace', region='ap1', page=2, page_size=100
+        )
+
+        assert result['status'] == 'success'
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/servers/servers/',
+            token='test-token',
+            params={'page': 2, 'page_size': 100},
         )
 
     @pytest.mark.asyncio
@@ -156,6 +177,7 @@ class TestListServers:
             workspace='testworkspace',
             endpoint='/api/servers/servers/',
             token='test-token',
+            params={},
         )
 
     @pytest.mark.asyncio
@@ -177,7 +199,7 @@ class TestGetServer:
         self, mock_http_client, mock_token_manager, sample_server
     ):
         """Test successful server details retrieval."""
-        mock_http_client.get.return_value = {'count': 1, 'results': [sample_server]}
+        mock_http_client.get.return_value = sample_server
 
         result = await get_server(
             server_id='550e8400-e29b-41d4-a716-446655440123', workspace='testworkspace'
@@ -187,12 +209,13 @@ class TestGetServer:
         assert result['data'] == sample_server
         assert result['server_id'] == '550e8400-e29b-41d4-a716-446655440123'
 
+        # Must address the server directly: the list endpoint ignores an 'id'
+        # filter and would return the first server of the default ordering.
         mock_http_client.get.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/servers/servers/',
+            endpoint='/api/servers/servers/550e8400-e29b-41d4-a716-446655440123/',
             token='test-token',
-            params={'id': '550e8400-e29b-41d4-a716-446655440123'},
         )
 
     @pytest.mark.asyncio
@@ -211,21 +234,27 @@ class TestGetServer:
     @pytest.mark.asyncio
     async def test_get_server_not_found(self, mock_http_client, mock_token_manager):
         """Test server details with non-existent server."""
-        mock_http_client.get.return_value = {'count': 0, 'results': []}
+        mock_http_client.get.return_value = {
+            'error': 'HTTP Error',
+            'status_code': 404,
+            'message': 'Not found.',
+            'response': '{"detail":"Not found."}',
+        }
 
         result = await get_server(
             server_id='99999999-9999-9999-9999-999999999999', workspace='testworkspace'
         )
 
         assert result['status'] == 'error'
-        assert 'Server not found' in result['message']
+        assert result['status_code'] == 404
+        assert result['server_id'] == '99999999-9999-9999-9999-999999999999'
 
     @pytest.mark.asyncio
     async def test_get_server_different_region(
         self, mock_http_client, mock_token_manager, sample_server
     ):
         """Test server details with different region."""
-        mock_http_client.get.return_value = {'count': 1, 'results': [sample_server]}
+        mock_http_client.get.return_value = sample_server
 
         result = await get_server(
             server_id='550e8400-e29b-41d4-a716-446655440123',
@@ -237,9 +266,8 @@ class TestGetServer:
         mock_http_client.get.assert_called_once_with(
             region='eu1',
             workspace='testworkspace',
-            endpoint='/api/servers/servers/',
+            endpoint='/api/servers/servers/550e8400-e29b-41d4-a716-446655440123/',
             token='test-token',
-            params={'id': '550e8400-e29b-41d4-a716-446655440123'},
         )
 
     @pytest.mark.asyncio
@@ -428,6 +456,7 @@ class TestParameterValidation:
             workspace='test-workspace_123',
             endpoint='/api/servers/servers/',
             token='test-token',
+            params={},
         )
 
     @pytest.mark.asyncio
@@ -477,6 +506,7 @@ class TestRegionHandling:
             workspace='testworkspace',
             endpoint='/api/servers/servers/',
             token='test-token',
+            params={},
         )
 
 
