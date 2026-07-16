@@ -158,7 +158,7 @@ async def _get_command_result(
 
 
 @mcp_tool_handler(
-    description='List recent command execution history with status, output, and timestamps. Filterable by server ID. When to use: reviewing past commands or checking what has been run on a server. Related: get_command_result (get full output of a specific command).',
+    description='List recent command execution history with status, output, and timestamps. Filterable by server ID. When to use: reviewing past commands, or retrieving the result of a command whose execute_command call timed out. Related: execute_command (run a command and wait).',
     annotations=READ_ONLY,
     meta={'anthropic/searchHint': 'command history list recent'},
 )
@@ -309,7 +309,9 @@ async def execute_command(
         if isinstance(result, dict):
             status = result.get('status', '')
 
-            if result.get('finished_at') is not None:
+            # handled_at is set once the agent reports the result (status then
+            # becomes 'success'/'failed'); the Command API has no 'finished_at'.
+            if result.get('handled_at') is not None:
                 response = success_response(
                     data=result,
                     command_id=command_id,
@@ -335,7 +337,29 @@ async def execute_command(
                         )
                 return response
 
-            if status in ('stuck', 'error'):
+            if status == 'awaiting_approval':
+                # HITL verification gate: a human must approve out-of-band
+                # (ADR 0015); polling would only burn the timeout window.
+                return pending_approval_response(
+                    'Command is awaiting human approval. A human must approve '
+                    'it out-of-band (Alpacon web console or Slack); it then runs '
+                    'automatically. Wait, then retrieve the result via '
+                    'list_commands. Do not re-run: a resubmission needs its own '
+                    'approval and may double-execute the command.',
+                    category='COMMAND_AWAITING_APPROVAL',
+                    command_id=command_id,
+                    server_id=server_id,
+                    command=command,
+                    region=region,
+                    workspace=workspace,
+                )
+
+            # Terminal non-approval statuses: the command will not produce a
+            # result (denied/rejected never run; stuck gave up), so fail fast
+            # instead of polling until timeout. ('error' is omitted: the
+            # server's compute_status never emits it given the scheduled_at
+            # default, so it is unreachable here.)
+            if status in ('denied', 'rejected', 'stuck'):
                 return error_response(
                     f'Command failed with status: {status}',
                     command_id=command_id,
@@ -346,8 +370,19 @@ async def execute_command(
                     details=result,
                 )
 
-            # Command still in progress — reset deadline (within hard cap)
-            if status in ('running', 'acked'):
+            # Command still in progress — reset deadline (within hard cap) so a
+            # slow AI verification or delayed delivery does not time out a
+            # command that is still advancing. Covers both pre-execution states
+            # (queued/scheduled/delivered/verifying) and execution (running).
+            # 'acked' is intentionally absent: compute_status returns 'running'
+            # once acked_at is set, so it is never emitted.
+            if status in (
+                'running',
+                'verifying',
+                'delivered',
+                'queued',
+                'scheduled',
+            ):
                 deadline = min(
                     loop.time() + timeout,
                     hard_deadline,
