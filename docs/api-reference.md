@@ -576,7 +576,7 @@ Update workspace-wide preferences. Only the fields you provide are sent (partial
 - `timezone` (string, optional): Workspace timezone; also the billing clock
 - `invite_ttl` (integer, optional): Invitation link time-to-live, in seconds
 - `enabled_extensions` (array, optional): List of enabled extension names
-- `websh_session_timeout` (integer, optional): WebSH idle session timeout, in seconds
+- `websh_session_timeout` (integer, optional): Websh idle session timeout, in seconds
 - `auto_agent_upgrade` (boolean, optional): Whether agents auto-upgrade
 - `package_proxy` (string, optional): Proxy server URL for package installation
 - `billing_email` (string, optional): Billing contact email; SaaS-only field

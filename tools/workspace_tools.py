@@ -269,7 +269,11 @@ async def get_workspace_security(
         token=token,
     )
 
-    if isinstance(result, dict) and result.get('status_code') == 404:
+    if (
+        isinstance(result, dict)
+        and 'error' in result
+        and result.get('status_code') == 404
+    ):
         return error_response(
             'Workspace security settings are not available on this deployment '
             '(this endpoint is SaaS-only and returns 404 on-premise).',
@@ -530,7 +534,7 @@ async def update_workspace_preferences(
         timezone: Workspace timezone; also the billing clock (optional)
         invite_ttl: Invitation link time-to-live, in seconds (optional)
         enabled_extensions: List of enabled extension names (optional)
-        websh_session_timeout: WebSH idle session timeout, in seconds (optional)
+        websh_session_timeout: Websh idle session timeout, in seconds (optional)
         auto_agent_upgrade: Whether agents auto-upgrade (optional)
         package_proxy: Proxy server URL for package installation, e.g.
             http://proxy.example.com:8080 (optional)

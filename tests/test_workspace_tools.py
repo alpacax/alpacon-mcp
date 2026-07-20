@@ -354,6 +354,22 @@ class TestGetWorkspaceSecurity:
         assert result['status_code'] == 500
         assert 'not available on this deployment' not in result['message']
 
+    @pytest.mark.asyncio
+    async def test_success_payload_with_status_code_404_is_not_misread(
+        self, mock_http_client, mock_token
+    ):
+        """A success payload that happens to carry status_code 404 (no error key)
+        must not trip the SaaS-only branch."""
+        mock_http_client.get.return_value = {
+            'mfa_required': True,
+            'status_code': 404,
+        }
+
+        result = await get_workspace_security(workspace='testworkspace', region='ap1')
+
+        assert result['status'] == 'success'
+        assert result['data']['status_code'] == 404
+
 
 class TestListWorkspaceMfaMethods:
     """Test list_workspace_mfa_methods function."""
