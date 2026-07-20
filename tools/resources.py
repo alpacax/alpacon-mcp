@@ -93,7 +93,15 @@ from tools.webftp_tools import (
 )
 from tools.webhook_tools import get_webhook, list_event_subscriptions, list_webhooks
 from tools.work_session_tools import work_session_get, work_session_list
-from tools.workspace_tools import get_current_user, list_workspaces
+from tools.workspace_tools import (
+    get_current_user,
+    get_workspace_access_control,
+    get_workspace_notifications,
+    get_workspace_preferences,
+    get_workspace_security,
+    list_workspace_mfa_methods,
+    list_workspaces,
+)
 
 
 def register_resource(
@@ -398,6 +406,31 @@ RESOURCES: list[tuple[str, Callable, str]] = [
     ('workspaces_all', list_workspaces, 'alpacon://workspaces'),
     ('workspaces_list', list_workspaces, 'alpacon://workspaces/{region}'),
     ('current_user', get_current_user, 'alpacon://current-user/{region}/{workspace}'),
+    (
+        'workspace_settings_access_control',
+        get_workspace_access_control,
+        'alpacon://workspace-settings/access-control/{region}/{workspace}',
+    ),
+    (
+        'workspace_settings_security',
+        get_workspace_security,
+        'alpacon://workspace-settings/security/{region}/{workspace}',
+    ),
+    (
+        'workspace_settings_mfa_methods',
+        list_workspace_mfa_methods,
+        'alpacon://workspace-settings/mfa-methods/{region}/{workspace}',
+    ),
+    (
+        'workspace_settings_notifications',
+        get_workspace_notifications,
+        'alpacon://workspace-settings/notifications/{region}/{workspace}',
+    ),
+    (
+        'workspace_settings_preferences',
+        get_workspace_preferences,
+        'alpacon://workspace-settings/preferences/{region}/{workspace}',
+    ),
 ]
 
 # (name, fn, uri, extra) — extra pins fixed kwargs for the few filtered resources.

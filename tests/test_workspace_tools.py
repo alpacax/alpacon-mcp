@@ -9,7 +9,17 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from tools.workspace_tools import get_current_user
+from tests.conftest import HTTP_ERROR_ENVELOPE
+from tools.workspace_tools import (
+    get_current_user,
+    get_workspace_access_control,
+    get_workspace_notifications,
+    get_workspace_preferences,
+    get_workspace_security,
+    list_workspace_mfa_methods,
+    update_workspace_notifications,
+    update_workspace_preferences,
+)
 
 
 @pytest.fixture
@@ -210,20 +220,25 @@ class TestListWorkspaces:
         assert len(workspaces) == 6
 
 
+@pytest.fixture
+def mock_http_client():
+    """Mock HTTP client for testing workspace settings tools."""
+    with patch('tools.workspace_tools.http_client') as mock_client:
+        mock_client.get = AsyncMock()
+        mock_client.patch = AsyncMock()
+        yield mock_client
+
+
+@pytest.fixture
+def mock_token():
+    """Mock token manager for testing workspace settings tools."""
+    with patch('utils.common.token_manager') as mock_manager:
+        mock_manager.get_token.return_value = 'test-token'
+        yield mock_manager
+
+
 class TestGetCurrentUser:
     """Test get_current_user function."""
-
-    @pytest.fixture
-    def mock_http_client(self):
-        with patch('tools.workspace_tools.http_client') as mock_client:
-            mock_client.get = AsyncMock()
-            yield mock_client
-
-    @pytest.fixture
-    def mock_token(self):
-        with patch('utils.common.token_manager') as mock_manager:
-            mock_manager.get_token.return_value = 'test-token'
-            yield mock_manager
 
     @pytest.mark.asyncio
     async def test_get_current_user_success(self, mock_http_client, mock_token):
@@ -253,6 +268,340 @@ class TestGetCurrentUser:
 
         assert result['status'] == 'error'
         assert 'workspace' in result['message'].lower()
+
+
+class TestGetWorkspaceAccessControl:
+    """Test get_workspace_access_control function."""
+
+    @pytest.mark.asyncio
+    async def test_success(self, mock_http_client, mock_token):
+        mock_http_client.get.return_value = {
+            'sudo_access': 'allowed',
+            'root_access': 'denied',
+            'work_session_ttl': 3600,
+        }
+
+        result = await get_workspace_access_control(
+            workspace='testworkspace', region='ap1'
+        )
+
+        assert result['status'] == 'success'
+        assert result['data']['work_session_ttl'] == 3600
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/workspaces/access-control/-/',
+            token='test-token',
+        )
+
+    @pytest.mark.asyncio
+    async def test_http_error(self, mock_http_client, mock_token):
+        mock_http_client.get.return_value = HTTP_ERROR_ENVELOPE
+
+        result = await get_workspace_access_control(
+            workspace='testworkspace', region='ap1'
+        )
+
+        assert result['status'] == 'error'
+
+
+class TestGetWorkspaceSecurity:
+    """Test get_workspace_security function, including the SaaS-only 404 case."""
+
+    @pytest.mark.asyncio
+    async def test_success(self, mock_http_client, mock_token):
+        mock_http_client.get.return_value = {
+            'mfa_required': True,
+            'allowed_mfa_methods': ['totp', 'webauthn'],
+            'mfa_timeout': 900,
+        }
+
+        result = await get_workspace_security(workspace='testworkspace', region='ap1')
+
+        assert result['status'] == 'success'
+        assert result['data']['mfa_required'] is True
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/workspaces/security/-/',
+            token='test-token',
+        )
+
+    @pytest.mark.asyncio
+    async def test_not_available_on_premise_returns_clear_message(
+        self, mock_http_client, mock_token
+    ):
+        """On-premise deployments 404 this SaaS-only route; report a clear reason."""
+        mock_http_client.get.return_value = HTTP_ERROR_ENVELOPE
+
+        result = await get_workspace_security(workspace='testworkspace', region='ap1')
+
+        assert result['status'] == 'error'
+        assert result['status_code'] == 404
+        assert 'not available on this deployment' in result['message']
+
+    @pytest.mark.asyncio
+    async def test_other_http_error(self, mock_http_client, mock_token):
+        mock_http_client.get.return_value = {
+            'error': 'HTTP Error',
+            'status_code': 500,
+            'message': 'Internal server error',
+        }
+
+        result = await get_workspace_security(workspace='testworkspace', region='ap1')
+
+        assert result['status'] == 'error'
+        assert result['status_code'] == 500
+        assert 'not available on this deployment' not in result['message']
+
+
+class TestListWorkspaceMfaMethods:
+    """Test list_workspace_mfa_methods function."""
+
+    @pytest.mark.asyncio
+    async def test_success(self, mock_http_client, mock_token):
+        mock_http_client.get.return_value = {
+            'allowed_mfa_methods': ['totp'],
+            'passkey_as_mfa': False,
+        }
+
+        result = await list_workspace_mfa_methods(
+            workspace='testworkspace', region='ap1'
+        )
+
+        assert result['status'] == 'success'
+        assert result['data']['allowed_mfa_methods'] == ['totp']
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/workspaces/security/-/mfa-methods/',
+            token='test-token',
+        )
+
+    @pytest.mark.asyncio
+    async def test_http_error(self, mock_http_client, mock_token):
+        mock_http_client.get.return_value = HTTP_ERROR_ENVELOPE
+
+        result = await list_workspace_mfa_methods(
+            workspace='testworkspace', region='ap1'
+        )
+
+        assert result['status'] == 'error'
+
+
+class TestGetWorkspaceNotifications:
+    """Test get_workspace_notifications function."""
+
+    @pytest.mark.asyncio
+    async def test_success(self, mock_http_client, mock_token):
+        mock_http_client.get.return_value = {
+            'disconnection_notification': True,
+            'notification_channels': ['email'],
+        }
+
+        result = await get_workspace_notifications(
+            workspace='testworkspace', region='ap1'
+        )
+
+        assert result['status'] == 'success'
+        assert result['data']['notification_channels'] == ['email']
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/workspaces/notifications/-/',
+            token='test-token',
+        )
+
+    @pytest.mark.asyncio
+    async def test_http_error(self, mock_http_client, mock_token):
+        mock_http_client.get.return_value = HTTP_ERROR_ENVELOPE
+
+        result = await get_workspace_notifications(
+            workspace='testworkspace', region='ap1'
+        )
+
+        assert result['status'] == 'error'
+
+
+class TestGetWorkspacePreferences:
+    """Test get_workspace_preferences function."""
+
+    @pytest.mark.asyncio
+    async def test_success(self, mock_http_client, mock_token):
+        mock_http_client.get.return_value = {
+            'timezone': 'Asia/Seoul',
+            'language': 'ko',
+            'billing_email': 'billing@example.com',
+        }
+
+        result = await get_workspace_preferences(
+            workspace='testworkspace', region='ap1'
+        )
+
+        assert result['status'] == 'success'
+        assert result['data']['timezone'] == 'Asia/Seoul'
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/workspaces/preferences/-/',
+            token='test-token',
+        )
+
+    @pytest.mark.asyncio
+    async def test_http_error(self, mock_http_client, mock_token):
+        mock_http_client.get.return_value = HTTP_ERROR_ENVELOPE
+
+        result = await get_workspace_preferences(
+            workspace='testworkspace', region='ap1'
+        )
+
+        assert result['status'] == 'error'
+
+
+class TestUpdateWorkspaceNotifications:
+    """Test update_workspace_notifications function."""
+
+    @pytest.mark.asyncio
+    async def test_partial_update_only_sends_provided_fields(
+        self, mock_http_client, mock_token
+    ):
+        mock_http_client.patch.return_value = {
+            'disconnection_notification': False,
+            'notification_channels': ['email'],
+        }
+
+        result = await update_workspace_notifications(
+            workspace='testworkspace',
+            disconnection_notification=False,
+            region='ap1',
+        )
+
+        assert result['status'] == 'success'
+        mock_http_client.patch.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/workspaces/notifications/-/',
+            token='test-token',
+            data={'disconnection_notification': False},
+        )
+
+    @pytest.mark.asyncio
+    async def test_update_multiple_fields(self, mock_http_client, mock_token):
+        mock_http_client.patch.return_value = {
+            'disconnection_notification': True,
+            'notification_channels': ['email', 'webhook'],
+        }
+
+        result = await update_workspace_notifications(
+            workspace='testworkspace',
+            disconnection_notification=True,
+            notification_channels=['email', 'webhook'],
+            region='ap1',
+        )
+
+        assert result['status'] == 'success'
+        mock_http_client.patch.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/workspaces/notifications/-/',
+            token='test-token',
+            data={
+                'disconnection_notification': True,
+                'notification_channels': ['email', 'webhook'],
+            },
+        )
+
+    @pytest.mark.asyncio
+    async def test_no_fields_provided_returns_error(self, mock_http_client, mock_token):
+        result = await update_workspace_notifications(
+            workspace='testworkspace', region='ap1'
+        )
+
+        assert result['status'] == 'error'
+        mock_http_client.patch.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_http_error(self, mock_http_client, mock_token):
+        mock_http_client.patch.return_value = HTTP_ERROR_ENVELOPE
+
+        result = await update_workspace_notifications(
+            workspace='testworkspace', disconnection_notification=True, region='ap1'
+        )
+
+        assert result['status'] == 'error'
+
+
+class TestUpdateWorkspacePreferences:
+    """Test update_workspace_preferences function."""
+
+    @pytest.mark.asyncio
+    async def test_partial_update_only_sends_provided_fields(
+        self, mock_http_client, mock_token
+    ):
+        mock_http_client.patch.return_value = {'timezone': 'Asia/Seoul'}
+
+        result = await update_workspace_preferences(
+            workspace='testworkspace',
+            timezone='Asia/Seoul',
+            region='ap1',
+        )
+
+        assert result['status'] == 'success'
+        mock_http_client.patch.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/workspaces/preferences/-/',
+            token='test-token',
+            data={'timezone': 'Asia/Seoul'},
+        )
+
+    @pytest.mark.asyncio
+    async def test_update_multiple_fields(self, mock_http_client, mock_token):
+        mock_http_client.patch.return_value = {
+            'timezone': 'Asia/Seoul',
+            'auto_agent_upgrade': False,
+            'enabled_extensions': ['metrics'],
+        }
+
+        result = await update_workspace_preferences(
+            workspace='testworkspace',
+            timezone='Asia/Seoul',
+            auto_agent_upgrade=False,
+            enabled_extensions=['metrics'],
+            region='ap1',
+        )
+
+        assert result['status'] == 'success'
+        mock_http_client.patch.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/workspaces/preferences/-/',
+            token='test-token',
+            data={
+                'timezone': 'Asia/Seoul',
+                'auto_agent_upgrade': False,
+                'enabled_extensions': ['metrics'],
+            },
+        )
+
+    @pytest.mark.asyncio
+    async def test_no_fields_provided_returns_error(self, mock_http_client, mock_token):
+        result = await update_workspace_preferences(
+            workspace='testworkspace', region='ap1'
+        )
+
+        assert result['status'] == 'error'
+        mock_http_client.patch.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_http_error(self, mock_http_client, mock_token):
+        mock_http_client.patch.return_value = HTTP_ERROR_ENVELOPE
+
+        result = await update_workspace_preferences(
+            workspace='testworkspace', timezone='Asia/Seoul', region='ap1'
+        )
+
+        assert result['status'] == 'error'
 
 
 if __name__ == '__main__':

@@ -480,6 +480,15 @@ All validators are defined in `utils/error_handler.py` and return user-friendly 
 ### ⚙️ Authentication & workspace
 - `list_workspaces`: List available workspaces
 - `get_current_user`: Get currently authenticated user info (username, email, role, UID, shell, home directory)
+- `get_workspace_access_control`: Get workspace access control settings (sudo/root access policy, tunnel/editor defaults, home directory permission, Work Session TTLs, command-env audit exposure, shared account names)
+- `get_workspace_security`: Get workspace authentication/security settings (mfa_required, allowed_mfa_methods, mfa_timeout); SaaS-only route, returns a clear message instead of a raw 404 on-premise
+- `list_workspace_mfa_methods`: List MFA methods allowed for the workspace (`allowed_mfa_methods`, `passkey_as_mfa`); useful when guiding a user through the remote-mode MFA re-authentication flow
+- `get_workspace_notifications`: Get workspace notification settings (disconnection_notification, notification_channels)
+- `get_workspace_preferences`: Get workspace-wide preferences (timezone, locale, billing_email, etc.); workspace-global, not per-user
+- `update_workspace_notifications`: Update workspace notification settings (partial update)
+- `update_workspace_preferences`: Update workspace-wide preferences (partial update); changing `timezone` shifts the workspace's billing-usage aggregation boundary, and `billing_email`/`allowed_domains` are only accepted on SaaS deployments
+
+Access control and security settings are intentionally read-only here: the server gates writes to those governance-level settings behind a superuser session with fresh MFA, which a static API token (stdio mode) cannot satisfy, so they stay human-only via the web console.
 
 **Note**: User settings and profile endpoints are not currently implemented in the Alpacon server. The following tools have been removed:
 - ~~`get_user_settings`~~: Not available (was using `/api/user/settings/`)
@@ -488,7 +497,7 @@ All validators are defined in `utils/error_handler.py` and return user-friendly 
 
 Alternative endpoints available in the server:
 - `/api/profiles/preferences/` (profiles app)
-- `/api/workspaces/preferences/` (workspaces app)
+- `/api/workspaces/preferences/` (workspaces app; see `get_workspace_preferences`/`update_workspace_preferences` above)
 - `/api/auth0/users/` (auth0 app)
 
 ### 🧩 MCP resources
@@ -502,6 +511,7 @@ Read-only data exposed as `alpacon://` resources (one per read tool). URI conven
 - `alpacon://iam/{users|groups|applications}/{region}/{workspace}`: IAM
 - `alpacon://certs/...`, `alpacon://audit/...`, `alpacon://tokens/...`, `alpacon://webhooks/...`, `alpacon://acls/...`, `alpacon://webftp/...`, `alpacon://approvals/...`, `alpacon://events/...`, `alpacon://commands/...`, `alpacon://work-sessions/...`
 - `alpacon://workspaces` (all regions) and `alpacon://workspaces/{region}`, `alpacon://current-user/{region}/{workspace}`
+- `alpacon://workspace-settings/{access-control|security|mfa-methods|notifications|preferences}/{region}/{workspace}`: workspace-wide settings
 
 Resources are generated from a registry table in `tools/resources.py`.
 
