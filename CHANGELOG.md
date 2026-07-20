@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Workspace settings management tools under `/api/workspaces/`
+  - Read tools: `get_workspace_access_control`, `get_workspace_security`, `list_workspace_mfa_methods`, `get_workspace_notifications`, `get_workspace_preferences`
+  - Partial-update tools: `update_workspace_notifications`, `update_workspace_preferences`
+  - Exposed the five read tools as `alpacon://workspace-settings/{access-control|security|mfa-methods|notifications|preferences}/{region}/{workspace}` resources
+  - Security and access-control writes are intentionally omitted (server gates them behind a superuser session with fresh MFA, unsatisfiable by a static API token); `get_workspace_security` is SaaS-only and returns a clear message on on-premise 404
+
 ### Documentation
 - Documented the hosted remote MCP server (`https://mcp.alpacon.io/mcp`, streamable-http transport)
   - Added a "Remote MCP server (hosted, no install)" section to `README.md` with per-client setup for Claude Code, Claude Desktop, Cursor, and VS Code
