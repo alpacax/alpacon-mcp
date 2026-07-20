@@ -65,6 +65,33 @@ def _collect_workspaces_from_tokens(
     return workspaces
 
 
+def _saas_only_security_404(
+    result: Any, region: str, workspace: str
+) -> dict[str, Any] | None:
+    """Translate a SaaS-only 404 into a clear "not available" error.
+
+    The SecuritySettingsViewSet routes (security settings and their mfa-methods
+    sub-route) are only registered under AUTH0_ENABLED, so on-premise
+    deployments return 404. Requires the http_client `error` key (matching
+    unwrap_http_result) so a success payload carrying status_code 404 is not
+    misread. Returns an error_response when the result is a 404 error envelope,
+    else None so the caller continues with normal unwrapping.
+    """
+    if (
+        isinstance(result, dict)
+        and 'error' in result
+        and result.get('status_code') == 404
+    ):
+        return error_response(
+            'Workspace security settings are not available on this deployment '
+            '(this endpoint is SaaS-only and returns 404 on-premise).',
+            region=region,
+            workspace=workspace,
+            status_code=404,
+        )
+    return None
+
+
 @mcp.tool(
     description='List all available workspaces and their regions. Returns workspace names, region codes, and domain hostnames. In local mode reads from token.json; in server mode extracts from JWT claims. When to use: first tool to call to discover which workspaces are configured. Related: list_servers (find servers in a workspace). Note: Most other tools require a workspace parameter from this list.',
     annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False),
@@ -269,18 +296,9 @@ async def get_workspace_security(
         token=token,
     )
 
-    if (
-        isinstance(result, dict)
-        and 'error' in result
-        and result.get('status_code') == 404
-    ):
-        return error_response(
-            'Workspace security settings are not available on this deployment '
-            '(this endpoint is SaaS-only and returns 404 on-premise).',
-            region=region,
-            workspace=workspace,
-            status_code=404,
-        )
+    saas_only = _saas_only_security_404(result, region, workspace)
+    if saas_only:
+        return saas_only
 
     err = unwrap_http_result(
         result,
@@ -327,6 +345,10 @@ async def list_workspace_mfa_methods(
         endpoint='/api/workspaces/security/-/mfa-methods/',
         token=token,
     )
+
+    saas_only = _saas_only_security_404(result, region, workspace)
+    if saas_only:
+        return saas_only
 
     err = unwrap_http_result(
         result,
@@ -469,7 +491,9 @@ async def update_workspace_notifications(
         update_data['notification_channels'] = notification_channels
 
     if not update_data:
-        return error_response('No update data provided')
+        return error_response(
+            'No update data provided', region=region, workspace=workspace
+        )
 
     result = await http_client.patch(
         region=region,
@@ -572,7 +596,9 @@ async def update_workspace_preferences(
         update_data['allowed_domains'] = allowed_domains
 
     if not update_data:
-        return error_response('No update data provided')
+        return error_response(
+            'No update data provided', region=region, workspace=workspace
+        )
 
     result = await http_client.patch(
         region=region,

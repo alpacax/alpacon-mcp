@@ -395,7 +395,11 @@ class TestListWorkspaceMfaMethods:
         )
 
     @pytest.mark.asyncio
-    async def test_http_error(self, mock_http_client, mock_token):
+    async def test_not_available_on_premise_returns_clear_message(
+        self, mock_http_client, mock_token
+    ):
+        """This mfa-methods sub-route shares the SaaS-only 404 guard, so on-premise
+        deployments get the same clear reason as get_workspace_security."""
         mock_http_client.get.return_value = HTTP_ERROR_ENVELOPE
 
         result = await list_workspace_mfa_methods(
@@ -403,6 +407,42 @@ class TestListWorkspaceMfaMethods:
         )
 
         assert result['status'] == 'error'
+        assert result['status_code'] == 404
+        assert 'not available on this deployment' in result['message']
+
+    @pytest.mark.asyncio
+    async def test_other_http_error(self, mock_http_client, mock_token):
+        mock_http_client.get.return_value = {
+            'error': 'HTTP Error',
+            'status_code': 500,
+            'message': 'Internal server error',
+        }
+
+        result = await list_workspace_mfa_methods(
+            workspace='testworkspace', region='ap1'
+        )
+
+        assert result['status'] == 'error'
+        assert result['status_code'] == 500
+        assert 'not available on this deployment' not in result['message']
+
+    @pytest.mark.asyncio
+    async def test_success_payload_with_status_code_404_is_not_misread(
+        self, mock_http_client, mock_token
+    ):
+        """A success payload carrying status_code 404 (no error key) must not trip
+        the shared SaaS-only branch."""
+        mock_http_client.get.return_value = {
+            'allowed_mfa_methods': ['totp'],
+            'status_code': 404,
+        }
+
+        result = await list_workspace_mfa_methods(
+            workspace='testworkspace', region='ap1'
+        )
+
+        assert result['status'] == 'success'
+        assert result['data']['allowed_mfa_methods'] == ['totp']
 
 
 class TestGetWorkspaceNotifications:
@@ -534,6 +574,8 @@ class TestUpdateWorkspaceNotifications:
         )
 
         assert result['status'] == 'error'
+        assert result['region'] == 'ap1'
+        assert result['workspace'] == 'testworkspace'
         mock_http_client.patch.assert_not_called()
 
     @pytest.mark.asyncio
@@ -607,6 +649,8 @@ class TestUpdateWorkspacePreferences:
         )
 
         assert result['status'] == 'error'
+        assert result['region'] == 'ap1'
+        assert result['workspace'] == 'testworkspace'
         mock_http_client.patch.assert_not_called()
 
     @pytest.mark.asyncio
