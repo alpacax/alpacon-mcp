@@ -237,6 +237,18 @@ def mock_token():
         yield mock_manager
 
 
+@pytest.fixture
+def mock_jwt_token():
+    """Mock token manager returning a JWT-shaped token.
+
+    The security-settings tools stack @require_jwt_auth, which rejects any
+    token that is not JWT-shaped (3 dotted non-empty parts).
+    """
+    with patch('utils.common.token_manager') as mock_manager:
+        mock_manager.get_token.return_value = 'header.payload.signature'
+        yield mock_manager
+
+
 class TestGetCurrentUser:
     """Test get_current_user function."""
 
@@ -309,7 +321,7 @@ class TestGetWorkspaceSecurity:
     """Test get_workspace_security function, including the SaaS-only 404 case."""
 
     @pytest.mark.asyncio
-    async def test_success(self, mock_http_client, mock_token):
+    async def test_success(self, mock_http_client, mock_jwt_token):
         mock_http_client.get.return_value = {
             'mfa_required': True,
             'allowed_mfa_methods': ['totp', 'webauthn'],
@@ -324,12 +336,22 @@ class TestGetWorkspaceSecurity:
             region='ap1',
             workspace='testworkspace',
             endpoint='/api/workspaces/security/-/',
-            token='test-token',
+            token='header.payload.signature',
         )
 
     @pytest.mark.asyncio
+    async def test_rejects_non_jwt_token(self, mock_http_client, mock_token):
+        """A static API token (stdio mode) is rejected before any request; the
+        upstream SecuritySettingsViewSet has no APITokenAuthentication."""
+        result = await get_workspace_security(workspace='testworkspace', region='ap1')
+
+        assert result['status'] == 'error'
+        assert 'JWT' in result['message']
+        mock_http_client.get.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_not_available_on_premise_returns_clear_message(
-        self, mock_http_client, mock_token
+        self, mock_http_client, mock_jwt_token
     ):
         """On-premise deployments 404 this SaaS-only route; report a clear reason."""
         mock_http_client.get.return_value = HTTP_ERROR_ENVELOPE
@@ -341,7 +363,7 @@ class TestGetWorkspaceSecurity:
         assert 'not available on this deployment' in result['message']
 
     @pytest.mark.asyncio
-    async def test_other_http_error(self, mock_http_client, mock_token):
+    async def test_other_http_error(self, mock_http_client, mock_jwt_token):
         mock_http_client.get.return_value = {
             'error': 'HTTP Error',
             'status_code': 500,
@@ -356,7 +378,7 @@ class TestGetWorkspaceSecurity:
 
     @pytest.mark.asyncio
     async def test_success_payload_with_status_code_404_is_not_misread(
-        self, mock_http_client, mock_token
+        self, mock_http_client, mock_jwt_token
     ):
         """A success payload that happens to carry status_code 404 (no error key)
         must not trip the SaaS-only branch."""
@@ -375,7 +397,7 @@ class TestListWorkspaceMfaMethods:
     """Test list_workspace_mfa_methods function."""
 
     @pytest.mark.asyncio
-    async def test_success(self, mock_http_client, mock_token):
+    async def test_success(self, mock_http_client, mock_jwt_token):
         mock_http_client.get.return_value = {
             'allowed_mfa_methods': ['totp'],
             'passkey_as_mfa': False,
@@ -391,12 +413,24 @@ class TestListWorkspaceMfaMethods:
             region='ap1',
             workspace='testworkspace',
             endpoint='/api/workspaces/security/-/mfa-methods/',
-            token='test-token',
+            token='header.payload.signature',
         )
 
     @pytest.mark.asyncio
+    async def test_rejects_non_jwt_token(self, mock_http_client, mock_token):
+        """A static API token is rejected before any request, matching
+        get_workspace_security (no APITokenAuthentication on the sub-route)."""
+        result = await list_workspace_mfa_methods(
+            workspace='testworkspace', region='ap1'
+        )
+
+        assert result['status'] == 'error'
+        assert 'JWT' in result['message']
+        mock_http_client.get.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_not_available_on_premise_returns_clear_message(
-        self, mock_http_client, mock_token
+        self, mock_http_client, mock_jwt_token
     ):
         """This mfa-methods sub-route shares the SaaS-only 404 guard, so on-premise
         deployments get the same clear reason as get_workspace_security."""
@@ -411,7 +445,7 @@ class TestListWorkspaceMfaMethods:
         assert 'not available on this deployment' in result['message']
 
     @pytest.mark.asyncio
-    async def test_other_http_error(self, mock_http_client, mock_token):
+    async def test_other_http_error(self, mock_http_client, mock_jwt_token):
         mock_http_client.get.return_value = {
             'error': 'HTTP Error',
             'status_code': 500,
@@ -428,7 +462,7 @@ class TestListWorkspaceMfaMethods:
 
     @pytest.mark.asyncio
     async def test_success_payload_with_status_code_404_is_not_misread(
-        self, mock_http_client, mock_token
+        self, mock_http_client, mock_jwt_token
     ):
         """A success payload carrying status_code 404 (no error key) must not trip
         the shared SaaS-only branch."""

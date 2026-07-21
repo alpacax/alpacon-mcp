@@ -6,7 +6,7 @@ from mcp.types import ToolAnnotations
 
 from server import mcp
 from utils.common import error_response, success_response, unwrap_http_result
-from utils.decorators import mcp_tool_handler
+from utils.decorators import mcp_tool_handler, require_jwt_auth
 from utils.http_client import http_client
 from utils.token_manager import TokenManager
 from utils.tool_annotations import IDEMPOTENT_WRITE, READ_ONLY
@@ -265,9 +265,12 @@ async def get_workspace_access_control(
     description=(
         'Get the workspace authentication/security settings: mfa_required, allowed_mfa_methods, '
         'mfa_timeout, and which actions require MFA. '
-        'Note: this route is SaaS-only; on-premise deployments return 404 from the upstream '
-        'API, and this tool reports that the settings are not available on this deployment '
-        'rather than a generic error. '
+        'Note: the upstream route authenticates JWT (OAuth/SSO) sessions only, so a static '
+        'API token (stdio mode) is rejected before any request is sent; use remote/'
+        'streamable-http (browser SSO) mode to read these settings. '
+        'Note: this route is also SaaS-only; on-premise deployments return 404 from the '
+        'upstream API, and this tool reports that the settings are not available on this '
+        'deployment rather than a generic error. '
         'Related: list_workspace_mfa_methods (allowed methods only), get_workspace_access_control.'
     ),
     annotations=READ_ONLY,
@@ -275,10 +278,14 @@ async def get_workspace_access_control(
         'anthropic/searchHint': 'workspace security mfa authentication settings',
     },
 )
+@require_jwt_auth
 async def get_workspace_security(
     workspace: str, region: str = '', **kwargs
 ) -> dict[str, Any]:
     """Get the workspace authentication/security settings.
+
+    Requires JWT (OAuth/SSO) authentication: the upstream SecuritySettingsViewSet
+    has no APITokenAuthentication, so a static API token is rejected up front.
 
     Args:
         workspace: Workspace name. Required parameter
@@ -318,6 +325,9 @@ async def get_workspace_security(
         'whether a passkey can satisfy MFA (passkey_as_mfa). Useful when a tool call fails '
         'with an MFA re-authentication requirement (remote/streamable-http mode) and you need '
         'to tell the user which methods they can use to complete the browser re-auth step. '
+        'Note: like get_workspace_security, the upstream route authenticates JWT (OAuth/SSO) '
+        'sessions only; a static API token (stdio mode) is rejected before any request is '
+        'sent, and the route is SaaS-only (on-premise returns a clear not-available message). '
         'Related: get_workspace_security (full security settings).'
     ),
     annotations=READ_ONLY,
@@ -325,10 +335,14 @@ async def get_workspace_security(
         'anthropic/searchHint': 'workspace mfa methods list allowed passkey reauth',
     },
 )
+@require_jwt_auth
 async def list_workspace_mfa_methods(
     workspace: str, region: str = '', **kwargs
 ) -> dict[str, Any]:
     """List MFA methods allowed for the workspace.
+
+    Requires JWT (OAuth/SSO) authentication: the upstream mfa-methods action has
+    no APITokenAuthentication, so a static API token is rejected up front.
 
     Args:
         workspace: Workspace name. Required parameter
@@ -457,7 +471,11 @@ async def get_workspace_preferences(
         'Update workspace notification settings. Only the fields you provide are sent '
         '(partial update). Fields: disconnection_notification (bool, notify when a server '
         'disconnects/goes offline), notification_channels (list of channel types to notify '
-        'through: email, webhook, push). Related: get_workspace_notifications.'
+        'through: email, webhook, push). '
+        'Warning: notification_channels REPLACES the whole list, it does not append. To add '
+        'a channel, first read the current list via get_workspace_notifications, merge, then '
+        'send the full list — otherwise the omitted channels are dropped. '
+        'Related: get_workspace_notifications.'
     ),
     annotations=IDEMPOTENT_WRITE,
     meta={
@@ -476,7 +494,9 @@ async def update_workspace_notifications(
     Args:
         workspace: Workspace name. Required parameter
         disconnection_notification: Notify when a server disconnects (optional)
-        notification_channels: Channel types to notify through, e.g. email/webhook/push (optional)
+        notification_channels: Channel types to notify through, e.g. email/webhook/push.
+            Replaces the whole list (not additive); read via get_workspace_notifications
+            and merge before sending to avoid dropping existing channels (optional)
         region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
@@ -523,6 +543,10 @@ async def update_workspace_notifications(
         'billing_email, allowed_domains. '
         "Warning: timezone is the workspace's billing clock—changing it shifts the daily "
         'usage-aggregation boundary. '
+        'Warning: the list fields (enabled_extensions, allowed_domains) REPLACE the whole '
+        'list, they do not append; read the current value via get_workspace_preferences, '
+        'merge, then send the full list to avoid dropping existing entries. Narrowing '
+        'enabled_extensions additionally fails with HTTP 402 on non-enterprise plans. '
         'Warning: billing_email and allowed_domains are only accepted by the server on SaaS '
         'deployments. '
         'Related: get_workspace_preferences.'
@@ -557,13 +581,17 @@ async def update_workspace_preferences(
         language: Workspace locale/language code (optional)
         timezone: Workspace timezone; also the billing clock (optional)
         invite_ttl: Invitation link time-to-live, in seconds (optional)
-        enabled_extensions: List of enabled extension names (optional)
+        enabled_extensions: List of enabled extension names. Replaces the whole list
+            (not additive); read via get_workspace_preferences and merge before sending.
+            Narrowing this list fails with HTTP 402 on non-enterprise plans (optional)
         websh_session_timeout: Websh idle session timeout, in seconds (optional)
         auto_agent_upgrade: Whether agents auto-upgrade (optional)
         package_proxy: Proxy server URL for package installation, e.g.
             http://proxy.example.com:8080 (optional)
         billing_email: Billing contact email; SaaS-only field (optional)
-        allowed_domains: Allowed email domains for invites; SaaS-only field (optional)
+        allowed_domains: Allowed email domains for invites; SaaS-only field. Replaces the
+            whole list (not additive); read via get_workspace_preferences and merge before
+            sending (optional)
         region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
