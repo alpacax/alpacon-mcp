@@ -6,10 +6,10 @@ from mcp.types import ToolAnnotations
 
 from server import mcp
 from utils.common import error_response, success_response, unwrap_http_result
-from utils.decorators import mcp_tool_handler
+from utils.decorators import mcp_tool_handler, require_jwt_auth
 from utils.http_client import http_client
 from utils.token_manager import TokenManager
-from utils.tool_annotations import READ_ONLY
+from utils.tool_annotations import IDEMPOTENT_WRITE, READ_ONLY
 
 
 def _collect_workspaces_from_tokens(
@@ -63,6 +63,33 @@ def _collect_workspaces_from_tokens(
                 }
             )
     return workspaces
+
+
+def _saas_only_security_404(
+    result: Any, region: str, workspace: str
+) -> dict[str, Any] | None:
+    """Translate a SaaS-only 404 into a clear "not available" error.
+
+    The SecuritySettingsViewSet routes (security settings and their mfa-methods
+    sub-route) are only registered under AUTH0_ENABLED, so on-premise
+    deployments return 404. Requires the http_client `error` key (matching
+    unwrap_http_result) so a success payload carrying status_code 404 is not
+    misread. Returns an error_response when the result is a 404 error envelope,
+    else None so the caller continues with normal unwrapping.
+    """
+    if (
+        isinstance(result, dict)
+        and 'error' in result
+        and result.get('status_code') == 404
+    ):
+        return error_response(
+            'Workspace security settings are not available on this deployment '
+            '(this endpoint is SaaS-only and returns 404 on-premise).',
+            region=region,
+            workspace=workspace,
+            status_code=404,
+        )
+    return None
 
 
 @mcp.tool(
@@ -175,6 +202,443 @@ async def get_current_user(
     err = unwrap_http_result(
         result,
         default_message='Failed to get current user',
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
+
+    return success_response(data=result, region=region, workspace=workspace)
+
+
+@mcp_tool_handler(
+    description=(
+        'Get the workspace access control settings: sudo/root access policy '
+        '(allow_sudo_with_mfa, allow_direct_root, block_local_sudo, sudo_timeout), '
+        'tunnel/editor defaults, home_directory_permission, Work Session TTLs '
+        '(work_session_max_ttl, work_session_pending_ttl), command-env audit exposure, '
+        'and shared_account_names. Use this to check what privilege-escalation and '
+        'session-lifetime rules apply workspace-wide before requesting elevated access. '
+        'Note: on-premise deployments omit the MFA-related fields (allow_sudo_with_mfa, '
+        'block_local_sudo, sudo_timeout). '
+        'Related: get_workspace_security (MFA/authentication settings), list_sudo_policies.'
+    ),
+    annotations=READ_ONLY,
+    meta={
+        'anthropic/searchHint': 'workspace access control sudo root tunnel editor home directory work session ttl shared accounts policy',
+    },
+)
+async def get_workspace_access_control(
+    workspace: str, region: str = '', **kwargs
+) -> dict[str, Any]:
+    """Get the workspace access control settings.
+
+    Args:
+        workspace: Workspace name. Required parameter
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
+
+    Returns:
+        Workspace access control settings response
+    """
+    token = kwargs.get('token')
+
+    result = await http_client.get(
+        region=region,
+        workspace=workspace,
+        endpoint='/api/workspaces/access-control/-/',
+        token=token,
+    )
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to get workspace access control settings',
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
+
+    return success_response(data=result, region=region, workspace=workspace)
+
+
+@mcp_tool_handler(
+    description=(
+        'Get the workspace authentication/security settings: mfa_required, allowed_mfa_methods, '
+        'mfa_timeout, and which actions require MFA. '
+        'Note: the upstream route authenticates JWT (OAuth/SSO) sessions only, so a static '
+        'API token (stdio mode) is rejected before any request is sent; use remote/'
+        'streamable-http (browser SSO) mode to read these settings. '
+        'Note: this route is also SaaS-only; on-premise deployments return 404 from the '
+        'upstream API, and this tool reports that the settings are not available on this '
+        'deployment rather than a generic error. '
+        'Related: list_workspace_mfa_methods (allowed methods only), get_workspace_access_control.'
+    ),
+    annotations=READ_ONLY,
+    meta={
+        'anthropic/searchHint': 'workspace security mfa authentication settings',
+    },
+)
+@require_jwt_auth
+async def get_workspace_security(
+    workspace: str, region: str = '', **kwargs
+) -> dict[str, Any]:
+    """Get the workspace authentication/security settings.
+
+    Requires JWT (OAuth/SSO) authentication: the upstream SecuritySettingsViewSet
+    has no APITokenAuthentication, so a static API token is rejected up front.
+
+    Args:
+        workspace: Workspace name. Required parameter
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
+
+    Returns:
+        Workspace security settings response
+    """
+    token = kwargs.get('token')
+
+    result = await http_client.get(
+        region=region,
+        workspace=workspace,
+        endpoint='/api/workspaces/security/-/',
+        token=token,
+    )
+
+    saas_only = _saas_only_security_404(result, region, workspace)
+    if saas_only:
+        return saas_only
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to get workspace security settings',
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
+
+    return success_response(data=result, region=region, workspace=workspace)
+
+
+@mcp_tool_handler(
+    description=(
+        'List the MFA methods allowed for this workspace. Returns allowed_mfa_methods and '
+        'whether a passkey can satisfy MFA (passkey_as_mfa). Useful when a tool call fails '
+        'with an MFA re-authentication requirement (remote/streamable-http mode) and you need '
+        'to tell the user which methods they can use to complete the browser re-auth step. '
+        'Note: like get_workspace_security, the upstream route authenticates JWT (OAuth/SSO) '
+        'sessions only; a static API token (stdio mode) is rejected before any request is '
+        'sent, and the route is SaaS-only (on-premise returns a clear not-available message). '
+        'Related: get_workspace_security (full security settings).'
+    ),
+    annotations=READ_ONLY,
+    meta={
+        'anthropic/searchHint': 'workspace mfa methods list allowed passkey reauth',
+    },
+)
+@require_jwt_auth
+async def list_workspace_mfa_methods(
+    workspace: str, region: str = '', **kwargs
+) -> dict[str, Any]:
+    """List MFA methods allowed for the workspace.
+
+    Requires JWT (OAuth/SSO) authentication: the upstream mfa-methods action has
+    no APITokenAuthentication, so a static API token is rejected up front.
+
+    Args:
+        workspace: Workspace name. Required parameter
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
+
+    Returns:
+        Allowed MFA methods response
+    """
+    token = kwargs.get('token')
+
+    result = await http_client.get(
+        region=region,
+        workspace=workspace,
+        endpoint='/api/workspaces/security/-/mfa-methods/',
+        token=token,
+    )
+
+    saas_only = _saas_only_security_404(result, region, workspace)
+    if saas_only:
+        return saas_only
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to list workspace MFA methods',
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
+
+    return success_response(data=result, region=region, workspace=workspace)
+
+
+@mcp_tool_handler(
+    description=(
+        'Get the workspace notification settings: disconnection_notification and the '
+        'notification_channels used to deliver workspace-level alerts. '
+        'Related: update_workspace_notifications, list_webhooks, list_event_subscriptions.'
+    ),
+    annotations=READ_ONLY,
+    meta={
+        'anthropic/searchHint': 'workspace notifications settings disconnection channels',
+    },
+)
+async def get_workspace_notifications(
+    workspace: str, region: str = '', **kwargs
+) -> dict[str, Any]:
+    """Get the workspace notification settings.
+
+    Args:
+        workspace: Workspace name. Required parameter
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
+
+    Returns:
+        Workspace notification settings response
+    """
+    token = kwargs.get('token')
+
+    result = await http_client.get(
+        region=region,
+        workspace=workspace,
+        endpoint='/api/workspaces/notifications/-/',
+        token=token,
+    )
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to get workspace notification settings',
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
+
+    return success_response(data=result, region=region, workspace=workspace)
+
+
+@mcp_tool_handler(
+    description=(
+        'Get the workspace-wide preferences: timezone, locale (country/language), '
+        'front_url, invite_ttl, enabled_extensions, websh_session_timeout, '
+        'auto_agent_upgrade, package_proxy, billing_email, and allowed_domains. '
+        'This is workspace-global configuration, not a per-user preference. '
+        'Related: update_workspace_preferences, get_workspace_notifications.'
+    ),
+    annotations=READ_ONLY,
+    meta={
+        'anthropic/searchHint': 'workspace preferences settings timezone locale billing',
+    },
+)
+async def get_workspace_preferences(
+    workspace: str, region: str = '', **kwargs
+) -> dict[str, Any]:
+    """Get the workspace-wide preferences.
+
+    Args:
+        workspace: Workspace name. Required parameter
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
+
+    Returns:
+        Workspace preferences response
+    """
+    token = kwargs.get('token')
+
+    result = await http_client.get(
+        region=region,
+        workspace=workspace,
+        endpoint='/api/workspaces/preferences/-/',
+        token=token,
+    )
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to get workspace preferences',
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
+
+    return success_response(data=result, region=region, workspace=workspace)
+
+
+@mcp_tool_handler(
+    description=(
+        'Update workspace notification settings. Only the fields you provide are sent '
+        '(partial update). Fields: disconnection_notification (bool, notify when a server '
+        'disconnects/goes offline), notification_channels (list of channel types to notify '
+        'through: email, webhook, push). '
+        'Warning: notification_channels REPLACES the whole list, it does not append. To add '
+        'a channel, first read the current list via get_workspace_notifications, merge, then '
+        'send the full list — otherwise the omitted channels are dropped. '
+        'Related: get_workspace_notifications.'
+    ),
+    annotations=IDEMPOTENT_WRITE,
+    meta={
+        'anthropic/searchHint': 'workspace notifications update modify settings',
+    },
+)
+async def update_workspace_notifications(
+    workspace: str,
+    disconnection_notification: bool | None = None,
+    notification_channels: list[str] | None = None,
+    region: str = '',
+    **kwargs,
+) -> dict[str, Any]:
+    """Update the workspace notification settings (partial update).
+
+    Args:
+        workspace: Workspace name. Required parameter
+        disconnection_notification: Notify when a server disconnects (optional)
+        notification_channels: Channel types to notify through, e.g. email/webhook/push.
+            Replaces the whole list (not additive); read via get_workspace_notifications
+            and merge before sending to avoid dropping existing channels (optional)
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
+
+    Returns:
+        Workspace notification update response
+    """
+    token = kwargs.get('token')
+
+    update_data: dict[str, Any] = {}
+    if disconnection_notification is not None:
+        update_data['disconnection_notification'] = disconnection_notification
+    if notification_channels is not None:
+        update_data['notification_channels'] = notification_channels
+
+    if not update_data:
+        return error_response(
+            'No update data provided', region=region, workspace=workspace
+        )
+
+    result = await http_client.patch(
+        region=region,
+        workspace=workspace,
+        endpoint='/api/workspaces/notifications/-/',
+        token=token,
+        data=update_data,
+    )
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to update workspace notification settings',
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
+
+    return success_response(data=result, region=region, workspace=workspace)
+
+
+@mcp_tool_handler(
+    description=(
+        'Update workspace-wide preferences. Only the fields you provide are sent (partial '
+        'update). Fields: front_url, country, language, timezone, invite_ttl, '
+        'enabled_extensions, websh_session_timeout, auto_agent_upgrade, package_proxy, '
+        'billing_email, allowed_domains. '
+        "Warning: timezone is the workspace's billing clock—changing it shifts the daily "
+        'usage-aggregation boundary. '
+        'Warning: the list fields (enabled_extensions, allowed_domains) REPLACE the whole '
+        'list, they do not append; read the current value via get_workspace_preferences, '
+        'merge, then send the full list to avoid dropping existing entries. Narrowing '
+        'enabled_extensions additionally fails with HTTP 402 on non-enterprise plans. '
+        'Warning: billing_email and allowed_domains are only accepted by the server on SaaS '
+        'deployments. '
+        'Related: get_workspace_preferences.'
+    ),
+    annotations=IDEMPOTENT_WRITE,
+    meta={
+        'anthropic/searchHint': 'workspace preferences update modify timezone billing',
+    },
+)
+async def update_workspace_preferences(
+    workspace: str,
+    front_url: str | None = None,
+    country: str | None = None,
+    language: str | None = None,
+    timezone: str | None = None,
+    invite_ttl: int | None = None,
+    enabled_extensions: list[str] | None = None,
+    websh_session_timeout: int | None = None,
+    auto_agent_upgrade: bool | None = None,
+    package_proxy: str | None = None,
+    billing_email: str | None = None,
+    allowed_domains: list[str] | None = None,
+    region: str = '',
+    **kwargs,
+) -> dict[str, Any]:
+    """Update the workspace-wide preferences (partial update).
+
+    Args:
+        workspace: Workspace name. Required parameter
+        front_url: Workspace front-end URL (optional)
+        country: Workspace country code (optional)
+        language: Workspace locale/language code (optional)
+        timezone: Workspace timezone; also the billing clock (optional)
+        invite_ttl: Invitation link time-to-live, in seconds (optional)
+        enabled_extensions: List of enabled extension names. Replaces the whole list
+            (not additive); read via get_workspace_preferences and merge before sending.
+            Narrowing this list fails with HTTP 402 on non-enterprise plans (optional)
+        websh_session_timeout: Websh idle session timeout, in seconds (optional)
+        auto_agent_upgrade: Whether agents auto-upgrade (optional)
+        package_proxy: Proxy server URL for package installation, e.g.
+            http://proxy.example.com:8080 (optional)
+        billing_email: Billing contact email; SaaS-only field (optional)
+        allowed_domains: Allowed email domains for invites; SaaS-only field. Replaces the
+            whole list (not additive); read via get_workspace_preferences and merge before
+            sending (optional)
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
+
+    Returns:
+        Workspace preferences update response
+    """
+    token = kwargs.get('token')
+
+    update_data: dict[str, Any] = {}
+    if front_url is not None:
+        update_data['front_url'] = front_url
+    if country is not None:
+        update_data['country'] = country
+    if language is not None:
+        update_data['language'] = language
+    if timezone is not None:
+        update_data['timezone'] = timezone
+    if invite_ttl is not None:
+        update_data['invite_ttl'] = invite_ttl
+    if enabled_extensions is not None:
+        update_data['enabled_extensions'] = enabled_extensions
+    if websh_session_timeout is not None:
+        update_data['websh_session_timeout'] = websh_session_timeout
+    if auto_agent_upgrade is not None:
+        update_data['auto_agent_upgrade'] = auto_agent_upgrade
+    if package_proxy is not None:
+        update_data['package_proxy'] = package_proxy
+    if billing_email is not None:
+        update_data['billing_email'] = billing_email
+    if allowed_domains is not None:
+        update_data['allowed_domains'] = allowed_domains
+
+    if not update_data:
+        return error_response(
+            'No update data provided', region=region, workspace=workspace
+        )
+
+    result = await http_client.patch(
+        region=region,
+        workspace=workspace,
+        endpoint='/api/workspaces/preferences/-/',
+        token=token,
+        data=update_data,
+    )
+
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to update workspace preferences',
         region=region,
         workspace=workspace,
     )

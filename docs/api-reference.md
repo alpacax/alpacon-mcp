@@ -517,6 +517,78 @@ Get list of available workspaces.
 **Parameters:**
 - `region` (string, default: "ap1"): Region name
 
+### `get_workspace_access_control`
+Get the workspace access control settings: sudo/root access policy (`allow_sudo_with_mfa`, `allow_direct_root`, `block_local_sudo`, `sudo_timeout`), tunnel/editor defaults, `home_directory_permission`, Work Session TTLs (`work_session_max_ttl`, `work_session_pending_ttl`), command-env audit exposure, and `shared_account_names`.
+
+**Parameters:**
+- `workspace` (string): Workspace name
+- `region` (string, default: "ap1"): Region name
+
+**Note:** On-premise deployments omit the MFA-related fields (`allow_sudo_with_mfa`, `block_local_sudo`, `sudo_timeout`).
+
+### `get_workspace_security`
+Get the workspace authentication/security settings: `mfa_required`, `allowed_mfa_methods`, `mfa_timeout`, and which actions require MFA.
+
+**Parameters:**
+- `workspace` (string): Workspace name
+- `region` (string, default: "ap1"): Region name
+
+**Note:** Requires JWT (OAuth/SSO) authentication. The upstream `SecuritySettingsViewSet` has no `APITokenAuthentication`, so a static API token (stdio mode) is rejected before any request is sent; use remote/streamable-http (browser SSO) mode to read these settings.
+
+**Note:** This route is also SaaS-only. On-premise deployments return 404 from the upstream API; this tool reports that the settings are not available on this deployment instead of a generic error.
+
+### `list_workspace_mfa_methods`
+List the MFA methods allowed for the workspace (`allowed_mfa_methods`, `passkey_as_mfa`). Useful when guiding a user through the remote/streamable-http MFA re-authentication flow.
+
+**Parameters:**
+- `workspace` (string): Workspace name
+- `region` (string, default: "ap1"): Region name
+
+**Note:** Like `get_workspace_security`, this requires JWT (OAuth/SSO) authentication (a static API token is rejected up front) and the route is SaaS-only.
+
+### `get_workspace_notifications`
+Get the workspace notification settings: `disconnection_notification` and `notification_channels`.
+
+**Parameters:**
+- `workspace` (string): Workspace name
+- `region` (string, default: "ap1"): Region name
+
+### `get_workspace_preferences`
+Get the workspace-wide preferences: timezone, locale, `front_url`, `invite_ttl`, `enabled_extensions`, `websh_session_timeout`, `auto_agent_upgrade`, `package_proxy`, `billing_email`, `allowed_domains`. Workspace-global configuration, not per-user.
+
+**Parameters:**
+- `workspace` (string): Workspace name
+- `region` (string, default: "ap1"): Region name
+
+### `update_workspace_notifications`
+Update workspace notification settings. Only the fields you provide are sent (partial update).
+
+**Parameters:**
+- `workspace` (string): Workspace name
+- `disconnection_notification` (boolean, optional): Notify when a server disconnects/goes offline
+- `notification_channels` (array, optional): Channel types to notify through (`email`, `webhook`, `push`). Replaces the whole list (not additive); read via `get_workspace_notifications` and merge before sending
+- `region` (string, default: "ap1"): Region name
+
+### `update_workspace_preferences`
+Update workspace-wide preferences. Only the fields you provide are sent (partial update).
+
+**Parameters:**
+- `workspace` (string): Workspace name
+- `front_url` (string, optional): Workspace front-end URL
+- `country` (string, optional): Workspace country code
+- `language` (string, optional): Workspace locale/language code
+- `timezone` (string, optional): Workspace timezone; also the billing clock
+- `invite_ttl` (integer, optional): Invitation link time-to-live, in seconds
+- `enabled_extensions` (array, optional): List of enabled extension names. Replaces the whole list (not additive); read via `get_workspace_preferences` and merge before sending. Narrowing it fails with HTTP 402 on non-enterprise plans
+- `websh_session_timeout` (integer, optional): Websh idle session timeout, in seconds
+- `auto_agent_upgrade` (boolean, optional): Whether agents auto-upgrade
+- `package_proxy` (string, optional): Proxy server URL for package installation
+- `billing_email` (string, optional): Billing contact email; SaaS-only field
+- `allowed_domains` (array, optional): Allowed email domains for invites; SaaS-only field. Replaces the whole list (not additive); read via `get_workspace_preferences` and merge before sending
+- `region` (string, default: "ap1"): Region name
+
+**⚠️ Warning:** `timezone` is the workspace's billing clock—changing it shifts the daily usage-aggregation boundary. The list fields (`enabled_extensions`, `allowed_domains`) replace the whole list rather than appending—read the current value, merge, then send. `billing_email` and `allowed_domains` are only accepted by the server on SaaS deployments.
+
 ---
 
 

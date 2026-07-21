@@ -495,9 +495,12 @@ def require_jwt_auth(func: Callable) -> Callable:
 
     Stack INSIDE ``@mcp_tool_handler`` so the resolved token is already
     in the wrapped function's ``**kwargs`` when this guard runs. Used on
-    tools whose endpoint ``APITokenObjectPermission`` would 403 for
-    ``source='api'`` requests — short-circuiting here skips the wasted
-    round-trip and returns a clearer error.
+    tools whose endpoint authentication accepts only JWT (OAuth/SSO)
+    sessions — e.g. ``APITokenObjectPermission`` 403s ``source='api'``
+    requests, and viewsets whose ``authentication_classes`` omit
+    ``APITokenAuthentication`` return 403 (AnonymousUser) for static API
+    tokens. Short-circuiting here skips the wasted round-trip and returns
+    a clearer error than the raw upstream 403.
 
     Usage::
 
@@ -511,8 +514,8 @@ def require_jwt_auth(func: Callable) -> Callable:
         token = kwargs.get('token')
         if token and not AlpaconHTTPClient._is_jwt(token):
             return error_response(
-                f'{func.__name__} requires JWT (OAuth/SSO) authentication; '
-                'API tokens cannot manage other API tokens. '
+                f'{func.__name__} requires JWT (OAuth/SSO) authentication and '
+                'cannot be performed with a static API token. '
                 'Re-authenticate via browser-based SSO and retry.'
             )
         return await func(*args, **kwargs)
