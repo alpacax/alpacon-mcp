@@ -50,11 +50,18 @@ class TestResolveToolsets:
         assert server.resolve_toolsets('servers') == {'server_tools'}
 
     def test_unknown_name_fails_fast_with_valid_names(self):
-        with pytest.raises(ValueError) as exc:
+        # ToolsetError, not a bare ValueError, so entry points catch only this.
+        with pytest.raises(server.ToolsetError) as exc:
             server.resolve_toolsets('servers,nope')
         assert 'nope' in str(exc.value)
         assert 'servers' in str(exc.value)  # selectable toolset listed
         assert 'health' in str(exc.value)  # always-on names listed as valid too
+
+    def test_names_are_case_insensitive(self):
+        assert server.resolve_toolsets('Servers, METRICS') == {
+            'server_tools',
+            'metrics_tools',
+        }
 
     def test_always_on_aliases_are_ignored_not_errors(self):
         assert server.resolve_toolsets(

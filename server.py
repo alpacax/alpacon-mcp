@@ -198,10 +198,16 @@ ALWAYS_ON_MODULES: frozenset[str] = frozenset(ALWAYS_ON.values())
 ALWAYS_ON_TOOLSET_NAMES: frozenset[str] = frozenset(ALWAYS_ON)
 
 
+class ToolsetError(ValueError):
+    """Bad --toolsets/env input. Subclasses ValueError so entry points can catch
+    it without also swallowing unrelated ValueErrors raised during tool import."""
+
+
 def resolve_toolsets(toolsets: str | None) -> set[str]:
-    """CLI arg > ALPACON_MCP_TOOLSETS env var > 'all'; unknown name -> ValueError."""
+    """CLI arg > ALPACON_MCP_TOOLSETS env var > 'all'; unknown name -> ToolsetError."""
     raw = toolsets if toolsets is not None else os.getenv(TOOLSETS_ENV_VAR)
-    names = [n.strip() for n in raw.split(',') if n.strip()] if raw else []
+    # Registry keys are all lowercase, so normalize case for a friendlier match.
+    names = [n.strip().lower() for n in raw.split(',') if n.strip()] if raw else []
 
     # Validate before the 'all' short-circuit so a typo alongside it still fails.
     unknown = [
@@ -216,7 +222,7 @@ def resolve_toolsets(toolsets: str | None) -> set[str]:
         valid = ', '.join(
             [*sorted(TOOLSET_REGISTRY), *sorted(ALWAYS_ON_TOOLSET_NAMES), TOOLSETS_ALL]
         )
-        raise ValueError(
+        raise ToolsetError(
             f'Unknown toolset(s): {", ".join(unknown)}. Valid toolsets: {valid}'
         )
 

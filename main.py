@@ -2,7 +2,7 @@
 import argparse
 from pathlib import Path
 
-from server import TOOLSETS_HELP, run
+from server import TOOLSETS_HELP, ToolsetError, run
 from utils.logger import get_logger
 
 logger = get_logger('main')
@@ -114,8 +114,10 @@ Examples:
 
     try:
         run('stdio', config_file=args.config_file, toolsets=args.toolsets)
-    except ValueError as e:
+    except ToolsetError as e:
         # A toolsets typo is user error, not a crash: one clean line, no traceback.
+        # Scoped to ToolsetError so an unrelated ValueError during tool import
+        # (e.g. a bad numeric env var) still gets the full-traceback path below.
         logger.error(f'Invalid --toolsets: {e}')
         raise SystemExit(2)
     except Exception as e:
