@@ -197,9 +197,10 @@ uvx alpacon-mcp --toolsets servers,commands,webftp   # Register only these tools
 ### Toolsets (selective tool registration)
 
 Local (stdio/SSE) mode can register a subset of toolsets to stay within
-client tool limits and reduce per-request token cost. Remote
-(streamable-http) mode always registers all tools and relies on the
-client's tool search optimization.
+client tool limits and reduce per-request token cost. Remote mode
+(streamable-http with JWT auth, i.e. `ALPACON_MCP_AUTH_ENABLED=true`)
+always registers all tools and relies on the client's tool search
+optimization.
 
 ```json
 {

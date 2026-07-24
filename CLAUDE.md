@@ -280,8 +280,9 @@ selectively import tool modules (registration is an import-time side effect).
 `workspace_tools`, `health_tools`, `work_session_tools`, and `prompts` are
 always registered. `tools/resources.py` references tools as `'module.func'`
 strings and `register_resources(enabled_modules)` registers only resources
-whose backing module is enabled. Remote mode ignores the setting and
-registers everything. Default: `all` (non-breaking).
+whose backing module is enabled. Remote mode (gated on
+`ALPACON_MCP_AUTH_ENABLED=true`, not on the transport name) ignores the
+setting and registers everything. Default: `all` (non-breaking).
 
 ## Available MCP tools
 
