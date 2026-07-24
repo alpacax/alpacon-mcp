@@ -212,7 +212,7 @@ def resolve_toolsets(toolsets: str | None) -> set[str]:
         and n not in ALWAYS_ON_TOOLSET_NAMES
     ]
     if unknown:
-        # Always-on names are accepted (but select nothing), so list them too.
+        # Always-on names are valid input too, so list them here.
         valid = ', '.join(
             [*sorted(TOOLSET_REGISTRY), *sorted(ALWAYS_ON_TOOLSET_NAMES), TOOLSETS_ALL]
         )
