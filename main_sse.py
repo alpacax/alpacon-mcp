@@ -1,7 +1,10 @@
 # main_sse.py
 import argparse
+import logging
 
 from server import TOOLSETS_HELP, run
+
+logger = logging.getLogger(__name__)
 
 
 def main():
@@ -19,7 +22,12 @@ def main():
     )
 
     args = parser.parse_args()
-    run('sse', config_file=args.config_file, toolsets=args.toolsets)
+    try:
+        run('sse', config_file=args.config_file, toolsets=args.toolsets)
+    except ValueError as e:
+        # A toolsets typo is user error, not a crash: one clean line, no traceback.
+        logger.error(f'Invalid --toolsets: {e}')
+        raise SystemExit(2)
 
 
 if __name__ == '__main__':

@@ -227,7 +227,10 @@ unrecognized name fails at startup.
 Narrow selections cut real capability: the workflow prompts still reference
 tools such as `execute_command` and `webftp_upload_file`, so an agent
 following them will hit "tool not found" if you excluded `commands` or
-`webftp`. Select the toolsets your workflows actually use.
+`webftp`. Select the toolsets your workflows actually use. A few resources
+also cross module boundaries: `alpacon://servers/.../overview` is backed by
+`system_info_tools`, so `--toolsets servers` alone silently drops it—add
+`system-info` to keep it.
 
 ---
 
