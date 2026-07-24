@@ -1,8 +1,19 @@
 """Tests for alpacon:// MCP resources."""
 
+import inspect
+import re
+
 import pytest
 
-from server import mcp
+import tools.resources as res
+from server import ALL_TOOL_MODULES, ALWAYS_ON_MODULES, mcp
+from tools.resources import register_resources
+
+
+@pytest.fixture(scope='module', autouse=True)
+def _register_all_resources():
+    """Resources are no longer registered at import time."""
+    register_resources(set(ALL_TOOL_MODULES) | ALWAYS_ON_MODULES)
 
 
 async def _registered_uris():
@@ -16,8 +27,6 @@ class TestResourceRegistration:
     @pytest.mark.asyncio
     async def test_helper_registers_and_reads(self):
         """register_resource builds a real-signature wrapper that reads through."""
-        import tools.resources as res
-
         captured = {}
 
         async def fake_fn(region, workspace, alert_id):
@@ -35,8 +44,6 @@ class TestResourceRegistration:
     @pytest.mark.asyncio
     async def test_helper_passes_extra_kwargs(self):
         """extra kwargs are forwarded to the backing function."""
-        import tools.resources as res
-
         captured = {}
 
         async def fake_fn(region, workspace, acknowledged=None):
@@ -56,8 +63,6 @@ class TestResourceRegistration:
     @pytest.mark.asyncio
     async def test_extra_kwargs_without_path_params(self):
         """No path params + extra must not emit a leading-comma SyntaxError."""
-        import tools.resources as res
-
         captured = {}
 
         async def fake_fn(flag=None):
@@ -74,10 +79,8 @@ class TestResourceRegistration:
     @pytest.mark.asyncio
     async def test_all_resources_registered(self):
         """Every RESOURCES entry is registered, no dup, no legacy scheme."""
-        import tools.resources as res
-
         uris = await _registered_uris()
-        table_uris = {uri for _n, _f, uri in res.RESOURCES}
+        table_uris = {uri for _n, _ref, uri in res.RESOURCES}
 
         assert table_uris <= uris
         assert 'alpacon://alerts/active/{region}/{workspace}' in uris  # extra-kwarg one
@@ -101,7 +104,6 @@ class TestResourceRegistration:
         """The exec'd wrapper must adopt the resource name and this module's
         identity, not stay '_wrapper' with a '<string>' traceback frame, so
         stack traces and name-based diagnostics stay legible."""
-        import tools.resources as res
 
         async def fake_fn(region, workspace):
             return {'ok': True}
@@ -123,12 +125,8 @@ class TestResourceRegistration:
     def test_uri_params_match_function_signatures(self):
         """Every URI {param} and extra kwarg must be a real parameter of its
         backing function — a typo breaks at read time, not import; catch it here."""
-        import inspect
-        import re
-
-        import tools.resources as res
-
-        for name, fn, uri, extra in res._REGISTRATIONS:
+        for name, ref, uri, extra in res.REGISTRATIONS:
+            fn = res._resolve(ref)
             wanted = set(re.findall(r'\{(\w+)\}', uri)) | set(extra or {})
             sig = inspect.signature(fn).parameters
             accepted = {
@@ -137,7 +135,7 @@ class TestResourceRegistration:
                 if v.kind not in (v.VAR_KEYWORD, v.VAR_POSITIONAL)
             }
             missing = wanted - accepted
-            assert not missing, f'{name}: {missing} not accepted by {fn.__name__}'
+            assert not missing, f'{name}: {missing} not accepted by {ref}'
 
             # Inverse: every required (no-default) param must be filled by the URI
             # or an extra kwarg, else the read fails at runtime, not import.
@@ -156,17 +154,13 @@ class TestResourceRegistration:
         its own handler — a general guard so a future literal/{id} sibling pair
         can't silently shadow one another. Subsumes the specific /active/, /scopes/,
         etc. cases without hard-coding them."""
-        import re
-
-        import tools.resources as res
-
         mgr = mcp._resource_manager
 
         def concrete(uri: str) -> str:
             # Sentinel placeholders never collide with a literal segment.
             return re.sub(r'\{(\w+)\}', lambda m: f'_{m.group(1)}_', uri)
 
-        for name, _fn, uri, _extra in res._REGISTRATIONS:
+        for name, _ref, uri, _extra in res.REGISTRATIONS:
             resolved = await mgr.get_resource(concrete(uri))
             assert resolved.name == name, (
                 f'{uri} -> {resolved.name}, want {name} (shadowed)'
