@@ -189,7 +189,48 @@ uvx alpacon-mcp setup --token-file ~/my.json   # Use custom file location
 uvx alpacon-mcp test                           # Test your connection
 uvx alpacon-mcp list                           # Show configured workspaces
 uvx alpacon-mcp add                            # Add another workspace (shows path)
+uvx alpacon-mcp --toolsets servers,commands,webftp   # Register only these toolsets
 ```
+
+---
+
+### Toolsets (selective tool registration)
+
+Local (stdio/SSE) mode can register a subset of toolsets to stay within
+client tool limits and reduce per-request token cost. Remote mode
+(streamable-http with JWT auth, i.e. `ALPACON_MCP_AUTH_ENABLED=true`)
+always registers all tools and relies on the client's tool search
+optimization.
+
+```json
+{
+  "mcpServers": {
+    "alpacon": {
+      "command": "uvx",
+      "args": ["alpacon-mcp", "--toolsets", "servers,commands,webftp,metrics"]
+    }
+  }
+}
+```
+
+The `ALPACON_MCP_TOOLSETS` environment variable is also supported; the CLI
+argument wins when both are set. Default: `all` (register everything).
+
+Available toolsets (1:1 with tool modules): `servers`, `commands`, `webftp`,
+`metrics`, `alerts`, `events`, `system-info`, `iam`, `security`, `audit`,
+`approvals`, `webhooks`, `packages`, `certs`, `tokens`. Workspace, health,
+and Work Session tools are always registered regardless of selection, as are
+the MCP prompts; their names (`workspace`, `health`, `work-sessions`,
+`prompts`) are accepted in `--toolsets` but have no effect. Any other
+unrecognized name fails at startup.
+
+Narrow selections cut real capability: the workflow prompts still reference
+tools such as `execute_command` and `webftp_upload_file`, so an agent
+following them will hit "tool not found" if you excluded `commands` or
+`webftp`. Select the toolsets your workflows actually use. A few resources
+also cross module boundaries: `alpacon://servers/.../overview` is backed by
+`system_info_tools`, so `--toolsets servers` alone silently drops it—add
+`system-info` to keep it.
 
 ---
 

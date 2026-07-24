@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `--toolsets` CLI argument (and `ALPACON_MCP_TOOLSETS` env var) for local
+  stdio/SSE mode: selectively register toolsets; default remains `all`
+  (#34). Remote mode is unaffected and always registers every tool.
 - Workspace settings management tools under `/api/workspaces/`
   - Read tools: `get_workspace_access_control`, `get_workspace_security`, `list_workspace_mfa_methods`, `get_workspace_notifications`, `get_workspace_preferences`
   - Partial-update tools: `update_workspace_notifications`, `update_workspace_preferences`

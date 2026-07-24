@@ -278,9 +278,7 @@ class TestURLConstruction:
 
         fake_tm = MagicMock()
         fake_tm.get_base_url_override.return_value = 'https://old-slug.us1.alpacon.io'
-        with patch(
-            'utils.token_manager.get_token_manager', return_value=fake_tm
-        ):
+        with patch('utils.token_manager.get_token_manager', return_value=fake_tm):
             await http_client.get(
                 region='us1',
                 workspace='renamed-workspace',
@@ -298,12 +296,9 @@ class TestURLConstruction:
         """With no override configured, the default Alpacon Cloud host is derived."""
         fake_tm = MagicMock()
         fake_tm.get_base_url_override.return_value = None
-        with patch(
-            'utils.token_manager.get_token_manager', return_value=fake_tm
-        ):
+        with patch('utils.token_manager.get_token_manager', return_value=fake_tm):
             assert (
-                http_client.get_base_url('ap1', 'myws')
-                == 'https://myws.ap1.alpacon.io'
+                http_client.get_base_url('ap1', 'myws') == 'https://myws.ap1.alpacon.io'
             )
 
     @pytest.mark.asyncio
@@ -314,9 +309,7 @@ class TestURLConstruction:
 
         mock_tm = MagicMock()
         mock_tm.get_base_url_override.return_value = 'https://pinned.us1.alpacon.io'
-        with patch(
-            'utils.token_manager.get_token_manager', return_value=mock_tm
-        ):
+        with patch('utils.token_manager.get_token_manager', return_value=mock_tm):
             await http_client.get(
                 region='ap1',
                 workspace='oldlabel',
@@ -332,12 +325,9 @@ class TestURLConstruction:
         """With no override configured, the default Alpacon Cloud host is derived."""
         mock_tm = MagicMock()
         mock_tm.get_base_url_override.return_value = None
-        with patch(
-            'utils.token_manager.get_token_manager', return_value=mock_tm
-        ):
+        with patch('utils.token_manager.get_token_manager', return_value=mock_tm):
             assert (
-                http_client.get_base_url('ap1', 'myws')
-                == 'https://myws.ap1.alpacon.io'
+                http_client.get_base_url('ap1', 'myws') == 'https://myws.ap1.alpacon.io'
             )
 
 
