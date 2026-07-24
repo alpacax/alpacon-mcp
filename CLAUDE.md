@@ -65,6 +65,7 @@ uvx alpacon-mcp setup --token-file ~/my-tokens.json   # Use custom location
 uvx alpacon-mcp test                                  # Test API connection
 uvx alpacon-mcp list                                  # Show configured workspaces
 uvx alpacon-mcp add                                   # Add another workspace (shows path)
+uvx alpacon-mcp --toolsets servers,commands,webftp    # Register only these toolsets
 ```
 
 ## Development commands
@@ -270,6 +271,17 @@ All validators are defined in `utils/error_handler.py` and return user-friendly 
 5. **Input validation**: Early validation of region, workspace, server_id, and file paths before API calls
 6. **Error handling**: Comprehensive error handling and reporting
 7. **Multi-workspace**: Support for multiple workspaces across regions
+
+### Toolset selection (local mode)
+
+Local (stdio/SSE) mode accepts `--toolsets` / `ALPACON_MCP_TOOLSETS` to
+selectively import tool modules (registration is an import-time side effect).
+`TOOLSET_REGISTRY` in `server.py` maps 15 toolset names 1:1 to tool modules;
+`workspace_tools`, `health_tools`, `work_session_tools`, and `prompts` are
+always registered. `tools/resources.py` references tools as `'module.func'`
+strings and `register_resources(enabled_modules)` registers only resources
+whose backing module is enabled. Remote mode ignores the setting and
+registers everything. Default: `all` (non-breaking).
 
 ## Available MCP tools
 
