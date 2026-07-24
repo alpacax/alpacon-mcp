@@ -1,6 +1,6 @@
 """alpacon:// MCP resources — thin read-only wrappers over list_/get_ tools.
 
-Resources are generated from the RESOURCES registry table to avoid ~70 copies
+Resources are generated from the RESOURCES registry table to avoid ~75 copies
 of identical boilerplate. Each wrapper is built via exec with real named
 parameters because FastMCP matches URI template params to the function
 signature by name; a **kwargs wrapper fails its func_metadata check.
