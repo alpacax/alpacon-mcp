@@ -222,7 +222,15 @@ def resolve_toolsets(toolsets: str | None) -> set[str]:
 
     if not names or TOOLSETS_ALL in names:
         return set(ALL_TOOL_MODULES)
-    return {TOOLSET_REGISTRY[n] for n in names if n in TOOLSET_REGISTRY}
+    selected = {TOOLSET_REGISTRY[n] for n in names if n in TOOLSET_REGISTRY}
+    if not selected:
+        # Only always-on names were given; warn so an all-no-op selection isn't silent.
+        logger.warning(
+            'No functional toolsets selected (only always-on names given: %s); '
+            'registering always-on tools only.',
+            ', '.join(names),
+        )
+    return selected
 
 
 def _modules_to_load(toolsets: str | None, remote_mode: bool) -> set[str]:

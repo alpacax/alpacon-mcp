@@ -61,6 +61,13 @@ class TestResolveToolsets:
             'servers,workspace,health,work-sessions,prompts'
         ) == {'server_tools'}
 
+    def test_only_always_on_names_warns_and_selects_nothing(self, caplog):
+        with caplog.at_level('WARNING'):
+            assert server.resolve_toolsets('health,workspace') == set()
+        assert any(
+            'No functional toolsets selected' in r.message for r in caplog.records
+        )
+
     def test_unknown_name_alongside_all_still_fails(self):
         with pytest.raises(ValueError) as exc:
             server.resolve_toolsets('all,mtrics')
