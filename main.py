@@ -2,7 +2,7 @@
 import argparse
 from pathlib import Path
 
-from server import run
+from server import TOOLSETS_HELP, run
 from utils.logger import get_logger
 
 logger = get_logger('main')
@@ -35,6 +35,7 @@ Examples:
   uvx alpacon-mcp test               # Test connection
   uvx alpacon-mcp list               # Show configured workspaces
   uvx alpacon-mcp add                # Add another workspace
+  uvx alpacon-mcp --toolsets servers # Register only the listed toolsets
         """,
     )
     parser.add_argument(
@@ -57,6 +58,11 @@ Examples:
         '--token-file',
         type=str,
         help='Custom path to token.json file (overrides --local and default locations)',
+    )
+    parser.add_argument(
+        '--toolsets',
+        type=str,
+        help=TOOLSETS_HELP,
     )
 
     args = parser.parse_args()
@@ -107,7 +113,7 @@ Examples:
     logger.info(f'Configuration: config_file={args.config_file}')
 
     try:
-        run('stdio', config_file=args.config_file)
+        run('stdio', config_file=args.config_file, toolsets=args.toolsets)
     except Exception as e:
         logger.error(f'Failed to start MCP server: {e}', exc_info=True)
         raise
