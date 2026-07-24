@@ -10,39 +10,30 @@ import pytest
 
 import server
 import tools.resources as res
-from server import (
-    ALL_TOOL_MODULES,
-    ALWAYS_ON_MODULES,
-    TOOLS_PACKAGE,
-    TOOLSET_REGISTRY,
-    TOOLSETS_ENV_VAR,
-    _modules_to_load,
-    resolve_toolsets,
-)
 
-ALL_MODULES = set(TOOLSET_REGISTRY.values())
+ALL_MODULES = set(server.TOOLSET_REGISTRY.values())
 
 
 @pytest.fixture(autouse=True)
 def _no_toolsets_env(monkeypatch):
-    monkeypatch.delenv(TOOLSETS_ENV_VAR, raising=False)
+    monkeypatch.delenv(server.TOOLSETS_ENV_VAR, raising=False)
 
 
 class TestResolveToolsets:
     def test_default_is_all(self):
-        assert resolve_toolsets(None) == ALL_MODULES
+        assert server.resolve_toolsets(None) == ALL_MODULES
 
     def test_empty_string_is_all(self):
-        assert resolve_toolsets('') == ALL_MODULES
+        assert server.resolve_toolsets('') == ALL_MODULES
 
     def test_all_keyword(self):
-        assert resolve_toolsets('all') == ALL_MODULES
+        assert server.resolve_toolsets('all') == ALL_MODULES
 
     def test_single_toolset(self):
-        assert resolve_toolsets('servers') == {'server_tools'}
+        assert server.resolve_toolsets('servers') == {'server_tools'}
 
     def test_multiple_toolsets_with_whitespace(self):
-        assert resolve_toolsets(' servers, commands , webftp ') == {
+        assert server.resolve_toolsets(' servers, commands , webftp ') == {
             'server_tools',
             'command_tools',
             'webftp_tools',
@@ -50,41 +41,42 @@ class TestResolveToolsets:
 
     def test_env_var_used_when_cli_absent(self, monkeypatch):
         # Pinned literal: renaming the constant must not silently move the contract.
-        assert TOOLSETS_ENV_VAR == 'ALPACON_MCP_TOOLSETS'
-        monkeypatch.setenv(TOOLSETS_ENV_VAR, 'metrics')
-        assert resolve_toolsets(None) == {'metrics_tools'}
+        assert server.TOOLSETS_ENV_VAR == 'ALPACON_MCP_TOOLSETS'
+        monkeypatch.setenv(server.TOOLSETS_ENV_VAR, 'metrics')
+        assert server.resolve_toolsets(None) == {'metrics_tools'}
 
     def test_cli_wins_over_env_var(self, monkeypatch):
-        monkeypatch.setenv(TOOLSETS_ENV_VAR, 'metrics')
-        assert resolve_toolsets('servers') == {'server_tools'}
+        monkeypatch.setenv(server.TOOLSETS_ENV_VAR, 'metrics')
+        assert server.resolve_toolsets('servers') == {'server_tools'}
 
     def test_unknown_name_fails_fast_with_valid_names(self):
         with pytest.raises(ValueError) as exc:
-            resolve_toolsets('servers,nope')
+            server.resolve_toolsets('servers,nope')
         assert 'nope' in str(exc.value)
-        assert 'servers' in str(exc.value)  # valid-name listing
+        assert 'servers' in str(exc.value)  # selectable toolset listed
+        assert 'health' in str(exc.value)  # always-on names listed as valid too
 
     def test_always_on_aliases_are_ignored_not_errors(self):
-        assert resolve_toolsets('servers,workspace,health,work-sessions,prompts') == {
-            'server_tools'
-        }
+        assert server.resolve_toolsets(
+            'servers,workspace,health,work-sessions,prompts'
+        ) == {'server_tools'}
 
     def test_unknown_name_alongside_all_still_fails(self):
         with pytest.raises(ValueError) as exc:
-            resolve_toolsets('all,mtrics')
+            server.resolve_toolsets('all,mtrics')
         assert 'mtrics' in str(exc.value)
 
 
 class TestRegistryConsistency:
     def test_registry_covers_every_tool_module(self):
         """resources.py is the resource registry, not a tool module, hence excluded."""
-        tools_dir = Path(server.__file__).parent / TOOLS_PACKAGE
+        tools_dir = Path(server.__file__).parent / server.TOOLS_PACKAGE
         on_disk = {p.stem for p in tools_dir.glob('*.py')} - {'__init__', 'resources'}
-        assert on_disk == ALL_MODULES | ALWAYS_ON_MODULES
+        assert on_disk == ALL_MODULES | server.ALWAYS_ON_MODULES
 
     def test_registry_modules_are_importable(self):
-        for module_name in ALL_MODULES | ALWAYS_ON_MODULES:
-            importlib.import_module(f'{TOOLS_PACKAGE}.{module_name}')
+        for module_name in ALL_MODULES | server.ALWAYS_ON_MODULES:
+            importlib.import_module(f'{server.TOOLS_PACKAGE}.{module_name}')
 
 
 class TestResourceRegistrations:
@@ -92,20 +84,20 @@ class TestResourceRegistrations:
         """tools/resources.py must not import a tool module, or --toolsets registers
         everything. Checked statically: sys.modules is process-global here.
         """
-        tool_modules = ALL_TOOL_MODULES | ALWAYS_ON_MODULES
+        tool_modules = server.ALL_TOOL_MODULES | server.ALWAYS_ON_MODULES
         leaked = set()
         # ast.walk, not tree.body: an import nested in a try/if still executes.
         for node in ast.walk(ast.parse(Path(res.__file__).read_text())):
             if isinstance(node, ast.ImportFrom) and node.module:
                 # `from tools import cert_tools` names the module in .names.
-                if node.module == TOOLS_PACKAGE:
+                if node.module == server.TOOLS_PACKAGE:
                     leaked |= {a.name for a in node.names} & tool_modules
-                elif node.module.split('.')[0] == TOOLS_PACKAGE:
+                elif node.module.split('.')[0] == server.TOOLS_PACKAGE:
                     leaked |= {node.module.split('.')[1]} & tool_modules
             elif isinstance(node, ast.Import):
                 for alias in node.names:
                     parts = alias.name.split('.')
-                    if parts[0] == TOOLS_PACKAGE and len(parts) > 1:
+                    if parts[0] == server.TOOLS_PACKAGE and len(parts) > 1:
                         leaked |= {parts[1]} & tool_modules
 
         assert not leaked, f'tools/resources.py eagerly imports: {sorted(leaked)}'
@@ -113,7 +105,7 @@ class TestResourceRegistrations:
     def test_every_ref_resolves_to_a_real_function(self):
         for name, ref, _uri, _extra in res.REGISTRATIONS:
             module_name, func_name = ref.split('.', 1)
-            mod = importlib.import_module(f'{TOOLS_PACKAGE}.{module_name}')
+            mod = importlib.import_module(f'{server.TOOLS_PACKAGE}.{module_name}')
             assert hasattr(mod, func_name), f'{name}: tools.{ref} does not exist'
 
     def test_register_resources_filters_by_module(self, monkeypatch):
@@ -195,8 +187,8 @@ class TestRunWiring:
 
         server.run('stdio', toolsets='servers')
 
-        expected = _modules_to_load('servers', remote_mode=False)
-        prefix = f'{TOOLS_PACKAGE}.'
+        expected = server._modules_to_load('servers', remote_mode=False)
+        prefix = f'{server.TOOLS_PACKAGE}.'
         assert {n for n in imported if n.startswith(prefix)} == {
             prefix + m for m in expected
         }
@@ -205,13 +197,13 @@ class TestRunWiring:
 
 class TestModulesToLoad:
     def test_local_mode_selects_subset_plus_always_on(self):
-        modules = _modules_to_load('servers,metrics', remote_mode=False)
-        assert modules == {'server_tools', 'metrics_tools', *ALWAYS_ON_MODULES}
+        modules = server._modules_to_load('servers,metrics', remote_mode=False)
+        assert modules == {'server_tools', 'metrics_tools', *server.ALWAYS_ON_MODULES}
 
     def test_remote_mode_ignores_toolsets(self):
-        modules = _modules_to_load('servers', remote_mode=True)
-        assert modules == ALL_MODULES | ALWAYS_ON_MODULES
+        modules = server._modules_to_load('servers', remote_mode=True)
+        assert modules == ALL_MODULES | server.ALWAYS_ON_MODULES
 
     def test_local_default_loads_everything(self):
-        modules = _modules_to_load(None, remote_mode=False)
-        assert modules == ALL_MODULES | ALWAYS_ON_MODULES
+        modules = server._modules_to_load(None, remote_mode=False)
+        assert modules == ALL_MODULES | server.ALWAYS_ON_MODULES

@@ -7,13 +7,12 @@ import pytest
 
 import tools.resources as res
 from server import ALL_TOOL_MODULES, ALWAYS_ON_MODULES, mcp
-from tools.resources import register_resources
 
 
 @pytest.fixture(scope='module', autouse=True)
 def _register_all_resources():
     """Resources are no longer registered at import time."""
-    register_resources(set(ALL_TOOL_MODULES) | ALWAYS_ON_MODULES)
+    res.register_resources(set(ALL_TOOL_MODULES) | ALWAYS_ON_MODULES)
 
 
 async def _registered_uris():

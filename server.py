@@ -212,7 +212,10 @@ def resolve_toolsets(toolsets: str | None) -> set[str]:
         and n not in ALWAYS_ON_TOOLSET_NAMES
     ]
     if unknown:
-        valid = ', '.join([*sorted(TOOLSET_REGISTRY), TOOLSETS_ALL])
+        # Always-on names are accepted (but select nothing), so list them too.
+        valid = ', '.join(
+            [*sorted(TOOLSET_REGISTRY), *sorted(ALWAYS_ON_TOOLSET_NAMES), TOOLSETS_ALL]
+        )
         raise ValueError(
             f'Unknown toolset(s): {", ".join(unknown)}. Valid toolsets: {valid}'
         )
