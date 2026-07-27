@@ -1,7 +1,5 @@
 """Tests for health check functionality."""
 
-import ast
-import inspect
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -215,35 +213,13 @@ class TestHealthCheckRemoteMode:
         assert result['data']['auth']['mode'] == 'jwt'
 
     def test_server_module_imports_health_tools_unconditionally(self):
-        """server.run() must import tools.health_tools regardless of remote_mode.
+        """health_tools is always-on: no remote_mode or --toolsets value may drop it."""
+        assert 'health_tools' in server.ALWAYS_ON_MODULES
 
-        Verifies the guard `if not remote_mode: import tools.health_tools` has been
-        removed so the MCP tool is registered in all transports. Uses AST inspection
-        so the assertion isn't sensitive to whitespace or comment changes.
-        """
-        tree = ast.parse(inspect.getsource(server.run))
-        function_def = tree.body[0]
-        assert isinstance(function_def, (ast.FunctionDef, ast.AsyncFunctionDef))
-
-        def imports_health_tools(node: ast.AST) -> bool:
-            return isinstance(node, ast.Import) and any(
-                alias.name == 'tools.health_tools' for alias in node.names
-            )
-
-        # The import must appear at the top level of run(), not nested inside any
-        # conditional or other compound statement.
-        assert any(imports_health_tools(stmt) for stmt in function_def.body), (
-            'tools.health_tools must be imported unconditionally inside server.run()'
-        )
-
-        # No If block inside run() may guard the import.
-        # (Try/With are excluded so future graceful optional-dep handling isn't rejected.)
-        for node in ast.walk(function_def):
-            if isinstance(node, ast.If):
-                for child in ast.walk(node):
-                    assert not imports_health_tools(child), (
-                        'tools.health_tools import must not be guarded by an if block'
-                    )
+        for remote_mode in (True, False):
+            for toolsets in (None, 'servers'):
+                modules = server._modules_to_load(toolsets, remote_mode=remote_mode)
+                assert 'health_tools' in modules
 
 
 if __name__ == '__main__':
