@@ -322,6 +322,19 @@ class AlpaconHTTPClient:
         retry_count = 0
         retry_delay = self.retry_delay
 
+        async def backoff(reason: str) -> bool:
+            """Count the attempt and sleep; False once retries are exhausted."""
+            nonlocal retry_count, retry_delay
+            retry_count += 1
+            logger.warning(
+                f'{reason}, retrying ({retry_count}/{self.max_retries}) in {retry_delay}s'
+            )
+            if retry_count >= self.max_retries:
+                return False
+            await asyncio.sleep(retry_delay)
+            retry_delay = min(retry_delay * 2, self.max_retry_delay)
+            return True
+
         # Log request details (without sensitive data)
         logger.info(f'HTTP {method} request to {url}')
         logger.debug(
@@ -392,14 +405,16 @@ class AlpaconHTTPClient:
 
                 if e.response.status_code >= 500:
                     # Server error - retry
-                    retry_count += 1
-                    logger.warning(
-                        f'Server error, retrying ({retry_count}/{self.max_retries}) in {retry_delay}s'
-                    )
-                    if retry_count < self.max_retries:
-                        await asyncio.sleep(retry_delay)
-                        retry_delay = min(retry_delay * 2, self.max_retry_delay)
+                    if await backoff('Server error'):
                         continue
+
+                    error_response = {
+                        'error': 'Max retries exceeded',
+                        'status_code': e.response.status_code,
+                        'message': f'Server error after {self.max_retries} attempts',
+                    }
+                    logger.error(f'Server error after all retries: {error_response}')
+                    return error_response
                 else:
                     # Client error - don't retry
                     if e.response.status_code == 401:
@@ -416,36 +431,24 @@ class AlpaconHTTPClient:
 
             except httpx.TimeoutException:
                 # Timeout - retry
-                retry_count += 1
-                logger.warning(
-                    f'Request timeout, retrying ({retry_count}/{self.max_retries}) in {retry_delay}s'
-                )
-                if retry_count < self.max_retries:
-                    await asyncio.sleep(retry_delay)
-                    retry_delay = min(retry_delay * 2, self.max_retry_delay)
+                if await backoff('Request timeout'):
                     continue
-                else:
-                    error_response = {
-                        'error': 'Timeout',
-                        'message': f'Request timed out after {self.max_retries} retries',
-                    }
-                    logger.error(f'Request timeout after all retries: {error_response}')
-                    return error_response
+
+                error_response = {
+                    'error': 'Timeout',
+                    'message': f'Request timed out after {self.max_retries} retries',
+                }
+                logger.error(f'Request timeout after all retries: {error_response}')
+                return error_response
 
             except httpx.RequestError as e:
                 # Network error - retry
-                retry_count += 1
-                logger.warning(
-                    f'Network error: {e}, retrying ({retry_count}/{self.max_retries}) in {retry_delay}s'
-                )
-                if retry_count < self.max_retries:
-                    await asyncio.sleep(retry_delay)
-                    retry_delay = min(retry_delay * 2, self.max_retry_delay)
+                if await backoff(f'Network error: {e}'):
                     continue
-                else:
-                    error_response = {'error': 'Request Error', 'message': str(e)}
-                    logger.error(f'Network error after all retries: {error_response}')
-                    return error_response
+
+                error_response = {'error': 'Request Error', 'message': str(e)}
+                logger.error(f'Network error after all retries: {error_response}')
+                return error_response
 
             except Exception as e:
                 # Unexpected error - don't retry
@@ -453,12 +456,12 @@ class AlpaconHTTPClient:
                 logger.error(f'Unexpected error: {error_response}', exc_info=True)
                 return error_response
 
-        # Should not reach here, but just in case
+        # Every branch above returns, so this is only reached when max_retries <= 0
         error_response = {
             'error': 'Max retries exceeded',
             'message': f'Failed after {self.max_retries} attempts',
         }
-        logger.error(f'Unexpected fallback - max retries exceeded: {error_response}')
+        logger.error(f'Loop never ran - max_retries is {self.max_retries}')
         return error_response
 
     async def batch_request(
