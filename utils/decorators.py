@@ -28,16 +28,13 @@ from utils.logger import get_logger
 
 logger = get_logger('decorators')
 
-# Arguments carrying a list of server UUIDs. Order is the reporting order when
-# more than one is invalid.
+# Order is the reporting order when more than one is invalid.
 _UUID_LIST_FIELDS = ('server_ids', 'servers')
 _UUID_LIST_TYPE_MSG = 'Must be a list of server UUIDs.'
 _UUID_LIST_ITEM_MSG = 'Each server ID must be in UUID format. (e.g., 550e8400-e29b-41d4-a716-446655440000)'
 
-# Trailing hint shared by the two "multiple regions available" messages.
 _SPECIFY_REGION_HINT = 'Please specify a region parameter.'
 
-# Argument names redacted from tool-entry logs.
 _SENSITIVE_LOG_KEYS = frozenset({'_token', 'password', 'secret', 'key'})
 
 
@@ -238,7 +235,7 @@ async def _check_mfa_requirement(
 
 
 def _validate_uuid_list(field: str, value: Any) -> dict[str, Any] | None:
-    """Validate a list of server UUIDs. Returns an error response, or None if valid."""
+    """Returns an error response, or None if valid."""
     if not isinstance(value, list):
         return format_validation_error(
             field,
@@ -327,8 +324,7 @@ def with_token_validation(func: Callable) -> Callable:
         if server_id is not None and not validate_server_id_format(server_id):
             return format_validation_error('server_id', server_id)
 
-        # Validate UUID list arguments if present
-        # ('servers' carries server UUIDs sent in request bodies)
+        # 'servers' carries server UUIDs sent in request bodies.
         for field in _UUID_LIST_FIELDS:
             value = arguments.get(field)
             if value is not None:

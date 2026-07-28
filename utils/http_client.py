@@ -13,8 +13,7 @@ from utils.logger import get_logger
 
 logger = get_logger('http_client')
 
-# Values of the 'error' key on a failure response. Callers branch on these
-# strings, so they are part of the response contract, not just log text.
+# Pinned values: tests assert these verbatim; callers only check that 'error' exists.
 _ERR_HTTP = 'HTTP Error'
 _ERR_MAX_RETRIES = 'Max retries exceeded'
 _ERR_MFA_REQUIRED = 'MFA Required'
@@ -23,11 +22,9 @@ _ERR_REQUEST_EXCEPTION = 'Request Exception'
 _ERR_TIMEOUT = 'Timeout'
 _ERR_UNEXPECTED = 'Unexpected Error'
 
-# Each retry waits this many times longer than the previous one.
 _BACKOFF_MULTIPLIER = 2
 
-# GET endpoints whose responses are cached. Prefixes, matched with startswith.
-# Real-time metrics are deliberately absent.
+# Prefix tuple (str.startswith needs a tuple); real-time metrics deliberately excluded.
 _CACHEABLE_ENDPOINTS = (
     '/api/servers/servers/',
     '/api/system/info/',
@@ -182,12 +179,11 @@ class AlpaconHTTPClient:
         retry_delay = self.retry_delay
 
         async def backoff(reason: str) -> bool:
-            """Count the attempt and sleep; False once retries are exhausted."""
+            """False once retries are exhausted."""
             nonlocal retry_count, retry_delay
             retry_count += 1
             if retry_count >= self.max_retries:
-                # No sleep follows, so don't log a retry that will not happen.
-                # The caller logs the exhaustion with its own error response.
+                # Check before the log: no retry follows, and the caller logs the exhaustion.
                 return False
             logger.warning(
                 f'{reason}, retrying ({retry_count}/{self.max_retries}) in {retry_delay}s'
@@ -643,14 +639,8 @@ class AlpaconHTTPClient:
             source,
         )
 
-        # Signal middleware AND raise exception in remote (streamable-http) mode.
-        # Uses a module-level thread-safe dict keyed by token hash instead
-        # of contextvars, because MCP streamable-http runs tool handlers in
-        # a separate anyio task context where ContextVar mutations are
-        # invisible to the ASGI middleware's parent context.
-        # Only signal for JWT (Bearer) tokens — API tokens (token=...) use
-        # a different auth scheme and the middleware cannot derive a matching
-        # key from them, which would leave unconsumed entries.
+        # Token-hash dict, not contextvars: streamable-http runs handlers in a separate anyio task where ContextVar writes are invisible to the ASGI middleware.
+        # JWT only — the middleware cannot derive a matching key from API tokens, so their entries would go unconsumed.
         if auth_enabled and token and is_jwt:
             from utils.error_handler import (
                 UpstreamAuthError,
