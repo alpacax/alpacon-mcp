@@ -28,11 +28,6 @@ from utils.logger import get_logger
 
 logger = get_logger('decorators')
 
-# Order is the reporting order when more than one is invalid.
-_UUID_LIST_FIELDS = ('server_ids', 'servers')
-_UUID_LIST_TYPE_MSG = 'Must be a list of server UUIDs.'
-_UUID_LIST_ITEM_MSG = 'Each server ID must be in UUID format. (e.g., 550e8400-e29b-41d4-a716-446655440000)'
-
 _SPECIFY_REGION_HINT = 'Please specify a region parameter.'
 
 _SENSITIVE_LOG_KEYS = frozenset({'_token', 'password', 'secret', 'key'})
@@ -142,7 +137,7 @@ def _resolve_region_jwt(
     if available_regions:
         return None, (
             f'Multiple regions available in token: {", ".join(available_regions)}. '
-            f'{_SPECIFY_REGION_HINT}'
+            + _SPECIFY_REGION_HINT
         )
     return None, 'No regions found in JWT token.'
 
@@ -170,7 +165,7 @@ def _resolve_region_local(workspace: str | None) -> tuple[str | None, str | None
     if available_regions:
         return None, (
             f'Multiple regions available: {", ".join(sorted(available_regions))}. '
-            f'{_SPECIFY_REGION_HINT}'
+            + _SPECIFY_REGION_HINT
         )
     return None, 'No regions configured. Please run setup first.'
 
@@ -240,7 +235,7 @@ def _validate_uuid_list(field: str, value: Any) -> dict[str, Any] | None:
         return format_validation_error(
             field,
             value,
-            _UUID_LIST_TYPE_MSG,
+            'Must be a list of server UUIDs.',
         )
 
     invalid = [item for item in value if not validate_server_id_format(item)]
@@ -248,7 +243,8 @@ def _validate_uuid_list(field: str, value: Any) -> dict[str, Any] | None:
         return format_validation_error(
             field,
             invalid,
-            _UUID_LIST_ITEM_MSG,
+            'Each server ID must be in UUID format. '
+            '(e.g., 550e8400-e29b-41d4-a716-446655440000)',
         )
     return None
 
@@ -325,7 +321,8 @@ def with_token_validation(func: Callable) -> Callable:
             return format_validation_error('server_id', server_id)
 
         # 'servers' carries server UUIDs sent in request bodies.
-        for field in _UUID_LIST_FIELDS:
+        # Tuple order is the reporting order when both are invalid.
+        for field in ('server_ids', 'servers'):
             value = arguments.get(field)
             if value is not None:
                 validation_error = _validate_uuid_list(field, value)

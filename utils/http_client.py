@@ -22,8 +22,6 @@ _ERR_REQUEST_EXCEPTION = 'Request Exception'
 _ERR_TIMEOUT = 'Timeout'
 _ERR_UNEXPECTED = 'Unexpected Error'
 
-_BACKOFF_MULTIPLIER = 2
-
 # Prefix tuple (str.startswith needs a tuple); real-time metrics deliberately excluded.
 _CACHEABLE_ENDPOINTS = (
     '/api/servers/servers/',
@@ -45,6 +43,7 @@ class AlpaconHTTPClient:
         self.max_retries = 3
         self.retry_delay = 1.0
         self.max_retry_delay = 30.0
+        self.backoff_multiplier = 2.0
 
         # Connection pooling
         self._client: httpx.AsyncClient | None = None
@@ -189,7 +188,9 @@ class AlpaconHTTPClient:
                 f'{reason}, retrying ({retry_count}/{self.max_retries}) in {retry_delay}s'
             )
             await asyncio.sleep(retry_delay)
-            retry_delay = min(retry_delay * _BACKOFF_MULTIPLIER, self.max_retry_delay)
+            retry_delay = min(
+                retry_delay * self.backoff_multiplier, self.max_retry_delay
+            )
             return True
 
         # Log request details (without sensitive data)
