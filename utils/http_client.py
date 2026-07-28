@@ -160,11 +160,13 @@ class AlpaconHTTPClient:
             """Count the attempt and sleep; False once retries are exhausted."""
             nonlocal retry_count, retry_delay
             retry_count += 1
+            if retry_count >= self.max_retries:
+                # No sleep follows, so don't log a retry that will not happen.
+                # The caller logs the exhaustion with its own error response.
+                return False
             logger.warning(
                 f'{reason}, retrying ({retry_count}/{self.max_retries}) in {retry_delay}s'
             )
-            if retry_count >= self.max_retries:
-                return False
             await asyncio.sleep(retry_delay)
             retry_delay = min(retry_delay * 2, self.max_retry_delay)
             return True
