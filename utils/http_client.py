@@ -37,24 +37,15 @@ class AlpaconHTTPClient:
             f'AlpaconHTTPClient initialized - timeout: {self.base_timeout.read}s, max_retries: {self.max_retries}, caching enabled'
         )
 
-    async def _get_client(self) -> httpx.AsyncClient:
-        """Get or create shared async client for connection pooling."""
-        # For testing compatibility, check if client pooling is disabled
-        if hasattr(self, '_disable_pooling') and self._disable_pooling:
-            return httpx.AsyncClient(timeout=self.base_timeout)
+    async def __aenter__(self):
+        """Async context manager entry."""
+        return self
 
-        async with self._client_lock:
-            if self._client is None or self._client.is_closed:
-                self._client = httpx.AsyncClient(
-                    timeout=self.base_timeout,
-                    limits=httpx.Limits(
-                        max_keepalive_connections=20,
-                        max_connections=100,
-                        keepalive_expiry=30.0,
-                    ),
-                )
-                logger.debug('Created new HTTP client with connection pooling')
-            return self._client
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit - close client."""
+        await self._close_client()
+
+    # __del__ removed: lifespan handles cleanup via close()
 
     async def close(self):
         """Close the HTTP client and clear caches.
@@ -83,163 +74,6 @@ class AlpaconHTTPClient:
     def cache_size(self) -> int:
         """Number of entries in the response cache."""
         return len(self._cache)
-
-    def _get_cache_key(self, method: str, url: str, params: dict | None = None) -> str:
-        """Generate cache key for request."""
-        key_parts = [method, url]
-        if params:
-            key_parts.append(json.dumps(params, sort_keys=True))
-        return '|'.join(key_parts)
-
-    def _is_cacheable(self, method: str, endpoint: str) -> bool:
-        """Check if request should be cached."""
-        if method != 'GET':
-            return False
-
-        # Cache server lists, system info, but not real-time metrics
-        cacheable_endpoints = [
-            '/api/servers/servers/',
-            '/api/system/info/',
-            '/api/system/users/',
-            '/api/system/packages/',
-            '/api/iam/users/',
-            '/api/iam/groups/',
-            '/api/iam/roles/',
-        ]
-
-        return any(endpoint.startswith(cacheable) for cacheable in cacheable_endpoints)
-
-    def _get_cached_response(self, cache_key: str) -> dict[str, Any] | None:
-        """Get cached response if still valid.
-
-        Uses .get() for resilient reads to avoid KeyError if close()
-        clears the cache concurrently.
-        """
-        if time.time() > self._cache_ttl.get(cache_key, 0):
-            # Cache expired or missing
-            self._cache.pop(cache_key, None)
-            self._cache_ttl.pop(cache_key, None)
-            return None
-
-        result = self._cache.get(cache_key)
-        if result is not None:
-            logger.debug(f'Cache hit for key: {cache_key}')
-        return result
-
-    def _set_cached_response(
-        self, cache_key: str, response: dict[str, Any], ttl: float | None = None
-    ):
-        """Cache response with TTL."""
-        self._cache[cache_key] = response
-        self._cache_ttl[cache_key] = time.time() + (ttl or self.default_cache_ttl)
-        logger.debug(f'Cached response for key: {cache_key}')
-
-    @staticmethod
-    def _is_jwt(token: str) -> bool:
-        """Check if a token is a JWT (header.payload.signature format)."""
-        parts = token.split('.')
-        return len(parts) == 3 and all(parts)
-
-    @staticmethod
-    def _handle_upstream_401(
-        exc: httpx.HTTPStatusError, token: str | None = None
-    ) -> dict[str, Any]:
-        """Handle upstream API 401 responses.
-
-        Detects MFA-required errors from the Alpacon API response body
-        and triggers re-authentication in remote (streamable-http) mode
-        via two complementary mechanisms:
-
-        1. Dict-based signal: Sets a module-level flag keyed by token hash
-           that the ASGI middleware consumes after the request completes.
-        2. Exception: Raises UpstreamAuthError which propagates through
-           the call stack to the middleware's try/except handler.
-
-        The exception path is the primary mechanism (more reliable across
-        anyio task boundaries). The dict signal is a fallback for edge
-        cases where the exception might be caught by intermediate handlers.
-
-        In stdio/SSE mode (auth not enabled), only returns an error dict
-        without signaling or raising.
-        """
-        mfa_required = False
-        source = ''
-
-        try:
-            body = exc.response.json()
-            if isinstance(body, dict) and body.get('code') == 'auth_mfa_required':
-                mfa_required = True
-                source = body.get('source', '')
-        except Exception as parse_exc:
-            logger.debug('Failed to parse 401 response body as JSON: %s', parse_exc)
-
-        auth_enabled = is_auth_enabled()
-        is_jwt = bool(token and AlpaconHTTPClient._is_jwt(token))
-
-        # DEBUG: Log all decision factors for 401 handling
-        logger.warning(
-            '[DEBUG-401] auth_enabled=%s, token_present=%s, is_jwt=%s, '
-            'mfa_required=%s, source=%s',
-            auth_enabled,
-            bool(token),
-            is_jwt,
-            mfa_required,
-            source,
-        )
-
-        # Signal middleware AND raise exception in remote (streamable-http) mode.
-        # Uses a module-level thread-safe dict keyed by token hash instead
-        # of contextvars, because MCP streamable-http runs tool handlers in
-        # a separate anyio task context where ContextVar mutations are
-        # invisible to the ASGI middleware's parent context.
-        # Only signal for JWT (Bearer) tokens — API tokens (token=...) use
-        # a different auth scheme and the middleware cannot derive a matching
-        # key from them, which would leave unconsumed entries.
-        if auth_enabled and token and is_jwt:
-            from utils.error_handler import (
-                UpstreamAuthError,
-                make_auth_error_key,
-                signal_upstream_auth_error,
-            )
-
-            token_key = make_auth_error_key(token)
-            logger.warning(
-                '[DEBUG-401] Setting dict signal with token_key=%s',
-                token_key,
-            )
-            signal_upstream_auth_error(
-                token_key,
-                {
-                    'mfa_required': mfa_required,
-                    'source': source,
-                },
-            )
-            logger.warning(
-                '[DEBUG-401] Raising UpstreamAuthError (mfa_required=%s, source=%s)',
-                mfa_required,
-                source,
-            )
-            raise UpstreamAuthError(mfa_required=mfa_required, source=source)
-
-        logger.warning(
-            '[DEBUG-401] NOT signaling/raising — falling through to error dict. '
-            'auth_enabled=%s, is_jwt=%s',
-            auth_enabled,
-            is_jwt,
-        )
-        error_msg = 'MFA verification required' if mfa_required else str(exc)
-        error_response = {
-            'error': 'MFA Required' if mfa_required else 'HTTP Error',
-            'status_code': 401,
-            'message': error_msg,
-            'mfa_required': mfa_required,
-        }
-        logger.error(
-            'Upstream 401 (mfa_required=%s, source=%s), not retrying',
-            mfa_required,
-            source,
-        )
-        return error_response
 
     def get_base_url(self, region: str, workspace: str) -> str:
         """Get base URL for API calls.
@@ -671,15 +505,181 @@ class AlpaconHTTPClient:
 
         return await self.request(method='DELETE', url=full_url, token=token)
 
-    async def __aenter__(self):
-        """Async context manager entry."""
-        return self
+    async def _get_client(self) -> httpx.AsyncClient:
+        """Get or create shared async client for connection pooling."""
+        # For testing compatibility, check if client pooling is disabled
+        if hasattr(self, '_disable_pooling') and self._disable_pooling:
+            return httpx.AsyncClient(timeout=self.base_timeout)
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        """Async context manager exit - close client."""
-        await self._close_client()
+        async with self._client_lock:
+            if self._client is None or self._client.is_closed:
+                self._client = httpx.AsyncClient(
+                    timeout=self.base_timeout,
+                    limits=httpx.Limits(
+                        max_keepalive_connections=20,
+                        max_connections=100,
+                        keepalive_expiry=30.0,
+                    ),
+                )
+                logger.debug('Created new HTTP client with connection pooling')
+            return self._client
 
-    # __del__ removed: lifespan handles cleanup via close()
+    def _get_cache_key(self, method: str, url: str, params: dict | None = None) -> str:
+        """Generate cache key for request."""
+        key_parts = [method, url]
+        if params:
+            key_parts.append(json.dumps(params, sort_keys=True))
+        return '|'.join(key_parts)
+
+    def _is_cacheable(self, method: str, endpoint: str) -> bool:
+        """Check if request should be cached."""
+        if method != 'GET':
+            return False
+
+        # Cache server lists, system info, but not real-time metrics
+        cacheable_endpoints = [
+            '/api/servers/servers/',
+            '/api/system/info/',
+            '/api/system/users/',
+            '/api/system/packages/',
+            '/api/iam/users/',
+            '/api/iam/groups/',
+            '/api/iam/roles/',
+        ]
+
+        return any(endpoint.startswith(cacheable) for cacheable in cacheable_endpoints)
+
+    def _get_cached_response(self, cache_key: str) -> dict[str, Any] | None:
+        """Get cached response if still valid.
+
+        Uses .get() for resilient reads to avoid KeyError if close()
+        clears the cache concurrently.
+        """
+        if time.time() > self._cache_ttl.get(cache_key, 0):
+            # Cache expired or missing
+            self._cache.pop(cache_key, None)
+            self._cache_ttl.pop(cache_key, None)
+            return None
+
+        result = self._cache.get(cache_key)
+        if result is not None:
+            logger.debug(f'Cache hit for key: {cache_key}')
+        return result
+
+    def _set_cached_response(
+        self, cache_key: str, response: dict[str, Any], ttl: float | None = None
+    ):
+        """Cache response with TTL."""
+        self._cache[cache_key] = response
+        self._cache_ttl[cache_key] = time.time() + (ttl or self.default_cache_ttl)
+        logger.debug(f'Cached response for key: {cache_key}')
+
+    @staticmethod
+    def _is_jwt(token: str) -> bool:
+        """Check if a token is a JWT (header.payload.signature format)."""
+        parts = token.split('.')
+        return len(parts) == 3 and all(parts)
+
+    @staticmethod
+    def _handle_upstream_401(
+        exc: httpx.HTTPStatusError, token: str | None = None
+    ) -> dict[str, Any]:
+        """Handle upstream API 401 responses.
+
+        Detects MFA-required errors from the Alpacon API response body
+        and triggers re-authentication in remote (streamable-http) mode
+        via two complementary mechanisms:
+
+        1. Dict-based signal: Sets a module-level flag keyed by token hash
+           that the ASGI middleware consumes after the request completes.
+        2. Exception: Raises UpstreamAuthError which propagates through
+           the call stack to the middleware's try/except handler.
+
+        The exception path is the primary mechanism (more reliable across
+        anyio task boundaries). The dict signal is a fallback for edge
+        cases where the exception might be caught by intermediate handlers.
+
+        In stdio/SSE mode (auth not enabled), only returns an error dict
+        without signaling or raising.
+        """
+        mfa_required = False
+        source = ''
+
+        try:
+            body = exc.response.json()
+            if isinstance(body, dict) and body.get('code') == 'auth_mfa_required':
+                mfa_required = True
+                source = body.get('source', '')
+        except Exception as parse_exc:
+            logger.debug('Failed to parse 401 response body as JSON: %s', parse_exc)
+
+        auth_enabled = is_auth_enabled()
+        is_jwt = bool(token and AlpaconHTTPClient._is_jwt(token))
+
+        # DEBUG: Log all decision factors for 401 handling
+        logger.warning(
+            '[DEBUG-401] auth_enabled=%s, token_present=%s, is_jwt=%s, '
+            'mfa_required=%s, source=%s',
+            auth_enabled,
+            bool(token),
+            is_jwt,
+            mfa_required,
+            source,
+        )
+
+        # Signal middleware AND raise exception in remote (streamable-http) mode.
+        # Uses a module-level thread-safe dict keyed by token hash instead
+        # of contextvars, because MCP streamable-http runs tool handlers in
+        # a separate anyio task context where ContextVar mutations are
+        # invisible to the ASGI middleware's parent context.
+        # Only signal for JWT (Bearer) tokens — API tokens (token=...) use
+        # a different auth scheme and the middleware cannot derive a matching
+        # key from them, which would leave unconsumed entries.
+        if auth_enabled and token and is_jwt:
+            from utils.error_handler import (
+                UpstreamAuthError,
+                make_auth_error_key,
+                signal_upstream_auth_error,
+            )
+
+            token_key = make_auth_error_key(token)
+            logger.warning(
+                '[DEBUG-401] Setting dict signal with token_key=%s',
+                token_key,
+            )
+            signal_upstream_auth_error(
+                token_key,
+                {
+                    'mfa_required': mfa_required,
+                    'source': source,
+                },
+            )
+            logger.warning(
+                '[DEBUG-401] Raising UpstreamAuthError (mfa_required=%s, source=%s)',
+                mfa_required,
+                source,
+            )
+            raise UpstreamAuthError(mfa_required=mfa_required, source=source)
+
+        logger.warning(
+            '[DEBUG-401] NOT signaling/raising — falling through to error dict. '
+            'auth_enabled=%s, is_jwt=%s',
+            auth_enabled,
+            is_jwt,
+        )
+        error_msg = 'MFA verification required' if mfa_required else str(exc)
+        error_response = {
+            'error': 'MFA Required' if mfa_required else 'HTTP Error',
+            'status_code': 401,
+            'message': error_msg,
+            'mfa_required': mfa_required,
+        }
+        logger.error(
+            'Upstream 401 (mfa_required=%s, source=%s), not retrying',
+            mfa_required,
+            source,
+        )
+        return error_response
 
 
 # Singleton instance
