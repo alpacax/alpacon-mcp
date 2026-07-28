@@ -225,6 +225,25 @@ async def _check_mfa_requirement(
         logger.debug('MFA pre-check failed (non-fatal): %s', e)
 
 
+def _validate_uuid_list(field: str, value: Any) -> dict[str, Any] | None:
+    """Validate a list of server UUIDs. Returns an error response, or None if valid."""
+    if not isinstance(value, list):
+        return format_validation_error(
+            field,
+            value,
+            'Must be a list of server UUIDs.',
+        )
+
+    invalid = [item for item in value if not validate_server_id_format(item)]
+    if invalid:
+        return format_validation_error(
+            field,
+            invalid,
+            'Each server ID must be in UUID format. (e.g., 550e8400-e29b-41d4-a716-446655440000)',
+        )
+    return None
+
+
 def with_token_validation(func: Callable) -> Callable:
     """Decorator to add automatic token validation to MCP tools.
 
@@ -296,43 +315,14 @@ def with_token_validation(func: Callable) -> Callable:
         if server_id is not None and not validate_server_id_format(server_id):
             return format_validation_error('server_id', server_id)
 
-        # Validate server_ids list if present
-        server_ids = arguments.get('server_ids')
-        if server_ids is not None:
-            if not isinstance(server_ids, list):
-                return format_validation_error(
-                    'server_ids',
-                    server_ids,
-                    'Must be a list of server UUIDs.',
-                )
-            invalid_ids = [
-                sid for sid in server_ids if not validate_server_id_format(sid)
-            ]
-            if invalid_ids:
-                return format_validation_error(
-                    'server_ids',
-                    invalid_ids,
-                    'Each server ID must be in UUID format. (e.g., 550e8400-e29b-41d4-a716-446655440000)',
-                )
-
-        # Validate servers list if present (server UUIDs sent in request bodies)
-        servers = arguments.get('servers')
-        if servers is not None:
-            if not isinstance(servers, list):
-                return format_validation_error(
-                    'servers',
-                    servers,
-                    'Must be a list of server UUIDs.',
-                )
-            invalid_servers = [
-                sid for sid in servers if not validate_server_id_format(sid)
-            ]
-            if invalid_servers:
-                return format_validation_error(
-                    'servers',
-                    invalid_servers,
-                    'Each server ID must be in UUID format. (e.g., 550e8400-e29b-41d4-a716-446655440000)',
-                )
+        # Validate UUID list arguments if present
+        # ('servers' carries server UUIDs sent in request bodies)
+        for field in ('server_ids', 'servers'):
+            value = arguments.get(field)
+            if value is not None:
+                validation_error = _validate_uuid_list(field, value)
+                if validation_error:
+                    return validation_error
 
         # session_id is interpolated into URL paths, so reject non-UUID values that could retarget the request.
         session_id = arguments.get('session_id')
