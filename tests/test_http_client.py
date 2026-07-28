@@ -11,6 +11,7 @@ import httpx
 import pytest
 
 from utils.http_client import AlpaconHTTPClient, http_client
+from utils.recovery_hints import _detect_error_domain, enrich_error_response
 
 
 @pytest.fixture
@@ -137,6 +138,36 @@ class TestHTTPClientGet:
         assert result['error'] == 'Max retries exceeded'
         # Should have retried 3 times
         assert mock_httpx_client.request.call_count == 3
+
+    @pytest.mark.asyncio
+    async def test_get_500_exhaustion_enriches_with_server_hints(
+        self, mock_httpx_client
+    ):
+        """5xx exhaustion carries status_code and a 'server'-domain message.
+
+        Both feed enrich_error_response, which every decorated tool runs over
+        its result, so changing either moves the hints the caller receives.
+        """
+        mock_response = create_mock_response(status_code=500)
+        mock_httpx_client.request.return_value = mock_response
+
+        result = await http_client.get(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/error/',
+            token='test-token',
+        )
+
+        assert result['status_code'] == 500
+        assert (
+            _detect_error_domain(result['status_code'], result['message']) == 'server'
+        )
+
+        enriched = enrich_error_response(dict(result))
+        assert enriched['recovery_hints'] == [
+            'The server encountered an internal error. Try again in a moment.',
+            'If the issue persists, check server health.',
+        ]
 
 
 class TestHTTPClientPost:
