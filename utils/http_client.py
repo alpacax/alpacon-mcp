@@ -13,6 +13,31 @@ from utils.logger import get_logger
 
 logger = get_logger('http_client')
 
+# Values of the 'error' key on a failure response. Callers branch on these
+# strings, so they are part of the response contract, not just log text.
+_ERR_HTTP = 'HTTP Error'
+_ERR_MAX_RETRIES = 'Max retries exceeded'
+_ERR_MFA_REQUIRED = 'MFA Required'
+_ERR_REQUEST = 'Request Error'
+_ERR_REQUEST_EXCEPTION = 'Request Exception'
+_ERR_TIMEOUT = 'Timeout'
+_ERR_UNEXPECTED = 'Unexpected Error'
+
+# Each retry waits this many times longer than the previous one.
+_BACKOFF_MULTIPLIER = 2
+
+# GET endpoints whose responses are cached. Prefixes, matched with startswith.
+# Real-time metrics are deliberately absent.
+_CACHEABLE_ENDPOINTS = (
+    '/api/servers/servers/',
+    '/api/system/info/',
+    '/api/system/users/',
+    '/api/system/packages/',
+    '/api/iam/users/',
+    '/api/iam/groups/',
+    '/api/iam/roles/',
+)
+
 
 class AlpaconHTTPClient:
     """Async HTTP client for Alpacon API with connection pooling and caching."""
@@ -168,7 +193,7 @@ class AlpaconHTTPClient:
                 f'{reason}, retrying ({retry_count}/{self.max_retries}) in {retry_delay}s'
             )
             await asyncio.sleep(retry_delay)
-            retry_delay = min(retry_delay * 2, self.max_retry_delay)
+            retry_delay = min(retry_delay * _BACKOFF_MULTIPLIER, self.max_retry_delay)
             return True
 
         # Log request details (without sensitive data)
@@ -245,7 +270,7 @@ class AlpaconHTTPClient:
                         continue
 
                     error_response = {
-                        'error': 'Max retries exceeded',
+                        'error': _ERR_MAX_RETRIES,
                         'status_code': e.response.status_code,
                         'message': f'Server error after {self.max_retries} attempts',
                     }
@@ -257,7 +282,7 @@ class AlpaconHTTPClient:
                         return self._handle_upstream_401(e, token=token)
 
                     error_response = {
-                        'error': 'HTTP Error',
+                        'error': _ERR_HTTP,
                         'status_code': e.response.status_code,
                         'message': str(e),
                         'response': e.response.text,
@@ -271,7 +296,7 @@ class AlpaconHTTPClient:
                     continue
 
                 error_response = {
-                    'error': 'Timeout',
+                    'error': _ERR_TIMEOUT,
                     'message': f'Request timed out after {self.max_retries} retries',
                 }
                 logger.error(f'Request timeout after all retries: {error_response}')
@@ -282,19 +307,19 @@ class AlpaconHTTPClient:
                 if await backoff(f'Network error: {e}'):
                     continue
 
-                error_response = {'error': 'Request Error', 'message': str(e)}
+                error_response = {'error': _ERR_REQUEST, 'message': str(e)}
                 logger.error(f'Network error after all retries: {error_response}')
                 return error_response
 
             except Exception as e:
                 # Unexpected error - don't retry
-                error_response = {'error': 'Unexpected Error', 'message': str(e)}
+                error_response = {'error': _ERR_UNEXPECTED, 'message': str(e)}
                 logger.error(f'Unexpected error: {error_response}', exc_info=True)
                 return error_response
 
         # Every branch above returns, so this is only reached when max_retries <= 0
         error_response = {
-            'error': 'Max retries exceeded',
+            'error': _ERR_MAX_RETRIES,
             'message': f'Failed after {self.max_retries} attempts',
         }
         logger.error(f'Loop never ran - max_retries is {self.max_retries}')
@@ -365,7 +390,7 @@ class AlpaconHTTPClient:
             if isinstance(result, Exception):
                 processed_results.append(
                     {
-                        'error': 'Request Exception',
+                        'error': _ERR_REQUEST_EXCEPTION,
                         'message': str(result),
                         'request_index': i,
                     }
@@ -538,18 +563,7 @@ class AlpaconHTTPClient:
         if method != 'GET':
             return False
 
-        # Cache server lists, system info, but not real-time metrics
-        cacheable_endpoints = [
-            '/api/servers/servers/',
-            '/api/system/info/',
-            '/api/system/users/',
-            '/api/system/packages/',
-            '/api/iam/users/',
-            '/api/iam/groups/',
-            '/api/iam/roles/',
-        ]
-
-        return any(endpoint.startswith(cacheable) for cacheable in cacheable_endpoints)
+        return endpoint.startswith(_CACHEABLE_ENDPOINTS)
 
     def _get_cached_response(self, cache_key: str) -> dict[str, Any] | None:
         """Get cached response if still valid.
@@ -671,7 +685,7 @@ class AlpaconHTTPClient:
         )
         error_msg = 'MFA verification required' if mfa_required else str(exc)
         error_response = {
-            'error': 'MFA Required' if mfa_required else 'HTTP Error',
+            'error': _ERR_MFA_REQUIRED if mfa_required else _ERR_HTTP,
             'status_code': 401,
             'message': error_msg,
             'mfa_required': mfa_required,

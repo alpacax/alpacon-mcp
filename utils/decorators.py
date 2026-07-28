@@ -28,6 +28,18 @@ from utils.logger import get_logger
 
 logger = get_logger('decorators')
 
+# Arguments carrying a list of server UUIDs. Order is the reporting order when
+# more than one is invalid.
+_UUID_LIST_FIELDS = ('server_ids', 'servers')
+_UUID_LIST_TYPE_MSG = 'Must be a list of server UUIDs.'
+_UUID_LIST_ITEM_MSG = 'Each server ID must be in UUID format. (e.g., 550e8400-e29b-41d4-a716-446655440000)'
+
+# Trailing hint shared by the two "multiple regions available" messages.
+_SPECIFY_REGION_HINT = 'Please specify a region parameter.'
+
+# Argument names redacted from tool-entry logs.
+_SENSITIVE_LOG_KEYS = frozenset({'_token', 'password', 'secret', 'key'})
+
 
 def _get_jwt_token() -> str | None:
     """Get JWT token from FastMCP auth context if available.
@@ -133,7 +145,7 @@ def _resolve_region_jwt(
     if available_regions:
         return None, (
             f'Multiple regions available in token: {", ".join(available_regions)}. '
-            f'Please specify a region parameter.'
+            f'{_SPECIFY_REGION_HINT}'
         )
     return None, 'No regions found in JWT token.'
 
@@ -161,7 +173,7 @@ def _resolve_region_local(workspace: str | None) -> tuple[str | None, str | None
     if available_regions:
         return None, (
             f'Multiple regions available: {", ".join(sorted(available_regions))}. '
-            f'Please specify a region parameter.'
+            f'{_SPECIFY_REGION_HINT}'
         )
     return None, 'No regions configured. Please run setup first.'
 
@@ -231,7 +243,7 @@ def _validate_uuid_list(field: str, value: Any) -> dict[str, Any] | None:
         return format_validation_error(
             field,
             value,
-            'Must be a list of server UUIDs.',
+            _UUID_LIST_TYPE_MSG,
         )
 
     invalid = [item for item in value if not validate_server_id_format(item)]
@@ -239,7 +251,7 @@ def _validate_uuid_list(field: str, value: Any) -> dict[str, Any] | None:
         return format_validation_error(
             field,
             invalid,
-            'Each server ID must be in UUID format. (e.g., 550e8400-e29b-41d4-a716-446655440000)',
+            _UUID_LIST_ITEM_MSG,
         )
     return None
 
@@ -317,7 +329,7 @@ def with_token_validation(func: Callable) -> Callable:
 
         # Validate UUID list arguments if present
         # ('servers' carries server UUIDs sent in request bodies)
-        for field in ('server_ids', 'servers'):
+        for field in _UUID_LIST_FIELDS:
             value = arguments.get(field)
             if value is not None:
                 validation_error = _validate_uuid_list(field, value)
@@ -455,11 +467,7 @@ def with_logging(func: Callable) -> Callable:
         arguments = bound_args.arguments
 
         # Create log-safe arguments (exclude sensitive data)
-        log_args = {
-            k: v
-            for k, v in arguments.items()
-            if k not in ['_token', 'password', 'secret', 'key']
-        }
+        log_args = {k: v for k, v in arguments.items() if k not in _SENSITIVE_LOG_KEYS}
 
         # Log function entry
         logger.info(f'{func_name} called with: {log_args}')
