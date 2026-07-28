@@ -13,11 +13,12 @@ import httpx
 
 from utils.common import (
     error_response,
+    is_auth_enabled,
     resolve_work_session_id,
     success_response,
     unwrap_http_result,
 )
-from utils.decorators import _is_auth_enabled, mcp_tool_handler
+from utils.decorators import mcp_tool_handler
 from utils.error_handler import format_validation_error, validate_file_path
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, READ_ONLY
@@ -341,7 +342,7 @@ async def webftp_upload_file(
     """Upload a local file to a server via S3 presigned URL."""
     token = kwargs.get('token')
 
-    if _is_auth_enabled():
+    if is_auth_enabled():
         return error_response(_REMOTE_MODE_ERROR, code='remote_mode_unsupported')
 
     if not validate_file_path(local_file_path):
@@ -575,7 +576,7 @@ async def webftp_download_file(
     if not validate_file_path(remote_file_path):
         return format_validation_error('remote_file_path', remote_file_path)
 
-    if _is_auth_enabled():
+    if is_auth_enabled():
         return await _download_remote_mode(
             server_id=server_id,
             remote_file_path=remote_file_path,
@@ -755,7 +756,7 @@ async def webftp_bulk_upload(
     """Upload multiple files to a server using bulk WebFTP API."""
     token = kwargs.get('token')
 
-    if _is_auth_enabled():
+    if is_auth_enabled():
         return error_response(_REMOTE_MODE_ERROR, code='remote_mode_unsupported')
 
     if not local_file_paths:
@@ -916,7 +917,7 @@ async def webftp_bulk_download(
     """Download multiple files/folders as a ZIP archive."""
     token = kwargs.get('token')
 
-    if _is_auth_enabled():
+    if is_auth_enabled():
         return error_response(_REMOTE_MODE_ERROR, code='remote_mode_unsupported')
 
     if not remote_paths:

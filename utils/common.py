@@ -23,55 +23,6 @@ except importlib.metadata.PackageNotFoundError:
 # MCP User-Agent for identification
 MCP_USER_AGENT = f'alpacon-mcp/{MCP_VERSION} (MCP-Server; persistent-pool) Python/{platform.python_version()}'
 
-
-def validate_token(region: str, workspace: str) -> str | None:
-    """Validate and retrieve token for given region and workspace.
-
-    Args:
-        region: Region (ap1, us1, eu1, etc.)
-        workspace: Workspace name
-
-    Returns:
-        Token string if found, None otherwise
-    """
-    token = token_manager.get_token(region, workspace)
-    if not token:
-        logger.error(f'No token found for {workspace}.{region}')
-    return token
-
-
-def error_response(message: str, **kwargs) -> dict[str, Any]:
-    """Create standardized error response.
-
-    Args:
-        message: Error message
-        **kwargs: Additional fields to include in response
-
-    Returns:
-        Standardized error response dict
-    """
-    response = {'status': 'error', 'message': message}
-    response.update(kwargs)
-    return response
-
-
-def success_response(data: Any = None, **kwargs) -> dict[str, Any]:
-    """Create standardized success response.
-
-    Args:
-        data: Response data
-        **kwargs: Additional fields to include in response
-
-    Returns:
-        Standardized success response dict
-    """
-    response = {'status': 'success'}
-    if data is not None:
-        response['data'] = data
-    response.update(kwargs)
-    return response
-
-
 # The human-resolvable next action differs by category: SUDO_APPROVAL_REQUIRED /
 # WORK_SESSION_PENDING need an out-of-band approval, while SUDO_PRESENCE_REQUIRED
 # is an MFA step-up and SUDO_NO_WORKSESSION_POLICY is a scope addition — none of
@@ -113,6 +64,98 @@ _NEXT_ACTION_BY_CATEGORY: dict[str, str] = {
     ),
 }
 _DEFAULT_NEXT_ACTION = _NEXT_ACTION_BY_CATEGORY['SUDO_APPROVAL_REQUIRED']
+
+# Server WorkSession gate codes → next-action telling the agent how to get inside a valid session (mirrors alpacon-cli worksession_error.go).
+_WORK_SESSION_GATE_NEXT_ACTION: dict[str, str] = {
+    'work_session_required': (
+        'No Work Session is attached. Create one with work_session_create '
+        '(scope covering this operation—"command" for command execution, '
+        '"webftp" for file transfers—plus the target server), have a human '
+        'approve it out-of-band, then retry passing its id as work_session_id.'
+    ),
+    'work_session_not_usable': (
+        'The attached Work Session is in a terminal state and cannot be used. '
+        'Create a new Work Session, get it approved, then retry.'
+    ),
+    'work_session_expired': (
+        'The attached Work Session has expired. Extend it with '
+        'work_session_extend, or create a new one, then retry.'
+    ),
+    'work_session_scope_not_allowed': (
+        'The attached Work Session does not include the scope for this '
+        'operation. Add the scope with work_session_update (may require '
+        'approval) or create a new session with the right scope, then retry.'
+    ),
+    'work_session_server_not_allowed': (
+        'The target server is not in the attached Work Session. Add it with '
+        'work_session_update, or create a new session including the server, '
+        'then retry.'
+    ),
+    'work_session_assignee_mismatch': (
+        'The attached Work Session is assigned to a different principal. Use a '
+        'session assigned to you, or create your own, then retry.'
+    ),
+}
+
+# Session exists but is unapproved; routes to pending-approval, not error.
+_WORK_SESSION_PENDING_CODE = 'work_session_not_active'
+
+_WORK_SESSION_GATE_CODES: frozenset[str] = frozenset(_WORK_SESSION_GATE_NEXT_ACTION) | {
+    _WORK_SESSION_PENDING_CODE
+}
+
+
+def is_auth_enabled() -> bool:
+    """Check if remote (streamable-http) mode with Auth0 JWT auth is enabled.
+
+    True when ALPACON_MCP_AUTH_ENABLED=true. False in stdio/SSE mode, which
+    authenticates with tokens from token.json.
+    """
+    return os.getenv('ALPACON_MCP_AUTH_ENABLED', '').lower() == 'true'
+
+
+def resolve_work_session_id(explicit: str | None) -> str | None:
+    """Resolve the effective Work Session id: explicit arg > ALPACON_WORK_SESSION env.
+
+    Mirrors alpacon-cli's resolve.go (flag > env). Returns None when neither is set.
+    """
+    return (
+        (explicit or '').strip()
+        or os.environ.get('ALPACON_WORK_SESSION', '').strip()
+        or None
+    )
+
+
+def error_response(message: str, **kwargs) -> dict[str, Any]:
+    """Create standardized error response.
+
+    Args:
+        message: Error message
+        **kwargs: Additional fields to include in response
+
+    Returns:
+        Standardized error response dict
+    """
+    response = {'status': 'error', 'message': message}
+    response.update(kwargs)
+    return response
+
+
+def success_response(data: Any = None, **kwargs) -> dict[str, Any]:
+    """Create standardized success response.
+
+    Args:
+        data: Response data
+        **kwargs: Additional fields to include in response
+
+    Returns:
+        Standardized success response dict
+    """
+    response = {'status': 'success'}
+    if data is not None:
+        response['data'] = data
+    response.update(kwargs)
+    return response
 
 
 def pending_approval_response(
@@ -163,6 +206,22 @@ def pending_approval_response(
     return response
 
 
+def validate_token(region: str, workspace: str) -> str | None:
+    """Validate and retrieve token for given region and workspace.
+
+    Args:
+        region: Region (ap1, us1, eu1, etc.)
+        workspace: Workspace name
+
+    Returns:
+        Token string if found, None otherwise
+    """
+    token = token_manager.get_token(region, workspace)
+    if not token:
+        logger.error(f'No token found for {workspace}.{region}')
+    return token
+
+
 def token_error_response(region: str, workspace: str) -> dict[str, Any]:
     """Create standardized token error response.
 
@@ -178,46 +237,6 @@ def token_error_response(region: str, workspace: str) -> dict[str, Any]:
         region=region,
         workspace=workspace,
     )
-
-
-# Server WorkSession gate codes → next-action telling the agent how to get inside a valid session (mirrors alpacon-cli worksession_error.go).
-_WORK_SESSION_GATE_NEXT_ACTION: dict[str, str] = {
-    'work_session_required': (
-        'No Work Session is attached. Create one with work_session_create '
-        '(scope covering this operation—"command" for command execution, '
-        '"webftp" for file transfers—plus the target server), have a human '
-        'approve it out-of-band, then retry passing its id as work_session_id.'
-    ),
-    'work_session_not_usable': (
-        'The attached Work Session is in a terminal state and cannot be used. '
-        'Create a new Work Session, get it approved, then retry.'
-    ),
-    'work_session_expired': (
-        'The attached Work Session has expired. Extend it with '
-        'work_session_extend, or create a new one, then retry.'
-    ),
-    'work_session_scope_not_allowed': (
-        'The attached Work Session does not include the scope for this '
-        'operation. Add the scope with work_session_update (may require '
-        'approval) or create a new session with the right scope, then retry.'
-    ),
-    'work_session_server_not_allowed': (
-        'The target server is not in the attached Work Session. Add it with '
-        'work_session_update, or create a new session including the server, '
-        'then retry.'
-    ),
-    'work_session_assignee_mismatch': (
-        'The attached Work Session is assigned to a different principal. Use a '
-        'session assigned to you, or create your own, then retry.'
-    ),
-}
-
-# Session exists but is unapproved; routes to pending-approval, not error.
-_WORK_SESSION_PENDING_CODE = 'work_session_not_active'
-
-_WORK_SESSION_GATE_CODES: frozenset[str] = frozenset(_WORK_SESSION_GATE_NEXT_ACTION) | {
-    _WORK_SESSION_PENDING_CODE
-}
 
 
 def work_session_gate_response(code: str, **kwargs: Any) -> dict[str, Any]:
@@ -305,15 +324,3 @@ def _extract_work_session_gate_code(result: dict[str, Any]) -> str | None:
     if isinstance(code, str) and code in _WORK_SESSION_GATE_CODES:
         return code
     return None
-
-
-def resolve_work_session_id(explicit: str | None) -> str | None:
-    """Resolve the effective Work Session id: explicit arg > ALPACON_WORK_SESSION env.
-
-    Mirrors alpacon-cli's resolve.go (flag > env). Returns None when neither is set.
-    """
-    return (
-        (explicit or '').strip()
-        or os.environ.get('ALPACON_WORK_SESSION', '').strip()
-        or None
-    )

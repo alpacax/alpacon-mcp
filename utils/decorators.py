@@ -10,7 +10,12 @@ from typing import Any
 
 from mcp.types import ToolAnnotations
 
-from utils.common import error_response, token_error_response, validate_token
+from utils.common import (
+    error_response,
+    is_auth_enabled,
+    token_error_response,
+    validate_token,
+)
 from utils.error_handler import (
     UpstreamAuthError,
     format_validation_error,
@@ -22,15 +27,6 @@ from utils.http_client import AlpaconHTTPClient
 from utils.logger import get_logger
 
 logger = get_logger('decorators')
-
-
-def _is_auth_enabled() -> bool:
-    """Check if OAuth2 authentication mode is enabled (streamable-http transport).
-
-    Returns True when running in streamable-http mode with Auth0 JWT auth.
-    Returns False when running in stdio/SSE mode with token.json.
-    """
-    return os.getenv('ALPACON_MCP_AUTH_ENABLED', '').lower() == 'true'
 
 
 def _get_jwt_token() -> str | None:
@@ -268,7 +264,7 @@ def with_token_validation(func: Callable) -> Callable:
         if not validate_workspace_format(workspace):
             return format_validation_error('workspace', workspace)
 
-        auth_enabled = _is_auth_enabled()
+        auth_enabled = is_auth_enabled()
 
         # Retrieve JWT token once upfront in streamable-http mode
         jwt_token = None

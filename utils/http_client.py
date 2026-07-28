@@ -2,14 +2,13 @@
 
 import asyncio
 import json
-import os
 import time
 from typing import Any
 from urllib.parse import urljoin
 
 import httpx
 
-from utils.common import MCP_USER_AGENT
+from utils.common import MCP_USER_AGENT, is_auth_enabled
 from utils.logger import get_logger
 
 logger = get_logger('http_client')
@@ -174,7 +173,7 @@ class AlpaconHTTPClient:
         except Exception as parse_exc:
             logger.debug('Failed to parse 401 response body as JSON: %s', parse_exc)
 
-        auth_enabled = os.getenv('ALPACON_MCP_AUTH_ENABLED', '').lower() == 'true'
+        auth_enabled = is_auth_enabled()
         is_jwt = bool(token and AlpaconHTTPClient._is_jwt(token))
 
         # DEBUG: Log all decision factors for 401 handling

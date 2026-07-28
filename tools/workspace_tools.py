@@ -5,7 +5,12 @@ from typing import Any
 from mcp.types import ToolAnnotations
 
 from server import mcp
-from utils.common import error_response, success_response, unwrap_http_result
+from utils.common import (
+    error_response,
+    is_auth_enabled,
+    success_response,
+    unwrap_http_result,
+)
 from utils.decorators import mcp_tool_handler, require_jwt_auth
 from utils.http_client import http_client
 from utils.token_manager import TokenManager
@@ -115,10 +120,10 @@ async def list_workspaces(region: str = '') -> dict[str, Any]:
     Returns:
         Workspaces list response
     """
-    from utils.decorators import _get_jwt_token, _get_jwt_workspaces, _is_auth_enabled
+    from utils.decorators import _get_jwt_token, _get_jwt_workspaces
 
     # Use explicit transport mode check, not JWT presence
-    if _is_auth_enabled():
+    if is_auth_enabled():
         jwt_token = _get_jwt_token()
         if not jwt_token:
             return error_response(
