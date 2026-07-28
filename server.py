@@ -8,6 +8,7 @@ from typing import Literal
 
 from mcp.server.fastmcp import FastMCP
 
+from utils.common import is_auth_enabled
 from utils.logger import get_logger
 
 logger = get_logger('server')
@@ -74,7 +75,7 @@ def _create_mcp_server() -> FastMCP:
     creates the server with Auth0 JWT authentication for HTTP transport.
     Otherwise creates a standard server for stdio/SSE transport.
     """
-    auth_enabled = os.getenv('ALPACON_MCP_AUTH_ENABLED', '').lower() == 'true'
+    auth_enabled = is_auth_enabled()
 
     if auth_enabled:
         from mcp.server.auth.settings import AuthSettings
@@ -254,11 +255,6 @@ def _modules_to_load(toolsets: str | None, remote_mode: bool) -> set[str]:
     return enabled | ALWAYS_ON_MODULES
 
 
-def _is_remote_mode() -> bool:
-    """Check if running in remote (streamable-http) mode with JWT auth."""
-    return os.getenv('ALPACON_MCP_AUTH_ENABLED', '').lower() == 'true'
-
-
 def _install_upstream_auth_middleware():
     """Override run_streamable_http_async to wrap app with auth error middleware.
 
@@ -346,7 +342,7 @@ def run(
     else:
         logger.info('No config file specified, using default config discovery')
 
-    remote_mode = _is_remote_mode()
+    remote_mode = is_auth_enabled()
 
     if remote_mode:
         # Remote (streamable-http) mode: register OAuth routes

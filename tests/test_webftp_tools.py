@@ -1255,9 +1255,9 @@ class TestRemoteModeUnsupported:
         """webftp_upload_file returns remote_mode_unsupported error in remote mode.
 
         The decorator's auth check is bypassed (auth disabled) so the function
-        body's _is_remote_mode check is what we're exercising here.
+        body's is_auth_enabled check is what we're exercising here.
         """
-        with patch('tools.webftp_tools._is_auth_enabled', return_value=True):
+        with patch('tools.webftp_tools.is_auth_enabled', return_value=True):
             result = await webftp_upload_file(
                 server_id=self.SERVER_ID,
                 local_file_path='/local/test.txt',
@@ -1273,7 +1273,7 @@ class TestRemoteModeUnsupported:
     @pytest.mark.asyncio
     async def test_bulk_upload_remote_mode(self, mock_http_client, mock_token_manager):
         """webftp_bulk_upload returns remote_mode_unsupported error in remote mode."""
-        with patch('tools.webftp_tools._is_auth_enabled', return_value=True):
+        with patch('tools.webftp_tools.is_auth_enabled', return_value=True):
             result = await webftp_bulk_upload(
                 server_id=self.SERVER_ID,
                 local_file_paths=['/local/a.txt', '/local/b.txt'],
@@ -1291,7 +1291,7 @@ class TestRemoteModeUnsupported:
         self, mock_http_client, mock_token_manager
     ):
         """webftp_bulk_download returns remote_mode_unsupported error in remote mode."""
-        with patch('tools.webftp_tools._is_auth_enabled', return_value=True):
+        with patch('tools.webftp_tools.is_auth_enabled', return_value=True):
             result = await webftp_bulk_download(
                 server_id=self.SERVER_ID,
                 remote_paths=['/remote/a.txt'],
@@ -1320,7 +1320,7 @@ class TestRemoteModeDownload:
             'download_url': 'https://s3.example.com/file?sig=abc',
         }
 
-        with patch('tools.webftp_tools._is_auth_enabled', return_value=True):
+        with patch('tools.webftp_tools.is_auth_enabled', return_value=True):
             result = await webftp_download_file(
                 server_id=self.SERVER_ID,
                 remote_file_path='/remote/file.txt',
@@ -1345,7 +1345,7 @@ class TestRemoteModeDownload:
         ]
 
         with (
-            patch('tools.webftp_tools._is_auth_enabled', return_value=True),
+            patch('tools.webftp_tools.is_auth_enabled', return_value=True),
             patch('asyncio.sleep', new_callable=AsyncMock),
         ):
             result = await webftp_download_file(
@@ -1368,7 +1368,7 @@ class TestRemoteModeDownload:
         mock_http_client.get.return_value = {'success': None}
 
         with (
-            patch('tools.webftp_tools._is_auth_enabled', return_value=True),
+            patch('tools.webftp_tools.is_auth_enabled', return_value=True),
             patch('asyncio.sleep', new_callable=AsyncMock),
             patch('tools.webftp_tools._REMOTE_DOWNLOAD_TIMEOUT', 2),
         ):
@@ -1395,7 +1395,7 @@ class TestRemoteModeDownload:
         }
 
         with (
-            patch('tools.webftp_tools._is_auth_enabled', return_value=True),
+            patch('tools.webftp_tools.is_auth_enabled', return_value=True),
             patch('asyncio.sleep', new_callable=AsyncMock),
         ):
             result = await webftp_download_file(

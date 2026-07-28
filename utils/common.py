@@ -24,6 +24,15 @@ except importlib.metadata.PackageNotFoundError:
 MCP_USER_AGENT = f'alpacon-mcp/{MCP_VERSION} (MCP-Server; persistent-pool) Python/{platform.python_version()}'
 
 
+def is_auth_enabled() -> bool:
+    """Check if remote (streamable-http) mode with Auth0 JWT auth is enabled.
+
+    True when ALPACON_MCP_AUTH_ENABLED=true. False in stdio/SSE mode, which
+    authenticates with tokens from token.json.
+    """
+    return os.getenv('ALPACON_MCP_AUTH_ENABLED', '').lower() == 'true'
+
+
 def validate_token(region: str, workspace: str) -> str | None:
     """Validate and retrieve token for given region and workspace.
 

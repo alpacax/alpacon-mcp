@@ -4,17 +4,13 @@ import os
 import time
 from typing import Any
 
+from utils.common import is_auth_enabled
 from utils.logger import get_logger
 
 logger = get_logger('health')
 
 # Track server start time
 _start_time = time.monotonic()
-
-
-def _is_remote_mode() -> bool:
-    """Check if running in remote (streamable-http) mode with JWT auth."""
-    return os.getenv('ALPACON_MCP_AUTH_ENABLED', '').lower() == 'true'
 
 
 def _get_auth_info_remote() -> dict[str, Any]:
@@ -58,7 +54,7 @@ async def get_health_info() -> dict[str, Any]:
         MCP_VERSION = '0.4.2-dev'
 
     # Auth config — mode-appropriate info only
-    auth_info = _get_auth_info_remote() if _is_remote_mode() else _get_auth_info_local()
+    auth_info = _get_auth_info_remote() if is_auth_enabled() else _get_auth_info_local()
 
     # HTTP client pool status
     http_pool_active = http_client.pool_active
