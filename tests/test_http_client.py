@@ -140,13 +140,13 @@ class TestHTTPClientGet:
         assert mock_httpx_client.request.call_count == 3
 
     @pytest.mark.asyncio
-    async def test_get_500_exhaustion_enriches_with_server_hints(
+    async def test_get_500_exhaustion_enriches_across_tool_domains(
         self, mock_httpx_client
     ):
-        """5xx exhaustion carries status_code and a 'server'-domain message.
-
-        Both feed enrich_error_response, which every decorated tool runs over
-        its result, so changing either moves the hints the caller receives.
+        """tool_name mirrors the live enrich call and outranks the message, so the
+        domain varies by caller; 500 has only a (500, 'general') entry so the hints
+        converge, and a domain-specific one would split them here. One request for
+        all three — exhausting the retries really sleeps.
         """
         mock_response = create_mock_response(status_code=500)
         mock_httpx_client.request.return_value = mock_response
@@ -159,15 +159,23 @@ class TestHTTPClientGet:
         )
 
         assert result['status_code'] == 500
-        assert (
-            _detect_error_domain(result['status_code'], result['message']) == 'server'
-        )
 
-        enriched = enrich_error_response(dict(result))
-        assert enriched['recovery_hints'] == [
-            'The server encountered an internal error. Try again in a moment.',
-            'If the issue persists, check server health.',
-        ]
+        for tool_name, domain in (
+            ('get_server', 'server'),
+            ('execute_command', 'command'),
+            ('webftp_upload_file', 'file'),
+        ):
+            assert (
+                _detect_error_domain(
+                    result['status_code'], result['message'], tool_name
+                )
+                == domain
+            )
+            enriched = enrich_error_response(dict(result), tool_name=tool_name)
+            assert enriched['recovery_hints'] == [
+                'The server encountered an internal error. Try again in a moment.',
+                'If the issue persists, check server health.',
+            ]
 
 
 class TestHTTPClientPost:
