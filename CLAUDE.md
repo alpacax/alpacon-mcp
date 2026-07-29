@@ -540,7 +540,7 @@ Workflow guides that teach an agent the Alpacon operating discipline (Work Sessi
 ## Dependencies
 
 **Runtime dependencies** (from `pyproject.toml`):
-- `mcp>=1.9.4`: Model Context Protocol framework
+- `mcp>=1.28.1,<2`: Model Context Protocol framework (upper bound: 2.0 renamed `mcp.server.fastmcp` to `mcp.server.mcpserver`; see #144)
 - `httpx>=0.27.1`: Async HTTP client
 - `PyJWT[crypto]>=2.10.1`: JWT token verification
 
