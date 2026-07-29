@@ -28,6 +28,10 @@ from utils.logger import get_logger
 
 logger = get_logger('decorators')
 
+_SPECIFY_REGION_HINT = 'Please specify a region parameter.'
+
+_SENSITIVE_LOG_KEYS = frozenset({'_token', 'password', 'secret', 'key'})
+
 
 def _get_jwt_token() -> str | None:
     """Get JWT token from FastMCP auth context if available.
@@ -133,7 +137,7 @@ def _resolve_region_jwt(
     if available_regions:
         return None, (
             f'Multiple regions available in token: {", ".join(available_regions)}. '
-            f'Please specify a region parameter.'
+            + _SPECIFY_REGION_HINT
         )
     return None, 'No regions found in JWT token.'
 
@@ -161,7 +165,7 @@ def _resolve_region_local(workspace: str | None) -> tuple[str | None, str | None
     if available_regions:
         return None, (
             f'Multiple regions available: {", ".join(sorted(available_regions))}. '
-            f'Please specify a region parameter.'
+            + _SPECIFY_REGION_HINT
         )
     return None, 'No regions configured. Please run setup first.'
 
@@ -223,6 +227,26 @@ async def _check_mfa_requirement(
         # Fail-open: if pre-check fails, let the API call proceed.
         # The upstream API's own MFA check will catch it as a fallback.
         logger.debug('MFA pre-check failed (non-fatal): %s', e)
+
+
+def _validate_uuid_list(field: str, value: Any) -> dict[str, Any] | None:
+    """Returns an error response, or None if valid."""
+    if not isinstance(value, list):
+        return format_validation_error(
+            field,
+            value,
+            'Must be a list of server UUIDs.',
+        )
+
+    invalid = [item for item in value if not validate_server_id_format(item)]
+    if invalid:
+        return format_validation_error(
+            field,
+            invalid,
+            'Each server ID must be in UUID format. '
+            '(e.g., 550e8400-e29b-41d4-a716-446655440000)',
+        )
+    return None
 
 
 def with_token_validation(func: Callable) -> Callable:
@@ -296,43 +320,14 @@ def with_token_validation(func: Callable) -> Callable:
         if server_id is not None and not validate_server_id_format(server_id):
             return format_validation_error('server_id', server_id)
 
-        # Validate server_ids list if present
-        server_ids = arguments.get('server_ids')
-        if server_ids is not None:
-            if not isinstance(server_ids, list):
-                return format_validation_error(
-                    'server_ids',
-                    server_ids,
-                    'Must be a list of server UUIDs.',
-                )
-            invalid_ids = [
-                sid for sid in server_ids if not validate_server_id_format(sid)
-            ]
-            if invalid_ids:
-                return format_validation_error(
-                    'server_ids',
-                    invalid_ids,
-                    'Each server ID must be in UUID format. (e.g., 550e8400-e29b-41d4-a716-446655440000)',
-                )
-
-        # Validate servers list if present (server UUIDs sent in request bodies)
-        servers = arguments.get('servers')
-        if servers is not None:
-            if not isinstance(servers, list):
-                return format_validation_error(
-                    'servers',
-                    servers,
-                    'Must be a list of server UUIDs.',
-                )
-            invalid_servers = [
-                sid for sid in servers if not validate_server_id_format(sid)
-            ]
-            if invalid_servers:
-                return format_validation_error(
-                    'servers',
-                    invalid_servers,
-                    'Each server ID must be in UUID format. (e.g., 550e8400-e29b-41d4-a716-446655440000)',
-                )
+        # 'servers' carries server UUIDs sent in request bodies.
+        # Tuple order is the reporting order when both are invalid.
+        for field in ('server_ids', 'servers'):
+            value = arguments.get(field)
+            if value is not None:
+                validation_error = _validate_uuid_list(field, value)
+                if validation_error:
+                    return validation_error
 
         # session_id is interpolated into URL paths, so reject non-UUID values that could retarget the request.
         session_id = arguments.get('session_id')
@@ -465,11 +460,7 @@ def with_logging(func: Callable) -> Callable:
         arguments = bound_args.arguments
 
         # Create log-safe arguments (exclude sensitive data)
-        log_args = {
-            k: v
-            for k, v in arguments.items()
-            if k not in ['_token', 'password', 'secret', 'key']
-        }
+        log_args = {k: v for k, v in arguments.items() if k not in _SENSITIVE_LOG_KEYS}
 
         # Log function entry
         logger.info(f'{func_name} called with: {log_args}')

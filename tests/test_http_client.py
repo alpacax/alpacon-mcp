@@ -11,6 +11,7 @@ import httpx
 import pytest
 
 from utils.http_client import AlpaconHTTPClient, http_client
+from utils.recovery_hints import _detect_error_domain, enrich_error_response
 
 
 @pytest.fixture
@@ -38,6 +39,16 @@ def mock_httpx_client():
         # Clean up after tests
         if hasattr(http_client, '_disable_pooling'):
             delattr(http_client, '_disable_pooling')
+
+
+@pytest.fixture
+def no_retry_delay(monkeypatch):
+    """Drop the backoff sleep for tests that exhaust the retries.
+
+    monkeypatch, not assignment: http_client is a module-level singleton, so
+    the value would leak into the rest of the suite.
+    """
+    monkeypatch.setattr(http_client, 'retry_delay', 0)
 
 
 def create_mock_response(status_code=200, json_data=None, text_data='', headers=None):
@@ -122,7 +133,7 @@ class TestHTTPClientGet:
         assert result['status_code'] == 404
 
     @pytest.mark.asyncio
-    async def test_get_500_error(self, mock_httpx_client):
+    async def test_get_500_error(self, mock_httpx_client, no_retry_delay):
         """Test GET request with 500 error (should retry and then fail)."""
         mock_response = create_mock_response(status_code=500)
         mock_httpx_client.request.return_value = mock_response
@@ -137,6 +148,44 @@ class TestHTTPClientGet:
         assert result['error'] == 'Max retries exceeded'
         # Should have retried 3 times
         assert mock_httpx_client.request.call_count == 3
+
+    @pytest.mark.parametrize(
+        ('tool_name', 'domain'),
+        [
+            ('get_server', 'server'),
+            ('execute_command', 'command'),
+            ('webftp_upload_file', 'file'),
+        ],
+    )
+    @pytest.mark.asyncio
+    async def test_get_500_exhaustion_enriches_across_tool_domains(
+        self, mock_httpx_client, no_retry_delay, tool_name, domain
+    ):
+        """tool_name mirrors the live enrich call and outranks the message, so the
+        domain varies by caller; 500 has only a (500, 'general') entry so the hints
+        converge, and a domain-specific one would split them here.
+        """
+        mock_response = create_mock_response(status_code=500)
+        mock_httpx_client.request.return_value = mock_response
+
+        result = await http_client.get(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/error/',
+            token='test-token',
+        )
+
+        assert result['status_code'] == 500
+        assert (
+            _detect_error_domain(result['status_code'], result['message'], tool_name)
+            == domain
+        )
+
+        enriched = enrich_error_response(dict(result), tool_name=tool_name)
+        assert enriched['recovery_hints'] == [
+            'The server encountered an internal error. Try again in a moment.',
+            'If the issue persists, check server health.',
+        ]
 
 
 class TestHTTPClientPost:
@@ -335,7 +384,7 @@ class TestErrorHandling:
     """Test error handling scenarios."""
 
     @pytest.mark.asyncio
-    async def test_network_timeout(self, mock_httpx_client):
+    async def test_network_timeout(self, mock_httpx_client, no_retry_delay):
         """Test network timeout handling."""
         mock_httpx_client.request.side_effect = httpx.TimeoutException(
             'Request timeout'
@@ -351,7 +400,7 @@ class TestErrorHandling:
         assert result['error'] == 'Timeout'
 
     @pytest.mark.asyncio
-    async def test_connection_error(self, mock_httpx_client):
+    async def test_connection_error(self, mock_httpx_client, no_retry_delay):
         """Test connection error handling."""
         mock_httpx_client.request.side_effect = httpx.ConnectError('Connection failed')
 
