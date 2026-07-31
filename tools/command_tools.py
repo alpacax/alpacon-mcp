@@ -1,6 +1,7 @@
 """Command execution tools for Alpacon MCP server."""
 
 import asyncio
+import re
 from typing import Any, cast
 
 from utils.common import (
@@ -18,88 +19,80 @@ from utils.tool_annotations import ADDITIVE, READ_ONLY
 # alpacon_approval.c's [A-Z0-9_] sanitizer (UPPERCASE). Kept in sync with
 # alpacon-server utils/error_codes.py. Surfaced to the agent as category-level
 # guidance only—the server never sends the risk score or reasoning to a client.
-_SUDO_DENIAL_HINTS: tuple[tuple[str, str], ...] = (
-    (
-        'SUDO_NO_WORKSESSION_POLICY',
+_SUDO_DENIAL_HINTS: dict[str, str] = {
+    'SUDO_NO_WORKSESSION_POLICY': (
         'sudo was denied: this command is not covered by an MFA-bypass policy '
         'in the Work Session. There is no MCP tool to add one—a human must add '
         'the command to the Work Session sudo policy (via the Alpacon web '
         "console or the CLI's 'work-session update --sudo'). Re-run once it is "
-        'added.',
+        'added.'
     ),
-    (
-        'SUDO_PRESENCE_REQUIRED',
+    'SUDO_PRESENCE_REQUIRED': (
         'sudo needs a recent human MFA: a human must complete a step-up, then '
-        're-run. An agent cannot satisfy this.',
+        're-run. An agent cannot satisfy this.'
     ),
-    (
-        'SUDO_APPROVAL_REQUIRED',
+    'SUDO_APPROVAL_REQUIRED': (
         'sudo needs human approval: an approval request was created. Re-run '
-        'after a reviewer approves it.',
+        'after a reviewer approves it.'
     ),
-    (
-        'SUDO_RISK_DENIED',
+    'SUDO_RISK_DENIED': (
         'sudo was denied by runtime risk assessment; this command is not '
-        'permitted in this Work Session.',
+        'permitted in this Work Session.'
     ),
-    (
-        'SUDO_POLICY_MFA_REQUIRED',
+    'SUDO_POLICY_MFA_REQUIRED': (
         'sudo was denied: a Work Session sudo policy covers this command, but '
         'it is not an MFA-bypass policy and a command runs non-interactively, '
         'so it can never supply MFA. A human must set allow_bypass_mfa on that '
         'policy (enterprise plan; the policy must be tied to a usable Work '
-        'Session). Re-run once it is set.',
+        'Session). Re-run once it is set.'
     ),
-    (
-        'SUDO_INTENT_DEVIATION',
+    'SUDO_INTENT_DEVIATION': (
         'sudo was denied: this command was judged off-purpose for the Work '
         "Session's declared intent, and an approval request was created. Either "
         'wait for a reviewer, or re-declare what the session is for with '
         'work_session_update(description=...) and re-run—note the server '
         'queues a description change for its own approval unless you are an '
-        'admin or hold owner/manager on every server in the session.',
+        'admin or hold owner/manager on every server in the session.'
     ),
-    (
-        'SUDO_COMMAND_NOT_AUTHORIZED',
+    'SUDO_COMMAND_NOT_AUTHORIZED': (
         'sudo was denied: the command carries no requesting identity, so no '
         'sudo policy can be matched to it. Re-running as-is will fail the same '
-        'way; report this to a workspace administrator.',
+        'way; report this to a workspace administrator.'
     ),
-    (
-        'WORK_SESSION_SCOPE_NOT_ALLOWED',
+    'WORK_SESSION_SCOPE_NOT_ALLOWED': (
         'sudo was denied: the Work Session does not carry the sudo scope. A '
         'human must add the scope with work_session_update (which may itself '
         'need approval) or open a session that has it. Re-run once it is '
-        'granted.',
+        'granted.'
     ),
-    (
-        'SUDO_SESSION_MISSING',
+    'SUDO_SESSION_MISSING': (
         'sudo was denied: the server could not tie this sudo request back to '
         'the command that issued it, so no policy can be evaluated. This is an '
         'agent/server plumbing failure, not a permissions one—report it rather '
-        'than re-running.',
+        'than re-running.'
     ),
-    (
-        'SUDO_NO_AUTHORITY',
+    'SUDO_NO_AUTHORITY': (
         'sudo was denied: the OS user running the command is a local account '
         'not mapped to an Alpacon identity, and local users cannot use sudo '
-        'through Alpacon. Re-run as a system user bound to an Alpacon account.',
+        'through Alpacon. Re-run as a system user bound to an Alpacon account.'
     ),
-    (
-        'WORKSPACE_SUDO_WITH_MFA_DISABLED',
+    'WORKSPACE_SUDO_WITH_MFA_DISABLED': (
         'sudo was denied: this workspace has sudo-with-MFA turned off in its '
         'security settings, which blocks every sudo command workspace-wide. '
         'Re-running changes nothing; a workspace administrator must change the '
-        'setting.',
+        'setting.'
     ),
-)
+}
 
 
 # The exact terminal-facing denial line alpacon_approval.c emits via
-# g_plugin_printf ("Alpacon denied this sudo command (CODE)."). The other
-# "Permission denied (CODE)" form is assigned to *errstr, which only reaches the
-# audit log—not the invoking terminal—so it must not be matched here.
-_SUDO_DENIAL_LINE_PREFIX = 'Alpacon denied this sudo command'
+# g_plugin_printf ("Alpacon denied this sudo command (CODE)."). Anchoring on the
+# whole line rather than a bare '(CODE)' token is what stops a command that
+# prints the token in its own output from forging a hint on a run that actually
+# succeeded. The other "Permission denied (CODE)" form is assigned to *errstr,
+# which only reaches the audit log—not the invoking terminal—so it must not be
+# matched here.
+_SUDO_DENIAL_LINE_RE = re.compile(r'Alpacon denied this sudo command \(([A-Z0-9_]+)\)')
 
 
 # Denial categories a human can resolve out-of-band (approve / step-up / grant).
@@ -130,33 +123,24 @@ def _sudo_denial(result: dict[str, Any]) -> tuple[str, str] | None:
     output = result.get('result') or ''
     if not isinstance(output, str):
         return None
-    for code, hint in _SUDO_DENIAL_HINTS:
-        # Anchor on the plugin's full denial line, not a bare '(CODE)' token:
-        # otherwise a command whose own output prints '(SUDO_RISK_DENIED)' could
-        # forge a hint on a command that actually succeeded and mislead the
-        # agent into a wrong action.
-        if f'{_SUDO_DENIAL_LINE_PREFIX} ({code})' in output:
-            return code, hint
-    return None
+    match = _SUDO_DENIAL_LINE_RE.search(output)
+    if not match:
+        return None
+    code = match.group(1)
+    hint = _SUDO_DENIAL_HINTS.get(code)
+    return (code, hint) if hint else None
 
 
-def _sudo_denial_hint(result: dict[str, Any]) -> str | None:
-    """Return the free-text denial hint for a sudo denial, or None.
+def _attach_sudo_denial(
+    target: dict[str, Any], source: dict[str, Any] | None = None
+) -> None:
+    """Attach denial guidance found in ``source`` onto ``target``.
 
-    Thin wrapper over :func:`_sudo_denial` kept for callers/tests that only need
-    the human-readable guidance string.
+    ``source`` defaults to ``target``: a listing entry carries its own output,
+    while a single command's guidance goes on the tool response rather than on
+    the raw API result it was read from.
     """
-    denial = _sudo_denial(result)
-    return denial[1] if denial else None
-
-
-def _attach_sudo_denial(target: dict[str, Any], source: dict[str, Any]) -> None:
-    """Attach denial guidance from ``source`` onto ``target``.
-
-    The two are the same object for a listing entry, distinct for a single
-    command whose guidance goes on the tool response.
-    """
-    denial = _sudo_denial(source)
+    denial = _sudo_denial(target if source is None else source)
     if not denial:
         return
     code, hint = denial
@@ -266,10 +250,9 @@ async def list_commands(
     # execute_command_multi_server only submits, so a fleet command's sudo
     # denial is observable nowhere else.
     entries = result.get('results') if isinstance(result, dict) else None
-    if isinstance(entries, list):
-        for entry in entries:
-            if isinstance(entry, dict):
-                _attach_sudo_denial(entry, entry)
+    for entry in entries if isinstance(entries, list) else ():
+        if isinstance(entry, dict):
+            _attach_sudo_denial(entry)
 
     return success_response(
         data=result,

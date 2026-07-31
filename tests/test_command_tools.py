@@ -7,7 +7,6 @@ import pytest
 from tools.command_tools import (
     _submit_command,
     _sudo_denial,
-    _sudo_denial_hint,
     execute_command,
     execute_command_multi_server,
     list_commands,
@@ -29,21 +28,26 @@ _GATE_ENVELOPE_NOT_ACTIVE = {
 class TestSudoDenialHint:
     """The exec-sudo denial code -> agent guidance mapping."""
 
+    @staticmethod
+    def _hint(result: dict) -> str | None:
+        denial = _sudo_denial(result)
+        return denial[1] if denial else None
+
     def test_presence_required(self):
         out = {'result': 'Alpacon denied this sudo command (SUDO_PRESENCE_REQUIRED).\n'}
-        hint = _sudo_denial_hint(out)
+        hint = self._hint(out)
         assert hint is not None
         assert 'step-up' in hint
 
     def test_approval_required(self):
         out = {'result': 'Alpacon denied this sudo command (SUDO_APPROVAL_REQUIRED).\n'}
-        hint = _sudo_denial_hint(out)
+        hint = self._hint(out)
         assert hint is not None
         assert 'approv' in hint
 
     def test_risk_denied_no_score_disclosed(self):
         out = {'result': 'Alpacon denied this sudo command (SUDO_RISK_DENIED).\n'}
-        hint = _sudo_denial_hint(out)
+        hint = self._hint(out)
         assert hint is not None
         assert 'risk' in hint
         # Disclosure: never echo a score / reasoning, only the category.
@@ -53,14 +57,14 @@ class TestSudoDenialHint:
         out = {
             'result': 'Alpacon denied this sudo command (SUDO_POLICY_MFA_REQUIRED).\n'
         }
-        hint = _sudo_denial_hint(out)
+        hint = self._hint(out)
         assert hint is not None
         # vs SUDO_NO_WORKSESSION_POLICY: a policy matched, just not a bypass one.
         assert 'allow_bypass_mfa' in hint
 
     def test_intent_deviation(self):
         out = {'result': 'Alpacon denied this sudo command (SUDO_INTENT_DEVIATION).\n'}
-        hint = _sudo_denial_hint(out)
+        hint = self._hint(out)
         assert hint is not None
         # 'queue' keeps the re-declare path from reading as approval-free.
         assert 'work_session_update' in hint
@@ -68,13 +72,13 @@ class TestSudoDenialHint:
 
     def test_session_missing(self):
         out = {'result': 'Alpacon denied this sudo command (SUDO_SESSION_MISSING).\n'}
-        hint = _sudo_denial_hint(out)
+        hint = self._hint(out)
         assert hint is not None
         assert 'approv' not in hint
 
     def test_no_authority(self):
         out = {'result': 'Alpacon denied this sudo command (SUDO_NO_AUTHORITY).\n'}
-        hint = _sudo_denial_hint(out)
+        hint = self._hint(out)
         assert hint is not None
         assert 'local' in hint
         assert 'approv' not in hint
@@ -84,7 +88,7 @@ class TestSudoDenialHint:
             'result': 'Alpacon denied this sudo command '
             '(SUDO_COMMAND_NOT_AUTHORIZED).\n'
         }
-        hint = _sudo_denial_hint(out)
+        hint = self._hint(out)
         assert hint is not None
         assert 'approv' not in hint
 
@@ -93,7 +97,7 @@ class TestSudoDenialHint:
             'result': 'Alpacon denied this sudo command '
             '(WORK_SESSION_SCOPE_NOT_ALLOWED).\n'
         }
-        hint = _sudo_denial_hint(out)
+        hint = self._hint(out)
         assert hint is not None
         assert 'sudo' in hint
         assert 'scope' in hint
@@ -103,26 +107,32 @@ class TestSudoDenialHint:
             'result': 'Alpacon denied this sudo command '
             '(WORKSPACE_SUDO_WITH_MFA_DISABLED).\n'
         }
-        hint = _sudo_denial_hint(out)
+        hint = self._hint(out)
         assert hint is not None
         assert 'workspace' in hint
         assert 'approv' not in hint
 
     def test_no_denial(self):
-        assert _sudo_denial_hint({'result': 'uid=0(root)\n'}) is None
-        assert _sudo_denial_hint({'result': ''}) is None
-        assert _sudo_denial_hint({'result': None}) is None
-        assert _sudo_denial_hint({}) is None
+        assert self._hint({'result': 'uid=0(root)\n'}) is None
+        assert self._hint({'result': ''}) is None
+        assert self._hint({'result': None}) is None
+        assert self._hint({}) is None
 
     def test_bare_code_is_not_a_false_positive(self):
         # A command that merely prints the code (no denial line) is not a hit.
-        assert _sudo_denial_hint({'result': 'echo SUDO_RISK_DENIED\n'}) is None
+        assert self._hint({'result': 'echo SUDO_RISK_DENIED\n'}) is None
+
+    def test_unmapped_code_yields_no_hint(self):
+        # The line parses but the code is unknown: no hint rather than a wrong
+        # one. This is the gap the mapping closes code by code.
+        out = {'result': 'Alpacon denied this sudo command (SUDO_SOMETHING_NEW).\n'}
+        assert _sudo_denial(out) is None
 
     def test_forged_parenthesized_token_is_not_a_false_positive(self):
         # A command whose own output prints the parenthesized token, without the
         # plugin's denial line, must not forge a hint (the command succeeded).
         forged = {'result': 'echo "(SUDO_RISK_DENIED)"\n(SUDO_RISK_DENIED)\n'}
-        assert _sudo_denial_hint(forged) is None
+        assert self._hint(forged) is None
 
 
 @pytest.fixture
