@@ -138,7 +138,7 @@ class TestSudoDenialHint:
         assert self._hint(forged) is None
 
     def test_closing_period_is_required(self):
-        # Both emitters end the line with a period; requiring it narrows what a
+        # Every emitter ends the line with a period; requiring it narrows what a
         # command's own output can forge.
         out = {'result': 'Alpacon denied this sudo command (SUDO_RISK_DENIED)\n'}
         assert self._hint(out) is None
@@ -151,6 +151,16 @@ class TestSudoDenialHint:
         out = {
             'result': 'writing...Alpacon denied this sudo command (SUDO_RISK_DENIED).\n'
         }
+        assert self._hint(out) is not None
+
+    @pytest.mark.parametrize(
+        'code', ['SUDO_SESSION_MISSING', 'SUDO_NO_WORKSESSION_POLICY']
+    )
+    def test_invocation_wording_is_matched(self, code):
+        # pam_sm_authenticate's hard-deny path says "invocation", not "command",
+        # and is scoped to the deploy shell execute_command produces. Matching
+        # only the "command" wording lost that denial's hint entirely.
+        out = {'result': f'Alpacon denied this sudo invocation ({code}).\n'}
         assert self._hint(out) is not None
 
 

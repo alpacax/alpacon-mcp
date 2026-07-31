@@ -86,18 +86,22 @@ _SUDO_DENIAL_HINTS: dict[str, str] = {
 }
 
 
-# The exact terminal-facing denial line, emitted identically by
-# alpacon_approval.c (g_plugin_printf) and pam_alpamon.c (pam_error) as
-# "Alpacon denied this sudo command (CODE).". Matching the whole line—closing
-# period included—rather than a bare '(CODE)' token is what stops a command that
-# prints the token in its own output from forging a hint on a run that actually
-# succeeded. Deliberately not anchored to a line start: the line is written to
-# stderr and lands mid-line whenever preceding output left no trailing newline,
-# and losing a real denial to that is worse than the residual false positive.
-# The other "Permission denied (CODE)" form is assigned to *errstr, which only
-# reaches the audit log—not the invoking terminal—so it must not be matched here.
+# The exact terminal-facing denial line. Three sites emit one carrying a code,
+# in two wordings: "...this sudo command (CODE)." from alpacon_approval.c
+# (g_plugin_printf) and pam_alpamon.c's pam_authorize_sudo_rs (pam_error), and
+# "...this sudo invocation (CODE)." from pam_alpamon.c's pam_sm_authenticate
+# hard-deny path (pam_error), which is scoped to a deploy shell—exactly what
+# execute_command produces. Both wordings must match or a real hard-deny loses
+# its hint. Matching the whole line—closing period included—rather than a bare
+# '(CODE)' token is what stops a command that prints the token in its own output
+# from forging a hint on a run that actually succeeded. Deliberately not
+# anchored to a line start: the line is written to stderr and lands mid-line
+# whenever preceding output left no trailing newline, and losing a real denial
+# to that is worse than the residual false positive. The other
+# "Permission denied (CODE)" form is assigned to *errstr, which only reaches the
+# audit log—not the invoking terminal—so it must not be matched here.
 _SUDO_DENIAL_LINE_RE = re.compile(
-    r'Alpacon denied this sudo command \(([A-Z0-9_]+)\)\.'
+    r'Alpacon denied this sudo (?:command|invocation) \(([A-Z0-9_]+)\)\.'
 )
 
 
