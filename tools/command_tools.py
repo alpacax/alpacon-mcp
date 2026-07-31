@@ -1,6 +1,7 @@
 """Command execution tools for Alpacon MCP server."""
 
 import asyncio
+import re
 from typing import Any, cast
 
 from utils.common import (
@@ -18,50 +19,105 @@ from utils.tool_annotations import ADDITIVE, READ_ONLY
 # alpacon_approval.c's [A-Z0-9_] sanitizer (UPPERCASE). Kept in sync with
 # alpacon-server utils/error_codes.py. Surfaced to the agent as category-level
 # guidance only—the server never sends the risk score or reasoning to a client.
-_SUDO_DENIAL_HINTS: tuple[tuple[str, str], ...] = (
-    (
-        'SUDO_NO_WORKSESSION_POLICY',
+_SUDO_DENIAL_HINTS: dict[str, str] = {
+    'SUDO_NO_WORKSESSION_POLICY': (
         'sudo was denied: this command is not covered by an MFA-bypass policy '
         'in the Work Session. There is no MCP tool to add one—a human must add '
         'the command to the Work Session sudo policy (via the Alpacon web '
         "console or the CLI's 'work-session update --sudo'). Re-run once it is "
-        'added.',
+        'added.'
     ),
-    (
-        'SUDO_PRESENCE_REQUIRED',
+    'SUDO_PRESENCE_REQUIRED': (
         'sudo needs a recent human MFA: a human must complete a step-up, then '
-        're-run. An agent cannot satisfy this.',
+        're-run. An agent cannot satisfy this.'
     ),
-    (
-        'SUDO_APPROVAL_REQUIRED',
+    'SUDO_APPROVAL_REQUIRED': (
         'sudo needs human approval: an approval request was created. Re-run '
-        'after a reviewer approves it.',
+        'after a reviewer approves it.'
     ),
-    (
-        'SUDO_RISK_DENIED',
+    'SUDO_RISK_DENIED': (
         'sudo was denied by runtime risk assessment; this command is not '
-        'permitted in this Work Session.',
+        'permitted in this Work Session.'
     ),
+    'SUDO_POLICY_MFA_REQUIRED': (
+        'sudo was denied: a Work Session sudo policy covers this command, but '
+        'it is not an MFA-bypass policy and a command runs non-interactively, '
+        'so it can never supply MFA. A human must set allow_bypass_mfa on that '
+        'policy (enterprise plan; the policy must be tied to a usable Work '
+        'Session). Re-run once it is set.'
+    ),
+    'SUDO_INTENT_DEVIATION': (
+        'sudo was denied: this command was judged off-purpose for the Work '
+        "Session's declared intent, and an approval request was created. Either "
+        'wait for a reviewer, or re-declare what the session is for with '
+        'work_session_update(description=...) and re-run—note the server '
+        'queues a description change for its own approval unless you are an '
+        'admin or hold owner/manager on every server in the session.'
+    ),
+    'SUDO_COMMAND_NOT_AUTHORIZED': (
+        'sudo was denied: the command carries no requesting identity, so no '
+        'sudo policy can be matched to it. Re-running as-is will fail the same '
+        'way; report this to a workspace administrator.'
+    ),
+    'WORK_SESSION_SCOPE_NOT_ALLOWED': (
+        'sudo was denied: the Work Session does not carry the sudo scope. Add '
+        'it with work_session_update(scopes=[...]), or open a session that has '
+        'it, then re-run—note the server queues a scope addition for its own '
+        'approval unless you are an admin or hold owner/manager on every '
+        'server in the session.'
+    ),
+    'SUDO_SESSION_MISSING': (
+        'sudo was denied: the server could not tie this sudo request back to '
+        'the command that issued it, so no policy can be evaluated. This is an '
+        'agent/server plumbing failure, not a permissions one—report it rather '
+        'than re-running.'
+    ),
+    'SUDO_NO_AUTHORITY': (
+        'sudo was denied: the OS user running the command is a local account '
+        'not mapped to an Alpacon identity, and local users cannot use sudo '
+        'through Alpacon. Re-run as a system user bound to an Alpacon account.'
+    ),
+    'WORKSPACE_SUDO_WITH_MFA_DISABLED': (
+        'sudo was denied: this workspace has sudo-with-MFA turned off in its '
+        'security settings, which blocks every sudo command workspace-wide. '
+        'Re-running changes nothing; a workspace administrator must change the '
+        'setting.'
+    ),
+}
+
+
+# The exact terminal-facing denial line. Three sites emit one carrying a code,
+# in two wordings: "...this sudo command (CODE)." from alpacon_approval.c
+# (g_plugin_printf) and pam_alpamon.c's pam_authorize_sudo_rs (pam_error), and
+# "...this sudo invocation (CODE)." from pam_alpamon.c's pam_sm_authenticate
+# hard-deny path (pam_error), which is scoped to a deploy shell—exactly what
+# execute_command produces. Both wordings must match or a real hard-deny loses
+# its hint. Matching the whole line—closing period included—rather than a bare
+# '(CODE)' token is what stops a command that prints the token in its own output
+# from forging a hint on a run that actually succeeded. Deliberately not
+# anchored to a line start: the line is written to stderr and lands mid-line
+# whenever preceding output left no trailing newline, and losing a real denial
+# to that is worse than the residual false positive. The other
+# "Permission denied (CODE)" form is assigned to *errstr, which only reaches the
+# audit log—not the invoking terminal—so it must not be matched here.
+_SUDO_DENIAL_LINE_RE = re.compile(
+    r'Alpacon denied this sudo (?:command|invocation) \(([A-Z0-9_]+)\)\.'
 )
 
 
-# The exact terminal-facing denial line alpacon_approval.c emits via
-# g_plugin_printf ("Alpacon denied this sudo command (CODE)."). The other
-# "Permission denied (CODE)" form is assigned to *errstr, which only reaches the
-# audit log—not the invoking terminal—so it must not be matched here.
-_SUDO_DENIAL_LINE_PREFIX = 'Alpacon denied this sudo command'
-
-
-# Denial categories that a human can resolve out-of-band (approve / step-up).
-# For these we attach a machine-actionable pending-approval block (ADR 0015) in
-# addition to the free-text hint, so an agent can branch on stable flags instead
-# of parsing prose, and waits/escalates rather than retry-spamming. Risk-denied
-# is excluded: it is a hard policy denial, not a pending human approval.
+# Denial categories a human can resolve out-of-band (approve / step-up / grant).
+# These also get a machine-actionable pending-approval block (ADR 0015) so an
+# agent branches on stable flags instead of prose, and waits rather than
+# retry-spams. Codes absent here are hard denials with nothing pending behind
+# them: telling the agent to wait would mean waiting forever.
 _SUDO_HUMAN_APPROVAL_CODES = frozenset(
     {
         'SUDO_NO_WORKSESSION_POLICY',
         'SUDO_PRESENCE_REQUIRED',
         'SUDO_APPROVAL_REQUIRED',
+        'SUDO_POLICY_MFA_REQUIRED',
+        'SUDO_INTENT_DEVIATION',
+        'WORK_SESSION_SCOPE_NOT_ALLOWED',
     }
 )
 
@@ -77,24 +133,32 @@ def _sudo_denial(result: dict[str, Any]) -> tuple[str, str] | None:
     output = result.get('result') or ''
     if not isinstance(output, str):
         return None
-    for code, hint in _SUDO_DENIAL_HINTS:
-        # Anchor on the plugin's full denial line, not a bare '(CODE)' token:
-        # otherwise a command whose own output prints '(SUDO_RISK_DENIED)' could
-        # forge a hint on a command that actually succeeded and mislead the
-        # agent into a wrong action.
-        if f'{_SUDO_DENIAL_LINE_PREFIX} ({code})' in output:
-            return code, hint
-    return None
+    match = _SUDO_DENIAL_LINE_RE.search(output)
+    if not match:
+        return None
+    code = match.group(1)
+    hint = _SUDO_DENIAL_HINTS.get(code)
+    return (code, hint) if hint else None
 
 
-def _sudo_denial_hint(result: dict[str, Any]) -> str | None:
-    """Return the free-text denial hint for a sudo denial, or None.
+def _attach_sudo_denial(
+    target: dict[str, Any], source: dict[str, Any] | None = None
+) -> None:
+    """Attach denial guidance found in ``source`` onto ``target``.
 
-    Thin wrapper over :func:`_sudo_denial` kept for callers/tests that only need
-    the human-readable guidance string.
+    ``source`` defaults to ``target``: a listing entry carries its own output,
+    while a single command's guidance goes on the tool response rather than on
+    the raw API result it was read from.
     """
-    denial = _sudo_denial(result)
-    return denial[1] if denial else None
+    denial = _sudo_denial(target if source is None else source)
+    if not denial:
+        return
+    code, hint = denial
+    # Backward-compatible free-text hint.
+    target['sudo_hint'] = hint
+    # Only the category is disclosed—never the risk score or reasoning.
+    if code in _SUDO_HUMAN_APPROVAL_CODES:
+        target['sudo_denial'] = pending_approval_response(hint, category=code)
 
 
 async def _submit_command(
@@ -158,7 +222,7 @@ async def _get_command_result(
 
 
 @mcp_tool_handler(
-    description='List recent command execution history with status, output, and timestamps. Filterable by server ID. When to use: reviewing past commands, or retrieving the result of a command whose execute_command call timed out. Related: execute_command (run a command and wait).',
+    description='List recent command execution history with status, output, and timestamps. Filterable by server ID. An entry whose output is a sudo denial also carries sudo_hint and, when a human can clear it, a structured sudo_denial block. When to use: reviewing past commands, retrieving the result of a command whose execute_command call timed out, or reading the results of an execute_command_multi_server batch. Related: execute_command (run a command and wait).',
     annotations=READ_ONLY,
     meta={'anthropic/searchHint': 'command history list recent'},
 )
@@ -192,6 +256,13 @@ async def list_commands(
         workspace=workspace,
     ):
         return err
+
+    # execute_command_multi_server only submits, so a fleet command's sudo
+    # denial is observable nowhere else.
+    entries = result.get('results') if isinstance(result, dict) else None
+    for entry in entries if isinstance(entries, list) else ():
+        if isinstance(entry, dict):
+            _attach_sudo_denial(entry)
 
     return success_response(
         data=result,
@@ -321,20 +392,7 @@ async def execute_command(
                     region=region,
                     workspace=workspace,
                 )
-                denial = _sudo_denial(result)
-                if denial:
-                    code, hint = denial
-                    # Backward-compatible free-text hint.
-                    response['sudo_hint'] = hint
-                    # For human-resolvable denials, also attach a structured,
-                    # machine-actionable pending-approval block (ADR 0015): the
-                    # command did not run and a human must act out-of-band. Only
-                    # the category is disclosed—never the risk score/reasoning.
-                    if code in _SUDO_HUMAN_APPROVAL_CODES:
-                        response['sudo_denial'] = pending_approval_response(
-                            hint,
-                            category=code,
-                        )
+                _attach_sudo_denial(response, result)
                 return response
 
             if status == 'awaiting_approval':
