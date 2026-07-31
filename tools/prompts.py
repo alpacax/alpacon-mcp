@@ -73,7 +73,8 @@ here is judged in real time and recorded. Follow this discipline.
    invocation routes to human-in-the-loop. You cannot self-approve (an agent has no
    presence/MFA). When a result is `pending_approval`, surface it to a human and wait.
 
-4. On a denial, read the structured `code` and `next_action` and self-correct — adjust
+4. On a denial, read the structured category and `next_action` and self-correct — the
+   field is `code` on an `error` result and `category` on a `pending_approval` one. Adjust
    the command, narrow the target, or escalate to a human. Never re-run the identical
    denied command in a loop. Some denials have a second path you can start yourself:
    `SUDO_INTENT_DEVIATION` means the command was judged off-purpose for the session, so

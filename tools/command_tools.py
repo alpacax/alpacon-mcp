@@ -86,14 +86,19 @@ _SUDO_DENIAL_HINTS: dict[str, str] = {
 }
 
 
-# The exact terminal-facing denial line alpacon_approval.c emits via
-# g_plugin_printf ("Alpacon denied this sudo command (CODE)."). Anchoring on the
-# whole line rather than a bare '(CODE)' token is what stops a command that
+# The exact terminal-facing denial line, emitted identically by
+# alpacon_approval.c (g_plugin_printf) and pam_alpamon.c (pam_error) as
+# "Alpacon denied this sudo command (CODE).". Matching the whole line—closing
+# period included—rather than a bare '(CODE)' token is what stops a command that
 # prints the token in its own output from forging a hint on a run that actually
-# succeeded. The other "Permission denied (CODE)" form is assigned to *errstr,
-# which only reaches the audit log—not the invoking terminal—so it must not be
-# matched here.
-_SUDO_DENIAL_LINE_RE = re.compile(r'Alpacon denied this sudo command \(([A-Z0-9_]+)\)')
+# succeeded. Deliberately not anchored to a line start: the line is written to
+# stderr and lands mid-line whenever preceding output left no trailing newline,
+# and losing a real denial to that is worse than the residual false positive.
+# The other "Permission denied (CODE)" form is assigned to *errstr, which only
+# reaches the audit log—not the invoking terminal—so it must not be matched here.
+_SUDO_DENIAL_LINE_RE = re.compile(
+    r'Alpacon denied this sudo command \(([A-Z0-9_]+)\)\.'
+)
 
 
 # Denial categories a human can resolve out-of-band (approve / step-up / grant).

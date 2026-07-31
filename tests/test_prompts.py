@@ -40,6 +40,16 @@ async def test_guarded_execution_covers_intent_deviation():
 
 
 @pytest.mark.asyncio
+async def test_guarded_execution_names_both_denial_fields():
+    # pending_approval_response carries `category`, gate errors carry `code`.
+    # Naming only one sends the agent looking for a field that is not there.
+    result = await mcp.get_prompt('guarded_execution', {'work_session_id': 'sess-123'})
+    text = result.messages[0].content.text
+    assert '`code`' in text
+    assert '`category`' in text
+
+
+@pytest.mark.asyncio
 async def test_work_session_workflow_renders_servers():
     result = await mcp.get_prompt(
         'work_session_workflow',

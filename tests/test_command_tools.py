@@ -137,6 +137,22 @@ class TestSudoDenialHint:
         forged = {'result': 'echo "(SUDO_RISK_DENIED)"\n(SUDO_RISK_DENIED)\n'}
         assert self._hint(forged) is None
 
+    def test_closing_period_is_required(self):
+        # Both emitters end the line with a period; requiring it narrows what a
+        # command's own output can forge.
+        out = {'result': 'Alpacon denied this sudo command (SUDO_RISK_DENIED)\n'}
+        assert self._hint(out) is None
+
+    def test_matches_when_appended_to_a_partial_line(self):
+        # The plugin writes to stderr, so the denial lands mid-line whenever the
+        # command's own output left no trailing newline. Anchoring to a line
+        # start would drop a real denial here—the failure this mapping exists to
+        # prevent.
+        out = {
+            'result': 'writing...Alpacon denied this sudo command (SUDO_RISK_DENIED).\n'
+        }
+        assert self._hint(out) is not None
+
 
 @pytest.fixture
 def mock_http_client():
