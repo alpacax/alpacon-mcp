@@ -23,12 +23,25 @@ except importlib.metadata.PackageNotFoundError:
 # MCP User-Agent for identification
 MCP_USER_AGENT = f'alpacon-mcp/{MCP_VERSION} (MCP-Server; persistent-pool) Python/{platform.python_version()}'
 
+# One string for the two transports the same denial arrives on—an HTTP error
+# envelope (lowercase code) and the sudo plugin's terminal line (uppercase)—so
+# the guidance cannot drift apart.
+_SCOPE_NOT_ALLOWED_NEXT_ACTION = (
+    'The attached Work Session does not include the scope for this operation. '
+    'Add the scope with work_session_update (may require approval) or create a '
+    'new session with the right scope, then retry.'
+)
+
 # The human-resolvable next action differs by category: SUDO_APPROVAL_REQUIRED /
 # WORK_SESSION_PENDING need an out-of-band approval, while SUDO_PRESENCE_REQUIRED
 # is an MFA step-up and SUDO_NO_WORKSESSION_POLICY is a scope addition — none of
 # which the agent can perform itself. COMMAND_AWAITING_APPROVAL is the
 # command-level analogue of WORK_SESSION_PENDING. APPROVAL_DECISION_HUMAN_ONLY is
 # a pure explanation that approving/rejecting is human-only; nothing to retry.
+# SUDO_POLICY_MFA_REQUIRED needs a policy edit, not a step-up (a Command is
+# non-interactive, so it can never supply MFA). SUDO_INTENT_DEVIATION and
+# WORK_SESSION_SCOPE_NOT_ALLOWED each carry a second path the agent can start
+# via work_session_update, though the server may still queue that edit.
 _NEXT_ACTION_BY_CATEGORY: dict[str, str] = {
     'SUDO_APPROVAL_REQUIRED': (
         'A human must approve this out-of-band (Alpacon web console or Slack). '
@@ -56,6 +69,23 @@ _NEXT_ACTION_BY_CATEGORY: dict[str, str] = {
         'must add it to the session scope (which may itself require approval), '
         'then retry. You cannot grant it yourself.'
     ),
+    'SUDO_POLICY_MFA_REQUIRED': (
+        'A sudo policy covers this command but is not an MFA-bypass policy, and '
+        'a command runs non-interactively so it can never supply MFA. A human '
+        'must set allow_bypass_mfa on the covering Work Session sudo policy '
+        '(enterprise plan, and the policy must be tied to a usable Work '
+        'Session), then retry. You cannot grant it yourself.'
+    ),
+    'SUDO_INTENT_DEVIATION': (
+        'This command was judged off-purpose for the Work Session and an '
+        'approval request was created. Either wait for a human reviewer to '
+        'approve it out-of-band, or re-declare what the session is actually for '
+        'with work_session_update(description=...) and retry. Re-declaring is '
+        'not a shortcut around approval: the server queues a description change '
+        'for its own approval unless you are an admin or hold owner/manager on '
+        'every server in the session.'
+    ),
+    'WORK_SESSION_SCOPE_NOT_ALLOWED': _SCOPE_NOT_ALLOWED_NEXT_ACTION,
     'APPROVAL_DECISION_HUMAN_ONLY': (
         'Surface this request to a human reviewer; only a human can approve or '
         'reject it, out-of-band (Alpacon web console or Slack). You cannot make '
@@ -81,11 +111,7 @@ _WORK_SESSION_GATE_NEXT_ACTION: dict[str, str] = {
         'The attached Work Session has expired. Extend it with '
         'work_session_extend, or create a new one, then retry.'
     ),
-    'work_session_scope_not_allowed': (
-        'The attached Work Session does not include the scope for this '
-        'operation. Add the scope with work_session_update (may require '
-        'approval) or create a new session with the right scope, then retry.'
-    ),
+    'work_session_scope_not_allowed': _SCOPE_NOT_ALLOWED_NEXT_ACTION,
     'work_session_server_not_allowed': (
         'The target server is not in the attached Work Session. Add it with '
         'work_session_update, or create a new session including the server, '

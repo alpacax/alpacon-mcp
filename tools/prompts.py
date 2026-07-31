@@ -75,7 +75,13 @@ here is judged in real time and recorded. Follow this discipline.
 
 4. On a denial, read the structured `code` and `next_action` and self-correct — adjust
    the command, narrow the target, or escalate to a human. Never re-run the identical
-   denied command in a loop.
+   denied command in a loop. Some denials have a second path you can start yourself:
+   `SUDO_INTENT_DEVIATION` means the command was judged off-purpose for the session, so
+   besides waiting for the approval it created you may re-declare what the session is for
+   with `work_session_update(description=...)`; `WORK_SESSION_SCOPE_NOT_ALLOWED` means you
+   may add the missing scope with `work_session_update(scopes=[...])`. Either edit is
+   normally queued for its own approval, so it is a correction, not a way around the
+   reviewer.
 
 5. When the work is done, call `work_session_close` to mark it completed and trigger the
    AI security analysis over the session.

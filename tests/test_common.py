@@ -1,13 +1,52 @@
-"""Unit tests for utils.common WorkSession gate helpers."""
+"""Unit tests for utils.common WorkSession gate and denial-guidance helpers."""
 
 import pytest
 
 from utils.common import (
+    _NEXT_ACTION_BY_CATEGORY,
     _WORK_SESSION_GATE_CODES,
+    _WORK_SESSION_GATE_NEXT_ACTION,
     resolve_work_session_id,
     unwrap_http_result,
     work_session_gate_response,
 )
+
+
+class TestSudoDenialNextActions:
+    """Falling through to _DEFAULT_NEXT_ACTION would tell the agent to wait on an
+    approval request that, for some of these codes, does not exist.
+    """
+
+    @pytest.mark.parametrize(
+        'category',
+        [
+            'SUDO_POLICY_MFA_REQUIRED',
+            'SUDO_INTENT_DEVIATION',
+            'WORK_SESSION_SCOPE_NOT_ALLOWED',
+        ],
+    )
+    def test_category_has_own_next_action(self, category):
+        assert _NEXT_ACTION_BY_CATEGORY[category].strip()
+
+    def test_policy_mfa_required_names_the_policy_edit(self):
+        # _DEFAULT_NEXT_ACTION is SUDO_APPROVAL_REQUIRED's own text, so a key
+        # silently pointing at it still passes a non-emptiness check.
+        assert (
+            'allow_bypass_mfa' in _NEXT_ACTION_BY_CATEGORY['SUDO_POLICY_MFA_REQUIRED']
+        )
+
+    def test_intent_deviation_states_both_paths(self):
+        text = _NEXT_ACTION_BY_CATEGORY['SUDO_INTENT_DEVIATION']
+        assert 'work_session_update' in text
+        # Saying otherwise sends the agent down a path it cannot finish.
+        assert 'queue' in text
+
+    def test_scope_not_allowed_wording_is_shared(self):
+        # One denial, two transports; one string so the wording cannot drift.
+        assert (
+            _NEXT_ACTION_BY_CATEGORY['WORK_SESSION_SCOPE_NOT_ALLOWED']
+            == _WORK_SESSION_GATE_NEXT_ACTION['work_session_scope_not_allowed']
+        )
 
 
 class TestWorkSessionGateResponse:

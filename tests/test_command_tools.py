@@ -49,6 +49,65 @@ class TestSudoDenialHint:
         # Disclosure: never echo a score / reasoning, only the category.
         assert 'score' not in hint
 
+    def test_policy_mfa_required(self):
+        out = {
+            'result': 'Alpacon denied this sudo command (SUDO_POLICY_MFA_REQUIRED).\n'
+        }
+        hint = _sudo_denial_hint(out)
+        assert hint is not None
+        # vs SUDO_NO_WORKSESSION_POLICY: a policy matched, just not a bypass one.
+        assert 'allow_bypass_mfa' in hint
+
+    def test_intent_deviation(self):
+        out = {'result': 'Alpacon denied this sudo command (SUDO_INTENT_DEVIATION).\n'}
+        hint = _sudo_denial_hint(out)
+        assert hint is not None
+        # 'queue' keeps the re-declare path from reading as approval-free.
+        assert 'work_session_update' in hint
+        assert 'queue' in hint
+
+    def test_session_missing(self):
+        out = {'result': 'Alpacon denied this sudo command (SUDO_SESSION_MISSING).\n'}
+        hint = _sudo_denial_hint(out)
+        assert hint is not None
+        assert 'approv' not in hint
+
+    def test_no_authority(self):
+        out = {'result': 'Alpacon denied this sudo command (SUDO_NO_AUTHORITY).\n'}
+        hint = _sudo_denial_hint(out)
+        assert hint is not None
+        assert 'local' in hint
+        assert 'approv' not in hint
+
+    def test_command_not_authorized(self):
+        out = {
+            'result': 'Alpacon denied this sudo command '
+            '(SUDO_COMMAND_NOT_AUTHORIZED).\n'
+        }
+        hint = _sudo_denial_hint(out)
+        assert hint is not None
+        assert 'approv' not in hint
+
+    def test_work_session_scope_not_allowed(self):
+        out = {
+            'result': 'Alpacon denied this sudo command '
+            '(WORK_SESSION_SCOPE_NOT_ALLOWED).\n'
+        }
+        hint = _sudo_denial_hint(out)
+        assert hint is not None
+        assert 'sudo' in hint
+        assert 'scope' in hint
+
+    def test_workspace_sudo_with_mfa_disabled(self):
+        out = {
+            'result': 'Alpacon denied this sudo command '
+            '(WORKSPACE_SUDO_WITH_MFA_DISABLED).\n'
+        }
+        hint = _sudo_denial_hint(out)
+        assert hint is not None
+        assert 'workspace' in hint
+        assert 'approv' not in hint
+
     def test_no_denial(self):
         assert _sudo_denial_hint({'result': 'uid=0(root)\n'}) is None
         assert _sudo_denial_hint({'result': ''}) is None
@@ -254,6 +313,89 @@ class TestListCommands:
 
         assert result['status'] == 'error'
         assert 'Permission denied' in result['message']
+
+
+class TestListCommandsSudoDenialAnnotation:
+    """execute_command_multi_server only submits, so denials surface only here."""
+
+    @staticmethod
+    def _denied(command_id: str, code: str) -> dict:
+        return {
+            'id': command_id,
+            'result': f'Alpacon denied this sudo command ({code}).\n',
+        }
+
+    @pytest.mark.asyncio
+    async def test_annotates_entry_with_hint(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.get.return_value = {
+            'count': 1,
+            'results': [self._denied('cmd-1', 'SUDO_RISK_DENIED')],
+        }
+
+        result = await list_commands(workspace='testworkspace')
+
+        entry = result['data']['results'][0]
+        assert 'risk' in entry['sudo_hint']
+        assert 'sudo_denial' not in entry
+
+    @pytest.mark.asyncio
+    async def test_annotates_entry_with_pending_block(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.get.return_value = {
+            'count': 1,
+            'results': [self._denied('cmd-2', 'SUDO_APPROVAL_REQUIRED')],
+        }
+
+        result = await list_commands(workspace='testworkspace')
+
+        entry = result['data']['results'][0]
+        assert entry['sudo_denial']['status'] == 'pending_approval'
+        assert entry['sudo_denial']['category'] == 'SUDO_APPROVAL_REQUIRED'
+
+    @pytest.mark.asyncio
+    async def test_only_denied_entries_are_annotated(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.get.return_value = {
+            'count': 2,
+            'results': [
+                {'id': 'cmd-3', 'result': 'uid=0(root)\n'},
+                self._denied('cmd-4', 'SUDO_PRESENCE_REQUIRED'),
+            ],
+        }
+
+        result = await list_commands(workspace='testworkspace')
+
+        clean, denied = result['data']['results']
+        assert 'sudo_hint' not in clean
+        assert denied['sudo_denial']['category'] == 'SUDO_PRESENCE_REQUIRED'
+
+    @pytest.mark.asyncio
+    async def test_non_list_results_are_tolerated(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.get.return_value = {'detail': 'no results key'}
+
+        result = await list_commands(workspace='testworkspace')
+
+        assert result['status'] == 'success'
+
+    @pytest.mark.asyncio
+    async def test_non_dict_entry_is_skipped(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.get.return_value = {
+            'count': 2,
+            'results': ['unexpected', self._denied('cmd-5', 'SUDO_RISK_DENIED')],
+        }
+
+        result = await list_commands(workspace='testworkspace')
+
+        assert result['status'] == 'success'
+        assert 'sudo_hint' in result['data']['results'][1]
 
 
 class TestExecuteCommand:
@@ -616,6 +758,80 @@ class TestExecuteCommand:
             result = await execute_command(
                 server_id='550e8400-e29b-41d4-a716-446655440001',
                 command='sudo rm -rf /',
+                workspace='testworkspace',
+                timeout=10,
+            )
+
+            assert 'sudo_hint' in result
+            assert 'sudo_denial' not in result
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        'code',
+        [
+            'SUDO_POLICY_MFA_REQUIRED',
+            'SUDO_INTENT_DEVIATION',
+            'WORK_SESSION_SCOPE_NOT_ALLOWED',
+        ],
+    )
+    async def test_human_resolvable_codes_surface_structured_block(
+        self, code, mock_http_client, mock_token_manager
+    ):
+        with (
+            patch('tools.command_tools._submit_command') as mock_submit,
+            patch('tools.command_tools._get_command_result') as mock_poll,
+        ):
+            mock_submit.return_value = {'id': 'cmd-800'}
+            mock_poll.return_value = {
+                'id': 'cmd-800',
+                'status': 'failed',
+                'success': False,
+                'exit_code': 1,
+                'result': f'Alpacon denied this sudo command ({code}).\n',
+                'handled_at': '2024-01-01T00:00:01Z',
+            }
+
+            result = await execute_command(
+                server_id='550e8400-e29b-41d4-a716-446655440001',
+                command='sudo systemctl restart nginx',
+                workspace='testworkspace',
+                timeout=10,
+            )
+
+            assert result['sudo_denial']['category'] == code
+            assert result['sudo_denial']['approvable_by_agent'] is False
+            assert result['sudo_denial']['next_action']
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        'code',
+        [
+            'SUDO_COMMAND_NOT_AUTHORIZED',
+            'WORKSPACE_SUDO_WITH_MFA_DISABLED',
+            'SUDO_SESSION_MISSING',
+            'SUDO_NO_AUTHORITY',
+        ],
+    )
+    async def test_hard_denial_codes_have_hint_but_no_pending_block(
+        self, code, mock_http_client, mock_token_manager
+    ):
+        with (
+            patch('tools.command_tools._submit_command') as mock_submit,
+            patch('tools.command_tools._get_command_result') as mock_poll,
+        ):
+            mock_submit.return_value = {'id': 'cmd-801'}
+            mock_poll.return_value = {
+                'id': 'cmd-801',
+                'status': 'failed',
+                'success': False,
+                'exit_code': 1,
+                'result': f'Alpacon denied this sudo command ({code}).\n',
+                'handled_at': '2024-01-01T00:00:01Z',
+            }
+
+            result = await execute_command(
+                server_id='550e8400-e29b-41d4-a716-446655440001',
+                command='sudo id',
                 workspace='testworkspace',
                 timeout=10,
             )

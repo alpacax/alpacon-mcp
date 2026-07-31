@@ -30,6 +30,16 @@ async def test_prompt_renders_nonempty_text(name, args):
 
 
 @pytest.mark.asyncio
+async def test_guarded_execution_covers_intent_deviation():
+    # Assert on the code, not on work_session_update alone — that verb also
+    # serves the scope case, so a deleted sentence would still pass.
+    result = await mcp.get_prompt('guarded_execution', {'work_session_id': 'sess-123'})
+    text = result.messages[0].content.text
+    assert 'SUDO_INTENT_DEVIATION' in text
+    assert 'work_session_update(description=...)' in text
+
+
+@pytest.mark.asyncio
 async def test_work_session_workflow_renders_servers():
     result = await mcp.get_prompt(
         'work_session_workflow',
