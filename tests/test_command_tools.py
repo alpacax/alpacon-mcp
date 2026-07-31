@@ -99,8 +99,11 @@ class TestSudoDenialHint:
         }
         hint = self._hint(out)
         assert hint is not None
-        assert 'sudo' in hint
         assert 'scope' in hint
+        # The agent can start this itself; saying "a human must" would send it
+        # to wait instead. 'queue' keeps that from reading as approval-free.
+        assert 'work_session_update' in hint
+        assert 'queue' in hint
 
     def test_workspace_sudo_with_mfa_disabled(self):
         out = {

@@ -60,10 +60,11 @@ _SUDO_DENIAL_HINTS: dict[str, str] = {
         'way; report this to a workspace administrator.'
     ),
     'WORK_SESSION_SCOPE_NOT_ALLOWED': (
-        'sudo was denied: the Work Session does not carry the sudo scope. A '
-        'human must add the scope with work_session_update (which may itself '
-        'need approval) or open a session that has it. Re-run once it is '
-        'granted.'
+        'sudo was denied: the Work Session does not carry the sudo scope. Add '
+        'it with work_session_update(scopes=[...]), or open a session that has '
+        'it, then re-run—note the server queues a scope addition for its own '
+        'approval unless you are an admin or hold owner/manager on every '
+        'server in the session.'
     ),
     'SUDO_SESSION_MISSING': (
         'sudo was denied: the server could not tie this sudo request back to '
