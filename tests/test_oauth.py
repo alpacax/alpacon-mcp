@@ -7,17 +7,41 @@ error handling).
 """
 
 import base64
+import hashlib
+import hmac
 import json
+import time
 from unittest.mock import AsyncMock, MagicMock, patch
+from urllib.parse import parse_qs, urlparse
 
 import pytest
+from starlette.applications import Starlette
+from starlette.routing import Route
 from starlette.testclient import TestClient
+
+from utils.oauth import (
+    _STATE_SECRET_ENV,
+    _STATE_SECRET_INFO,
+    _STATE_TTL_SECONDS,
+    _build_state,
+    _get_state_secret,
+    _sign_state,
+    _verify_state,
+    register_oauth_routes,
+)
 
 # Test configuration constants
 TEST_AUTH0_DOMAIN = 'test.us.auth0.com'
 TEST_CLIENT_ID = 'test-client-id'
 TEST_CLIENT_SECRET = 'test-client-secret'
 TEST_RESOURCE_URL = 'https://mcp.test.alpacon.io'
+
+# Redirect targets used across the state tests
+TRUSTED_REDIRECT_URI = 'https://claude.ai/cb'
+EVIL_REDIRECT_URI = 'https://evil.com/cb'
+
+# An exp far enough ahead that a forged payload is never rejected as expired
+FAR_FUTURE_EXP = 9999999999
 
 # Environment variables needed for OAuth config
 OAUTH_ENV = {
@@ -37,30 +61,38 @@ def _set_oauth_env():
         yield
 
 
+class MockMCPServer:
+    """Stands in for FastMCP, collecting whatever register_oauth_routes registers."""
+
+    def __init__(self):
+        self.routes = []
+
+    def custom_route(self, path, methods=None):
+        def decorator(func):
+            self.routes.append(Route(path, func, methods=methods))
+            return func
+
+        return decorator
+
+
 @pytest.fixture
 def oauth_app():
     """Create a minimal Starlette app with OAuth routes registered."""
-    from starlette.applications import Starlette
-    from starlette.routing import Route
-
-    routes = []
-
-    class MockMCPServer:
-        def custom_route(self, path, methods=None):
-            def decorator(func):
-                routes.append(Route(path, func, methods=methods))
-                return func
-
-            return decorator
-
     mock_server = MockMCPServer()
-
-    from utils.oauth import register_oauth_routes
-
     register_oauth_routes(mock_server)
+    return TestClient(
+        Starlette(routes=mock_server.routes), raise_server_exceptions=False
+    )
 
-    app = Starlette(routes=routes)
-    return TestClient(app, raise_server_exceptions=False)
+
+def _forge_state_under_valid_signature():
+    """A state whose payload was swapped out after signing, keeping the signature."""
+    signed = _sign_state({'redirect_uri': TRUSTED_REDIRECT_URI})
+    _, _, signature = signed.rpartition('.')
+    forged = base64.urlsafe_b64encode(
+        json.dumps({'redirect_uri': EVIL_REDIRECT_URI, 'exp': FAR_FUTURE_EXP}).encode()
+    ).decode()
+    return f'{forged}.{signature}'
 
 
 def _mock_auth0_response(status_code=200, json_data=None):
@@ -73,6 +105,97 @@ def _mock_auth0_response(status_code=200, json_data=None):
     mock_client.__aenter__ = AsyncMock(return_value=mock_client)
     mock_client.__aexit__ = AsyncMock(return_value=None)
     return mock_client
+
+
+class TestStateSecret:
+    """Tests for state signing key derivation."""
+
+    def test_explicit_env_secret_wins(self):
+        with patch.dict('os.environ', {_STATE_SECRET_ENV: 'a1' * 32}):
+            assert _get_state_secret() == b'\xa1' * 32
+
+    def test_rejects_non_hex_explicit_secret(self):
+        # A typed passphrase is the weak key this check exists to keep out.
+        with patch.dict('os.environ', {_STATE_SECRET_ENV: 'correct-horse-battery'}):
+            with pytest.raises(ValueError, match='must be hex'):
+                _get_state_secret()
+
+    def test_rejects_short_explicit_secret(self):
+        with patch.dict('os.environ', {_STATE_SECRET_ENV: 'a1' * 31}):
+            with pytest.raises(ValueError, match='at least 32 bytes'):
+                _get_state_secret()
+
+    def test_derives_from_client_secret_when_env_unset(self):
+        expected = hmac.new(
+            TEST_CLIENT_SECRET.encode(), _STATE_SECRET_INFO, hashlib.sha256
+        ).digest()
+        assert _get_state_secret() == expected
+
+    def test_derived_secret_is_deterministic(self):
+        assert _get_state_secret() == _get_state_secret()
+
+    def test_registration_logs_state_secret_source(self, caplog):
+        with caplog.at_level('INFO'):
+            register_oauth_routes(MockMCPServer())
+
+        assert 'derived from client secret' in caplog.text
+
+
+class TestStateEnvelope:
+    """Tests for state signing and verification."""
+
+    def test_round_trip_preserves_payload(self):
+        signed = _sign_state({'redirect_uri': TRUSTED_REDIRECT_URI, 'state': 'xyz'})
+        payload = _verify_state(signed)
+        assert payload['redirect_uri'] == TRUSTED_REDIRECT_URI
+        assert payload['state'] == 'xyz'
+
+    def test_sign_adds_expiry(self):
+        payload = _verify_state(_sign_state({'state': 'xyz'}))
+        assert payload['exp'] <= int(time.time()) + _STATE_TTL_SECONDS
+
+    def test_tampered_payload_is_rejected(self):
+        assert _verify_state(_forge_state_under_valid_signature()) is None
+
+    def test_unsigned_state_is_rejected(self):
+        unsigned = base64.urlsafe_b64encode(
+            json.dumps({'redirect_uri': EVIL_REDIRECT_URI}).encode()
+        ).decode()
+        assert _verify_state(unsigned) is None
+
+    def test_wrong_signature_is_rejected(self):
+        encoded, _, _ = _sign_state({'state': 'xyz'}).rpartition('.')
+        assert _verify_state(f'{encoded}.bm90LWEtc2ln') is None
+
+    def test_expired_state_is_rejected(self):
+        with patch('utils.oauth.time.time', return_value=1000):
+            signed = _sign_state({'state': 'xyz'})
+        with patch('utils.oauth.time.time', return_value=99999999):
+            assert _verify_state(signed) is None
+
+    def test_malformed_state_is_rejected(self):
+        assert _verify_state('not-a-state') is None
+        assert _verify_state('') is None
+
+    def test_non_ascii_state_is_rejected(self):
+        """hmac.compare_digest raises TypeError on non-ASCII str, so compare bytes."""
+        assert _verify_state('payload.서명') is None
+
+
+class TestBuildState:
+    """Tests for state payload assembly."""
+
+    def test_carries_redirect_uri_and_client_state(self):
+        decoded = _verify_state(_build_state(TRUSTED_REDIRECT_URI, 'xyz'))
+        assert decoded['redirect_uri'] == TRUSTED_REDIRECT_URI
+        assert decoded['state'] == 'xyz'
+
+    def test_carries_extra_flow_fields(self):
+        decoded = _verify_state(
+            _build_state('', '', stage='mfa', original_scope='openid')
+        )
+        assert decoded['stage'] == 'mfa'
+        assert decoded['original_scope'] == 'openid'
 
 
 class TestOAuthMetadata:
@@ -126,8 +249,6 @@ class TestOAuthAuthorize:
 
     def test_authorize_overrides_redirect_uri_to_server_callback(self, oauth_app):
         """redirect_uri sent to Auth0 should be the MCP server's own callback."""
-        from urllib.parse import parse_qs, urlparse
-
         response = oauth_app.get(
             '/oauth/authorize',
             params={
@@ -143,8 +264,6 @@ class TestOAuthAuthorize:
 
     def test_authorize_stores_client_redirect_uri_in_state(self, oauth_app):
         """Client's original redirect_uri should be encoded in the state param."""
-        from urllib.parse import parse_qs, urlparse
-
         client_uri = 'http://localhost:52048/callback'
         response = oauth_app.get(
             '/oauth/authorize',
@@ -159,7 +278,7 @@ class TestOAuthAuthorize:
         parsed = urlparse(location)
         params = parse_qs(parsed.query)
         composite_state = params['state'][0]
-        state_data = json.loads(base64.urlsafe_b64decode(composite_state))
+        state_data = _verify_state(composite_state)
         assert state_data['redirect_uri'] == client_uri
         assert state_data['state'] == 'original-state'
 
@@ -196,6 +315,20 @@ class TestOAuthAuthorize:
         data = response.json()
         assert data['error'] == 'invalid_request'
         assert 'trusted' in data['error_description']
+
+    def test_authorize_reports_malformed_state_secret(self, oauth_app):
+        """Signing is the first place a bad key raises; the message must survive."""
+        with patch.dict('os.environ', {_STATE_SECRET_ENV: 'correct-horse-battery'}):
+            response = oauth_app.get(
+                '/oauth/authorize',
+                params={
+                    'response_type': 'code',
+                    'redirect_uri': 'http://localhost:52048/callback',
+                },
+                follow_redirects=False,
+            )
+        assert response.status_code == 500
+        assert 'must be hex' in response.json()['error']
 
     def test_authorize_allows_claude_ai_redirect_uri(self, oauth_app):
         """Claude web redirect_uri should be allowed as a trusted domain."""
@@ -327,8 +460,6 @@ class TestOAuthAuthorize:
         )
         assert response.status_code == 302
         location = response.headers['location']
-        from urllib.parse import parse_qs, urlparse
-
         parsed = urlparse(location)
         params = parse_qs(parsed.query)
         # Should redirect to MFA audience with enroll scope
@@ -339,7 +470,7 @@ class TestOAuthAuthorize:
         assert 'read:authenticators' in scope_value
         # State should contain stage='mfa'
         state = params.get('state', [''])[0]
-        state_data = json.loads(base64.urlsafe_b64decode(state.encode()).decode())
+        state_data = _verify_state(state)
         assert state_data.get('stage') == 'mfa'
 
     def test_authorize_without_mfa_scope_uses_regular_audience(self, oauth_app):
@@ -355,8 +486,6 @@ class TestOAuthAuthorize:
         )
         assert response.status_code == 302
         location = response.headers['location']
-        from urllib.parse import parse_qs, urlparse
-
         parsed = urlparse(location)
         params = parse_qs(parsed.query)
         audience = params.get('audience', [''])[0]
@@ -437,19 +566,6 @@ class TestOAuthToken:
 
     def test_token_fails_without_client_secret(self):
         """Token endpoint should return 500 when AUTH0_CLIENT_SECRET is missing."""
-        from starlette.applications import Starlette
-        from starlette.routing import Route
-
-        routes = []
-
-        class MockMCPServer:
-            def custom_route(self, path, methods=None):
-                def decorator(func):
-                    routes.append(Route(path, func, methods=methods))
-                    return func
-
-                return decorator
-
         env_without_secret = {
             'AUTH0_DOMAIN': TEST_AUTH0_DOMAIN,
             'AUTH0_CLIENT_ID': TEST_CLIENT_ID,
@@ -462,10 +578,8 @@ class TestOAuthToken:
         with patch.dict('os.environ', env_without_secret, clear=False):
             # Unset AUTH0_CLIENT_SECRET if present
             with patch.dict('os.environ', {'AUTH0_CLIENT_SECRET': ''}, clear=False):
-                from utils.oauth import register_oauth_routes
-
                 register_oauth_routes(mock_server)
-                app = Starlette(routes=routes)
+                app = Starlette(routes=mock_server.routes)
                 client = TestClient(app, raise_server_exceptions=False)
                 response = client.post(
                     '/oauth/token',
@@ -672,9 +786,8 @@ class TestOAuthFallbackRoutes:
 
 
 def _make_composite_state(redirect_uri='', state='', **extra):
-    """Helper to create composite state as the authorize endpoint does."""
-    data = {'redirect_uri': redirect_uri, 'state': state, **extra}
-    return base64.urlsafe_b64encode(json.dumps(data).encode()).decode()
+    """Helper to create signed composite state as the authorize endpoint does."""
+    return _sign_state({'redirect_uri': redirect_uri, 'state': state, **extra})
 
 
 class TestOAuthCallback:
@@ -693,6 +806,51 @@ class TestOAuthCallback:
         assert location.startswith('http://localhost:52048/callback')
         assert 'code=auth-code' in location
         assert 'state=xyz' in location
+
+    def test_callback_rejects_unsigned_state(self, oauth_app):
+        """A state we never signed must not steer the redirect."""
+        unsigned = base64.urlsafe_b64encode(
+            json.dumps({'redirect_uri': TRUSTED_REDIRECT_URI, 'state': 'x'}).encode()
+        ).decode()
+        response = oauth_app.get(
+            '/oauth/callback',
+            params={'code': 'auth-code', 'state': unsigned},
+            follow_redirects=False,
+        )
+        assert response.status_code == 400
+        assert response.json()['error'] == 'invalid_request'
+        assert 'location' not in response.headers
+
+    def test_callback_rejects_tampered_state(self, oauth_app):
+        """Swapping the payload under a valid signature must be rejected."""
+        response = oauth_app.get(
+            '/oauth/callback',
+            params={'code': 'auth-code', 'state': _forge_state_under_valid_signature()},
+            follow_redirects=False,
+        )
+        assert response.status_code == 400
+        assert 'location' not in response.headers
+
+    def test_callback_rejects_expired_state(self, oauth_app):
+        """A state past its expiry must be rejected."""
+        with patch('utils.oauth.time.time', return_value=1000):
+            expired = _make_composite_state('http://localhost:52048/callback', 'xyz')
+        response = oauth_app.get(
+            '/oauth/callback',
+            params={'code': 'auth-code', 'state': expired},
+            follow_redirects=False,
+        )
+        assert response.status_code == 400
+
+    def test_callback_reports_missing_config_instead_of_crashing(self, oauth_app):
+        """Missing client secret: same JSON 500 as other handlers, not a stack trace."""
+        with patch.dict('os.environ', {'AUTH0_CLIENT_SECRET': ''}):
+            response = oauth_app.get(
+                '/oauth/callback',
+                params={'code': 'auth-code', 'state': 'aGVsbG8.c2ln'},
+            )
+        assert response.status_code == 500
+        assert 'AUTH0_CLIENT_SECRET' in response.json()['error']
 
     def test_callback_returns_json_without_redirect_uri(self, oauth_app):
         """Without a client redirect_uri in state, return JSON as fallback."""
@@ -737,20 +895,18 @@ class TestOAuthCallback:
         assert response.status_code == 400
         assert response.json()['error'] == 'access_denied'
 
-    def test_callback_handles_invalid_state_gracefully(self, oauth_app):
-        """Invalid composite state should not crash — echoes raw state back."""
+    def test_callback_rejects_opaque_state(self, oauth_app):
+        """A state that is not one of ours is rejected, not echoed back."""
         response = oauth_app.get(
             '/oauth/callback',
             params={'code': 'auth-code', 'state': 'opaque-state-value'},
         )
-        assert response.status_code == 200
-        data = response.json()
-        assert data['code'] == 'auth-code'
-        assert data['state'] == 'opaque-state-value'
+        assert response.status_code == 400
+        assert response.json()['error'] == 'invalid_request'
 
     def test_callback_does_not_redirect_to_untrusted_uri(self, oauth_app):
         """Callback must not redirect to an untrusted redirect_uri from state."""
-        composite = _make_composite_state('https://evil.com/cb', 'xyz')
+        composite = _make_composite_state(EVIL_REDIRECT_URI, 'xyz')
         response = oauth_app.get(
             '/oauth/callback',
             params={'code': 'auth-code', 'state': composite},
@@ -796,8 +952,6 @@ class TestOAuthCallback:
 
         assert response.status_code == 302
         location = response.headers['location']
-        from urllib.parse import parse_qs, urlparse
-
         parsed = urlparse(location)
         params = parse_qs(parsed.query)
 
@@ -813,7 +967,7 @@ class TestOAuthCallback:
 
         # State should contain stage='regular'
         state = params.get('state', [''])[0]
-        state_data = json.loads(base64.urlsafe_b64decode(state.encode()).decode())
+        state_data = _verify_state(state)
         assert state_data.get('stage') == 'regular'
         assert state_data.get('redirect_uri') == 'http://localhost:8080/callback'
         assert state_data.get('state') == 'orig-state'

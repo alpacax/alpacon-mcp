@@ -216,6 +216,7 @@ python main_sse.py
 - HTTP-based transport for hosting a remote MCP server
 - Authenticates clients with Auth0 JWT (browser OAuth)—no `token.json` or API token on the client
 - `main_http.py` validates `AUTH0_DOMAIN` and `AUTH0_CLIENT_ID` at startup; the OAuth proxy endpoints additionally require `AUTH0_CLIENT_SECRET`, and accept an optional `AUTH0_AUDIENCE` (default `https://alpacon.io/access/`)
+- The OAuth `state` parameter is signed and expires after 10 minutes. The signing key is derived from `AUTH0_CLIENT_SECRET` by default; set the optional `ALPACON_MCP_STATE_SECRET` to use an explicit key instead. It must be hex decoding to at least 32 bytes, matching what the derived key always is—generate it with `openssl rand -hex 32` rather than typing a passphrase, because the state travels in URLs and proxy logs and a guessable key is an offline brute-force target. A value that is not hex, or is shorter, is rejected when the OAuth endpoints first sign or verify a state
 - Alpacon operates a managed instance at `https://mcp.alpacon.io/mcp`
 
 ```bash

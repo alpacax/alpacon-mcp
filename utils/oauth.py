@@ -9,8 +9,13 @@ which bypasses MCP authentication — appropriate for OAuth flow endpoints.
 """
 
 import base64
+import binascii
+import hashlib
+import hmac
 import json
 import os
+import time
+from http import HTTPStatus
 
 import httpx
 
@@ -18,6 +23,23 @@ from utils.logger import get_logger
 
 logger = get_logger('oauth')
 
+
+# Explicit state signing key; when unset, the key is derived from the client secret.
+_STATE_SECRET_ENV = 'ALPACON_MCP_STATE_SECRET'
+
+# Stage tags carried through the state in the two-stage MFA flow.
+_STAGE_MFA = 'mfa'
+_STAGE_REGULAR = 'regular'
+
+# Domain-separates the state key from other keys derived from the client secret.
+_STATE_SECRET_INFO = b'alpacon-mcp-oauth-state-v1'
+
+# Matches the 32 bytes the derived key always has, so an explicit key cannot be
+# weaker than leaving the variable unset.
+_STATE_SECRET_MIN_BYTES = 32
+
+# Covers an Auth0 login plus MFA; keeps a leaked state only briefly usable.
+_STATE_TTL_SECONDS = 600
 
 _ALLOWED_LOOPBACK_HOSTS = ('localhost', '127.0.0.1', '::1')
 
@@ -123,6 +145,82 @@ def _get_oauth_config() -> dict[str, str]:
     }
 
 
+def _get_state_secret() -> bytes:
+    """Falls back to deriving from AUTH0_CLIENT_SECRET so no extra secret needs
+    provisioning; the derived key is identical across replicas, so state
+    verifies without shared server-side storage.
+    """
+    explicit = os.getenv(_STATE_SECRET_ENV, '')
+    if explicit:
+        # The state travels in URLs and proxy logs, so the key is an offline
+        # brute-force target; hex-only input keeps a typed passphrase out.
+        try:
+            key = bytes.fromhex(explicit)
+        except ValueError:
+            raise ValueError(
+                f'{_STATE_SECRET_ENV} must be hex; '
+                f'generate one with openssl rand -hex {_STATE_SECRET_MIN_BYTES}'
+            ) from None
+        if len(key) < _STATE_SECRET_MIN_BYTES:
+            raise ValueError(
+                f'{_STATE_SECRET_ENV} must decode to at least '
+                f'{_STATE_SECRET_MIN_BYTES} bytes'
+            )
+        return key
+
+    client_secret = _get_oauth_config()['client_secret']
+    return hmac.new(client_secret.encode(), _STATE_SECRET_INFO, hashlib.sha256).digest()
+
+
+def _sign_state(payload: dict) -> str:
+    """Serialise a state payload with an expiry and an HMAC signature."""
+    body = {**payload, 'exp': int(time.time()) + _STATE_TTL_SECONDS}
+    encoded = base64.urlsafe_b64encode(
+        json.dumps(body, separators=(',', ':')).encode()
+    ).decode()
+    signature = base64.urlsafe_b64encode(
+        hmac.new(_get_state_secret(), encoded.encode(), hashlib.sha256).digest()
+    ).decode()
+    return f'{encoded}.{signature}'
+
+
+def _verify_state(state: str) -> dict | None:
+    """Return the state payload, or None when it is forged or expired.
+
+    The signature covers the encoded payload rather than the raw JSON so it can
+    be checked before anything is decoded.
+    """
+    encoded, _, signature = state.rpartition('.')
+    if not encoded or not signature:
+        return None
+
+    expected = base64.urlsafe_b64encode(
+        hmac.new(_get_state_secret(), encoded.encode(), hashlib.sha256).digest()
+    )
+    # Compare bytes: compare_digest raises TypeError on non-ASCII str input.
+    if not hmac.compare_digest(expected, signature.encode()):
+        return None
+
+    try:
+        payload = json.loads(base64.urlsafe_b64decode(encoded.encode()).decode())
+    except (json.JSONDecodeError, UnicodeDecodeError, binascii.Error):
+        return None
+
+    if not isinstance(payload, dict):
+        return None
+
+    expires_at = payload.get('exp')
+    if not isinstance(expires_at, int) or expires_at < int(time.time()):
+        return None
+
+    return payload
+
+
+def _build_state(redirect_uri: str, state: str, **extra) -> str:
+    """Pack everything the callback needs to recover into one signed state value."""
+    return _sign_state({'redirect_uri': redirect_uri, 'state': state, **extra})
+
+
 def register_oauth_routes(mcp_server):
     """Register OAuth proxy routes on the FastMCP server.
 
@@ -184,13 +282,11 @@ def register_oauth_routes(mcp_server):
         """
         from urllib.parse import urlencode
 
-        from starlette.responses import RedirectResponse
+        from starlette.responses import JSONResponse, RedirectResponse
 
         try:
             config = _get_oauth_config()
         except ValueError as e:
-            from starlette.responses import JSONResponse
-
             return JSONResponse({'error': str(e)}, status_code=500)
 
         # Forward all query parameters to Auth0
@@ -234,8 +330,6 @@ def register_oauth_routes(mcp_server):
         # open redirect attacks while supporting Claude web, ChatGPT, etc.
         client_redirect_uri = params.get('redirect_uri', '')
         if client_redirect_uri and not _is_allowed_redirect_url(client_redirect_uri):
-            from starlette.responses import JSONResponse
-
             return JSONResponse(
                 {
                     'error': 'invalid_request',
@@ -248,57 +342,62 @@ def register_oauth_routes(mcp_server):
 
         original_state = params.get('state', '')
 
-        if mfa_requested:
-            # Two-stage OAuth flow: Stage 1 — redirect to Auth0 MFA audience
-            # to force MFA verification. After MFA completion, the callback
-            # handler will redirect again to the regular audience (Stage 2).
-            mfa_params = {
-                'response_type': 'code',
-                'client_id': config['client_id'],
-                'audience': config['mfa_audience'],
-                'redirect_uri': f'{server_url}/oauth/callback',
-                'scope': 'enroll read:authenticators',
-            }
-
-            # Preserve PKCE and other client authorize params for Stage 2.
-            # The MCP client's PKCE code_challenge must be replayed when
-            # redirecting to the regular audience so the final code exchange
-            # succeeds with the client's code_verifier.
-            stage2_authorize_params = {}
-            for key in ('code_challenge', 'code_challenge_method', 'nonce', 'resource'):
-                if key in params:
-                    stage2_authorize_params[key] = params[key]
-
-            state_data = json.dumps(
-                {
-                    'redirect_uri': client_redirect_uri,
-                    'state': original_state,
-                    'stage': 'mfa',
-                    'original_scope': scope,
-                    'authorize_params': stage2_authorize_params,
+        # _build_state signs with the configured key, so a malformed
+        # ALPACON_MCP_STATE_SECRET raises here — on the endpoint an operator
+        # reaches before the callback. Carry the message instead of a bare 500.
+        try:
+            if mfa_requested:
+                # Two-stage OAuth flow: Stage 1 — redirect to Auth0 MFA audience
+                # to force MFA verification. After MFA completion, the callback
+                # handler will redirect again to the regular audience (Stage 2).
+                mfa_params = {
+                    'response_type': 'code',
+                    'client_id': config['client_id'],
+                    'audience': config['mfa_audience'],
+                    'redirect_uri': f'{server_url}/oauth/callback',
+                    'scope': 'enroll read:authenticators',
                 }
-            )
-            mfa_params['state'] = base64.urlsafe_b64encode(state_data.encode()).decode()
 
-            auth0_url = f'{config["auth0_base_url"]}/authorize?{urlencode(mfa_params)}'
-            logger.info(
-                'Stage 1: Redirecting to Auth0 MFA audience for MFA verification'
-            )
-        else:
-            # Standard single-stage OAuth flow (no MFA required)
-            state_data = json.dumps(
-                {
-                    'redirect_uri': client_redirect_uri,
-                    'state': original_state,
-                }
-            )
-            composite_state = base64.urlsafe_b64encode(state_data.encode()).decode()
+                # Preserve PKCE and other client authorize params for Stage 2.
+                # The MCP client's PKCE code_challenge must be replayed when
+                # redirecting to the regular audience so the final code exchange
+                # succeeds with the client's code_verifier.
+                stage2_authorize_params = {}
+                for key in (
+                    'code_challenge',
+                    'code_challenge_method',
+                    'nonce',
+                    'resource',
+                ):
+                    if key in params:
+                        stage2_authorize_params[key] = params[key]
 
-            params['redirect_uri'] = f'{server_url}/oauth/callback'
-            params['state'] = composite_state
+                mfa_params['state'] = _build_state(
+                    client_redirect_uri,
+                    original_state,
+                    stage=_STAGE_MFA,
+                    original_scope=scope,
+                    authorize_params=stage2_authorize_params,
+                )
 
-            auth0_url = f'{config["auth0_base_url"]}/authorize?{urlencode(params)}'
-            logger.info('Redirecting to Auth0 authorize endpoint')
+                auth0_url = (
+                    f'{config["auth0_base_url"]}/authorize?{urlencode(mfa_params)}'
+                )
+                logger.info(
+                    'Stage 1: Redirecting to Auth0 MFA audience for MFA verification'
+                )
+            else:
+                # Standard single-stage OAuth flow (no MFA required)
+                params['redirect_uri'] = f'{server_url}/oauth/callback'
+                params['state'] = _build_state(client_redirect_uri, original_state)
+
+                auth0_url = f'{config["auth0_base_url"]}/authorize?{urlencode(params)}'
+                logger.info('Redirecting to Auth0 authorize endpoint')
+        except ValueError as e:
+            return JSONResponse(
+                {'error': str(e)}, status_code=HTTPStatus.INTERNAL_SERVER_ERROR
+            )
+
         return RedirectResponse(url=auth0_url, status_code=302)
 
     @mcp_server.custom_route('/oauth/token', methods=['POST'])
@@ -589,25 +688,32 @@ def register_oauth_routes(mcp_server):
         stage = ''
         original_scope = ''
         authorize_params: dict = {}
+        # An absent state is not rejected: Auth0 error callbacks can arrive
+        # without one, and it names no redirect target a forgery could steer.
         if composite_state:
             try:
-                state_data = json.loads(
-                    base64.urlsafe_b64decode(composite_state.encode()).decode()
+                state_data = _verify_state(composite_state)
+            except ValueError as e:
+                # Without an explicit state secret, verification needs the OAuth
+                # config; surface misconfiguration as the other handlers do.
+                return JSONResponse(
+                    {'error': str(e)},
+                    status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
                 )
-                client_redirect_uri = state_data.get('redirect_uri', '')
-                original_state = state_data.get('state', '')
-                stage = state_data.get('stage', '')
-                original_scope = state_data.get('original_scope', '')
-                authorize_params = state_data.get('authorize_params', {})
-            except (
-                json.JSONDecodeError,
-                UnicodeDecodeError,
-                base64.binascii.Error,
-            ) as e:
-                logger.warning(f'Failed to decode composite state: {e}')
-                # Fall back to treating the raw state as the original opaque state
-                # so it can be echoed back to the client per OAuth spec.
-                original_state = composite_state
+            if state_data is None:
+                logger.warning('Callback rejected an invalid or expired state')
+                return JSONResponse(
+                    {
+                        'error': 'invalid_request',
+                        'error_description': 'Invalid or expired state parameter',
+                    },
+                    status_code=400,
+                )
+            client_redirect_uri = state_data.get('redirect_uri', '')
+            original_state = state_data.get('state', '')
+            stage = state_data.get('stage', '')
+            original_scope = state_data.get('original_scope', '')
+            authorize_params = state_data.get('authorize_params', {})
 
         # Defense-in-depth: re-validate redirect_uri from state is allowed.
         # The authorize endpoint already validates this, but an attacker could craft
@@ -644,7 +750,7 @@ def register_oauth_routes(mcp_server):
             )
 
         # --- Two-stage MFA flow: Stage 1 callback ---
-        if stage == 'mfa':
+        if stage == _STAGE_MFA:
             logger.info(
                 'Stage 1 complete: MFA authorization code received, '
                 'exchanging and proceeding to Stage 2 (regular audience)'
@@ -692,21 +798,15 @@ def register_oauth_routes(mcp_server):
             # Stage 2: redirect to Auth0 with regular audience.
             # The Auth0 SSO session will skip the login prompt since
             # the user just authenticated (with MFA) moments ago.
-            stage2_state = json.dumps(
-                {
-                    'redirect_uri': client_redirect_uri,
-                    'state': original_state,
-                    'stage': 'regular',
-                }
-            )
-
             stage2_params = {
                 'response_type': 'code',
                 'client_id': config['client_id'],
                 'audience': config['audience'],
                 'redirect_uri': f'{server_url}/oauth/callback',
                 'scope': original_scope or 'openid profile email offline_access',
-                'state': base64.urlsafe_b64encode(stage2_state.encode()).decode(),
+                'state': _build_state(
+                    client_redirect_uri, original_state, stage=_STAGE_REGULAR
+                ),
             }
             # Replay PKCE and other client params preserved from Stage 1
             # so the final code exchange succeeds with the client's verifier.
@@ -781,5 +881,9 @@ def register_oauth_routes(mcp_server):
         return await oauth_register(request)
 
     logger.info(
-        'OAuth proxy routes registered (including /token, /authorize, /register fallbacks)'
+        'OAuth proxy routes registered (including /token, /authorize, '
+        '/register fallbacks) - state secret: %s',
+        'explicit env'
+        if os.getenv(_STATE_SECRET_ENV)
+        else 'derived from client secret',
     )
