@@ -15,6 +15,7 @@ import re
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 import httpx
+from starlette.responses import JSONResponse, RedirectResponse
 
 from utils.logger import get_logger
 
@@ -271,8 +272,6 @@ def register_oauth_routes(mcp_server):
         authorization server. The authorize, token, and register
         endpoints proxy to Auth0; only jwks_uri points to Auth0 directly.
         """
-        from starlette.responses import JSONResponse
-
         try:
             config = _get_oauth_config()
         except ValueError as e:
@@ -315,13 +314,9 @@ def register_oauth_routes(mcp_server):
         Proxies the OAuth authorize request to Auth0, adding the
         configured client_id and audience.
         """
-        from starlette.responses import RedirectResponse
-
         try:
             config = _get_oauth_config()
         except ValueError as e:
-            from starlette.responses import JSONResponse
-
             return JSONResponse({'error': str(e)}, status_code=500)
 
         # Forward all query parameters to Auth0
@@ -368,8 +363,6 @@ def register_oauth_routes(mcp_server):
             client_redirect_uri, params.get('code_challenge_method', '')
         )
         if client_redirect_uri and not _check_redirect_uri(client_redirect_uri):
-            from starlette.responses import JSONResponse
-
             return JSONResponse(
                 {
                     'error': 'invalid_request',
@@ -444,8 +437,6 @@ def register_oauth_routes(mcp_server):
         Injects the configured client_id and client_secret for
         Auth0 token exchange (confidential client / RWA).
         """
-        from starlette.responses import JSONResponse
-
         try:
             config = _get_oauth_config()
         except ValueError as e:
@@ -615,8 +606,6 @@ def register_oauth_routes(mcp_server):
         plans, so this endpoint returns the server's pre-configured client_id
         to satisfy the MCP SDK's registration requirement.
         """
-        from starlette.responses import JSONResponse
-
         try:
             config = _get_oauth_config()
         except ValueError as e:
@@ -706,8 +695,6 @@ def register_oauth_routes(mcp_server):
           regular audience (Stage 2) using Auth0 SSO session.
         - Stage 'regular' or absent: forward code to MCP client.
         """
-        from starlette.responses import JSONResponse, RedirectResponse
-
         # Extract callback parameters
         code = request.query_params.get('code')
         composite_state = request.query_params.get('state')
