@@ -130,6 +130,20 @@ _WORK_SESSION_GATE_CODES: frozenset[str] = frozenset(_WORK_SESSION_GATE_NEXT_ACT
     _WORK_SESSION_PENDING_CODE
 }
 
+# Actionable hints for server error `code` values that are not WorkSession
+# gate codes (see _extract_error_code). Keyed by code so new hints can be
+# added without touching unwrap_http_result. Appended to the error message
+# so an AI agent reading the response text alone knows how to retry.
+_ERROR_CODE_HINT: dict[str, str] = {
+    'command_inline_credential': (
+        'The server rejected this command because it carries an inline '
+        'credential on the command line (e.g. `mysql -pSecret`, '
+        '`PGPASSWORD=...`, or a `user:pw@host` URL), which would otherwise be '
+        'stored in plaintext in the audit log. Move the secret into the '
+        '`env` parameter of execute_command and retry.'
+    ),
+}
+
 
 def is_auth_enabled() -> bool:
     """Check if remote (streamable-http) mode with Auth0 JWT auth is enabled.
@@ -302,6 +316,17 @@ def unwrap_http_result(
     by `utils.http_client` on 4xx/5xx; otherwise returns None so the caller
     can wrap the payload with `success_response`.
 
+    WorkSession gate codes (``_WORK_SESSION_GATE_CODES``) take the dedicated
+    ``work_session_gate_response`` path, unchanged from before. Any other
+    server `code` found in the error body is now surfaced as `error_code` in
+    the returned response instead of being silently dropped—alpacon-server's
+    4xx bodies carry only ``{"code": "..."}``, no message, so without this the
+    caller only ever sees a generic "Client error '400 Bad Request'" string.
+    A curated subset of codes (``_ERROR_CODE_HINT``) also get an actionable
+    hint appended to the message, e.g. `command_inline_credential` (see
+    alpacax/alpacon-server#2745) telling the agent to retry via the `env`
+    parameter.
+
     Args:
         result: Raw value returned by an http_client method.
         default_message: Fallback message when the upstream response has none.
@@ -319,23 +344,30 @@ def unwrap_http_result(
     if status_code is not None:
         error_kwargs['status_code'] = status_code
 
-    gate_code = _extract_work_session_gate_code(result)
-    if gate_code is not None:
-        return work_session_gate_response(gate_code, **error_kwargs)
+    # Parse the body's `code` once; it decides both whether this is a
+    # WorkSession gate (membership in _WORK_SESSION_GATE_CODES) and, on the
+    # generic path below, what gets surfaced as `error_code`.
+    code = _extract_error_code(result)
+    if code is not None and code in _WORK_SESSION_GATE_CODES:
+        return work_session_gate_response(code, **error_kwargs)
 
-    return error_response(
-        result.get('message', default_message),
-        **error_kwargs,
-    )
+    message = result.get('message', default_message)
+    if code is not None:
+        error_kwargs['error_code'] = code
+        hint = _ERROR_CODE_HINT.get(code)
+        if hint is not None:
+            message = f'{message} {hint}'
+
+    return error_response(message, **error_kwargs)
 
 
-def _extract_work_session_gate_code(result: dict[str, Any]) -> str | None:
-    """Return the WorkSession gate code carried by an http error envelope, if any.
+def _extract_error_code(result: dict[str, Any]) -> str | None:
+    """Return the `code` field carried by an http error envelope's body, if any.
 
     alpacon-server's exception handler returns 4xx bodies shaped as
     ``{"code": "<error_code>"}``; ``utils.http_client`` carries the raw body in
-    the ``response`` key. Returns None when the body is missing, not JSON, or not
-    a recognized gate code (so the caller falls back to a generic error).
+    the ``response`` key. Returns None when the body is missing, not JSON, or
+    lacks a string `code` field.
     """
     raw = result.get('response')
     if not isinstance(raw, str):
@@ -347,6 +379,4 @@ def _extract_work_session_gate_code(result: dict[str, Any]) -> str | None:
     if not isinstance(body, dict):
         return None
     code = body.get('code')
-    if isinstance(code, str) and code in _WORK_SESSION_GATE_CODES:
-        return code
-    return None
+    return code if isinstance(code, str) else None
