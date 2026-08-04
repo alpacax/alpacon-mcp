@@ -46,6 +46,10 @@ _STATE_TTL_SECONDS = 600
 
 _ALLOWED_LOOPBACK_HOSTS = ('localhost', '127.0.0.1', '::1')
 
+# Caps a client-supplied value in a log line. Escaping expands a byte up to
+# sixfold, so an unbounded value on an unauthenticated route inflates log volume.
+_LOG_VALUE_MAX_CHARS = 512
+
 _ENV_ALLOWED_REDIRECT_DOMAINS = 'ALLOWED_REDIRECT_DOMAINS'
 _ENV_ALLOWED_REDIRECT_URIS = 'ALLOWED_REDIRECT_URIS'
 _ENV_REDIRECT_URI_REPORT_ONLY = 'ALPACON_MCP_REDIRECT_URI_REPORT_ONLY'
@@ -91,7 +95,12 @@ def _escape_for_log(value: str) -> str:
 
     A raw newline would otherwise let a client forge a second log line.
     """
-    return ''.join(c if c.isprintable() else repr(c)[1:-1] for c in value)
+    escaped = ''.join(
+        c if c.isprintable() else repr(c)[1:-1] for c in value[:_LOG_VALUE_MAX_CHARS]
+    )
+    if len(value) > _LOG_VALUE_MAX_CHARS or len(escaped) > _LOG_VALUE_MAX_CHARS:
+        return escaped[:_LOG_VALUE_MAX_CHARS] + '...(truncated)'
+    return escaped
 
 
 def _get_server_url(request) -> str:

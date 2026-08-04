@@ -20,11 +20,13 @@ from starlette.routing import Route
 from starlette.testclient import TestClient
 
 from utils.oauth import (
+    _LOG_VALUE_MAX_CHARS,
     _STATE_SECRET_ENV,
     _STATE_SECRET_INFO,
     _STATE_TTL_SECONDS,
     _build_state,
     _check_redirect_uri,
+    _escape_for_log,
     _get_allowed_redirect_uris,
     _get_state_secret,
     _is_exact_allowed_redirect_uri,
@@ -311,6 +313,17 @@ class TestAuthorizeObservation:
 
         assert 'cb\\nforged line' in caplog.text
         assert 'cb\nforged line' not in caplog.text
+
+    def test_truncates_an_oversized_value(self):
+        escaped = _escape_for_log('a' * (_LOG_VALUE_MAX_CHARS + 100))
+
+        assert escaped == 'a' * _LOG_VALUE_MAX_CHARS + '...(truncated)'
+
+    def test_truncates_when_escaping_expands_the_value(self):
+        """Escaping grows a control character, so the input cap alone is not enough."""
+        escaped = _escape_for_log('\n' * _LOG_VALUE_MAX_CHARS)
+
+        assert escaped == '\\n' * (_LOG_VALUE_MAX_CHARS // 2) + '...(truncated)'
 
 
 class TestStateSecret:
