@@ -167,6 +167,19 @@ class TestExactRedirectUriMatch:
             assert not _is_exact_allowed_redirect_uri(
                 'https://claude.ai/api/mcp/auth_callback'
             )
+            # The built-in patterns are part of the built-in list, so an
+            # override drops them too.
+            assert not _is_exact_allowed_redirect_uri(
+                'https://chatgpt.com/connector/oauth/abc123'
+            )
+
+    def test_plaintext_uri_is_rejected(self):
+        from utils.oauth import _is_exact_allowed_redirect_uri
+
+        with patch.dict(
+            'os.environ', {'ALLOWED_REDIRECT_URIS': 'http://a.example/cb'}
+        ):
+            assert not _is_exact_allowed_redirect_uri('http://a.example/cb')
 
 
 REPORT_ONLY = {'ALPACON_MCP_REDIRECT_URI_REPORT_ONLY': 'true'}
@@ -184,6 +197,14 @@ class TestRedirectUriGate:
         from utils.oauth import _check_redirect_uri
 
         assert _check_redirect_uri('https://claude.ai/api/mcp/auth_callback')
+
+    def test_every_default_endpoint_passes_the_gate(self):
+        """A listed endpoint must not be blocked by the legacy host allowlist."""
+        from utils.oauth import _check_redirect_uri, _get_allowed_redirect_uris
+
+        for uri in _get_allowed_redirect_uris():
+            assert _check_redirect_uri(uri), uri
+        assert _check_redirect_uri('https://chatgpt.com/connector/oauth/abc123')
 
     def test_keeps_every_loopback_path(self):
         from utils.oauth import _check_redirect_uri

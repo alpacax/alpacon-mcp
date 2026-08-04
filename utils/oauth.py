@@ -80,6 +80,11 @@ def _get_allowed_redirect_domains() -> tuple[str, ...]:
     return _DEFAULT_REDIRECT_DOMAINS
 
 
+def _redirect_uris_are_overridden() -> bool:
+    """Whether a deployment replaced the built-in endpoint allowlist."""
+    return bool(os.getenv('ALLOWED_REDIRECT_URIS', '').strip())
+
+
 def _get_allowed_redirect_uris() -> tuple[str, ...]:
     """Return the allowed non-loopback callback endpoints.
 
@@ -93,15 +98,24 @@ def _get_allowed_redirect_uris() -> tuple[str, ...]:
 
 
 def _is_exact_allowed_redirect_uri(url: str) -> bool:
-    """Return True when the URL is one of the allowed callback endpoints."""
+    """Return True when the URL is one of the allowed callback endpoints.
+
+    https only: a pinned endpoint bypasses the host allowlist, so the scheme
+    check that keeps authorization codes off plaintext lives here too.
+    """
     from urllib.parse import urlparse
 
     parsed = urlparse(url)
-    if parsed.query or parsed.fragment:
+    if parsed.scheme != 'https' or parsed.query or parsed.fragment:
         return False
 
     if url in _get_allowed_redirect_uris():
         return True
+
+    # An override is the whole allowlist: the built-in patterns go out with the
+    # built-in URIs, so narrowing the list cannot leave one behind.
+    if _redirect_uris_are_overridden():
+        return False
 
     return any(pattern.match(url) for pattern in _DEFAULT_REDIRECT_URI_PATTERNS)
 
@@ -129,10 +143,15 @@ def _check_redirect_uri(url: str) -> bool:
     /oauth/callback, /) and pinning them would break clients without closing
     the local-listener risk, which browser-session binding handles instead.
     """
+    # A pinned endpoint is stricter than a host match, so it stands on its own;
+    # otherwise every listed host would also have to be in the domain list.
+    if _is_exact_allowed_redirect_uri(url):
+        return True
+
     if not _is_allowed_redirect_url(url):
         return False
 
-    if _is_loopback_redirect_url(url) or _is_exact_allowed_redirect_uri(url):
+    if _is_loopback_redirect_url(url):
         return True
 
     if _redirect_uri_report_only():
