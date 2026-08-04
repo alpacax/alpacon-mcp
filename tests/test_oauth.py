@@ -75,6 +75,130 @@ def _mock_auth0_response(status_code=200, json_data=None):
     return mock_client
 
 
+class TestStateSecret:
+    """Tests for state signing key derivation."""
+
+    def test_explicit_env_secret_wins(self):
+        from utils.oauth import _get_state_secret
+
+        with patch.dict('os.environ', {'ALPACON_MCP_STATE_SECRET': 'explicit-key'}):
+            assert _get_state_secret() == b'explicit-key'
+
+    def test_derives_from_client_secret_when_env_unset(self):
+        import hashlib
+        import hmac
+
+        from utils.oauth import _STATE_SECRET_INFO, _get_state_secret
+
+        expected = hmac.new(
+            TEST_CLIENT_SECRET.encode(), _STATE_SECRET_INFO, hashlib.sha256
+        ).digest()
+        assert _get_state_secret() == expected
+
+    def test_derived_secret_is_deterministic(self):
+        from utils.oauth import _get_state_secret
+
+        assert _get_state_secret() == _get_state_secret()
+
+    def test_registration_logs_state_secret_source(self, caplog):
+        from utils.oauth import register_oauth_routes
+
+        class MockMCPServer:
+            def custom_route(self, path, methods=None):
+                return lambda func: func
+
+        with caplog.at_level('INFO'):
+            register_oauth_routes(MockMCPServer())
+
+        assert 'derived from client secret' in caplog.text
+
+
+class TestStateEnvelope:
+    """Tests for state signing and verification."""
+
+    def test_round_trip_preserves_payload(self):
+        from utils.oauth import _sign_state, _verify_state
+
+        signed = _sign_state({'redirect_uri': 'https://claude.ai/cb', 'state': 'xyz'})
+        payload = _verify_state(signed)
+        assert payload['redirect_uri'] == 'https://claude.ai/cb'
+        assert payload['state'] == 'xyz'
+
+    def test_sign_adds_expiry(self):
+        import time
+
+        from utils.oauth import _STATE_TTL_SECONDS, _sign_state, _verify_state
+
+        payload = _verify_state(_sign_state({'state': 'xyz'}))
+        assert payload['exp'] <= int(time.time()) + _STATE_TTL_SECONDS
+
+    def test_tampered_payload_is_rejected(self):
+        from utils.oauth import _sign_state, _verify_state
+
+        signed = _sign_state({'redirect_uri': 'https://claude.ai/cb', 'state': ''})
+        _, _, sig = signed.rpartition('.')
+        forged = base64.urlsafe_b64encode(
+            json.dumps(
+                {'redirect_uri': 'https://evil.com/cb', 'exp': 9999999999}
+            ).encode()
+        ).decode()
+        assert _verify_state(f'{forged}.{sig}') is None
+
+    def test_unsigned_state_is_rejected(self):
+        from utils.oauth import _verify_state
+
+        unsigned = base64.urlsafe_b64encode(
+            json.dumps({'redirect_uri': 'https://evil.com/cb'}).encode()
+        ).decode()
+        assert _verify_state(unsigned) is None
+
+    def test_wrong_signature_is_rejected(self):
+        from utils.oauth import _sign_state, _verify_state
+
+        encoded, _, _ = _sign_state({'state': 'xyz'}).rpartition('.')
+        assert _verify_state(f'{encoded}.bm90LWEtc2ln') is None
+
+    def test_expired_state_is_rejected(self):
+        from utils.oauth import _sign_state, _verify_state
+
+        with patch('utils.oauth.time.time', return_value=1000):
+            signed = _sign_state({'state': 'xyz'})
+        with patch('utils.oauth.time.time', return_value=99999999):
+            assert _verify_state(signed) is None
+
+    def test_malformed_state_is_rejected(self):
+        from utils.oauth import _verify_state
+
+        assert _verify_state('not-a-state') is None
+        assert _verify_state('') is None
+
+    def test_non_ascii_state_is_rejected(self):
+        """hmac.compare_digest raises TypeError on non-ASCII str, so compare bytes."""
+        from utils.oauth import _verify_state
+
+        assert _verify_state('payload.서명') is None
+
+
+class TestBuildState:
+    """Tests for state payload assembly."""
+
+    def test_carries_redirect_uri_and_client_state(self):
+        from utils.oauth import _build_state, _verify_state
+
+        decoded = _verify_state(_build_state('https://claude.ai/cb', 'xyz'))
+        assert decoded['redirect_uri'] == 'https://claude.ai/cb'
+        assert decoded['state'] == 'xyz'
+
+    def test_carries_extra_flow_fields(self):
+        from utils.oauth import _build_state, _verify_state
+
+        decoded = _verify_state(
+            _build_state('', '', stage='mfa', original_scope='openid')
+        )
+        assert decoded['stage'] == 'mfa'
+        assert decoded['original_scope'] == 'openid'
+
+
 class TestOAuthMetadata:
     """Tests for /.well-known/oauth-authorization-server endpoint."""
 
@@ -159,7 +283,9 @@ class TestOAuthAuthorize:
         parsed = urlparse(location)
         params = parse_qs(parsed.query)
         composite_state = params['state'][0]
-        state_data = json.loads(base64.urlsafe_b64decode(composite_state))
+        from utils.oauth import _verify_state
+
+        state_data = _verify_state(composite_state)
         assert state_data['redirect_uri'] == client_uri
         assert state_data['state'] == 'original-state'
 
@@ -339,7 +465,9 @@ class TestOAuthAuthorize:
         assert 'read:authenticators' in scope_value
         # State should contain stage='mfa'
         state = params.get('state', [''])[0]
-        state_data = json.loads(base64.urlsafe_b64decode(state.encode()).decode())
+        from utils.oauth import _verify_state
+
+        state_data = _verify_state(state)
         assert state_data.get('stage') == 'mfa'
 
     def test_authorize_without_mfa_scope_uses_regular_audience(self, oauth_app):
@@ -672,9 +800,10 @@ class TestOAuthFallbackRoutes:
 
 
 def _make_composite_state(redirect_uri='', state='', **extra):
-    """Helper to create composite state as the authorize endpoint does."""
-    data = {'redirect_uri': redirect_uri, 'state': state, **extra}
-    return base64.urlsafe_b64encode(json.dumps(data).encode()).decode()
+    """Helper to create signed composite state as the authorize endpoint does."""
+    from utils.oauth import _sign_state
+
+    return _sign_state({'redirect_uri': redirect_uri, 'state': state, **extra})
 
 
 class TestOAuthCallback:
@@ -693,6 +822,60 @@ class TestOAuthCallback:
         assert location.startswith('http://localhost:52048/callback')
         assert 'code=auth-code' in location
         assert 'state=xyz' in location
+
+    def test_callback_rejects_unsigned_state(self, oauth_app):
+        """A state we never signed must not steer the redirect."""
+        unsigned = base64.urlsafe_b64encode(
+            json.dumps({'redirect_uri': 'https://claude.ai/cb', 'state': 'x'}).encode()
+        ).decode()
+        response = oauth_app.get(
+            '/oauth/callback',
+            params={'code': 'auth-code', 'state': unsigned},
+            follow_redirects=False,
+        )
+        assert response.status_code == 400
+        assert response.json()['error'] == 'invalid_request'
+        assert 'location' not in response.headers
+
+    def test_callback_rejects_tampered_state(self, oauth_app):
+        """Swapping the payload under a valid signature must be rejected."""
+        from utils.oauth import _sign_state
+
+        signed = _sign_state({'redirect_uri': 'https://claude.ai/cb'})
+        _, _, sig = signed.rpartition('.')
+        forged = base64.urlsafe_b64encode(
+            json.dumps(
+                {'redirect_uri': 'https://evil.com/cb', 'exp': 9999999999}
+            ).encode()
+        ).decode()
+        response = oauth_app.get(
+            '/oauth/callback',
+            params={'code': 'auth-code', 'state': f'{forged}.{sig}'},
+            follow_redirects=False,
+        )
+        assert response.status_code == 400
+        assert 'location' not in response.headers
+
+    def test_callback_rejects_expired_state(self, oauth_app):
+        """A state past its expiry must be rejected."""
+        with patch('utils.oauth.time.time', return_value=1000):
+            expired = _make_composite_state('http://localhost:52048/callback', 'xyz')
+        response = oauth_app.get(
+            '/oauth/callback',
+            params={'code': 'auth-code', 'state': expired},
+            follow_redirects=False,
+        )
+        assert response.status_code == 400
+
+    def test_callback_reports_missing_config_instead_of_crashing(self, oauth_app):
+        """Missing client secret: same JSON 500 as other handlers, not a stack trace."""
+        with patch.dict('os.environ', {'AUTH0_CLIENT_SECRET': ''}):
+            response = oauth_app.get(
+                '/oauth/callback',
+                params={'code': 'auth-code', 'state': 'aGVsbG8.c2ln'},
+            )
+        assert response.status_code == 500
+        assert 'AUTH0_CLIENT_SECRET' in response.json()['error']
 
     def test_callback_returns_json_without_redirect_uri(self, oauth_app):
         """Without a client redirect_uri in state, return JSON as fallback."""
@@ -737,16 +920,14 @@ class TestOAuthCallback:
         assert response.status_code == 400
         assert response.json()['error'] == 'access_denied'
 
-    def test_callback_handles_invalid_state_gracefully(self, oauth_app):
-        """Invalid composite state should not crash — echoes raw state back."""
+    def test_callback_rejects_opaque_state(self, oauth_app):
+        """A state that is not one of ours is rejected, not echoed back."""
         response = oauth_app.get(
             '/oauth/callback',
             params={'code': 'auth-code', 'state': 'opaque-state-value'},
         )
-        assert response.status_code == 200
-        data = response.json()
-        assert data['code'] == 'auth-code'
-        assert data['state'] == 'opaque-state-value'
+        assert response.status_code == 400
+        assert response.json()['error'] == 'invalid_request'
 
     def test_callback_does_not_redirect_to_untrusted_uri(self, oauth_app):
         """Callback must not redirect to an untrusted redirect_uri from state."""
@@ -813,7 +994,9 @@ class TestOAuthCallback:
 
         # State should contain stage='regular'
         state = params.get('state', [''])[0]
-        state_data = json.loads(base64.urlsafe_b64decode(state.encode()).decode())
+        from utils.oauth import _verify_state
+
+        state_data = _verify_state(state)
         assert state_data.get('stage') == 'regular'
         assert state_data.get('redirect_uri') == 'http://localhost:8080/callback'
         assert state_data.get('state') == 'orig-state'
