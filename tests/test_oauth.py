@@ -122,6 +122,20 @@ class TestAllowedRedirectUris:
 
         assert 'ALLOWED_REDIRECT_URIS' in caplog.text
 
+    def test_blank_domain_var_does_not_warn(self, caplog):
+        """A whitespace-only value is unset to _get_allowed_redirect_domains."""
+        from utils.oauth import register_oauth_routes
+
+        class MockMCPServer:
+            def custom_route(self, path, methods=None):
+                return lambda func: func
+
+        with patch.dict('os.environ', {'ALLOWED_REDIRECT_DOMAINS': '  '}):
+            with caplog.at_level('WARNING'):
+                register_oauth_routes(MockMCPServer())
+
+        assert 'ALLOWED_REDIRECT_URIS' not in caplog.text
+
 
 class TestExactRedirectUriMatch:
     """Tests for endpoint-level redirect_uri matching."""
@@ -295,6 +309,21 @@ class TestAuthorizeObservation:
             )
 
         assert 'pkce: none' in caplog.text
+
+    def test_escapes_control_characters(self, oauth_app, caplog):
+        """A raw newline would otherwise look like a second log line."""
+        with caplog.at_level('INFO'):
+            oauth_app.get(
+                '/oauth/authorize',
+                params={
+                    'response_type': 'code',
+                    'redirect_uri': 'https://evil.example/cb\nforged line',
+                },
+                follow_redirects=False,
+            )
+
+        assert 'cb\\nforged line' in caplog.text
+        assert 'cb\nforged line' not in caplog.text
 
 
 class TestOAuthMetadata:

@@ -63,6 +63,15 @@ _DEFAULT_REDIRECT_URI_PATTERNS = (
 )
 
 
+def _escape_for_log(value: str) -> str:
+    """Escape control characters in a client-supplied value.
+
+    A raw newline in redirect_uri would otherwise let a client write what looks
+    like a second log line.
+    """
+    return ''.join(c if c.isprintable() else repr(c)[1:-1] for c in value)
+
+
 def _get_server_url(request) -> str:
     """Build the MCP server's base URL from config or request.
 
@@ -182,11 +191,14 @@ def _check_redirect_uri(url: str) -> bool:
         logger.warning(
             'redirect_uri is outside the endpoint allowlist and is allowed only '
             'because report-only mode is on: %s',
-            url,
+            _escape_for_log(url),
         )
         return True
 
-    logger.warning('Rejected redirect_uri outside the endpoint allowlist: %s', url)
+    logger.warning(
+        'Rejected redirect_uri outside the endpoint allowlist: %s',
+        _escape_for_log(url),
+    )
     return False
 
 
@@ -200,8 +212,8 @@ def _log_authorize_client_profile(
     """
     logger.info(
         'authorize observed - redirect_uri: %s, pkce: %s',
-        redirect_uri or '(none)',
-        code_challenge_method or 'none',
+        _escape_for_log(redirect_uri) or '(none)',
+        _escape_for_log(code_challenge_method) or 'none',
     )
 
 
@@ -733,8 +745,8 @@ def register_oauth_routes(mcp_server):
         # a composite state directly and hit Auth0 with our callback URL.
         if client_redirect_uri and not _check_redirect_uri(client_redirect_uri):
             logger.warning(
-                f'Callback rejected untrusted redirect_uri from state: '
-                f'{client_redirect_uri}'
+                'Callback rejected untrusted redirect_uri from state: %s',
+                _escape_for_log(client_redirect_uri),
             )
             client_redirect_uri = ''
 
@@ -899,9 +911,11 @@ def register_oauth_routes(mcp_server):
         logger.info('/register fallback hit — delegating to /oauth/register handler')
         return await oauth_register(request)
 
-    if os.getenv(_ENV_ALLOWED_REDIRECT_DOMAINS) and not os.getenv(
-        _ENV_ALLOWED_REDIRECT_URIS
-    ):
+    domains_only = (
+        os.getenv(_ENV_ALLOWED_REDIRECT_DOMAINS, '').strip()
+        and not _redirect_uris_are_overridden()
+    )
+    if domains_only:
         logger.warning(
             'ALLOWED_REDIRECT_DOMAINS is set but ALLOWED_REDIRECT_URIS is not; '
             'those hosts are being rejected. List their full callback URIs in '
