@@ -143,24 +143,16 @@ def _redirect_uris_are_overridden() -> bool:
 
 
 def _is_allowed_redirect_host(url: str) -> bool:
-    """Whether the URL's scheme and host clear the legacy host allowlist.
+    """Whether the URL's host clears the legacy host allowlist.
 
-    Loopback hosts may use http or https; every other host must use https, so
-    an authorization code never travels over plaintext. Clearing this check is
-    not sufficient on its own — see _check_redirect_uri.
+    https only, so an authorization code never travels over plaintext.
+    Clearing this check is not sufficient on its own — see _check_redirect_uri.
     """
     parsed = urlparse(url)
-    if parsed.scheme not in ('http', 'https'):
-        return False
-
-    hostname = parsed.hostname or ''
-    if hostname in _ALLOWED_LOOPBACK_HOSTS:
-        return True
-
     if parsed.scheme != 'https':
         return False
 
-    return hostname in _get_allowed_redirect_domains()
+    return (parsed.hostname or '') in _get_allowed_redirect_domains()
 
 
 def _is_exact_allowed_redirect_uri(url: str) -> bool:
@@ -184,10 +176,6 @@ def _is_exact_allowed_redirect_uri(url: str) -> bool:
     return any(pattern.match(url) for pattern in _DEFAULT_REDIRECT_URI_PATTERNS)
 
 
-def _is_loopback_redirect_url(url: str) -> bool:
-    return (urlparse(url).hostname or '') in _ALLOWED_LOOPBACK_HOSTS
-
-
 def _redirect_uri_report_only() -> bool:
     """Escape hatch: recover from a missing allowlist entry without a code change."""
     return os.getenv(_ENV_REDIRECT_URI_REPORT_ONLY, '').lower() == 'true'
@@ -205,11 +193,12 @@ def _check_redirect_uri(url: str) -> bool:
     if _is_exact_allowed_redirect_uri(url):
         return True
 
+    parsed = urlparse(url)
+    if (parsed.hostname or '') in _ALLOWED_LOOPBACK_HOSTS:
+        return parsed.scheme in ('http', 'https')
+
     if not _is_allowed_redirect_host(url):
         return False
-
-    if _is_loopback_redirect_url(url):
-        return True
 
     if _redirect_uri_report_only():
         logger.warning(
