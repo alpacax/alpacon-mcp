@@ -87,11 +87,6 @@ def _get_allowed_redirect_domains() -> tuple[str, ...]:
     return _DEFAULT_REDIRECT_DOMAINS
 
 
-def _redirect_uris_are_overridden() -> bool:
-    """Whether a deployment replaced the built-in endpoint allowlist."""
-    return bool(os.getenv(_ENV_ALLOWED_REDIRECT_URIS, '').strip())
-
-
 def _get_allowed_redirect_uris() -> tuple[str, ...]:
     """Return the allowed non-loopback callback endpoints.
 
@@ -102,6 +97,32 @@ def _get_allowed_redirect_uris() -> tuple[str, ...]:
     if env_uris:
         return tuple(u.strip() for u in env_uris.split(',') if u.strip())
     return _DEFAULT_REDIRECT_URIS
+
+
+def _redirect_uris_are_overridden() -> bool:
+    """Whether a deployment replaced the built-in endpoint allowlist."""
+    return bool(os.getenv(_ENV_ALLOWED_REDIRECT_URIS, '').strip())
+
+
+def _is_allowed_redirect_host(url: str) -> bool:
+    """Whether the URL's scheme and host clear the legacy host allowlist.
+
+    Loopback hosts may use http or https; every other host must use https, so
+    an authorization code never travels over plaintext. Clearing this check is
+    not sufficient on its own — see _check_redirect_uri.
+    """
+    parsed = urlparse(url)
+    if parsed.scheme not in ('http', 'https'):
+        return False
+
+    hostname = parsed.hostname or ''
+    if hostname in _ALLOWED_LOOPBACK_HOSTS:
+        return True
+
+    if parsed.scheme != 'https':
+        return False
+
+    return hostname in _get_allowed_redirect_domains()
 
 
 def _is_exact_allowed_redirect_uri(url: str) -> bool:
@@ -151,7 +172,7 @@ def _check_redirect_uri(url: str) -> bool:
     if _is_exact_allowed_redirect_uri(url):
         return True
 
-    if not _is_allowed_redirect_url(url):
+    if not _is_allowed_redirect_host(url):
         return False
 
     if _is_loopback_redirect_url(url):
@@ -182,32 +203,6 @@ def _log_authorize_client_profile(
         redirect_uri or '(none)',
         code_challenge_method or 'none',
     )
-
-
-def _is_allowed_redirect_url(url: str) -> bool:
-    """Validate that a redirect URL is allowed.
-
-    Allows localhost URLs (http/https) and trusted redirect domains (https only).
-    Non-loopback domains must use https to prevent authorization code leakage
-    over plaintext connections.
-    """
-    parsed = urlparse(url)
-    if parsed.scheme not in ('http', 'https'):
-        return False
-
-    hostname = parsed.hostname or ''
-
-    # Allow localhost with http or https (for local development)
-    if hostname in _ALLOWED_LOOPBACK_HOSTS:
-        return True
-
-    # Trusted domains must use https to prevent code leakage via plaintext
-    if parsed.scheme != 'https':
-        return False
-
-    # Allow trusted redirect domains (exact match)
-    allowed_domains = _get_allowed_redirect_domains()
-    return hostname in allowed_domains
 
 
 def _build_redirect_url(base_url: str, extra_params: dict) -> str:
