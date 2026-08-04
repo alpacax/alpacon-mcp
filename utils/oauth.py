@@ -12,6 +12,7 @@ import base64
 import json
 import os
 import re
+from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 import httpx
 
@@ -104,8 +105,6 @@ def _is_exact_allowed_redirect_uri(url: str) -> bool:
     https only: a pinned endpoint bypasses the host allowlist, so the scheme
     check that keeps authorization codes off plaintext lives here too.
     """
-    from urllib.parse import urlparse
-
     parsed = urlparse(url)
     if parsed.scheme != 'https' or parsed.query or parsed.fragment:
         return False
@@ -123,8 +122,6 @@ def _is_exact_allowed_redirect_uri(url: str) -> bool:
 
 def _is_loopback_redirect_url(url: str) -> bool:
     """Whether the callback points back at the client's own machine."""
-    from urllib.parse import urlparse
-
     return (urlparse(url).hostname or '') in _ALLOWED_LOOPBACK_HOSTS
 
 
@@ -189,8 +186,6 @@ def _is_allowed_redirect_url(url: str) -> bool:
     Non-loopback domains must use https to prevent authorization code leakage
     over plaintext connections.
     """
-    from urllib.parse import urlparse
-
     parsed = urlparse(url)
     if parsed.scheme not in ('http', 'https'):
         return False
@@ -212,8 +207,6 @@ def _is_allowed_redirect_url(url: str) -> bool:
 
 def _build_redirect_url(base_url: str, extra_params: dict) -> str:
     """Safely merge query params into a URL, preserving existing params."""
-    from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
-
     parsed = urlparse(base_url)
     existing_params = parse_qs(parsed.query, keep_blank_values=True)
     merged = {k: v[0] if len(v) == 1 else v for k, v in existing_params.items()}
@@ -310,8 +303,6 @@ def register_oauth_routes(mcp_server):
         Proxies the OAuth authorize request to Auth0, adding the
         configured client_id and audience.
         """
-        from urllib.parse import urlencode
-
         from starlette.responses import RedirectResponse
 
         try:
@@ -471,8 +462,6 @@ def register_oauth_routes(mcp_server):
                 )
         else:
             # application/x-www-form-urlencoded (standard OAuth)
-            from urllib.parse import parse_qs
-
             try:
                 decoded_body = body.decode('utf-8')
             except UnicodeDecodeError:
@@ -705,8 +694,6 @@ def register_oauth_routes(mcp_server):
           regular audience (Stage 2) using Auth0 SSO session.
         - Stage 'regular' or absent: forward code to MCP client.
         """
-        from urllib.parse import urlencode
-
         from starlette.responses import JSONResponse, RedirectResponse
 
         # Extract callback parameters
