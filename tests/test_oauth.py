@@ -75,6 +75,49 @@ def _mock_auth0_response(status_code=200, json_data=None):
     return mock_client
 
 
+class TestAllowedRedirectUris:
+    """Tests for the endpoint-level redirect_uri allowlist configuration."""
+
+    def test_defaults_cover_known_remote_clients(self):
+        from utils.oauth import _get_allowed_redirect_uris
+
+        uris = _get_allowed_redirect_uris()
+        assert 'https://claude.ai/api/mcp/auth_callback' in uris
+        assert 'https://claude.com/api/mcp/auth_callback' in uris
+        assert 'https://chatgpt.com/connector_platform_oauth_redirect' in uris
+        assert 'https://www.cursor.com/agents/mcp/oauth/callback' in uris
+        assert 'https://vscode.dev/redirect/' in uris
+        assert 'https://antigravity.google/oauth-callback' in uris
+        assert 'https://global.consent.azure-apim.net/redirect' in uris
+
+    def test_env_override_replaces_defaults(self):
+        from utils.oauth import _get_allowed_redirect_uris
+
+        with patch.dict(
+            'os.environ',
+            {'ALLOWED_REDIRECT_URIS': 'https://a.example/cb, https://b.example/cb'},
+        ):
+            assert _get_allowed_redirect_uris() == (
+                'https://a.example/cb',
+                'https://b.example/cb',
+            )
+
+    def test_warns_when_only_legacy_domain_var_is_set(self, caplog):
+        from utils.oauth import register_oauth_routes
+
+        class MockMCPServer:
+            def custom_route(self, path, methods=None):
+                return lambda func: func
+
+        with patch.dict(
+            'os.environ', {'ALLOWED_REDIRECT_DOMAINS': 'custom.example.com'}
+        ):
+            with caplog.at_level('WARNING'):
+                register_oauth_routes(MockMCPServer())
+
+        assert 'ALLOWED_REDIRECT_URIS' in caplog.text
+
+
 class TestOAuthMetadata:
     """Tests for /.well-known/oauth-authorization-server endpoint."""
 

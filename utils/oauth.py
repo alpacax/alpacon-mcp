@@ -29,6 +29,25 @@ _DEFAULT_REDIRECT_DOMAINS = (
     'chat.openai.com',
 )
 
+# Endpoint-level allowlist for non-loopback clients. Trusting a whole domain
+# lets an authorization code land on any path an attacker can influence there,
+# so each entry pins one callback endpoint.
+_DEFAULT_REDIRECT_URIS = (
+    # Anthropic — hosted surfaces (web, Desktop, mobile, Cowork)
+    'https://claude.ai/api/mcp/auth_callback',
+    'https://claude.com/api/mcp/auth_callback',
+    # OpenAI — legacy connector callback, still served for published apps
+    'https://chatgpt.com/connector_platform_oauth_redirect',
+    # Cursor — web and Cursor Agents
+    'https://www.cursor.com/agents/mcp/oauth/callback',
+    # VS Code / GitHub Copilot — web
+    'https://vscode.dev/redirect/',
+    # Google Antigravity
+    'https://antigravity.google/oauth-callback',
+    # Microsoft Copilot Studio, via the Power Platform connector gateway
+    'https://global.consent.azure-apim.net/redirect',
+)
+
 
 def _get_server_url(request) -> str:
     """Build the MCP server's base URL from config or request.
@@ -52,6 +71,18 @@ def _get_allowed_redirect_domains() -> tuple[str, ...]:
     if env_domains:
         return tuple(d.strip().lower() for d in env_domains.split(',') if d.strip())
     return _DEFAULT_REDIRECT_DOMAINS
+
+
+def _get_allowed_redirect_uris() -> tuple[str, ...]:
+    """Return the allowed non-loopback callback endpoints.
+
+    Reads from ALLOWED_REDIRECT_URIS env var (comma-separated full URIs).
+    Falls back to _DEFAULT_REDIRECT_URIS if not set.
+    """
+    env_uris = os.getenv('ALLOWED_REDIRECT_URIS', '').strip()
+    if env_uris:
+        return tuple(u.strip() for u in env_uris.split(',') if u.strip())
+    return _DEFAULT_REDIRECT_URIS
 
 
 def _is_allowed_redirect_url(url: str) -> bool:
@@ -779,6 +810,12 @@ def register_oauth_routes(mcp_server):
         """
         logger.info('/register fallback hit — delegating to /oauth/register handler')
         return await oauth_register(request)
+
+    if os.getenv('ALLOWED_REDIRECT_DOMAINS') and not os.getenv('ALLOWED_REDIRECT_URIS'):
+        logger.warning(
+            'ALLOWED_REDIRECT_DOMAINS is set but ALLOWED_REDIRECT_URIS is not; '
+            'those hosts will be rejected once redirect_uri enforcement is enabled'
+        )
 
     logger.info(
         'OAuth proxy routes registered (including /token, /authorize, /register fallbacks)'
