@@ -169,6 +169,98 @@ class TestExactRedirectUriMatch:
             )
 
 
+REPORT_ONLY = {'ALPACON_MCP_REDIRECT_URI_REPORT_ONLY': 'true'}
+
+
+class TestRedirectUriGate:
+    """Tests for the redirect_uri endpoint gate."""
+
+    def test_rejects_untracked_path_by_default(self):
+        from utils.oauth import _check_redirect_uri
+
+        assert not _check_redirect_uri('https://chatgpt.com/evil/path')
+
+    def test_allows_listed_endpoint(self):
+        from utils.oauth import _check_redirect_uri
+
+        assert _check_redirect_uri('https://claude.ai/api/mcp/auth_callback')
+
+    def test_keeps_every_loopback_path(self):
+        from utils.oauth import _check_redirect_uri
+
+        assert _check_redirect_uri('http://localhost:1234/callback')
+        assert _check_redirect_uri('http://localhost:1234/oauth/callback')
+        assert _check_redirect_uri('http://127.0.0.1:33418/')
+
+    def test_untrusted_domain_is_rejected_in_either_mode(self):
+        from utils.oauth import _check_redirect_uri
+
+        assert not _check_redirect_uri('https://evil.com/cb')
+        with patch.dict('os.environ', REPORT_ONLY):
+            assert not _check_redirect_uri('https://evil.com/cb')
+
+    def test_report_only_allows_untracked_path_with_a_warning(self, caplog):
+        from utils.oauth import _check_redirect_uri
+
+        with patch.dict('os.environ', REPORT_ONLY):
+            with caplog.at_level('WARNING'):
+                assert _check_redirect_uri('https://chatgpt.com/evil/path')
+        assert 'report-only' in caplog.text
+
+    def test_authorize_rejects_untracked_path(self, oauth_app):
+        response = oauth_app.get(
+            '/oauth/authorize',
+            params={
+                'response_type': 'code',
+                'redirect_uri': 'https://chatgpt.com/evil/path',
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == 400
+
+    def test_callback_does_not_relay_to_untracked_path(self, oauth_app):
+        composite = _make_composite_state('https://chatgpt.com/evil/path', 'xyz')
+        response = oauth_app.get(
+            '/oauth/callback',
+            params={'code': 'auth-code', 'state': composite},
+            follow_redirects=False,
+        )
+        assert 'location' not in response.headers
+
+
+class TestAuthorizeObservation:
+    """Tests for the observation-window log line."""
+
+    def test_logs_redirect_uri_and_pkce_method(self, oauth_app, caplog):
+        with caplog.at_level('INFO'):
+            oauth_app.get(
+                '/oauth/authorize',
+                params={
+                    'response_type': 'code',
+                    'redirect_uri': 'https://claude.ai/api/mcp/auth_callback',
+                    'code_challenge': 'abc',
+                    'code_challenge_method': 'S256',
+                },
+                follow_redirects=False,
+            )
+
+        assert 'https://claude.ai/api/mcp/auth_callback' in caplog.text
+        assert 'S256' in caplog.text
+
+    def test_records_absent_pkce(self, oauth_app, caplog):
+        with caplog.at_level('INFO'):
+            oauth_app.get(
+                '/oauth/authorize',
+                params={
+                    'response_type': 'code',
+                    'redirect_uri': 'https://claude.ai/api/mcp/auth_callback',
+                },
+                follow_redirects=False,
+            )
+
+        assert 'pkce: none' in caplog.text
+
+
 class TestOAuthMetadata:
     """Tests for /.well-known/oauth-authorization-server endpoint."""
 
@@ -315,12 +407,15 @@ class TestOAuthAuthorize:
         )
         assert response.status_code == 302
 
-    def test_authorize_allows_custom_redirect_domains(self, oauth_app):
-        """Custom ALLOWED_REDIRECT_DOMAINS env var should override defaults."""
+    def test_authorize_allows_custom_redirect_uris(self, oauth_app):
+        """Overriding both env vars admits a custom endpoint and drops the defaults."""
         with patch.dict(
-            'os.environ', {'ALLOWED_REDIRECT_DOMAINS': 'custom.example.com'}
+            'os.environ',
+            {
+                'ALLOWED_REDIRECT_DOMAINS': 'custom.example.com',
+                'ALLOWED_REDIRECT_URIS': 'https://custom.example.com/callback',
+            },
         ):
-            # Custom domain should be allowed
             response = oauth_app.get(
                 '/oauth/authorize',
                 params={
@@ -331,7 +426,7 @@ class TestOAuthAuthorize:
             )
             assert response.status_code == 302
 
-            # Default domains should no longer be allowed when overridden
+            # Default endpoints should no longer be allowed when overridden
             response = oauth_app.get(
                 '/oauth/authorize',
                 params={
@@ -340,6 +435,25 @@ class TestOAuthAuthorize:
                 },
             )
             assert response.status_code == 400
+
+    def test_authorize_rejects_domain_override_without_uri_override(self, oauth_app):
+        """ALLOWED_REDIRECT_DOMAINS alone no longer admits a host.
+
+        Breaking change: the domain list clears the host check, but the endpoint
+        allowlist still has to list the callback URI.
+        """
+        with patch.dict(
+            'os.environ', {'ALLOWED_REDIRECT_DOMAINS': 'custom.example.com'}
+        ):
+            response = oauth_app.get(
+                '/oauth/authorize',
+                params={
+                    'response_type': 'code',
+                    'redirect_uri': 'https://custom.example.com/callback',
+                },
+                follow_redirects=False,
+            )
+        assert response.status_code == 400
 
     def test_authorize_rejects_http_trusted_domain(self, oauth_app):
         """Trusted domains must use https to prevent code leakage over plaintext."""

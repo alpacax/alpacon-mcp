@@ -106,6 +106,61 @@ def _is_exact_allowed_redirect_uri(url: str) -> bool:
     return any(pattern.match(url) for pattern in _DEFAULT_REDIRECT_URI_PATTERNS)
 
 
+def _is_loopback_redirect_url(url: str) -> bool:
+    """Whether the callback points back at the client's own machine."""
+    from urllib.parse import urlparse
+
+    return (urlparse(url).hostname or '') in _ALLOWED_LOOPBACK_HOSTS
+
+
+def _redirect_uri_report_only() -> bool:
+    """Escape hatch: log allowlist misses instead of rejecting them.
+
+    Lets a deployment recover from a missing allowlist entry without waiting
+    for a code change.
+    """
+    return os.getenv('ALPACON_MCP_REDIRECT_URI_REPORT_ONLY', '').lower() == 'true'
+
+
+def _check_redirect_uri(url: str) -> bool:
+    """Decide whether a client redirect_uri may receive an authorization code.
+
+    Loopback is exempt: callback paths differ per client (/callback,
+    /oauth/callback, /) and pinning them would break clients without closing
+    the local-listener risk, which browser-session binding handles instead.
+    """
+    if not _is_allowed_redirect_url(url):
+        return False
+
+    if _is_loopback_redirect_url(url) or _is_exact_allowed_redirect_uri(url):
+        return True
+
+    if _redirect_uri_report_only():
+        logger.warning(
+            'redirect_uri is outside the endpoint allowlist and is allowed only '
+            'because report-only mode is on: %s',
+            url,
+        )
+        return True
+
+    logger.warning('Rejected redirect_uri outside the endpoint allowlist: %s', url)
+    return False
+
+
+def _log_authorize_client_profile(
+    redirect_uri: str, code_challenge_method: str
+) -> None:
+    """Record what each client sends, to settle the allowlist and PKCE questions.
+
+    Remove once the endpoint allowlist is enforced and PKCE is required.
+    """
+    logger.info(
+        'authorize observed - redirect_uri: %s, pkce: %s',
+        redirect_uri or '(none)',
+        code_challenge_method or 'none',
+    )
+
+
 def _is_allowed_redirect_url(url: str) -> bool:
     """Validate that a redirect URL is allowed.
 
@@ -285,7 +340,10 @@ def register_oauth_routes(mcp_server):
         # Allow localhost and trusted cloud MCP client domains to prevent
         # open redirect attacks while supporting Claude web, ChatGPT, etc.
         client_redirect_uri = params.get('redirect_uri', '')
-        if client_redirect_uri and not _is_allowed_redirect_url(client_redirect_uri):
+        _log_authorize_client_profile(
+            client_redirect_uri, params.get('code_challenge_method', '')
+        )
+        if client_redirect_uri and not _check_redirect_uri(client_redirect_uri):
             from starlette.responses import JSONResponse
 
             return JSONResponse(
@@ -664,7 +722,7 @@ def register_oauth_routes(mcp_server):
         # Defense-in-depth: re-validate redirect_uri from state is allowed.
         # The authorize endpoint already validates this, but an attacker could craft
         # a composite state directly and hit Auth0 with our callback URL.
-        if client_redirect_uri and not _is_allowed_redirect_url(client_redirect_uri):
+        if client_redirect_uri and not _check_redirect_uri(client_redirect_uri):
             logger.warning(
                 f'Callback rejected untrusted redirect_uri from state: '
                 f'{client_redirect_uri}'
@@ -835,7 +893,9 @@ def register_oauth_routes(mcp_server):
     if os.getenv('ALLOWED_REDIRECT_DOMAINS') and not os.getenv('ALLOWED_REDIRECT_URIS'):
         logger.warning(
             'ALLOWED_REDIRECT_DOMAINS is set but ALLOWED_REDIRECT_URIS is not; '
-            'those hosts will be rejected once redirect_uri enforcement is enabled'
+            'those hosts are being rejected. List their full callback URIs in '
+            'ALLOWED_REDIRECT_URIS, or set ALPACON_MCP_REDIRECT_URI_REPORT_ONLY=true '
+            'to fall back to logging only'
         )
 
     logger.info(
