@@ -46,14 +46,12 @@ _STATE_TTL_SECONDS = 600
 
 _ALLOWED_LOOPBACK_HOSTS = ('localhost', '127.0.0.1', '::1')
 
-# Each env var is read from more than one place, so name it once.
 _ENV_ALLOWED_REDIRECT_DOMAINS = 'ALLOWED_REDIRECT_DOMAINS'
 _ENV_ALLOWED_REDIRECT_URIS = 'ALLOWED_REDIRECT_URIS'
 _ENV_REDIRECT_URI_REPORT_ONLY = 'ALPACON_MCP_REDIRECT_URI_REPORT_ONLY'
 
-# Endpoint-level allowlist for non-loopback clients. Trusting a whole domain
-# lets an authorization code land on any path an attacker can influence there,
-# so each entry pins one callback endpoint.
+# Trusting a whole domain lets an authorization code land on any path an
+# attacker can influence there, so each entry pins one callback endpoint.
 _DEFAULT_REDIRECT_URIS = (
     # Anthropic — hosted surfaces (web, Desktop, mobile, Cowork)
     'https://claude.ai/api/mcp/auth_callback',
@@ -64,7 +62,6 @@ _DEFAULT_REDIRECT_URIS = (
     'https://www.cursor.com/agents/mcp/oauth/callback',
     # VS Code / GitHub Copilot — web
     'https://vscode.dev/redirect/',
-    # Google Antigravity
     'https://antigravity.google/oauth-callback',
     # Microsoft Copilot Studio, via the Power Platform connector gateway
     'https://global.consent.azure-apim.net/redirect',
@@ -77,11 +74,10 @@ _DEFAULT_REDIRECT_URI_PATTERNS = (
     re.compile(r'^https://chatgpt\.com/connector/oauth/[A-Za-z0-9_-]{1,64}\Z'),
 )
 
-# Hosts that report-only mode may fall back to when a client's callback endpoint
-# is not listed above — derived from that list, so a client whose endpoint moves
-# is covered by the escape hatch without a second edit. chat.openai.com has no
-# endpoint entry and stays as the legacy OpenAI host. Override via the
-# ALLOWED_REDIRECT_DOMAINS env var (comma-separated).
+# Hosts report-only mode may fall back to, derived from the endpoint list so a
+# client whose endpoint moves stays covered without a second edit.
+# chat.openai.com has no endpoint entry and stays as the legacy OpenAI host.
+# Override via ALLOWED_REDIRECT_DOMAINS (comma-separated).
 _DEFAULT_REDIRECT_DOMAINS = tuple(
     sorted(
         {host for uri in _DEFAULT_REDIRECT_URIS if (host := urlparse(uri).hostname)}
@@ -93,8 +89,7 @@ _DEFAULT_REDIRECT_DOMAINS = tuple(
 def _escape_for_log(value: str) -> str:
     """Escape control characters in a client-supplied value.
 
-    A raw newline in redirect_uri would otherwise let a client write what looks
-    like a second log line.
+    A raw newline would otherwise let a client forge a second log line.
     """
     return ''.join(c if c.isprintable() else repr(c)[1:-1] for c in value)
 
@@ -126,8 +121,7 @@ def _get_allowed_redirect_domains() -> tuple[str, ...]:
 def _get_allowed_redirect_uris() -> tuple[str, ...]:
     """Return the allowed non-loopback callback endpoints.
 
-    Reads from ALLOWED_REDIRECT_URIS env var (comma-separated full URIs).
-    Falls back to _DEFAULT_REDIRECT_URIS if not set.
+    Reads ALLOWED_REDIRECT_URIS (comma-separated full URIs) when set.
     """
     env_uris = os.getenv(_ENV_ALLOWED_REDIRECT_URIS, '').strip()
     if env_uris:
@@ -136,7 +130,6 @@ def _get_allowed_redirect_uris() -> tuple[str, ...]:
 
 
 def _redirect_uris_are_overridden() -> bool:
-    """Whether a deployment replaced the built-in endpoint allowlist."""
     return bool(os.getenv(_ENV_ALLOWED_REDIRECT_URIS, '').strip())
 
 
@@ -183,16 +176,11 @@ def _is_exact_allowed_redirect_uri(url: str) -> bool:
 
 
 def _is_loopback_redirect_url(url: str) -> bool:
-    """Whether the callback points back at the client's own machine."""
     return (urlparse(url).hostname or '') in _ALLOWED_LOOPBACK_HOSTS
 
 
 def _redirect_uri_report_only() -> bool:
-    """Escape hatch: log allowlist misses instead of rejecting them.
-
-    Lets a deployment recover from a missing allowlist entry without waiting
-    for a code change.
-    """
+    """Escape hatch: recover from a missing allowlist entry without a code change."""
     return os.getenv(_ENV_REDIRECT_URI_REPORT_ONLY, '').lower() == 'true'
 
 
@@ -458,8 +446,6 @@ def register_oauth_routes(mcp_server):
         server_url = _get_server_url(request)
 
         # Save client's original redirect_uri to relay the code later.
-        # Only loopback and allowlisted callback endpoints may receive the code,
-        # so an open redirect cannot carry it to an attacker.
         client_redirect_uri = params.get('redirect_uri', '')
         _log_authorize_client_profile(
             client_redirect_uri, params.get('code_challenge_method', '')
