@@ -23,6 +23,11 @@ logger = get_logger('oauth')
 
 _ALLOWED_LOOPBACK_HOSTS = ('localhost', '127.0.0.1', '::1')
 
+# Each env var is read from more than one place, so name it once.
+_ENV_ALLOWED_REDIRECT_DOMAINS = 'ALLOWED_REDIRECT_DOMAINS'
+_ENV_ALLOWED_REDIRECT_URIS = 'ALLOWED_REDIRECT_URIS'
+_ENV_REDIRECT_URI_REPORT_ONLY = 'ALPACON_MCP_REDIRECT_URI_REPORT_ONLY'
+
 # Hosts that report-only mode may fall back to when a callback endpoint is not
 # yet listed below. Override via ALLOWED_REDIRECT_DOMAINS env var (comma-separated).
 _DEFAULT_REDIRECT_DOMAINS = (
@@ -76,7 +81,7 @@ def _get_allowed_redirect_domains() -> tuple[str, ...]:
     Reads from ALLOWED_REDIRECT_DOMAINS env var (comma-separated).
     Falls back to _DEFAULT_REDIRECT_DOMAINS if not set.
     """
-    env_domains = os.getenv('ALLOWED_REDIRECT_DOMAINS', '').strip()
+    env_domains = os.getenv(_ENV_ALLOWED_REDIRECT_DOMAINS, '').strip()
     if env_domains:
         return tuple(d.strip().lower() for d in env_domains.split(',') if d.strip())
     return _DEFAULT_REDIRECT_DOMAINS
@@ -84,7 +89,7 @@ def _get_allowed_redirect_domains() -> tuple[str, ...]:
 
 def _redirect_uris_are_overridden() -> bool:
     """Whether a deployment replaced the built-in endpoint allowlist."""
-    return bool(os.getenv('ALLOWED_REDIRECT_URIS', '').strip())
+    return bool(os.getenv(_ENV_ALLOWED_REDIRECT_URIS, '').strip())
 
 
 def _get_allowed_redirect_uris() -> tuple[str, ...]:
@@ -93,7 +98,7 @@ def _get_allowed_redirect_uris() -> tuple[str, ...]:
     Reads from ALLOWED_REDIRECT_URIS env var (comma-separated full URIs).
     Falls back to _DEFAULT_REDIRECT_URIS if not set.
     """
-    env_uris = os.getenv('ALLOWED_REDIRECT_URIS', '').strip()
+    env_uris = os.getenv(_ENV_ALLOWED_REDIRECT_URIS, '').strip()
     if env_uris:
         return tuple(u.strip() for u in env_uris.split(',') if u.strip())
     return _DEFAULT_REDIRECT_URIS
@@ -131,7 +136,7 @@ def _redirect_uri_report_only() -> bool:
     Lets a deployment recover from a missing allowlist entry without waiting
     for a code change.
     """
-    return os.getenv('ALPACON_MCP_REDIRECT_URI_REPORT_ONLY', '').lower() == 'true'
+    return os.getenv(_ENV_REDIRECT_URI_REPORT_ONLY, '').lower() == 'true'
 
 
 def _check_redirect_uri(url: str) -> bool:
@@ -899,7 +904,9 @@ def register_oauth_routes(mcp_server):
         logger.info('/register fallback hit — delegating to /oauth/register handler')
         return await oauth_register(request)
 
-    if os.getenv('ALLOWED_REDIRECT_DOMAINS') and not os.getenv('ALLOWED_REDIRECT_URIS'):
+    if os.getenv(_ENV_ALLOWED_REDIRECT_DOMAINS) and not os.getenv(
+        _ENV_ALLOWED_REDIRECT_URIS
+    ):
         logger.warning(
             'ALLOWED_REDIRECT_DOMAINS is set but ALLOWED_REDIRECT_URIS is not; '
             'those hosts are being rejected. List their full callback URIs in '
