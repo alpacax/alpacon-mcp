@@ -60,25 +60,38 @@ def _set_oauth_env():
         yield
 
 
+class MockMCPServer:
+    """Stands in for FastMCP, collecting whatever register_oauth_routes registers."""
+
+    def __init__(self):
+        self.routes = []
+
+    def custom_route(self, path, methods=None):
+        def decorator(func):
+            self.routes.append(Route(path, func, methods=methods))
+            return func
+
+        return decorator
+
+
 @pytest.fixture
 def oauth_app():
     """Create a minimal Starlette app with OAuth routes registered."""
-    routes = []
-
-    class MockMCPServer:
-        def custom_route(self, path, methods=None):
-            def decorator(func):
-                routes.append(Route(path, func, methods=methods))
-                return func
-
-            return decorator
-
     mock_server = MockMCPServer()
-
     register_oauth_routes(mock_server)
+    return TestClient(
+        Starlette(routes=mock_server.routes), raise_server_exceptions=False
+    )
 
-    app = Starlette(routes=routes)
-    return TestClient(app, raise_server_exceptions=False)
+
+def _forge_state_under_valid_signature():
+    """A state whose payload was swapped out after signing, keeping the signature."""
+    signed = _sign_state({'redirect_uri': TRUSTED_REDIRECT_URI})
+    _, _, signature = signed.rpartition('.')
+    forged = base64.urlsafe_b64encode(
+        json.dumps({'redirect_uri': EVIL_REDIRECT_URI, 'exp': FAR_FUTURE_EXP}).encode()
+    ).decode()
+    return f'{forged}.{signature}'
 
 
 def _mock_auth0_response(status_code=200, json_data=None):
@@ -110,10 +123,6 @@ class TestStateSecret:
         assert _get_state_secret() == _get_state_secret()
 
     def test_registration_logs_state_secret_source(self, caplog):
-        class MockMCPServer:
-            def custom_route(self, path, methods=None):
-                return lambda func: func
-
         with caplog.at_level('INFO'):
             register_oauth_routes(MockMCPServer())
 
@@ -134,14 +143,7 @@ class TestStateEnvelope:
         assert payload['exp'] <= int(time.time()) + _STATE_TTL_SECONDS
 
     def test_tampered_payload_is_rejected(self):
-        signed = _sign_state({'redirect_uri': TRUSTED_REDIRECT_URI, 'state': ''})
-        _, _, sig = signed.rpartition('.')
-        forged = base64.urlsafe_b64encode(
-            json.dumps(
-                {'redirect_uri': EVIL_REDIRECT_URI, 'exp': FAR_FUTURE_EXP}
-            ).encode()
-        ).decode()
-        assert _verify_state(f'{forged}.{sig}') is None
+        assert _verify_state(_forge_state_under_valid_signature()) is None
 
     def test_unsigned_state_is_rejected(self):
         unsigned = base64.urlsafe_b64encode(
@@ -538,16 +540,6 @@ class TestOAuthToken:
 
     def test_token_fails_without_client_secret(self):
         """Token endpoint should return 500 when AUTH0_CLIENT_SECRET is missing."""
-        routes = []
-
-        class MockMCPServer:
-            def custom_route(self, path, methods=None):
-                def decorator(func):
-                    routes.append(Route(path, func, methods=methods))
-                    return func
-
-                return decorator
-
         env_without_secret = {
             'AUTH0_DOMAIN': TEST_AUTH0_DOMAIN,
             'AUTH0_CLIENT_ID': TEST_CLIENT_ID,
@@ -561,7 +553,7 @@ class TestOAuthToken:
             # Unset AUTH0_CLIENT_SECRET if present
             with patch.dict('os.environ', {'AUTH0_CLIENT_SECRET': ''}, clear=False):
                 register_oauth_routes(mock_server)
-                app = Starlette(routes=routes)
+                app = Starlette(routes=mock_server.routes)
                 client = TestClient(app, raise_server_exceptions=False)
                 response = client.post(
                     '/oauth/token',
@@ -805,16 +797,9 @@ class TestOAuthCallback:
 
     def test_callback_rejects_tampered_state(self, oauth_app):
         """Swapping the payload under a valid signature must be rejected."""
-        signed = _sign_state({'redirect_uri': TRUSTED_REDIRECT_URI})
-        _, _, sig = signed.rpartition('.')
-        forged = base64.urlsafe_b64encode(
-            json.dumps(
-                {'redirect_uri': EVIL_REDIRECT_URI, 'exp': FAR_FUTURE_EXP}
-            ).encode()
-        ).decode()
         response = oauth_app.get(
             '/oauth/callback',
-            params={'code': 'auth-code', 'state': f'{forged}.{sig}'},
+            params={'code': 'auth-code', 'state': _forge_state_under_valid_signature()},
             follow_redirects=False,
         )
         assert response.status_code == 400
