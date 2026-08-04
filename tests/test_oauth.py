@@ -27,6 +27,11 @@ OAUTH_ENV = {
     'AUTH0_AUDIENCE': 'https://alpacon.io/access/',
     'ALPACON_MCP_AUTH_ENABLED': 'true',
     'ALPACON_MCP_RESOURCE_URL': TEST_RESOURCE_URL,
+    # Pinned empty so a developer's exported redirect_uri settings cannot
+    # invert the default-behavior assertions below.
+    'ALLOWED_REDIRECT_URIS': '',
+    'ALLOWED_REDIRECT_DOMAINS': '',
+    'ALPACON_MCP_REDIRECT_URI_REPORT_ONLY': '',
 }
 
 
@@ -155,7 +160,9 @@ class TestExactRedirectUriMatch:
         assert not _is_exact_allowed_redirect_uri(
             'https://chatgpt.com/connector/oauth/abc/evil'
         )
-        assert not _is_exact_allowed_redirect_uri('https://chatgpt.com/connector/oauth/')
+        assert not _is_exact_allowed_redirect_uri(
+            'https://chatgpt.com/connector/oauth/'
+        )
 
     def test_env_override_is_honoured(self):
         from utils.oauth import _is_exact_allowed_redirect_uri
@@ -176,9 +183,7 @@ class TestExactRedirectUriMatch:
     def test_plaintext_uri_is_rejected(self):
         from utils.oauth import _is_exact_allowed_redirect_uri
 
-        with patch.dict(
-            'os.environ', {'ALLOWED_REDIRECT_URIS': 'http://a.example/cb'}
-        ):
+        with patch.dict('os.environ', {'ALLOWED_REDIRECT_URIS': 'http://a.example/cb'}):
             assert not _is_exact_allowed_redirect_uri('http://a.example/cb')
 
 
@@ -246,6 +251,8 @@ class TestRedirectUriGate:
             params={'code': 'auth-code', 'state': composite},
             follow_redirects=False,
         )
+        # 200 as well as the missing header: a 500 would also have no location.
+        assert response.status_code == 200
         assert 'location' not in response.headers
 
 
