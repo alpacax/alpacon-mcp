@@ -3,6 +3,7 @@
 import pytest
 
 from utils.common import (
+    _ERROR_CODE_HINT,
     _NEXT_ACTION_BY_CATEGORY,
     _WORK_SESSION_GATE_CODES,
     _WORK_SESSION_GATE_NEXT_ACTION,
@@ -122,7 +123,11 @@ class TestUnwrapHttpResultGate:
             self._envelope('some_other_error'), default_message='failed'
         )
         assert out['status'] == 'error'
-        assert 'code' not in out  # generic path does not attach a gate code
+        # Generic path does not route through the gate-response shape...
+        assert 'code' not in out
+        assert 'next_action' not in out
+        # ...but the server's error code must still surface, not be dropped.
+        assert out['error_code'] == 'some_other_error'
 
     def test_non_json_body_is_generic_error(self):
         env = {
@@ -132,14 +137,47 @@ class TestUnwrapHttpResultGate:
         }
         out = unwrap_http_result(env, default_message='failed')
         assert out['status'] == 'error'
+        assert 'error_code' not in out
 
     def test_no_response_key_is_generic_error(self):
         env = {'error': 'HTTP Error', 'status_code': 500, 'message': 'boom'}
         out = unwrap_http_result(env, default_message='failed')
         assert out['status'] == 'error'
+        assert 'error_code' not in out
+        assert out['message'] == 'boom'
 
     def test_success_envelope_returns_none(self):
         assert unwrap_http_result({'status': 'success'}, default_message='x') is None
+
+    def test_command_inline_credential_gets_actionable_hint(self):
+        out = unwrap_http_result(
+            self._envelope('command_inline_credential'), default_message='failed'
+        )
+        assert out['status'] == 'error'
+        assert out['error_code'] == 'command_inline_credential'
+        assert 'env' in out['message']
+        assert 'audit log' in out['message']
+
+    def test_unhinted_code_has_no_hint_text_appended(self):
+        out = unwrap_http_result(
+            self._envelope('some_other_error'), default_message='failed'
+        )
+        # No entry in _ERROR_CODE_HINT for this code: message is untouched.
+        assert out['message'] == 'HTTP 400'
+
+
+class TestErrorCodeHint:
+    def test_command_inline_credential_names_env_and_reason(self):
+        hint = _ERROR_CODE_HINT['command_inline_credential']
+        assert 'env' in hint
+        assert 'audit log' in hint
+        # No new opt-in param: this hint must not tell the agent to pass one.
+        assert 'credential_exposure_acknowledged' not in hint
+
+    def test_gate_codes_have_no_hint_entries(self):
+        # Gate codes are handled entirely by work_session_gate_response;
+        # _ERROR_CODE_HINT is only consulted on the generic error path.
+        assert not (set(_ERROR_CODE_HINT) & _WORK_SESSION_GATE_CODES)
 
 
 class TestResolveWorkSessionId:
