@@ -314,6 +314,10 @@ class TestAuthorizeObservation:
         assert 'cb\\nforged line' in caplog.text
         assert 'cb\nforged line' not in caplog.text
 
+
+class TestEscapeForLog:
+    """Tests for the client-value escaping helper."""
+
     def test_truncates_an_oversized_value(self):
         escaped = _escape_for_log('a' * (_LOG_VALUE_MAX_CHARS + 100))
 
