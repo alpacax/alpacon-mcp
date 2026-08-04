@@ -20,6 +20,7 @@ from starlette.routing import Route
 from starlette.testclient import TestClient
 
 from utils.oauth import (
+    _STATE_SECRET_ENV,
     _STATE_SECRET_INFO,
     _STATE_TTL_SECONDS,
     _build_state,
@@ -110,7 +111,7 @@ class TestStateSecret:
     """Tests for state signing key derivation."""
 
     def test_explicit_env_secret_wins(self):
-        with patch.dict('os.environ', {'ALPACON_MCP_STATE_SECRET': 'explicit-key'}):
+        with patch.dict('os.environ', {_STATE_SECRET_ENV: 'explicit-key'}):
             assert _get_state_secret() == b'explicit-key'
 
     def test_derives_from_client_secret_when_env_unset(self):
