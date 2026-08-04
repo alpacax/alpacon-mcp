@@ -111,8 +111,19 @@ class TestStateSecret:
     """Tests for state signing key derivation."""
 
     def test_explicit_env_secret_wins(self):
-        with patch.dict('os.environ', {_STATE_SECRET_ENV: 'explicit-key'}):
-            assert _get_state_secret() == b'explicit-key'
+        with patch.dict('os.environ', {_STATE_SECRET_ENV: 'a1' * 32}):
+            assert _get_state_secret() == b'\xa1' * 32
+
+    def test_rejects_non_hex_explicit_secret(self):
+        # A typed passphrase is the weak key this check exists to keep out.
+        with patch.dict('os.environ', {_STATE_SECRET_ENV: 'correct-horse-battery'}):
+            with pytest.raises(ValueError, match='must be hex'):
+                _get_state_secret()
+
+    def test_rejects_short_explicit_secret(self):
+        with patch.dict('os.environ', {_STATE_SECRET_ENV: 'a1' * 31}):
+            with pytest.raises(ValueError, match='at least 32 bytes'):
+                _get_state_secret()
 
     def test_derives_from_client_secret_when_env_unset(self):
         expected = hmac.new(

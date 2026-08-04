@@ -34,6 +34,10 @@ _STAGE_REGULAR = 'regular'
 # Domain-separates the state key from other keys derived from the client secret.
 _STATE_SECRET_INFO = b'alpacon-mcp-oauth-state-v1'
 
+# Matches the 32 bytes the derived key always has, so an explicit key cannot be
+# weaker than leaving the variable unset.
+_STATE_SECRET_MIN_BYTES = 32
+
 # Covers an Auth0 login plus MFA; keeps a leaked state only briefly usable.
 _STATE_TTL_SECONDS = 600
 
@@ -148,7 +152,21 @@ def _get_state_secret() -> bytes:
     """
     explicit = os.getenv(_STATE_SECRET_ENV, '')
     if explicit:
-        return explicit.encode()
+        # The state travels in URLs and proxy logs, so the key is an offline
+        # brute-force target; hex-only input keeps a typed passphrase out.
+        try:
+            key = bytes.fromhex(explicit)
+        except ValueError:
+            raise ValueError(
+                f'{_STATE_SECRET_ENV} must be hex; '
+                f'generate one with openssl rand -hex {_STATE_SECRET_MIN_BYTES}'
+            ) from None
+        if len(key) < _STATE_SECRET_MIN_BYTES:
+            raise ValueError(
+                f'{_STATE_SECRET_ENV} must decode to at least '
+                f'{_STATE_SECRET_MIN_BYTES} bytes'
+            )
+        return key
 
     client_secret = _get_oauth_config()['client_secret']
     return hmac.new(client_secret.encode(), _STATE_SECRET_INFO, hashlib.sha256).digest()
