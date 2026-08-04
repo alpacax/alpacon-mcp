@@ -282,13 +282,11 @@ def register_oauth_routes(mcp_server):
         """
         from urllib.parse import urlencode
 
-        from starlette.responses import RedirectResponse
+        from starlette.responses import JSONResponse, RedirectResponse
 
         try:
             config = _get_oauth_config()
         except ValueError as e:
-            from starlette.responses import JSONResponse
-
             return JSONResponse({'error': str(e)}, status_code=500)
 
         # Forward all query parameters to Auth0
@@ -332,8 +330,6 @@ def register_oauth_routes(mcp_server):
         # open redirect attacks while supporting Claude web, ChatGPT, etc.
         client_redirect_uri = params.get('redirect_uri', '')
         if client_redirect_uri and not _is_allowed_redirect_url(client_redirect_uri):
-            from starlette.responses import JSONResponse
-
             return JSONResponse(
                 {
                     'error': 'invalid_request',
@@ -346,46 +342,62 @@ def register_oauth_routes(mcp_server):
 
         original_state = params.get('state', '')
 
-        if mfa_requested:
-            # Two-stage OAuth flow: Stage 1 — redirect to Auth0 MFA audience
-            # to force MFA verification. After MFA completion, the callback
-            # handler will redirect again to the regular audience (Stage 2).
-            mfa_params = {
-                'response_type': 'code',
-                'client_id': config['client_id'],
-                'audience': config['mfa_audience'],
-                'redirect_uri': f'{server_url}/oauth/callback',
-                'scope': 'enroll read:authenticators',
-            }
+        # _build_state signs with the configured key, so a malformed
+        # ALPACON_MCP_STATE_SECRET raises here — on the endpoint an operator
+        # reaches before the callback. Carry the message instead of a bare 500.
+        try:
+            if mfa_requested:
+                # Two-stage OAuth flow: Stage 1 — redirect to Auth0 MFA audience
+                # to force MFA verification. After MFA completion, the callback
+                # handler will redirect again to the regular audience (Stage 2).
+                mfa_params = {
+                    'response_type': 'code',
+                    'client_id': config['client_id'],
+                    'audience': config['mfa_audience'],
+                    'redirect_uri': f'{server_url}/oauth/callback',
+                    'scope': 'enroll read:authenticators',
+                }
 
-            # Preserve PKCE and other client authorize params for Stage 2.
-            # The MCP client's PKCE code_challenge must be replayed when
-            # redirecting to the regular audience so the final code exchange
-            # succeeds with the client's code_verifier.
-            stage2_authorize_params = {}
-            for key in ('code_challenge', 'code_challenge_method', 'nonce', 'resource'):
-                if key in params:
-                    stage2_authorize_params[key] = params[key]
+                # Preserve PKCE and other client authorize params for Stage 2.
+                # The MCP client's PKCE code_challenge must be replayed when
+                # redirecting to the regular audience so the final code exchange
+                # succeeds with the client's code_verifier.
+                stage2_authorize_params = {}
+                for key in (
+                    'code_challenge',
+                    'code_challenge_method',
+                    'nonce',
+                    'resource',
+                ):
+                    if key in params:
+                        stage2_authorize_params[key] = params[key]
 
-            mfa_params['state'] = _build_state(
-                client_redirect_uri,
-                original_state,
-                stage=_STAGE_MFA,
-                original_scope=scope,
-                authorize_params=stage2_authorize_params,
+                mfa_params['state'] = _build_state(
+                    client_redirect_uri,
+                    original_state,
+                    stage=_STAGE_MFA,
+                    original_scope=scope,
+                    authorize_params=stage2_authorize_params,
+                )
+
+                auth0_url = (
+                    f'{config["auth0_base_url"]}/authorize?{urlencode(mfa_params)}'
+                )
+                logger.info(
+                    'Stage 1: Redirecting to Auth0 MFA audience for MFA verification'
+                )
+            else:
+                # Standard single-stage OAuth flow (no MFA required)
+                params['redirect_uri'] = f'{server_url}/oauth/callback'
+                params['state'] = _build_state(client_redirect_uri, original_state)
+
+                auth0_url = f'{config["auth0_base_url"]}/authorize?{urlencode(params)}'
+                logger.info('Redirecting to Auth0 authorize endpoint')
+        except ValueError as e:
+            return JSONResponse(
+                {'error': str(e)}, status_code=HTTPStatus.INTERNAL_SERVER_ERROR
             )
 
-            auth0_url = f'{config["auth0_base_url"]}/authorize?{urlencode(mfa_params)}'
-            logger.info(
-                'Stage 1: Redirecting to Auth0 MFA audience for MFA verification'
-            )
-        else:
-            # Standard single-stage OAuth flow (no MFA required)
-            params['redirect_uri'] = f'{server_url}/oauth/callback'
-            params['state'] = _build_state(client_redirect_uri, original_state)
-
-            auth0_url = f'{config["auth0_base_url"]}/authorize?{urlencode(params)}'
-            logger.info('Redirecting to Auth0 authorize endpoint')
         return RedirectResponse(url=auth0_url, status_code=302)
 
     @mcp_server.custom_route('/oauth/token', methods=['POST'])

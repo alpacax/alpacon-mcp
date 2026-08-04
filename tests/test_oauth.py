@@ -316,6 +316,20 @@ class TestOAuthAuthorize:
         assert data['error'] == 'invalid_request'
         assert 'trusted' in data['error_description']
 
+    def test_authorize_reports_malformed_state_secret(self, oauth_app):
+        """Signing is the first place a bad key raises; the message must survive."""
+        with patch.dict('os.environ', {_STATE_SECRET_ENV: 'correct-horse-battery'}):
+            response = oauth_app.get(
+                '/oauth/authorize',
+                params={
+                    'response_type': 'code',
+                    'redirect_uri': 'http://localhost:52048/callback',
+                },
+                follow_redirects=False,
+            )
+        assert response.status_code == 500
+        assert 'must be hex' in response.json()['error']
+
     def test_authorize_allows_claude_ai_redirect_uri(self, oauth_app):
         """Claude web redirect_uri should be allowed as a trusted domain."""
         response = oauth_app.get(
