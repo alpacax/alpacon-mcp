@@ -35,6 +35,13 @@ TEST_CLIENT_ID = 'test-client-id'
 TEST_CLIENT_SECRET = 'test-client-secret'
 TEST_RESOURCE_URL = 'https://mcp.test.alpacon.io'
 
+# Redirect targets used across the state tests
+TRUSTED_REDIRECT_URI = 'https://claude.ai/cb'
+EVIL_REDIRECT_URI = 'https://evil.com/cb'
+
+# An exp far enough ahead that a forged payload is never rejected as expired
+FAR_FUTURE_EXP = 9999999999
+
 # Environment variables needed for OAuth config
 OAUTH_ENV = {
     'AUTH0_DOMAIN': TEST_AUTH0_DOMAIN,
@@ -117,9 +124,9 @@ class TestStateEnvelope:
     """Tests for state signing and verification."""
 
     def test_round_trip_preserves_payload(self):
-        signed = _sign_state({'redirect_uri': 'https://claude.ai/cb', 'state': 'xyz'})
+        signed = _sign_state({'redirect_uri': TRUSTED_REDIRECT_URI, 'state': 'xyz'})
         payload = _verify_state(signed)
-        assert payload['redirect_uri'] == 'https://claude.ai/cb'
+        assert payload['redirect_uri'] == TRUSTED_REDIRECT_URI
         assert payload['state'] == 'xyz'
 
     def test_sign_adds_expiry(self):
@@ -127,18 +134,18 @@ class TestStateEnvelope:
         assert payload['exp'] <= int(time.time()) + _STATE_TTL_SECONDS
 
     def test_tampered_payload_is_rejected(self):
-        signed = _sign_state({'redirect_uri': 'https://claude.ai/cb', 'state': ''})
+        signed = _sign_state({'redirect_uri': TRUSTED_REDIRECT_URI, 'state': ''})
         _, _, sig = signed.rpartition('.')
         forged = base64.urlsafe_b64encode(
             json.dumps(
-                {'redirect_uri': 'https://evil.com/cb', 'exp': 9999999999}
+                {'redirect_uri': EVIL_REDIRECT_URI, 'exp': FAR_FUTURE_EXP}
             ).encode()
         ).decode()
         assert _verify_state(f'{forged}.{sig}') is None
 
     def test_unsigned_state_is_rejected(self):
         unsigned = base64.urlsafe_b64encode(
-            json.dumps({'redirect_uri': 'https://evil.com/cb'}).encode()
+            json.dumps({'redirect_uri': EVIL_REDIRECT_URI}).encode()
         ).decode()
         assert _verify_state(unsigned) is None
 
@@ -165,8 +172,8 @@ class TestBuildState:
     """Tests for state payload assembly."""
 
     def test_carries_redirect_uri_and_client_state(self):
-        decoded = _verify_state(_build_state('https://claude.ai/cb', 'xyz'))
-        assert decoded['redirect_uri'] == 'https://claude.ai/cb'
+        decoded = _verify_state(_build_state(TRUSTED_REDIRECT_URI, 'xyz'))
+        assert decoded['redirect_uri'] == TRUSTED_REDIRECT_URI
         assert decoded['state'] == 'xyz'
 
     def test_carries_extra_flow_fields(self):
@@ -785,7 +792,7 @@ class TestOAuthCallback:
     def test_callback_rejects_unsigned_state(self, oauth_app):
         """A state we never signed must not steer the redirect."""
         unsigned = base64.urlsafe_b64encode(
-            json.dumps({'redirect_uri': 'https://claude.ai/cb', 'state': 'x'}).encode()
+            json.dumps({'redirect_uri': TRUSTED_REDIRECT_URI, 'state': 'x'}).encode()
         ).decode()
         response = oauth_app.get(
             '/oauth/callback',
@@ -798,11 +805,11 @@ class TestOAuthCallback:
 
     def test_callback_rejects_tampered_state(self, oauth_app):
         """Swapping the payload under a valid signature must be rejected."""
-        signed = _sign_state({'redirect_uri': 'https://claude.ai/cb'})
+        signed = _sign_state({'redirect_uri': TRUSTED_REDIRECT_URI})
         _, _, sig = signed.rpartition('.')
         forged = base64.urlsafe_b64encode(
             json.dumps(
-                {'redirect_uri': 'https://evil.com/cb', 'exp': 9999999999}
+                {'redirect_uri': EVIL_REDIRECT_URI, 'exp': FAR_FUTURE_EXP}
             ).encode()
         ).decode()
         response = oauth_app.get(
@@ -888,7 +895,7 @@ class TestOAuthCallback:
 
     def test_callback_does_not_redirect_to_untrusted_uri(self, oauth_app):
         """Callback must not redirect to an untrusted redirect_uri from state."""
-        composite = _make_composite_state('https://evil.com/cb', 'xyz')
+        composite = _make_composite_state(EVIL_REDIRECT_URI, 'xyz')
         response = oauth_app.get(
             '/oauth/callback',
             params={'code': 'auth-code', 'state': composite},

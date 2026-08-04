@@ -15,6 +15,7 @@ import hmac
 import json
 import os
 import time
+from http import HTTPStatus
 
 import httpx
 
@@ -22,6 +23,13 @@ from utils.logger import get_logger
 
 logger = get_logger('oauth')
 
+
+# Explicit state signing key; when unset, the key is derived from the client secret.
+_STATE_SECRET_ENV = 'ALPACON_MCP_STATE_SECRET'
+
+# Stage tags carried through the state in the two-stage MFA flow.
+_STAGE_MFA = 'mfa'
+_STAGE_REGULAR = 'regular'
 
 # Domain-separates the state key from other keys derived from the client secret.
 _STATE_SECRET_INFO = b'alpacon-mcp-oauth-state-v1'
@@ -138,7 +146,7 @@ def _get_state_secret() -> bytes:
     provisioning; the derived key is identical across replicas, so state
     verifies without shared server-side storage.
     """
-    explicit = os.getenv('ALPACON_MCP_STATE_SECRET', '')
+    explicit = os.getenv(_STATE_SECRET_ENV, '')
     if explicit:
         return explicit.encode()
 
@@ -344,7 +352,7 @@ def register_oauth_routes(mcp_server):
             mfa_params['state'] = _build_state(
                 client_redirect_uri,
                 original_state,
-                stage='mfa',
+                stage=_STAGE_MFA,
                 original_scope=scope,
                 authorize_params=stage2_authorize_params,
             )
@@ -658,7 +666,10 @@ def register_oauth_routes(mcp_server):
             except ValueError as e:
                 # Without an explicit state secret, verification needs the OAuth
                 # config; surface misconfiguration as the other handlers do.
-                return JSONResponse({'error': str(e)}, status_code=500)
+                return JSONResponse(
+                    {'error': str(e)},
+                    status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
+                )
             if state_data is None:
                 logger.warning('Callback rejected an invalid or expired state')
                 return JSONResponse(
@@ -709,7 +720,7 @@ def register_oauth_routes(mcp_server):
             )
 
         # --- Two-stage MFA flow: Stage 1 callback ---
-        if stage == 'mfa':
+        if stage == _STAGE_MFA:
             logger.info(
                 'Stage 1 complete: MFA authorization code received, '
                 'exchanging and proceeding to Stage 2 (regular audience)'
@@ -764,7 +775,7 @@ def register_oauth_routes(mcp_server):
                 'redirect_uri': f'{server_url}/oauth/callback',
                 'scope': original_scope or 'openid profile email offline_access',
                 'state': _build_state(
-                    client_redirect_uri, original_state, stage='regular'
+                    client_redirect_uri, original_state, stage=_STAGE_REGULAR
                 ),
             }
             # Replay PKCE and other client params preserved from Stage 1
@@ -843,6 +854,6 @@ def register_oauth_routes(mcp_server):
         'OAuth proxy routes registered (including /token, /authorize, '
         '/register fallbacks) - state secret: %s',
         'explicit env'
-        if os.getenv('ALPACON_MCP_STATE_SECRET')
+        if os.getenv(_STATE_SECRET_ENV)
         else 'derived from client secret',
     )
