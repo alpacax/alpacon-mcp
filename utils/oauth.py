@@ -29,14 +29,6 @@ _ENV_ALLOWED_REDIRECT_DOMAINS = 'ALLOWED_REDIRECT_DOMAINS'
 _ENV_ALLOWED_REDIRECT_URIS = 'ALLOWED_REDIRECT_URIS'
 _ENV_REDIRECT_URI_REPORT_ONLY = 'ALPACON_MCP_REDIRECT_URI_REPORT_ONLY'
 
-# Hosts that report-only mode may fall back to when a callback endpoint is not
-# yet listed below. Override via ALLOWED_REDIRECT_DOMAINS env var (comma-separated).
-_DEFAULT_REDIRECT_DOMAINS = (
-    'claude.ai',
-    'chatgpt.com',
-    'chat.openai.com',
-)
-
 # Endpoint-level allowlist for non-loopback clients. Trusting a whole domain
 # lets an authorization code land on any path an attacker can influence there,
 # so each entry pins one callback endpoint.
@@ -61,6 +53,18 @@ _DEFAULT_REDIRECT_URIS = (
 # and \Z rather than $ so a trailing newline cannot ride along.
 _DEFAULT_REDIRECT_URI_PATTERNS = (
     re.compile(r'^https://chatgpt\.com/connector/oauth/[A-Za-z0-9_-]{1,64}\Z'),
+)
+
+# Hosts that report-only mode may fall back to when a client's callback endpoint
+# is not listed above — derived from that list, so a client whose endpoint moves
+# is covered by the escape hatch without a second edit. chat.openai.com has no
+# endpoint entry and stays as the legacy OpenAI host. Override via the
+# ALLOWED_REDIRECT_DOMAINS env var (comma-separated).
+_DEFAULT_REDIRECT_DOMAINS = tuple(
+    sorted(
+        {host for uri in _DEFAULT_REDIRECT_URIS if (host := urlparse(uri).hostname)}
+        | {'chat.openai.com'}
+    )
 )
 
 

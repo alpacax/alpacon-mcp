@@ -263,6 +263,15 @@ class TestRedirectUriGate:
         with patch.dict('os.environ', REPORT_ONLY):
             assert not _check_redirect_uri('https://evil.com/cb')
 
+    def test_report_only_covers_every_built_in_client_host(self):
+        """The escape hatch is useless on a host whose endpoint it cannot reach."""
+        from utils.oauth import _check_redirect_uri, _get_allowed_redirect_uris
+
+        with patch.dict('os.environ', REPORT_ONLY):
+            for uri in _get_allowed_redirect_uris():
+                moved = uri.rstrip('/') + '/moved'
+                assert _check_redirect_uri(moved), moved
+
     def test_report_only_allows_untracked_path_with_a_warning(self, caplog):
         from utils.oauth import _check_redirect_uri
 
