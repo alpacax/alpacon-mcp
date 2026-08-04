@@ -323,8 +323,9 @@ def unwrap_http_result(
     4xx bodies carry only ``{"code": "..."}``, no message, so without this the
     caller only ever sees a generic "Client error '400 Bad Request'" string.
     A curated subset of codes (``_ERROR_CODE_HINT``) also get an actionable
-    hint appended to the message, e.g. `command_inline_credential` (ADR 0037)
-    telling the agent to retry via the `env` parameter.
+    hint appended to the message, e.g. `command_inline_credential` (see
+    alpacax/alpacon-server#2745) telling the agent to retry via the `env`
+    parameter.
 
     Args:
         result: Raw value returned by an http_client method.
@@ -343,15 +344,17 @@ def unwrap_http_result(
     if status_code is not None:
         error_kwargs['status_code'] = status_code
 
-    gate_code = _extract_work_session_gate_code(result)
-    if gate_code is not None:
-        return work_session_gate_response(gate_code, **error_kwargs)
+    # Parse the body's `code` once; it decides both whether this is a
+    # WorkSession gate (membership in _WORK_SESSION_GATE_CODES) and, on the
+    # generic path below, what gets surfaced as `error_code`.
+    code = _extract_error_code(result)
+    if code is not None and code in _WORK_SESSION_GATE_CODES:
+        return work_session_gate_response(code, **error_kwargs)
 
     message = result.get('message', default_message)
-    error_code = _extract_error_code(result)
-    if error_code is not None:
-        error_kwargs['error_code'] = error_code
-        hint = _ERROR_CODE_HINT.get(error_code)
+    if code is not None:
+        error_kwargs['error_code'] = code
+        hint = _ERROR_CODE_HINT.get(code)
         if hint is not None:
             message = f'{message} {hint}'
 
@@ -377,15 +380,3 @@ def _extract_error_code(result: dict[str, Any]) -> str | None:
         return None
     code = body.get('code')
     return code if isinstance(code, str) else None
-
-
-def _extract_work_session_gate_code(result: dict[str, Any]) -> str | None:
-    """Return the WorkSession gate code carried by an http error envelope, if any.
-
-    Returns None when `_extract_error_code` finds no code, or the code is not a
-    recognized gate code (so the caller falls back to the generic error path).
-    """
-    code = _extract_error_code(result)
-    if code is not None and code in _WORK_SESSION_GATE_CODES:
-        return code
-    return None
