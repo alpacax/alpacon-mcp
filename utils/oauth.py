@@ -50,9 +50,10 @@ _DEFAULT_REDIRECT_URIS = (
 )
 
 # OpenAI issues one opaque callback id per connector, so the last segment
-# cannot be pinned. The character class excludes "/" so no deeper path matches.
+# cannot be pinned. The character class excludes "/" so no deeper path matches,
+# and \Z rather than $ so a trailing newline cannot ride along.
 _DEFAULT_REDIRECT_URI_PATTERNS = (
-    re.compile(r'^https://chatgpt\.com/connector/oauth/[A-Za-z0-9_-]{1,64}$'),
+    re.compile(r'^https://chatgpt\.com/connector/oauth/[A-Za-z0-9_-]{1,64}\Z'),
 )
 
 

@@ -164,6 +164,14 @@ class TestExactRedirectUriMatch:
             'https://chatgpt.com/connector/oauth/'
         )
 
+    def test_chatgpt_connector_trailing_newline_is_rejected(self):
+        """$ would match before a trailing newline; the pattern uses \\Z."""
+        from utils.oauth import _is_exact_allowed_redirect_uri
+
+        assert not _is_exact_allowed_redirect_uri(
+            'https://chatgpt.com/connector/oauth/abc123\n'
+        )
+
     def test_env_override_is_honoured(self):
         from utils.oauth import _is_exact_allowed_redirect_uri
 
