@@ -217,6 +217,7 @@ python main_sse.py
 - Authenticates clients with Auth0 JWT (browser OAuth)—no `token.json` or API token on the client
 - `main_http.py` validates `AUTH0_DOMAIN` and `AUTH0_CLIENT_ID` at startup; the OAuth proxy endpoints additionally require `AUTH0_CLIENT_SECRET`, and accept an optional `AUTH0_AUDIENCE` (default `https://alpacon.io/access/`)
 - A client's `redirect_uri` must be a loopback URL or one of the callback endpoints the server knows: the built-in list covers Claude, ChatGPT, Cursor, VS Code, Antigravity, and Copilot Studio. `ALLOWED_REDIRECT_URIS` replaces that list, and `ALPACON_MCP_REDIRECT_URI_REPORT_ONLY=true` logs an unlisted endpoint instead of rejecting it
+- `ALLOWED_REDIRECT_DOMAINS` no longer admits a host by itself—it now only bounds which hosts report-only mode will let through. A deployment that relied on it alone must list the full callback URIs in `ALLOWED_REDIRECT_URIS`, or turn report-only on; route registration logs a warning when the domain list is set with neither
 - Alpacon operates a managed instance at `https://mcp.alpacon.io/mcp`
 
 ```bash
@@ -247,6 +248,7 @@ export ALPACON_MCP_WEBFTP_DOWNLOAD_TIMEOUT=60   # Seconds to poll for S3 staging
 # OAuth callback allowlist (remote mode only)
 export ALLOWED_REDIRECT_URIS="https://app.example.com/oauth/callback"   # Comma-separated full URIs; replaces the built-in list
 export ALPACON_MCP_REDIRECT_URI_REPORT_ONLY=true                       # Log an unlisted endpoint instead of rejecting it
+export ALLOWED_REDIRECT_DOMAINS="app.example.com"                      # Hosts report-only mode may fall back to; admits nothing on its own
 ```
 
 #### Configuration examples

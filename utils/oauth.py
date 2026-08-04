@@ -898,9 +898,12 @@ def register_oauth_routes(mcp_server):
         logger.info('/register fallback hit — delegating to /oauth/register handler')
         return await oauth_register(request)
 
+    # Report-only mode is what makes the domain list meaningful on its own, so
+    # a deployment running it is configured, not misconfigured.
     domains_only = (
         os.getenv(_ENV_ALLOWED_REDIRECT_DOMAINS, '').strip()
         and not _redirect_uris_are_overridden()
+        and not _redirect_uri_report_only()
     )
     if domains_only:
         logger.warning(

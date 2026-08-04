@@ -34,6 +34,8 @@ OAUTH_ENV = {
     'ALPACON_MCP_REDIRECT_URI_REPORT_ONLY': '',
 }
 
+REPORT_ONLY = {'ALPACON_MCP_REDIRECT_URI_REPORT_ONLY': 'true'}
+
 
 @pytest.fixture(autouse=True)
 def _set_oauth_env():
@@ -136,6 +138,23 @@ class TestAllowedRedirectUris:
 
         assert 'ALLOWED_REDIRECT_URIS' not in caplog.text
 
+    def test_domain_var_with_report_only_does_not_warn(self, caplog):
+        """Report-only mode is what makes the domain list usable on its own."""
+        from utils.oauth import register_oauth_routes
+
+        class MockMCPServer:
+            def custom_route(self, path, methods=None):
+                return lambda func: func
+
+        with patch.dict(
+            'os.environ',
+            {'ALLOWED_REDIRECT_DOMAINS': 'custom.example.com', **REPORT_ONLY},
+        ):
+            with caplog.at_level('WARNING'):
+                register_oauth_routes(MockMCPServer())
+
+        assert 'ALLOWED_REDIRECT_URIS' not in caplog.text
+
 
 class TestExactRedirectUriMatch:
     """Tests for endpoint-level redirect_uri matching."""
@@ -207,9 +226,6 @@ class TestExactRedirectUriMatch:
 
         with patch.dict('os.environ', {'ALLOWED_REDIRECT_URIS': 'http://a.example/cb'}):
             assert not _is_exact_allowed_redirect_uri('http://a.example/cb')
-
-
-REPORT_ONLY = {'ALPACON_MCP_REDIRECT_URI_REPORT_ONLY': 'true'}
 
 
 class TestRedirectUriGate:
