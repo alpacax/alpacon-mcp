@@ -118,6 +118,57 @@ class TestAllowedRedirectUris:
         assert 'ALLOWED_REDIRECT_URIS' in caplog.text
 
 
+class TestExactRedirectUriMatch:
+    """Tests for endpoint-level redirect_uri matching."""
+
+    def test_listed_uri_matches(self):
+        from utils.oauth import _is_exact_allowed_redirect_uri
+
+        assert _is_exact_allowed_redirect_uri('https://claude.ai/api/mcp/auth_callback')
+        assert _is_exact_allowed_redirect_uri(
+            'https://antigravity.google/oauth-callback'
+        )
+
+    def test_other_path_on_trusted_domain_is_rejected(self):
+        from utils.oauth import _is_exact_allowed_redirect_uri
+
+        assert not _is_exact_allowed_redirect_uri('https://chatgpt.com/evil/path')
+        assert not _is_exact_allowed_redirect_uri('https://claude.ai/')
+
+    def test_query_or_fragment_is_rejected(self):
+        from utils.oauth import _is_exact_allowed_redirect_uri
+
+        base = 'https://claude.ai/api/mcp/auth_callback'
+        assert not _is_exact_allowed_redirect_uri(f'{base}?x=1')
+        assert not _is_exact_allowed_redirect_uri(f'{base}#frag')
+
+    def test_chatgpt_connector_id_segment_matches(self):
+        from utils.oauth import _is_exact_allowed_redirect_uri
+
+        assert _is_exact_allowed_redirect_uri(
+            'https://chatgpt.com/connector/oauth/abc123_-XYZ'
+        )
+
+    def test_chatgpt_connector_extra_segment_is_rejected(self):
+        from utils.oauth import _is_exact_allowed_redirect_uri
+
+        assert not _is_exact_allowed_redirect_uri(
+            'https://chatgpt.com/connector/oauth/abc/evil'
+        )
+        assert not _is_exact_allowed_redirect_uri('https://chatgpt.com/connector/oauth/')
+
+    def test_env_override_is_honoured(self):
+        from utils.oauth import _is_exact_allowed_redirect_uri
+
+        with patch.dict(
+            'os.environ', {'ALLOWED_REDIRECT_URIS': 'https://a.example/cb'}
+        ):
+            assert _is_exact_allowed_redirect_uri('https://a.example/cb')
+            assert not _is_exact_allowed_redirect_uri(
+                'https://claude.ai/api/mcp/auth_callback'
+            )
+
+
 class TestOAuthMetadata:
     """Tests for /.well-known/oauth-authorization-server endpoint."""
 

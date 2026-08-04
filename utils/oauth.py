@@ -11,6 +11,7 @@ which bypasses MCP authentication — appropriate for OAuth flow endpoints.
 import base64
 import json
 import os
+import re
 
 import httpx
 
@@ -48,6 +49,12 @@ _DEFAULT_REDIRECT_URIS = (
     'https://global.consent.azure-apim.net/redirect',
 )
 
+# OpenAI issues one opaque callback id per connector, so the last segment
+# cannot be pinned. The character class excludes "/" so no deeper path matches.
+_DEFAULT_REDIRECT_URI_PATTERNS = (
+    re.compile(r'^https://chatgpt\.com/connector/oauth/[A-Za-z0-9_-]{1,64}$'),
+)
+
 
 def _get_server_url(request) -> str:
     """Build the MCP server's base URL from config or request.
@@ -83,6 +90,20 @@ def _get_allowed_redirect_uris() -> tuple[str, ...]:
     if env_uris:
         return tuple(u.strip() for u in env_uris.split(',') if u.strip())
     return _DEFAULT_REDIRECT_URIS
+
+
+def _is_exact_allowed_redirect_uri(url: str) -> bool:
+    """Return True when the URL is one of the allowed callback endpoints."""
+    from urllib.parse import urlparse
+
+    parsed = urlparse(url)
+    if parsed.query or parsed.fragment:
+        return False
+
+    if url in _get_allowed_redirect_uris():
+        return True
+
+    return any(pattern.match(url) for pattern in _DEFAULT_REDIRECT_URI_PATTERNS)
 
 
 def _is_allowed_redirect_url(url: str) -> bool:
