@@ -216,6 +216,7 @@ python main_sse.py
 - HTTP-based transport for hosting a remote MCP server
 - Authenticates clients with Auth0 JWT (browser OAuth)—no `token.json` or API token on the client
 - `main_http.py` validates `AUTH0_DOMAIN` and `AUTH0_CLIENT_ID` at startup; the OAuth proxy endpoints additionally require `AUTH0_CLIENT_SECRET`, and accept an optional `AUTH0_AUDIENCE` (default `https://alpacon.io/access/`)
+- A client's `redirect_uri` must be a loopback URL or one of the callback endpoints the server knows: the built-in list covers Claude, ChatGPT, Cursor, VS Code, Antigravity, and Copilot Studio. `ALLOWED_REDIRECT_URIS` replaces that list, and `ALPACON_MCP_REDIRECT_URI_REPORT_ONLY=true` logs an unlisted endpoint instead of rejecting it
 - Alpacon operates a managed instance at `https://mcp.alpacon.io/mcp`
 
 ```bash
@@ -242,6 +243,10 @@ export DEBUG=true        # Enable debug logging
 
 # WebFTP configuration
 export ALPACON_MCP_WEBFTP_DOWNLOAD_TIMEOUT=60   # Seconds to poll for S3 staging in remote-mode downloads (default: 60). Raise for large folder ZIPs.
+
+# OAuth callback allowlist (remote mode only)
+export ALLOWED_REDIRECT_URIS="https://app.example.com/oauth/callback"   # Comma-separated full URIs; replaces the built-in list
+export ALPACON_MCP_REDIRECT_URI_REPORT_ONLY=true                       # Log an unlisted endpoint instead of rejecting it
 ```
 
 #### Configuration examples
