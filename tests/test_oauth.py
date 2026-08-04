@@ -264,28 +264,6 @@ class TestRedirectUriGate:
                 assert _check_redirect_uri(UNLISTED_PATH_URI)
         assert 'report-only' in caplog.text
 
-    def test_authorize_rejects_untracked_path(self, oauth_app):
-        response = oauth_app.get(
-            '/oauth/authorize',
-            params={
-                'response_type': 'code',
-                'redirect_uri': UNLISTED_PATH_URI,
-            },
-            follow_redirects=False,
-        )
-        assert response.status_code == 400
-
-    def test_callback_does_not_relay_to_untracked_path(self, oauth_app):
-        composite = _make_composite_state(UNLISTED_PATH_URI, 'xyz')
-        response = oauth_app.get(
-            '/oauth/callback',
-            params={'code': 'auth-code', 'state': composite},
-            follow_redirects=False,
-        )
-        # 200 as well as the missing header: a 500 would also have no location.
-        assert response.status_code == 200
-        assert 'location' not in response.headers
-
 
 class TestAuthorizeObservation:
     """Tests for the observation-window log line."""
@@ -543,6 +521,17 @@ class TestOAuthAuthorize:
         data = response.json()
         assert data['error'] == 'invalid_request'
         assert 'allowlisted' in data['error_description']
+
+    def test_authorize_rejects_untracked_path(self, oauth_app):
+        response = oauth_app.get(
+            '/oauth/authorize',
+            params={
+                'response_type': 'code',
+                'redirect_uri': UNLISTED_PATH_URI,
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == 400
 
     def test_authorize_reports_malformed_state_secret(self, oauth_app):
         """Signing is the first place a bad key raises; the message must survive."""
@@ -1165,6 +1154,17 @@ class TestOAuthCallback:
         assert 'location' not in response.headers
         data = response.json()
         assert data['code'] == 'auth-code'
+
+    def test_callback_does_not_relay_to_untracked_path(self, oauth_app):
+        composite = _make_composite_state(UNLISTED_PATH_URI, 'xyz')
+        response = oauth_app.get(
+            '/oauth/callback',
+            params={'code': 'auth-code', 'state': composite},
+            follow_redirects=False,
+        )
+        # 200 as well as the missing header: a 500 would also have no location.
+        assert response.status_code == 200
+        assert 'location' not in response.headers
 
     def test_callback_redirects_to_allowlisted_endpoint(self, oauth_app):
         """Callback relays the code to an allowlisted endpoint like claude.ai."""
