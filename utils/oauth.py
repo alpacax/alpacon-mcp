@@ -371,7 +371,8 @@ def register_oauth_routes(mcp_server):
                 {
                     'error': 'invalid_request',
                     'error_description': (
-                        'redirect_uri must be a localhost URL or a trusted domain'
+                        'redirect_uri must be a loopback URL or an allowlisted '
+                        'callback endpoint'
                     ),
                 },
                 status_code=400,

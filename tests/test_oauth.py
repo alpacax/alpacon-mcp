@@ -417,7 +417,7 @@ class TestOAuthAuthorize:
         assert response.status_code == 400
         data = response.json()
         assert data['error'] == 'invalid_request'
-        assert 'trusted' in data['error_description']
+        assert 'allowlisted' in data['error_description']
 
     def test_authorize_allows_claude_ai_redirect_uri(self, oauth_app):
         """Claude web redirect_uri should be allowed as a trusted domain."""
