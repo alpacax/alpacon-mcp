@@ -22,8 +22,8 @@ logger = get_logger('oauth')
 
 _ALLOWED_LOOPBACK_HOSTS = ('localhost', '127.0.0.1', '::1')
 
-# Default trusted redirect domains for cloud-based MCP clients (e.g. Claude web, ChatGPT).
-# Override via ALLOWED_REDIRECT_DOMAINS env var (comma-separated).
+# Hosts that report-only mode may fall back to when a callback endpoint is not
+# yet listed below. Override via ALLOWED_REDIRECT_DOMAINS env var (comma-separated).
 _DEFAULT_REDIRECT_DOMAINS = (
     'claude.ai',
     'chatgpt.com',
@@ -171,7 +171,8 @@ def _log_authorize_client_profile(
 ) -> None:
     """Record what each client sends, to settle the allowlist and PKCE questions.
 
-    Remove once the endpoint allowlist is enforced and PKCE is required.
+    Remove once PKCE is required and no deployment still needs report-only mode
+    to cover a missing allowlist entry.
     """
     logger.info(
         'authorize observed - redirect_uri: %s, pkce: %s',
@@ -356,8 +357,8 @@ def register_oauth_routes(mcp_server):
         server_url = _get_server_url(request)
 
         # Save client's original redirect_uri to relay the code later.
-        # Allow localhost and trusted cloud MCP client domains to prevent
-        # open redirect attacks while supporting Claude web, ChatGPT, etc.
+        # Only loopback and allowlisted callback endpoints may receive the code,
+        # so an open redirect cannot carry it to an attacker.
         client_redirect_uri = params.get('redirect_uri', '')
         _log_authorize_client_profile(
             client_redirect_uri, params.get('code_challenge_method', '')
