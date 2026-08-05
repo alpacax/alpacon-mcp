@@ -240,8 +240,7 @@ def _is_registrable_uri_list(value: object) -> bool:
     """Whether redirect_uris has the shape RFC 7591 asks for, at a length we accept."""
     return (
         isinstance(value, list)
-        and bool(value)
-        and len(value) <= _MAX_REGISTERED_REDIRECT_URIS
+        and 1 <= len(value) <= _MAX_REGISTERED_REDIRECT_URIS
         and all(isinstance(uri, str) and uri for uri in value)
     )
 
