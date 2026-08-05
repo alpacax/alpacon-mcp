@@ -22,7 +22,7 @@ from http import HTTPStatus
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 import httpx
-from starlette.responses import JSONResponse, RedirectResponse
+from starlette.responses import JSONResponse, RedirectResponse, Response
 
 from utils.logger import get_logger
 
@@ -361,6 +361,19 @@ def _hash_nonce(nonce: str) -> str:
     return base64.urlsafe_b64encode(hashlib.sha256(nonce.encode()).digest()).decode()
 
 
+def _set_nonce_cookie(response: Response, nonce: str) -> None:
+    """SameSite must stay Lax: Strict drops the cookie on the return from Auth0."""
+    response.set_cookie(
+        _NONCE_COOKIE_NAME,
+        nonce,
+        max_age=_STATE_TTL_SECONDS,
+        path='/',
+        secure=True,
+        httponly=True,
+        samesite='lax',
+    )
+
+
 def register_oauth_routes(mcp_server):
     """Register OAuth proxy routes on the FastMCP server.
 
@@ -477,6 +490,8 @@ def register_oauth_routes(mcp_server):
             )
 
         original_state = params.get('state', '')
+        nonce = _new_nonce()
+        nonce_hash = _hash_nonce(nonce)
 
         # _build_state signs with the configured key, so a malformed
         # ALPACON_MCP_STATE_SECRET raises here — on the endpoint an operator
@@ -514,6 +529,7 @@ def register_oauth_routes(mcp_server):
                     stage=_STAGE_MFA,
                     original_scope=scope,
                     authorize_params=stage2_authorize_params,
+                    nonce_hash=nonce_hash,
                 )
 
                 auth0_url = (
@@ -525,7 +541,9 @@ def register_oauth_routes(mcp_server):
             else:
                 # Standard single-stage OAuth flow (no MFA required)
                 params['redirect_uri'] = f'{server_url}/oauth/callback'
-                params['state'] = _build_state(client_redirect_uri, original_state)
+                params['state'] = _build_state(
+                    client_redirect_uri, original_state, nonce_hash=nonce_hash
+                )
 
                 auth0_url = f'{config["auth0_base_url"]}/authorize?{urlencode(params)}'
                 logger.info('Redirecting to Auth0 authorize endpoint')
@@ -534,7 +552,9 @@ def register_oauth_routes(mcp_server):
                 {'error': str(e)}, status_code=HTTPStatus.INTERNAL_SERVER_ERROR
             )
 
-        return RedirectResponse(url=auth0_url, status_code=302)
+        response = RedirectResponse(url=auth0_url, status_code=302)
+        _set_nonce_cookie(response, nonce)
+        return response
 
     @mcp_server.custom_route('/oauth/token', methods=['POST'])
     async def oauth_token(request):

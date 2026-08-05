@@ -772,6 +772,50 @@ class TestOAuthAuthorize:
         audience = params.get('audience', [''])[0]
         assert '/mfa/' not in audience
 
+    def test_authorize_sets_the_nonce_cookie(self, oauth_app):
+        """The browser that starts the flow gets marked."""
+        response = oauth_app.get(
+            '/oauth/authorize',
+            params={'redirect_uri': 'http://localhost:52048/callback'},
+            follow_redirects=False,
+        )
+        raw = response.headers['set-cookie'].lower()
+        assert raw.startswith('__host-alpacon_oauth_nonce=')
+        assert 'secure' in raw
+        assert 'httponly' in raw
+        assert 'samesite=lax' in raw
+        assert 'path=/' in raw
+        assert 'max-age=600' in raw
+
+    def test_authorize_state_carries_the_cookie_hash(self, oauth_app):
+        """The state names the browser by hash, never by the raw nonce."""
+        response = oauth_app.get(
+            '/oauth/authorize',
+            params={'redirect_uri': 'http://localhost:52048/callback'},
+            follow_redirects=False,
+        )
+        nonce = response.cookies['__Host-alpacon_oauth_nonce']
+        state = parse_qs(urlparse(response.headers['location']).query)['state'][0]
+        payload = _verify_state(state)
+        assert payload['nonce_hash'] == _hash_nonce(nonce)
+        assert nonce not in state
+
+    def test_mfa_authorize_state_carries_the_cookie_hash(self, oauth_app):
+        """The MFA stage-1 state is bound to the browser too."""
+        response = oauth_app.get(
+            '/oauth/authorize',
+            params={
+                'redirect_uri': 'http://localhost:52048/callback',
+                'scope': 'openid profile mfa',
+            },
+            follow_redirects=False,
+        )
+        nonce = response.cookies['__Host-alpacon_oauth_nonce']
+        state = parse_qs(urlparse(response.headers['location']).query)['state'][0]
+        payload = _verify_state(state)
+        assert payload['stage'] == 'mfa'
+        assert payload['nonce_hash'] == _hash_nonce(nonce)
+
 
 class TestOAuthToken:
     """Tests for /oauth/token endpoint."""
