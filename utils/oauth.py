@@ -67,6 +67,10 @@ _ALLOWED_LOOPBACK_HOSTS = ('localhost', '127.0.0.1', '::1')
 # sixfold, so an unbounded value on an unauthenticated route inflates log volume.
 _LOG_VALUE_MAX_CHARS = 512
 
+# A real client registers one or two callbacks. The cap keeps one unauthenticated
+# registration from driving a check — and in report-only mode a warning — per entry.
+_MAX_REGISTERED_REDIRECT_URIS = 20
+
 _ENV_ALLOWED_REDIRECT_DOMAINS = 'ALLOWED_REDIRECT_DOMAINS'
 _ENV_ALLOWED_REDIRECT_URIS = 'ALLOWED_REDIRECT_URIS'
 _ENV_REDIRECT_URI_REPORT_ONLY = 'ALPACON_MCP_REDIRECT_URI_REPORT_ONLY'
@@ -233,10 +237,11 @@ def _check_redirect_uri(url: str) -> bool:
 
 
 def _is_registrable_uri_list(value: object) -> bool:
-    """Whether redirect_uris has the shape RFC 7591 asks for."""
+    """Whether redirect_uris has the shape RFC 7591 asks for, at a length we accept."""
     return (
         isinstance(value, list)
         and bool(value)
+        and len(value) <= _MAX_REGISTERED_REDIRECT_URIS
         and all(isinstance(uri, str) and uri for uri in value)
     )
 
@@ -824,7 +829,8 @@ def register_oauth_routes(mcp_server):
                     {
                         'error': 'invalid_client_metadata',
                         'error_description': (
-                            'redirect_uris must be a non-empty array of strings'
+                            'redirect_uris must be an array of 1 to '
+                            f'{_MAX_REGISTERED_REDIRECT_URIS} strings'
                         ),
                     },
                     status_code=400,

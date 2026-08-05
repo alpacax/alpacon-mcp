@@ -21,6 +21,7 @@ from starlette.testclient import TestClient
 
 from utils.oauth import (
     _LOG_VALUE_MAX_CHARS,
+    _MAX_REGISTERED_REDIRECT_URIS,
     _NONCE_COOKIE_NAME,
     _STATE_SECRET_ENV,
     _STATE_SECRET_INFO,
@@ -1125,6 +1126,26 @@ class TestOAuthRegister:
         )
         assert response.status_code == 400
         assert response.json()['error'] == 'invalid_client_metadata'
+
+    def test_register_rejects_too_many_redirect_uris(self, oauth_app):
+        """One unauthenticated body must not buy a check, or a warning, per entry."""
+        uris = [LISTED_REDIRECT_URI] * (_MAX_REGISTERED_REDIRECT_URIS + 1)
+        response = oauth_app.post(
+            '/oauth/register',
+            content=json.dumps({'redirect_uris': uris}).encode(),
+            headers={'content-type': 'application/json'},
+        )
+        assert response.status_code == 400
+        assert response.json()['error'] == 'invalid_client_metadata'
+
+    def test_register_accepts_redirect_uris_at_the_cap(self, oauth_app):
+        uris = [LISTED_REDIRECT_URI] * _MAX_REGISTERED_REDIRECT_URIS
+        response = oauth_app.post(
+            '/oauth/register',
+            content=json.dumps({'redirect_uris': uris}).encode(),
+            headers={'content-type': 'application/json'},
+        )
+        assert response.status_code == 201
 
     def test_register_rejects_null_redirect_uris(self, oauth_app):
         """A client that will use the code flow has to name where the code goes."""
