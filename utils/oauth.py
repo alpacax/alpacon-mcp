@@ -50,6 +50,16 @@ _STATE_TTL_SECONDS = 600
 # Domain, so the cookie cannot be planted by a sibling host.
 _NONCE_COOKIE_NAME = '__Host-alpacon_oauth_nonce'
 
+# Shared by set and delete: a browser only drops a cookie when the attributes
+# match the ones it was set with. SameSite stays Lax because Strict drops the
+# cookie on the top-level return from Auth0.
+_NONCE_COOKIE_ATTRS = {
+    'path': '/',
+    'secure': True,
+    'httponly': True,
+    'samesite': 'lax',
+}
+
 _ALLOWED_LOOPBACK_HOSTS = ('localhost', '127.0.0.1', '::1')
 
 # Caps a client-supplied value in a log line. Escaping expands a byte up to
@@ -362,15 +372,8 @@ def _hash_nonce(nonce: str) -> str:
 
 
 def _set_nonce_cookie(response: Response, nonce: str) -> None:
-    """SameSite must stay Lax: Strict drops the cookie on the return from Auth0."""
     response.set_cookie(
-        _NONCE_COOKIE_NAME,
-        nonce,
-        max_age=_STATE_TTL_SECONDS,
-        path='/',
-        secure=True,
-        httponly=True,
-        samesite='lax',
+        _NONCE_COOKIE_NAME, nonce, max_age=_STATE_TTL_SECONDS, **_NONCE_COOKIE_ATTRS
     )
 
 
@@ -385,10 +388,7 @@ def _nonce_cookie_matches(request: Request, state_data: dict) -> bool:
 
 
 def _clear_nonce_cookie(response: Response) -> None:
-    """Attributes must match the ones it was set with, or the browser keeps it."""
-    response.delete_cookie(
-        _NONCE_COOKIE_NAME, path='/', secure=True, httponly=True, samesite='lax'
-    )
+    response.delete_cookie(_NONCE_COOKIE_NAME, **_NONCE_COOKIE_ATTRS)
 
 
 def register_oauth_routes(mcp_server):
