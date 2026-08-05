@@ -21,6 +21,7 @@ from starlette.testclient import TestClient
 
 from utils.oauth import (
     _LOG_VALUE_MAX_CHARS,
+    _NONCE_COOKIE_NAME,
     _STATE_SECRET_ENV,
     _STATE_SECRET_INFO,
     _STATE_TTL_SECONDS,
@@ -29,7 +30,9 @@ from utils.oauth import (
     _escape_for_log,
     _get_allowed_redirect_uris,
     _get_state_secret,
+    _hash_nonce,
     _is_exact_allowed_redirect_uri,
+    _new_nonce,
     _sign_state,
     _verify_state,
     register_oauth_routes,
@@ -362,6 +365,29 @@ class TestStateSecret:
             register_oauth_routes(MockMCPServer())
 
         assert 'derived from client secret' in caplog.text
+
+
+class TestNonceHelpers:
+    """Tests for the per-flow nonce that binds a state to one browser."""
+
+    def test_new_nonce_differs_every_call(self):
+        assert _new_nonce() != _new_nonce()
+
+    def test_new_nonce_is_long_enough_to_resist_guessing(self):
+        assert len(_new_nonce()) >= 32
+
+    def test_hash_nonce_is_stable_for_the_same_input(self):
+        assert _hash_nonce('abc') == _hash_nonce('abc')
+
+    def test_hash_nonce_differs_for_different_input(self):
+        assert _hash_nonce('abc') != _hash_nonce('abd')
+
+    def test_hash_nonce_is_base64url_sha256(self):
+        expected = base64.urlsafe_b64encode(hashlib.sha256(b'abc').digest()).decode()
+        assert _hash_nonce('abc') == expected
+
+    def test_nonce_cookie_name_carries_the_host_prefix(self):
+        assert _NONCE_COOKIE_NAME == '__Host-alpacon_oauth_nonce'
 
 
 class TestStateEnvelope:

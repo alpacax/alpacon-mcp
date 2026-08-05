@@ -8,6 +8,7 @@ All routes are registered via FastMCP's custom_route decorator,
 which bypasses MCP authentication — appropriate for OAuth flow endpoints.
 """
 
+
 import base64
 import binascii
 import hashlib
@@ -15,6 +16,7 @@ import hmac
 import json
 import os
 import re
+import secrets
 import time
 from http import HTTPStatus
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
@@ -43,6 +45,10 @@ _STATE_SECRET_MIN_BYTES = 32
 
 # Covers an Auth0 login plus MFA; keeps a leaked state only briefly usable.
 _STATE_TTL_SECONDS = 600
+
+# The __Host- prefix makes the browser itself require Secure, Path=/ and no
+# Domain, so the cookie cannot be planted by a sibling host.
+_NONCE_COOKIE_NAME = '__Host-alpacon_oauth_nonce'
 
 _ALLOWED_LOOPBACK_HOSTS = ('localhost', '127.0.0.1', '::1')
 
@@ -343,6 +349,16 @@ def _verify_state(state: str) -> dict | None:
 def _build_state(redirect_uri: str, state: str, **extra) -> str:
     """Pack everything the callback needs to recover into one signed state value."""
     return _sign_state({'redirect_uri': redirect_uri, 'state': state, **extra})
+
+
+def _new_nonce() -> str:
+    """Mint the per-flow value that proves a callback reached the same browser."""
+    return secrets.token_urlsafe(32)
+
+
+def _hash_nonce(nonce: str) -> str:
+    """State travels through URLs and proxy logs, so it carries only the hash."""
+    return base64.urlsafe_b64encode(hashlib.sha256(nonce.encode()).digest()).decode()
 
 
 def register_oauth_routes(mcp_server):
