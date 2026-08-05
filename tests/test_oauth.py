@@ -502,6 +502,16 @@ class TestOAuthMetadata:
         response = oauth_app.get('/.well-known/oauth-authorization-server')
         assert 'max-age=3600' in response.headers.get('cache-control', '')
 
+    def test_metadata_allows_any_cors_origin(self, oauth_app):
+        """The discovery document is public, so a browser client may read it."""
+        response = oauth_app.get('/.well-known/oauth-authorization-server')
+        assert response.headers['access-control-allow-origin'] == '*'
+
+    def test_metadata_cors_origin_ignores_the_resource_url(self, oauth_app):
+        """ALPACON_MCP_RESOURCE_URL names this server, not who may read it."""
+        response = oauth_app.get('/.well-known/oauth-authorization-server')
+        assert TEST_RESOURCE_URL not in response.headers['access-control-allow-origin']
+
 
 class TestOAuthAuthorize:
     """Tests for /oauth/authorize endpoint."""

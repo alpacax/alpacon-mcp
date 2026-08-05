@@ -445,9 +445,9 @@ def register_oauth_routes(mcp_server):
             metadata,
             headers={
                 'Cache-Control': 'public, max-age=3600',
-                'Access-Control-Allow-Origin': os.getenv(
-                    'ALPACON_MCP_RESOURCE_URL', request.url.netloc
-                ),
+                # RFC 8414 metadata is public and carries no credentials, and a
+                # browser client's origin is not knowable here.
+                'Access-Control-Allow-Origin': '*',
             },
         )
 
