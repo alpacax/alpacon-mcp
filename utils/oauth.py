@@ -8,7 +8,6 @@ All routes are registered via FastMCP's custom_route decorator,
 which bypasses MCP authentication — appropriate for OAuth flow endpoints.
 """
 
-
 import base64
 import binascii
 import hashlib
