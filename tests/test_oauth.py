@@ -1054,6 +1054,7 @@ class TestOAuthRegister:
         )
         assert response.status_code == 201
         assert response.json()['client_name'] == 'my-app'
+        assert 'redirect_uris' not in response.json()
 
     def test_register_no_store_cache_control(self, oauth_app):
         response = oauth_app.post(
@@ -1195,15 +1196,6 @@ class TestOAuthRegister:
                 headers={'content-type': 'application/json'},
             )
         assert response.status_code == 201
-
-    def test_register_without_redirect_uris_omits_the_key(self, oauth_app):
-        response = oauth_app.post(
-            '/oauth/register',
-            content=json.dumps({'client_name': 'my-app'}).encode(),
-            headers={'content-type': 'application/json'},
-        )
-        assert response.status_code == 201
-        assert 'redirect_uris' not in response.json()
 
 
 class TestOAuthFallbackRoutes:
