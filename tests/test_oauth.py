@@ -1255,7 +1255,7 @@ class TestOAuthFallbackRoutes:
         assert response.json()['client_id'] == TEST_CLIENT_ID
 
     def test_register_fallback_rejects_an_unlisted_redirect_uri(self, oauth_app):
-        """POST /register should apply the same redirect_uri check."""
+        """The fallback delegates, so the check must not be bypassable through it."""
         response = oauth_app.post(
             '/register',
             content=json.dumps({'redirect_uris': [EVIL_REDIRECT_URI]}).encode(),

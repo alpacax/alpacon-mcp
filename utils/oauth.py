@@ -851,8 +851,7 @@ def register_oauth_routes(mcp_server):
             'token_endpoint_auth_method': 'none',
         }
 
-        # The echo is truthful only because the URIs above cleared the same check
-        # /oauth/authorize applies.
+        # Truthful only because these URIs cleared the check /oauth/authorize applies.
         if 'redirect_uris' in client_metadata:
             response_data['redirect_uris'] = client_metadata['redirect_uris']
 
