@@ -839,6 +839,17 @@ class TestOAuthAuthorize:
         assert payload['stage'] == 'mfa'
         assert payload['nonce_hash'] == _hash_nonce(nonce)
 
+    def test_authorize_replaces_a_stale_nonce_cookie(self, oauth_app):
+        """A browser arriving with an old cookie is re-marked, not trusted as it is."""
+        response = oauth_app.get(
+            '/oauth/authorize',
+            params={'redirect_uri': 'http://localhost:52048/callback'},
+            follow_redirects=False,
+        )
+        assert TEST_NONCE not in response.headers['set-cookie']
+        state = parse_qs(urlparse(response.headers['location']).query)['state'][0]
+        assert _verify_state(state)['nonce_hash'] != _hash_nonce(TEST_NONCE)
+
 
 class TestOAuthToken:
     """Tests for /oauth/token endpoint."""
@@ -1387,7 +1398,7 @@ class TestOAuthCallback:
         state = parse_qs(urlparse(response.headers['location']).query)['state'][0]
         assert _verify_state(state)['nonce_hash'] == _hash_nonce(TEST_NONCE)
 
-    def test_mfa_stage1_refreshes_the_cookie_lifetime(self, oauth_app):
+    def test_mfa_stage2_refreshes_the_cookie_lifetime(self, oauth_app):
         """Stage 2 mints a fresh state expiry, so the cookie is re-set to match."""
         composite = _make_composite_state(
             redirect_uri='http://localhost:8080/callback',
@@ -1441,6 +1452,50 @@ class TestOAuthCallback:
             follow_redirects=False,
         )
         assert response.status_code == 400
+        assert 'location' not in response.headers
+
+    def test_callback_rejects_a_non_ascii_binding(self, oauth_app):
+        """hmac.compare_digest raises TypeError on non-ASCII str, so compare bytes."""
+        composite = _make_composite_state(
+            'http://localhost:52048/callback', 'xyz', nonce_hash='서명'
+        )
+        response = oauth_app.get(
+            '/oauth/callback',
+            params={'code': 'auth-code', 'state': composite},
+            follow_redirects=False,
+        )
+        assert response.status_code == 400
+        assert response.json()['error'] == 'invalid_request'
+        assert 'location' not in response.headers
+
+    @pytest.mark.parametrize('binding', ['', None, 0, True, ['hash'], {'v': 'hash'}])
+    def test_callback_rejects_a_binding_that_is_not_a_hash(self, oauth_app, binding):
+        """Fail closed on whatever else a forged state could carry as nonce_hash."""
+        composite = _make_composite_state(
+            'http://localhost:52048/callback', 'xyz', nonce_hash=binding
+        )
+        response = oauth_app.get(
+            '/oauth/callback',
+            params={'code': 'auth-code', 'state': composite},
+            follow_redirects=False,
+        )
+        assert response.status_code == 400
+        assert 'location' not in response.headers
+
+    def test_error_callback_rejects_an_unbound_state(self, oauth_app):
+        """The gate sits before the error branch, so an error callback passes it too."""
+        composite = _make_composite_state(
+            'http://localhost:52048/callback', 'xyz', nonce_hash=_hash_nonce('other')
+        )
+        response = oauth_app.get(
+            '/oauth/callback',
+            params={'error': 'access_denied', 'state': composite},
+            follow_redirects=False,
+        )
+        assert response.status_code == 400
+        # invalid_request, not access_denied: the gate rejected it before the
+        # error was relayed anywhere.
+        assert response.json()['error'] == 'invalid_request'
         assert 'location' not in response.headers
 
     def test_callback_rejects_loopback_when_the_cookie_disagrees(self, oauth_app):
