@@ -14,10 +14,13 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import time
 from http import HTTPStatus
+from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 import httpx
+from starlette.responses import JSONResponse, RedirectResponse
 
 from utils.logger import get_logger
 
@@ -43,13 +46,61 @@ _STATE_TTL_SECONDS = 600
 
 _ALLOWED_LOOPBACK_HOSTS = ('localhost', '127.0.0.1', '::1')
 
-# Default trusted redirect domains for cloud-based MCP clients (e.g. Claude web, ChatGPT).
-# Override via ALLOWED_REDIRECT_DOMAINS env var (comma-separated).
-_DEFAULT_REDIRECT_DOMAINS = (
-    'claude.ai',
-    'chatgpt.com',
-    'chat.openai.com',
+# Caps a client-supplied value in a log line. Escaping expands a byte up to
+# sixfold, so an unbounded value on an unauthenticated route inflates log volume.
+_LOG_VALUE_MAX_CHARS = 512
+
+_ENV_ALLOWED_REDIRECT_DOMAINS = 'ALLOWED_REDIRECT_DOMAINS'
+_ENV_ALLOWED_REDIRECT_URIS = 'ALLOWED_REDIRECT_URIS'
+_ENV_REDIRECT_URI_REPORT_ONLY = 'ALPACON_MCP_REDIRECT_URI_REPORT_ONLY'
+
+# Trusting a whole domain lets an authorization code land on any path an
+# attacker can influence there, so each entry pins one callback endpoint.
+_DEFAULT_REDIRECT_URIS = (
+    # Anthropic — hosted surfaces (web, Desktop, mobile, Cowork)
+    'https://claude.ai/api/mcp/auth_callback',
+    'https://claude.com/api/mcp/auth_callback',
+    # OpenAI — legacy connector callback, still served for published apps
+    'https://chatgpt.com/connector_platform_oauth_redirect',
+    # Cursor — web and Cursor Agents
+    'https://www.cursor.com/agents/mcp/oauth/callback',
+    # VS Code / GitHub Copilot — web
+    'https://vscode.dev/redirect/',
+    'https://antigravity.google/oauth-callback',
+    # Microsoft Copilot Studio, via the Power Platform connector gateway
+    'https://global.consent.azure-apim.net/redirect',
 )
+
+# OpenAI issues one opaque callback id per connector, so the last segment
+# cannot be pinned. The character class excludes "/" so no deeper path matches,
+# and \Z rather than $ so a trailing newline cannot ride along.
+_DEFAULT_REDIRECT_URI_PATTERNS = (
+    re.compile(r'^https://chatgpt\.com/connector/oauth/[A-Za-z0-9_-]{1,64}\Z'),
+)
+
+# Hosts report-only mode may fall back to, derived from the endpoint list so a
+# client whose endpoint moves stays covered without a second edit.
+# chat.openai.com has no endpoint entry and stays as the legacy OpenAI host.
+# Override via ALLOWED_REDIRECT_DOMAINS (comma-separated).
+_DEFAULT_REDIRECT_DOMAINS = tuple(
+    sorted(
+        {host for uri in _DEFAULT_REDIRECT_URIS if (host := urlparse(uri).hostname)}
+        | {'chat.openai.com'}
+    )
+)
+
+
+def _escape_for_log(value: str) -> str:
+    """Escape control characters in a client-supplied value.
+
+    A raw newline would otherwise let a client forge a second log line.
+    """
+    escaped = ''.join(
+        c if c.isprintable() else repr(c)[1:-1] for c in value[:_LOG_VALUE_MAX_CHARS]
+    )
+    if len(value) > _LOG_VALUE_MAX_CHARS or len(escaped) > _LOG_VALUE_MAX_CHARS:
+        return escaped[:_LOG_VALUE_MAX_CHARS] + '...(truncated)'
+    return escaped
 
 
 def _get_server_url(request) -> str:
@@ -70,44 +121,117 @@ def _get_allowed_redirect_domains() -> tuple[str, ...]:
     Reads from ALLOWED_REDIRECT_DOMAINS env var (comma-separated).
     Falls back to _DEFAULT_REDIRECT_DOMAINS if not set.
     """
-    env_domains = os.getenv('ALLOWED_REDIRECT_DOMAINS', '').strip()
+    env_domains = os.getenv(_ENV_ALLOWED_REDIRECT_DOMAINS, '').strip()
     if env_domains:
         return tuple(d.strip().lower() for d in env_domains.split(',') if d.strip())
     return _DEFAULT_REDIRECT_DOMAINS
 
 
-def _is_allowed_redirect_url(url: str) -> bool:
-    """Validate that a redirect URL is allowed.
+def _get_allowed_redirect_uris() -> tuple[str, ...]:
+    """Return the allowed non-loopback callback endpoints.
 
-    Allows localhost URLs (http/https) and trusted redirect domains (https only).
-    Non-loopback domains must use https to prevent authorization code leakage
-    over plaintext connections.
+    Reads ALLOWED_REDIRECT_URIS (comma-separated full URIs) when set.
     """
-    from urllib.parse import urlparse
+    env_uris = os.getenv(_ENV_ALLOWED_REDIRECT_URIS, '').strip()
+    if env_uris:
+        return tuple(u.strip() for u in env_uris.split(',') if u.strip())
+    return _DEFAULT_REDIRECT_URIS
 
+
+def _redirect_uris_are_overridden() -> bool:
+    return bool(os.getenv(_ENV_ALLOWED_REDIRECT_URIS, '').strip())
+
+
+def _is_allowed_redirect_host(url: str) -> bool:
+    """Whether the URL's host clears the legacy host allowlist.
+
+    https only, so an authorization code never travels over plaintext.
+    Clearing this check is not sufficient on its own — see _check_redirect_uri.
+    """
     parsed = urlparse(url)
-    if parsed.scheme not in ('http', 'https'):
-        return False
-
-    hostname = parsed.hostname or ''
-
-    # Allow localhost with http or https (for local development)
-    if hostname in _ALLOWED_LOOPBACK_HOSTS:
-        return True
-
-    # Trusted domains must use https to prevent code leakage via plaintext
     if parsed.scheme != 'https':
         return False
 
-    # Allow trusted redirect domains (exact match)
-    allowed_domains = _get_allowed_redirect_domains()
-    return hostname in allowed_domains
+    return (parsed.hostname or '') in _get_allowed_redirect_domains()
+
+
+def _is_exact_allowed_redirect_uri(url: str) -> bool:
+    """Return True when the URL is one of the allowed callback endpoints.
+
+    https only: a pinned endpoint bypasses the host allowlist, so the scheme
+    check that keeps authorization codes off plaintext lives here too.
+    """
+    parsed = urlparse(url)
+    if parsed.scheme != 'https' or parsed.query or parsed.fragment:
+        return False
+
+    if url in _get_allowed_redirect_uris():
+        return True
+
+    # An override is the whole allowlist: the built-in patterns go out with the
+    # built-in URIs, so narrowing the list cannot leave one behind.
+    if _redirect_uris_are_overridden():
+        return False
+
+    return any(pattern.match(url) for pattern in _DEFAULT_REDIRECT_URI_PATTERNS)
+
+
+def _redirect_uri_report_only() -> bool:
+    """Escape hatch: recover from a missing allowlist entry without a code change."""
+    return os.getenv(_ENV_REDIRECT_URI_REPORT_ONLY, '').lower() == 'true'
+
+
+def _check_redirect_uri(url: str) -> bool:
+    """Decide whether a client redirect_uri may receive an authorization code.
+
+    Loopback is exempt: callback paths differ per client (/callback,
+    /oauth/callback, /) and pinning them would break clients without closing
+    the local-listener risk, which browser-session binding handles instead.
+    """
+    # A pinned endpoint is stricter than a host match, so it stands on its own;
+    # otherwise every listed host would also have to be in the domain list.
+    if _is_exact_allowed_redirect_uri(url):
+        return True
+
+    parsed = urlparse(url)
+    if (parsed.hostname or '') in _ALLOWED_LOOPBACK_HOSTS:
+        return parsed.scheme in ('http', 'https')
+
+    if not _is_allowed_redirect_host(url):
+        return False
+
+    if _redirect_uri_report_only():
+        logger.warning(
+            'redirect_uri is outside the endpoint allowlist and is allowed only '
+            'because report-only mode is on: %s',
+            _escape_for_log(url),
+        )
+        return True
+
+    logger.warning(
+        'Rejected redirect_uri outside the endpoint allowlist: %s',
+        _escape_for_log(url),
+    )
+    return False
+
+
+def _log_authorize_client_profile(
+    redirect_uri: str, code_challenge_method: str
+) -> None:
+    """Record what each client sends, to settle the allowlist and PKCE questions.
+
+    Remove once PKCE is required and no deployment still needs report-only mode
+    to cover a missing allowlist entry.
+    """
+    logger.info(
+        'authorize observed - redirect_uri: %s, pkce: %s',
+        _escape_for_log(redirect_uri) or '(none)',
+        _escape_for_log(code_challenge_method) or 'none',
+    )
 
 
 def _build_redirect_url(base_url: str, extra_params: dict) -> str:
     """Safely merge query params into a URL, preserving existing params."""
-    from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
-
     parsed = urlparse(base_url)
     existing_params = parse_qs(parsed.query, keep_blank_values=True)
     merged = {k: v[0] if len(v) == 1 else v for k, v in existing_params.items()}
@@ -236,8 +360,6 @@ def register_oauth_routes(mcp_server):
         authorization server. The authorize, token, and register
         endpoints proxy to Auth0; only jwks_uri points to Auth0 directly.
         """
-        from starlette.responses import JSONResponse
-
         try:
             config = _get_oauth_config()
         except ValueError as e:
@@ -280,10 +402,6 @@ def register_oauth_routes(mcp_server):
         Proxies the OAuth authorize request to Auth0, adding the
         configured client_id and audience.
         """
-        from urllib.parse import urlencode
-
-        from starlette.responses import JSONResponse, RedirectResponse
-
         try:
             config = _get_oauth_config()
         except ValueError as e:
@@ -326,15 +444,17 @@ def register_oauth_routes(mcp_server):
         server_url = _get_server_url(request)
 
         # Save client's original redirect_uri to relay the code later.
-        # Allow localhost and trusted cloud MCP client domains to prevent
-        # open redirect attacks while supporting Claude web, ChatGPT, etc.
         client_redirect_uri = params.get('redirect_uri', '')
-        if client_redirect_uri and not _is_allowed_redirect_url(client_redirect_uri):
+        _log_authorize_client_profile(
+            client_redirect_uri, params.get('code_challenge_method', '')
+        )
+        if client_redirect_uri and not _check_redirect_uri(client_redirect_uri):
             return JSONResponse(
                 {
                     'error': 'invalid_request',
                     'error_description': (
-                        'redirect_uri must be a localhost URL or a trusted domain'
+                        'redirect_uri must be a loopback URL or an allowlisted '
+                        'callback endpoint'
                     ),
                 },
                 status_code=400,
@@ -408,8 +528,6 @@ def register_oauth_routes(mcp_server):
         Injects the configured client_id and client_secret for
         Auth0 token exchange (confidential client / RWA).
         """
-        from starlette.responses import JSONResponse
-
         try:
             config = _get_oauth_config()
         except ValueError as e:
@@ -438,8 +556,6 @@ def register_oauth_routes(mcp_server):
                 )
         else:
             # application/x-www-form-urlencoded (standard OAuth)
-            from urllib.parse import parse_qs
-
             try:
                 decoded_body = body.decode('utf-8')
             except UnicodeDecodeError:
@@ -581,8 +697,6 @@ def register_oauth_routes(mcp_server):
         plans, so this endpoint returns the server's pre-configured client_id
         to satisfy the MCP SDK's registration requirement.
         """
-        from starlette.responses import JSONResponse
-
         try:
             config = _get_oauth_config()
         except ValueError as e:
@@ -672,10 +786,6 @@ def register_oauth_routes(mcp_server):
           regular audience (Stage 2) using Auth0 SSO session.
         - Stage 'regular' or absent: forward code to MCP client.
         """
-        from urllib.parse import urlencode
-
-        from starlette.responses import JSONResponse, RedirectResponse
-
         # Extract callback parameters
         code = request.query_params.get('code')
         composite_state = request.query_params.get('state')
@@ -718,10 +828,10 @@ def register_oauth_routes(mcp_server):
         # Defense-in-depth: re-validate redirect_uri from state is allowed.
         # The authorize endpoint already validates this, but an attacker could craft
         # a composite state directly and hit Auth0 with our callback URL.
-        if client_redirect_uri and not _is_allowed_redirect_url(client_redirect_uri):
+        if client_redirect_uri and not _check_redirect_uri(client_redirect_uri):
             logger.warning(
-                f'Callback rejected untrusted redirect_uri from state: '
-                f'{client_redirect_uri}'
+                'Callback rejected untrusted redirect_uri from state: %s',
+                _escape_for_log(client_redirect_uri),
             )
             client_redirect_uri = ''
 
@@ -879,6 +989,21 @@ def register_oauth_routes(mcp_server):
         """
         logger.info('/register fallback hit — delegating to /oauth/register handler')
         return await oauth_register(request)
+
+    # Report-only mode is what makes the domain list meaningful on its own, so
+    # a deployment running it is configured, not misconfigured.
+    domains_only = (
+        os.getenv(_ENV_ALLOWED_REDIRECT_DOMAINS, '').strip()
+        and not _redirect_uris_are_overridden()
+        and not _redirect_uri_report_only()
+    )
+    if domains_only:
+        logger.warning(
+            'ALLOWED_REDIRECT_DOMAINS is set but ALLOWED_REDIRECT_URIS is not; '
+            'those hosts are being rejected. List their full callback URIs in '
+            'ALLOWED_REDIRECT_URIS, or set ALPACON_MCP_REDIRECT_URI_REPORT_ONLY=true '
+            'to fall back to logging only'
+        )
 
     logger.info(
         'OAuth proxy routes registered (including /token, /authorize, '
