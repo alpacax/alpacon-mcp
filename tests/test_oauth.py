@@ -1330,6 +1330,41 @@ class TestOAuthCallback:
         # MFA code should have been exchanged
         mock_client.post.assert_called_once()
 
+    def test_final_redirect_clears_the_cookie(self, oauth_app):
+        """The mark is spent once the code is relayed."""
+        composite = _make_composite_state('http://localhost:52048/callback', 'xyz')
+        response = oauth_app.get(
+            '/oauth/callback',
+            params={'code': 'auth-code', 'state': composite},
+            follow_redirects=False,
+        )
+        assert response.status_code == 302
+        raw = response.headers['set-cookie'].lower()
+        assert '__host-alpacon_oauth_nonce=' in raw
+        assert 'max-age=0' in raw or 'expires=' in raw
+
+    def test_json_fallback_clears_the_cookie(self, oauth_app):
+        """The fallback ends the flow too, so it clears the mark as well."""
+        composite = _make_composite_state('', 'xyz')
+        response = oauth_app.get(
+            '/oauth/callback', params={'code': 'auth-code', 'state': composite}
+        )
+        assert response.status_code == 200
+        assert '__host-alpacon_oauth_nonce=' in response.headers['set-cookie'].lower()
+
+    def test_rejection_leaves_the_cookie_alone(self, oauth_app):
+        """Otherwise a forced callback could wipe a live flow's cookie."""
+        composite = _make_composite_state(
+            'http://localhost:52048/callback', 'xyz', nonce_hash=_hash_nonce('other')
+        )
+        response = oauth_app.get(
+            '/oauth/callback',
+            params={'code': 'auth-code', 'state': composite},
+            follow_redirects=False,
+        )
+        assert response.status_code == 400
+        assert 'set-cookie' not in response.headers
+
     def test_mfa_stage2_state_keeps_the_same_binding(self, oauth_app):
         """Stage 2 must stay bound to the browser that cleared MFA."""
         composite = _make_composite_state(

@@ -384,6 +384,13 @@ def _nonce_cookie_matches(request: Request, state_data: dict) -> bool:
     return hmac.compare_digest(expected, _hash_nonce(nonce))
 
 
+def _clear_nonce_cookie(response: Response) -> None:
+    """Attributes must match the ones it was set with, or the browser keeps it."""
+    response.delete_cookie(
+        _NONCE_COOKIE_NAME, path='/', secure=True, httponly=True, samesite='lax'
+    )
+
+
 def register_oauth_routes(mcp_server):
     """Register OAuth proxy routes on the FastMCP server.
 
@@ -1013,16 +1020,20 @@ def register_oauth_routes(mcp_server):
             params = {'code': code}
             if original_state:
                 params['state'] = original_state
-            return RedirectResponse(
+            response = RedirectResponse(
                 url=_build_redirect_url(client_redirect_uri, params),
                 status_code=302,
             )
+            _clear_nonce_cookie(response)
+            return response
 
         # Fallback: return as JSON if no client redirect_uri was found
         result = {'code': code}
         if original_state:
             result['state'] = original_state
-        return JSONResponse(result)
+        response = JSONResponse(result)
+        _clear_nonce_cookie(response)
+        return response
 
     @mcp_server.custom_route('/token', methods=['POST'])
     async def oauth_token_fallback(request):
