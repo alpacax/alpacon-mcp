@@ -1008,7 +1008,7 @@ def register_oauth_routes(mcp_server):
             logger.info('Stage 2: Redirecting to Auth0 regular audience (SSO)')
             response = RedirectResponse(url=auth0_url, status_code=302)
             # Stage 2 restarts the state expiry; re-set the cookie so the two
-            # do not drift apart while the user is completing MFA.
+            # do not drift apart.
             _set_nonce_cookie(response, request.cookies[_NONCE_COOKIE_NAME])
             return response
 
