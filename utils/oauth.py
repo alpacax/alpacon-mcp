@@ -50,9 +50,10 @@ _STATE_TTL_SECONDS = 600
 # Domain, so the cookie cannot be planted by a sibling host.
 _NONCE_COOKIE_NAME = '__Host-alpacon_oauth_nonce'
 
-# Shared by set and delete: a browser only drops a cookie when the attributes
-# match the ones it was set with. SameSite stays Lax because Strict drops the
-# cookie on the top-level return from Auth0.
+# Shared by set and delete: the delete has to repeat Path, or it addresses a
+# different cookie, and Secure, or the browser rejects the whole Set-Cookie
+# under a __Host- name and the cookie survives. SameSite stays Lax because
+# Strict drops the cookie on the top-level return from Auth0.
 _NONCE_COOKIE_ATTRS = {
     'path': '/',
     'secure': True,
