@@ -1121,6 +1121,54 @@ class TestOAuthRegister:
         assert response.status_code == 400
         assert response.json()['error'] == 'invalid_client_metadata'
 
+    def test_register_rejects_unlisted_redirect_uri(self, oauth_app):
+        response = oauth_app.post(
+            '/oauth/register',
+            content=json.dumps({'redirect_uris': [EVIL_REDIRECT_URI]}).encode(),
+            headers={'content-type': 'application/json'},
+        )
+        assert response.status_code == 400
+        assert response.json()['error'] == 'invalid_redirect_uri'
+
+    def test_register_rejects_a_list_with_one_unlisted_uri(self, oauth_app):
+        response = oauth_app.post(
+            '/oauth/register',
+            content=json.dumps(
+                {'redirect_uris': [LISTED_REDIRECT_URI, EVIL_REDIRECT_URI]}
+            ).encode(),
+            headers={'content-type': 'application/json'},
+        )
+        assert response.status_code == 400
+        assert response.json()['error'] == 'invalid_redirect_uri'
+
+    def test_register_accepts_a_listed_redirect_uri(self, oauth_app):
+        uris = [LISTED_REDIRECT_URI]
+        response = oauth_app.post(
+            '/oauth/register',
+            content=json.dumps({'redirect_uris': uris}).encode(),
+            headers={'content-type': 'application/json'},
+        )
+        assert response.status_code == 201
+        assert response.json()['redirect_uris'] == uris
+
+    def test_register_accepts_a_domain_match_in_report_only(self, oauth_app):
+        with patch.dict('os.environ', REPORT_ONLY):
+            response = oauth_app.post(
+                '/oauth/register',
+                content=json.dumps({'redirect_uris': [UNLISTED_PATH_URI]}).encode(),
+                headers={'content-type': 'application/json'},
+            )
+        assert response.status_code == 201
+
+    def test_register_without_redirect_uris_omits_the_key(self, oauth_app):
+        response = oauth_app.post(
+            '/oauth/register',
+            content=json.dumps({'client_name': 'my-app'}).encode(),
+            headers={'content-type': 'application/json'},
+        )
+        assert response.status_code == 201
+        assert 'redirect_uris' not in response.json()
+
 
 class TestOAuthFallbackRoutes:
     """Tests for fallback routes (/token, /authorize, /register)."""
@@ -1169,6 +1217,16 @@ class TestOAuthFallbackRoutes:
         )
         assert response.status_code == 201
         assert response.json()['client_id'] == TEST_CLIENT_ID
+
+    def test_register_fallback_rejects_an_unlisted_redirect_uri(self, oauth_app):
+        """POST /register should apply the same redirect_uri check."""
+        response = oauth_app.post(
+            '/register',
+            content=json.dumps({'redirect_uris': [EVIL_REDIRECT_URI]}).encode(),
+            headers={'content-type': 'application/json'},
+        )
+        assert response.status_code == 400
+        assert response.json()['error'] == 'invalid_redirect_uri'
 
 
 def _make_composite_state(redirect_uri='', state='', **extra):

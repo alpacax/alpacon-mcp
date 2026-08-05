@@ -829,13 +829,27 @@ def register_oauth_routes(mcp_server):
                 status_code=400,
             )
 
+        if 'redirect_uris' in client_metadata and not all(
+            _check_redirect_uri(uri) for uri in client_metadata['redirect_uris']
+        ):
+            return JSONResponse(
+                {
+                    'error': 'invalid_redirect_uri',
+                    'error_description': (
+                        'One or more redirect_uris are not allowed by this server'
+                    ),
+                },
+                status_code=400,
+            )
+
         # Return pre-configured client_id with metadata echoed back
         response_data = {
             'client_id': config['client_id'],
             'token_endpoint_auth_method': 'none',
         }
 
-        # Echo back redirect_uris if provided
+        # The echo is truthful only because the URIs above cleared the same check
+        # /oauth/authorize applies.
         if 'redirect_uris' in client_metadata:
             response_data['redirect_uris'] = client_metadata['redirect_uris']
 
