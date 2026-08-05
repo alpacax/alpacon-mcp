@@ -380,7 +380,8 @@ def _nonce_cookie_matches(request: Request, state_data: dict) -> bool:
     nonce = request.cookies.get(_NONCE_COOKIE_NAME, '')
     if not isinstance(expected, str) or not expected or not nonce:
         return False
-    return hmac.compare_digest(expected, _hash_nonce(nonce))
+    # Compare bytes: compare_digest raises TypeError on non-ASCII str input.
+    return hmac.compare_digest(expected.encode(), _hash_nonce(nonce).encode())
 
 
 def _clear_nonce_cookie(response: Response) -> None:
