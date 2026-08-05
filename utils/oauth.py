@@ -232,6 +232,15 @@ def _check_redirect_uri(url: str) -> bool:
     return False
 
 
+def _is_registrable_uri_list(value: object) -> bool:
+    """Whether redirect_uris has the shape RFC 7591 asks for."""
+    return (
+        isinstance(value, list)
+        and bool(value)
+        and all(isinstance(uri, str) and uri for uri in value)
+    )
+
+
 def _log_authorize_client_profile(
     redirect_uri: str, code_challenge_method: str
 ) -> None:
@@ -803,6 +812,19 @@ def register_oauth_routes(mcp_server):
                 {
                     'error': 'invalid_client_metadata',
                     'error_description': 'Client metadata must be a JSON object',
+                },
+                status_code=400,
+            )
+
+        if 'redirect_uris' in client_metadata and not _is_registrable_uri_list(
+            client_metadata['redirect_uris']
+        ):
+            return JSONResponse(
+                {
+                    'error': 'invalid_client_metadata',
+                    'error_description': (
+                        'redirect_uris must be a non-empty array of strings'
+                    ),
                 },
                 status_code=400,
             )

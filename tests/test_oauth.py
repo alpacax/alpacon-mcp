@@ -1094,6 +1094,33 @@ class TestOAuthRegister:
         assert response.status_code == 400
         assert response.json()['error'] == 'invalid_client_metadata'
 
+    def test_register_rejects_non_list_redirect_uris(self, oauth_app):
+        response = oauth_app.post(
+            '/oauth/register',
+            content=json.dumps({'redirect_uris': LISTED_REDIRECT_URI}).encode(),
+            headers={'content-type': 'application/json'},
+        )
+        assert response.status_code == 400
+        assert response.json()['error'] == 'invalid_client_metadata'
+
+    def test_register_rejects_empty_redirect_uris(self, oauth_app):
+        response = oauth_app.post(
+            '/oauth/register',
+            content=json.dumps({'redirect_uris': []}).encode(),
+            headers={'content-type': 'application/json'},
+        )
+        assert response.status_code == 400
+        assert response.json()['error'] == 'invalid_client_metadata'
+
+    def test_register_rejects_non_string_redirect_uri_entry(self, oauth_app):
+        response = oauth_app.post(
+            '/oauth/register',
+            content=json.dumps({'redirect_uris': [LISTED_REDIRECT_URI, 42]}).encode(),
+            headers={'content-type': 'application/json'},
+        )
+        assert response.status_code == 400
+        assert response.json()['error'] == 'invalid_client_metadata'
+
 
 class TestOAuthFallbackRoutes:
     """Tests for fallback routes (/token, /authorize, /register)."""
