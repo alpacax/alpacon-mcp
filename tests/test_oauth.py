@@ -1330,6 +1330,41 @@ class TestOAuthCallback:
         # MFA code should have been exchanged
         mock_client.post.assert_called_once()
 
+    def test_mfa_stage2_state_keeps_the_same_binding(self, oauth_app):
+        """Stage 2 must stay bound to the browser that cleared MFA."""
+        composite = _make_composite_state(
+            redirect_uri='http://localhost:8080/callback',
+            state='orig-state',
+            stage='mfa',
+            original_scope='openid profile email offline_access',
+        )
+        with patch('httpx.AsyncClient', return_value=_mock_auth0_response()):
+            response = oauth_app.get(
+                '/oauth/callback',
+                params={'code': 'mfa-auth-code', 'state': composite},
+                follow_redirects=False,
+            )
+        state = parse_qs(urlparse(response.headers['location']).query)['state'][0]
+        assert _verify_state(state)['nonce_hash'] == _hash_nonce(TEST_NONCE)
+
+    def test_mfa_stage1_refreshes_the_cookie_lifetime(self, oauth_app):
+        """Stage 2 mints a fresh state expiry, so the cookie is re-set to match."""
+        composite = _make_composite_state(
+            redirect_uri='http://localhost:8080/callback',
+            state='orig-state',
+            stage='mfa',
+            original_scope='openid profile email offline_access',
+        )
+        with patch('httpx.AsyncClient', return_value=_mock_auth0_response()):
+            response = oauth_app.get(
+                '/oauth/callback',
+                params={'code': 'mfa-auth-code', 'state': composite},
+                follow_redirects=False,
+            )
+        raw = response.headers['set-cookie'].lower()
+        assert f'__host-alpacon_oauth_nonce={TEST_NONCE}'.lower() in raw
+        assert 'max-age=600' in raw
+
     def test_callback_rejects_a_browser_without_the_cookie(self, oauth_app_no_cookie):
         """A code must not reach a browser that never started the flow."""
         composite = _make_composite_state('http://localhost:52048/callback', 'xyz')

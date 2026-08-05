@@ -843,6 +843,7 @@ def register_oauth_routes(mcp_server):
         original_state = ''
         stage = ''
         original_scope = ''
+        nonce_hash = ''
         authorize_params: dict = {}
         # An absent state is not rejected: Auth0 error callbacks can arrive
         # without one, and it names no redirect target a forgery could steer.
@@ -880,6 +881,7 @@ def register_oauth_routes(mcp_server):
             original_state = state_data.get('state', '')
             stage = state_data.get('stage', '')
             original_scope = state_data.get('original_scope', '')
+            nonce_hash = state_data.get('nonce_hash', '')
             authorize_params = state_data.get('authorize_params', {})
 
         # Defense-in-depth: re-validate redirect_uri from state is allowed.
@@ -972,7 +974,10 @@ def register_oauth_routes(mcp_server):
                 'redirect_uri': f'{server_url}/oauth/callback',
                 'scope': original_scope or 'openid profile email offline_access',
                 'state': _build_state(
-                    client_redirect_uri, original_state, stage=_STAGE_REGULAR
+                    client_redirect_uri,
+                    original_state,
+                    stage=_STAGE_REGULAR,
+                    nonce_hash=nonce_hash,
                 ),
             }
             # Replay PKCE and other client params preserved from Stage 1
@@ -994,7 +999,11 @@ def register_oauth_routes(mcp_server):
                 f'{config["auth0_base_url"]}/authorize?{urlencode(stage2_params)}'
             )
             logger.info('Stage 2: Redirecting to Auth0 regular audience (SSO)')
-            return RedirectResponse(url=auth0_url, status_code=302)
+            response = RedirectResponse(url=auth0_url, status_code=302)
+            # Stage 2 restarts the state expiry; re-set the cookie so the two
+            # do not drift apart while the user is completing MFA.
+            _set_nonce_cookie(response, request.cookies[_NONCE_COOKIE_NAME])
+            return response
 
         # --- Standard callback (stage 'regular' or absent) ---
         logger.info('Auth0 callback received authorization code')
