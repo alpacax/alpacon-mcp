@@ -15,12 +15,14 @@ import hmac
 import json
 import os
 import re
+import secrets
 import time
 from http import HTTPStatus
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 import httpx
-from starlette.responses import JSONResponse, RedirectResponse
+from starlette.requests import Request
+from starlette.responses import JSONResponse, RedirectResponse, Response
 
 from utils.logger import get_logger
 
@@ -43,6 +45,21 @@ _STATE_SECRET_MIN_BYTES = 32
 
 # Covers an Auth0 login plus MFA; keeps a leaked state only briefly usable.
 _STATE_TTL_SECONDS = 600
+
+# The __Host- prefix makes the browser itself require Secure, Path=/ and no
+# Domain, so the cookie cannot be planted by a sibling host.
+_NONCE_COOKIE_NAME = '__Host-alpacon_oauth_nonce'
+
+# Shared by set and delete: the delete has to repeat Path, or it addresses a
+# different cookie, and Secure, or the browser rejects the whole Set-Cookie
+# under a __Host- name and the cookie survives. SameSite stays Lax because
+# Strict drops the cookie on the top-level return from Auth0.
+_NONCE_COOKIE_ATTRS = {
+    'path': '/',
+    'secure': True,
+    'httponly': True,
+    'samesite': 'lax',
+}
 
 _ALLOWED_LOOPBACK_HOSTS = ('localhost', '127.0.0.1', '::1')
 
@@ -345,6 +362,36 @@ def _build_state(redirect_uri: str, state: str, **extra) -> str:
     return _sign_state({'redirect_uri': redirect_uri, 'state': state, **extra})
 
 
+def _new_nonce() -> str:
+    """Mint the per-flow value that proves a callback reached the same browser."""
+    return secrets.token_urlsafe(32)
+
+
+def _hash_nonce(nonce: str) -> str:
+    """State travels through URLs and proxy logs, so it carries only the hash."""
+    return base64.urlsafe_b64encode(hashlib.sha256(nonce.encode()).digest()).decode()
+
+
+def _set_nonce_cookie(response: Response, nonce: str) -> None:
+    response.set_cookie(
+        _NONCE_COOKIE_NAME, nonce, max_age=_STATE_TTL_SECONDS, **_NONCE_COOKIE_ATTRS
+    )
+
+
+def _nonce_cookie_matches(request: Request, state_data: dict) -> bool:
+    """Fail closed: a state with no binding, or a browser with no cookie, is a no."""
+    expected = state_data.get('nonce_hash')
+    nonce = request.cookies.get(_NONCE_COOKIE_NAME, '')
+    if not isinstance(expected, str) or not expected or not nonce:
+        return False
+    # Compare bytes: compare_digest raises TypeError on non-ASCII str input.
+    return hmac.compare_digest(expected.encode(), _hash_nonce(nonce).encode())
+
+
+def _clear_nonce_cookie(response: Response) -> None:
+    response.delete_cookie(_NONCE_COOKIE_NAME, **_NONCE_COOKIE_ATTRS)
+
+
 def register_oauth_routes(mcp_server):
     """Register OAuth proxy routes on the FastMCP server.
 
@@ -461,6 +508,8 @@ def register_oauth_routes(mcp_server):
             )
 
         original_state = params.get('state', '')
+        nonce = _new_nonce()
+        nonce_hash = _hash_nonce(nonce)
 
         # _build_state signs with the configured key, so a malformed
         # ALPACON_MCP_STATE_SECRET raises here — on the endpoint an operator
@@ -498,6 +547,7 @@ def register_oauth_routes(mcp_server):
                     stage=_STAGE_MFA,
                     original_scope=scope,
                     authorize_params=stage2_authorize_params,
+                    nonce_hash=nonce_hash,
                 )
 
                 auth0_url = (
@@ -509,7 +559,9 @@ def register_oauth_routes(mcp_server):
             else:
                 # Standard single-stage OAuth flow (no MFA required)
                 params['redirect_uri'] = f'{server_url}/oauth/callback'
-                params['state'] = _build_state(client_redirect_uri, original_state)
+                params['state'] = _build_state(
+                    client_redirect_uri, original_state, nonce_hash=nonce_hash
+                )
 
                 auth0_url = f'{config["auth0_base_url"]}/authorize?{urlencode(params)}'
                 logger.info('Redirecting to Auth0 authorize endpoint')
@@ -518,7 +570,9 @@ def register_oauth_routes(mcp_server):
                 {'error': str(e)}, status_code=HTTPStatus.INTERNAL_SERVER_ERROR
             )
 
-        return RedirectResponse(url=auth0_url, status_code=302)
+        response = RedirectResponse(url=auth0_url, status_code=302)
+        _set_nonce_cookie(response, nonce)
+        return response
 
     @mcp_server.custom_route('/oauth/token', methods=['POST'])
     async def oauth_token(request):
@@ -797,6 +851,7 @@ def register_oauth_routes(mcp_server):
         original_state = ''
         stage = ''
         original_scope = ''
+        nonce_hash = ''
         authorize_params: dict = {}
         # An absent state is not rejected: Auth0 error callbacks can arrive
         # without one, and it names no redirect target a forgery could steer.
@@ -819,10 +874,22 @@ def register_oauth_routes(mcp_server):
                     },
                     status_code=400,
                 )
+            # Placed before the error branch so the gate lives in one spot; an
+            # error callback carries no code, so nothing is lost by rejecting it.
+            if not _nonce_cookie_matches(request, state_data):
+                logger.warning('Callback rejected a state not bound to this browser')
+                return JSONResponse(
+                    {
+                        'error': 'invalid_request',
+                        'error_description': 'Invalid or expired state parameter',
+                    },
+                    status_code=400,
+                )
             client_redirect_uri = state_data.get('redirect_uri', '')
             original_state = state_data.get('state', '')
             stage = state_data.get('stage', '')
             original_scope = state_data.get('original_scope', '')
+            nonce_hash = state_data.get('nonce_hash', '')
             authorize_params = state_data.get('authorize_params', {})
 
         # Defense-in-depth: re-validate redirect_uri from state is allowed.
@@ -915,7 +982,10 @@ def register_oauth_routes(mcp_server):
                 'redirect_uri': f'{server_url}/oauth/callback',
                 'scope': original_scope or 'openid profile email offline_access',
                 'state': _build_state(
-                    client_redirect_uri, original_state, stage=_STAGE_REGULAR
+                    client_redirect_uri,
+                    original_state,
+                    stage=_STAGE_REGULAR,
+                    nonce_hash=nonce_hash,
                 ),
             }
             # Replay PKCE and other client params preserved from Stage 1
@@ -937,7 +1007,11 @@ def register_oauth_routes(mcp_server):
                 f'{config["auth0_base_url"]}/authorize?{urlencode(stage2_params)}'
             )
             logger.info('Stage 2: Redirecting to Auth0 regular audience (SSO)')
-            return RedirectResponse(url=auth0_url, status_code=302)
+            response = RedirectResponse(url=auth0_url, status_code=302)
+            # Stage 2 restarts the state expiry; re-set the cookie so the two
+            # do not drift apart.
+            _set_nonce_cookie(response, request.cookies[_NONCE_COOKIE_NAME])
+            return response
 
         # --- Standard callback (stage 'regular' or absent) ---
         logger.info('Auth0 callback received authorization code')
@@ -947,16 +1021,20 @@ def register_oauth_routes(mcp_server):
             params = {'code': code}
             if original_state:
                 params['state'] = original_state
-            return RedirectResponse(
+            response = RedirectResponse(
                 url=_build_redirect_url(client_redirect_uri, params),
                 status_code=302,
             )
+            _clear_nonce_cookie(response)
+            return response
 
         # Fallback: return as JSON if no client redirect_uri was found
         result = {'code': code}
         if original_state:
             result['state'] = original_state
-        return JSONResponse(result)
+        response = JSONResponse(result)
+        _clear_nonce_cookie(response)
+        return response
 
     @mcp_server.custom_route('/token', methods=['POST'])
     async def oauth_token_fallback(request):
