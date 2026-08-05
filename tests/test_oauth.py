@@ -72,6 +72,9 @@ OAUTH_ENV = {
 
 REPORT_ONLY = {'ALPACON_MCP_REDIRECT_URI_REPORT_ONLY': 'true'}
 
+# The nonce a browser is pretending to carry through the callback tests
+TEST_NONCE = 'test-nonce-value'
+
 
 @pytest.fixture(autouse=True)
 def _set_oauth_env():
@@ -96,7 +99,24 @@ class MockMCPServer:
 
 @pytest.fixture
 def oauth_app():
-    """Create a minimal Starlette app with OAuth routes registered."""
+    """Create a minimal Starlette app with OAuth routes registered.
+
+    The client carries the nonce cookie a real browser would have, so callback
+    tests exercise the success path; use oauth_app_no_cookie for the negative.
+    """
+    mock_server = MockMCPServer()
+    register_oauth_routes(mock_server)
+    return TestClient(
+        Starlette(routes=mock_server.routes),
+        raise_server_exceptions=False,
+        cookies={_NONCE_COOKIE_NAME: TEST_NONCE},
+    )
+
+
+@pytest.fixture
+def oauth_app_no_cookie():
+    """A client with no nonce cookie, standing in for a browser that never
+    started the flow."""
     mock_server = MockMCPServer()
     register_oauth_routes(mock_server)
     return TestClient(
@@ -1112,6 +1132,7 @@ class TestOAuthFallbackRoutes:
 
 def _make_composite_state(redirect_uri='', state='', **extra):
     """Helper to create signed composite state as the authorize endpoint does."""
+    extra.setdefault('nonce_hash', _hash_nonce(TEST_NONCE))
     return _sign_state({'redirect_uri': redirect_uri, 'state': state, **extra})
 
 
@@ -1308,3 +1329,54 @@ class TestOAuthCallback:
 
         # MFA code should have been exchanged
         mock_client.post.assert_called_once()
+
+    def test_callback_rejects_a_browser_without_the_cookie(self, oauth_app_no_cookie):
+        """A code must not reach a browser that never started the flow."""
+        composite = _make_composite_state('http://localhost:52048/callback', 'xyz')
+        response = oauth_app_no_cookie.get(
+            '/oauth/callback',
+            params={'code': 'auth-code', 'state': composite},
+            follow_redirects=False,
+        )
+        assert response.status_code == 400
+        assert response.json()['error'] == 'invalid_request'
+        assert 'location' not in response.headers
+
+    def test_callback_rejects_a_mismatched_cookie(self, oauth_app):
+        """A different browser's nonce must not unlock someone else's state."""
+        composite = _make_composite_state(
+            'http://localhost:52048/callback', 'xyz', nonce_hash=_hash_nonce('other')
+        )
+        response = oauth_app.get(
+            '/oauth/callback',
+            params={'code': 'auth-code', 'state': composite},
+            follow_redirects=False,
+        )
+        assert response.status_code == 400
+        assert 'location' not in response.headers
+
+    def test_callback_rejects_state_without_a_binding(self, oauth_app):
+        """Fail closed: a state carrying no nonce_hash is not accepted."""
+        composite = _sign_state(
+            {'redirect_uri': 'http://localhost:52048/callback', 'state': 'xyz'}
+        )
+        response = oauth_app.get(
+            '/oauth/callback',
+            params={'code': 'auth-code', 'state': composite},
+            follow_redirects=False,
+        )
+        assert response.status_code == 400
+        assert 'location' not in response.headers
+
+    def test_callback_rejects_loopback_when_the_cookie_disagrees(self, oauth_app):
+        """The binding closes the loopback hole the URI allowlist cannot."""
+        composite = _make_composite_state(
+            'http://localhost:9999/steal', 'xyz', nonce_hash=_hash_nonce('attacker')
+        )
+        response = oauth_app.get(
+            '/oauth/callback',
+            params={'code': 'auth-code', 'state': composite},
+            follow_redirects=False,
+        )
+        assert response.status_code == 400
+        assert 'location' not in response.headers

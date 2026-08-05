@@ -22,6 +22,7 @@ from http import HTTPStatus
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 import httpx
+from starlette.requests import Request
 from starlette.responses import JSONResponse, RedirectResponse, Response
 
 from utils.logger import get_logger
@@ -372,6 +373,15 @@ def _set_nonce_cookie(response: Response, nonce: str) -> None:
         httponly=True,
         samesite='lax',
     )
+
+
+def _nonce_cookie_matches(request: Request, state_data: dict) -> bool:
+    """Fail closed: a state with no binding, or a browser with no cookie, is a no."""
+    expected = state_data.get('nonce_hash')
+    nonce = request.cookies.get(_NONCE_COOKIE_NAME, '')
+    if not isinstance(expected, str) or not expected or not nonce:
+        return False
+    return hmac.compare_digest(expected, _hash_nonce(nonce))
 
 
 def register_oauth_routes(mcp_server):
@@ -848,6 +858,17 @@ def register_oauth_routes(mcp_server):
                 )
             if state_data is None:
                 logger.warning('Callback rejected an invalid or expired state')
+                return JSONResponse(
+                    {
+                        'error': 'invalid_request',
+                        'error_description': 'Invalid or expired state parameter',
+                    },
+                    status_code=400,
+                )
+            # Placed before the error branch so the gate lives in one spot; an
+            # error callback carries no code, so nothing is lost by rejecting it.
+            if not _nonce_cookie_matches(request, state_data):
+                logger.warning('Callback rejected a state not bound to this browser')
                 return JSONResponse(
                     {
                         'error': 'invalid_request',
