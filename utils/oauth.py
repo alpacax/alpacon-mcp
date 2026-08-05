@@ -816,31 +816,29 @@ def register_oauth_routes(mcp_server):
                 status_code=400,
             )
 
-        if 'redirect_uris' in client_metadata and not _is_registrable_uri_list(
-            client_metadata['redirect_uris']
-        ):
-            return JSONResponse(
-                {
-                    'error': 'invalid_client_metadata',
-                    'error_description': (
-                        'redirect_uris must be a non-empty array of strings'
-                    ),
-                },
-                status_code=400,
-            )
-
-        if 'redirect_uris' in client_metadata and not all(
-            _check_redirect_uri(uri) for uri in client_metadata['redirect_uris']
-        ):
-            return JSONResponse(
-                {
-                    'error': 'invalid_redirect_uri',
-                    'error_description': (
-                        'One or more redirect_uris are not allowed by this server'
-                    ),
-                },
-                status_code=400,
-            )
+        if 'redirect_uris' in client_metadata:
+            redirect_uris = client_metadata['redirect_uris']
+            # The shape check comes first: _check_redirect_uri parses a str.
+            if not _is_registrable_uri_list(redirect_uris):
+                return JSONResponse(
+                    {
+                        'error': 'invalid_client_metadata',
+                        'error_description': (
+                            'redirect_uris must be a non-empty array of strings'
+                        ),
+                    },
+                    status_code=400,
+                )
+            if not all(_check_redirect_uri(uri) for uri in redirect_uris):
+                return JSONResponse(
+                    {
+                        'error': 'invalid_redirect_uri',
+                        'error_description': (
+                            'One or more redirect_uris are not allowed by this server'
+                        ),
+                    },
+                    status_code=400,
+                )
 
         # Return pre-configured client_id with metadata echoed back
         response_data = {
