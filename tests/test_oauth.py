@@ -75,6 +75,9 @@ REPORT_ONLY = {'ALPACON_MCP_REDIRECT_URI_REPORT_ONLY': 'true'}
 # The nonce a browser is pretending to carry through the callback tests
 TEST_NONCE = 'test-nonce-value'
 
+# Set-Cookie assertions lowercase the whole header, so the name must match in kind
+NONCE_COOKIE_PREFIX = f'{_NONCE_COOKIE_NAME.lower()}='
+
 
 @pytest.fixture(autouse=True)
 def _set_oauth_env():
@@ -800,7 +803,7 @@ class TestOAuthAuthorize:
             follow_redirects=False,
         )
         raw = response.headers['set-cookie'].lower()
-        assert raw.startswith('__host-alpacon_oauth_nonce=')
+        assert raw.startswith(NONCE_COOKIE_PREFIX)
         assert 'secure' in raw
         assert 'httponly' in raw
         assert 'samesite=lax' in raw
@@ -814,7 +817,7 @@ class TestOAuthAuthorize:
             params={'redirect_uri': 'http://localhost:52048/callback'},
             follow_redirects=False,
         )
-        nonce = response.cookies['__Host-alpacon_oauth_nonce']
+        nonce = response.cookies[_NONCE_COOKIE_NAME]
         state = parse_qs(urlparse(response.headers['location']).query)['state'][0]
         payload = _verify_state(state)
         assert payload['nonce_hash'] == _hash_nonce(nonce)
@@ -830,7 +833,7 @@ class TestOAuthAuthorize:
             },
             follow_redirects=False,
         )
-        nonce = response.cookies['__Host-alpacon_oauth_nonce']
+        nonce = response.cookies[_NONCE_COOKIE_NAME]
         state = parse_qs(urlparse(response.headers['location']).query)['state'][0]
         payload = _verify_state(state)
         assert payload['stage'] == 'mfa'
@@ -1340,7 +1343,7 @@ class TestOAuthCallback:
         )
         assert response.status_code == 302
         raw = response.headers['set-cookie'].lower()
-        assert '__host-alpacon_oauth_nonce=' in raw
+        assert NONCE_COOKIE_PREFIX in raw
         assert 'max-age=0' in raw or 'expires=' in raw
 
     def test_json_fallback_clears_the_cookie(self, oauth_app):
@@ -1351,7 +1354,7 @@ class TestOAuthCallback:
         )
         assert response.status_code == 200
         raw = response.headers['set-cookie'].lower()
-        assert '__host-alpacon_oauth_nonce=' in raw
+        assert NONCE_COOKIE_PREFIX in raw
         assert 'max-age=0' in raw or 'expires=' in raw
 
     def test_rejection_leaves_the_cookie_alone(self, oauth_app):
@@ -1399,7 +1402,7 @@ class TestOAuthCallback:
                 follow_redirects=False,
             )
         raw = response.headers['set-cookie'].lower()
-        assert f'__host-alpacon_oauth_nonce={TEST_NONCE}'.lower() in raw
+        assert f'{NONCE_COOKIE_PREFIX}{TEST_NONCE}' in raw
         assert 'max-age=600' in raw
 
     def test_callback_rejects_a_browser_without_the_cookie(self, oauth_app_no_cookie):
