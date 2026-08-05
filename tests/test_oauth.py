@@ -1350,7 +1350,9 @@ class TestOAuthCallback:
             '/oauth/callback', params={'code': 'auth-code', 'state': composite}
         )
         assert response.status_code == 200
-        assert '__host-alpacon_oauth_nonce=' in response.headers['set-cookie'].lower()
+        raw = response.headers['set-cookie'].lower()
+        assert '__host-alpacon_oauth_nonce=' in raw
+        assert 'max-age=0' in raw or 'expires=' in raw
 
     def test_rejection_leaves_the_cookie_alone(self, oauth_app):
         """Otherwise a forced callback could wipe a live flow's cookie."""
