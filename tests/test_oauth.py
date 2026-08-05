@@ -503,14 +503,9 @@ class TestOAuthMetadata:
         assert 'max-age=3600' in response.headers.get('cache-control', '')
 
     def test_metadata_allows_any_cors_origin(self, oauth_app):
-        """The discovery document is public, so a browser client may read it."""
+        """Public per RFC 8414, and ALPACON_MCP_RESOURCE_URL is set in this env."""
         response = oauth_app.get('/.well-known/oauth-authorization-server')
         assert response.headers['access-control-allow-origin'] == '*'
-
-    def test_metadata_cors_origin_ignores_the_resource_url(self, oauth_app):
-        """ALPACON_MCP_RESOURCE_URL names this server, not who may read it."""
-        response = oauth_app.get('/.well-known/oauth-authorization-server')
-        assert TEST_RESOURCE_URL not in response.headers['access-control-allow-origin']
 
 
 class TestOAuthAuthorize:
@@ -1126,6 +1121,16 @@ class TestOAuthRegister:
         response = oauth_app.post(
             '/oauth/register',
             content=json.dumps({'redirect_uris': [LISTED_REDIRECT_URI, 42]}).encode(),
+            headers={'content-type': 'application/json'},
+        )
+        assert response.status_code == 400
+        assert response.json()['error'] == 'invalid_client_metadata'
+
+    def test_register_rejects_null_redirect_uris(self, oauth_app):
+        """A client that will use the code flow has to name where the code goes."""
+        response = oauth_app.post(
+            '/oauth/register',
+            content=json.dumps({'redirect_uris': None}).encode(),
             headers={'content-type': 'application/json'},
         )
         assert response.status_code == 400
