@@ -275,9 +275,12 @@ uvx alpacon-mcp
 **Pinning a workspace API host** (optional):
 
 By default the API host is derived from the workspace name as
-`https://{workspace}.{region}.alpacon.io`. To pin a fixed base URL instead —
-so a workspace stays reachable even if its URL label later changes — use the
-object form of a token entry:
+`https://{workspace}.{region}.alpacon.io`. A workspace's URL slug is a mutable
+label, and a freed slug can later be reused by a different workspace, so
+re-deriving the host from a stale label could resolve to the wrong
+workspace's host. Pin a fixed base URL with the object form of a token entry
+instead—the old host stays alive as an alias, so a pinned URL keeps working
+across a slug change:
 
 ```bash
 echo '{

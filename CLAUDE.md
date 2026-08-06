@@ -92,8 +92,10 @@ the job that needs them, never at the workflow level.
 - `CONTRIBUTING.md` (`## 🔧 Adding new features`): the full recipe for a new
   tool—module skeleton, `TOOLSET_REGISTRY` entry, `tools/resources.py` row,
   test, docs. Follow it whenever you add a tool.
-- `docs/configuration.md`: token discovery order, host pinning, transports,
-  `--toolsets`, client config. Read it when authentication or startup misbehaves.
+- `docs/configuration.md`: token discovery order, transports, `--toolsets`,
+  client config. Read it when authentication or startup misbehaves.
+- `README.md` (`Pinning a workspace API host`): the object form of a token entry
+  and why a derived host can resolve to the wrong workspace (ADR 0027).
 - `docs/mfa-reauth-flow.md`: the two-stage Auth0 re-auth sequence. Read it only
   when touching `auth_error_middleware.py` or the OAuth routes.
 - `docs/troubleshooting.md`: symptom-first fixes, including which env var names
