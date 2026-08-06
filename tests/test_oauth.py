@@ -20,6 +20,7 @@ from starlette.routing import Route
 from starlette.testclient import TestClient
 
 from utils.oauth import (
+    _CORS_PREFLIGHT_HEADERS,
     _LOG_VALUE_MAX_CHARS,
     _MAX_REGISTERED_REDIRECT_URIS,
     _NONCE_COOKIE_NAME,
@@ -1255,6 +1256,53 @@ class TestOAuthFallbackRoutes:
         )
         assert response.status_code == 400
         assert response.json()['error'] == 'invalid_redirect_uri'
+
+
+class TestOAuthCors:
+    """CORS on the endpoints a browser-based client posts to."""
+
+    @pytest.mark.parametrize('path', ['/oauth/register', '/oauth/token'])
+    def test_preflight_is_answered(self, oauth_app, path):
+        response = oauth_app.options(path)
+        assert response.status_code == 204
+        assert response.headers['access-control-allow-origin'] == '*'
+        assert 'POST' in response.headers['access-control-allow-methods']
+        assert 'content-type' in response.headers['access-control-allow-headers']
+
+    @pytest.mark.parametrize('path', ['/register', '/token'])
+    def test_fallback_preflight_is_answered(self, oauth_app, path):
+        """A client that never read the metadata preflights the fallback path."""
+        response = oauth_app.options(path)
+        assert response.status_code == 204
+        assert response.headers['access-control-allow-origin'] == '*'
+
+    def test_preflight_grants_no_credentials(self):
+        """A wildcard origin plus credentials would let any page use the session."""
+        assert 'Access-Control-Allow-Credentials' not in _CORS_PREFLIGHT_HEADERS
+
+    def test_register_response_is_readable_cross_origin(self, oauth_app):
+        response = oauth_app.post(
+            '/oauth/register',
+            content=json.dumps({'client_name': 'my-app'}).encode(),
+            headers={'content-type': 'application/json'},
+        )
+        assert response.status_code == 201
+        assert response.headers['access-control-allow-origin'] == '*'
+
+    def test_rejected_register_is_readable_cross_origin(self, oauth_app):
+        """The client can only act on the error code if it can read the body."""
+        response = oauth_app.post(
+            '/oauth/register',
+            content=json.dumps({'redirect_uris': [EVIL_REDIRECT_URI]}).encode(),
+            headers={'content-type': 'application/json'},
+        )
+        assert response.status_code == 400
+        assert response.headers['access-control-allow-origin'] == '*'
+
+    def test_navigation_endpoints_stay_closed(self, oauth_app):
+        """CORS never governs a top-level navigation, so authorize must not open."""
+        response = oauth_app.get('/oauth/authorize')
+        assert 'access-control-allow-origin' not in response.headers
 
 
 def _make_composite_state(redirect_uri='', state='', **extra):
