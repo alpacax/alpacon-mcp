@@ -445,6 +445,10 @@ def register_oauth_routes(mcp_server):
     """
 
     @mcp_server.custom_route('/.well-known/oauth-authorization-server', methods=['GET'])
+    # RFC 8414 metadata is public and carries no credentials, and a browser
+    # client's origin is not knowable here. Decorating covers the 500 path too,
+    # so a misconfigured deployment shows its JSON body instead of a CORS error.
+    @_allow_browser_clients
     async def oauth_metadata(request):
         """OAuth 2.0 Authorization Server Metadata (RFC 8414).
 
@@ -479,12 +483,7 @@ def register_oauth_routes(mcp_server):
 
         return JSONResponse(
             metadata,
-            headers={
-                'Cache-Control': 'public, max-age=3600',
-                # RFC 8414 metadata is public and carries no credentials, and a
-                # browser client's origin is not knowable here.
-                'Access-Control-Allow-Origin': '*',
-            },
+            headers={'Cache-Control': 'public, max-age=3600'},
         )
 
     @mcp_server.custom_route('/oauth/authorize', methods=['GET'])

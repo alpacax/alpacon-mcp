@@ -510,6 +510,13 @@ class TestOAuthMetadata:
         response = oauth_app.get('/.well-known/oauth-authorization-server')
         assert response.headers['access-control-allow-origin'] == '*'
 
+    def test_metadata_error_is_readable_cross_origin(self, oauth_app):
+        """Without the header a misconfigured deployment reads as a CORS failure."""
+        with patch.dict('os.environ', {'AUTH0_DOMAIN': ''}):
+            response = oauth_app.get('/.well-known/oauth-authorization-server')
+        assert response.status_code == 500
+        assert response.headers['access-control-allow-origin'] == '*'
+
 
 class TestOAuthAuthorize:
     """Tests for /oauth/authorize endpoint."""
