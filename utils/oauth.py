@@ -873,7 +873,8 @@ def register_oauth_routes(mcp_server):
                     {
                         'error': 'invalid_redirect_uri',
                         'error_description': (
-                            'One or more redirect_uris are not allowed by this server'
+                            'One or more redirect_uris are invalid or not allowed '
+                            'by this server'
                         ),
                     },
                     status_code=400,
