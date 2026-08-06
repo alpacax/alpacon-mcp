@@ -1296,6 +1296,16 @@ class TestOAuthCors:
         assert response.status_code == 201
         assert response.headers['access-control-allow-origin'] == '*'
 
+    def test_token_response_is_readable_cross_origin(self, oauth_app):
+        mock_client = _mock_auth0_response()
+        with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
+            response = oauth_app.post(
+                '/oauth/token',
+                data={'grant_type': 'authorization_code', 'code': 'test-code'},
+            )
+        assert response.status_code == 200
+        assert response.headers['access-control-allow-origin'] == '*'
+
     def test_rejected_register_is_readable_cross_origin(self, oauth_app):
         """The client can only act on the error code if it can read the body."""
         response = oauth_app.post(
