@@ -1117,7 +1117,8 @@ def register_oauth_routes(mcp_server):
         still has a stored refresh_token but lost the server metadata.
         Delegating to the canonical handler avoids a silent 404.
         """
-        logger.info('/token fallback hit — delegating to /oauth/token handler')
+        if request.method != 'OPTIONS':
+            logger.info('/token fallback hit — delegating to /oauth/token handler')
         return await oauth_token(request)
 
     @mcp_server.custom_route('/authorize', methods=['GET'])
@@ -1137,7 +1138,10 @@ def register_oauth_routes(mcp_server):
         MCP SDK clients fall back to /register when oauth_metadata
         is not cached.
         """
-        logger.info('/register fallback hit — delegating to /oauth/register handler')
+        if request.method != 'OPTIONS':
+            logger.info(
+                '/register fallback hit — delegating to /oauth/register handler'
+            )
         return await oauth_register(request)
 
     # Report-only mode is what makes the domain list meaningful on its own, so

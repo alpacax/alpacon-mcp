@@ -10,6 +10,7 @@ import base64
 import hashlib
 import hmac
 import json
+import logging
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
 from urllib.parse import parse_qs, urlparse
@@ -1270,11 +1271,17 @@ class TestOAuthCors:
         assert 'content-type' in response.headers['access-control-allow-headers']
 
     @pytest.mark.parametrize('path', ['/register', '/token'])
-    def test_fallback_preflight_is_answered(self, oauth_app, path):
-        """A client that never read the metadata preflights the fallback path."""
-        response = oauth_app.options(path)
+    def test_fallback_preflight_is_answered(self, oauth_app, path, caplog):
+        """A client that never read the metadata preflights the fallback path.
+
+        The log there flags a client that lost its metadata; a preflight is not
+        that, so it must not appear in the log.
+        """
+        with caplog.at_level(logging.INFO, logger='alpacon_mcp.oauth'):
+            response = oauth_app.options(path)
         assert response.status_code == 204
         assert response.headers['access-control-allow-origin'] == '*'
+        assert 'fallback hit' not in caplog.text
 
     def test_preflight_grants_no_credentials(self):
         """A wildcard origin plus credentials would let any page use the session."""
