@@ -68,7 +68,7 @@ We use the following tools for code quality:
 - **ruff** for linting, import sorting, and formatting
 - **mypy** for type checking
 
-Both run as pre-commit hooks, and CI runs `ruff check`, `mypy`, and `pytest` with a 60% coverage floor.
+Both run as pre-commit hooks, and CI runs `ruff check`, `mypy`, and `pytest` under a coverage floor set in `.github/workflows/test.yml`.
 
 ```bash
 # Format code
@@ -169,7 +169,7 @@ async def test_list_servers_success():
     with patch('tools.server_tools.http_client.get') as mock_get:
         mock_get.return_value = {
             'count': 1,
-            'results': [{'id': 'srv-1', 'name': 'Test Server'}]
+            'results': [{'id': 'srv-1', 'name': 'Test Server'}],
         }
 
         result = await list_servers(region='ap1', workspace='test')
@@ -198,12 +198,13 @@ async def test_list_servers_success():
    from utils.common import success_response, error_response
    from utils.decorators import mcp_tool_handler
 
-   @mcp_tool_handler(description="Your tool description")
+
+   @mcp_tool_handler(description='Your tool description')
    async def your_tool_function(
        parameter: str,
        workspace: str,
        region: str = '',  # Empty means auto-detect from the workspace
-       **kwargs  # Receives token from decorator
+       **kwargs,  # Receives token from decorator
    ) -> Dict[str, Any]:
        """Your tool documentation.
 
@@ -220,16 +221,13 @@ async def test_list_servers_success():
        result = await http_client.get(
            region=region,
            workspace=workspace,
-           endpoint="/api/your-endpoint/",
+           endpoint='/api/your-endpoint/',
            token=token,
-           params={"param": parameter}
+           params={'param': parameter},
        )
 
        return success_response(
-           data=result,
-           parameter=parameter,
-           region=region,
-           workspace=workspace
+           data=result, parameter=parameter, region=region, workspace=workspace
        )
    ```
 
@@ -253,6 +251,7 @@ async def test_list_servers_success():
    # tests/test_your_feature_tools.py
    import pytest
    from tools.your_feature_tools import your_tool_function
+
 
    @pytest.mark.asyncio
    async def test_your_tool_function():

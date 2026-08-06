@@ -119,9 +119,9 @@ curl -H "Authorization: Bearer your-token-here" \
 from utils.token_manager import TokenManager
 
 tm = TokenManager()
-print("Config file:", tm.token_file)
-print("Workspaces:", {r: list(ws) for r, ws in tm.get_all_tokens().items()})
-print("Token found:", bool(tm.get_token('ap1', 'your-workspace')))
+print('Config file:', tm.token_file)
+print('Workspaces:', {r: list(ws) for r, ws in tm.get_all_tokens().items()})
+print('Token found:', bool(tm.get_token('ap1', 'your-workspace')))
 ```
 
 Print the workspace names and a boolean, never the token values—this output usually ends up pasted into an issue.
@@ -245,6 +245,7 @@ curl -H "Authorization: Bearer your-token" \
 ```python
 # Check if server exists
 from tools.server_tools import list_servers
+
 result = await list_servers(region='ap1', workspace='your-workspace')
 print(result)
 ```
@@ -392,13 +393,14 @@ echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"clientInfo":{"nam
 
 ```python
 import tracemalloc
+
 tracemalloc.start()
 
 # Your code here
 
 current, peak = tracemalloc.get_traced_memory()
-print(f"Current memory usage: {current / 1024 / 1024:.1f} MB")
-print(f"Peak memory usage: {peak / 1024 / 1024:.1f} MB")
+print(f'Current memory usage: {current / 1024 / 1024:.1f} MB')
+print(f'Peak memory usage: {peak / 1024 / 1024:.1f} MB')
 ```
 
 ---

@@ -39,8 +39,8 @@ uvx alpacon-mcp
 # Run with environment variables
 ALPACON_MCP_AP1_PRODUCTION_TOKEN="your-token" uvx alpacon-mcp
 
-# Run specific version
-uvx alpacon-mcp@0.8.2
+# Pin a version — pick a tag from https://github.com/alpacax/alpacon-mcp/releases
+uvx alpacon-mcp@<version>
 ```
 
 **Benefits of uvx:**
@@ -409,7 +409,7 @@ ruff format .
 mypy --ignore-missing-imports --no-strict-optional .
 ```
 
-CI runs the same three: `ruff check`, `mypy`, and `pytest` with coverage (the build fails below 60%).
+CI runs the same three: `ruff check`, `mypy`, and `pytest` under a coverage floor. `.github/workflows/test.yml` holds the current threshold.
 
 ### Custom configuration
 
