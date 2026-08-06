@@ -395,6 +395,10 @@ uv venv
 source .venv/bin/activate
 uv pip install -e .[dev]
 
+# ruff and pre-commit ship as tools, not as dev dependencies
+uv tool install ruff
+uv tool install pre-commit
+
 # Install pre-commit hooks (ruff + mypy)
 pre-commit install
 

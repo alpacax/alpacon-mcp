@@ -31,6 +31,10 @@ Thank you for your interest in contributing to the Alpacon MCP server! This guid
    # Install development dependencies
    uv pip install -e .[dev]
 
+   # ruff and pre-commit ship as tools, not as dev dependencies
+   uv tool install ruff
+   uv tool install pre-commit
+
    # Install pre-commit hooks
    pre-commit install
    ```
