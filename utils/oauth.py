@@ -444,10 +444,9 @@ def register_oauth_routes(mcp_server):
         mcp_server: FastMCP server instance
     """
 
+    # RFC 8414 metadata is public and carries no credentials. Decorating covers
+    # the 500 path too, so a misconfiguration is readable rather than a CORS error.
     @mcp_server.custom_route('/.well-known/oauth-authorization-server', methods=['GET'])
-    # RFC 8414 metadata is public and carries no credentials, and a browser
-    # client's origin is not knowable here. Decorating covers the 500 path too,
-    # so a misconfigured deployment shows its JSON body instead of a CORS error.
     @_allow_browser_clients
     async def oauth_metadata(request):
         """OAuth 2.0 Authorization Server Metadata (RFC 8414).
