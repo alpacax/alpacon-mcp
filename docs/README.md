@@ -19,7 +19,7 @@ Welcome to the Alpacon MCP Server documentation. Alpacon provides browser-based,
 The fastest path needs no clone at all:
 
 ```bash
-uvx alpacon-mcp        # Starts the setup wizard on first run, then the server
+uvx alpacon-mcp        # Runs the setup wizard when nothing is configured; starts the server once it is
 ```
 
 To run from a checkout instead:

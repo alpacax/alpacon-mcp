@@ -185,11 +185,11 @@ Get disk I/O performance metrics for a server.
 - `workspace` (string): Workspace name
 
 ### `get_top_servers`
-Rank servers by resource usage over the last 24 hours.
+Rank the top five servers by resource usage over the last 24 hours.
 
 **Parameters:**
 - `workspace` (string): Workspace name
-- `metric_types` (array, optional): Metrics to rank by (`cpu`, `memory`, `disk`, …); several in one call
+- `metric_types` (string, optional): Comma-separated metrics to rank by (`cpu`, `memory`, `disk_io`, `traffic`); omit for all four
 - `region` (string, optional): Region name; resolved from the workspace when omitted
 
 ### `get_alert_rules`
@@ -482,8 +482,8 @@ List all IAM users in workspace with pagination support.
 **Parameters:**
 - `workspace` (string): Workspace name
 - `region` (string, optional): Region name; resolved from the workspace when omitted
-- `page` (number, optional): Page number for pagination
-- `page_size` (number, optional): Users per page
+- `page` (integer, optional): Page number for pagination
+- `page_size` (integer, optional): Users per page
 
 **Example:**
 ```json
@@ -563,8 +563,8 @@ List all IAM groups in workspace with pagination support.
 **Parameters:**
 - `workspace` (string): Workspace name
 - `region` (string, optional): Region name; resolved from the workspace when omitted
-- `page` (number, optional): Page number
-- `page_size` (number, optional): Groups per page
+- `page` (integer, optional): Page number
+- `page_size` (integer, optional): Groups per page
 
 **Returns:** List of groups with member counts and permission summaries.
 
@@ -829,7 +829,7 @@ There are likewise no user-settings or user-profile tools: `/api/user/settings/`
 
 ## 🔍 Resources and prompts
 
-Every read tool is also exposed as a read-only MCP resource under the `alpacon://` scheme, so a client can pull data without a tool call. The URI convention is `alpacon://<domain>[/<sub>]/{region}/{workspace}[/{id}]`; optional filters are not part of the URI, so resources use each tool's defaults.
+Most read tools are also exposed as read-only MCP resources under the `alpacon://` scheme, so a client can pull data without a tool call. `search_events`, `get_registration_guide`, `work_session_timeline`, `explain_approval_decision`, `webftp_check_status`, and `health_check` are tool-only. The URI convention is `alpacon://<domain>[/<sub>]/{region}/{workspace}[/{id}]`; optional filters are not part of the URI, so resources use each tool's defaults.
 
 - `alpacon://servers/{region}/{workspace}` — also `/{server_id}`, `/{server_id}/overview`, `/{server_id}/notes`
 - `alpacon://metrics/{region}/{workspace}/{server_id}/{cpu|memory|disk|disk-io|network|summary}` and `alpacon://metrics/{region}/{workspace}/top`
