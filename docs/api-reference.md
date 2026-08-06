@@ -621,7 +621,7 @@ Send an email invitation to join the workspace (Auth0-enabled deployments). **Pa
 A Work Session is the unit of authorized work: a scope, a set of servers, an expiry, and an audit trail. OAuth/browser callers must have one active before executing commands or transferring files; static API tokens and service tokens bypass the gate.
 
 ### `work_session_create`
-Open a session. **Parameters:** `workspace`, `scopes` (array; agents may request `command`, `webftp`, `tunnel`), `servers` (array of UUIDs), `expires_at` (optional ISO 8601), `title` (optional), `description` (optional), `region` (optional).
+Open a session. **Parameters:** `workspace`, `scopes` (array; agents may request `command`, `webftp`, `tunnel`), `servers` (array of UUIDs), `expires_at` (ISO 8601), `description`, `title` (optional), `region` (optional). Only `title` and `region` may be omitted—a session with no expiry or no stated reason is not a session anyone can approve.
 
 A session that needs human approval comes back with `status="pending_approval"`—surface it to a person and retry after they approve.
 

@@ -75,6 +75,7 @@ When you reach Alpacon through OAuth (the hosted server at `mcp.alpacon.io`, or 
        workspace="production",
        scopes=["command"],
        servers=["7e3984de-49ab-4cc6-bcdf-21fbd35858b8"],
+       expires_at="2026-08-06T05:00:00Z",
        title="Restart nginx on web-01",
        description="Service unresponsive since 03:10 UTC",
    )
