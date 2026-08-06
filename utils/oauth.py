@@ -19,6 +19,7 @@ import secrets
 import time
 from functools import wraps
 from http import HTTPStatus
+from typing import Literal, TypedDict
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 import httpx
@@ -51,11 +52,19 @@ _STATE_TTL_SECONDS = 600
 # Domain, so the cookie cannot be planted by a sibling host.
 _NONCE_COOKIE_NAME = '__Host-alpacon_oauth_nonce'
 
+
+class _NonceCookieAttrs(TypedDict):
+    path: str
+    secure: bool
+    httponly: bool
+    samesite: Literal['lax', 'strict', 'none']
+
+
 # Shared by set and delete: the delete has to repeat Path, or it addresses a
 # different cookie, and Secure, or the browser rejects the whole Set-Cookie
 # under a __Host- name and the cookie survives. SameSite stays Lax because
 # Strict drops the cookie on the top-level return from Auth0.
-_NONCE_COOKIE_ATTRS = {
+_NONCE_COOKIE_ATTRS: _NonceCookieAttrs = {
     'path': '/',
     'secure': True,
     'httponly': True,
