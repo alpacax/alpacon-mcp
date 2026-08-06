@@ -5,804 +5,97 @@ stack: python
 
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Alpacon MCP Server: a FastMCP server that bridges Alpacon's zero-trust
+infrastructure access to AI assistants over plain HTTP. No alpacon CLI, no
+subprocess, no external binaries in the runtime path.
 
-## Project overview
+## Red lines
 
-This is an **Alpacon MCP Server**: an MCP (Model Context Protocol) server that extends Alpacon's zero-trust, browser-based infrastructure access to AI assistants. Alpacon provides secure server access without VPNs or SSH keys. This MCP server lets AI agents authenticate through the same identity layer, execute commands, transfer files, monitor metrics, and manage servers—with every action authorized by RBAC and recorded for audit.
-
-## Quick start guide
-
-### Simple setup (recommended)
-
-```bash
-# 1. Run the MCP server - it will automatically start setup wizard
-uvx alpacon-mcp
-
-# 2. Follow the interactive prompts:
-#    - Enter region (default: ap1)
-#    - Enter workspace name
-#    - Enter API token (get from https://alpacon.io)
-
-# 3. Add to Claude Desktop config as shown in the output
-
-# 4. Restart Claude Desktop
-```
-
-That's it! The setup wizard handles everything automatically.
-
-### Alternative: manual setup
-
-If you prefer manual configuration or need to use specific paths:
-
-```bash
-# 1. Create config directory
-mkdir -p ~/.alpacon-mcp
-
-# 2. Create token.json
-echo '{"ap1": {"your-workspace": "your-api-token"}}' > ~/.alpacon-mcp/token.json
-
-# 3. Add to Claude Desktop config:
-{
-  "mcpServers": {
-    "alpacon": {
-      "command": "uvx",
-      "args": ["alpacon-mcp"]
-    }
-  }
-}
-
-# 4. Restart Claude Desktop
-```
-
-### CLI commands
-
-```bash
-uvx alpacon-mcp                                       # Start MCP server (auto-setup if needed)
-uvx alpacon-mcp setup                                 # Run setup wizard (shows token file path)
-uvx alpacon-mcp setup --local                         # Configure for current project only
-uvx alpacon-mcp setup --token-file ~/my-tokens.json   # Use custom location
-uvx alpacon-mcp test                                  # Test API connection
-uvx alpacon-mcp list                                  # Show configured workspaces
-uvx alpacon-mcp add                                   # Add another workspace (shows path)
-uvx alpacon-mcp --toolsets servers,commands,webftp    # Register only these toolsets
-```
+- **Reach Alpacon only through `mcp__alpacon__*` tools.** Never the `alpacon`
+  CLI, never `ssh`, never a shell fallback when an MCP call fails. On failure:
+  report the exact error, propose another MCP route, ask for the missing
+  auth/config. This constrains how you talk to Alpacon—it does not restrict
+  ordinary local work in this repo (`pytest`, `git`, `uv`).
+- **`server_id` is always a UUID, never a server name.** `list_servers` maps a
+  name to its UUID. A name fails at the input validator, before the API call.
+- **Approve/reject is human-only (ADR 0015).** No `approve_request` tool exists
+  and the server answers agent/token channels with 403. When a tool returns
+  `status="pending_approval"`, surface it to a human who decides out-of-band in
+  the web console or Slack, then retry.
 
 ## Development commands
 
-### Environment setup
 ```bash
-uv venv                    # Create virtual environment
-source .venv/bin/activate  # Activate virtual environment (Linux/Mac)
-uv install                 # Install dependencies from pyproject.toml
+uv venv && source .venv/bin/activate
+uv sync --extra dev         # runtime + dev dependencies
+
+python main.py              # stdio transport (default MCP mode)
+python main_sse.py          # SSE transport
+python main_http.py         # streamable-http; needs AUTH0_* configured
+
+pytest                      # test suite
+python -c "from server import mcp; print('ok')"   # import smoke check
 ```
 
-### Running the MCP server
-```bash
-# Run with stdio transport (default MCP mode)
-python main.py
-
-# Run with SSE transport (Server-Sent Events mode)
-python main_sse.py
-
-# Test the server locally
-python -c "from server import mcp; print('MCP Server initialized successfully')"
-```
-
-### Testing and development
-```bash
-# Run with specific workspace for testing
-python main.py  # Then connect via MCP client
-
-# Check server status
-curl -X GET "https://alpacon.io/api/servers/servers/" \
-  -H "Authorization: Bearer YOUR_TOKEN"
-```
-
-## Architecture overview
-
-This MCP server provides a **pure HTTP API bridge** to Alpacon's infrastructure management platform. No external CLI dependencies required.
-
-### Core components
-
-**MCP server (`server.py`)**
-- Built with FastMCP framework
-- Supports stdio and SSE transports
-- Single shared instance across all tools
-- Thread-safe HTTP client for concurrent operations
-
-**Tool modules** (all in `tools/` directory):
-- `server_tools.py`: Server listing, details, management, and agent actions (restart, shutdown, upgrade)
-- `command_tools.py`: Remote command execution and monitoring (ACL-based)
-- `webftp_tools.py`: File transfer and management via S3 presigned URLs
-- `metrics_tools.py`: Performance monitoring, metrics, and alerting
-- `alert_tools.py`: Alert management, alert rules CRUD, and muting
-- `events_tools.py`: Event logging and search
-- `system_info_tools.py`: System information, hardware details, user/group/package management
-- `iam_tools.py`: Identity and access management (users, groups)
-- `security_tools.py`: Security ACL management (command, server, file ACLs)
-- `audit_tools.py`: Audit activity logs, server logs, and WebFTP logs
-- `workspace_tools.py`: Workspace and configuration management
-- `approval_tools.py`: Approval requests and sudo policy management
-- `webhook_tools.py`: Webhook endpoints and event subscription management
-- `package_tools.py`: System and Python package management
-- `cert_tools.py`: Certificate authority, signing requests, and certificate management
-
-**Utilities** (all in `utils/` directory):
-- `http_client.py`: Async HTTP client for Alpacon API
-- `token_manager.py`: Secure token storage and management
-- `decorators.py`: MCP tool decorators (token validation, input validation, error handling, logging)
-- `error_handler.py`: Input validators, validation error formatting, circuit breaker, upstream auth flag
-- `auth_error_middleware.py`: ASGI middleware for upstream 401 → MCP transport 401 propagation (MFA re-auth)
-- `common.py`: Shared helpers (token validation, response formatting)
-- `logger.py`: Logging configuration
-- `setup_wizard.py`: Interactive setup wizard for first-time configuration
-
-**Configuration**:
-- `config/token.json`: API tokens by region and workspace
-- `pyproject.toml`: Project dependencies and metadata
-
-### Authentication & token management
-
-**Authentication flow**:
-1. **Get token**: Obtain API token from Alpacon web interface (see "API token setup" section)
-2. **Store token**: Save in `config/token.json` by region and workspace
-3. **Token retrieval**: `TokenManager` provides secure token access
-4. **API authentication**: HTTP client uses tokens for all API requests
-5. **Request format**: All requests go to Alpacon's API endpoints
-
-**Token storage structure**:
-```json
-{
-  "ap1": {
-    "workspace-name": "your-api-token-from-web-interface"
-  },
-  "us1": {
-    "workspace-name": "your-api-token-from-web-interface"
-  }
-}
-```
-
-**Host derivation and pinning a base URL** (slug-change safety, ADR 0027):
-
-By default the API host is derived from the workspace label as
-`https://{workspace}.{region}.alpacon.io` on every call (`http_client.get_base_url`).
-Because a workspace's URL slug is a mutable label — a freed slug can later be
-reused by a different workspace — re-deriving the host from a stale label could
-resolve to the wrong host. To pin a workspace's resolved base URL, use the
-object form of a token entry (the old host stays alive as an alias, so the
-pinned URL keeps working across a slug change):
-
-```json
-{
-  "us1": {
-    "workspace-name": {
-      "token": "your-api-token-from-web-interface",
-      "url": "https://workspace-name.us1.alpacon.io"
-    }
-  }
-}
-```
-
-The bare-string form (`"workspace-name": "token"`) remains fully supported and
-derives the default host. A pinned URL can also be supplied via the
-`ALPACON_MCP_<REGION>_<WORKSPACE>_URL` env var (mirrors the token env override
-`ALPACON_MCP_<REGION>_<WORKSPACE>_TOKEN`); the env var wins over the config file.
-`TokenManager.get_base_url_override()` resolves the pinned URL and
-`get_base_url` falls back to derivation when none is configured.
-
-**MFA re-authentication flow** (remote/streamable-http mode only):
-
-When the Alpacon API returns 401 (e.g., MFA timeout with `code: "auth_mfa_required"`), the system triggers a two-stage OAuth re-authentication via the browser:
-
-1. `http_client` detects 401, raises `UpstreamAuthError` (also sets module-level dict signal as fallback)
-2. `UpstreamAuthErrorMiddleware` catches the exception and returns HTTP 401 + `WWW-Authenticate` header (includes `mfa` pseudo-scope when `mfa_required` is true)
-3. MCP client opens browser to `/oauth/authorize` with `mfa` in scope when present in the header
-4. `/oauth/authorize` detects `mfa` scope → **Stage 1**: redirects browser to Auth0 MFA audience (`https://{domain}/mfa/`) to force MFA verification
-5. User completes MFA in browser → Auth0 redirects to `/oauth/callback`
-6. `/oauth/callback` exchanges MFA code (token discarded, only MFA session side-effect needed) → **Stage 2**: redirects browser to Auth0 regular audience, which issues a new authorization code (Auth0 SSO session now has MFA completed)
-7. Final `/oauth/callback` forwards code to MCP client's redirect URI → client exchanges for new JWT with fresh `completed_mfa_methods` timestamp
-8. MCP client automatically retries the original tool call with the new token
-
-A 60-second cooldown prevents infinite re-auth loops when 401s are not fixable by re-authentication.
-
-### Tool registration pattern
-
-All tools use the unified `@mcp_tool_handler` decorator pattern for consistent error handling and token management:
-
-```python
-from utils.http_client import http_client
-from utils.common import success_response, error_response
-from utils.decorators import mcp_tool_handler
-
-@mcp_tool_handler(description="Tool description")
-async def tool_function(
-    server_id: str,
-    workspace: str,  # Required parameter (no default)
-    region: str = "ap1",
-    **kwargs  # Receives token from decorator
-) -> Dict[str, Any]:
-    """Tool implementation using HTTP API."""
-    token = kwargs.get('token')
-
-    result = await http_client.get(
-        region=region,
-        workspace=workspace,
-        endpoint="/api/endpoint/",
-        token=token
-    )
-
-    return success_response(
-        data=result,
-        server_id=server_id,
-        region=region,
-        workspace=workspace
-    )
-```
-
-**Key benefits**:
-- Automatic input validation (region, workspace, server_id, server_ids, session_id) before any API call
-- Automatic token injection via decorator
-- Unified error handling and response formatting
-- Reduced boilerplate code (~60% less per function)
-- Consistent logging across all tools
-
-### Input validation
-
-The `with_token_validation` decorator (`utils/decorators.py`) validates inputs **before** token lookup:
-
-1. **Region format**: Must be one of: `ap1`, `us1`, `eu1`
-2. **Workspace format**: Alphanumeric with hyphens/underscores, 1-63 characters
-3. **Server ID format**: Must be valid UUID (when present)
-4. **Server IDs list**: Must be a list; each element must be valid UUID (when present)
-5. **Servers list**: Must be a list; each element must be valid UUID (when present; server UUIDs sent in request bodies)
-6. **Session ID format**: Must be valid UUID (when present); session_id is interpolated into URL paths
-
-File path validation is applied inline in `webftp_upload_file` and `webftp_download_file` using `validate_file_path()` from `utils/error_handler.py`. Rejects path traversal (`../`), relative paths, null bytes, and dangerous characters.
-
-All validators are defined in `utils/error_handler.py` and return user-friendly error responses via `format_validation_error()`.
-
-### Key architecture principles
-
-1. **HTTP-first**: All operations use direct HTTP API calls
-2. **Async/await**: Concurrent operations with asyncio
-3. **No CLI dependencies**: Pure Python implementation
-4. **Workspace explicit**: All operations require workspace parameter
-5. **Input validation**: Early validation of region, workspace, server_id, and file paths before API calls
-6. **Error handling**: Comprehensive error handling and reporting
-7. **Multi-workspace**: Support for multiple workspaces across regions
-
-### Toolset selection (local mode)
-
-Local (stdio/SSE) mode accepts `--toolsets` / `ALPACON_MCP_TOOLSETS` to
-selectively import tool modules (registration is an import-time side effect).
-`TOOLSET_REGISTRY` in `server.py` maps 15 toolset names 1:1 to tool modules;
-`workspace_tools`, `health_tools`, `work_session_tools`, and `prompts` are
-always registered. `tools/resources.py` references tools as `'module.func'`
-strings and `register_resources(enabled_modules)` registers only resources
-whose backing module is enabled. Remote mode (gated on
-`ALPACON_MCP_AUTH_ENABLED=true`, not on the transport name) ignores the
-setting and registers everything. Default: `all` (non-breaking).
-
-## Available MCP tools
-
-### 🖥️ Server management
-- `list_servers`: List all servers in workspace
-- `get_server`: Get detailed server information
-- `get_server_overview`: Get comprehensive server overview (system info + metrics)
-- `list_server_notes`: List server documentation
-- `create_server_note`: Create server notes
-- `get_server_note`: Get detailed information about a specific server note by ID
-- `update_server_note`: Update an existing server note (partial update of title/content)
-- `delete_server_note`: Permanently delete a server note by ID
-- `restart_agent`: Restart the Alpacon agent on a server
-- `shutdown_agent`: Shut down the Alpacon agent on a server
-- `upgrade_agent`: Upgrade the Alpacon agent to latest version
-- `update_information`: Refresh system information collected by the agent
-- `upgrade_system`: Upgrade all system packages via OS package manager
-- `reboot_system`: Reboot a server
-- `shutdown_system`: Shut down a server completely
-
-### 💻 Remote operations (Command API: requires ACL permission)
-- `execute_command`: Execute a command on a server and wait for the result
-- `list_commands`: List recent command history
-- `execute_command_multi_server`: Execute command on multiple servers simultaneously
-
-**Note**: These tools require API token with command execution ACL permission enabled.
-
-### 📁 File management (WebFTP)
-- `webftp_session_create`: Create file transfer session
-- `webftp_sessions_list`: List active FTP sessions
-- `webftp_upload_file`: Upload local files to servers using S3 presigned URLs with automatic processing
-- `webftp_download_file`: Download server files or folders to local storage (folders as .zip)
-- `webftp_uploads_list`: List uploaded files (upload history)
-- `webftp_downloads_list`: List download requests (download history)
-
-**Bulk operations**:
-- `webftp_bulk_upload`: Upload multiple files to a server in a single operation
-- `webftp_bulk_download`: Download multiple files/folders as a single ZIP archive
-- `webftp_check_status`: Check transfer status of an async upload or download operation
-
-**WebFTP architecture**: Uses S3 presigned URLs for efficient file transfers. Upload process: local file → S3 → server processing. Download process: server → S3 → local file. Supports both individual files and folder downloads (as ZIP archives).
-
-### 📊 Monitoring & metrics
-- `get_cpu_usage`: CPU utilization metrics
-- `get_memory_usage`: Memory usage statistics
-- `get_disk_usage`: Disk space metrics
-- `get_disk_io`: Disk I/O performance metrics
-- `get_network_traffic`: Network interface statistics
-- `get_top_servers`: Get top performing servers by metric type(s), supports multiple metrics in one call
-- `get_alert_rules`: Get alert rules configuration
-- `get_server_metrics_summary`: Comprehensive metrics overview
-
-### 🔔 Alert management
-- `list_alerts`: List alerts with optional filtering by server or status
-- `get_alert`: Get detailed information about a specific alert
-- `mute_alert`: Mute an alert to suppress notifications temporarily
-- `create_alert_rule`: Create an alert rule with monitoring thresholds
-- `update_alert_rule`: Update an existing alert rule configuration
-- `delete_alert_rule`: Delete an alert rule
-
-### 🛡️ Security ACLs
-- `list_command_acls`: List command ACL rules
-- `create_command_acl`: Create a command ACL rule (allow/deny command execution)
-- `update_command_acl`: Update an existing command ACL rule
-- `delete_command_acl`: Delete a command ACL rule
-- `list_server_acls`: List server ACL rules
-- `create_server_acl`: Create a server ACL rule granting a token access to a server
-- `update_server_acl`: Update an existing server ACL rule
-- `delete_server_acl`: Delete a server ACL rule
-- `bulk_server_acl`: Bulk add or remove server ACL entries for multiple servers
-- `list_file_acls`: List file ACL rules
-- `create_file_acl`: Create a file ACL rule (control file upload/download access)
-- `update_file_acl`: Update an existing file ACL rule
-- `delete_file_acl`: Delete a file ACL rule
-
-### 📋 Events & logging
-- `list_events`: List server events
-- `get_event`: Get event details by ID
-- `search_events`: Search server events and logs
-
-### 📝 Audit logs
-- `list_activity_logs`: List activity logs for auditing user and system actions
-- `get_activity_log`: Get detailed information about a specific activity log entry
-- `list_server_logs`: List server command execution logs from history
-- `list_webftp_logs`: List WebFTP file transfer logs from history
-- `list_session_analyses`: List AI security analysis results across the workspace
-- `get_session_analysis_detail`: Get detailed AI security analysis with MITRE ATT&CK mapping
-
-### 🗂️ Work sessions
-- `work_session_create`: Create a Work Session for auditable, approval-gated infrastructure access
-- `work_session_get`: Get details of a Work Session (status, scopes, servers, requester_type, expires_at)
-- `work_session_list`: List Work Sessions with optional status and requester_type filters
-- `work_session_update`: Partially update a Work Session (title, description, scopes, servers; expires_at for pending sessions only)
-- `work_session_extend`: Extend the expiry time of an approved or active Work Session
-- `work_session_timeline`: Get the unified chronological timeline of a Work Session
-- `work_session_analyze`: Manually trigger AI security analysis for a terminal Work Session
-- `work_session_close`: Mark a Work Session as completed and trigger AI security analysis
-
-**WorkSession gate (OAuth/browser auth only)**: alpacon-server requires every interactive/OAuth (MCP OAuth) caller to scope infrastructure actions (command execution, file transfers) under an active Work Session; static API tokens and service tokens bypass this. When the server blocks a call, the MCP server translates the gate error into a structured result: `work_session_not_active` returns `status="pending_approval"` (wait for human approval), and the other gate codes (`work_session_required`, `work_session_not_usable`, `work_session_expired`, `work_session_scope_not_allowed`, `work_session_server_not_allowed`, `work_session_assignee_mismatch`) return `status="error"` with a `code` and a `next_action` describing how to get inside a valid session. Set the `ALPACON_WORK_SESSION` environment variable to supply a default Work Session id when a tool's `work_session_id` argument is omitted (explicit argument wins).
-
-### 🔍 System information
-- `get_system_info`: Hardware and OS information
-- `get_os_version`: Operating system details
-- `list_system_users`: User account management
-- `list_system_groups`: Group management
-- `list_system_packages`: Installed software packages
-- `get_network_interfaces`: Network configuration
-- `get_disk_info`: Storage and partition information
-- `get_system_time`: System time and uptime
-
-### 🔐 Identity and access management (IAM)
-
-**User management**:
-- `list_iam_users`: List all IAM users in workspace with pagination support
-- `get_iam_user`: Get detailed information about a specific IAM user
-- `create_iam_user`: Create new IAM user (username, email, name, active status)
-- `update_iam_user`: Update existing IAM user (email, name, active status)
-- `delete_iam_user`: Delete IAM user from workspace
-- `invite_workspace_user`: Send an email invitation to join the workspace (Auth0-enabled deployments only)
-
-**Group management**:
-- `list_iam_groups`: List all IAM groups in workspace with pagination support
-- `create_iam_group`: Create new IAM group (name, display name, description)
-- `get_iam_group`: Get detailed information about a specific IAM group
-- `update_iam_group`: Update an IAM group (display name, description; group name is immutable)
-- `delete_iam_group`: Permanently delete an IAM group
-
-**Membership management**:
-- `list_iam_memberships`: List group memberships, optionally filtered by group
-- `add_iam_member`: Add a user to a group with a role (member, manager, or owner)
-- `remove_iam_member`: Remove a membership by membership ID
-
-**Application management** (machine service accounts):
-- `list_iam_applications`: List IAM applications with pagination support
-- `create_iam_application`: Create an IAM application (name, description, service type)
-- `get_iam_application`: Get detailed information about a specific application
-- `update_iam_application`: Update an application (name, description)
-- `delete_iam_application`: Permanently delete an application
-- `assign_application_system_users`: Bind system users to an application as service accounts
-- `unassign_application_system_users`: Release system users from an application
-
-**IAM architecture**: Identity management supporting users, groups, memberships, and machine applications with workspace-level isolation. Group membership is managed through the memberships API (users have no writable groups field).
-
-**Note**: Role and permission management endpoints are not currently implemented in the Alpacon server. The following tools have been removed:
-- ~~`list_iam_roles`~~: Not available
-- ~~`assign_iam_user_role`~~: Not available
-- ~~`list_iam_permissions`~~: Not available
-- ~~`get_iam_user_permissions`~~: Not available
-
-### ✅ Approval management
-- `list_approval_requests`: List pending and historical approval requests
-- `get_approval_request`: Get detailed approval request information
-- `explain_approval_decision`: Explain that approving/rejecting a request is human-only and out-of-band (no mutation; returns ADR 0015 pending-approval guidance)
-- `list_sudo_policies`: List sudo privilege policies
-- `create_sudo_policy`: Create a sudo policy for elevated privileges
-
-**ADR 0015 (out-of-band approval channel)**: An AI agent reaching Alpacon through MCP is a request/execution surface and cannot approve or reject privileged-access requests. There is intentionally no `approve_request`/`reject_request` tool, and the Alpacon server refuses approve/reject from agent/token channels with HTTP 403. When an action needs approval (a sudo HITL denial such as `SUDO_APPROVAL_REQUIRED` or `SUDO_INTENT_DEVIATION`, a Work Session that lands `pending`, or a Work Session update queued as a modification request `WORK_SESSION_MOD_PENDING`), the relevant tool returns a structured `status="pending_approval"` result with `requires_human_approval`/`approvable_by_agent` flags and a `category` code—surface it to a human who approves out-of-band (Alpacon web console or Slack), then retry.
-
-### 🔗 Webhooks & event subscriptions
-- `list_event_subscriptions`: List event subscriptions
-- `create_event_subscription`: Create an event subscription
-- `delete_event_subscription`: Delete an event subscription
-- `list_webhooks`: List configured webhooks
-- `get_webhook`: Get detailed information about a specific webhook by ID
-- `create_webhook`: Create a webhook endpoint
-- `update_webhook`: Update a webhook configuration
-- `delete_webhook`: Delete a webhook endpoint
-
-### 📦 Package management
-- `list_system_package_entries`: List system packages on a server
-- `install_system_package`: Install a system package on a server
-- `remove_system_package`: Remove a system package entry
-- `list_python_packages`: List Python packages on a server
-- `install_python_package`: Install a Python package on a server
-- `remove_python_package`: Remove a Python package entry
-
-### 📜 Certificate management
-
-**Certificate authorities (CAs)**:
-- `list_certificate_authorities`: List certificate authorities
-- `create_certificate_authority`: Create a certificate authority
-- `get_certificate_authority`: Get detailed information about a specific CA by ID
-- `update_certificate_authority`: Update an existing CA (partial update of default_valid_days/max_valid_days/owner)
-- `delete_certificate_authority`: Permanently delete a CA by ID
-
-**Certificate signing requests (CSRs)**:
-- `list_sign_requests`: List certificate signing requests
-- `create_sign_request`: Create a certificate signing request
-- `get_sign_request`: Get detailed information about a specific CSR by ID
-- `approve_sign_request`: Approve a pending CSR so the CA issues the certificate
-- `deny_sign_request`: Deny a CSR (no requested-only guard, so any non-terminal CSR can be denied)
-- `retry_sign_request`: Retry a CSR stuck in the signing state
-- `delete_sign_request`: Cancel a pending (requested) CSR; it transitions to the canceled state
-
-**Certificates**:
-- `list_certificates`: List issued certificates
-- `get_certificate`: Get detailed information about a specific issued certificate by ID
-- `revoke_certificate`: Create a revocation request for an issued certificate (auto-approved and revoked immediately when the caller is the CA owner or an admin; otherwise waits for approval)
-
-**Revocation requests**:
-- `list_revoke_requests`: List certificate revocation requests
-- `get_revoke_request`: Get detailed information about a specific revocation request by ID
-- `approve_revoke_request`: Approve a pending revocation request (revokes the certificate)
-- `deny_revoke_request`: Deny a pending revocation request
-- `retry_revoke_request`: Retry a revocation request stuck in the revoking state
-- `cancel_revoke_request`: Cancel a pending revocation request (certificate remains valid)
-
-### ⚙️ Authentication & workspace
-- `list_workspaces`: List available workspaces
-- `get_current_user`: Get currently authenticated user info (username, email, role, UID, shell, home directory)
-- `get_workspace_access_control`: Get workspace access control settings (sudo/root access policy, tunnel/editor defaults, home directory permission, Work Session TTLs, command-env audit exposure, shared account names)
-- `get_workspace_security`: Get workspace authentication/security settings (mfa_required, allowed_mfa_methods, mfa_timeout); JWT/SSO auth only (a static API token is rejected before the request via `@require_jwt_auth`) and SaaS-only route, returns a clear message instead of a raw 404 on-premise
-- `list_workspace_mfa_methods`: List MFA methods allowed for the workspace (`allowed_mfa_methods`, `passkey_as_mfa`); same JWT/SSO-only, SaaS-only constraints as `get_workspace_security`; useful when guiding a user through the remote-mode MFA re-authentication flow
-- `get_workspace_notifications`: Get workspace notification settings (disconnection_notification, notification_channels)
-- `get_workspace_preferences`: Get workspace-wide preferences (timezone, locale, billing_email, etc.); workspace-global, not per-user
-- `update_workspace_notifications`: Update workspace notification settings (partial update); `notification_channels` replaces the whole list rather than appending (read via `get_workspace_notifications`, merge, then send)
-- `update_workspace_preferences`: Update workspace-wide preferences (partial update); changing `timezone` shifts the workspace's billing-usage aggregation boundary, `billing_email`/`allowed_domains` are only accepted on SaaS deployments, and the list fields (`enabled_extensions`, `allowed_domains`) replace the whole list rather than appending (narrowing `enabled_extensions` also 402s on non-enterprise plans)
-
-Access control and security settings are intentionally read-only here. On SaaS the server gates those governance-level writes behind a superuser session with fresh MFA, which a static API token (stdio mode) cannot satisfy. On-premise the same writes require only an admin token with the `workspaces` scope (MFA is skipped), so a token could technically perform them—but keeping governance-level settings human-only via the web console is the deliberate, safer default regardless of deployment, so no write tool is exposed.
-
-**Note**: User settings and profile endpoints are not currently implemented in the Alpacon server. The following tools have been removed:
-- ~~`get_user_settings`~~: Not available (was using `/api/user/settings/`)
-- ~~`update_user_settings`~~: Not available (was using `/api/user/settings/`)
-- ~~`get_user_profile`~~: Not available (was using `/api/user/profile/`)
-
-Alternative endpoints available in the server:
-- `/api/profiles/preferences/` (profiles app)
-- `/api/workspaces/preferences/` (workspaces app; see `get_workspace_preferences`/`update_workspace_preferences` above)
-- `/api/auth0/users/` (auth0 app)
-
-### 🧩 MCP resources
-
-Read-only data exposed as `alpacon://` resources (one per read tool). URI convention: `alpacon://<domain>[/<sub>]/{region}/{workspace}[/{id}]`. Optional filters use tool defaults (no filter params in the URI).
-
-- `alpacon://servers/{region}/{workspace}`: server list (also `/{server_id}`, `/{server_id}/overview`, `/{server_id}/notes`)
-- `alpacon://alerts/{region}/{workspace}` and `alpacon://alerts/active/{region}/{workspace}`: all / active (unacknowledged) alerts
-- `alpacon://metrics/{region}/{workspace}/{server_id}/{cpu|memory|disk|disk-io|network|summary}`: server metrics
-- `alpacon://system/{region}/{workspace}/{server_id}/{info|users|groups|packages|...}`: system information
-- `alpacon://iam/{users|groups|applications}/{region}/{workspace}`: IAM
-- `alpacon://certs/...`, `alpacon://audit/...`, `alpacon://tokens/...`, `alpacon://webhooks/...`, `alpacon://acls/...`, `alpacon://webftp/...`, `alpacon://approvals/...`, `alpacon://events/...`, `alpacon://commands/...`, `alpacon://work-sessions/...`
-- `alpacon://workspaces` (all regions) and `alpacon://workspaces/{region}`, `alpacon://current-user/{region}/{workspace}`
-- `alpacon://workspace-settings/{access-control|security|mfa-methods|notifications|preferences}/{region}/{workspace}`: workspace-wide settings
-
-Resources are generated from a registry table in `tools/resources.py`.
-
-### MCP prompts
-
-Workflow guides that teach an agent the Alpacon operating discipline (Work Session as the single primitive, human-gated approval, structured-denial self-correction). Defined in `tools/prompts.py` and aligned to the handbook's ACCESS→EXECUTION→AUDIT model.
-
-- `work_session_workflow`: ACCESS—how to scope and open a Work Session (minimal scope, agent-requestable `command`/`webftp`/`tunnel`, handle `pending_approval`) before any infrastructure action
-- `guarded_execution`: EXECUTION—run commands and transfers inside an approved session, handling HITL approval and structured denials
-- `incident_response`: Scenario—read-only triage first, then bounded remediation inside a scoped Work Session
-- `security_audit`: AUDIT—pick the right one of Alpacon's five audit lenses (session forensic, event forensic, decision, mutation, AI/MITRE) for the question
-
-## Dependencies
-
-**Runtime dependencies** (from `pyproject.toml`):
-- `mcp>=1.28.1,<2`: Model Context Protocol framework (upper bound: 2.0 renamed `mcp.server.fastmcp` to `mcp.server.mcpserver`; see #144)
-- `httpx>=0.27.1`: Async HTTP client
-- `PyJWT[crypto]>=2.10.1`: JWT token verification
-
-**Development dependencies**:
-- `pytest>=7.0.0`: Testing framework
-- `pytest-asyncio>=0.21.0`: Async test support
-- `black>=23.0.0`: Code formatting
-- `isort>=5.12.0`: Import sorting
-- `flake8>=6.0.0`: Linting
-- `mypy>=1.0.0`: Type checking
-
-**No external dependencies**:
-- ✅ No alpacon CLI required
-- ✅ No subprocess calls
-- ✅ Pure Python HTTP implementation
-- ✅ Cross-platform compatibility
-
-## Language guidelines
-
-- **ALL code comments**: English only
-- **ALL documentation**: English only
-- **ALL commit messages**: English only
-- **ALL PR titles/descriptions**: English only
-- **ALL docstrings**: English only
-- **ALL variable/function/class names**: English only
-- **User-facing output messages**: Korean for better user experience in CLI/console output
-
-## Writing style
-
-### General rules
-- **Sentence case**: Use sentence case for all headings and titles (capitalize only the first word and proper nouns)
-  - Correct: "## Available MCP tools", "### Key architecture principles"
-  - Incorrect: "## Available MCP Tools", "### Key Architecture Principles"
-- **Em-dash**: No spaces around em-dashes
-  - Correct: "remote/streamable-http mode—not stdio"
-  - Incorrect: "remote/streamable-http mode — not stdio"
-- **Itemized descriptions**: Use a colon, not a dash, to separate an item from its description in bullet lists
-  - Correct: ``- `list_servers`: List all servers in workspace``
-  - Incorrect: ``- `list_servers` - List all servers in workspace``
-
-### Technology names
-- **WebFTP**: Use "WebFTP" for file transfer functionality (maintain existing convention)
-- **MCP**: Use "MCP" for Model Context Protocol (maintain existing convention)
-
-## CRITICAL: MCP-only policy
-
-**🚨 ABSOLUTE RULE: Never use alpacon CLI or any external CLI tools**
-
-- ✅ **ONLY USE MCP tools**: All operations must use MCP tools (`mcp__alpacon__*`)
-- ❌ **NO CLI FALLBACK**: Never fall back to CLI commands when MCP fails
-- ❌ **NO SUBPROCESS**: Never use `subprocess` or shell commands
-- ❌ **NO DIRECT COMMANDS**: Never execute `alpacon`, `ssh`, or any external commands
-
-**If MCP operations fail:**
-1. Report the exact error message
-2. Suggest alternative MCP approaches
-3. Ask user for additional authentication/configuration
-4. **NEVER** suggest or attempt CLI solutions
-
-**This ensures:**
-- Pure API-based operations
-- Consistent authentication model
-- No external dependencies
-- Reliable cross-platform compatibility
-
-## Important usage notes
-
-### Server ID requirements
-⚠️ **Critical**: Always use server UUIDs, not server names for all operations:
-- ✅ Correct: `server_id="7e3984de-49ab-4cc6-bcdf-21fbd35858b8"`
-- ❌ Incorrect: `server_id="amazon-linux-1"`
-- Use `list_servers` to get the correct UUID from the server name
-
-### WebFTP file paths
-- **Local paths**: Absolute paths on the local machine (e.g., `/Users/user/file.txt`)
-- **Remote paths**: Absolute paths on the server (e.g., `/home/user/file.txt`)
-- **Username**: Optional parameter; if omitted, uses authenticated user's name
-
-
-## Development workflow
-
-### GitHub Actions workflow conventions
-
-Keep `permissions: contents: read` at the workflow level. Add extra scopes at the job level only:
-
-```yaml
-# ✅ job level
-jobs:
-  test:
-    permissions:
-      contents: read
-      pull-requests: write
-
-# ❌ workflow level
-permissions:
-  pull-requests: write
-```
-
-### Adding new tools
-1. Create function in appropriate `tools/*.py` file
-2. Use `@mcp_tool_handler(description="...")` decorator
-3. Add `**kwargs` parameter to receive token from decorator
-4. Use `success_response()` and `error_response()` helpers
-5. Follow async/await pattern for HTTP calls
-6. For file path parameters, add inline `validate_file_path()` checks
-7. Common parameters (`region`, `workspace`, `server_id`, `session_id`) are validated automatically by the decorator
-8. Update this documentation
-
-### API token setup
-
-#### Simple method (recommended)
-
-Use the interactive setup wizard:
-
-```bash
-uvx alpacon-mcp setup
-```
-
-The wizard will:
-1. Ask for your region (default: ap1)
-2. Ask for your workspace name
-3. Ask for your API token (hidden input)
-4. Save configuration to `~/.alpacon-mcp/token.json`
-5. Test the connection
-6. Show Claude Desktop config to copy
-
-#### Manual method
-
-If you need to manually configure or use project-specific settings:
-
-**Global configuration** (`~/.alpacon-mcp/token.json`):
-```bash
-mkdir -p ~/.alpacon-mcp
-echo '{
-  "ap1": {
-    "production": "your-api-token-here",
-    "staging": "your-staging-token-here"
-  }
-}' > ~/.alpacon-mcp/token.json
-```
-
-**Local configuration** (`./config/token.json`):
-```bash
-mkdir -p config
-echo '{
-  "ap1": {
-    "project-workspace": "your-api-token-here"
-  }
-}' > config/token.json
-```
-
-**Priority order**:
-1. `ALPACON_MCP_CONFIG_FILE` environment variable (if set)
-2. Global config (`~/.alpacon-mcp/token.json`, if exists)
-3. Local config (`./config/token.json`, fallback)
-
-#### Get API token from Alpacon
-
-1. Visit `https://alpacon.io`
-2. Log in to your account
-3. Click **"API Token"** in the left sidebar
-4. Create a new token or copy existing token
-
-#### Test configuration
-
-```bash
-# Test connection
-uvx alpacon-mcp test
-
-# List configured workspaces
-uvx alpacon-mcp list
-
-# Add another workspace
-uvx alpacon-mcp add-workspace
-```
-
-**Supported regions**: `ap1` (Asia Pacific), `us1` (US), `eu1` (Europe)
-
-### Testing MCP integration
-```bash
-# Test with Claude Code or other MCP client
-# Add to .mcp.json in your project:
-{
-  "mcpServers": {
-    "alpacon": {
-      "command": "python",
-      "args": ["/path/to/alpacon-mcp/main.py"]
-    }
-  }
-}
-```
-
-## Common usage patterns
-
-### Server management example:
-```python
-# List servers
-servers = await list_servers(workspace="production", region="ap1")
-
-# Execute command
-result = await execute_command(
-    server_id="web-server-01",
-    command="df -h",
-    workspace="production"
-)
-```
-
-### Monitoring example:
-```python
-# Get comprehensive server overview
-overview = await get_server_metrics_summary(
-    server_id="web-server-01",
-    hours=24,
-    workspace="production"
-)
-
-# Check specific metrics
-cpu = await get_cpu_usage(
-    server_id="web-server-01",
-    start_date="2024-01-01T00:00:00Z",
-    end_date="2024-01-02T00:00:00Z",
-    workspace="production"
-)
-```
-
-### WebFTP example:
-```python
-# Upload a local file to server using S3 presigned URLs
-upload_result = await webftp_upload_file(
-    server_id="server-uuid",  # Use server UUID, not name
-    local_file_path="/Users/user/config.txt",
-    remote_file_path="/home/user/config.txt",
-    workspace="production",
-    username="optional-username"  # Optional, uses authenticated user if omitted
-)
-
-# Download a server file to local storage
-download_result = await webftp_download_file(
-    server_id="server-uuid",
-    remote_file_path="/var/log/app.log",
-    local_file_path="/Users/user/Downloads/app.log",
-    workspace="production"
-)
-
-# Download a folder (creates zip)
-folder_download = await webftp_download_file(
-    server_id="server-uuid",
-    remote_file_path="/var/log/app",
-    local_file_path="/Users/user/Downloads/app_logs.zip",
-    resource_type="folder",
-    workspace="production"
-)
-
-# List upload/download history
-uploads = await webftp_uploads_list(workspace="production")
-downloads = await webftp_downloads_list(workspace="production")
-```
-
-## Task Master AI instructions
-**Import Task Master's development workflow commands and guidelines, treat as if import is in the main CLAUDE.md file.**
-@./.taskmaster/CLAUDE.md
-
----
-
-*This MCP server extends Alpacon's zero-trust infrastructure access to AI agents, enabling secure server operations through natural language.*
+## Non-obvious invariants
+
+Things the code will not tell you at a glance:
+
+- **Regions are `ap1` and `us1` only** (the validator also accepts an internal
+  `dev`). An omitted `region` is resolved from the JWT in remote mode and from
+  `token.json` in local mode, then validated; resolution fails when the
+  workspace is unknown or its token spans several regions.
+- **Toolset selection crosses module boundaries.** `--toolsets` /
+  `ALPACON_MCP_TOOLSETS` gates imports, and registration is an import-time side
+  effect. `alpacon://servers/.../overview` is backed by `system_info_tools`, so
+  `--toolsets servers` alone silently drops it. Remote mode is gated on
+  `ALPACON_MCP_AUTH_ENABLED=true`, not on the transport name, and ignores the
+  setting entirely.
+- **`@mcp_tool_handler` owns validation, token injection, error shape, and
+  logging.** Never write a try/except around an HTTP call in a tool. `region`,
+  `workspace`, `server_id`, `server_ids`, `servers`, and `session_id` are
+  validated before the token lookup; file paths are not—call
+  `validate_file_path()` inline in any tool taking a path.
+- **The WorkSession gate applies to OAuth/browser callers only.** Static API and
+  service tokens bypass it, so a flow that works in stdio mode can be blocked in
+  remote mode. `ALPACON_WORK_SESSION` supplies a default session id; an explicit
+  `work_session_id` argument wins.
+- **The API token tools 403 in stdio mode.** `APITokenObjectPermission` rejects
+  `source='api'` tokens, so list/get/create/update/delete/duplicate need
+  JWT/OAuth, a browser session, or a `source='login'` token. The scopes and
+  presets catalogs are exempt.
+- **MFA re-authentication exists only in remote/streamable-http mode**, with a
+  60-second cooldown against re-auth loops.
+
+## Language and writing style
+
+- English only: code, comments, docstrings, documentation, commit messages, PR
+  titles and bodies, and every identifier. User-facing CLI/console output is
+  Korean.
+- Sentence case for all headings and titles: "## Available MCP tools", not
+  "## Available MCP Tools".
+- Em-dashes take no surrounding spaces: "remote mode—not stdio".
+- A bullet separates its item from the description with a colon:
+  `` - `list_servers`: List all servers in workspace ``.
+- Spell it "WebFTP", "Websh", and "MCP".
+
+## GitHub Actions conventions
+
+Keep `permissions: contents: read` at the workflow level; add extra scopes on
+the job that needs them, never at the workflow level.
+
+## Where the detail lives
+
+- `docs/api-reference.md`: every tool, its parameters, and its response shape.
+  Read it before calling an unfamiliar tool or adding one—it is the catalog this
+  file deliberately does not duplicate.
+- `CONTRIBUTING.md` (`## 🔧 Adding new features`): the full recipe for a new
+  tool—module skeleton, `TOOLSET_REGISTRY` entry, `tools/resources.py` row,
+  test, docs. Follow it whenever you add a tool.
+- `docs/configuration.md`: token discovery order, host pinning, transports,
+  `--toolsets`, client config. Read it when authentication or startup misbehaves.
+- `docs/mfa-reauth-flow.md`: the two-stage Auth0 re-auth sequence. Read it only
+  when touching `auth_error_middleware.py` or the OAuth routes.
+- `docs/troubleshooting.md`: symptom-first fixes, including which env var names
+  actually resolve.
+- `docs/examples.md`: worked call sequences for common operations.
