@@ -506,7 +506,7 @@ class TestOAuthMetadata:
         assert 'max-age=3600' in response.headers.get('cache-control', '')
 
     def test_metadata_allows_any_cors_origin(self, oauth_app):
-        """Public per RFC 8414, and ALPACON_MCP_RESOURCE_URL is set in this env."""
+        """Public per RFC 8414."""
         response = oauth_app.get('/.well-known/oauth-authorization-server')
         assert response.headers['access-control-allow-origin'] == '*'
 
