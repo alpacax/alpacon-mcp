@@ -731,7 +731,7 @@ Command ACLs decide which commands a token may run, server ACLs which hosts it m
 ## 🏢 Workspace management
 
 ### `list_workspaces`
-Get list of available workspaces. The only tool that does not take a `workspace`.
+Get list of available workspaces. Takes no `workspace`—it is how you find the name every other tool needs.
 
 **Parameters:**
 - `region` (string, optional): Restrict the listing to one region; omit to list every configured region
