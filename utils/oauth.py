@@ -17,6 +17,7 @@ import os
 import re
 import secrets
 import time
+from functools import wraps
 from http import HTTPStatus
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
@@ -70,6 +71,16 @@ _LOG_VALUE_MAX_CHARS = 512
 # A real client registers one or two callbacks. The cap keeps one unauthenticated
 # registration from driving a check — and in report-only mode a warning — per entry.
 _MAX_REGISTERED_REDIRECT_URIS = 20
+
+# Sent on the preflight for the two endpoints a browser-based client posts to.
+# Allow-Credentials stays unset: with it, a wildcard origin would let any page
+# ride the user's ambient cookies, and neither endpoint reads a cookie anyway.
+_CORS_PREFLIGHT_HEADERS = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'authorization, content-type',
+    'Access-Control-Max-Age': '3600',
+}
 
 _ENV_ALLOWED_REDIRECT_DOMAINS = 'ALLOWED_REDIRECT_DOMAINS'
 _ENV_ALLOWED_REDIRECT_URIS = 'ALLOWED_REDIRECT_URIS'
@@ -243,6 +254,27 @@ def _is_registrable_uri_list(value: object) -> bool:
         and 1 <= len(value) <= _MAX_REGISTERED_REDIRECT_URIS
         and all(isinstance(uri, str) and uri for uri in value)
     )
+
+
+def _allow_browser_clients(handler):
+    """Answer the CORS preflight and mark the response readable cross-origin.
+
+    Only for endpoints a browser-based client reaches with fetch: /oauth/authorize
+    and /oauth/callback are top-level navigations, which CORS never governs.
+    Starlette ships CORSMiddleware, but custom_route takes no per-route middleware
+    and installing it app-wide would also open the MCP transport endpoint.
+    """
+
+    @wraps(handler)
+    async def with_cors(request: Request) -> Response:
+        if request.method == 'OPTIONS':
+            return Response(status_code=204, headers=_CORS_PREFLIGHT_HEADERS)
+
+        response = await handler(request)
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        return response
+
+    return with_cors
 
 
 def _log_authorize_client_profile(
@@ -587,7 +619,8 @@ def register_oauth_routes(mcp_server):
         _set_nonce_cookie(response, nonce)
         return response
 
-    @mcp_server.custom_route('/oauth/token', methods=['POST'])
+    @mcp_server.custom_route('/oauth/token', methods=['POST', 'OPTIONS'])
+    @_allow_browser_clients
     async def oauth_token(request):
         """Proxy token exchange to Auth0.
 
@@ -756,7 +789,8 @@ def register_oauth_routes(mcp_server):
                 status_code=502,
             )
 
-    @mcp_server.custom_route('/oauth/register', methods=['POST'])
+    @mcp_server.custom_route('/oauth/register', methods=['POST', 'OPTIONS'])
+    @_allow_browser_clients
     async def oauth_register(request):
         """Dynamic Client Registration endpoint (RFC 7591).
 
@@ -1074,7 +1108,7 @@ def register_oauth_routes(mcp_server):
         _clear_nonce_cookie(response)
         return response
 
-    @mcp_server.custom_route('/token', methods=['POST'])
+    @mcp_server.custom_route('/token', methods=['POST', 'OPTIONS'])
     async def oauth_token_fallback(request):
         """Fallback token endpoint at /token.
 
@@ -1096,7 +1130,7 @@ def register_oauth_routes(mcp_server):
         logger.info('/authorize fallback hit — delegating to /oauth/authorize handler')
         return await oauth_authorize(request)
 
-    @mcp_server.custom_route('/register', methods=['POST'])
+    @mcp_server.custom_route('/register', methods=['POST', 'OPTIONS'])
     async def oauth_register_fallback(request):
         """Fallback register endpoint at /register.
 
