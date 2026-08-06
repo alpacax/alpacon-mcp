@@ -15,7 +15,6 @@ The Alpacon MCP Server supports environment variables for token management, perf
 export ALPACON_MCP_AP1_PRODUCTION_TOKEN="your-ap1-production-token"
 export ALPACON_MCP_AP1_STAGING_TOKEN="your-ap1-staging-token"
 export ALPACON_MCP_US1_BACKUP_TOKEN="your-us1-backup-token"
-export ALPACON_MCP_EU1_ENTERPRISE_TOKEN="your-eu1-enterprise-token"
 ```
 
 #### Using with uvx
@@ -46,9 +45,6 @@ ALPACON_MCP_AP1_PRODUCTION_TOKEN="your-token" uvx alpacon-mcp
   "us1": {
     "org-primary": "us1-org-primary-token-here",
     "org-secondary": "us1-org-secondary-token-here"
-  },
-  "eu1": {
-    "enterprise": "eu1-enterprise-token-here"
   }
 }
 ```
@@ -72,7 +68,7 @@ uvx alpacon-mcp
 ALPACON_MCP_CONFIG_FILE="/path/to/tokens.json" uvx alpacon-mcp
 
 # Use environment variable for config path
-export ALPACON_MCP_CONFIG_FILE=".config/token.json"
+export ALPACON_MCP_CONFIG_FILE="$HOME/.alpacon-mcp/token.json"
 uvx alpacon-mcp
 ```
 
@@ -120,7 +116,7 @@ uvx alpacon-mcp
 
 ### Cursor IDE
 
-**Configuration file**: `.cursor/mcp_config.json` in your project root
+**Configuration file**: `.cursor/mcp.json` in your project root
 
 ```json
 {
@@ -128,9 +124,9 @@ uvx alpacon-mcp
     "alpacon-mcp": {
       "command": "uv",
       "args": ["run", "python", "main.py"],
-      "cwd": "./path/to/alpacon-mcp",
+      "cwd": "/absolute/path/to/alpacon-mcp",
       "env": {
-        "ALPACON_MCP_CONFIG_FILE": ".config/token.json"
+        "ALPACON_MCP_CONFIG_FILE": "/absolute/path/to/config/token.json"
       }
     }
   }
@@ -148,9 +144,9 @@ uvx alpacon-mcp
     "alpacon-mcp": {
       "command": "uv",
       "args": ["run", "python", "main.py"],
-      "cwd": "./path/to/alpacon-mcp",
+      "cwd": "/absolute/path/to/alpacon-mcp",
       "env": {
-        "ALPACON_MCP_CONFIG_FILE": ".config/token.json"
+        "ALPACON_MCP_CONFIG_FILE": "/absolute/path/to/config/token.json"
       }
     }
   }
@@ -185,12 +181,17 @@ python main.py
 # Custom config file
 python main.py --config-file /path/to/config.json
 
+# Register only some toolsets (local mode)
+python main.py --toolsets servers,commands,webftp
+
 # SSE mode
 python main_sse.py
 
 # Help
 python main.py --help
 ```
+
+The `alpacon-mcp` CLI takes the same flags plus the `setup`, `test`, `list`, and `add` subcommands. `--toolsets` is also accepted by `main_sse.py`; the `ALPACON_MCP_TOOLSETS` environment variable is the equivalent, and the flag wins when both are set. Available toolsets: `servers`, `commands`, `webftp`, `metrics`, `alerts`, `events`, `system-info`, `iam`, `security`, `audit`, `approvals`, `webhooks`, `packages`, `certs`, `tokens`. Workspace, health, Work Session tools, and prompts are always registered. Remote mode ignores the setting. A few resources cross module boundaries—`alpacon://servers/.../overview` is backed by `system_info_tools`, so `--toolsets servers` alone silently drops it; add `system-info` to keep it.
 
 ### Transport modes
 
@@ -206,7 +207,7 @@ python main.py
 #### SSE mode (Server-Sent Events)
 - HTTP-based transport with Server-Sent Events
 - Useful for web-based integrations
-- Runs on host 0.0.0.0:8237
+- Binds `127.0.0.1:8237` by default; override with `ALPACON_MCP_HOST` and `ALPACON_MCP_PORT`
 
 ```bash
 python main_sse.py
@@ -238,14 +239,23 @@ To connect a client to a remote streamable-http server, point it at the server U
 ```bash
 # Token configuration
 export ALPACON_MCP_CONFIG_FILE="/path/to/custom-tokens.json"  # Custom token file (optional)
+export ALPACON_MCP_AP1_PRODUCTION_TOKEN="alpat-..."           # Per-workspace token
+export ALPACON_MCP_AP1_PRODUCTION_URL="https://production.ap1.alpacon.io"  # Pin the API host
+
+# Tool registration (local mode only)
+export ALPACON_MCP_TOOLSETS="servers,commands,webftp"
+
+# Default Work Session for tools called without work_session_id
+export ALPACON_WORK_SESSION="<work-session-uuid>"
+
+# Transport binding (SSE and streamable-http)
+export ALPACON_MCP_HOST=127.0.0.1
+export ALPACON_MCP_PORT=8237
 
 # Logging configuration
 export ALPACON_MCP_LOG_LEVEL=DEBUG   # For development
 export ALPACON_MCP_LOG_LEVEL=INFO    # For standard use (default)
 export ALPACON_MCP_LOG_LEVEL=ERROR   # For production
-
-# Debug mode
-export DEBUG=true        # Enable debug logging
 
 # WebFTP configuration
 export ALPACON_MCP_WEBFTP_DOWNLOAD_TIMEOUT=60   # Seconds to poll for S3 staging in remote-mode downloads (default: 60). Raise for large folder ZIPs.
@@ -254,13 +264,24 @@ export ALPACON_MCP_WEBFTP_DOWNLOAD_TIMEOUT=60   # Seconds to poll for S3 staging
 export ALLOWED_REDIRECT_URIS="https://app.example.com/oauth/callback"   # Comma-separated full URIs; replaces the built-in list
 export ALPACON_MCP_REDIRECT_URI_REPORT_ONLY=true                       # Log an unlisted endpoint instead of rejecting it; accepts any path on the fallback hosts
 export ALLOWED_REDIRECT_DOMAINS="app.example.com"                      # Hosts report-only mode may fall back to; admits nothing on its own
+
+# Auth0 (remote mode only; main_http.py refuses to start without the first two)
+export AUTH0_DOMAIN="your-tenant.auth0.com"
+export AUTH0_CLIENT_ID="..."
+export AUTH0_CLIENT_SECRET="..."                # Required by the OAuth proxy endpoints
+export AUTH0_AUDIENCE="https://alpacon.io/access/"   # Optional; this is the default
+export AUTH0_MFA_AUDIENCE="https://your-tenant.auth0.com/mfa/"  # Optional; stage 1 of the MFA re-auth flow
+export AUTH0_NAMESPACE="https://alpacon.io/"    # Optional; custom claim namespace (this is the default)
+export ALPACON_MCP_RESOURCE_URL="https://mcp.example.com"  # Public https URL of this server
+export ALPACON_MCP_STATE_SECRET="$(openssl rand -hex 32)"  # Optional; derived from the client secret otherwise
+export ALPACON_ACCOUNT_URL="https://account.example.com"   # Optional; unset skips the security-settings prefetch
 ```
 
 #### Configuration examples
 
 ```bash
 # Development setup
-export ALPACON_MCP_CONFIG_FILE=".config/local-tokens.json"
+export ALPACON_MCP_CONFIG_FILE="./config/token.json"
 export ALPACON_MCP_LOG_LEVEL=DEBUG
 
 # Production setup
@@ -322,48 +343,11 @@ export ALPACON_MCP_LOG_LEVEL=INFO
 }
 ```
 
-#### Europe (eu1)
-```json
-{
-  "eu1": {
-    "frankfurt": "eu1-fra-token",
-    "london": "eu1-lon-token",
-    "paris": "eu1-par-token"
-  }
-}
-```
-
 ### Docker configuration
 
-#### Dockerfile configuration
-```dockerfile
-FROM python:3.11-slim
+Building the image and the `docker-compose.yml` to run it live in the [installation guide](installation.md#-docker-installation). What follows is only what a container needs configured.
 
-WORKDIR /app
-COPY . .
-
-RUN pip install uv
-RUN uv venv && uv pip install mcp httpx "PyJWT[crypto]"
-
-# Use config volume for tokens
-VOLUME ["/app/config"]
-
-CMD ["python", "main.py"]
-```
-
-#### Docker Compose
-```yaml
-version: '3.8'
-services:
-  alpacon-mcp:
-    build: .
-    volumes:
-      - ./config:/app/config:ro
-    environment:
-      - ALPACON_MCP_CONFIG_FILE=/app/config/tokens.json
-    ports:
-      - "8237:8237"  # For SSE mode
-```
+The shipped image runs `main_http.py`—the remote (streamable-http) transport with JWT auth—so it needs the `AUTH0_*` variables above and no token file. Override the command to `python main.py` to run the stdio server instead; that path authenticates from `token.json`, so mount the config directory and point `ALPACON_MCP_CONFIG_FILE` at the mounted file.
 
 #### MCP client Docker configuration
 ```json
@@ -383,73 +367,20 @@ services:
 
 ---
 
-## 🔧 Performance configuration
-
-### Connection pooling
-
-The server uses connection pooling for better performance:
-
-```python
-# HTTP client configuration (internal)
-HTTP_TIMEOUT = 30  # seconds
-MAX_CONNECTIONS = 100
-MAX_KEEPALIVE_CONNECTIONS = 20
-```
-
-### Request timeout configuration
-
-```bash
-# Environment variables for timeout control
-export ALPACON_REQUEST_TIMEOUT=30
-export ALPACON_CONNECT_TIMEOUT=10
-export ALPACON_READ_TIMEOUT=30
-```
-
-### Concurrent request limits
-
-```python
-# Internal configuration
-MAX_CONCURRENT_REQUESTS = 50
-REQUEST_QUEUE_SIZE = 100
-```
-
----
-
 ## 📊 Logging configuration
-
-### Log levels
 
 ```bash
 # Debug logging (local)
 export ALPACON_MCP_LOG_LEVEL=DEBUG
 
-# Info logging (standard)
+# Info logging (standard, default)
 export ALPACON_MCP_LOG_LEVEL=INFO
 
 # Error logging only
 export ALPACON_MCP_LOG_LEVEL=ERROR
 ```
 
-### Log format
-
-```bash
-# Structured JSON logging
-export LOG_FORMAT=json
-
-# Human-readable logging
-export LOG_FORMAT=text
-```
-
-### Log file configuration
-
-```bash
-# Enable file logging
-export LOG_FILE=/var/log/alpacon-mcp/server.log
-
-# Log rotation
-export LOG_MAX_SIZE=100MB
-export LOG_BACKUP_COUNT=5
-```
+`ALPACON_MCP_LOG_LEVEL` is the only logging knob the server reads. See [LOGGING.md](../LOGGING.md) for where the log output goes and why stdio mode never writes to stdout.
 
 ---
 
@@ -471,78 +402,24 @@ export ALPACON_MCP_AP1_COMPANY_MAIN_TOKEN="your-token-here"
 export ALPACON_MCP_US1_BACKUP_TOKEN="your-backup-token"
 ```
 
-#### Token encryption (optional)
-```python
-# Enable token encryption in storage
-export ALPACON_ENCRYPT_TOKENS=true
-export ALPACON_ENCRYPTION_KEY="your-encryption-key"
-```
-
 ### Network security
 
-#### HTTPS configuration
-```bash
-# Force HTTPS for all API calls
-export ALPACON_FORCE_HTTPS=true
-
-# Certificate verification
-export ALPACON_VERIFY_SSL=true
-```
-
-#### IP restrictions
-```bash
-# Restrict API access to specific IPs
-export ALPACON_ALLOWED_IPS="10.0.0.0/8,192.168.0.0/16"
-```
+All API calls go to `https://{workspace}.{region}.alpacon.io` (or the URL you pinned per workspace), and TLS verification is httpx's default. There is no setting that turns either off.
 
 ### Access control
 
-#### Workspace restrictions
-```json
-{
-  "access_control": {
-    "ap1": ["company-main", "company-backup"],
-    "us1": ["backup-site"],
-    "eu1": ["enterprise"]
-  }
-}
-```
+Access is decided by the token, not by local configuration: a workspace is reachable exactly when the config holds a token for it, and what that token may do comes from its ACL and scopes in the Alpacon web console.
 
 ---
 
-## 🚦 Health checks and monitoring
-
-### Health check endpoints
+## 🚦 Health check
 
 ```bash
-# Check server health (SSE mode)
-curl http://localhost:8237/health
-
-# Check authentication status
-curl http://localhost:8237/auth/status
+# HTTP transports (SSE, streamable-http) expose a health route
+curl http://127.0.0.1:8237/health
 ```
 
-### Monitoring configuration
-
-```bash
-# Enable metrics collection
-export ALPACON_METRICS_ENABLED=true
-
-# Metrics export interval
-export ALPACON_METRICS_INTERVAL=60
-
-# Prometheus metrics endpoint
-export ALPACON_PROMETHEUS_PORT=9090
-```
-
-### Status monitoring
-
-```python
-# Internal health checks
-HEALTH_CHECK_INTERVAL = 300  # 5 minutes
-AUTH_TOKEN_CHECK_INTERVAL = 3600  # 1 hour
-CONNECTION_TEST_INTERVAL = 600  # 10 minutes
-```
+The same information is available in any transport through the `health_check` MCP tool: version, uptime, authentication mode, and connection pool state.
 
 ---
 
@@ -577,49 +454,21 @@ python main.py
 
 ## 📋 Configuration validation
 
-### Validate token configuration
-
 ```bash
-# Test all tokens
-python -c "
-from utils.token_manager import TokenManager
-tm = TokenManager()
-tokens = tm.get_all_tokens()
-for region, workspaces in tokens.items():
-    for workspace, token in workspaces.items():
-        status = '✓' if token else '✗'
-        print(f'{region}/{workspace}: {status}')
-"
+# List the workspaces the current configuration knows about
+uvx alpacon-mcp list
+
+# Ask for a region and workspace, then call the API with that token
+uvx alpacon-mcp test
 ```
 
-### Test MCP client connection
+Both read the same configuration the server does, so together they answer "is this file in the right place and does the token work". `test` is interactive—it prompts for the region and workspace and checks that one. From a checkout, `python main.py list` and `python main.py test` do the same thing.
+
+To check the API by hand, call the workspace host directly:
 
 ```bash
-# Test MCP protocol
-echo '{"jsonrpc":"2.0","id":1,"method":"ping","params":{}}' | python main.py
-```
-
-### Validate API access
-
-```python
-# Test API connectivity
-import asyncio
-from utils.http_client import http_client
-from utils.token_manager import TokenManager
-
-async def test_connection():
-    tm = TokenManager()
-    token = tm.get_token('ap1', 'company-main')
-
-    result = await http_client.get(
-        region='ap1',
-        workspace='company-main',
-        endpoint='/api/servers/',
-        token=token
-    )
-    print('✓ API connection successful' if result else '✗ API connection failed')
-
-asyncio.run(test_connection())
+curl -H "Authorization: Bearer alpat-..." \
+     "https://your-workspace.ap1.alpacon.io/api/servers/servers/"
 ```
 
 ---

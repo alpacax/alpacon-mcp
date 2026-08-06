@@ -11,6 +11,8 @@ Before you begin, make sure you have:
 - [ ] **API tokens** for your Alpacon workspace
 - [ ] **An MCP-compatible client** (Claude Desktop, Cursor, VS Code, etc.)
 
+> **Want nothing installed at all?** Alpacon hosts a managed MCP server at `https://mcp.alpacon.io/mcp`. Point your client at the URL and sign in through the browser—no token file, no region or workspace configuration. See the [hosted server section in the README](../README.md#-remote-mcp-server-hosted-no-install). The rest of this guide covers running it yourself.
+
 ## 🚀 Quick setup
 
 ### Method 1: Using uvx (recommended—zero installation)
@@ -19,10 +21,17 @@ Before you begin, make sure you have:
 # Install UV if not already installed
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# Run directly without any installation
-uvx alpacon-mcp --help
+# Run directly without any installation; the setup wizard starts if nothing is configured yet
+uvx alpacon-mcp
 
-# Set up environment variables and run
+# Or configure explicitly first
+uvx alpacon-mcp setup
+uvx alpacon-mcp test
+```
+
+Prefer environment variables? Skip the wizard entirely:
+
+```bash
 export ALPACON_MCP_AP1_PRODUCTION_TOKEN="your-token-here"
 uvx alpacon-mcp
 ```
@@ -70,7 +79,7 @@ source .venv/bin/activate  # Linux/macOS
 # .venv\Scripts\activate     # Windows
 
 # Install dependencies
-uv pip install mcp httpx "PyJWT[crypto]"
+uv sync
 ```
 
 ### Step 3: Get API token from Alpacon
@@ -134,9 +143,6 @@ nano config/token.json  # or your preferred editor
   },
   "us1": {
     "backup-site": "your-us-token-here"
-  },
-  "eu1": {
-    "enterprise": "your-eu-token-here"
   }
 }
 ```
@@ -146,14 +152,17 @@ nano config/token.json  # or your preferred editor
 Verify everything is working:
 
 ```bash
-# Test the server
-python main.py --test
+# Check a token against the API (prompts for region and workspace)
+python main.py test
 
-# Or run in stdio mode
+# List the workspaces the configuration knows about
+python main.py list
+
+# Or run in stdio mode (waits for an MCP client on stdin)
 python main.py
 ```
 
-You should see output indicating the server is running and tools are loaded.
+`test` asks for a region and workspace, then reports whether that token reaches the API. In stdio mode the log lines go to stderr, so a quiet stdout is expected.
 
 ### Step 5: Configure your MCP client
 
@@ -179,7 +188,7 @@ Edit your Claude configuration file:
 
 #### Cursor IDE
 
-Create `.cursor/mcp_config.json` in your project:
+Create `.cursor/mcp.json` in your project:
 
 ```json
 {
@@ -187,7 +196,7 @@ Create `.cursor/mcp_config.json` in your project:
     "alpacon-mcp": {
       "command": "uv",
       "args": ["run", "python", "main.py"],
-      "cwd": "./path/to/alpacon-mcp"
+      "cwd": "/absolute/path/to/alpacon-mcp"
     }
   }
 }
@@ -203,7 +212,7 @@ Install the MCP extension and add to `settings.json`:
     "alpacon-mcp": {
       "command": "uv",
       "args": ["run", "python", "main.py"],
-      "cwd": "./path/to/alpacon-mcp"
+      "cwd": "/absolute/path/to/alpacon-mcp"
     }
   }
 }
@@ -252,19 +261,24 @@ Now that you're set up, try these common tasks:
 
 ```bash
 python main.py --config-file /path/to/custom-tokens.json
-```
 
-### Custom config file
-
-```bash
-export ALPACON_MCP_CONFIG_FILE=".config/token.json"
+# Same thing through the environment
+export ALPACON_MCP_CONFIG_FILE="/path/to/custom-tokens.json"
 python main.py
 ```
+
+### Registering only some tools
+
+```bash
+python main.py --toolsets servers,commands,webftp,metrics
+```
+
+Useful when your client has a tool limit. Workspace, health, and Work Session tools are always registered.
 
 ### SSE mode (Server-Sent Events)
 
 ```bash
-python main_sse.py
+python main_sse.py   # 127.0.0.1:8237 by default
 ```
 
 ## 🚨 Common issues
@@ -285,7 +299,7 @@ source .venv/bin/activate
 ```
 
 ### 3. Token authentication failed
-- Double-check your API tokens in `.config/token.json`
+- Double-check your API tokens in `~/.alpacon-mcp/token.json` or `./config/token.json`
 - Verify workspace names match your Alpacon account
 - Ensure tokens have proper permissions
 
@@ -305,7 +319,7 @@ Now that you're up and running:
 
 ## 💡 Pro tips
 
-1. **Use .config directory** for local testing and development
+1. **Use `./config/token.json`** for local testing, `~/.alpacon-mcp/token.json` for everyday use
 2. **Keep tokens secure**—never commit them to repositories
 3. **Test with simple commands** first before complex operations
 4. **Check server logs** if something isn't working as expected

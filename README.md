@@ -30,10 +30,10 @@ An MCP (Model Context Protocol) server that extends Alpacon's browser-based, zer
 - Automatic session recording for compliance
 
 ### 🔧 **Secure remote operations**
-- Websh sessions for browser-based terminal access
-- Command execution with real-time output
+- Command execution on one server or many, gated by the token's ACL
 - File upload/download via WebFTP with S3 presigned URLs
-- Persistent connections with automatic session management
+- Work Sessions that scope every action to an approved, auditable window
+- Structured denials that tell the agent how to get authorized instead of failing blind
 
 ### 📊 **Real-time monitoring**
 - CPU, memory, disk, and network metrics
@@ -300,7 +300,7 @@ export ALPACON_MCP_US1_PRODUCTION_URL="https://production.us1.alpacon.io"
 git clone https://github.com/alpacax/alpacon-mcp.git
 cd alpacon-mcp
 uv venv && source .venv/bin/activate
-uv install
+uv sync
 python main.py
 ```
 
@@ -365,17 +365,22 @@ Install the MCP extension and add to settings:
 ### File management
 > *"Upload my config.txt file to /home/user/ on server web-01 and then download the logs folder as a zip"*
 
-### Persistent shell sessions
-> *"Create a persistent shell connection to server web-01 and run these commands: check disk usage, list running processes, and create a backup directory"*
+### Audited work under approval
+> *"Open a Work Session for restarting nginx on web-01, and once it's approved run the restart and close the session"*
 
 ## 🔧 Available tools
 
 ### 🖥️ Server management
 - **list_servers**: List all servers in workspace
 - **get_server**: Get detailed server information
-- **get_server_overview**: Comprehensive server overview (system info + metrics)
-- **list_server_notes**: View server documentation
-- **create_server_note**: Create server notes
+- **get_server_overview**: Comprehensive server overview (hardware, OS, network, disks)
+- **update_server**: Rename or relabel a server entry
+- **unregister_server**: Unregister a host from the workspace
+- **star_server**: Pin or unpin a server for yourself
+- **list_server_notes** / **get_server_note** / **create_server_note** / **update_server_note** / **delete_server_note**: Server documentation notes
+- **restart_agent** / **shutdown_agent** / **upgrade_agent** / **update_information**: Alpacon agent lifecycle
+- **upgrade_system** / **reboot_system** / **shutdown_system**: Host-level actions
+- **list_registration_tokens** / **create_registration_token** / **delete_registration_token** / **get_registration_guide**: Register new hosts with Alpamon
 
 ### 📊 Monitoring & metrics
 - **get_cpu_usage**: CPU utilization metrics
@@ -404,27 +409,24 @@ Install the MCP extension and add to settings:
 - **list_commands**: List recent command history
 - **execute_command_multi_server**: Execute on multiple servers simultaneously
 
-#### Websh (shell access)
-- **execute_command**: Execute single command (auto-manages connections)
-- **execute_command_batch**: Execute multiple commands on same server
-- **websh_session_create**: Create Websh session
-- **websh_sessions_list**: List active sessions
-- **websh_session_reconnect**: Create new channel for existing session
-- **websh_session_terminate**: Close sessions
-- **websh_websocket_execute**: Single command via WebSocket
-- **websh_websocket_batch_execute**: Multiple commands via WebSocket
-- **websh_channel_connect**: Persistent connection management
-- **websh_channel_execute**: Execute using persistent channels
-- **websh_channels_list**: List active WebSocket channels
-- **websh_channel_disconnect**: Disconnect and clean up connections
-
 #### WebFTP (file management)
 - **webftp_session_create**: Create file transfer session
 - **webftp_upload_file**: Upload files using S3 presigned URLs
+- **webftp_upload_content**: Upload base64-encoded content without a local file
 - **webftp_download_file**: Download files/folders (folders as .zip)
-- **webftp_uploads_list**: Upload history
-- **webftp_downloads_list**: Download history
+- **webftp_bulk_upload** / **webftp_bulk_download**: Multi-file transfers in one operation
+- **webftp_check_status**: Check the status of an in-flight transfer
+- **webftp_uploads_list** / **webftp_downloads_list**: Transfer history
 - **webftp_sessions_list**: Active FTP sessions
+
+### 🗂️ Work sessions
+- **work_session_create**: Open an auditable, approval-gated session for infrastructure work
+- **work_session_get** / **work_session_list**: Inspect sessions and their status
+- **work_session_update** / **work_session_extend**: Adjust scope, servers, or expiry
+- **work_session_timeline**: Chronological record of everything done in the session
+- **work_session_close** / **work_session_analyze**: Close a session and run AI security analysis
+
+OAuth/browser callers must scope command execution and file transfers under an active Work Session; static API tokens bypass the gate.
 
 ### 🔔 Alert management
 - **list_alerts**: List alerts with optional filtering
@@ -435,14 +437,36 @@ Install the MCP extension and add to settings:
 - **delete_alert_rule**: Delete an alert rule
 
 ### 🛡️ Security ACLs
-- **list_command_acls**: List command ACL rules
-- **create_command_acl**: Create command ACL rule
-- **update_command_acl**: Update command ACL rule
-- **delete_command_acl**: Delete command ACL rule
-- **list_server_acls**: List server ACL rules
-- **create_server_acl**: Create server ACL rule
-- **list_file_acls**: List file ACL rules
-- **create_file_acl**: Create file ACL rule
+- **list_command_acls** / **create_command_acl** / **update_command_acl** / **delete_command_acl**: Which commands a token may run
+- **list_server_acls** / **create_server_acl** / **update_server_acl** / **delete_server_acl** / **bulk_server_acl**: Which servers a token may reach
+- **list_file_acls** / **create_file_acl** / **update_file_acl** / **delete_file_acl**: Which paths a token may transfer
+
+### ✅ Approvals & sudo
+- **list_approval_requests** / **get_approval_request**: Pending and historical approval requests
+- **explain_approval_decision**: Why an agent cannot approve, and who can
+- **list_sudo_policies** / **create_sudo_policy**: Elevated-privilege policies
+
+Approving or rejecting a request is deliberately human-only and happens out of band (web console or Slack).
+
+### 📦 Package management
+- **list_system_package_entries** / **install_system_package** / **remove_system_package**: OS packages
+- **list_python_packages** / **install_python_package** / **remove_python_package**: Python packages
+
+### 📜 Certificates
+- **list_certificate_authorities** / **create_certificate_authority** / **get_certificate_authority** / **update_certificate_authority** / **delete_certificate_authority**: CAs
+- **list_sign_requests** / **create_sign_request** / **get_sign_request** / **approve_sign_request** / **deny_sign_request** / **retry_sign_request** / **delete_sign_request**: Signing requests
+- **list_certificates** / **get_certificate** / **revoke_certificate**: Issued certificates
+- **list_revoke_requests** / **get_revoke_request** / **approve_revoke_request** / **deny_revoke_request** / **retry_revoke_request** / **cancel_revoke_request**: Revocation requests
+
+### 🔗 Webhooks & subscriptions
+- **list_webhooks** / **get_webhook** / **create_webhook** / **update_webhook** / **delete_webhook**: Webhook endpoints
+- **list_event_subscriptions** / **create_event_subscription** / **delete_event_subscription**: Which events get delivered
+
+### 🎫 API tokens
+- **list_api_tokens** / **get_api_token** / **create_api_token** / **update_api_token** / **delete_api_token** / **duplicate_api_token**: Token lifecycle
+- **list_api_token_scopes** / **list_api_token_presets**: Available scopes and presets
+
+These tools need a JWT/OAuth session (hosted server), a browser session, or a login-source token—an API token from `token.json` gets a 403 from the server. Scopes and presets are readable either way.
 
 ### 📋 Events & logging
 - **list_events**: Browse server events and logs
@@ -454,19 +478,25 @@ Install the MCP extension and add to settings:
 - **get_activity_log**: Get activity log details
 - **list_server_logs**: Server command execution logs
 - **list_webftp_logs**: WebFTP file transfer logs
+- **list_session_analyses** / **get_session_analysis_detail**: AI security analysis with MITRE ATT&CK mapping
 
 ### 🔐 Identity and access management (IAM)
 
 **User management**:
 - **list_iam_users**: List workspace IAM users with pagination
 - **get_iam_user**: Get detailed user information
-- **create_iam_user**: Create new users with group assignment
-- **update_iam_user**: Update user details and group memberships
+- **create_iam_user**: Create a new IAM user
+- **update_iam_user**: Update a user's email, name, or active status
 - **delete_iam_user**: Remove users from workspace
+- **invite_workspace_user**: Send an email invitation to join the workspace
 
-**Group management**:
-- **list_iam_groups**: List all workspace groups
-- **create_iam_group**: Create new IAM group
+**Group and membership management**:
+- **list_iam_groups** / **get_iam_group** / **create_iam_group** / **update_iam_group** / **delete_iam_group**: Groups
+- **list_iam_memberships** / **add_iam_member** / **remove_iam_member**: Who belongs to which group, and in what role
+
+**Applications** (machine service accounts):
+- **list_iam_applications** / **get_iam_application** / **create_iam_application** / **update_iam_application** / **delete_iam_application**: Application lifecycle
+- **assign_application_system_users** / **unassign_application_system_users**: Bind OS-level accounts to an application
 
 ### ⚙️ Workspace
 - **list_workspaces**: List available workspaces
@@ -478,6 +508,13 @@ Install the MCP extension and add to settings:
 - **get_workspace_preferences**: Get workspace-wide preferences
 - **update_workspace_notifications**: Update notification settings (partial)
 - **update_workspace_preferences**: Update workspace-wide preferences (partial)
+- **health_check**: MCP server health, version, and authentication mode
+
+### 🧩 Resources and prompts
+
+Every read tool is also exposed as a read-only `alpacon://` resource—for example `alpacon://servers/{region}/{workspace}`, `alpacon://metrics/{region}/{workspace}/{server_id}/cpu`, or `alpacon://audit/activity/{region}/{workspace}`—so a client can pull data without a tool call.
+
+Four MCP prompts teach the operating discipline: `work_session_workflow` (open a scoped session), `guarded_execution` (act inside it), `incident_response` (triage first, then remediate), and `security_audit` (pick the right audit lens).
 
 ## 🌍 Supported platforms
 
@@ -498,6 +535,7 @@ Install the MCP extension and add to settings:
 - 💡 **[Usage Examples](docs/examples.md)** - Real-world scenarios
 - 🛠️ **[Installation Guide](docs/installation.md)** - Platform-specific setup
 - 🔍 **[Troubleshooting](docs/troubleshooting.md)** - Common issues and solutions
+- 🔐 **[MFA Re-authentication Flow](docs/mfa-reauth-flow.md)** - How the hosted server re-verifies MFA
 
 ## 🚀 Advanced usage
 
@@ -537,14 +575,14 @@ python main_sse.py
 ## 🔒 Security & best practices
 
 - **Zero-trust architecture**: Every request authenticated and authorized through Alpacon's identity layer
-- **Session recording**: All Websh and WebFTP operations automatically recorded for audit
+- **Session recording**: Command execution and WebFTP transfers are recorded for audit
 - **Workspace-based access control**: Separate tokens per workspace with RBAC
 - **ACL configuration required**: Configure token permissions in Alpacon web interface for command execution
 - **Audit logging**: All operations logged with full traceability
 
 ### ⚠️ Command execution limitations
 
-**Important**: Websh and command execution tools can only run **pre-approved commands** configured in your token's ACL settings:
+**Important**: command execution tools can only run **pre-approved commands** configured in your token's ACL settings:
 
 1. **Visit token details** in Alpacon web interface (click on your token)
 2. **Configure ACL permissions** for allowed commands, servers, and operations

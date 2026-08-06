@@ -9,21 +9,31 @@ Welcome to the Alpacon MCP Server documentation. Alpacon provides browser-based,
 - **[Configuration](configuration.md)**: Authentication and settings
 - **[API Reference](api-reference.md)**: Complete tool documentation
 - **[Examples](examples.md)**: Common usage patterns
+- **[MFA Re-authentication Flow](mfa-reauth-flow.md)**: How the hosted server re-verifies MFA
 - **[Troubleshooting](troubleshooting.md)**: Common issues and solutions
+- **[Logging](../LOGGING.md)**: Log levels, log file location, and what gets redacted
 - **[Contributing](../CONTRIBUTING.md)**: How to contribute to the project
 
 ## 🚀 Quick start
 
+The fastest path needs no clone at all:
+
+```bash
+uvx alpacon-mcp        # Starts the setup wizard on first run, then the server
+```
+
+To run from a checkout instead:
+
 1. **Install dependencies**
    ```bash
    uv venv && source .venv/bin/activate
-   uv pip install mcp httpx "PyJWT[crypto]"
+   uv sync
    ```
 
 2. **Configure tokens**
    ```bash
-   mkdir -p .config
-   cp .config/token.json.example .config/token.json
+   mkdir -p config
+   cp config/token.json.example config/token.json
    # Edit with your actual tokens
    ```
 
@@ -36,7 +46,7 @@ Welcome to the Alpacon MCP Server documentation. Alpacon provides browser-based,
 
 Alpacon MCP Server extends [Alpacon's](https://www.alpacax.com/alpacon/) zero-trust infrastructure access to AI assistants, enabling:
 
-- **Secure remote operations**: Websh terminal and WebFTP file transfer—no SSH keys or VPN required
+- **Secure remote operations**: Command execution and WebFTP file transfer—no SSH keys or VPN required
 - **Real-time monitoring**: CPU, memory, disk, and network metrics with alerting
 - **System administration**: Hardware details, OS info, users, packages, and IAM
 - **Compliance-ready audit**: Every AI operation logged with full session recording
@@ -81,17 +91,21 @@ AI Client (Claude/Cursor/VS Code)
 - Installed packages inventory
 - Network interface details
 
-### Websh & command execution
-- Secure shell sessions
-- Command execution with history
-- Session management
-- Real-time output streaming
+### Command execution and file transfer
+- Commands on one server or many, gated by the token's ACL
+- Command history with status and output
+- WebFTP upload/download, including bulk transfers and folder ZIPs
+
+### Work sessions, approvals, and audit
+- Scoped, approval-gated sessions for infrastructure work
+- Approval requests and sudo policies (deciding stays human-only)
+- Activity, command, and file-transfer audit logs
+- AI security analysis of finished sessions, mapped to MITRE ATT&CK
 
 ### Event management
-- Command acknowledgment
 - Event tracking and logging
 - Search and filtering
-- Status monitoring
+- Webhooks and event subscriptions
 
 ## 🔧 Supported platforms
 
@@ -106,8 +120,9 @@ AI Client (Claude/Cursor/VS Code)
 ## 📊 Workspaces
 
 Supports Alpacon workspaces with secure API authentication:
-- **ap1**: Currently supported region
+- **ap1** (Asia Pacific), **us1** (US)
 - Multiple workspaces per region supported
+- `region` may be omitted; it is resolved from the workspace's token entry (local mode) or the JWT claims (hosted mode)
 
 ## 🔐 Security
 

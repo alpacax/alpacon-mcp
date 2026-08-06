@@ -38,26 +38,25 @@ Thank you for your interest in contributing to the Alpacon MCP server! This guid
 3. **Configure Development Tokens**
    ```bash
    # Set up development configuration
-   mkdir -p .config
-   cp .config/token.json.example .config/token.json
-   # Edit .config/token.json with your development tokens
+   mkdir -p config
+   cp config/token.json.example config/token.json
+   # Edit config/token.json with your development tokens
 
    # Set custom config file if needed
-   export ALPACON_CONFIG_FILE=".config/token.json"
+   export ALPACON_MCP_CONFIG_FILE="./config/token.json"
    ```
 
 4. **Verify Setup**
    ```bash
    # Run tests
-   python -m pytest tests/
+   pytest
 
-   # Test server startup
-   python main.py --test
+   # Check a token against the API (prompts for region and workspace)
+   python main.py test
 
-   # Check code formatting
-   black --check .
-   isort --check .
-   flake8 .
+   # Lint and type check
+   ruff check .
+   mypy --ignore-missing-imports --no-strict-optional .
    ```
 
 ## 📋 Development guidelines
@@ -66,22 +65,20 @@ Thank you for your interest in contributing to the Alpacon MCP server! This guid
 
 We use the following tools for code quality:
 
-- **Black** for code formatting
-- **isort** for import sorting
-- **flake8** for linting
+- **ruff** for linting, import sorting, and formatting
 - **mypy** for type checking
 
-Run all checks:
+Both run as pre-commit hooks, and CI runs `ruff check`, `mypy`, and `pytest` with a 60% coverage floor.
+
 ```bash
 # Format code
-black .
-isort .
+ruff format .
 
 # Check linting
-flake8 .
+ruff check .
 
 # Type checking
-mypy .
+mypy --ignore-missing-imports --no-strict-optional .
 
 # Or run all at once
 pre-commit run --all-files
@@ -110,7 +107,7 @@ We follow [Conventional Commits](https://www.conventionalcommits.org/):
 
 **Examples:**
 ```
-feat(websh): add session timeout configuration
+feat(webftp): add bulk download support
 fix(auth): handle expired tokens gracefully
 docs(api): update server management examples
 test(metrics): add integration tests for CPU metrics
@@ -147,12 +144,16 @@ Tests are located in the `tests/` directory:
 
 ```
 tests/
-├── test_auth.py           # Authentication tests
-├── test_server_tools.py   # Server management tests
-├── test_metrics_tools.py  # Metrics tools tests
-├── test_websh_tools.py    # Websh functionality tests
-└── conftest.py           # Test configuration and fixtures
+├── test_auth.py                # Authentication tests
+├── test_server_tools.py        # Server management tests
+├── test_metrics_tools.py       # Metrics tools tests
+├── test_webftp_tools.py        # File transfer tests
+├── test_work_session_tools.py  # Work Session tests
+├── integration/                # Integration tests
+└── conftest.py                 # Test configuration and fixtures
 ```
+
+One test module per tool module, named after it.
 
 **Example Test:**
 ```python
@@ -201,7 +202,7 @@ async def test_list_servers_success():
    async def your_tool_function(
        parameter: str,
        workspace: str,
-       region: str = "ap1",
+       region: str = '',  # Empty means auto-detect from the workspace
        **kwargs  # Receives token from decorator
    ) -> Dict[str, Any]:
        """Your tool documentation.
@@ -209,7 +210,7 @@ async def test_list_servers_success():
        Args:
            parameter: Description of parameter
            workspace: Workspace name (required)
-           region: Region name
+           region: Region (ap1, us1). Auto-detected if not provided
 
        Returns:
            Tool response
@@ -234,11 +235,18 @@ async def test_list_servers_success():
 
    **Note**: Error handling is automatically managed by the `@mcp_tool_handler` decorator. No need for manual try-except blocks.
 
-2. **Register Tool in Main Module**
+2. **Register the Module**
+
+   Registration is an import-time side effect, and imports are driven by the toolset registry. Add the module to `TOOLSET_REGISTRY` in `server.py`:
+
    ```python
-   # main.py or server.py - ensure tool is imported
-   from tools import your_feature_tools  # This registers the tools
+   TOOLSET_REGISTRY: dict[str, str] = {
+       ...
+       'your-feature': 'your_feature_tools',
+   }
    ```
+
+   A module missing from the registry is never imported, so its tools never appear. If the new tool has a read-only counterpart worth exposing as a resource, add a row to the registry table in `tools/resources.py` as well.
 
 3. **Add Tests**
    ```python
@@ -276,8 +284,9 @@ docs/
 ├── installation.md        # Installation instructions
 ├── configuration.md       # Configuration guide
 ├── api-reference.md       # Complete API documentation
-├── examples.md           # Usage examples
-└── troubleshooting.md    # Common issues and solutions
+├── examples.md            # Usage examples
+├── mfa-reauth-flow.md     # MFA re-authentication in remote mode
+└── troubleshooting.md     # Common issues and solutions
 ```
 
 ### Writing documentation
@@ -377,8 +386,8 @@ Feature requests should include:
    # Run linting
    pre-commit run --all-files
 
-   # Test with real MCP client
-   python main.py --test
+   # Check a token against the API
+   python main.py test
    ```
 
 4. **Commit Changes**
@@ -476,15 +485,15 @@ Brief description of changes.
 
 1. **Version Bumping**
    ```bash
-   # Update version in setup.py, __init__.py, etc.
-   # Follow semantic versioning (MAJOR.MINOR.PATCH)
+   # The version comes from the git tag (hatch-vcs); there is no version
+   # string to edit. Follow semantic versioning (MAJOR.MINOR.PATCH).
    ```
 
 2. **Update CHANGELOG.md**
    ```markdown
-   ## [1.1.0] - 2024-01-15
+   ## [1.1.0] - 2026-01-15
    ### Added
-   - New Websh session management
+   - Bulk WebFTP transfers
    - Enhanced error handling
 
    ### Fixed

@@ -7,51 +7,30 @@ Common issues and solutions for the Alpacon MCP Server.
 ### Quick health check
 
 ```bash
-# Test server startup
-python main.py --test
+# Check one workspace's token against the API (prompts for region and workspace)
+python main.py test
 
-# Check token configuration
-python -c "from utils.token_manager import TokenManager; tm = TokenManager(); print(tm.get_all_tokens())"
+# List the workspaces the configuration knows about
+python main.py list
 
-# Verify MCP tools are loaded
-python -c "from server import mcp; print([tool.name for tool in mcp.get_tools()])"
+# Verify the server imports and tools register
+python -c "from server import mcp; print('MCP Server initialized successfully')"
 ```
 
 ### Debug mode
 
 ```bash
-# Enable debug logging
-export DEBUG=true
+# Enable debug logging (stderr + logs/alpacon-mcp.log)
 export ALPACON_MCP_LOG_LEVEL=DEBUG
 python main.py
 ```
 
 ### Connection test
 
-```python
-# Test API connectivity
-python -c "
-import asyncio
-from utils.http_client import http_client
-from utils.token_manager import TokenManager
-
-async def test():
-    tm = TokenManager()
-    token = tm.get_token('ap1', 'company-main')  # Adjust region/workspace
-    try:
-        result = await http_client.get(
-            region='ap1',
-            workspace='company-main',
-            endpoint='/api/servers/',
-            token=token
-        )
-        print('✅ API connection successful')
-        print(f'Response: {result}')
-    except Exception as e:
-        print(f'❌ API connection failed: {e}')
-
-asyncio.run(test())
-"
+```bash
+# Test API connectivity by hand (host is per workspace)
+curl -H "Authorization: Bearer alpat-..." \
+     "https://company-main.ap1.alpacon.io/api/servers/servers/"
 ```
 
 ---
@@ -68,11 +47,11 @@ ImportError: No module named 'httpx'
 
 #### Solutions
 ```bash
-# Install missing dependencies
-uv pip install mcp httpx "PyJWT[crypto]"
+# Install dependencies from pyproject.toml
+uv sync
 
-# Or using pip
-pip install mcp httpx "PyJWT[crypto]"
+# Or using pip, from a checkout
+pip install -e .
 
 # Verify virtual environment is activated
 source .venv/bin/activate
@@ -107,9 +86,9 @@ python -c "import mcp; print(mcp.__version__)"
 
 **Check token file:**
 ```bash
-# Verify token file exists
+# Verify a token file exists in one of the discovered locations
+ls -la ~/.alpacon-mcp/token.json
 ls -la config/token.json
-ls -la .config/token.json
 
 # Check file permissions
 chmod 600 config/token.json
@@ -117,6 +96,8 @@ chmod 600 config/token.json
 # Validate JSON format
 python -c "import json; json.load(open('config/token.json'))"
 ```
+
+**Discovery order:** `ALPACON_MCP_<REGION>_<WORKSPACE>_TOKEN` env var → `ALPACON_MCP_CONFIG_FILE` → `~/.alpacon-mcp/token.json` → `./config/token.json`.
 
 **Verify token format:**
 ```json
@@ -130,17 +111,20 @@ python -c "import json; json.load(open('config/token.json'))"
 **Test token manually:**
 ```bash
 curl -H "Authorization: Bearer your-token-here" \
-     "https://alpacon.io/api/servers/"
+     "https://your-workspace.ap1.alpacon.io/api/servers/servers/"
 ```
 
 **Debug token loading:**
 ```python
 from utils.token_manager import TokenManager
+
 tm = TokenManager()
-print("Config directory:", tm.config_dir)
-print("Available tokens:", tm.get_all_tokens())
-print("Specific token:", tm.get_token('ap1', 'your-workspace'))
+print("Config file:", tm.token_file)
+print("Workspaces:", {r: list(ws) for r, ws in tm.get_all_tokens().items()})
+print("Token found:", bool(tm.get_token('ap1', 'your-workspace')))
 ```
+
+Print the workspace names and a boolean, never the token values—this output usually ends up pasted into an issue.
 
 ---
 
@@ -209,8 +193,8 @@ tail -f %APPDATA%/Claude/logs/claude_desktop.log
 
 **Cursor IDE:**
 ```bash
-# Check .cursor/mcp_config.json exists
-ls -la .cursor/mcp_config.json
+# Check .cursor/mcp.json exists
+ls -la .cursor/mcp.json
 
 # Check Cursor's MCP status in developer console
 # Ctrl+Shift+I (Windows/Linux) or Cmd+Option+I (macOS)
@@ -250,11 +234,11 @@ cat ~/.config/Code/User/settings.json | grep -A5 "mcp.servers"
 ```bash
 # Test server list endpoint
 curl -H "Authorization: Bearer your-token" \
-     "https://alpacon.io/api/servers/"
+     "https://your-workspace.ap1.alpacon.io/api/servers/servers/"
 
 # Test specific server
 curl -H "Authorization: Bearer your-token" \
-     "https://alpacon.io/api/servers/server-id/"
+     "https://your-workspace.ap1.alpacon.io/api/servers/servers/<server-uuid>/"
 ```
 
 **Verify server status:**
@@ -273,43 +257,34 @@ print(result)
 
 ---
 
-### 5. Websh session issues
+### 5. Work Session gate blocks a command or transfer
 
 #### Symptoms
 ```json
 {
-  "status": "error",
-  "message": "Failed to create Websh session"
+  "status": "pending_approval",
+  "code": "work_session_not_active",
+  "next_action": "..."
 }
 ```
 
+or a `status="error"` result carrying `work_session_required`, `work_session_not_usable`, `work_session_expired`, `work_session_scope_not_allowed`, `work_session_server_not_allowed`, or `work_session_assignee_mismatch`.
+
+#### Why
+
+An OAuth/browser caller must run infrastructure actions inside an active Work Session. Static API tokens and service tokens bypass the gate, so this appears in hosted mode, not in stdio mode with `token.json`.
+
 #### Solutions
 
-**Check server connectivity:**
-```python
-# Verify server is online
-from tools.server_tools import get_server
-result = await get_server(server_id='your-server-id')
-print("Server status:", result.get('data', {}).get('status'))
-```
+- `work_session_not_active`: the session exists but awaits human approval. Someone approves it in the Alpacon web console or Slack; then retry
+- `work_session_required`: open one with `work_session_create`, requesting only the scopes you need (`command`, `webftp`, `tunnel`)
+- `work_session_scope_not_allowed` / `work_session_server_not_allowed`: the session's scope or server list doesn't cover this call—`work_session_update` it, or open a session that does
+- `work_session_expired`: extend it with `work_session_extend`, or open a new one
+- Pass the session explicitly as `work_session_id`, or set `ALPACON_WORK_SESSION` so tools pick it up by default
 
-**Test Websh prerequisites:**
-```bash
-# Ensure server allows SSH connections
-# Check with Alpacon web interface first
-```
+### 5a. Sudo needs approval
 
-**Debug session creation:**
-```python
-from tools.websh_tools import websh_session_create
-result = await websh_session_create(
-    server_id='your-server-id',
-    username='admin',  # Make sure user exists
-    region='ap1',
-    workspace='your-workspace'
-)
-print(result)
-```
+A command that escalates privileges can come back as `status="pending_approval"` with `SUDO_APPROVAL_REQUIRED` or `SUDO_INTENT_DEVIATION`. An agent cannot approve its own request—that is deliberate. Surface it to a human, who approves out of band, then retry the call.
 
 ---
 
@@ -325,25 +300,17 @@ print(result)
 
 #### Solutions
 
-**Check file permissions:**
-```bash
-# Ensure target directory exists and is writable
-# Check via Websh first:
+**Check the target directory:**
+```
 execute_command(command="ls -la /target/directory/")
 ```
+The upload fails if the directory does not exist or the transfer user cannot write to it.
 
-**Verify file encoding:**
-```python
-# For binary files, use base64 encoding
-import base64
+**Check the paths:** both `local_file_path` and `remote_file_path` must be absolute. Relative paths, `../`, and null bytes are rejected before the request is sent.
 
-with open('file.pdf', 'rb') as f:
-    file_data = base64.b64encode(f.read()).decode()
+**Hosted mode has no access to your disk.** `webftp_upload_file` reads a local file, which only works when the server runs on your machine. From the hosted server, use `webftp_upload_content` with base64-encoded bytes instead.
 
-# For text files, use plain text
-with open('file.txt', 'r') as f:
-    file_data = f.read()
-```
+**Large folder downloads time out.** A folder downloads as a ZIP staged through S3; raise `ALPACON_MCP_WEBFTP_DOWNLOAD_TIMEOUT` (default 60 seconds) when staging takes longer, and use `webftp_check_status` to follow an in-flight transfer.
 
 ---
 
@@ -369,7 +336,7 @@ netstat -an | grep :8237
 ```bash
 # Test API response time
 time curl -H "Authorization: Bearer token" \
-          "https://alpacon.io/api/servers/"
+          "https://your-workspace.ap1.alpacon.io/api/servers/servers/"
 ```
 
 ---
@@ -381,24 +348,25 @@ time curl -H "Authorization: Bearer token" \
 **Issue:** Wrong configuration directory being used
 
 **Debug:**
-```python
-from utils.token_manager import TokenManager
-tm = TokenManager()
-print("Using config directory:", tm.config_dir)
-print("ALPACON_CONFIG_FILE:", os.getenv('ALPACON_CONFIG_FILE'))
+```bash
+# The startup log says which file was chosen
+ALPACON_MCP_LOG_LEVEL=INFO python main.py list
+# -> "Using global config file: /Users/you/.alpacon-mcp/token.json"
 ```
 
 **Solutions:**
 ```bash
-# Use custom config file location
-export ALPACON_CONFIG_FILE=".config/token.json"
+# Point at a specific config file
+export ALPACON_MCP_CONFIG_FILE="/path/to/token.json"
 
-# Use default config location
-unset ALPACON_CONFIG_FILE
+# Back to the default discovery order
+unset ALPACON_MCP_CONFIG_FILE
 
-# Use custom config file
+# Same thing as a flag
 python main.py --config-file /path/to/custom/config.json
 ```
+
+**Note:** the variable is `ALPACON_MCP_CONFIG_FILE`. A plain `ALPACON_CONFIG_FILE` has no effect.
 
 ---
 
@@ -406,21 +374,12 @@ python main.py --config-file /path/to/custom/config.json
 
 ### Enable verbose logging
 
-```python
-import logging
-logging.basicConfig(level=logging.DEBUG)
-
-# Or set environment variable
-export ALPACON_MCP_LOG_LEVEL=DEBUG
-```
-
-### Network debugging
-
 ```bash
-# Monitor HTTP traffic
-export HTTPX_LOG_LEVEL=DEBUG
+export ALPACON_MCP_LOG_LEVEL=DEBUG
 python main.py
 ```
+
+DEBUG records request and response bodies. Authorization headers are masked as `[REDACTED]`; everything else is written as-is to `logs/alpacon-mcp.log`, so treat that file as sensitive.
 
 ### MCP protocol debugging
 
@@ -463,8 +422,8 @@ which python3
 **Permission issues:**
 ```bash
 # Fix permissions on config directory
-chmod 700 ~/.config/
-chmod 600 ~/.config/token.json
+chmod 700 ~/.alpacon-mcp/
+chmod 600 ~/.alpacon-mcp/token.json
 ```
 
 ### Windows issues
@@ -510,7 +469,7 @@ User=alpacon
 WorkingDirectory=/opt/alpacon-mcp
 ExecStart=/opt/alpacon-mcp/.venv/bin/python main.py
 Restart=always
-Environment=ALPACON_CONFIG_FILE=/etc/alpacon-mcp/token.json
+Environment=ALPACON_MCP_CONFIG_FILE=/etc/alpacon-mcp/token.json
 
 [Install]
 WantedBy=multi-user.target
@@ -541,23 +500,13 @@ pip list | grep -E "(mcp|httpx)" >> debug_report.txt
 echo "" >> debug_report.txt
 
 echo "=== Configuration ===" >> debug_report.txt
-echo "Config dir exists: $([ -d config ] && echo 'Yes' || echo 'No')" >> debug_report.txt
-echo ".config dir exists: $([ -d .config ] && echo 'Yes' || echo 'No')" >> debug_report.txt
-echo "ALPACON_CONFIG_FILE: ${ALPACON_CONFIG_FILE:-'Not set'}" >> debug_report.txt
+echo "Global config exists: $([ -f ~/.alpacon-mcp/token.json ] && echo 'Yes' || echo 'No')" >> debug_report.txt
+echo "Local config exists: $([ -f config/token.json ] && echo 'Yes' || echo 'No')" >> debug_report.txt
+echo "ALPACON_MCP_CONFIG_FILE: ${ALPACON_MCP_CONFIG_FILE:-'Not set'}" >> debug_report.txt
 echo "" >> debug_report.txt
 
-echo "=== Token Test ===" >> debug_report.txt
-python -c "
-try:
-    from utils.token_manager import TokenManager
-    tm = TokenManager()
-    tokens = tm.get_all_tokens()
-    print(f'Found {len(tokens)} token configurations')
-    for (region, workspace) in tokens:
-        print(f'- {region}/{workspace}')
-except Exception as e:
-    print(f'Error: {e}')
-" >> debug_report.txt
+echo "=== Workspaces ===" >> debug_report.txt
+python main.py list >> debug_report.txt 2>&1
 
 echo "Debug report saved to debug_report.txt"
 ```
