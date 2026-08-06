@@ -303,7 +303,11 @@ A command that escalates privileges can come back as `status="pending_approval"`
 
 **Check the target directory:**
 ```
-execute_command(command="ls -la /target/directory/")
+execute_command(
+    server_id="7e3984de-49ab-4cc6-bcdf-21fbd35858b8",
+    command="ls -la /target/directory/",
+    workspace="production",
+)
 ```
 The upload fails if the directory does not exist or the transfer user cannot write to it.
 
