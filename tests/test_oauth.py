@@ -10,6 +10,7 @@ import base64
 import hashlib
 import hmac
 import json
+import logging
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
 from urllib.parse import parse_qs, urlparse
@@ -20,7 +21,9 @@ from starlette.routing import Route
 from starlette.testclient import TestClient
 
 from utils.oauth import (
+    _CORS_PREFLIGHT_HEADERS,
     _LOG_VALUE_MAX_CHARS,
+    _MAX_REGISTERED_REDIRECT_URIS,
     _NONCE_COOKIE_NAME,
     _STATE_SECRET_ENV,
     _STATE_SECRET_INFO,
@@ -501,6 +504,18 @@ class TestOAuthMetadata:
     def test_metadata_cache_control(self, oauth_app):
         response = oauth_app.get('/.well-known/oauth-authorization-server')
         assert 'max-age=3600' in response.headers.get('cache-control', '')
+
+    def test_metadata_allows_any_cors_origin(self, oauth_app):
+        """Public per RFC 8414."""
+        response = oauth_app.get('/.well-known/oauth-authorization-server')
+        assert response.headers['access-control-allow-origin'] == '*'
+
+    def test_metadata_error_is_readable_cross_origin(self, oauth_app):
+        """Without the header a misconfigured deployment reads as a CORS failure."""
+        with patch.dict('os.environ', {'AUTH0_DOMAIN': ''}):
+            response = oauth_app.get('/.well-known/oauth-authorization-server')
+        assert response.status_code == 500
+        assert response.headers['access-control-allow-origin'] == '*'
 
 
 class TestOAuthAuthorize:
@@ -1048,6 +1063,7 @@ class TestOAuthRegister:
         )
         assert response.status_code == 201
         assert response.json()['client_name'] == 'my-app'
+        assert 'redirect_uris' not in response.json()
 
     def test_register_no_store_cache_control(self, oauth_app):
         response = oauth_app.post(
@@ -1093,6 +1109,102 @@ class TestOAuthRegister:
         )
         assert response.status_code == 400
         assert response.json()['error'] == 'invalid_client_metadata'
+
+    def test_register_rejects_non_list_redirect_uris(self, oauth_app):
+        response = oauth_app.post(
+            '/oauth/register',
+            content=json.dumps({'redirect_uris': LISTED_REDIRECT_URI}).encode(),
+            headers={'content-type': 'application/json'},
+        )
+        assert response.status_code == 400
+        assert response.json()['error'] == 'invalid_client_metadata'
+
+    def test_register_rejects_empty_redirect_uris(self, oauth_app):
+        response = oauth_app.post(
+            '/oauth/register',
+            content=json.dumps({'redirect_uris': []}).encode(),
+            headers={'content-type': 'application/json'},
+        )
+        assert response.status_code == 400
+        assert response.json()['error'] == 'invalid_client_metadata'
+
+    def test_register_rejects_non_string_redirect_uri_entry(self, oauth_app):
+        response = oauth_app.post(
+            '/oauth/register',
+            content=json.dumps({'redirect_uris': [LISTED_REDIRECT_URI, 42]}).encode(),
+            headers={'content-type': 'application/json'},
+        )
+        assert response.status_code == 400
+        assert response.json()['error'] == 'invalid_client_metadata'
+
+    def test_register_rejects_too_many_redirect_uris(self, oauth_app):
+        """One unauthenticated body must not buy a check, or a warning, per entry."""
+        uris = [LISTED_REDIRECT_URI] * (_MAX_REGISTERED_REDIRECT_URIS + 1)
+        response = oauth_app.post(
+            '/oauth/register',
+            content=json.dumps({'redirect_uris': uris}).encode(),
+            headers={'content-type': 'application/json'},
+        )
+        assert response.status_code == 400
+        assert response.json()['error'] == 'invalid_client_metadata'
+
+    def test_register_accepts_redirect_uris_at_the_cap(self, oauth_app):
+        uris = [LISTED_REDIRECT_URI] * _MAX_REGISTERED_REDIRECT_URIS
+        response = oauth_app.post(
+            '/oauth/register',
+            content=json.dumps({'redirect_uris': uris}).encode(),
+            headers={'content-type': 'application/json'},
+        )
+        assert response.status_code == 201
+
+    def test_register_rejects_null_redirect_uris(self, oauth_app):
+        """A client that will use the code flow has to name where the code goes."""
+        response = oauth_app.post(
+            '/oauth/register',
+            content=json.dumps({'redirect_uris': None}).encode(),
+            headers={'content-type': 'application/json'},
+        )
+        assert response.status_code == 400
+        assert response.json()['error'] == 'invalid_client_metadata'
+
+    def test_register_rejects_unlisted_redirect_uri(self, oauth_app):
+        response = oauth_app.post(
+            '/oauth/register',
+            content=json.dumps({'redirect_uris': [EVIL_REDIRECT_URI]}).encode(),
+            headers={'content-type': 'application/json'},
+        )
+        assert response.status_code == 400
+        assert response.json()['error'] == 'invalid_redirect_uri'
+
+    def test_register_rejects_a_list_with_one_unlisted_uri(self, oauth_app):
+        response = oauth_app.post(
+            '/oauth/register',
+            content=json.dumps(
+                {'redirect_uris': [LISTED_REDIRECT_URI, EVIL_REDIRECT_URI]}
+            ).encode(),
+            headers={'content-type': 'application/json'},
+        )
+        assert response.status_code == 400
+        assert response.json()['error'] == 'invalid_redirect_uri'
+
+    def test_register_accepts_a_listed_redirect_uri(self, oauth_app):
+        uris = [LISTED_REDIRECT_URI]
+        response = oauth_app.post(
+            '/oauth/register',
+            content=json.dumps({'redirect_uris': uris}).encode(),
+            headers={'content-type': 'application/json'},
+        )
+        assert response.status_code == 201
+        assert response.json()['redirect_uris'] == uris
+
+    def test_register_accepts_a_domain_match_in_report_only(self, oauth_app):
+        with patch.dict('os.environ', REPORT_ONLY):
+            response = oauth_app.post(
+                '/oauth/register',
+                content=json.dumps({'redirect_uris': [UNLISTED_PATH_URI]}).encode(),
+                headers={'content-type': 'application/json'},
+            )
+        assert response.status_code == 201
 
 
 class TestOAuthFallbackRoutes:
@@ -1142,6 +1254,79 @@ class TestOAuthFallbackRoutes:
         )
         assert response.status_code == 201
         assert response.json()['client_id'] == TEST_CLIENT_ID
+
+    def test_register_fallback_rejects_an_unlisted_redirect_uri(self, oauth_app):
+        """The fallback delegates, so the check must not be bypassable through it."""
+        response = oauth_app.post(
+            '/register',
+            content=json.dumps({'redirect_uris': [EVIL_REDIRECT_URI]}).encode(),
+            headers={'content-type': 'application/json'},
+        )
+        assert response.status_code == 400
+        assert response.json()['error'] == 'invalid_redirect_uri'
+
+
+class TestOAuthCors:
+    """CORS on the endpoints a browser-based client posts to."""
+
+    @pytest.mark.parametrize('path', ['/oauth/register', '/oauth/token'])
+    def test_preflight_is_answered(self, oauth_app, path):
+        response = oauth_app.options(path)
+        assert response.status_code == 204
+        assert response.headers['access-control-allow-origin'] == '*'
+        assert 'POST' in response.headers['access-control-allow-methods']
+        assert 'content-type' in response.headers['access-control-allow-headers']
+
+    @pytest.mark.parametrize('path', ['/register', '/token'])
+    def test_fallback_preflight_is_answered(self, oauth_app, path, caplog):
+        """A client that never read the metadata preflights the fallback path.
+
+        The log there flags a client that lost its metadata; a preflight is not
+        that, so it must not appear in the log.
+        """
+        with caplog.at_level(logging.INFO, logger='alpacon_mcp.oauth'):
+            response = oauth_app.options(path)
+        assert response.status_code == 204
+        assert response.headers['access-control-allow-origin'] == '*'
+        assert 'fallback hit' not in caplog.text
+
+    def test_preflight_grants_no_credentials(self):
+        """A wildcard origin plus credentials would let any page use the session."""
+        assert 'Access-Control-Allow-Credentials' not in _CORS_PREFLIGHT_HEADERS
+
+    def test_register_response_is_readable_cross_origin(self, oauth_app):
+        response = oauth_app.post(
+            '/oauth/register',
+            content=json.dumps({'client_name': 'my-app'}).encode(),
+            headers={'content-type': 'application/json'},
+        )
+        assert response.status_code == 201
+        assert response.headers['access-control-allow-origin'] == '*'
+
+    def test_token_response_is_readable_cross_origin(self, oauth_app):
+        mock_client = _mock_auth0_response()
+        with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
+            response = oauth_app.post(
+                '/oauth/token',
+                data={'grant_type': 'authorization_code', 'code': 'test-code'},
+            )
+        assert response.status_code == 200
+        assert response.headers['access-control-allow-origin'] == '*'
+
+    def test_rejected_register_is_readable_cross_origin(self, oauth_app):
+        """The client can only act on the error code if it can read the body."""
+        response = oauth_app.post(
+            '/oauth/register',
+            content=json.dumps({'redirect_uris': [EVIL_REDIRECT_URI]}).encode(),
+            headers={'content-type': 'application/json'},
+        )
+        assert response.status_code == 400
+        assert response.headers['access-control-allow-origin'] == '*'
+
+    def test_navigation_endpoints_stay_closed(self, oauth_app):
+        """CORS never governs a top-level navigation, so authorize must not open."""
+        response = oauth_app.get('/oauth/authorize')
+        assert 'access-control-allow-origin' not in response.headers
 
 
 def _make_composite_state(redirect_uri='', state='', **extra):

@@ -17,6 +17,7 @@ import os
 import re
 import secrets
 import time
+from functools import wraps
 from http import HTTPStatus
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
@@ -66,6 +67,20 @@ _ALLOWED_LOOPBACK_HOSTS = ('localhost', '127.0.0.1', '::1')
 # Caps a client-supplied value in a log line. Escaping expands a byte up to
 # sixfold, so an unbounded value on an unauthenticated route inflates log volume.
 _LOG_VALUE_MAX_CHARS = 512
+
+# A real client registers one or two callbacks. The cap keeps one unauthenticated
+# registration from driving a check — and in report-only mode a warning — per entry.
+_MAX_REGISTERED_REDIRECT_URIS = 20
+
+# Sent on the preflight for the two endpoints a browser-based client posts to.
+# Allow-Credentials stays unset: with it, a wildcard origin would let any page
+# ride the user's ambient cookies, and neither endpoint reads a cookie anyway.
+_CORS_PREFLIGHT_HEADERS = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'authorization, content-type',
+    'Access-Control-Max-Age': '3600',
+}
 
 _ENV_ALLOWED_REDIRECT_DOMAINS = 'ALLOWED_REDIRECT_DOMAINS'
 _ENV_ALLOWED_REDIRECT_URIS = 'ALLOWED_REDIRECT_URIS'
@@ -230,6 +245,36 @@ def _check_redirect_uri(url: str) -> bool:
         _escape_for_log(url),
     )
     return False
+
+
+def _is_registrable_uri_list(value: object) -> bool:
+    """Whether redirect_uris has the shape RFC 7591 asks for, at a length we accept."""
+    return (
+        isinstance(value, list)
+        and 1 <= len(value) <= _MAX_REGISTERED_REDIRECT_URIS
+        and all(isinstance(uri, str) and uri for uri in value)
+    )
+
+
+def _allow_browser_clients(handler):
+    """Answer the CORS preflight and mark the response readable cross-origin.
+
+    Only for endpoints a browser-based client reaches with fetch: /oauth/authorize
+    and /oauth/callback are top-level navigations, which CORS never governs.
+    Starlette ships CORSMiddleware, but custom_route takes no per-route middleware
+    and installing it app-wide would also open the MCP transport endpoint.
+    """
+
+    @wraps(handler)
+    async def with_cors(request: Request) -> Response:
+        if request.method == 'OPTIONS':
+            return Response(status_code=204, headers=_CORS_PREFLIGHT_HEADERS)
+
+        response = await handler(request)
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        return response
+
+    return with_cors
 
 
 def _log_authorize_client_profile(
@@ -399,7 +444,10 @@ def register_oauth_routes(mcp_server):
         mcp_server: FastMCP server instance
     """
 
+    # RFC 8414 metadata is public and carries no credentials. Decorating covers
+    # the 500 path too, so a misconfiguration is readable rather than a CORS error.
     @mcp_server.custom_route('/.well-known/oauth-authorization-server', methods=['GET'])
+    @_allow_browser_clients
     async def oauth_metadata(request):
         """OAuth 2.0 Authorization Server Metadata (RFC 8414).
 
@@ -434,12 +482,7 @@ def register_oauth_routes(mcp_server):
 
         return JSONResponse(
             metadata,
-            headers={
-                'Cache-Control': 'public, max-age=3600',
-                'Access-Control-Allow-Origin': os.getenv(
-                    'ALPACON_MCP_RESOURCE_URL', request.url.netloc
-                ),
-            },
+            headers={'Cache-Control': 'public, max-age=3600'},
         )
 
     @mcp_server.custom_route('/oauth/authorize', methods=['GET'])
@@ -574,7 +617,8 @@ def register_oauth_routes(mcp_server):
         _set_nonce_cookie(response, nonce)
         return response
 
-    @mcp_server.custom_route('/oauth/token', methods=['POST'])
+    @mcp_server.custom_route('/oauth/token', methods=['POST', 'OPTIONS'])
+    @_allow_browser_clients
     async def oauth_token(request):
         """Proxy token exchange to Auth0.
 
@@ -743,7 +787,8 @@ def register_oauth_routes(mcp_server):
                 status_code=502,
             )
 
-    @mcp_server.custom_route('/oauth/register', methods=['POST'])
+    @mcp_server.custom_route('/oauth/register', methods=['POST', 'OPTIONS'])
+    @_allow_browser_clients
     async def oauth_register(request):
         """Dynamic Client Registration endpoint (RFC 7591).
 
@@ -807,13 +852,39 @@ def register_oauth_routes(mcp_server):
                 status_code=400,
             )
 
+        if 'redirect_uris' in client_metadata:
+            redirect_uris = client_metadata['redirect_uris']
+            # The shape check comes first: _check_redirect_uri parses a str.
+            if not _is_registrable_uri_list(redirect_uris):
+                return JSONResponse(
+                    {
+                        'error': 'invalid_client_metadata',
+                        'error_description': (
+                            'redirect_uris must be an array of 1 to '
+                            f'{_MAX_REGISTERED_REDIRECT_URIS} strings'
+                        ),
+                    },
+                    status_code=400,
+                )
+            if not all(_check_redirect_uri(uri) for uri in redirect_uris):
+                return JSONResponse(
+                    {
+                        'error': 'invalid_redirect_uri',
+                        'error_description': (
+                            'One or more redirect_uris are invalid or not allowed '
+                            'by this server'
+                        ),
+                    },
+                    status_code=400,
+                )
+
         # Return pre-configured client_id with metadata echoed back
         response_data = {
             'client_id': config['client_id'],
             'token_endpoint_auth_method': 'none',
         }
 
-        # Echo back redirect_uris if provided
+        # Truthful only because these URIs cleared the check /oauth/authorize applies.
         if 'redirect_uris' in client_metadata:
             response_data['redirect_uris'] = client_metadata['redirect_uris']
 
@@ -1036,7 +1107,7 @@ def register_oauth_routes(mcp_server):
         _clear_nonce_cookie(response)
         return response
 
-    @mcp_server.custom_route('/token', methods=['POST'])
+    @mcp_server.custom_route('/token', methods=['POST', 'OPTIONS'])
     async def oauth_token_fallback(request):
         """Fallback token endpoint at /token.
 
@@ -1045,7 +1116,8 @@ def register_oauth_routes(mcp_server):
         still has a stored refresh_token but lost the server metadata.
         Delegating to the canonical handler avoids a silent 404.
         """
-        logger.info('/token fallback hit — delegating to /oauth/token handler')
+        if request.method != 'OPTIONS':
+            logger.info('/token fallback hit — delegating to /oauth/token handler')
         return await oauth_token(request)
 
     @mcp_server.custom_route('/authorize', methods=['GET'])
@@ -1058,14 +1130,17 @@ def register_oauth_routes(mcp_server):
         logger.info('/authorize fallback hit — delegating to /oauth/authorize handler')
         return await oauth_authorize(request)
 
-    @mcp_server.custom_route('/register', methods=['POST'])
+    @mcp_server.custom_route('/register', methods=['POST', 'OPTIONS'])
     async def oauth_register_fallback(request):
         """Fallback register endpoint at /register.
 
         MCP SDK clients fall back to /register when oauth_metadata
         is not cached.
         """
-        logger.info('/register fallback hit — delegating to /oauth/register handler')
+        if request.method != 'OPTIONS':
+            logger.info(
+                '/register fallback hit — delegating to /oauth/register handler'
+            )
         return await oauth_register(request)
 
     # Report-only mode is what makes the domain list meaningful on its own, so
