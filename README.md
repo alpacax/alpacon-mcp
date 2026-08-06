@@ -512,7 +512,7 @@ These tools need a JWT/OAuth session (hosted server), a browser session, or a lo
 
 ### 🧩 Resources and prompts
 
-Every read tool is also exposed as a read-only `alpacon://` resource—for example `alpacon://servers/{region}/{workspace}`, `alpacon://metrics/{region}/{workspace}/{server_id}/cpu`, or `alpacon://audit/activity/{region}/{workspace}`—so a client can pull data without a tool call.
+Most read tools are also exposed as read-only `alpacon://` resources—for example `alpacon://servers/{region}/{workspace}`, `alpacon://metrics/{region}/{workspace}/{server_id}/cpu`, or `alpacon://audit/activity/{region}/{workspace}`—so a client can pull data without a tool call.
 
 Four MCP prompts teach the operating discipline: `work_session_workflow` (open a scoped session), `guarded_execution` (act inside it), `incident_response` (triage first, then remediate), and `security_audit` (pick the right audit lens).
 

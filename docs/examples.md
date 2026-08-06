@@ -49,7 +49,7 @@ Related: `get_memory_usage`, `get_disk_usage` (by `device` or `partition`), `get
 
 > *"Which servers are working hardest right now?"*
 
-`get_top_servers(workspace, metric_types=["cpu", "memory"])` ranks by usage over the last 24 hours and takes several metrics in one call.
+`get_top_servers(workspace, metric_types="cpu,memory")` ranks the top five by usage over the last 24 hours and takes several metrics in one call.
 
 ### Who is on this host
 
