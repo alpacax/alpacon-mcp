@@ -2,7 +2,6 @@
 .github
 .venv
 .claude
-.taskmaster
 __pycache__
 *.pyc
 *.pyo

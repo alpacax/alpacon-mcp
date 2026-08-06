@@ -71,10 +71,6 @@ mcp.json
 # OS specific
 .DS_Store
 
-# taskmaster
-.taskmaster/
-.rules/
-
 # packages
 package-lock.json
 package.json
