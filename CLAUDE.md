@@ -41,8 +41,8 @@ python -c "from server import mcp; print('ok')"   # import smoke check
 
 Things the code will not tell you at a glance:
 
-- **Regions are `ap1` and `us1` only** (the validator also accepts an internal
-  `dev`). An omitted `region` is resolved from the JWT in remote mode and from
+- **Regions are `ap1` and `us1` only** (the internal `dev` is not a served
+  region). An omitted `region` is resolved from the JWT in remote mode and from
   `token.json` in local mode, then validated; resolution fails when the
   workspace is unknown or its token spans several regions.
 - **Toolset selection crosses module boundaries.** `--toolsets` /
