@@ -304,10 +304,10 @@ def _allow_browser_clients(handler):
 def _log_authorize_client_profile(
     redirect_uri: str, code_challenge_method: str
 ) -> None:
-    """Record what each client sends, to settle the allowlist and PKCE questions.
+    """Record what each client sends, to settle who reaches the exempt callback.
 
-    Remove once PKCE is required and no deployment still needs report-only mode
-    to cover a missing allowlist entry.
+    Remove once no client uses the PKCE-exempt redirect_uri and no deployment
+    needs report-only mode to cover a missing allowlist entry.
     """
     logger.info(
         'authorize observed - redirect_uri: %s, pkce: %s',
