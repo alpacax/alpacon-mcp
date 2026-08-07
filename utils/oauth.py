@@ -72,6 +72,12 @@ _LOG_VALUE_MAX_CHARS = 512
 # registration from driving a check — and in report-only mode a warning — per entry.
 _MAX_REGISTERED_REDIRECT_URIS = 20
 
+# Both the authorize gate and the discovery document use this, so the enforced
+# and the advertised method cannot drift apart. plain is not accepted: its
+# challenge is the verifier itself, so whoever reads the authorization request
+# can replay it.
+_PKCE_CHALLENGE_METHOD = 'S256'
+
 # Sent on the preflight for the two endpoints a browser-based client posts to.
 # Allow-Credentials stays unset: with it, a wildcard origin would let any page
 # ride the user's ambient cookies, and neither endpoint reads a cookie anyway.
@@ -566,6 +572,30 @@ def register_oauth_routes(mcp_server):
                     ),
                 },
                 status_code=400,
+            )
+
+        code_challenge = params.get('code_challenge', '')
+        code_challenge_method = params.get('code_challenge_method', '')
+        if not code_challenge and not _is_pkce_exempt_redirect_uri(client_redirect_uri):
+            return JSONResponse(
+                {
+                    'error': 'invalid_request',
+                    'error_description': (
+                        'code_challenge is required; this server accepts only '
+                        f'{_PKCE_CHALLENGE_METHOD} PKCE'
+                    ),
+                },
+                status_code=HTTPStatus.BAD_REQUEST,
+            )
+        if code_challenge and code_challenge_method != _PKCE_CHALLENGE_METHOD:
+            return JSONResponse(
+                {
+                    'error': 'invalid_request',
+                    'error_description': (
+                        f'code_challenge_method must be {_PKCE_CHALLENGE_METHOD}'
+                    ),
+                },
+                status_code=HTTPStatus.BAD_REQUEST,
             )
 
         original_state = params.get('state', '')

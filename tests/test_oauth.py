@@ -12,6 +12,7 @@ import hmac
 import json
 import logging
 import time
+from http import HTTPStatus
 from unittest.mock import AsyncMock, MagicMock, patch
 from urllib.parse import parse_qs, urlparse
 
@@ -25,6 +26,7 @@ from utils.oauth import (
     _LOG_VALUE_MAX_CHARS,
     _MAX_REGISTERED_REDIRECT_URIS,
     _NONCE_COOKIE_NAME,
+    _PKCE_CHALLENGE_METHOD,
     _STATE_SECRET_ENV,
     _STATE_SECRET_INFO,
     _STATE_TTL_SECONDS,
@@ -76,6 +78,12 @@ OAUTH_ENV = {
 }
 
 REPORT_ONLY = {'ALPACON_MCP_REDIRECT_URI_REPORT_ONLY': 'true'}
+
+# Every non-exempt authorize request has to carry these
+PKCE_PARAMS = {
+    'code_challenge': 'test-challenge',
+    'code_challenge_method': _PKCE_CHALLENGE_METHOD,
+}
 
 # The nonce a browser is pretending to carry through the callback tests
 TEST_NONCE = 'test-nonce-value'
@@ -561,6 +569,7 @@ class TestOAuthAuthorize:
             params={
                 'response_type': 'code',
                 'redirect_uri': 'http://localhost:52048/callback',
+                **PKCE_PARAMS,
             },
             follow_redirects=False,
         )
@@ -575,6 +584,7 @@ class TestOAuthAuthorize:
             params={
                 'response_type': 'code',
                 'redirect_uri': 'http://localhost:52048/callback',
+                **PKCE_PARAMS,
             },
             follow_redirects=False,
         )
@@ -592,6 +602,7 @@ class TestOAuthAuthorize:
                 'response_type': 'code',
                 'redirect_uri': client_uri,
                 'state': 'original-state',
+                **PKCE_PARAMS,
             },
             follow_redirects=False,
         )
@@ -607,7 +618,11 @@ class TestOAuthAuthorize:
         """Even if a different client_id is provided, configured one is used."""
         response = oauth_app.get(
             '/oauth/authorize',
-            params={'client_id': 'attacker-client-id', 'response_type': 'code'},
+            params={
+                'client_id': 'attacker-client-id',
+                'response_type': 'code',
+                **PKCE_PARAMS,
+            },
             follow_redirects=False,
         )
         location = response.headers['location']
@@ -617,7 +632,7 @@ class TestOAuthAuthorize:
     def test_authorize_sets_default_response_type(self, oauth_app):
         response = oauth_app.get(
             '/oauth/authorize',
-            params={'redirect_uri': 'http://localhost:3000/callback'},
+            params={'redirect_uri': 'http://localhost:3000/callback', **PKCE_PARAMS},
             follow_redirects=False,
         )
         location = response.headers['location']
@@ -656,6 +671,7 @@ class TestOAuthAuthorize:
                 params={
                     'response_type': 'code',
                     'redirect_uri': 'http://localhost:52048/callback',
+                    **PKCE_PARAMS,
                 },
                 follow_redirects=False,
             )
@@ -669,6 +685,7 @@ class TestOAuthAuthorize:
             params={
                 'response_type': 'code',
                 'redirect_uri': LISTED_REDIRECT_URI,
+                **PKCE_PARAMS,
             },
             follow_redirects=False,
         )
@@ -681,6 +698,7 @@ class TestOAuthAuthorize:
             params={
                 'response_type': 'code',
                 'redirect_uri': 'https://chatgpt.com/connector_platform_oauth_redirect',
+                **PKCE_PARAMS,
             },
             follow_redirects=False,
         )
@@ -700,6 +718,7 @@ class TestOAuthAuthorize:
                 params={
                     'response_type': 'code',
                     'redirect_uri': 'https://custom.example.com/callback',
+                    **PKCE_PARAMS,
                 },
                 follow_redirects=False,
             )
@@ -750,6 +769,7 @@ class TestOAuthAuthorize:
             params={
                 'response_type': 'code',
                 'redirect_uri': 'http://127.0.0.1:8080/callback',
+                **PKCE_PARAMS,
             },
             follow_redirects=False,
         )
@@ -763,6 +783,7 @@ class TestOAuthAuthorize:
                 'response_type': 'code',
                 'redirect_uri': 'http://localhost:8080/callback',
                 'scope': 'openid profile',
+                **PKCE_PARAMS,
             },
             follow_redirects=False,
         )
@@ -778,6 +799,7 @@ class TestOAuthAuthorize:
                 'response_type': 'code',
                 'redirect_uri': 'http://localhost:8080/callback',
                 'scope': 'openid offline_access',
+                **PKCE_PARAMS,
             },
             follow_redirects=False,
         )
@@ -793,6 +815,7 @@ class TestOAuthAuthorize:
             params={
                 'response_type': 'code',
                 'redirect_uri': 'http://localhost:8080/callback',
+                **PKCE_PARAMS,
             },
             follow_redirects=False,
         )
@@ -808,6 +831,7 @@ class TestOAuthAuthorize:
                 'response_type': 'code',
                 'scope': 'openid profile email offline_access mfa',
                 'redirect_uri': 'http://localhost:8080/callback',
+                **PKCE_PARAMS,
             },
             follow_redirects=False,
         )
@@ -834,6 +858,7 @@ class TestOAuthAuthorize:
                 'response_type': 'code',
                 'scope': 'openid profile email offline_access',
                 'redirect_uri': 'http://localhost:8080/callback',
+                **PKCE_PARAMS,
             },
             follow_redirects=False,
         )
@@ -848,7 +873,7 @@ class TestOAuthAuthorize:
         """The browser that starts the flow gets marked."""
         response = oauth_app.get(
             '/oauth/authorize',
-            params={'redirect_uri': 'http://localhost:52048/callback'},
+            params={'redirect_uri': 'http://localhost:52048/callback', **PKCE_PARAMS},
             follow_redirects=False,
         )
         raw = response.headers['set-cookie'].lower()
@@ -863,7 +888,7 @@ class TestOAuthAuthorize:
         """The state names the browser by hash, never by the raw nonce."""
         response = oauth_app.get(
             '/oauth/authorize',
-            params={'redirect_uri': 'http://localhost:52048/callback'},
+            params={'redirect_uri': 'http://localhost:52048/callback', **PKCE_PARAMS},
             follow_redirects=False,
         )
         nonce = response.cookies[_NONCE_COOKIE_NAME]
@@ -879,6 +904,7 @@ class TestOAuthAuthorize:
             params={
                 'redirect_uri': 'http://localhost:52048/callback',
                 'scope': 'openid profile mfa',
+                **PKCE_PARAMS,
             },
             follow_redirects=False,
         )
@@ -892,12 +918,148 @@ class TestOAuthAuthorize:
         """A browser arriving with an old cookie is re-marked, not trusted as it is."""
         response = oauth_app.get(
             '/oauth/authorize',
-            params={'redirect_uri': 'http://localhost:52048/callback'},
+            params={'redirect_uri': 'http://localhost:52048/callback', **PKCE_PARAMS},
             follow_redirects=False,
         )
         assert TEST_NONCE not in response.headers['set-cookie']
         state = parse_qs(urlparse(response.headers['location']).query)['state'][0]
         assert _verify_state(state)['nonce_hash'] != _hash_nonce(TEST_NONCE)
+
+
+class TestAuthorizePkce:
+    """Tests for the S256 PKCE requirement at /oauth/authorize."""
+
+    def test_pkce_missing_challenge_is_rejected(self, oauth_app):
+        response = oauth_app.get(
+            '/oauth/authorize',
+            params={'response_type': 'code', 'redirect_uri': LISTED_REDIRECT_URI},
+            follow_redirects=False,
+        )
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        data = response.json()
+        assert data['error'] == 'invalid_request'
+        assert 'code_challenge' in data['error_description']
+
+    def test_pkce_empty_challenge_is_rejected(self, oauth_app):
+        response = oauth_app.get(
+            '/oauth/authorize',
+            params={
+                'response_type': 'code',
+                'redirect_uri': LISTED_REDIRECT_URI,
+                'code_challenge': '',
+                'code_challenge_method': 'S256',
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert response.json()['error'] == 'invalid_request'
+
+    def test_pkce_missing_method_is_rejected(self, oauth_app):
+        response = oauth_app.get(
+            '/oauth/authorize',
+            params={
+                'response_type': 'code',
+                'redirect_uri': LISTED_REDIRECT_URI,
+                'code_challenge': 'test-challenge',
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert 'code_challenge_method' in response.json()['error_description']
+
+    def test_pkce_plain_method_is_rejected(self, oauth_app):
+        response = oauth_app.get(
+            '/oauth/authorize',
+            params={
+                'response_type': 'code',
+                'redirect_uri': LISTED_REDIRECT_URI,
+                'code_challenge': 'test-challenge',
+                'code_challenge_method': 'plain',
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert 'S256' in response.json()['error_description']
+
+    def test_pkce_s256_is_accepted(self, oauth_app):
+        response = oauth_app.get(
+            '/oauth/authorize',
+            params={
+                'response_type': 'code',
+                'redirect_uri': LISTED_REDIRECT_URI,
+                **PKCE_PARAMS,
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == HTTPStatus.FOUND
+
+    def test_pkce_exempt_redirect_uri_may_omit_the_challenge(self, oauth_app):
+        response = oauth_app.get(
+            '/oauth/authorize',
+            params={'response_type': 'code', 'redirect_uri': EXEMPT_REDIRECT_URI},
+            follow_redirects=False,
+        )
+        assert response.status_code == HTTPStatus.FOUND
+        forwarded = parse_qs(urlparse(response.headers['location']).query)
+        assert 'code_challenge' not in forwarded
+
+    def test_pkce_exempt_redirect_uri_may_not_downgrade_to_plain(self, oauth_app):
+        response = oauth_app.get(
+            '/oauth/authorize',
+            params={
+                'response_type': 'code',
+                'redirect_uri': EXEMPT_REDIRECT_URI,
+                'code_challenge': 'test-challenge',
+                'code_challenge_method': 'plain',
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+
+    def test_pkce_deeper_path_on_the_exempt_host_is_not_exempt(self, oauth_app):
+        with patch.dict('os.environ', REPORT_ONLY):
+            response = oauth_app.get(
+                '/oauth/authorize',
+                params={
+                    'response_type': 'code',
+                    'redirect_uri': f'{EXEMPT_REDIRECT_URI}/deeper',
+                },
+                follow_redirects=False,
+            )
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert 'code_challenge' in response.json()['error_description']
+
+    def test_pkce_is_required_without_a_redirect_uri(self, oauth_app):
+        response = oauth_app.get(
+            '/oauth/authorize',
+            params={'response_type': 'code'},
+            follow_redirects=False,
+        )
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert 'code_challenge' in response.json()['error_description']
+
+    def test_pkce_check_runs_after_the_redirect_uri_gate(self, oauth_app):
+        response = oauth_app.get(
+            '/oauth/authorize',
+            params={'response_type': 'code', 'redirect_uri': EVIL_REDIRECT_URI},
+            follow_redirects=False,
+        )
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert 'allowlisted' in response.json()['error_description']
+
+    def test_pkce_challenge_reaches_auth0_unchanged(self, oauth_app):
+        response = oauth_app.get(
+            '/oauth/authorize',
+            params={
+                'response_type': 'code',
+                'redirect_uri': LISTED_REDIRECT_URI,
+                **PKCE_PARAMS,
+            },
+            follow_redirects=False,
+        )
+        forwarded = parse_qs(urlparse(response.headers['location']).query)
+        assert forwarded['code_challenge'] == ['test-challenge']
+        assert forwarded['code_challenge_method'] == [_PKCE_CHALLENGE_METHOD]
 
 
 class TestOAuthToken:
@@ -1272,6 +1434,7 @@ class TestOAuthFallbackRoutes:
             params={
                 'response_type': 'code',
                 'redirect_uri': 'http://localhost:52048/callback',
+                **PKCE_PARAMS,
             },
             follow_redirects=False,
         )
