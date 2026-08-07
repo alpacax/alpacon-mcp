@@ -1061,6 +1061,34 @@ class TestAuthorizePkce:
         assert forwarded['code_challenge'] == ['test-challenge']
         assert forwarded['code_challenge_method'] == [_PKCE_CHALLENGE_METHOD]
 
+    def test_pkce_fallback_route_enforces_the_same_rule(self, oauth_app):
+        """/authorize delegates, so it must reject what /oauth/authorize rejects."""
+        response = oauth_app.get(
+            '/authorize',
+            params={'response_type': 'code', 'redirect_uri': LISTED_REDIRECT_URI},
+            follow_redirects=False,
+        )
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert response.json()['error'] == 'invalid_request'
+
+    def test_pkce_advertised_method_is_the_enforced_one(self, oauth_app):
+        advertised = oauth_app.get('/.well-known/oauth-authorization-server').json()[
+            'code_challenge_methods_supported'
+        ]
+        assert advertised == [_PKCE_CHALLENGE_METHOD]
+
+        response = oauth_app.get(
+            '/oauth/authorize',
+            params={
+                'response_type': 'code',
+                'redirect_uri': LISTED_REDIRECT_URI,
+                'code_challenge': 'test-challenge',
+                'code_challenge_method': advertised[0],
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == HTTPStatus.FOUND
+
 
 class TestOAuthToken:
     """Tests for /oauth/token endpoint."""

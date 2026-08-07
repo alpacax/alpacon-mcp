@@ -501,7 +501,7 @@ def register_oauth_routes(mcp_server):
                 'none',
             ],
             'scopes_supported': ['openid', 'profile', 'email', 'offline_access'],
-            'code_challenge_methods_supported': ['S256'],
+            'code_challenge_methods_supported': [_PKCE_CHALLENGE_METHOD],
         }
 
         return JSONResponse(
