@@ -14,9 +14,9 @@
   - Incorrect: ``- `list_servers` - List all servers in workspace``
 
 ### Technology names
-- **Websh**: Always use "Websh" (not "WebSH") for web shell functionality
-  - Correct: `websh_session_create`, "Websh session", "Websh tools"
-  - Incorrect: `webSH_session_create`, "WebSH session", "WebSH tools"
+- **Websh**: Always use "Websh" (not "WebSH") for the web shell. This MCP server exposes no Websh tools, but the term still appears in settings and audit surfaces
+  - Correct: `websh_session_timeout`, "Websh session analysis"
+  - Incorrect: `webSH_session_timeout`, "WebSH session analysis"
 - **WebFTP**: Use "WebFTP" for file transfer functionality
 - **MCP**: Use "MCP" for Model Context Protocol
 

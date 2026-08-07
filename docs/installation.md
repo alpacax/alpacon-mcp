@@ -34,13 +34,13 @@ Complete installation guide for the Alpacon MCP Server across different platform
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # Run Alpacon MCP Server directly
-uvx alpacon-mcp --help
+uvx alpacon-mcp
 
 # Run with environment variables
 ALPACON_MCP_AP1_PRODUCTION_TOKEN="your-token" uvx alpacon-mcp
 
-# Run specific version
-uvx alpacon-mcp@0.1.0
+# Pin a version — pick a tag from https://github.com/alpacax/alpacon-mcp/releases
+uvx alpacon-mcp@<version>
 ```
 
 **Benefits of uvx:**
@@ -50,17 +50,21 @@ uvx alpacon-mcp@0.1.0
 - ✅ Always runs latest version
 - ✅ Easy to update
 
-### One-line installation (Unix/Linux/macOS)
+### Installing as a tool
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/your-repo/alpacon-mcp/main/install.sh | bash
+# Keep it on PATH as `alpacon-mcp`
+uv tool install alpacon-mcp
+
+# Or with pip
+pip install alpacon-mcp
 ```
 
 ### Manual installation
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-repo/alpacon-mcp.git
+git clone https://github.com/alpacax/alpacon-mcp.git
 cd alpacon-mcp
 
 # Install UV (if not already installed)
@@ -72,7 +76,7 @@ source .venv/bin/activate  # Linux/macOS
 # .venv\Scripts\activate     # Windows
 
 # Install dependencies
-uv pip install mcp httpx "PyJWT[crypto]"
+uv sync
 
 # Configure tokens
 mkdir -p config
@@ -80,7 +84,7 @@ echo '{"ap1": {"your-workspace": "your-token"}}' > config/token.json
 # Edit config/token.json with your actual API tokens
 
 # Test installation
-python main.py --test
+python main.py test
 ```
 
 ---
@@ -93,13 +97,13 @@ python main.py --test
 
 ```bash
 # Install prerequisites
-brew install python@3.11 git
+brew install python@3.12 git
 
 # Install UV
 brew install uv
 
 # Clone and setup
-git clone https://github.com/your-repo/alpacon-mcp.git
+git clone https://github.com/alpacax/alpacon-mcp.git
 cd alpacon-mcp
 
 # Create virtual environment
@@ -107,7 +111,7 @@ uv venv
 source .venv/bin/activate
 
 # Install dependencies
-uv pip install mcp httpx "PyJWT[crypto]"
+uv sync
 ```
 
 #### Method 2: Using system Python
@@ -121,7 +125,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 export PATH="$HOME/.local/bin:$PATH"
 
 # Clone and setup
-git clone https://github.com/your-repo/alpacon-mcp.git
+git clone https://github.com/alpacax/alpacon-mcp.git
 cd alpacon-mcp
 
 # Create virtual environment
@@ -129,7 +133,7 @@ uv venv
 source .venv/bin/activate
 
 # Install dependencies
-uv pip install mcp httpx "PyJWT[crypto]"
+uv sync
 ```
 
 #### macOS-specific configuration
@@ -162,7 +166,7 @@ export PATH="$HOME/.local/bin:$PATH"
 
 ```bash
 # Clone repository
-git clone https://github.com/your-repo/alpacon-mcp.git
+git clone https://github.com/alpacax/alpacon-mcp.git
 cd alpacon-mcp
 
 # Create virtual environment
@@ -170,10 +174,10 @@ uv venv
 source .venv/bin/activate
 
 # Install dependencies
-uv pip install mcp httpx "PyJWT[crypto]"
+uv sync
 
 # Test installation
-python main.py --test
+python main.py test
 ```
 
 #### Linux service setup (optional)
@@ -191,7 +195,7 @@ User=$USER
 WorkingDirectory=$PWD
 ExecStart=$PWD/.venv/bin/python main.py
 Restart=always
-Environment=ALPACON_CONFIG_FILE=$PWD/config/token.json
+Environment=ALPACON_MCP_CONFIG_FILE=$PWD/config/token.json
 
 [Install]
 WantedBy=multi-user.target
@@ -225,12 +229,12 @@ export PATH="$HOME/.local/bin:$PATH"
 
 ```bash
 # Clone and setup (same as Ubuntu)
-git clone https://github.com/your-repo/alpacon-mcp.git
+git clone https://github.com/alpacax/alpacon-mcp.git
 cd alpacon-mcp
 
 uv venv
 source .venv/bin/activate
-uv pip install mcp httpx "PyJWT[crypto]"
+uv sync
 ```
 
 ### Windows
@@ -253,7 +257,7 @@ git --version
 powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
 
 # Clone repository
-git clone https://github.com/your-repo/alpacon-mcp.git
+git clone https://github.com/alpacax/alpacon-mcp.git
 cd alpacon-mcp
 
 # Create virtual environment
@@ -261,10 +265,10 @@ uv venv
 .venv\Scripts\Activate.ps1
 
 # Install dependencies
-uv pip install mcp httpx "PyJWT[crypto]"
+uv sync
 
 # Test installation
-python main.py --test
+python main.py test
 ```
 
 #### Method 2: WSL2 (Windows Subsystem for Linux)
@@ -293,25 +297,15 @@ $env:PATH += ";$env:USERPROFILE\.local\bin"
 
 ## 🐳 Docker installation
 
-### Using pre-built image
+Images are published to Docker Hub by the release workflow; the repository name comes from the deployment's `DOCKER_IMAGE` setting, with a `-dev` suffix for pre-release builds. Ask your operator for the exact name, or build from source as shown below.
 
-```bash
-# Pull the image
-docker pull alpacon/mcp-server:latest
-
-# Run with volume for configuration
-docker run -d \
-  --name alpacon-mcp \
-  -v $(pwd)/config:/app/config:ro \
-  -p 8237:8237 \
-  alpacon/mcp-server:latest
-```
+The image's default command is `main_http.py`—the remote transport with Auth0 JWT auth, which needs the `AUTH0_*` variables. Override the command to run the stdio server instead.
 
 ### Building from source
 
 ```bash
 # Clone repository
-git clone https://github.com/your-repo/alpacon-mcp.git
+git clone https://github.com/alpacax/alpacon-mcp.git
 cd alpacon-mcp
 
 # Build image
@@ -330,7 +324,6 @@ docker run -d \
 Create `docker-compose.yml`:
 
 ```yaml
-version: '3.8'
 services:
   alpacon-mcp:
     build: .
@@ -340,10 +333,10 @@ services:
     ports:
       - "8237:8237"
     environment:
-      - ALPACON_CONFIG_FILE=/app/config/token.json
+      - ALPACON_MCP_CONFIG_FILE=/app/config/token.json
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8237/health')"]
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8237/health').raise_for_status()"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -365,9 +358,9 @@ docker-compose up -d
 chmod 700 config/
 chmod 600 config/token.json
 
-# For .config directory
-chmod 700 .config/
-chmod 600 .config/token.json
+# Global configuration
+chmod 700 ~/.alpacon-mcp/
+chmod 600 ~/.alpacon-mcp/token.json
 ```
 
 ### Network security
@@ -394,7 +387,7 @@ sudo chown -R alpacon-mcp:alpacon-mcp /opt/alpacon-mcp
 
 ```bash
 # Clone and setup for development
-git clone https://github.com/your-repo/alpacon-mcp.git
+git clone https://github.com/alpacax/alpacon-mcp.git
 cd alpacon-mcp
 
 # Install project dependencies
@@ -402,26 +395,34 @@ uv venv
 source .venv/bin/activate
 uv pip install -e .[dev]
 
-# Install pre-commit hooks
+# ruff and pre-commit ship as tools, not as dev dependencies
+uv tool install ruff
+uv tool install pre-commit
+
+# Install pre-commit hooks (ruff + mypy)
 pre-commit install
 
 # Run tests
-python -m pytest tests/
+pytest
 
-# Run linting
-black .
-isort .
-flake8 .
+# Lint and format
+ruff check .
+ruff format .
+
+# Type check
+mypy --ignore-missing-imports --no-strict-optional .
 ```
+
+CI runs the same three: `ruff check`, `mypy`, and `pytest` under a coverage floor. `.github/workflows/test.yml` holds the current threshold.
 
 ### Custom configuration
 
 ```bash
 # Use custom config file location (optional)
-export ALPACON_CONFIG_FILE="/path/to/custom-tokens.json"
+export ALPACON_MCP_CONFIG_FILE="/path/to/custom-tokens.json"
 
 # Or for local development
-export ALPACON_CONFIG_FILE=".config/local-tokens.json"
+export ALPACON_MCP_CONFIG_FILE="./config/token.json"
 ```
 
 ---
@@ -431,22 +432,14 @@ export ALPACON_CONFIG_FILE=".config/local-tokens.json"
 ### Test installation
 
 ```bash
-# Basic functionality test
-python main.py --test
+# Check a token against the API (prompts for region and workspace)
+python main.py test
 
-# Test token configuration
-python -c "from utils.token_manager import TokenManager; tm = TokenManager(); print('Tokens loaded:', len(tm.get_all_tokens()))"
+# Show the configured workspaces
+python main.py list
 
-# Test MCP tools loading
-python -c "from server import mcp; print('MCP tools loaded:', len(mcp.get_tools()))"
-
-# Test API connectivity (requires valid token)
-python -c "
-import asyncio
-from tools.server_tools import list_servers
-result = asyncio.run(list_servers(region='ap1', workspace='your-workspace'))
-print('API test result:', result['status'])
-"
+# Verify the server and its tools import
+python -c "from server import mcp; print('MCP Server initialized successfully')"
 ```
 
 ### Integration test
@@ -466,8 +459,8 @@ echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"clientInfo":{"nam
 # Pull latest changes
 git pull origin main
 
-# Update dependencies
-uv pip install --upgrade mcp httpx "PyJWT[crypto]"
+# Update dependencies to match the lockfile
+uv sync
 
 # Restart service if running
 sudo systemctl restart alpacon-mcp  # Linux service
@@ -482,7 +475,7 @@ docker-compose restart alpacon-mcp
 cp config/token.json config/token.json.backup.$(date +%Y%m%d)
 
 # Backup entire configuration
-tar -czf alpacon-mcp-backup-$(date +%Y%m%d).tar.gz config/ .config/
+tar -czf alpacon-mcp-backup-$(date +%Y%m%d).tar.gz config/ ~/.alpacon-mcp/
 ```
 
 ---
@@ -524,7 +517,7 @@ chmod +x ~/.local/bin/uv
 rm -rf .venv
 uv venv
 source .venv/bin/activate
-uv pip install mcp httpx "PyJWT[crypto]"
+uv sync
 ```
 
 ### Platform-specific issues
