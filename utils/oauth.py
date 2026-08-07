@@ -110,6 +110,14 @@ _DEFAULT_REDIRECT_URI_PATTERNS = (
     re.compile(r'^https://chatgpt\.com/connector/oauth/[A-Za-z0-9_-]{1,64}\Z'),
 )
 
+# The Power Platform connector Copilot Studio builds cannot send a challenge,
+# so its gateway callback may start a flow without one. Membership is redundant
+# with the allowlist today; it stays so that dropping the callback from the
+# allowlist cannot leave an exempt destination behind.
+_PKCE_EXEMPT_REDIRECT_URIS = frozenset(
+    {'https://global.consent.azure-apim.net/redirect'}
+)
+
 # Hosts report-only mode may fall back to, derived from the endpoint list so a
 # client whose endpoint moves stays covered without a second edit.
 # chat.openai.com has no endpoint entry and stays as the legacy OpenAI host.
@@ -206,6 +214,16 @@ def _is_exact_allowed_redirect_uri(url: str) -> bool:
         return False
 
     return any(pattern.match(url) for pattern in _DEFAULT_REDIRECT_URI_PATTERNS)
+
+
+def _is_pkce_exempt_redirect_uri(url: str) -> bool:
+    """Whether a destination may start an authorization flow with no PKCE.
+
+    Goes through _is_exact_allowed_redirect_uri, not _check_redirect_uri: the
+    latter accepts any path on an allowlisted host in report-only mode, which
+    would let an unrelated environment variable widen the exemption.
+    """
+    return url in _PKCE_EXEMPT_REDIRECT_URIS and _is_exact_allowed_redirect_uri(url)
 
 
 def _redirect_uri_report_only() -> bool:

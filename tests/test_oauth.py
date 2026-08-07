@@ -35,6 +35,7 @@ from utils.oauth import (
     _get_state_secret,
     _hash_nonce,
     _is_exact_allowed_redirect_uri,
+    _is_pkce_exempt_redirect_uri,
     _new_nonce,
     _sign_state,
     _verify_state,
@@ -55,6 +56,7 @@ EVIL_REDIRECT_URI = 'https://evil.com/cb'
 FAR_FUTURE_EXP = 9999999999
 
 LISTED_REDIRECT_URI = 'https://claude.ai/api/mcp/auth_callback'
+EXEMPT_REDIRECT_URI = 'https://global.consent.azure-apim.net/redirect'
 UNLISTED_PATH_URI = 'https://chatgpt.com/evil/path'
 CONNECTOR_REDIRECT_URI = 'https://chatgpt.com/connector/oauth/abc123'
 
@@ -253,6 +255,38 @@ class TestExactRedirectUriMatch:
     def test_plaintext_uri_is_rejected(self):
         with patch.dict('os.environ', {'ALLOWED_REDIRECT_URIS': 'http://a.example/cb'}):
             assert not _is_exact_allowed_redirect_uri('http://a.example/cb')
+
+
+class TestPkceExemption:
+    """Tests for the one redirect_uri that may skip PKCE."""
+
+    def test_pkce_exempt_uri_is_the_copilot_studio_callback(self):
+        assert _is_pkce_exempt_redirect_uri(EXEMPT_REDIRECT_URI)
+
+    def test_pkce_exemption_needs_the_whole_string(self):
+        assert not _is_pkce_exempt_redirect_uri(
+            'https://global.consent.azure-apim.net/redirect/deeper'
+        )
+        assert not _is_pkce_exempt_redirect_uri(
+            'https://global.consent.azure-apim.net/'
+        )
+        assert not _is_pkce_exempt_redirect_uri(
+            'https://global.consent.azure-apim.net/redirect?x=1'
+        )
+
+    def test_pkce_exemption_does_not_extend_to_other_allowlisted_uris(self):
+        assert not _is_pkce_exempt_redirect_uri(LISTED_REDIRECT_URI)
+        assert not _is_pkce_exempt_redirect_uri('http://localhost:52048/callback')
+
+    def test_pkce_exemption_is_not_widened_by_report_only_mode(self):
+        with patch.dict('os.environ', REPORT_ONLY):
+            assert not _is_pkce_exempt_redirect_uri(
+                'https://global.consent.azure-apim.net/redirect/deeper'
+            )
+
+    def test_pkce_exemption_dies_with_the_allowlist_entry(self):
+        with patch.dict('os.environ', {'ALLOWED_REDIRECT_URIS': LISTED_REDIRECT_URI}):
+            assert not _is_pkce_exempt_redirect_uri(EXEMPT_REDIRECT_URI)
 
 
 class TestRedirectUriGate:
