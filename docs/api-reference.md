@@ -775,27 +775,11 @@ List the MFA methods allowed for the workspace (`allowed_mfa_methods`, `passkey_
 
 **Note:** Like `get_workspace_security`, this requires JWT (OAuth/SSO) authentication (a static API token is rejected up front) and the route is SaaS-only.
 
-### `get_workspace_notifications`
-Get the workspace notification settings: `disconnection_notification` and `notification_channels`.
-
-**Parameters:**
-- `workspace` (string): Workspace name
-- `region` (string, optional): Region name; resolved from the workspace when omitted
-
 ### `get_workspace_preferences`
 Get the workspace-wide preferences: timezone, locale, `front_url`, `invite_ttl`, `enabled_extensions`, `websh_session_timeout`, `auto_agent_upgrade`, `package_proxy`, `billing_email`, `allowed_domains`. Workspace-global configuration, not per-user.
 
 **Parameters:**
 - `workspace` (string): Workspace name
-- `region` (string, optional): Region name; resolved from the workspace when omitted
-
-### `update_workspace_notifications`
-Update workspace notification settings. Only the fields you provide are sent (partial update).
-
-**Parameters:**
-- `workspace` (string): Workspace name
-- `disconnection_notification` (boolean, optional): Notify when a server disconnects/goes offline
-- `notification_channels` (array, optional): Channel types to notify through (`email`, `webhook`, `push`). Replaces the whole list (not additive); read via `get_workspace_notifications` and merge before sending
 - `region` (string, optional): Region name; resolved from the workspace when omitted
 
 ### `update_workspace_preferences`
@@ -840,7 +824,7 @@ Most read tools are also exposed as read-only MCP resources under the `alpacon:/
 - `alpacon://audit/{activity|server-logs|webftp-logs|session-analyses}/{region}/{workspace}`
 - `alpacon://certs/...`, `alpacon://tokens/...`, `alpacon://webhooks/...`, `alpacon://event-subscriptions/...`, `alpacon://acls/{command|server|file}/...`, `alpacon://webftp/{sessions|uploads|downloads}/...`, `alpacon://packages/{system|python}/...`, `alpacon://events/...`, `alpacon://commands/...`, `alpacon://registration-tokens/...`
 - `alpacon://workspaces`, `alpacon://workspaces/{region}`, `alpacon://current-user/{region}/{workspace}`
-- `alpacon://workspace-settings/{access-control|security|mfa-methods|notifications|preferences}/{region}/{workspace}`
+- `alpacon://workspace-settings/{access-control|security|mfa-methods|preferences}/{region}/{workspace}`
 
 A resource is registered only when its backing tool module is enabled, so a narrow `--toolsets` selection drops the matching resources too.
 

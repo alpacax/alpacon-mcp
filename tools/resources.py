@@ -412,11 +412,6 @@ RESOURCES: list[tuple[str, str, str]] = [
         'alpacon://workspace-settings/mfa-methods/{region}/{workspace}',
     ),
     (
-        'workspace_settings_notifications',
-        'workspace_tools.get_workspace_notifications',
-        'alpacon://workspace-settings/notifications/{region}/{workspace}',
-    ),
-    (
         'workspace_settings_preferences',
         'workspace_tools.get_workspace_preferences',
         'alpacon://workspace-settings/preferences/{region}/{workspace}',
