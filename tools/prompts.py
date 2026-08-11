@@ -73,9 +73,10 @@ here is judged in real time and recorded. Follow this discipline.
    - File transfers: `webftp_download_file`. `webftp_upload_file` is local-mode only—in
      remote/OAuth mode it returns `remote_mode_unsupported`.
 
-3. Expect risk verdicts. Each action is scored; a HIGH-risk command, or a `sudo` invocation
-   no Work Session sudo policy already covers, routes to human-in-the-loop. You cannot
-   self-approve (an agent has no presence/MFA). When a result is `pending_approval`, surface
+3. Expect risk verdicts. Each action is scored. A HIGH-risk command routes to
+   human-in-the-loop, and so does any `sudo` invocation that no Work Session sudo policy
+   already covers. You cannot self-approve (an agent has no presence/MFA). When a result
+   is `pending_approval`, surface
    it to a human and wait—but read the category first: a hard denial such as
    `SUDO_RISK_DENIED` creates no request anyone can approve, so waiting on it never ends
    (see step 4). So do not prefix commands with `sudo` by default—a needless `sudo` blocks
