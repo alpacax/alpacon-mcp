@@ -24,6 +24,8 @@ must belong to an approved Work Session. Follow this order.
    - Required arguments: `workspace`, `scopes` (list), `servers` (list of UUIDs),
      `expires_at` (ISO 8601), and `description` — fill them all or the call is rejected.
    - Pass the goal above as the session `description` (the API has no `intent` field).
+     The description is prose for the human who approves the session — never a list of
+     commands. Nothing in it is executed; commands run via `execute_command` in step 3.
    - Valid scopes are `command`, `webftp`, `tunnel`, and `sudo`. As an agent (MCP channel)
      you can request `command`/`webftp`/`tunnel` directly; `sudo` is available but every
      sudo invocation routes to human approval (HITL). Interactive `websh`/`editor` access
@@ -78,9 +80,11 @@ here is judged in real time and recorded. Follow this discipline.
    the command, narrow the target, or escalate to a human. Never re-run the identical
    denied command in a loop. Some denials have a second path you can start yourself:
    `SUDO_INTENT_DEVIATION` means the command was judged off-purpose for the session, so
-   besides waiting for the approval it created you may re-declare what the session is for
-   with `work_session_update(description=...)`; `WORK_SESSION_SCOPE_NOT_ALLOWED` means you
-   may add the missing scope with `work_session_update(scopes=[...])`. Either edit is
+   besides waiting for the approval it created you may restate in prose what the session
+   is for with `work_session_update(description=...)` — never paste the command text into
+   the description, which is read by the approver and never executed.
+   `WORK_SESSION_SCOPE_NOT_ALLOWED` means you may add the missing scope with
+   `work_session_update(scopes=[...])`. Either edit is
    normally queued for its own approval, so it is a correction, not a way around the
    reviewer.
 

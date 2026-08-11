@@ -641,3 +641,22 @@ class TestWorkSessionAnalyze:
 
         assert result['status'] == 'error'
         assert 'terminal state' in result['message']
+
+
+class TestDescriptionIsNotAnExecutionChannel:
+    """Agents have pasted the commands they meant to run into `description`;
+    the schema has to say outright that nothing there is executed.
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        'tool_name', ['work_session_create', 'work_session_update']
+    )
+    async def test_description_field_is_declared_non_executable(self, tool_name):
+        import tools.work_session_tools  # noqa: F401  (registers the tools)
+        from server import mcp
+
+        descriptions = {t.name: t.description for t in await mcp.list_tools()}
+        text = descriptions[tool_name]
+        assert 'NOT a command list' in text
+        assert 'nothing in it is executed' in text

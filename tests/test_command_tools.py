@@ -66,7 +66,7 @@ class TestSudoDenialHint:
         out = {'result': 'Alpacon denied this sudo command (SUDO_INTENT_DEVIATION).\n'}
         hint = self._hint(out)
         assert hint is not None
-        # 'queue' keeps the re-declare path from reading as approval-free.
+        # 'queue' keeps the restated-description path from reading as approval-free.
         assert 'work_session_update' in hint
         assert 'queue' in hint
 

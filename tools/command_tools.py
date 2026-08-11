@@ -49,10 +49,13 @@ _SUDO_DENIAL_HINTS: dict[str, str] = {
     'SUDO_INTENT_DEVIATION': (
         'sudo was denied: this command was judged off-purpose for the Work '
         "Session's declared intent, and an approval request was created. Either "
-        'wait for a reviewer, or re-declare what the session is for with '
-        'work_session_update(description=...) and re-run—note the server '
-        'queues a description change for its own approval unless you are an '
-        'admin or hold owner/manager on every server in the session.'
+        'wait for a reviewer, or—if the session description understates the work '
+        'it was always meant to cover—restate that purpose in prose with '
+        'work_session_update(description=...) and re-run. Never put the command '
+        'text in the description: it is a purpose statement for the approver and '
+        'nothing in it is executed. Note the server queues a description change '
+        'for its own approval unless you are an admin or hold owner/manager on '
+        'every server in the session.'
     ),
     'SUDO_COMMAND_NOT_AUTHORIZED': (
         'sudo was denied: the command carries no requesting identity, so no '
