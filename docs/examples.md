@@ -28,7 +28,7 @@ Nothing here changes state, and none of it needs a Work Session.
 2. `get_server_overview(server_id, workspace)`—hardware, OS, uptime, network interfaces, disk layout in a single call
 3. `get_server_metrics_summary(server_id, workspace, hours=24)` for CPU, memory, disk, and network together
 
-Prefer `get_server_overview` over calling `get_system_info`, `get_os_version`, `get_network_interfaces`, and `get_disk_info` separately—it is one round trip instead of four.
+Prefer `get_server_overview` over calling `get_system_info`, `get_os_version`, `get_system_time`, `get_network_interfaces`, and `get_disk_info` separately—it is one round trip instead of five.
 
 ### Narrow a performance question
 
