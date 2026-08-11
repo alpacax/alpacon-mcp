@@ -1560,6 +1560,78 @@ def _make_composite_state(redirect_uri='', state='', **extra):
     return _sign_state({'redirect_uri': redirect_uri, 'state': state, **extra})
 
 
+class TestMfaPkceReplay:
+    """The client's challenge has to survive the two-stage MFA flow.
+
+    Stage 1 authorizes against the MFA audience without the challenge, so the
+    signed state holds the only copy. Losing it strands the client: it still
+    holds a verifier, and the code it finally exchanges was issued without one.
+    """
+
+    def test_stage1_stashes_the_challenge_in_the_state(self, oauth_app):
+        response = oauth_app.get(
+            '/oauth/authorize',
+            params={
+                'response_type': 'code',
+                'scope': 'openid profile email offline_access mfa',
+                'redirect_uri': 'http://localhost:8080/callback',
+                **PKCE_PARAMS,
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == 302
+        stage1 = parse_qs(urlparse(response.headers['location']).query)
+        assert 'code_challenge' not in stage1
+
+        stashed = _verify_state(stage1['state'][0]).get('authorize_params', {})
+        assert stashed.get('code_challenge') == PKCE_PARAMS['code_challenge']
+        assert (
+            stashed.get('code_challenge_method') == PKCE_PARAMS['code_challenge_method']
+        )
+
+    def test_stage2_replays_the_stashed_challenge(self, oauth_app):
+        composite = _make_composite_state(
+            redirect_uri='http://localhost:8080/callback',
+            state='orig-state',
+            stage='mfa',
+            original_scope='openid profile email offline_access',
+            authorize_params=dict(PKCE_PARAMS),
+        )
+
+        with patch('httpx.AsyncClient', return_value=_mock_auth0_response()):
+            response = oauth_app.get(
+                '/oauth/callback',
+                params={'code': 'mfa-auth-code', 'state': composite},
+                follow_redirects=False,
+            )
+
+        assert response.status_code == 302
+        stage2 = parse_qs(urlparse(response.headers['location']).query)
+        assert stage2['code_challenge'] == [PKCE_PARAMS['code_challenge']]
+        assert stage2['code_challenge_method'] == [PKCE_PARAMS['code_challenge_method']]
+
+    def test_stage2_replays_only_the_allowlisted_keys(self, oauth_app):
+        """A key outside the replay allowlist cannot ride the state into stage 2."""
+        composite = _make_composite_state(
+            redirect_uri='http://localhost:8080/callback',
+            state='orig-state',
+            stage='mfa',
+            original_scope='openid',
+            authorize_params={**PKCE_PARAMS, 'audience': 'https://evil.example/'},
+        )
+
+        with patch('httpx.AsyncClient', return_value=_mock_auth0_response()):
+            response = oauth_app.get(
+                '/oauth/callback',
+                params={'code': 'mfa-auth-code', 'state': composite},
+                follow_redirects=False,
+            )
+
+        assert response.status_code == 302
+        stage2 = parse_qs(urlparse(response.headers['location']).query)
+        assert stage2['audience'] == ['https://alpacon.io/access/']
+
+
 class TestOAuthCallback:
     """Tests for /oauth/callback endpoint."""
 
