@@ -358,7 +358,9 @@ The shipped image runs `main_http.py`—the remote (streamable-http) transport w
       "args": [
         "run", "--rm", "-i",
         "-v", "/path/to/config:/app/config:ro",
-        "alpacon-mcp:latest"
+        "-e", "ALPACON_MCP_CONFIG_FILE=/app/config/token.json",
+        "alpacon-mcp:latest",
+        "python", "main.py"
       ]
     }
   }
