@@ -381,6 +381,8 @@ Execute a command on multiple servers simultaneously.
 
 ## 📁 WebFTP tools
 
+`webftp_upload_file`, `webftp_bulk_upload`, and `webftp_bulk_download` read or write a local path, so in remote mode they return `remote_mode_unsupported`. Remote callers use `webftp_upload_content`, and `webftp_download_file`, which answers with a presigned URL there.
+
 ### `webftp_session_create`
 Create a new WebFTP session for file transfer.
 
