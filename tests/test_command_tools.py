@@ -1070,3 +1070,21 @@ class TestExecuteCommandMultiServerGateTranslation:
         server_entry = result['deploy_shell_results'][sid]
         assert server_entry.get('code') == 'work_session_required'
         assert 'next_action' in server_entry
+
+
+class TestSudoGuidanceInToolDescriptions:
+    """MCP prompts are opt-in—clients that read only tool schemas (Codex) must
+    still learn that an unneeded sudo prefix blocks the session on a human.
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        'tool_name', ['execute_command', 'execute_command_multi_server']
+    )
+    async def test_description_states_the_sudo_cost(self, tool_name):
+        from server import mcp
+
+        descriptions = {t.name: t.description for t in await mcp.list_tools()}
+        text = descriptions[tool_name]
+        assert 'Do not prefix the command with sudo by default' in text
+        assert 'human-in-the-loop' in text

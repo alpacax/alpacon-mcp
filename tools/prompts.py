@@ -28,8 +28,9 @@ must belong to an approved Work Session. Follow this order.
      commands. Nothing in it is executed; commands run via `execute_command` in step 3.
    - Valid scopes are `command`, `webftp`, `tunnel`, and `sudo`. As an agent (MCP channel)
      you can request `command`/`webftp`/`tunnel` directly; `sudo` is available but every
-     sudo invocation routes to human approval (HITL). Interactive `websh`/`editor` access
-     requires human presence (MFA) and is NOT available to you.
+     sudo invocation routes to human approval (HITL), so request it only when the work
+     genuinely requires root. Interactive `websh`/`editor` access requires human presence
+     (MFA) and is NOT available to you.
    - Scope to the specific target servers only — do not request workspace-wide access.
 
 2. Handle the result by status:
@@ -74,6 +75,8 @@ here is judged in real time and recorded. Follow this discipline.
 3. Expect risk verdicts. Each action is scored; a HIGH-risk command or any `sudo`
    invocation routes to human-in-the-loop. You cannot self-approve (an agent has no
    presence/MFA). When a result is `pending_approval`, surface it to a human and wait.
+   So do not prefix commands with `sudo` by default — a needless `sudo` blocks the whole
+   session on a human. Use it only when the command genuinely requires root.
 
 4. On a denial, read the structured category and `next_action` and self-correct — the
    field is `code` on an `error` result and `category` on a `pending_approval` one. Adjust
