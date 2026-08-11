@@ -273,7 +273,7 @@ python main.py
 python main.py --toolsets servers,commands,webftp,metrics
 ```
 
-Useful when your client has a tool limit. Workspace, health, and Work Session tools are always registered.
+Useful when your client has a tool limit. Workspace, health, Work Session, and prompt tools are always registered.
 
 ### SSE mode (Server-Sent Events)
 
