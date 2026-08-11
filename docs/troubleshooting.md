@@ -354,8 +354,9 @@ time curl -H "Authorization: Bearer token" \
 
 **Debug:**
 ```bash
-# The startup log says which file was chosen
-ALPACON_MCP_LOG_LEVEL=INFO python main.py list
+# Whichever path resolves a config file logs the choice; `test` does it
+# after asking for the region and workspace
+ALPACON_MCP_LOG_LEVEL=INFO python main.py test
 # -> "Using global config file: /Users/you/.alpacon-mcp/token.json"
 ```
 
