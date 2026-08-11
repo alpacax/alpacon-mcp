@@ -653,8 +653,8 @@ class TestDescriptionIsNotAnExecutionChannel:
         'tool_name', ['work_session_create', 'work_session_update']
     )
     async def test_description_field_is_declared_non_executable(self, tool_name):
-        import tools.work_session_tools  # noqa: F401  (registers the tools)
         from server import mcp
+        from tools import work_session_tools  # noqa: F401  (registers the tools)
 
         descriptions = {t.name: t.description for t in await mcp.list_tools()}
         text = descriptions[tool_name]
