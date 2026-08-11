@@ -22,8 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 - `get_workspace_notifications` and `update_workspace_notifications`, along with the
   `alpacon://workspace-settings/notifications/{region}/{workspace}` resource. The upstream
-  `/api/workspaces/notifications/-/` endpoint no longer exists — the `NotificationSettings`
-  model, serializer, viewset and route were deleted server-side (alpacon-server #2832)
+  `/api/workspaces/notifications/-/` endpoint no longer exists—the `NotificationSettings`
+  model, serializer, viewset and route were deleted server-side (alpacax/alpacon-server#2832)
   because the two fields had no runtime consumer, so both tools returned 404. Server
   disconnection still raises an alert in the notification bell; that path is unaffected,
   as are the `notification_channels` parameters on `create_alert_rule`/`update_alert_rule`,
