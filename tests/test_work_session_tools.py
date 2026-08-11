@@ -4,6 +4,9 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from server import mcp
+from tools import work_session_tools  # noqa: F401  (registers the tools)
+
 
 @pytest.fixture
 def mock_http_client():
@@ -653,9 +656,6 @@ class TestDescriptionIsNotAnExecutionChannel:
         'tool_name', ['work_session_create', 'work_session_update']
     )
     async def test_description_field_is_declared_non_executable(self, tool_name):
-        from server import mcp
-        from tools import work_session_tools  # noqa: F401  (registers the tools)
-
         descriptions = {t.name: t.description for t in await mcp.list_tools()}
         text = descriptions[tool_name]
         assert 'NOT a command list' in text

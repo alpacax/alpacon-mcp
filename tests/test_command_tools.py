@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from server import mcp
 from tools.command_tools import (
     _submit_command,
     _sudo_denial,
@@ -1082,8 +1083,6 @@ class TestSudoGuidanceInToolDescriptions:
         'tool_name', ['execute_command', 'execute_command_multi_server']
     )
     async def test_description_states_the_sudo_cost(self, tool_name):
-        from server import mcp
-
         descriptions = {t.name: t.description for t in await mcp.list_tools()}
         text = descriptions[tool_name]
         assert 'Do not prefix the command with sudo by default' in text
