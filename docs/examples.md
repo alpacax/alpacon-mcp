@@ -98,6 +98,7 @@ The gate answers in a structured way. Each code has one right move:
 |---|---|---|
 | `work_session_not_active` (`status="pending_approval"`) | The session awaits human approval | Surface it to a person; retry after approval |
 | `work_session_required` | No session at all | `work_session_create` |
+| `work_session_not_usable` | Session reached a terminal state | `work_session_create` |
 | `work_session_scope_not_allowed` | Session lacks the scope this call needs | `work_session_update` to add it, or open a fitting session |
 | `work_session_server_not_allowed` | Server is outside the session | `work_session_update` the server list |
 | `work_session_expired` | Window closed | `work_session_extend`, or open a new session |
