@@ -13,11 +13,9 @@ from tests.conftest import HTTP_ERROR_ENVELOPE
 from tools.workspace_tools import (
     get_current_user,
     get_workspace_access_control,
-    get_workspace_notifications,
     get_workspace_preferences,
     get_workspace_security,
     list_workspace_mfa_methods,
-    update_workspace_notifications,
     update_workspace_preferences,
 )
 
@@ -479,40 +477,6 @@ class TestListWorkspaceMfaMethods:
         assert result['data']['allowed_mfa_methods'] == ['totp']
 
 
-class TestGetWorkspaceNotifications:
-    """Test get_workspace_notifications function."""
-
-    @pytest.mark.asyncio
-    async def test_success(self, mock_http_client, mock_token):
-        mock_http_client.get.return_value = {
-            'disconnection_notification': True,
-            'notification_channels': ['email'],
-        }
-
-        result = await get_workspace_notifications(
-            workspace='testworkspace', region='ap1'
-        )
-
-        assert result['status'] == 'success'
-        assert result['data']['notification_channels'] == ['email']
-        mock_http_client.get.assert_called_once_with(
-            region='ap1',
-            workspace='testworkspace',
-            endpoint='/api/workspaces/notifications/-/',
-            token='test-token',
-        )
-
-    @pytest.mark.asyncio
-    async def test_http_error(self, mock_http_client, mock_token):
-        mock_http_client.get.return_value = HTTP_ERROR_ENVELOPE
-
-        result = await get_workspace_notifications(
-            workspace='testworkspace', region='ap1'
-        )
-
-        assert result['status'] == 'error'
-
-
 class TestGetWorkspacePreferences:
     """Test get_workspace_preferences function."""
 
@@ -543,81 +507,6 @@ class TestGetWorkspacePreferences:
 
         result = await get_workspace_preferences(
             workspace='testworkspace', region='ap1'
-        )
-
-        assert result['status'] == 'error'
-
-
-class TestUpdateWorkspaceNotifications:
-    """Test update_workspace_notifications function."""
-
-    @pytest.mark.asyncio
-    async def test_partial_update_only_sends_provided_fields(
-        self, mock_http_client, mock_token
-    ):
-        mock_http_client.patch.return_value = {
-            'disconnection_notification': False,
-            'notification_channels': ['email'],
-        }
-
-        result = await update_workspace_notifications(
-            workspace='testworkspace',
-            disconnection_notification=False,
-            region='ap1',
-        )
-
-        assert result['status'] == 'success'
-        mock_http_client.patch.assert_called_once_with(
-            region='ap1',
-            workspace='testworkspace',
-            endpoint='/api/workspaces/notifications/-/',
-            token='test-token',
-            data={'disconnection_notification': False},
-        )
-
-    @pytest.mark.asyncio
-    async def test_update_multiple_fields(self, mock_http_client, mock_token):
-        mock_http_client.patch.return_value = {
-            'disconnection_notification': True,
-            'notification_channels': ['email', 'webhook'],
-        }
-
-        result = await update_workspace_notifications(
-            workspace='testworkspace',
-            disconnection_notification=True,
-            notification_channels=['email', 'webhook'],
-            region='ap1',
-        )
-
-        assert result['status'] == 'success'
-        mock_http_client.patch.assert_called_once_with(
-            region='ap1',
-            workspace='testworkspace',
-            endpoint='/api/workspaces/notifications/-/',
-            token='test-token',
-            data={
-                'disconnection_notification': True,
-                'notification_channels': ['email', 'webhook'],
-            },
-        )
-
-    @pytest.mark.asyncio
-    async def test_no_fields_provided_returns_error(self, mock_http_client, mock_token):
-        result = await update_workspace_notifications(
-            workspace='testworkspace', region='ap1'
-        )
-
-        assert result['status'] == 'error'
-        assert result['region'] == 'ap1'
-        assert result['workspace'] == 'testworkspace'
-        mock_http_client.patch.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_http_error(self, mock_http_client, mock_token):
-        mock_http_client.patch.return_value = HTTP_ERROR_ENVELOPE
-
-        result = await update_workspace_notifications(
-            workspace='testworkspace', disconnection_notification=True, region='ap1'
         )
 
         assert result['status'] == 'error'

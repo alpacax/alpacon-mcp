@@ -383,55 +383,11 @@ async def list_workspace_mfa_methods(
 
 @mcp_tool_handler(
     description=(
-        'Get the workspace notification settings: disconnection_notification and the '
-        'notification_channels used to deliver workspace-level alerts. '
-        'Related: update_workspace_notifications, list_webhooks, list_event_subscriptions.'
-    ),
-    annotations=READ_ONLY,
-    meta={
-        'anthropic/searchHint': 'workspace notifications settings disconnection channels',
-    },
-)
-async def get_workspace_notifications(
-    workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
-    """Get the workspace notification settings.
-
-    Args:
-        workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
-
-    Returns:
-        Workspace notification settings response
-    """
-    token = kwargs.get('token')
-
-    result = await http_client.get(
-        region=region,
-        workspace=workspace,
-        endpoint='/api/workspaces/notifications/-/',
-        token=token,
-    )
-
-    err = unwrap_http_result(
-        result,
-        default_message='Failed to get workspace notification settings',
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(data=result, region=region, workspace=workspace)
-
-
-@mcp_tool_handler(
-    description=(
         'Get the workspace-wide preferences: timezone, locale (country/language), '
         'front_url, invite_ttl, enabled_extensions, websh_session_timeout, '
         'auto_agent_upgrade, package_proxy, billing_email, and allowed_domains. '
         'This is workspace-global configuration, not a per-user preference. '
-        'Related: update_workspace_preferences, get_workspace_notifications.'
+        'Related: update_workspace_preferences.'
     ),
     annotations=READ_ONLY,
     meta={
@@ -462,75 +418,6 @@ async def get_workspace_preferences(
     err = unwrap_http_result(
         result,
         default_message='Failed to get workspace preferences',
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(data=result, region=region, workspace=workspace)
-
-
-@mcp_tool_handler(
-    description=(
-        'Update workspace notification settings. Only the fields you provide are sent '
-        '(partial update). Fields: disconnection_notification (bool, notify when a server '
-        'disconnects/goes offline), notification_channels (list of channel types to notify '
-        'through: email, webhook, push). '
-        'Warning: notification_channels REPLACES the whole list, it does not append. To add '
-        'a channel, first read the current list via get_workspace_notifications, merge, then '
-        'send the full list — otherwise the omitted channels are dropped. '
-        'Related: get_workspace_notifications.'
-    ),
-    annotations=IDEMPOTENT_WRITE,
-    meta={
-        'anthropic/searchHint': 'workspace notifications update modify settings',
-    },
-)
-async def update_workspace_notifications(
-    workspace: str,
-    disconnection_notification: bool | None = None,
-    notification_channels: list[str] | None = None,
-    region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
-    """Update the workspace notification settings (partial update).
-
-    Args:
-        workspace: Workspace name. Required parameter
-        disconnection_notification: Notify when a server disconnects (optional)
-        notification_channels: Channel types to notify through, e.g. email/webhook/push.
-            Replaces the whole list (not additive); read via get_workspace_notifications
-            and merge before sending to avoid dropping existing channels (optional)
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
-
-    Returns:
-        Workspace notification update response
-    """
-    token = kwargs.get('token')
-
-    update_data: dict[str, Any] = {}
-    if disconnection_notification is not None:
-        update_data['disconnection_notification'] = disconnection_notification
-    if notification_channels is not None:
-        update_data['notification_channels'] = notification_channels
-
-    if not update_data:
-        return error_response(
-            'No update data provided', region=region, workspace=workspace
-        )
-
-    result = await http_client.patch(
-        region=region,
-        workspace=workspace,
-        endpoint='/api/workspaces/notifications/-/',
-        token=token,
-        data=update_data,
-    )
-
-    err = unwrap_http_result(
-        result,
-        default_message='Failed to update workspace notification settings',
         region=region,
         workspace=workspace,
     )
