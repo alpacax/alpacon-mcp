@@ -92,7 +92,7 @@ _NEXT_ACTION_BY_CATEGORY: dict[str, str] = {
         'Surface this request to a human reviewer; only a human can approve or '
         'reject it, out-of-band (Alpacon web console or Slack). You cannot make '
         'this decision and no MCP tool does it for you. Wait for the human '
-        'decision — there is nothing for you to retry or resubmit.'
+        'decision—there is nothing for you to retry or resubmit.'
     ),
 }
 _DEFAULT_NEXT_ACTION = _NEXT_ACTION_BY_CATEGORY['SUDO_APPROVAL_REQUIRED']

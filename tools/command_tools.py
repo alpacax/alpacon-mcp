@@ -431,7 +431,7 @@ async def execute_command(
                     details=result,
                 )
 
-            # Command still in progress — reset deadline (within hard cap) so a
+            # Command still in progress—reset deadline (within hard cap) so a
             # slow AI verification or delayed delivery does not time out a
             # command that is still advancing. Covers both pre-execution states
             # (queued/scheduled/delivered/verifying) and execution (running).
