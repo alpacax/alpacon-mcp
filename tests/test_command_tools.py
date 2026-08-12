@@ -1087,3 +1087,8 @@ class TestSudoGuidanceInToolDescriptions:
         text = descriptions[tool_name]
         assert 'Do not prefix the command with sudo by default' in text
         assert 'human-in-the-loop' in text
+        # The carve-out and the hard-denial path are the reason the rule is
+        # qualified rather than absolute; pin both so neither regresses.
+        assert 'sudo policy already covers' in text
+        assert 'denied outright' in text
+        assert 'sudo_denial.category' in text
