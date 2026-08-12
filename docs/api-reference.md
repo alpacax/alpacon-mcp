@@ -340,7 +340,7 @@ Execute a command on a server and wait for the result.
 
 **Parameters:**
 - `server_id` (string): Server ID
-- `command` (string): Command to execute
+- `command` (string): Command to execute. Do not prefix it with `sudo` by default: unless a Work Session sudo policy already covers the command, a sudo invocation either routes to human approval and blocks until a human acts, or is denied outright with no request anyone can approve. Check `sudo_denial.category` before waiting—a `sudo_hint` with no `sudo_denial` is a hard denial that creates no request
 - `workspace` (string): Workspace name
 - `shell` (string, default: "system"): Shell type
 - `username` (string, optional): Username for execution
@@ -367,7 +367,7 @@ Execute a command on multiple servers simultaneously.
 
 **Parameters:**
 - `server_ids` (array): List of server IDs
-- `command` (string): Command to execute
+- `command` (string): Command to execute. The same sudo rule as `execute_command` applies, per server: a needless `sudo` prefix stalls that server's command on a human approver, or is denied outright with no request anyone can approve
 - `workspace` (string): Workspace name
 - `shell` (string, default: "system"): Shell type
 - `username` (string, optional): Username for execution
@@ -621,7 +621,9 @@ Send an email invitation to join the workspace (Auth0-enabled deployments). **Pa
 A Work Session is the unit of authorized work: a scope, a set of servers, an expiry, and an audit trail. OAuth/browser callers must have one active before executing commands or transferring files; static API tokens and service tokens bypass the gate.
 
 ### `work_session_create`
-Open a session. **Parameters:** `workspace`, `scopes` (array; agents may request `command`, `webftp`, `tunnel`), `servers` (array of UUIDs), `expires_at` (ISO 8601), `description`, `title` (optional), `region` (optional). Only `title` and `region` may be omitted—a session with no expiry or no stated reason is not a session anyone can approve.
+Open a session. **Parameters:** `workspace`, `scopes` (array; agents may request `command`, `webftp`, `tunnel`, and `sudo`—request `sudo` only when the work genuinely requires root, since a sudo invocation no policy covers routes to human approval), `servers` (array of UUIDs), `expires_at` (ISO 8601), `description`, `title` (optional), `region` (optional). Only `title` and `region` may be omitted—a session with no expiry or no stated reason is not a session anyone can approve.
+
+`description` is prose for the human who approves the session. It is not a command list and nothing in it is executed; commands run via `execute_command` once the session is active.
 
 A session that needs human approval comes back with `status="pending_approval"`—surface it to a person and retry after they approve.
 
@@ -629,7 +631,7 @@ A session that needs human approval comes back with `status="pending_approval"`�
 Read one session (`session_id`) or list them (`status`, `requester_type`, `limit` filters).
 
 ### `work_session_update` / `work_session_extend`
-Partial update of `title`, `description`, `scopes`, `servers` (and `expires_at` for pending sessions only), or extend `expires_at` on an approved/active session. An update that needs approval is queued as a modification request.
+Partial update of `title`, `description`, `scopes`, `servers` (and `expires_at` for pending sessions only), or extend `expires_at` on an approved/active session. `description` carries the same prose-only rule as on `work_session_create`. An update that needs approval is queued as a modification request.
 
 ### `work_session_timeline`
 Chronological record of commands, file transfers, terminal activity, and sudo grants. **Parameters:** `session_id`, `workspace`, `include_records` (boolean, default true), `region` (optional).

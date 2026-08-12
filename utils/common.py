@@ -79,8 +79,10 @@ _NEXT_ACTION_BY_CATEGORY: dict[str, str] = {
     'SUDO_INTENT_DEVIATION': (
         'This command was judged off-purpose for the Work Session and an '
         'approval request was created. Either wait for a human reviewer to '
-        'approve it out-of-band, or re-declare what the session is actually for '
-        'with work_session_update(description=...) and retry. Re-declaring is '
+        'approve it out-of-band, or restate in prose what the session is '
+        'actually for with work_session_update(description=...) and retry—'
+        'never put the command text there; the description is a purpose '
+        'statement for the approver and nothing in it is executed. Restating is '
         'not a shortcut around approval: the server queues a description change '
         'for its own approval unless you are an admin or hold owner/manager on '
         'every server in the session.'
@@ -90,7 +92,7 @@ _NEXT_ACTION_BY_CATEGORY: dict[str, str] = {
         'Surface this request to a human reviewer; only a human can approve or '
         'reject it, out-of-band (Alpacon web console or Slack). You cannot make '
         'this decision and no MCP tool does it for you. Wait for the human '
-        'decision — there is nothing for you to retry or resubmit.'
+        'decision—there is nothing for you to retry or resubmit.'
     ),
 }
 _DEFAULT_NEXT_ACTION = _NEXT_ACTION_BY_CATEGORY['SUDO_APPROVAL_REQUIRED']

@@ -49,10 +49,13 @@ _SUDO_DENIAL_HINTS: dict[str, str] = {
     'SUDO_INTENT_DEVIATION': (
         'sudo was denied: this command was judged off-purpose for the Work '
         "Session's declared intent, and an approval request was created. Either "
-        'wait for a reviewer, or re-declare what the session is for with '
-        'work_session_update(description=...) and re-run—note the server '
-        'queues a description change for its own approval unless you are an '
-        'admin or hold owner/manager on every server in the session.'
+        'wait for a reviewer, or—if the session description understates the work '
+        'it was always meant to cover—restate that purpose in prose with '
+        'work_session_update(description=...) and re-run. Never put the command '
+        'text in the description: it is a purpose statement for the approver and '
+        'nothing in it is executed. Note the server queues a description change '
+        'for its own approval unless you are an admin or hold owner/manager on '
+        'every server in the session.'
     ),
     'SUDO_COMMAND_NOT_AUTHORIZED': (
         'sudo was denied: the command carries no requesting identity, so no '
@@ -274,7 +277,7 @@ async def list_commands(
 
 
 @mcp_tool_handler(
-    description='Run a shell command on a server and wait for the result (up to 5 minutes by default). Returns stdout, stderr, and exit code in a single call. Requires ACL permission. The timeout resets when the command is actively running. Supports dependency chains (run_after), scheduled execution (scheduled_at), and stdin data. Pass work_session_id to link this command to a Work Session for audit—the server enforces this for MCP OAuth and browser-based auth. When to use: the recommended way to run a command on a server. Related: execute_command_multi_server (run on multiple servers), list_commands (browse history), work_session_create (create a Work Session). Note: Default timeout is 300 seconds (5 minutes).',
+    description='Run a shell command on a server and wait for the result (up to 5 minutes by default). Returns stdout, stderr, and exit code in a single call. Requires ACL permission. Do not prefix the command with sudo by default: unless a Work Session sudo policy already covers the command, a sudo invocation either routes to human-in-the-loop approval and blocks until a human acts, or is denied outright with no request anyone can approve. Check sudo_denial.category before waiting; a sudo_hint with no sudo_denial is a hard denial that creates no request, so do not wait on it. Use sudo only when the command genuinely requires root and the Work Session carries the "sudo" scope. The timeout resets when the command is actively running. Supports dependency chains (run_after), scheduled execution (scheduled_at), and stdin data. Pass work_session_id to link this command to a Work Session for audit—the server enforces this for MCP OAuth and browser-based auth. When to use: the recommended way to run a command on a server. Related: execute_command_multi_server (run on multiple servers), list_commands (browse history), work_session_create (create a Work Session). Note: Default timeout is 300 seconds (5 minutes).',
     annotations=ADDITIVE,
     meta={
         'anthropic/alwaysLoad': True,
@@ -428,7 +431,7 @@ async def execute_command(
                     details=result,
                 )
 
-            # Command still in progress — reset deadline (within hard cap) so a
+            # Command still in progress—reset deadline (within hard cap) so a
             # slow AI verification or delayed delivery does not time out a
             # command that is still advancing. Covers both pre-execution states
             # (queued/scheduled/delivered/verifying) and execution (running).
@@ -460,7 +463,7 @@ async def execute_command(
 
 
 @mcp_tool_handler(
-    description='Run the same shell command on multiple servers simultaneously or sequentially. Returns per-server results with success/failure status. Requires ACL permission. Pass work_session_id to link commands to a Work Session for audit—the server enforces this for MCP OAuth and browser-based auth. When to use: batch operations like deploying configs, checking status, or running diagnostics across a fleet. Related: execute_command (single server), work_session_create (create a Work Session). Note: Set parallel=false for sequential execution. This submits commands without waiting for results — use list_commands to check status.',
+    description='Run the same shell command on multiple servers simultaneously or sequentially. Returns per-server results with success/failure status. Requires ACL permission. Do not prefix the command with sudo by default: unless a Work Session sudo policy already covers the command, a sudo invocation either routes to human-in-the-loop approval and stalls that server\'s command until a human acts—once per server—or is denied outright with no request anyone can approve. The denial surfaces on that server\'s list_commands entry: check sudo_denial.category there before waiting; a sudo_hint with no sudo_denial is a hard denial that creates no request, so do not wait on it. Use sudo only when the command genuinely requires root and the Work Session carries the "sudo" scope. Pass work_session_id to link commands to a Work Session for audit—the server enforces this for MCP OAuth and browser-based auth. When to use: batch operations like deploying configs, checking status, or running diagnostics across a fleet. Related: execute_command (single server), work_session_create (create a Work Session). Note: Set parallel=false for sequential execution. This submits commands without waiting for results—use list_commands to check status.',
     annotations=ADDITIVE,
     meta={'anthropic/searchHint': 'command multi server batch deploy fleet parallel'},
 )

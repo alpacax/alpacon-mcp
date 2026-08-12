@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from server import mcp
 from tools.command_tools import (
     _submit_command,
     _sudo_denial,
@@ -66,7 +67,7 @@ class TestSudoDenialHint:
         out = {'result': 'Alpacon denied this sudo command (SUDO_INTENT_DEVIATION).\n'}
         hint = self._hint(out)
         assert hint is not None
-        # 'queue' keeps the re-declare path from reading as approval-free.
+        # 'queue' keeps the restated-description path from reading as approval-free.
         assert 'work_session_update' in hint
         assert 'queue' in hint
 
@@ -1070,3 +1071,24 @@ class TestExecuteCommandMultiServerGateTranslation:
         server_entry = result['deploy_shell_results'][sid]
         assert server_entry.get('code') == 'work_session_required'
         assert 'next_action' in server_entry
+
+
+class TestSudoGuidanceInToolDescriptions:
+    """MCP prompts are opt-in—clients that read only tool schemas (Codex) must
+    still learn that an unneeded sudo prefix blocks the session on a human.
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        'tool_name', ['execute_command', 'execute_command_multi_server']
+    )
+    async def test_description_states_the_sudo_cost(self, tool_name):
+        descriptions = {t.name: t.description for t in await mcp.list_tools()}
+        text = descriptions[tool_name]
+        assert 'Do not prefix the command with sudo by default' in text
+        assert 'human-in-the-loop' in text
+        # The carve-out and the hard-denial path are the reason the rule is
+        # qualified rather than absolute; pin both so neither regresses.
+        assert 'sudo policy already covers' in text
+        assert 'denied outright' in text
+        assert 'sudo_denial.category' in text
