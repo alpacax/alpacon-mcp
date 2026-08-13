@@ -571,7 +571,7 @@ def register_oauth_routes(mcp_server):
                         'callback endpoint'
                     ),
                 },
-                status_code=400,
+                status_code=HTTPStatus.BAD_REQUEST,
             )
 
         code_challenge = params.get('code_challenge', '')
