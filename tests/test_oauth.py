@@ -1149,6 +1149,23 @@ class TestAuthorizePkceChallengeFormat:
         assert response.status_code == HTTPStatus.BAD_REQUEST
         assert 'code_challenge_method' in response.json()['error_description']
 
+    def test_pkce_exempt_redirect_uri_does_not_forward_an_uninspected_method(
+        self, oauth_app
+    ):
+        """With no challenge the method is never inspected."""
+        response = oauth_app.get(
+            '/oauth/authorize',
+            params={
+                'response_type': 'code',
+                'redirect_uri': EXEMPT_REDIRECT_URI,
+                'code_challenge_method': 'garbage',
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == HTTPStatus.FOUND
+        forwarded = parse_qs(urlparse(response.headers['location']).query)
+        assert 'code_challenge_method' not in forwarded
+
 
 class TestOAuthToken:
     """Tests for /oauth/token endpoint."""

@@ -613,6 +613,11 @@ def register_oauth_routes(mcp_server):
                 },
                 status_code=HTTPStatus.BAD_REQUEST,
             )
+        if not code_challenge:
+            # Only an exempt destination gets here, and nothing inspected its
+            # method. Forwarding it hands Auth0 a value this server never stood
+            # behind.
+            params.pop('code_challenge_method', None)
 
         original_state = params.get('state', '')
         nonce = _new_nonce()
