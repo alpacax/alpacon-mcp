@@ -78,6 +78,11 @@ _MAX_REGISTERED_REDIRECT_URIS = 20
 # can replay it.
 _PKCE_CHALLENGE_METHOD = 'S256'
 
+# RFC 7636 §4.1 fixes the shape: a base64url SHA-256 digest. Matched, never
+# normalized — the value checked here is the one forwarded upstream, and
+# trimming would break that.
+_PKCE_CHALLENGE_PATTERN = re.compile(r'^[A-Za-z0-9\-._~]{43,128}\Z')
+
 # Sent on the preflight for the two endpoints a browser-based client posts to.
 # Allow-Credentials stays unset: with it, a wildcard origin would let any page
 # ride the user's ambient cookies, and neither endpoint reads a cookie anyway.
@@ -593,6 +598,17 @@ def register_oauth_routes(mcp_server):
                     'error': 'invalid_request',
                     'error_description': (
                         f'code_challenge_method must be {_PKCE_CHALLENGE_METHOD}'
+                    ),
+                },
+                status_code=HTTPStatus.BAD_REQUEST,
+            )
+        if code_challenge and not _PKCE_CHALLENGE_PATTERN.match(code_challenge):
+            return JSONResponse(
+                {
+                    'error': 'invalid_request',
+                    'error_description': (
+                        'code_challenge must be 43 to 128 characters from the '
+                        'RFC 7636 unreserved set'
                     ),
                 },
                 status_code=HTTPStatus.BAD_REQUEST,

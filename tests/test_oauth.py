@@ -79,9 +79,12 @@ OAUTH_ENV = {
 
 REPORT_ONLY = {'ALPACON_MCP_REDIRECT_URI_REPORT_ONLY': 'true'}
 
+# RFC 7636 appendix B's challenge — 43 characters, so it clears the format check
+PKCE_CHALLENGE = 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM'
+
 # Every non-exempt authorize request has to carry these
 PKCE_PARAMS = {
-    'code_challenge': 'test-challenge',
+    'code_challenge': PKCE_CHALLENGE,
     'code_challenge_method': _PKCE_CHALLENGE_METHOD,
 }
 
@@ -960,7 +963,7 @@ class TestAuthorizePkce:
             params={
                 'response_type': 'code',
                 'redirect_uri': LISTED_REDIRECT_URI,
-                'code_challenge': 'test-challenge',
+                'code_challenge': PKCE_CHALLENGE,
             },
             follow_redirects=False,
         )
@@ -973,7 +976,7 @@ class TestAuthorizePkce:
             params={
                 'response_type': 'code',
                 'redirect_uri': LISTED_REDIRECT_URI,
-                'code_challenge': 'test-challenge',
+                'code_challenge': PKCE_CHALLENGE,
                 'code_challenge_method': 'plain',
             },
             follow_redirects=False,
@@ -1009,7 +1012,7 @@ class TestAuthorizePkce:
             params={
                 'response_type': 'code',
                 'redirect_uri': EXEMPT_REDIRECT_URI,
-                'code_challenge': 'test-challenge',
+                'code_challenge': PKCE_CHALLENGE,
                 'code_challenge_method': 'plain',
             },
             follow_redirects=False,
@@ -1058,7 +1061,7 @@ class TestAuthorizePkce:
             follow_redirects=False,
         )
         forwarded = parse_qs(urlparse(response.headers['location']).query)
-        assert forwarded['code_challenge'] == ['test-challenge']
+        assert forwarded['code_challenge'] == [PKCE_CHALLENGE]
         assert forwarded['code_challenge_method'] == [_PKCE_CHALLENGE_METHOD]
 
     def test_pkce_fallback_route_enforces_the_same_rule(self, oauth_app):
@@ -1082,12 +1085,69 @@ class TestAuthorizePkce:
             params={
                 'response_type': 'code',
                 'redirect_uri': LISTED_REDIRECT_URI,
-                'code_challenge': 'test-challenge',
+                'code_challenge': PKCE_CHALLENGE,
                 'code_challenge_method': advertised[0],
             },
             follow_redirects=False,
         )
         assert response.status_code == HTTPStatus.FOUND
+
+
+class TestAuthorizePkceChallengeFormat:
+    """RFC 7636 §4.1 fixes the challenge shape."""
+
+    @pytest.mark.parametrize(
+        'challenge',
+        [
+            ' ',
+            'x',
+            'a+b/c=',  # standard base64, not base64url
+            'A' * 42,
+            'A' * 129,
+            f'{PKCE_CHALLENGE}\n',
+        ],
+    )
+    def test_pkce_malformed_challenge_is_rejected(self, oauth_app, challenge):
+        response = oauth_app.get(
+            '/oauth/authorize',
+            params={
+                'response_type': 'code',
+                'redirect_uri': LISTED_REDIRECT_URI,
+                'code_challenge': challenge,
+                'code_challenge_method': _PKCE_CHALLENGE_METHOD,
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert response.json()['error'] == 'invalid_request'
+
+    @pytest.mark.parametrize('length', [43, 128])
+    def test_pkce_challenge_length_bounds_are_inclusive(self, oauth_app, length):
+        response = oauth_app.get(
+            '/oauth/authorize',
+            params={
+                'response_type': 'code',
+                'redirect_uri': LISTED_REDIRECT_URI,
+                'code_challenge': 'A' * length,
+                'code_challenge_method': _PKCE_CHALLENGE_METHOD,
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == HTTPStatus.FOUND
+
+    def test_pkce_method_is_rejected_before_the_challenge_format(self, oauth_app):
+        response = oauth_app.get(
+            '/oauth/authorize',
+            params={
+                'response_type': 'code',
+                'redirect_uri': LISTED_REDIRECT_URI,
+                'code_challenge': 'x',
+                'code_challenge_method': 'plain',
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert 'code_challenge_method' in response.json()['error_description']
 
 
 class TestOAuthToken:
