@@ -1166,6 +1166,96 @@ class TestAuthorizePkceChallengeFormat:
         forwarded = parse_qs(urlparse(response.headers['location']).query)
         assert 'code_challenge_method' not in forwarded
 
+    @pytest.mark.parametrize('method', ['s256', 'S256 ', ' S256', 'SHA256'])
+    def test_pkce_method_comparison_is_exact(self, oauth_app, method):
+        """RFC 7636 §4.3 makes the method case-sensitive.
+
+        These pass only because the comparison is != on the raw string. A later
+        .strip().upper() cleanup would start accepting all four.
+        """
+        response = oauth_app.get(
+            '/oauth/authorize',
+            params={
+                'response_type': 'code',
+                'redirect_uri': LISTED_REDIRECT_URI,
+                'code_challenge': PKCE_CHALLENGE,
+                'code_challenge_method': method,
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert 'S256' in response.json()['error_description']
+
+
+class TestAuthorizePkceDuplicateParams:
+    """The value the gate checks must be the value forwarded upstream.
+
+    dict(request.query_params) is last-wins and urlencode re-encodes that same
+    dict, so the two agree. The agreement is load-bearing and incidental: a move
+    to getlist, or a framework with first-wins semantics, would break it.
+    """
+
+    def test_pkce_duplicate_challenge_checks_the_forwarded_value(self, oauth_app):
+        response = oauth_app.get(
+            '/oauth/authorize',
+            params=[
+                ('response_type', 'code'),
+                ('redirect_uri', LISTED_REDIRECT_URI),
+                ('code_challenge', ''),
+                ('code_challenge', PKCE_CHALLENGE),
+                ('code_challenge_method', _PKCE_CHALLENGE_METHOD),
+            ],
+            follow_redirects=False,
+        )
+        assert response.status_code == HTTPStatus.FOUND
+        forwarded = parse_qs(urlparse(response.headers['location']).query)
+        assert forwarded['code_challenge'] == [PKCE_CHALLENGE]
+
+    def test_pkce_duplicate_challenge_rejects_on_the_last_value(self, oauth_app):
+        response = oauth_app.get(
+            '/oauth/authorize',
+            params=[
+                ('response_type', 'code'),
+                ('redirect_uri', LISTED_REDIRECT_URI),
+                ('code_challenge', PKCE_CHALLENGE),
+                ('code_challenge', ''),
+                ('code_challenge_method', _PKCE_CHALLENGE_METHOD),
+            ],
+            follow_redirects=False,
+        )
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+
+    def test_pkce_duplicate_method_checks_the_forwarded_value(self, oauth_app):
+        response = oauth_app.get(
+            '/oauth/authorize',
+            params=[
+                ('response_type', 'code'),
+                ('redirect_uri', LISTED_REDIRECT_URI),
+                ('code_challenge', PKCE_CHALLENGE),
+                ('code_challenge_method', 'plain'),
+                ('code_challenge_method', _PKCE_CHALLENGE_METHOD),
+            ],
+            follow_redirects=False,
+        )
+        assert response.status_code == HTTPStatus.FOUND
+        forwarded = parse_qs(urlparse(response.headers['location']).query)
+        assert forwarded['code_challenge_method'] == [_PKCE_CHALLENGE_METHOD]
+
+    def test_pkce_duplicate_method_rejects_on_the_last_value(self, oauth_app):
+        response = oauth_app.get(
+            '/oauth/authorize',
+            params=[
+                ('response_type', 'code'),
+                ('redirect_uri', LISTED_REDIRECT_URI),
+                ('code_challenge', PKCE_CHALLENGE),
+                ('code_challenge_method', _PKCE_CHALLENGE_METHOD),
+                ('code_challenge_method', 'plain'),
+            ],
+            follow_redirects=False,
+        )
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert 'S256' in response.json()['error_description']
+
 
 class TestOAuthToken:
     """Tests for /oauth/token endpoint."""
