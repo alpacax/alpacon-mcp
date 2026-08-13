@@ -140,3 +140,15 @@ python_version = "3.12"
 ignore_missing_imports = true
 namespace_packages = true
 explicit_package_bases = true
+
+# Per-module strict list: grows by one bundle per migration PR (issue #86).
+# mypy does not accept 'strict' in overrides, so the flags are spelled out.
+[[tool.mypy.overrides]]
+module = ["utils.auth_context"]
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+disallow_untyped_decorators = true
+disallow_any_generics = true
+disallow_any_explicit = true
+warn_return_any = true
+strict_equality = true
