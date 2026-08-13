@@ -72,6 +72,17 @@ _LOG_VALUE_MAX_CHARS = 512
 # registration from driving a check — and in report-only mode a warning — per entry.
 _MAX_REGISTERED_REDIRECT_URIS = 20
 
+# Both the authorize gate and the discovery document use this, so the enforced
+# and the advertised method cannot drift apart. plain is not accepted: its
+# challenge is the verifier itself, so whoever reads the authorization request
+# can replay it.
+_PKCE_CHALLENGE_METHOD = 'S256'
+
+# RFC 7636 §4.1 fixes the shape: a base64url SHA-256 digest. Matched, never
+# normalized — the value checked here is the one forwarded upstream, and
+# trimming would break that.
+_PKCE_CHALLENGE_PATTERN = re.compile(r'^[A-Za-z0-9\-._~]{43,128}\Z')
+
 # Sent on the preflight for the two endpoints a browser-based client posts to.
 # Allow-Credentials stays unset: with it, a wildcard origin would let any page
 # ride the user's ambient cookies, and neither endpoint reads a cookie anyway.
@@ -108,6 +119,14 @@ _DEFAULT_REDIRECT_URIS = (
 # and \Z rather than $ so a trailing newline cannot ride along.
 _DEFAULT_REDIRECT_URI_PATTERNS = (
     re.compile(r'^https://chatgpt\.com/connector/oauth/[A-Za-z0-9_-]{1,64}\Z'),
+)
+
+# The Power Platform connector Copilot Studio builds cannot send a challenge,
+# so its gateway callback may start a flow without one. Membership is redundant
+# with the allowlist today; it stays so that dropping the callback from the
+# allowlist cannot leave an exempt destination behind.
+_PKCE_EXEMPT_REDIRECT_URIS = frozenset(
+    {'https://global.consent.azure-apim.net/redirect'}
 )
 
 # Hosts report-only mode may fall back to, derived from the endpoint list so a
@@ -208,6 +227,16 @@ def _is_exact_allowed_redirect_uri(url: str) -> bool:
     return any(pattern.match(url) for pattern in _DEFAULT_REDIRECT_URI_PATTERNS)
 
 
+def _is_pkce_exempt_redirect_uri(url: str) -> bool:
+    """Whether a destination may start an authorization flow with no PKCE.
+
+    Goes through _is_exact_allowed_redirect_uri, not _check_redirect_uri: the
+    latter accepts any path on an allowlisted host in report-only mode, which
+    would let an unrelated environment variable widen the exemption.
+    """
+    return url in _PKCE_EXEMPT_REDIRECT_URIS and _is_exact_allowed_redirect_uri(url)
+
+
 def _redirect_uri_report_only() -> bool:
     """Escape hatch: recover from a missing allowlist entry without a code change."""
     return os.getenv(_ENV_REDIRECT_URI_REPORT_ONLY, '').lower() == 'true'
@@ -280,10 +309,10 @@ def _allow_browser_clients(handler):
 def _log_authorize_client_profile(
     redirect_uri: str, code_challenge_method: str
 ) -> None:
-    """Record what each client sends, to settle the allowlist and PKCE questions.
+    """Record what each client sends, to settle who reaches the exempt callback.
 
-    Remove once PKCE is required and no deployment still needs report-only mode
-    to cover a missing allowlist entry.
+    Remove once no client uses the PKCE-exempt redirect_uri and no deployment
+    needs report-only mode to cover a missing allowlist entry.
     """
     logger.info(
         'authorize observed - redirect_uri: %s, pkce: %s',
@@ -477,7 +506,7 @@ def register_oauth_routes(mcp_server):
                 'none',
             ],
             'scopes_supported': ['openid', 'profile', 'email', 'offline_access'],
-            'code_challenge_methods_supported': ['S256'],
+            'code_challenge_methods_supported': [_PKCE_CHALLENGE_METHOD],
         }
 
         return JSONResponse(
@@ -547,8 +576,48 @@ def register_oauth_routes(mcp_server):
                         'callback endpoint'
                     ),
                 },
-                status_code=400,
+                status_code=HTTPStatus.BAD_REQUEST,
             )
+
+        code_challenge = params.get('code_challenge', '')
+        code_challenge_method = params.get('code_challenge_method', '')
+        if not code_challenge and not _is_pkce_exempt_redirect_uri(client_redirect_uri):
+            return JSONResponse(
+                {
+                    'error': 'invalid_request',
+                    'error_description': (
+                        'code_challenge is required; this server accepts only '
+                        f'{_PKCE_CHALLENGE_METHOD} PKCE'
+                    ),
+                },
+                status_code=HTTPStatus.BAD_REQUEST,
+            )
+        if code_challenge and code_challenge_method != _PKCE_CHALLENGE_METHOD:
+            return JSONResponse(
+                {
+                    'error': 'invalid_request',
+                    'error_description': (
+                        f'code_challenge_method must be {_PKCE_CHALLENGE_METHOD}'
+                    ),
+                },
+                status_code=HTTPStatus.BAD_REQUEST,
+            )
+        if code_challenge and not _PKCE_CHALLENGE_PATTERN.match(code_challenge):
+            return JSONResponse(
+                {
+                    'error': 'invalid_request',
+                    'error_description': (
+                        'code_challenge must be 43 to 128 characters from the '
+                        'RFC 7636 unreserved set'
+                    ),
+                },
+                status_code=HTTPStatus.BAD_REQUEST,
+            )
+        if not code_challenge:
+            # Only an exempt destination gets here, and nothing inspected its
+            # method. Forwarding it hands Auth0 a value this server never stood
+            # behind.
+            params.pop('code_challenge_method', None)
 
         original_state = params.get('state', '')
         nonce = _new_nonce()
