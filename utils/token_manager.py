@@ -314,19 +314,6 @@ class TokenManager:
             'token_file': str(self.token_file),
         }
 
-    def get_config_info(self) -> dict[str, Any]:
-        """Get configuration directory information.
-
-        Returns:
-            Configuration directory details
-        """
-        return {
-            'config_dir': str(self.config_dir),
-            'token_file': str(self.token_file),
-            'token_file_exists': self.token_file.exists(),
-            'env_config_file': os.getenv('ALPACON_CONFIG_FILE'),
-        }
-
 
 # Global token manager instance
 _global_token_manager = None
