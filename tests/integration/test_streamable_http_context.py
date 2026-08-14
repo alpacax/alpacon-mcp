@@ -3,8 +3,8 @@
 utils/http_client.py:643 documents ContextVar writes being invisible across
 the anyio task boundary between tool handlers and the ASGI middleware. Here
 both the write (decorator) and the read (tool body) sit inside the handler
-coroutine chain; this test is the go/no-go gate for that assumption
-(spec 2026-08-13-pr1-type-foundation, requirement 4).
+coroutine chain; this test is the go/no-go gate for that assumption, and so
+for every later PR of #86 that reads the token from this store.
 """
 
 import json
