@@ -480,7 +480,16 @@ def register_oauth_routes(mcp_server):
 
     Args:
         mcp_server: FastMCP server instance
+
+    Raises:
+        ValueError: ALPACON_MCP_STATE_SECRET is set to a malformed value.
     """
+    # A malformed key otherwise surfaces on the first user's OAuth request,
+    # long after the deployment reported success. Only the explicit key is
+    # checked: the derived path needs OAuth config, and deployments that run
+    # without it have to keep starting.
+    if os.getenv(_STATE_SECRET_ENV):
+        _get_state_secret()
 
     # RFC 8414 metadata is public and carries no credentials. Decorating covers
     # the 500 path too, so a misconfiguration is readable rather than a CORS error.
