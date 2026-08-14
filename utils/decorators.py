@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import inspect
 import os
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from functools import wraps
-from typing import Any
+from typing import Any, cast
 
 from mcp.types import ToolAnnotations
 
@@ -250,7 +250,9 @@ def _validate_uuid_list(field: str, value: Any) -> dict[str, Any] | None:
     return None
 
 
-def with_token_validation(func: Callable) -> Callable:
+def with_token_validation[**P](
+    func: Callable[P, Awaitable[dict[str, Any]]],
+) -> Callable[P, Awaitable[dict[str, Any]]]:
     """Decorator to add automatic token validation to MCP tools.
 
     Transport mode is determined by ALPACON_MCP_AUTH_ENABLED env var:
@@ -267,7 +269,7 @@ def with_token_validation(func: Callable) -> Callable:
     """
 
     @wraps(func)
-    async def wrapper(*args, **kwargs):
+    async def wrapper(*args: P.args, **kwargs: P.kwargs) -> dict[str, Any]:
         # Remove _token from kwargs if present (MCP doesn't allow _ prefix)
         kwargs.pop('_token', None)
 
@@ -291,10 +293,13 @@ def with_token_validation(func: Callable) -> Callable:
 
         auth_enabled = is_auth_enabled()
 
-        # Retrieve JWT token once upfront in streamable-http mode
-        jwt_token = None
+        # Retrieve JWT token once upfront in streamable-http mode.
+        # Empty string rather than None: past the guard below it is always a real
+        # token, but the checker cannot carry that narrowing into the later
+        # `if auth_enabled` block.
+        jwt_token = ''
         if auth_enabled:
-            jwt_token = _get_jwt_token()
+            jwt_token = _get_jwt_token() or ''
             if not jwt_token:
                 return error_response(
                     'Authentication required. No JWT token found in request context.'
@@ -364,8 +369,11 @@ def with_token_validation(func: Callable) -> Callable:
         bound_args.arguments['kwargs'] = extra_kwargs
 
         # Call the original function using bound_args to handle
-        # both positional and keyword region correctly
-        return await func(*bound_args.args, **bound_args.kwargs)
+        # both positional and keyword region correctly.
+        # Rebinding drops the P.args/P.kwargs shape, hence the cast.
+        return await cast('Callable[..., Awaitable[dict[str, Any]]]', func)(
+            *bound_args.args, **bound_args.kwargs
+        )
 
     # Remove _token parameter from the wrapper signature
     original_sig = inspect.signature(func)
@@ -375,7 +383,9 @@ def with_token_validation(func: Callable) -> Callable:
     return wrapper
 
 
-def with_error_handling(func: Callable) -> Callable:
+def with_error_handling[**P](
+    func: Callable[P, Awaitable[dict[str, Any]]],
+) -> Callable[P, Awaitable[dict[str, Any]]]:
     """Decorator to add consistent error handling to MCP tools.
 
     This decorator:
@@ -392,7 +402,7 @@ def with_error_handling(func: Callable) -> Callable:
     """
 
     @wraps(func)
-    async def wrapper(*args, **kwargs):
+    async def wrapper(*args: P.args, **kwargs: P.kwargs) -> dict[str, Any]:
         from utils.recovery_hints import enrich_error_response
 
         # Extract function name for logging
@@ -437,7 +447,9 @@ def with_error_handling(func: Callable) -> Callable:
     return wrapper
 
 
-def with_logging(func: Callable) -> Callable:
+def with_logging[**P](
+    func: Callable[P, Awaitable[dict[str, Any]]],
+) -> Callable[P, Awaitable[dict[str, Any]]]:
     """Decorator to add automatic logging to MCP tools.
 
     This decorator:
@@ -453,7 +465,7 @@ def with_logging(func: Callable) -> Callable:
     """
 
     @wraps(func)
-    async def wrapper(*args, **kwargs):
+    async def wrapper(*args: P.args, **kwargs: P.kwargs) -> dict[str, Any]:
         func_name = func.__name__
 
         # Get function arguments for logging
@@ -535,7 +547,9 @@ def mcp_tool_handler(
         Decorator function
     """
 
-    def decorator(func: Callable) -> Callable:
+    def decorator[**P](
+        func: Callable[P, Awaitable[dict[str, Any]]],
+    ) -> Callable[P, Awaitable[dict[str, Any]]]:
         # Apply decorators in order (innermost first)
         func = with_error_handling(func)
         func = with_token_validation(func)
