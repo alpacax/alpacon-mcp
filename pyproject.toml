@@ -63,9 +63,10 @@ dev = [
     "pytest>=8.4.2",
     "pytest-asyncio>=1.2.0",
     "pytest-cov>=6.0.0",
-    # Floor only: the mypy step is advisory (continue-on-error), so CI need
-    # not match the pre-commit rev exactly.
+    # Matches the pre-commit rev (v1.15.0): the CI mypy step now gates, so the
+    # version CI resolves must not lag the hook.
     "mypy>=1.15.0",
+    "ty>=0.0.71",
 ]
 
 [tool.hatch.version]

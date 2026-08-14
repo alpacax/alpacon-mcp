@@ -50,7 +50,10 @@ jobs:
       run: uv run --no-sync ruff format --check .
 
     - name: Type check with mypy
-      run: uv run --no-sync mypy --ignore-missing-imports --no-strict-optional .
+      run: uv run --no-sync mypy .
+
+    - name: Type check with ty (non-blocking)
+      run: uv run --no-sync ty check
       continue-on-error: true
 
     - name: Test with pytest
