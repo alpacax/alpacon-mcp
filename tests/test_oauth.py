@@ -437,6 +437,20 @@ class TestStateSecret:
 
         assert 'derived from client secret' in caplog.text
 
+    def test_registration_rejects_malformed_explicit_secret(self):
+        """A bad key fails the boot rather than the first user's OAuth request."""
+        with patch.dict('os.environ', {_STATE_SECRET_ENV: 'correct-horse-battery'}):
+            with pytest.raises(ValueError, match='must be hex'):
+                register_oauth_routes(MockMCPServer())
+
+    def test_registration_survives_incomplete_oauth_config(self):
+        """Without an explicit key the check stays off, so a deployment that
+        starts with OAuth unconfigured keeps starting."""
+        with patch.dict(
+            'os.environ', {_STATE_SECRET_ENV: '', 'AUTH0_CLIENT_SECRET': ''}
+        ):
+            register_oauth_routes(MockMCPServer())
+
 
 class TestNonceHelpers:
     """Tests for the per-flow nonce that binds a state to one browser."""
