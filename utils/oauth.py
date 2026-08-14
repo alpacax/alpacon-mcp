@@ -54,6 +54,8 @@ _NONCE_COOKIE_NAME = '__Host-alpacon_oauth_nonce'
 
 
 class _NonceCookieAttrs(TypedDict):
+    """Keys mirror Response.set_cookie's parameters so **-unpacking type-checks."""
+
     path: Literal['/']
     secure: Literal[True]
     httponly: bool
