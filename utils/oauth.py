@@ -306,7 +306,9 @@ def _allow_browser_clients(handler):
     @wraps(handler)
     async def with_cors(request: Request) -> Response:
         if request.method == 'OPTIONS':
-            return Response(status_code=204, headers=_CORS_PREFLIGHT_HEADERS)
+            return Response(
+                status_code=HTTPStatus.NO_CONTENT, headers=_CORS_PREFLIGHT_HEADERS
+            )
 
         response = await handler(request)
         response.headers['Access-Control-Allow-Origin'] = '*'
@@ -505,7 +507,9 @@ def register_oauth_routes(mcp_server):
         try:
             config = _get_oauth_config()
         except ValueError as e:
-            return JSONResponse({'error': str(e)}, status_code=500)
+            return JSONResponse(
+                {'error': str(e)}, status_code=HTTPStatus.INTERNAL_SERVER_ERROR
+            )
 
         server_url = _get_server_url(request)
 
@@ -542,7 +546,9 @@ def register_oauth_routes(mcp_server):
         try:
             config = _get_oauth_config()
         except ValueError as e:
-            return JSONResponse({'error': str(e)}, status_code=500)
+            return JSONResponse(
+                {'error': str(e)}, status_code=HTTPStatus.INTERNAL_SERVER_ERROR
+            )
 
         # Forward all query parameters to Auth0
         params = dict(request.query_params)
@@ -700,7 +706,7 @@ def register_oauth_routes(mcp_server):
                 {'error': str(e)}, status_code=HTTPStatus.INTERNAL_SERVER_ERROR
             )
 
-        response = RedirectResponse(url=auth0_url, status_code=302)
+        response = RedirectResponse(url=auth0_url, status_code=HTTPStatus.FOUND)
         _set_nonce_cookie(response, nonce)
         return response
 
@@ -716,7 +722,9 @@ def register_oauth_routes(mcp_server):
         try:
             config = _get_oauth_config()
         except ValueError as e:
-            return JSONResponse({'error': str(e)}, status_code=500)
+            return JSONResponse(
+                {'error': str(e)}, status_code=HTTPStatus.INTERNAL_SERVER_ERROR
+            )
 
         # Parse request body
         body = await request.body()
@@ -728,7 +736,7 @@ def register_oauth_routes(mcp_server):
             except json.JSONDecodeError:
                 return JSONResponse(
                     {'error': 'invalid_request', 'error_description': 'Invalid JSON'},
-                    status_code=400,
+                    status_code=HTTPStatus.BAD_REQUEST,
                 )
 
             if not isinstance(params, dict):
@@ -737,7 +745,7 @@ def register_oauth_routes(mcp_server):
                         'error': 'invalid_request',
                         'error_description': 'Request body must be a JSON object',
                     },
-                    status_code=400,
+                    status_code=HTTPStatus.BAD_REQUEST,
                 )
         else:
             # application/x-www-form-urlencoded (standard OAuth)
@@ -749,7 +757,7 @@ def register_oauth_routes(mcp_server):
                         'error': 'invalid_request',
                         'error_description': 'Request body must be UTF-8 encoded',
                     },
-                    status_code=400,
+                    status_code=HTTPStatus.BAD_REQUEST,
                 )
 
             parsed = parse_qs(decoded_body)
@@ -767,7 +775,7 @@ def register_oauth_routes(mcp_server):
                         f'Allowed: {", ".join(sorted(allowed_grant_types))}'
                     ),
                 },
-                status_code=400,
+                status_code=HTTPStatus.BAD_REQUEST,
             )
 
         # Enforce configured client_id to prevent this endpoint from
@@ -784,7 +792,7 @@ def register_oauth_routes(mcp_server):
                     'error': 'invalid_client',
                     'error_description': 'client_id is not allowed for this endpoint',
                 },
-                status_code=400,
+                status_code=HTTPStatus.BAD_REQUEST,
             )
         params['client_id'] = configured_client_id
         params['client_secret'] = config['client_secret']
@@ -826,7 +834,7 @@ def register_oauth_routes(mcp_server):
 
             # Log token response details for debugging refresh issues
             if isinstance(response_data, dict):
-                if response.status_code == 200:
+                if response.status_code == HTTPStatus.OK:
                     has_access = 'access_token' in response_data
                     has_refresh = 'refresh_token' in response_data
                     expires_in = response_data.get('expires_in')
@@ -871,7 +879,7 @@ def register_oauth_routes(mcp_server):
                     'error': 'server_error',
                     'error_description': 'Failed to communicate with Auth0',
                 },
-                status_code=502,
+                status_code=HTTPStatus.BAD_GATEWAY,
             )
 
     @mcp_server.custom_route('/oauth/register', methods=['POST', 'OPTIONS'])
@@ -892,7 +900,7 @@ def register_oauth_routes(mcp_server):
                     'error': 'server_error',
                     'error_description': 'OAuth configuration is incomplete',
                 },
-                status_code=500,
+                status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
             )
 
         # Parse and validate client metadata from request body (RFC 7591)
@@ -905,7 +913,7 @@ def register_oauth_routes(mcp_server):
                     'error': 'invalid_request',
                     'error_description': 'Content-Type must be application/json',
                 },
-                status_code=400,
+                status_code=HTTPStatus.BAD_REQUEST,
             )
 
         if not body:
@@ -916,7 +924,7 @@ def register_oauth_routes(mcp_server):
                         'Request body must be a JSON object with client metadata'
                     ),
                 },
-                status_code=400,
+                status_code=HTTPStatus.BAD_REQUEST,
             )
 
         try:
@@ -927,7 +935,7 @@ def register_oauth_routes(mcp_server):
                     'error': 'invalid_client_metadata',
                     'error_description': 'Request body must be valid JSON',
                 },
-                status_code=400,
+                status_code=HTTPStatus.BAD_REQUEST,
             )
 
         if not isinstance(client_metadata, dict):
@@ -936,7 +944,7 @@ def register_oauth_routes(mcp_server):
                     'error': 'invalid_client_metadata',
                     'error_description': 'Client metadata must be a JSON object',
                 },
-                status_code=400,
+                status_code=HTTPStatus.BAD_REQUEST,
             )
 
         if 'redirect_uris' in client_metadata:
@@ -951,7 +959,7 @@ def register_oauth_routes(mcp_server):
                             f'{_MAX_REGISTERED_REDIRECT_URIS} strings'
                         ),
                     },
-                    status_code=400,
+                    status_code=HTTPStatus.BAD_REQUEST,
                 )
             if not all(_check_redirect_uri(uri) for uri in redirect_uris):
                 return JSONResponse(
@@ -962,7 +970,7 @@ def register_oauth_routes(mcp_server):
                             'by this server'
                         ),
                     },
-                    status_code=400,
+                    status_code=HTTPStatus.BAD_REQUEST,
                 )
 
         # Return pre-configured client_id with metadata echoed back
@@ -983,7 +991,7 @@ def register_oauth_routes(mcp_server):
 
         return JSONResponse(
             response_data,
-            status_code=201,
+            status_code=HTTPStatus.CREATED,
             headers={
                 'Cache-Control': 'no-store',
             },
@@ -1030,7 +1038,7 @@ def register_oauth_routes(mcp_server):
                         'error': 'invalid_request',
                         'error_description': 'Invalid or expired state parameter',
                     },
-                    status_code=400,
+                    status_code=HTTPStatus.BAD_REQUEST,
                 )
             # Placed before the error branch so the gate lives in one spot; an
             # error callback carries no code, so nothing is lost by rejecting it.
@@ -1041,7 +1049,7 @@ def register_oauth_routes(mcp_server):
                         'error': 'invalid_request',
                         'error_description': 'Invalid or expired state parameter',
                     },
-                    status_code=400,
+                    status_code=HTTPStatus.BAD_REQUEST,
                 )
             client_redirect_uri = state_data.get('redirect_uri', '')
             original_state = state_data.get('state', '')
@@ -1068,11 +1076,11 @@ def register_oauth_routes(mcp_server):
                     params['state'] = original_state
                 return RedirectResponse(
                     url=_build_redirect_url(client_redirect_uri, params),
-                    status_code=302,
+                    status_code=HTTPStatus.FOUND,
                 )
             return JSONResponse(
                 {'error': error, 'error_description': error_description},
-                status_code=400,
+                status_code=HTTPStatus.BAD_REQUEST,
             )
 
         if not code:
@@ -1081,7 +1089,7 @@ def register_oauth_routes(mcp_server):
                     'error': 'invalid_request',
                     'error_description': 'Missing authorization code',
                 },
-                status_code=400,
+                status_code=HTTPStatus.BAD_REQUEST,
             )
 
         # --- Two-stage MFA flow: Stage 1 callback ---
@@ -1094,7 +1102,9 @@ def register_oauth_routes(mcp_server):
             try:
                 config = _get_oauth_config()
             except ValueError as e:
-                return JSONResponse({'error': str(e)}, status_code=500)
+                return JSONResponse(
+                    {'error': str(e)}, status_code=HTTPStatus.INTERNAL_SERVER_ERROR
+                )
 
             server_url = _get_server_url(request)
 
@@ -1119,7 +1129,7 @@ def register_oauth_routes(mcp_server):
                     # MFA token is discarded — we only need the side effect
                     # of MFA completion in the Auth0 session. Log non-2xx
                     # responses for debugging misconfiguration.
-                    if mfa_response.status_code >= 400:
+                    if mfa_response.status_code >= HTTPStatus.BAD_REQUEST:
                         logger.warning(
                             'MFA token exchange returned %s (non-fatal): %s',
                             mfa_response.status_code,
@@ -1165,7 +1175,7 @@ def register_oauth_routes(mcp_server):
                 f'{config["auth0_base_url"]}/authorize?{urlencode(stage2_params)}'
             )
             logger.info('Stage 2: Redirecting to Auth0 regular audience (SSO)')
-            response = RedirectResponse(url=auth0_url, status_code=302)
+            response = RedirectResponse(url=auth0_url, status_code=HTTPStatus.FOUND)
             # Stage 2 restarts the state expiry; re-set the cookie so the two
             # do not drift apart.
             _set_nonce_cookie(response, request.cookies[_NONCE_COOKIE_NAME])
@@ -1181,7 +1191,7 @@ def register_oauth_routes(mcp_server):
                 params['state'] = original_state
             response = RedirectResponse(
                 url=_build_redirect_url(client_redirect_uri, params),
-                status_code=302,
+                status_code=HTTPStatus.FOUND,
             )
             _clear_nonce_cookie(response)
             return response

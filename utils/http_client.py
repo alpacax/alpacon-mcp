@@ -3,6 +3,7 @@
 import asyncio
 import json
 import time
+from http import HTTPStatus
 from typing import Any
 from urllib.parse import urljoin
 
@@ -258,10 +259,10 @@ class AlpaconHTTPClient:
                     f'HTTP {method} error - Status: {e.response.status_code}, URL: {url}'
                 )
                 # Omit response body for 401 to avoid leaking auth error details/PII
-                if e.response.status_code != 401:
+                if e.response.status_code != HTTPStatus.UNAUTHORIZED:
                     logger.error(f'Response body: {e.response.text}')
 
-                if e.response.status_code >= 500:
+                if e.response.status_code >= HTTPStatus.INTERNAL_SERVER_ERROR:
                     # Server error - retry
                     if await backoff('Server error'):
                         continue
@@ -275,7 +276,7 @@ class AlpaconHTTPClient:
                     return error_response
                 else:
                     # Client error - don't retry
-                    if e.response.status_code == 401:
+                    if e.response.status_code == HTTPStatus.UNAUTHORIZED:
                         return self._handle_upstream_401(e, token=token)
 
                     error_response = {
@@ -677,7 +678,7 @@ class AlpaconHTTPClient:
         error_msg = 'MFA verification required' if mfa_required else str(exc)
         error_response = {
             'error': _ERR_MFA_REQUIRED if mfa_required else _ERR_HTTP,
-            'status_code': 401,
+            'status_code': HTTPStatus.UNAUTHORIZED,
             'message': error_msg,
             'mfa_required': mfa_required,
         }

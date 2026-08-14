@@ -1,5 +1,6 @@
 """Workspace management tools for Alpacon MCP server."""
 
+from http import HTTPStatus
 from typing import Any
 
 from mcp.types import ToolAnnotations
@@ -85,14 +86,14 @@ def _saas_only_security_404(
     if (
         isinstance(result, dict)
         and 'error' in result
-        and result.get('status_code') == 404
+        and result.get('status_code') == HTTPStatus.NOT_FOUND
     ):
         return error_response(
             'Workspace security settings are not available on this deployment '
             '(this endpoint is SaaS-only and returns 404 on-premise).',
             region=region,
             workspace=workspace,
-            status_code=404,
+            status_code=HTTPStatus.NOT_FOUND,
         )
     return None
 

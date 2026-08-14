@@ -25,6 +25,7 @@ Only active in remote (streamable-http) mode where OAuth is enabled.
 import json
 import time
 from collections.abc import MutableMapping
+from http import HTTPStatus
 from typing import Any
 
 from starlette.types import ASGIApp, Receive, Scope, Send
@@ -173,7 +174,9 @@ class UpstreamAuthErrorMiddleware:
                 # No response was buffered (exception raised before any
                 # response was written). Send a generic error as fallback.
                 await self._send_error(
-                    send, status_code=500, message='Authentication error'
+                    send,
+                    status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
+                    message='Authentication error',
                 )
             return
         except BaseException:
@@ -245,7 +248,11 @@ class UpstreamAuthErrorMiddleware:
             await send(msg)
 
     async def _send_error(
-        self, send: Send, *, status_code: int = 500, message: str = 'Internal error'
+        self,
+        send: Send,
+        *,
+        status_code: int = HTTPStatus.INTERNAL_SERVER_ERROR,
+        message: str = 'Internal error',
     ) -> None:
         """Send a generic HTTP error response."""
         body = json.dumps({'error': message}).encode()
@@ -299,7 +306,7 @@ class UpstreamAuthErrorMiddleware:
         await send(
             {
                 'type': 'http.response.start',
-                'status': 401,
+                'status': HTTPStatus.UNAUTHORIZED,
                 'headers': [
                     (b'content-type', b'application/json'),
                     (b'content-length', str(len(body)).encode()),
