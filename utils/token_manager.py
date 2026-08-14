@@ -17,8 +17,10 @@ class TokenManager:
         """Initialize token manager.
 
         Args:
-            config_file: Full path to config file. If None, uses ALPACON_MCP_CONFIG_FILE
-                        env var or defaults to global config (~/.alpacon-mcp/token.json)
+            config_file: Full path to config file. If None, resolution order is
+                        ALPACON_MCP_CONFIG_FILE, then ~/.alpacon-mcp/token.json,
+                        then ./config/token.json, defaulting to the global path
+                        when neither file exists.
         """
         if config_file:
             # Use specific config file path, expand ~ to home directory
