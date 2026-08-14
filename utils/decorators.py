@@ -10,6 +10,7 @@ from typing import Any
 
 from mcp.types import ToolAnnotations
 
+from utils.auth_context import set_token
 from utils.common import (
     error_response,
     is_auth_enabled,
@@ -346,6 +347,7 @@ def with_token_validation(func: Callable) -> Callable:
                     workspace=workspace,
                 )
             extra_kwargs['token'] = jwt_token
+            set_token(jwt_token)
 
             # MFA pre-check: verify MFA completion for actions that require it.
             # Raises UpstreamAuthError if MFA is required but not satisfied.
@@ -357,6 +359,7 @@ def with_token_validation(func: Callable) -> Callable:
             if not token:
                 return token_error_response(region, workspace)
             extra_kwargs['token'] = token
+            set_token(token)
 
         bound_args.arguments['kwargs'] = extra_kwargs
 
