@@ -10,7 +10,7 @@ from typing import Any, cast
 
 from mcp.types import ToolAnnotations
 
-from utils.auth_context import set_token
+from utils.auth_context import clear_token, set_token
 from utils.common import (
     error_response,
     is_auth_enabled,
@@ -270,6 +270,11 @@ def with_token_validation[**P](
 
     @wraps(func)
     async def wrapper(*args: P.args, **kwargs: P.kwargs) -> dict[str, Any]:
+        # A call inherits whatever context the task already carries, and every
+        # validation failure below returns before set_token runs. Without this,
+        # current_token() would still answer with the previous call's token.
+        clear_token()
+
         # Remove _token from kwargs if present (MCP doesn't allow _ prefix)
         kwargs.pop('_token', None)
 

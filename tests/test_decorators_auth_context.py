@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from utils.auth_context import current_token
+from utils.auth_context import current_token, set_token
 from utils.decorators import with_token_validation
 
 
@@ -45,3 +45,15 @@ async def test_jwt_mode_dual_writes_token() -> None:
 
     assert result == {'status': 'success'}
     assert seen == {'context': 'jwt-tok', 'kwargs': 'jwt-tok'}
+
+
+@pytest.mark.asyncio
+async def test_validation_failure_leaves_no_stale_token() -> None:
+    """An early return must not let the previous call's token stay readable."""
+    set_token('previous-call-tok')
+    wrapped = with_token_validation(_make_probe({}))
+
+    result = await wrapped(workspace='', region='ap1')
+
+    assert result['status'] == 'error'
+    assert current_token() is None

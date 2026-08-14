@@ -14,5 +14,9 @@ def set_token(token: str) -> None:
     _token_var.set(token)
 
 
+def clear_token() -> None:
+    _token_var.set(None)
+
+
 def current_token() -> str | None:
     return _token_var.get()

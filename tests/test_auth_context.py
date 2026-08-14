@@ -1,10 +1,19 @@
 """Unit tests for the ContextVar-backed token store."""
 
 import asyncio
+from collections.abc import Iterator
 
 import pytest
 
-from utils.auth_context import current_token, set_token
+from utils.auth_context import clear_token, current_token, set_token
+
+
+@pytest.fixture(autouse=True)
+def reset_token() -> Iterator[None]:
+    """Tests that run in the caller's context would otherwise leak into each other."""
+    clear_token()
+    yield
+    clear_token()
 
 
 def test_current_token_defaults_to_none() -> None:
@@ -15,6 +24,13 @@ def test_current_token_defaults_to_none() -> None:
 async def test_set_then_get_returns_the_token() -> None:
     set_token('tok-a')
     assert current_token() == 'tok-a'
+
+
+@pytest.mark.asyncio
+async def test_clear_token_resets_to_none() -> None:
+    set_token('tok-a')
+    clear_token()
+    assert current_token() is None
 
 
 @pytest.mark.asyncio
