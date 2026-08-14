@@ -17,8 +17,10 @@ class TokenManager:
         """Initialize token manager.
 
         Args:
-            config_file: Full path to config file. If None, uses ALPACON_CONFIG_FILE env var
-                        or defaults to global config (~/.alpacon-mcp/token.json)
+            config_file: Full path to config file. If None, resolution order is
+                        ALPACON_MCP_CONFIG_FILE, then ~/.alpacon-mcp/token.json,
+                        then ./config/token.json, defaulting to the global path
+                        when neither file exists.
         """
         if config_file:
             # Use specific config file path, expand ~ to home directory
@@ -312,19 +314,6 @@ class TokenManager:
             'regions': regions,
             'config_dir': str(self.config_dir),
             'token_file': str(self.token_file),
-        }
-
-    def get_config_info(self) -> dict[str, Any]:
-        """Get configuration directory information.
-
-        Returns:
-            Configuration directory details
-        """
-        return {
-            'config_dir': str(self.config_dir),
-            'token_file': str(self.token_file),
-            'token_file_exists': self.token_file.exists(),
-            'env_config_file': os.getenv('ALPACON_CONFIG_FILE'),
         }
 
 
