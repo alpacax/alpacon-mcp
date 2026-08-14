@@ -54,8 +54,8 @@ _NONCE_COOKIE_NAME = '__Host-alpacon_oauth_nonce'
 
 
 class _NonceCookieAttrs(TypedDict):
-    path: str
-    secure: bool
+    path: Literal['/']
+    secure: Literal[True]
     httponly: bool
     samesite: Literal['lax', 'strict', 'none']
 
