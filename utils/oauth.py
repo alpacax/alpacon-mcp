@@ -1127,7 +1127,7 @@ def register_oauth_routes(mcp_server):
                         },
                     )
                     # MFA token is discarded — we only need the side effect
-                    # of MFA completion in the Auth0 session. Log non-2xx
+                    # of MFA completion in the Auth0 session. Log error
                     # responses for debugging misconfiguration.
                     if mfa_response.status_code >= HTTPStatus.BAD_REQUEST:
                         logger.warning(
