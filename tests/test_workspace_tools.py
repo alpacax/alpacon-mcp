@@ -5,6 +5,7 @@ Tests workspace management functionality including workspace listing.
 Note: User settings and profile endpoints have been removed from the server.
 """
 
+from http import HTTPStatus
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -357,21 +358,21 @@ class TestGetWorkspaceSecurity:
         result = await get_workspace_security(workspace='testworkspace', region='ap1')
 
         assert result['status'] == 'error'
-        assert result['status_code'] == 404
+        assert result['status_code'] == HTTPStatus.NOT_FOUND
         assert 'not available on this deployment' in result['message']
 
     @pytest.mark.asyncio
     async def test_other_http_error(self, mock_http_client, mock_jwt_token):
         mock_http_client.get.return_value = {
             'error': 'HTTP Error',
-            'status_code': 500,
+            'status_code': HTTPStatus.INTERNAL_SERVER_ERROR,
             'message': 'Internal server error',
         }
 
         result = await get_workspace_security(workspace='testworkspace', region='ap1')
 
         assert result['status'] == 'error'
-        assert result['status_code'] == 500
+        assert result['status_code'] == HTTPStatus.INTERNAL_SERVER_ERROR
         assert 'not available on this deployment' not in result['message']
 
     @pytest.mark.asyncio
@@ -382,13 +383,13 @@ class TestGetWorkspaceSecurity:
         must not trip the SaaS-only branch."""
         mock_http_client.get.return_value = {
             'mfa_required': True,
-            'status_code': 404,
+            'status_code': HTTPStatus.NOT_FOUND,
         }
 
         result = await get_workspace_security(workspace='testworkspace', region='ap1')
 
         assert result['status'] == 'success'
-        assert result['data']['status_code'] == 404
+        assert result['data']['status_code'] == HTTPStatus.NOT_FOUND
 
 
 class TestListWorkspaceMfaMethods:
@@ -439,14 +440,14 @@ class TestListWorkspaceMfaMethods:
         )
 
         assert result['status'] == 'error'
-        assert result['status_code'] == 404
+        assert result['status_code'] == HTTPStatus.NOT_FOUND
         assert 'not available on this deployment' in result['message']
 
     @pytest.mark.asyncio
     async def test_other_http_error(self, mock_http_client, mock_jwt_token):
         mock_http_client.get.return_value = {
             'error': 'HTTP Error',
-            'status_code': 500,
+            'status_code': HTTPStatus.INTERNAL_SERVER_ERROR,
             'message': 'Internal server error',
         }
 
@@ -455,7 +456,7 @@ class TestListWorkspaceMfaMethods:
         )
 
         assert result['status'] == 'error'
-        assert result['status_code'] == 500
+        assert result['status_code'] == HTTPStatus.INTERNAL_SERVER_ERROR
         assert 'not available on this deployment' not in result['message']
 
     @pytest.mark.asyncio
@@ -466,7 +467,7 @@ class TestListWorkspaceMfaMethods:
         the shared SaaS-only branch."""
         mock_http_client.get.return_value = {
             'allowed_mfa_methods': ['totp'],
-            'status_code': 404,
+            'status_code': HTTPStatus.NOT_FOUND,
         }
 
         result = await list_workspace_mfa_methods(

@@ -1,5 +1,7 @@
 """Tests for recovery hints module."""
 
+from http import HTTPStatus
+
 from utils.recovery_hints import (
     _detect_error_domain,
     _parse_status_code,
@@ -12,75 +14,106 @@ class TestDetectErrorDomain:
     """Tests for error domain detection."""
 
     def test_command_from_message(self):
-        assert _detect_error_domain(403, 'command ACL denied') == 'command'
+        assert (
+            _detect_error_domain(HTTPStatus.FORBIDDEN, 'command ACL denied')
+            == 'command'
+        )
 
     def test_command_from_tool_name(self):
         assert (
-            _detect_error_domain(403, 'denied', tool_name='execute_command_sync')
+            _detect_error_domain(
+                HTTPStatus.FORBIDDEN, 'denied', tool_name='execute_command_sync'
+            )
             == 'command'
         )
 
     def test_command_from_endpoint(self):
         assert (
-            _detect_error_domain(403, 'denied', endpoint='/api/events/commands/')
+            _detect_error_domain(
+                HTTPStatus.FORBIDDEN, 'denied', endpoint='/api/events/commands/'
+            )
             == 'command'
         )
 
     def test_server_from_message(self):
-        assert _detect_error_domain(404, 'server not found') == 'server'
+        assert (
+            _detect_error_domain(HTTPStatus.NOT_FOUND, 'server not found') == 'server'
+        )
 
     def test_server_from_tool_name(self):
         assert (
-            _detect_error_domain(404, 'not found', tool_name='get_server') == 'server'
+            _detect_error_domain(
+                HTTPStatus.NOT_FOUND, 'not found', tool_name='get_server'
+            )
+            == 'server'
         )
 
     def test_server_from_endpoint(self):
         assert (
-            _detect_error_domain(404, 'not found', endpoint='/api/servers/servers/abc')
+            _detect_error_domain(
+                HTTPStatus.NOT_FOUND, 'not found', endpoint='/api/servers/servers/abc'
+            )
             == 'server'
         )
 
     def test_file_from_message(self):
-        assert _detect_error_domain(403, 'file access denied') == 'file'
+        assert (
+            _detect_error_domain(HTTPStatus.FORBIDDEN, 'file access denied') == 'file'
+        )
 
     def test_file_from_tool_name(self):
         assert (
-            _detect_error_domain(403, 'denied', tool_name='webftp_upload_file')
+            _detect_error_domain(
+                HTTPStatus.FORBIDDEN, 'denied', tool_name='webftp_upload_file'
+            )
             == 'file'
         )
 
     def test_user_from_message(self):
-        assert _detect_error_domain(404, 'user not found') == 'user'
+        assert _detect_error_domain(HTTPStatus.NOT_FOUND, 'user not found') == 'user'
 
     def test_user_from_tool_name(self):
         assert (
-            _detect_error_domain(404, 'not found', tool_name='get_iam_user') == 'user'
+            _detect_error_domain(
+                HTTPStatus.NOT_FOUND, 'not found', tool_name='get_iam_user'
+            )
+            == 'user'
         )
 
     def test_alert_from_tool_name(self):
-        assert _detect_error_domain(404, 'not found', tool_name='get_alert') == 'alert'
+        assert (
+            _detect_error_domain(
+                HTTPStatus.NOT_FOUND, 'not found', tool_name='get_alert'
+            )
+            == 'alert'
+        )
 
     def test_acl_alone_does_not_match_command(self):
-        assert _detect_error_domain(403, 'ACL denied') != 'command'
+        assert _detect_error_domain(HTTPStatus.FORBIDDEN, 'ACL denied') != 'command'
 
     def test_server_acl_matches_server_not_command(self):
         assert (
-            _detect_error_domain(403, 'server ACL denied', tool_name='list_server_acls')
+            _detect_error_domain(
+                HTTPStatus.FORBIDDEN, 'server ACL denied', tool_name='list_server_acls'
+            )
             == 'server'
         )
 
     def test_general_fallback(self):
-        assert _detect_error_domain(500, 'something broke') == 'general'
+        assert (
+            _detect_error_domain(HTTPStatus.INTERNAL_SERVER_ERROR, 'something broke')
+            == 'general'
+        )
 
 
 class TestParseStatusCode:
     """Tests for status code parsing."""
 
     def test_int(self):
-        assert _parse_status_code(403) == 403
+        assert _parse_status_code(HTTPStatus.FORBIDDEN) == HTTPStatus.FORBIDDEN
 
     def test_string(self):
-        assert _parse_status_code('404') == 404
+        assert _parse_status_code('404') == HTTPStatus.NOT_FOUND
 
     def test_none(self):
         assert _parse_status_code(None) is None
@@ -99,48 +132,60 @@ class TestGetRecoveryHints:
 
     def test_403_command_acl(self):
         hints = get_recovery_hints(
-            403, 'command ACL denied', tool_name='execute_command_sync'
+            HTTPStatus.FORBIDDEN, 'command ACL denied', tool_name='execute_command_sync'
         )
         assert len(hints['recovery_hints']) > 0
         assert 'list_command_acls' in hints['related_tools']
 
     def test_403_server_access(self):
-        hints = get_recovery_hints(403, 'access denied', tool_name='get_server')
+        hints = get_recovery_hints(
+            HTTPStatus.FORBIDDEN, 'access denied', tool_name='get_server'
+        )
         assert len(hints['recovery_hints']) > 0
         assert 'list_server_acls' in hints['related_tools']
 
     def test_403_file_access(self):
-        hints = get_recovery_hints(403, 'upload denied', tool_name='webftp_upload_file')
+        hints = get_recovery_hints(
+            HTTPStatus.FORBIDDEN, 'upload denied', tool_name='webftp_upload_file'
+        )
         assert len(hints['recovery_hints']) > 0
         assert 'list_file_acls' in hints['related_tools']
 
     def test_404_server(self):
-        hints = get_recovery_hints(404, 'server not found', tool_name='get_server')
+        hints = get_recovery_hints(
+            HTTPStatus.NOT_FOUND, 'server not found', tool_name='get_server'
+        )
         assert len(hints['recovery_hints']) > 0
         assert 'list_servers' in hints['related_tools']
 
     def test_404_user(self):
-        hints = get_recovery_hints(404, 'not found', tool_name='get_iam_user')
+        hints = get_recovery_hints(
+            HTTPStatus.NOT_FOUND, 'not found', tool_name='get_iam_user'
+        )
         assert 'list_iam_users' in hints['related_tools']
 
     def test_404_alert(self):
-        hints = get_recovery_hints(404, 'not found', tool_name='get_alert')
+        hints = get_recovery_hints(
+            HTTPStatus.NOT_FOUND, 'not found', tool_name='get_alert'
+        )
         assert 'list_alerts' in hints['related_tools']
 
     def test_401_general(self):
-        hints = get_recovery_hints(401, 'authentication failed')
+        hints = get_recovery_hints(HTTPStatus.UNAUTHORIZED, 'authentication failed')
         assert len(hints['recovery_hints']) > 0
 
     def test_429_rate_limit(self):
-        hints = get_recovery_hints(429, 'too many requests')
+        hints = get_recovery_hints(HTTPStatus.TOO_MANY_REQUESTS, 'too many requests')
         assert len(hints['recovery_hints']) > 0
 
     def test_500_server_error(self):
-        hints = get_recovery_hints(500, 'internal server error')
+        hints = get_recovery_hints(
+            HTTPStatus.INTERNAL_SERVER_ERROR, 'internal server error'
+        )
         assert len(hints['recovery_hints']) > 0
 
     def test_unknown_code_returns_empty(self):
-        hints = get_recovery_hints(418, "I'm a teapot")
+        hints = get_recovery_hints(HTTPStatus.IM_A_TEAPOT, "I'm a teapot")
         assert hints['recovery_hints'] == []
         assert hints['related_tools'] == []
 
@@ -151,12 +196,12 @@ class TestGetRecoveryHints:
         assert len(hints['recovery_hints']) > 0
 
     def test_general_fallback_for_unknown_domain(self):
-        hints = get_recovery_hints(404, 'something not found')
+        hints = get_recovery_hints(HTTPStatus.NOT_FOUND, 'something not found')
         assert len(hints['recovery_hints']) > 0
 
     def test_returned_hints_are_independent_copies(self):
-        hints1 = get_recovery_hints(401, 'auth failed')
-        hints2 = get_recovery_hints(401, 'auth failed')
+        hints1 = get_recovery_hints(HTTPStatus.UNAUTHORIZED, 'auth failed')
+        hints2 = get_recovery_hints(HTTPStatus.UNAUTHORIZED, 'auth failed')
         hints1['recovery_hints'].append('mutated')
         assert 'mutated' not in hints2['recovery_hints']
 
@@ -168,7 +213,7 @@ class TestEnrichErrorResponse:
         resp = {
             'status': 'error',
             'message': 'server not found',
-            'status_code': 404,
+            'status_code': HTTPStatus.NOT_FOUND,
         }
         enriched = enrich_error_response(resp, tool_name='get_server')
         assert 'recovery_hints' in enriched
@@ -178,7 +223,7 @@ class TestEnrichErrorResponse:
     def test_enriches_http_client_error(self):
         resp = {
             'error': 'HTTP Error',
-            'status_code': 403,
+            'status_code': HTTPStatus.FORBIDDEN,
             'message': 'command ACL denied',
         }
         enriched = enrich_error_response(resp, tool_name='execute_command_sync')
@@ -197,7 +242,7 @@ class TestEnrichErrorResponse:
         resp = {
             'status': 'error',
             'message': 'server not found',
-            'status_code': 404,
+            'status_code': HTTPStatus.NOT_FOUND,
             'recovery_hints': ['custom hint'],
         }
         enriched = enrich_error_response(resp, tool_name='get_server')
@@ -207,7 +252,7 @@ class TestEnrichErrorResponse:
         resp = {
             'status': 'error',
             'message': 'weird error',
-            'status_code': 418,
+            'status_code': HTTPStatus.IM_A_TEAPOT,
         }
         enriched = enrich_error_response(resp)
         assert 'recovery_hints' not in enriched
@@ -216,7 +261,7 @@ class TestEnrichErrorResponse:
         resp = {
             'status': 'error',
             'message': 'authentication failed',
-            'error_code': 401,
+            'error_code': HTTPStatus.UNAUTHORIZED,
         }
         enriched = enrich_error_response(resp)
         assert 'recovery_hints' in enriched

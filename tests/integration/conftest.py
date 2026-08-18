@@ -4,6 +4,7 @@ Provides MockTransport-based fixtures that inject mock HTTP responses at the
 httpx transport layer, letting the full request path execute end-to-end.
 """
 
+from http import HTTPStatus
 from unittest.mock import patch
 
 import httpx
@@ -163,7 +164,7 @@ def sample_api_responses():
             },
             'iam_user_deleted': {
                 'status': 'success',
-                'status_code': 204,
+                'status_code': HTTPStatus.NO_CONTENT,
             },
             'events_list': {
                 'count': 2,

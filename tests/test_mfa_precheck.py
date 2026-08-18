@@ -2,6 +2,7 @@
 
 import os
 from datetime import UTC, datetime, timedelta
+from http import HTTPStatus
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -322,7 +323,7 @@ class TestSecuritySettingsCache:
 
         # httpx.Response methods (json, raise_for_status) are sync
         mock_response = MagicMock()
-        mock_response.status_code = 200
+        mock_response.status_code = HTTPStatus.OK
         mock_response.json.return_value = [
             {
                 'workspace': 'ws1',

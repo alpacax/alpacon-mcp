@@ -5,6 +5,7 @@ Tests metrics and monitoring functionality including CPU, memory, disk,
 network traffic monitoring and server performance analytics.
 """
 
+from http import HTTPStatus
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -109,7 +110,7 @@ class TestGetCpuUsage:
         )
 
         assert result['status'] == 'error'
-        assert result['status_code'] == 404
+        assert result['status_code'] == HTTPStatus.NOT_FOUND
         assert result['message'] == 'Not found'
 
     @pytest.mark.asyncio
@@ -312,7 +313,7 @@ class TestGetDiskUsage:
         )
 
         assert result['status'] == 'error'
-        assert result['status_code'] == 404
+        assert result['status_code'] == HTTPStatus.NOT_FOUND
         assert 'No disk devices found' not in result['message']
         # The metrics call must be skipped once discovery fails.
         assert mock_http_client.get.call_count == 1
@@ -444,7 +445,7 @@ class TestGetDiskIo:
         )
 
         assert result['status'] == 'error'
-        assert result['status_code'] == 404
+        assert result['status_code'] == HTTPStatus.NOT_FOUND
         assert result['message'] == 'Not found'
 
 
@@ -531,7 +532,7 @@ class TestGetTopServers:
         )
 
         assert result['status'] == 'error'
-        assert result['status_code'] == 404
+        assert result['status_code'] == HTTPStatus.NOT_FOUND
 
     @pytest.mark.asyncio
     async def test_top_servers_invalid_metric(
@@ -660,7 +661,7 @@ class TestGetAlertRules:
         result = await get_alert_rules(workspace='testworkspace')
 
         assert result['status'] == 'error'
-        assert result['status_code'] == 404
+        assert result['status_code'] == HTTPStatus.NOT_FOUND
         assert result['message'] == 'Not found'
 
     @pytest.mark.asyncio

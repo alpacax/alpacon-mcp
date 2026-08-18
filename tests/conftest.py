@@ -4,6 +4,7 @@ Provides autouse fixtures that prevent tests from hitting the real
 TokenManager (which requires ~/.alpacon-mcp/token.json to exist).
 """
 
+from http import HTTPStatus
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -12,7 +13,7 @@ import pytest
 # 4xx/5xx). Shared across error-path tests so the envelope is defined once.
 HTTP_ERROR_ENVELOPE = {
     'error': 'HTTP Error',
-    'status_code': 404,
+    'status_code': HTTPStatus.NOT_FOUND,
     'message': 'Not found',
 }
 

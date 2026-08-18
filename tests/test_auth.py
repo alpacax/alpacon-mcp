@@ -6,6 +6,7 @@ and token verification (valid, expired, invalid kid, audience mismatch).
 """
 
 import time
+from http import HTTPStatus
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import jwt as pyjwt
@@ -228,7 +229,7 @@ class TestAuth0TokenVerifier:
     @pytest.mark.asyncio
     async def test_verify_valid_token(self, rsa_keypair, jwks_response):
         mock_response = MagicMock()
-        mock_response.status_code = 200
+        mock_response.status_code = HTTPStatus.OK
         mock_response.json.return_value = jwks_response
         mock_response.raise_for_status = MagicMock()
 
@@ -253,7 +254,7 @@ class TestAuth0TokenVerifier:
     @pytest.mark.asyncio
     async def test_verify_expired_token_returns_none(self, rsa_keypair, jwks_response):
         mock_response = MagicMock()
-        mock_response.status_code = 200
+        mock_response.status_code = HTTPStatus.OK
         mock_response.json.return_value = jwks_response
         mock_response.raise_for_status = MagicMock()
 
@@ -276,7 +277,7 @@ class TestAuth0TokenVerifier:
     @pytest.mark.asyncio
     async def test_verify_invalid_kid_returns_none(self, rsa_keypair, jwks_response):
         mock_response = MagicMock()
-        mock_response.status_code = 200
+        mock_response.status_code = HTTPStatus.OK
         mock_response.json.return_value = jwks_response
         mock_response.raise_for_status = MagicMock()
 
@@ -300,7 +301,7 @@ class TestAuth0TokenVerifier:
     @pytest.mark.asyncio
     async def test_verify_wrong_audience_returns_none(self, rsa_keypair, jwks_response):
         mock_response = MagicMock()
-        mock_response.status_code = 200
+        mock_response.status_code = HTTPStatus.OK
         mock_response.json.return_value = jwks_response
         mock_response.raise_for_status = MagicMock()
 
@@ -348,7 +349,7 @@ class TestJwksCaching:
     @pytest.mark.asyncio
     async def test_caches_jwks_response(self, jwks_response):
         mock_response = MagicMock()
-        mock_response.status_code = 200
+        mock_response.status_code = HTTPStatus.OK
         mock_response.json.return_value = jwks_response
         mock_response.raise_for_status = MagicMock()
 

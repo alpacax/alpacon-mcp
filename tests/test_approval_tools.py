@@ -1,5 +1,6 @@
 """Unit tests for approval and sudo policy tools module."""
 
+from http import HTTPStatus
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -136,7 +137,7 @@ class TestGetApprovalRequest:
         )
 
         assert result['status'] == 'error'
-        assert result['status_code'] == 404
+        assert result['status_code'] == HTTPStatus.NOT_FOUND
         assert result['message'] == 'Not found'
 
 
@@ -223,7 +224,7 @@ class TestSudoPolicies:
         result = await list_sudo_policies(workspace='testworkspace', region='ap1')
 
         assert result['status'] == 'error'
-        assert result['status_code'] == 404
+        assert result['status_code'] == HTTPStatus.NOT_FOUND
         assert result['message'] == 'Not found'
 
     @pytest.mark.asyncio
@@ -303,5 +304,5 @@ class TestSudoPolicies:
         )
 
         assert result['status'] == 'error'
-        assert result['status_code'] == 404
+        assert result['status_code'] == HTTPStatus.NOT_FOUND
         assert result['message'] == 'Not found'

@@ -5,6 +5,7 @@ Tests system information functionality including system details,
 OS version, users, groups, packages, network interfaces, and disk information.
 """
 
+from http import HTTPStatus
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -118,7 +119,7 @@ class TestGetSystemInfo:
 
         assert result['status'] == 'error'
         assert result['message'] == 'Not found'
-        assert result['status_code'] == 404
+        assert result['status_code'] == HTTPStatus.NOT_FOUND
         assert result['server_id'] == '550e8400-e29b-41d4-a716-446655440001'
         assert result['region'] == 'ap1'
         assert result['workspace'] == 'testworkspace'
@@ -304,7 +305,7 @@ class TestListSystemUsers:
 
         assert result['status'] == 'error'
         assert result['message'] == 'Not found'
-        assert result['status_code'] == 404
+        assert result['status_code'] == HTTPStatus.NOT_FOUND
         assert result['server_id'] == '550e8400-e29b-41d4-a716-446655440001'
         assert 'data' not in result
 
@@ -577,7 +578,7 @@ class TestGetNetworkInterfaces:
 
         assert result['status'] == 'error'
         assert result['message'] == 'Not found'
-        assert result['status_code'] == 404
+        assert result['status_code'] == HTTPStatus.NOT_FOUND
         assert result['server_id'] == '550e8400-e29b-41d4-a716-446655440001'
         assert 'data' not in result
 

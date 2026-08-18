@@ -5,6 +5,7 @@ Tests the HTTP client functionality including GET, POST, PATCH, DELETE operation
 and error handling.
 """
 
+from http import HTTPStatus
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -51,7 +52,9 @@ def no_retry_delay(monkeypatch):
     monkeypatch.setattr(http_client, 'retry_delay', 0)
 
 
-def create_mock_response(status_code=200, json_data=None, text_data='', headers=None):
+def create_mock_response(
+    status_code=HTTPStatus.OK, json_data=None, text_data='', headers=None
+):
     """Create a properly configured mock response."""
     # Use MagicMock instead of AsyncMock for response to avoid coroutine issues
     mock_response = MagicMock()
@@ -68,7 +71,7 @@ def create_mock_response(status_code=200, json_data=None, text_data='', headers=
         mock_response.text = ''
 
     # Mock raise_for_status to raise HTTPStatusError for error codes
-    if status_code >= 400:
+    if status_code >= HTTPStatus.BAD_REQUEST:
         error = httpx.HTTPStatusError(
             'HTTP Error', request=MagicMock(), response=mock_response
         )
@@ -86,7 +89,7 @@ class TestHTTPClientGet:
     async def test_get_success(self, mock_httpx_client):
         """Test successful GET request."""
         mock_response = create_mock_response(
-            status_code=200, json_data={'result': 'success'}
+            status_code=HTTPStatus.OK, json_data={'result': 'success'}
         )
         mock_httpx_client.request.return_value = mock_response
 
@@ -102,7 +105,9 @@ class TestHTTPClientGet:
     @pytest.mark.asyncio
     async def test_get_with_params(self, mock_httpx_client):
         """Test GET request with query parameters."""
-        mock_response = create_mock_response(status_code=200, json_data={'results': []})
+        mock_response = create_mock_response(
+            status_code=HTTPStatus.OK, json_data={'results': []}
+        )
         mock_httpx_client.request.return_value = mock_response
 
         params = {'page': 1, 'page_size': 20}
@@ -119,7 +124,7 @@ class TestHTTPClientGet:
     @pytest.mark.asyncio
     async def test_get_404_error(self, mock_httpx_client):
         """Test GET request with 404 error."""
-        mock_response = create_mock_response(status_code=404)
+        mock_response = create_mock_response(status_code=HTTPStatus.NOT_FOUND)
         mock_httpx_client.request.return_value = mock_response
 
         result = await http_client.get(
@@ -130,12 +135,14 @@ class TestHTTPClientGet:
         )
 
         assert result['error'] == 'HTTP Error'
-        assert result['status_code'] == 404
+        assert result['status_code'] == HTTPStatus.NOT_FOUND
 
     @pytest.mark.asyncio
     async def test_get_500_error(self, mock_httpx_client, no_retry_delay):
         """Test GET request with 500 error (should retry and then fail)."""
-        mock_response = create_mock_response(status_code=500)
+        mock_response = create_mock_response(
+            status_code=HTTPStatus.INTERNAL_SERVER_ERROR
+        )
         mock_httpx_client.request.return_value = mock_response
 
         result = await http_client.get(
@@ -165,7 +172,9 @@ class TestHTTPClientGet:
         domain varies by caller; 500 has only a (500, 'general') entry so the hints
         converge, and a domain-specific one would split them here.
         """
-        mock_response = create_mock_response(status_code=500)
+        mock_response = create_mock_response(
+            status_code=HTTPStatus.INTERNAL_SERVER_ERROR
+        )
         mock_httpx_client.request.return_value = mock_response
 
         result = await http_client.get(
@@ -175,7 +184,7 @@ class TestHTTPClientGet:
             token='test-token',
         )
 
-        assert result['status_code'] == 500
+        assert result['status_code'] == HTTPStatus.INTERNAL_SERVER_ERROR
         assert (
             _detect_error_domain(result['status_code'], result['message'], tool_name)
             == domain
@@ -195,7 +204,7 @@ class TestHTTPClientPost:
     async def test_post_success(self, mock_httpx_client):
         """Test successful POST request."""
         mock_response = create_mock_response(
-            status_code=201, json_data={'id': 123, 'created': True}
+            status_code=HTTPStatus.CREATED, json_data={'id': 123, 'created': True}
         )
         mock_httpx_client.request.return_value = mock_response
 
@@ -212,7 +221,7 @@ class TestHTTPClientPost:
     @pytest.mark.asyncio
     async def test_post_validation_error(self, mock_httpx_client):
         """Test POST request with validation error."""
-        mock_response = create_mock_response(status_code=400)
+        mock_response = create_mock_response(status_code=HTTPStatus.BAD_REQUEST)
         mock_httpx_client.request.return_value = mock_response
 
         result = await http_client.post(
@@ -224,7 +233,7 @@ class TestHTTPClientPost:
         )
 
         assert result['error'] == 'HTTP Error'
-        assert result['status_code'] == 400
+        assert result['status_code'] == HTTPStatus.BAD_REQUEST
 
 
 class TestHTTPClientPatch:
@@ -234,7 +243,7 @@ class TestHTTPClientPatch:
     async def test_patch_success(self, mock_httpx_client):
         """Test successful PATCH request."""
         mock_response = create_mock_response(
-            status_code=200, json_data={'updated': True}
+            status_code=HTTPStatus.OK, json_data={'updated': True}
         )
         mock_httpx_client.request.return_value = mock_response
 
@@ -255,7 +264,9 @@ class TestHTTPClientDelete:
     @pytest.mark.asyncio
     async def test_delete_success(self, mock_httpx_client):
         """Test successful DELETE request (no content)."""
-        mock_response = create_mock_response(status_code=204, text_data='')
+        mock_response = create_mock_response(
+            status_code=HTTPStatus.NO_CONTENT, text_data=''
+        )
         mock_httpx_client.request.return_value = mock_response
 
         result = await http_client.delete(
@@ -265,13 +276,13 @@ class TestHTTPClientDelete:
             token='test-token',
         )
 
-        assert result == {'status': 'success', 'status_code': 204}
+        assert result == {'status': 'success', 'status_code': HTTPStatus.NO_CONTENT}
 
     @pytest.mark.asyncio
     async def test_delete_with_response(self, mock_httpx_client):
         """Test DELETE request with response body."""
         mock_response = create_mock_response(
-            status_code=200, json_data={'deleted': True, 'id': 123}
+            status_code=HTTPStatus.OK, json_data={'deleted': True, 'id': 123}
         )
         mock_httpx_client.request.return_value = mock_response
 
@@ -292,7 +303,7 @@ class TestURLConstruction:
     async def test_url_construction_all_regions(self, mock_httpx_client):
         """Test URL construction for all supported regions."""
         mock_response = create_mock_response(
-            status_code=200, json_data={'region': 'test'}
+            status_code=HTTPStatus.OK, json_data={'region': 'test'}
         )
         mock_httpx_client.request.return_value = mock_response
 
@@ -322,7 +333,9 @@ class TestURLConstruction:
         This keeps a workspace addressable across a URL slug change (ADR 0027):
         the host is a persisted value, not re-derived from the workspace label.
         """
-        mock_response = create_mock_response(status_code=200, json_data={'ok': True})
+        mock_response = create_mock_response(
+            status_code=HTTPStatus.OK, json_data={'ok': True}
+        )
         mock_httpx_client.request.return_value = mock_response
 
         fake_tm = MagicMock()
@@ -353,7 +366,9 @@ class TestURLConstruction:
     @pytest.mark.asyncio
     async def test_pinned_base_url_override_used(self, mock_httpx_client):
         """A configured base-URL override replaces the derived host (ADR 0027)."""
-        mock_response = create_mock_response(status_code=200, json_data={'ok': True})
+        mock_response = create_mock_response(
+            status_code=HTTPStatus.OK, json_data={'ok': True}
+        )
         mock_httpx_client.request.return_value = mock_response
 
         mock_tm = MagicMock()
@@ -418,7 +433,7 @@ class TestErrorHandling:
         """Test handling of invalid JSON response."""
         # Create a response that will cause json() to fail
         mock_response = MagicMock()
-        mock_response.status_code = 200
+        mock_response.status_code = HTTPStatus.OK
         mock_response.headers = {}
         mock_response.content = b'invalid json response'
         mock_response.text = 'invalid json response'
@@ -444,7 +459,7 @@ class TestHTTPClientJWTAuth:
     async def test_jwt_token_uses_bearer_header(self, mock_httpx_client):
         """Test that JWT-like tokens use Bearer authorization header."""
         mock_response = create_mock_response(
-            status_code=200, json_data={'result': 'success'}
+            status_code=HTTPStatus.OK, json_data={'result': 'success'}
         )
         mock_httpx_client.request.return_value = mock_response
 
@@ -465,7 +480,7 @@ class TestHTTPClientJWTAuth:
     async def test_api_token_uses_token_header(self, mock_httpx_client):
         """Test that API tokens use token= authorization header."""
         mock_response = create_mock_response(
-            status_code=200, json_data={'result': 'success'}
+            status_code=HTTPStatus.OK, json_data={'result': 'success'}
         )
         mock_httpx_client.request.return_value = mock_response
 
@@ -498,7 +513,7 @@ class TestHandleUpstream401:
     def _make_401_exc(self, json_body=None, text=''):
         """Create a mock HTTPStatusError with 401 response."""
         mock_response = MagicMock()
-        mock_response.status_code = 401
+        mock_response.status_code = HTTPStatus.UNAUTHORIZED
         mock_response.text = text or str(json_body)
         if json_body is not None:
             mock_response.json.return_value = json_body
@@ -516,7 +531,7 @@ class TestHandleUpstream401:
         exc = self._make_401_exc({'code': 'auth_mfa_required', 'source': 'websh'})
         result = AlpaconHTTPClient._handle_upstream_401(exc)
         assert result['mfa_required'] is True
-        assert result['status_code'] == 401
+        assert result['status_code'] == HTTPStatus.UNAUTHORIZED
         assert result['error'] == 'MFA Required'
 
     def test_non_mfa_401(self):
@@ -531,7 +546,7 @@ class TestHandleUpstream401:
         exc = self._make_401_exc(json_body=None, text='Unauthorized')
         result = AlpaconHTTPClient._handle_upstream_401(exc)
         assert result['mfa_required'] is False
-        assert result['status_code'] == 401
+        assert result['status_code'] == HTTPStatus.UNAUTHORIZED
 
     def test_no_response_body_in_result(self):
         """Error dict should NOT contain raw response body (PII protection)."""

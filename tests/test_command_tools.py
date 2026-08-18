@@ -1,5 +1,6 @@
 """Unit tests for command tools module."""
 
+from http import HTTPStatus
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -15,13 +16,13 @@ from tools.command_tools import (
 
 _GATE_ENVELOPE_REQUIRED = {
     'error': 'HTTP Error',
-    'status_code': 400,
+    'status_code': HTTPStatus.BAD_REQUEST,
     'response': '{"code":"work_session_required"}',
 }
 
 _GATE_ENVELOPE_NOT_ACTIVE = {
     'error': 'HTTP Error',
-    'status_code': 400,
+    'status_code': HTTPStatus.BAD_REQUEST,
     'response': '{"code":"work_session_not_active"}',
 }
 
@@ -346,7 +347,7 @@ class TestListCommands:
         mock_http_client.get.return_value = {
             'error': 'Forbidden',
             'message': 'Permission denied',
-            'status_code': 403,
+            'status_code': HTTPStatus.FORBIDDEN,
         }
 
         result = await list_commands(workspace='testworkspace', region='ap1')
@@ -552,7 +553,7 @@ class TestExecuteCommand:
             mock_submit.return_value = {
                 'error': 'Permission denied',
                 'message': 'Permission denied',
-                'status_code': 403,
+                'status_code': HTTPStatus.FORBIDDEN,
             }
 
             result = await execute_command(
