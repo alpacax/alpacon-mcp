@@ -6,6 +6,7 @@ and authorization headers.
 """
 
 import time
+from http import HTTPStatus
 from unittest.mock import patch
 
 import httpx
@@ -26,7 +27,10 @@ class TestRetryBehavior:
         def handler(request: httpx.Request) -> httpx.Response:
             nonlocal call_count
             call_count += 1
-            return httpx.Response(500, json={'error': 'Internal Server Error'})
+            return httpx.Response(
+                HTTPStatus.INTERNAL_SERVER_ERROR,
+                json={'error': 'Internal Server Error'},
+            )
 
         patched_http_client.set_handler(handler)
 
@@ -49,8 +53,10 @@ class TestRetryBehavior:
             nonlocal call_count
             call_count += 1
             if call_count == 1:
-                return httpx.Response(500, json={'error': 'Server Error'})
-            return httpx.Response(200, json={'result': 'ok'})
+                return httpx.Response(
+                    HTTPStatus.INTERNAL_SERVER_ERROR, json={'error': 'Server Error'}
+                )
+            return httpx.Response(HTTPStatus.OK, json={'result': 'ok'})
 
         patched_http_client.set_handler(handler)
 
@@ -67,7 +73,9 @@ class TestRetryBehavior:
         """Retry delays follow exponential backoff pattern."""
 
         def handler(request: httpx.Request) -> httpx.Response:
-            return httpx.Response(500, json={'error': 'Server Error'})
+            return httpx.Response(
+                HTTPStatus.INTERNAL_SERVER_ERROR, json={'error': 'Server Error'}
+            )
 
         patched_http_client.set_handler(handler)
 
@@ -93,7 +101,7 @@ class TestRetryBehavior:
         def handler(request: httpx.Request) -> httpx.Response:
             nonlocal call_count
             call_count += 1
-            return httpx.Response(404, json={'detail': 'Not found'})
+            return httpx.Response(HTTPStatus.NOT_FOUND, json={'detail': 'Not found'})
 
         patched_http_client.set_handler(handler)
 
@@ -105,7 +113,7 @@ class TestRetryBehavior:
 
         assert call_count == 1
         assert result['error'] == 'HTTP Error'
-        assert result['status_code'] == 404
+        assert result['status_code'] == HTTPStatus.NOT_FOUND
 
     async def test_401_not_retried(self, patched_http_client, no_sleep):
         """401 Unauthorized errors are not retried."""
@@ -114,7 +122,9 @@ class TestRetryBehavior:
         def handler(request: httpx.Request) -> httpx.Response:
             nonlocal call_count
             call_count += 1
-            return httpx.Response(401, json={'detail': 'Unauthorized'})
+            return httpx.Response(
+                HTTPStatus.UNAUTHORIZED, json={'detail': 'Unauthorized'}
+            )
 
         patched_http_client.set_handler(handler)
 
@@ -126,7 +136,7 @@ class TestRetryBehavior:
 
         assert call_count == 1
         assert result['error'] == 'HTTP Error'
-        assert result['status_code'] == 401
+        assert result['status_code'] == HTTPStatus.UNAUTHORIZED
 
     async def test_502_retried(self, patched_http_client, no_sleep):
         """502 Bad Gateway is retried (5xx behavior)."""
@@ -136,8 +146,10 @@ class TestRetryBehavior:
             nonlocal call_count
             call_count += 1
             if call_count < 3:
-                return httpx.Response(502, json={'error': 'Bad Gateway'})
-            return httpx.Response(200, json={'result': 'recovered'})
+                return httpx.Response(
+                    HTTPStatus.BAD_GATEWAY, json={'error': 'Bad Gateway'}
+                )
+            return httpx.Response(HTTPStatus.OK, json={'result': 'recovered'})
 
         patched_http_client.set_handler(handler)
 
@@ -157,7 +169,9 @@ class TestRetryBehavior:
         def handler(request: httpx.Request) -> httpx.Response:
             nonlocal call_count
             call_count += 1
-            return httpx.Response(503, json={'error': 'Service Unavailable'})
+            return httpx.Response(
+                HTTPStatus.SERVICE_UNAVAILABLE, json={'error': 'Service Unavailable'}
+            )
 
         patched_http_client.set_handler(handler)
 
@@ -189,7 +203,9 @@ class TestCacheBehavior:
         def handler(request: httpx.Request) -> httpx.Response:
             nonlocal call_count
             call_count += 1
-            return httpx.Response(200, json={'count': call_count, 'results': []})
+            return httpx.Response(
+                HTTPStatus.OK, json={'count': call_count, 'results': []}
+            )
 
         patched_http_client.set_handler(handler)
 
@@ -242,7 +258,7 @@ class TestCacheBehavior:
         def handler(request: httpx.Request) -> httpx.Response:
             nonlocal call_count
             call_count += 1
-            return httpx.Response(200, json={'data': call_count})
+            return httpx.Response(HTTPStatus.OK, json={'data': call_count})
 
         patched_http_client.set_handler(handler)
 
@@ -283,7 +299,7 @@ class TestCacheBehavior:
         def handler(request: httpx.Request) -> httpx.Response:
             nonlocal call_count
             call_count += 1
-            return httpx.Response(201, json={'id': call_count})
+            return httpx.Response(HTTPStatus.CREATED, json={'id': call_count})
 
         patched_http_client.set_handler(handler)
 
@@ -344,7 +360,7 @@ class TestURLConstruction:
 
         def handler(request: httpx.Request) -> httpx.Response:
             captured_urls.append(str(request.url))
-            return httpx.Response(200, json={'ok': True})
+            return httpx.Response(HTTPStatus.OK, json={'ok': True})
 
         patched_http_client.set_handler(handler)
 
@@ -368,7 +384,7 @@ class TestURLConstruction:
 
         def handler(request: httpx.Request) -> httpx.Response:
             captured_headers.update(dict(request.headers))
-            return httpx.Response(200, json={'ok': True})
+            return httpx.Response(HTTPStatus.OK, json={'ok': True})
 
         patched_http_client.set_handler(handler)
 

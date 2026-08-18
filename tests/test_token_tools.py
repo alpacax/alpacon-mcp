@@ -1,5 +1,6 @@
 """Unit tests for API token management tools."""
 
+from http import HTTPStatus
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -143,7 +144,7 @@ class TestListApiTokens:
         """Test that list_api_tokens surfaces API error responses as errors."""
         mock_http_client.get.return_value = {
             'error': 'HTTP Error',
-            'status_code': 403,
+            'status_code': HTTPStatus.FORBIDDEN,
             'message': 'Permission denied',
         }
 
@@ -302,7 +303,7 @@ class TestCreateApiToken:
         """Test that create_api_token with empty name surfaces the server 400 as error."""
         mock_http_client.post.return_value = {
             'error': 'HTTP Error',
-            'status_code': 400,
+            'status_code': HTTPStatus.BAD_REQUEST,
             'message': 'This field may not be blank.',
         }
 
@@ -319,7 +320,7 @@ class TestCreateApiToken:
         """Test that create_api_token surfaces API error responses as errors."""
         mock_http_client.post.return_value = {
             'error': 'HTTP Error',
-            'status_code': 400,
+            'status_code': HTTPStatus.BAD_REQUEST,
             'message': 'Token name already exists',
         }
 
@@ -402,7 +403,7 @@ class TestDeleteApiToken:
         """Test that delete_api_token returns error when token does not exist (404)."""
         mock_http_client.delete.return_value = {
             'error': 'HTTP Error',
-            'status_code': 404,
+            'status_code': HTTPStatus.NOT_FOUND,
             'message': 'Not found',
         }
 
@@ -542,7 +543,7 @@ class TestDuplicateApiToken:
         """Test that duplicate_api_token returns error when source token does not exist (404)."""
         mock_http_client.post.return_value = {
             'error': 'HTTP Error',
-            'status_code': 404,
+            'status_code': HTTPStatus.NOT_FOUND,
             'message': 'Not found',
         }
 
@@ -607,7 +608,7 @@ class TestListApiTokenScopes:
         """Test that list_api_token_scopes surfaces API error responses as errors."""
         mock_http_client.get.return_value = {
             'error': 'HTTP Error',
-            'status_code': 403,
+            'status_code': HTTPStatus.FORBIDDEN,
             'message': 'Permission denied',
         }
 
@@ -662,7 +663,7 @@ class TestGetApiToken:
         """Test that get_api_token returns error when token does not exist."""
         mock_http_client.get.return_value = {
             'error': 'HTTP Error',
-            'status_code': 404,
+            'status_code': HTTPStatus.NOT_FOUND,
             'message': 'Not found',
         }
 
@@ -861,7 +862,7 @@ class TestUpdateApiToken:
         """
         mock_http_client.patch.return_value = {
             'error': 'HTTP Error',
-            'status_code': 400,
+            'status_code': HTTPStatus.BAD_REQUEST,
             'message': 'Presets are not allowed on update.',
         }
 
@@ -881,7 +882,7 @@ class TestUpdateApiToken:
         """Test update_api_token returns error when token does not exist."""
         mock_http_client.patch.return_value = {
             'error': 'HTTP Error',
-            'status_code': 404,
+            'status_code': HTTPStatus.NOT_FOUND,
             'message': 'Not found',
         }
 
@@ -940,7 +941,7 @@ class TestListApiTokenPresets:
         """Test list_api_token_presets surfaces API error responses as errors."""
         mock_http_client.get.return_value = {
             'error': 'HTTP Error',
-            'status_code': 403,
+            'status_code': HTTPStatus.FORBIDDEN,
             'message': 'Permission denied',
         }
 

@@ -1,6 +1,7 @@
 """Tests for UpstreamAuthErrorMiddleware."""
 
 import json
+from http import HTTPStatus
 
 import pytest
 
@@ -14,7 +15,7 @@ from utils.error_handler import (
 # Default body that mimics http_client's 401 error response dict.
 _DEFAULT_401_BODY = {
     'error': 'HTTP Error',
-    'status_code': 401,
+    'status_code': HTTPStatus.UNAUTHORIZED,
     'message': 'Unauthorized',
     'mfa_required': False,
 }
@@ -51,7 +52,7 @@ class _MockApp:
         await send(
             {
                 'type': 'http.response.start',
-                'status': 200,
+                'status': HTTPStatus.OK,
                 'headers': [(b'content-type', b'application/json')],
             }
         )
@@ -123,7 +124,7 @@ async def test_no_flag_passes_through():
     mw = _make()
     sent = await _run(mw)
     status, _, body = await _collect_response(sent)
-    assert status == 200
+    assert status == HTTPStatus.OK
     assert 'ok' in body
 
 
@@ -137,7 +138,7 @@ async def test_flag_triggers_401():
     sent = await _run(mw)
     status, headers, body = await _collect_response(sent)
 
-    assert status == 401
+    assert status == HTTPStatus.UNAUTHORIZED
     assert 'www-authenticate' in headers
     assert 'invalid_token' in headers['www-authenticate']
     assert (
@@ -154,7 +155,7 @@ async def test_mfa_flag_includes_mfa_scope():
     sent = await _run(mw)
     status, headers, body = await _collect_response(sent)
 
-    assert status == 401
+    assert status == HTTPStatus.UNAUTHORIZED
     assert 'offline_access mfa' in headers['www-authenticate']
     assert 'MFA' in json.loads(body)['error_description']
 
@@ -166,7 +167,7 @@ async def test_non_mfa_flag_excludes_mfa_scope():
     sent = await _run(mw)
     status, headers, _ = await _collect_response(sent)
 
-    assert status == 401
+    assert status == HTTPStatus.UNAUTHORIZED
     assert 'mfa' not in headers['www-authenticate']
 
 
@@ -187,12 +188,12 @@ async def test_cooldown_passes_through_on_second_401():
 
     # First: 401
     sent1 = await _run(mw, scope=scope)
-    assert (await _collect_response(sent1))[0] == 401
+    assert (await _collect_response(sent1))[0] == HTTPStatus.UNAUTHORIZED
 
     # Second (same client, within cooldown): pass through as tool error
     sent2 = await _run(mw, scope=scope)
     status2, _, body2 = await _collect_response(sent2)
-    assert status2 == 200
+    assert status2 == HTTPStatus.OK
     assert 'status_code' in body2
 
 
@@ -216,12 +217,12 @@ async def test_per_client_cooldown_isolation():
 
     # Client A: 401
     sent_a = await _run(mw, scope=_http_scope(f'Bearer {token_a}'))
-    assert (await _collect_response(sent_a))[0] == 401
+    assert (await _collect_response(sent_a))[0] == HTTPStatus.UNAUTHORIZED
 
     # Client B (different token): swap app and test
     mw.app = app_b
     sent_b = await _run(mw, scope=_http_scope(f'Bearer {token_b}'))
-    assert (await _collect_response(sent_b))[0] == 401
+    assert (await _collect_response(sent_b))[0] == HTTPStatus.UNAUTHORIZED
 
 
 @pytest.mark.asyncio
@@ -260,7 +261,7 @@ async def test_stale_signal_triggers_401_on_next_request():
     status, headers, _ = await _collect_response(sent)
 
     # Signal is consumed → 401 returned to trigger re-auth
-    assert status == 401
+    assert status == HTTPStatus.UNAUTHORIZED
     assert 'www-authenticate' in headers
 
 
@@ -281,7 +282,7 @@ async def test_flag_triggers_401_with_any_body():
     sent = await _run(mw, scope=_http_scope(f'Bearer {token}'))
     status, headers, _ = await _collect_response(sent)
 
-    assert status == 401
+    assert status == HTTPStatus.UNAUTHORIZED
     assert 'www-authenticate' in headers
 
 
@@ -292,7 +293,11 @@ async def test_no_signal_passes_through_regardless_of_body():
 
     # Body looks like a 401 error but no signal was set
     app = _MockApp(
-        body={'error': 'HTTP Error', 'status_code': 401, 'message': 'Unauthorized'}
+        body={
+            'error': 'HTTP Error',
+            'status_code': HTTPStatus.UNAUTHORIZED,
+            'message': 'Unauthorized',
+        }
     )
     mw = UpstreamAuthErrorMiddleware(app)
 
@@ -300,7 +305,7 @@ async def test_no_signal_passes_through_regardless_of_body():
     status, _, body = await _collect_response(sent)
 
     # No signal → passes through as 200
-    assert status == 200
+    assert status == HTTPStatus.OK
     assert '401' in body
 
 
@@ -339,7 +344,7 @@ async def test_exception_triggers_401():
     sent = await _run(mw)
     status, headers, _ = await _collect_response(sent)
 
-    assert status == 401
+    assert status == HTTPStatus.UNAUTHORIZED
     assert 'www-authenticate' in headers
     assert 'mfa' in headers['www-authenticate']
 
@@ -353,7 +358,7 @@ async def test_exception_non_mfa_triggers_401_without_mfa_scope():
     sent = await _run(mw)
     status, headers, _ = await _collect_response(sent)
 
-    assert status == 401
+    assert status == HTTPStatus.UNAUTHORIZED
     assert 'www-authenticate' in headers
     assert 'mfa' not in headers['www-authenticate']
 
@@ -383,10 +388,10 @@ async def test_exception_respects_cooldown():
     # First call: should get 401
     sent1 = await _run(mw)
     status1, _, _ = await _collect_response(sent1)
-    assert status1 == 401
+    assert status1 == HTTPStatus.UNAUTHORIZED
 
     # Second call within cooldown: should get 500 fallback (no buffered response
     # because _RaisingApp raises before writing any response)
     sent2 = await _run(mw)
     status2, _, _ = await _collect_response(sent2)
-    assert status2 == 500
+    assert status2 == HTTPStatus.INTERNAL_SERVER_ERROR

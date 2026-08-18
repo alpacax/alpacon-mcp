@@ -4,6 +4,7 @@ Unit tests for server tools module.
 Tests all server management functions including server listing, details, and notes management.
 """
 
+from http import HTTPStatus
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -236,7 +237,7 @@ class TestGetServer:
         """Test server details with non-existent server."""
         mock_http_client.get.return_value = {
             'error': 'HTTP Error',
-            'status_code': 404,
+            'status_code': HTTPStatus.NOT_FOUND,
             'message': 'Not found.',
             'response': '{"detail":"Not found."}',
         }
@@ -246,7 +247,7 @@ class TestGetServer:
         )
 
         assert result['status'] == 'error'
-        assert result['status_code'] == 404
+        assert result['status_code'] == HTTPStatus.NOT_FOUND
         assert result['server_id'] == '99999999-9999-9999-9999-999999999999'
 
     @pytest.mark.asyncio

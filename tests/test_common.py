@@ -1,5 +1,7 @@
 """Unit tests for utils.common WorkSession gate and denial-guidance helpers."""
 
+from http import HTTPStatus
+
 import pytest
 
 from utils.common import (
@@ -96,7 +98,7 @@ class TestUnwrapHttpResultGate:
     def _envelope(self, code):
         return {
             'error': 'HTTP Error',
-            'status_code': 400,
+            'status_code': HTTPStatus.BAD_REQUEST,
             'message': 'HTTP 400',
             'response': f'{{"code": "{code}"}}',
         }
@@ -110,7 +112,7 @@ class TestUnwrapHttpResultGate:
         assert out['code'] == 'work_session_required'
         assert out['next_action']
         assert out['region'] == 'ap1'
-        assert out['status_code'] == 400
+        assert out['status_code'] == HTTPStatus.BAD_REQUEST
 
     def test_not_active_becomes_pending(self):
         out = unwrap_http_result(
@@ -132,7 +134,7 @@ class TestUnwrapHttpResultGate:
     def test_non_json_body_is_generic_error(self):
         env = {
             'error': 'HTTP Error',
-            'status_code': 400,
+            'status_code': HTTPStatus.BAD_REQUEST,
             'response': '<html>500</html>',
         }
         out = unwrap_http_result(env, default_message='failed')
@@ -140,7 +142,11 @@ class TestUnwrapHttpResultGate:
         assert 'error_code' not in out
 
     def test_no_response_key_is_generic_error(self):
-        env = {'error': 'HTTP Error', 'status_code': 500, 'message': 'boom'}
+        env = {
+            'error': 'HTTP Error',
+            'status_code': HTTPStatus.INTERNAL_SERVER_ERROR,
+            'message': 'boom',
+        }
         out = unwrap_http_result(env, default_message='failed')
         assert out['status'] == 'error'
         assert 'error_code' not in out

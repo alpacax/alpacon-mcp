@@ -1,5 +1,6 @@
 """Unit tests for work_session_tools module."""
 
+from http import HTTPStatus
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -219,7 +220,7 @@ class TestWorkSessionGet:
         mock_http_client.get.return_value = {
             'error': 'Not found',
             'message': 'Work Session not found',
-            'status_code': 404,
+            'status_code': HTTPStatus.NOT_FOUND,
         }
 
         result = await work_session_get(
@@ -295,7 +296,7 @@ class TestWorkSessionList:
         mock_http_client.get.return_value = {
             'error': 'Forbidden',
             'message': 'Permission denied',
-            'status_code': 403,
+            'status_code': HTTPStatus.FORBIDDEN,
         }
 
         result = await work_session_list(workspace='testworkspace', region='ap1')
@@ -447,7 +448,7 @@ class TestWorkSessionUpdate:
         mock_http_client.patch.return_value = {
             'error': 'Validation error',
             'message': 'Work session is not modifiable',
-            'status_code': 400,
+            'status_code': HTTPStatus.BAD_REQUEST,
         }
 
         result = await work_session_update(
@@ -497,7 +498,7 @@ class TestWorkSessionExtend:
         mock_http_client.post.return_value = {
             'error': 'Validation error',
             'message': 'New expiry must be later than current expiry',
-            'status_code': 400,
+            'status_code': HTTPStatus.BAD_REQUEST,
         }
 
         result = await work_session_extend(
@@ -566,7 +567,7 @@ class TestWorkSessionTimeline:
         mock_http_client.get.return_value = {
             'error': 'Not found',
             'message': 'Work Session not found',
-            'status_code': 404,
+            'status_code': HTTPStatus.NOT_FOUND,
         }
 
         result = await work_session_timeline(
@@ -633,7 +634,7 @@ class TestWorkSessionAnalyze:
         mock_http_client.post.return_value = {
             'error': 'Validation error',
             'message': 'Work session is not in a terminal state',
-            'status_code': 400,
+            'status_code': HTTPStatus.BAD_REQUEST,
         }
 
         result = await work_session_analyze(

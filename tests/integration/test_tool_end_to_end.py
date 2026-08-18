@@ -6,6 +6,7 @@ payloads produce correct success/error responses.
 """
 
 import json
+from http import HTTPStatus
 
 import httpx
 import pytest
@@ -40,7 +41,7 @@ class TestServerToolsEndToEnd:
         api_data = sample_api_responses()
 
         def handler(request: httpx.Request) -> httpx.Response:
-            return httpx.Response(200, json=api_data['servers_list'])
+            return httpx.Response(HTTPStatus.OK, json=api_data['servers_list'])
 
         patched_http_client.set_handler(handler)
 
@@ -61,7 +62,7 @@ class TestServerToolsEndToEnd:
         def handler(request: httpx.Request) -> httpx.Response:
             # The server must be addressed by URL path, not a list filter
             assert request.url.path.endswith(f'/api/servers/servers/{SERVER_UUID}/')
-            return httpx.Response(200, json=api_data['server_detail'])
+            return httpx.Response(HTTPStatus.OK, json=api_data['server_detail'])
 
         patched_http_client.set_handler(handler)
 
@@ -80,7 +81,9 @@ class TestServerToolsEndToEnd:
         api_data = sample_api_responses()
 
         def handler(request: httpx.Request) -> httpx.Response:
-            return httpx.Response(404, json=api_data['server_not_found'])
+            return httpx.Response(
+                HTTPStatus.NOT_FOUND, json=api_data['server_not_found']
+            )
 
         patched_http_client.set_handler(handler)
 
@@ -91,7 +94,7 @@ class TestServerToolsEndToEnd:
         )
 
         assert result['status'] == 'error'
-        assert result['status_code'] == 404
+        assert result['status_code'] == HTTPStatus.NOT_FOUND
         assert result['server_id'] == '99999999-9999-9999-9999-999999999999'
 
     async def test_create_server_note_post_body(
@@ -104,7 +107,9 @@ class TestServerToolsEndToEnd:
         def handler(request: httpx.Request) -> httpx.Response:
             body = json.loads(request.content)
             captured_body.update(body)
-            return httpx.Response(201, json=api_data['server_note_created'])
+            return httpx.Response(
+                HTTPStatus.CREATED, json=api_data['server_note_created']
+            )
 
         patched_http_client.set_handler(handler)
 
@@ -136,7 +141,7 @@ class TestIAMToolsEndToEnd:
 
         def handler(request: httpx.Request) -> httpx.Response:
             assert '/api/iam/users/' in str(request.url)
-            return httpx.Response(200, json=api_data['iam_users_list'])
+            return httpx.Response(HTTPStatus.OK, json=api_data['iam_users_list'])
 
         patched_http_client.set_handler(handler)
 
@@ -156,7 +161,7 @@ class TestIAMToolsEndToEnd:
         def handler(request: httpx.Request) -> httpx.Response:
             body = json.loads(request.content)
             captured_body.update(body)
-            return httpx.Response(201, json=api_data['iam_user_created'])
+            return httpx.Response(HTTPStatus.CREATED, json=api_data['iam_user_created'])
 
         patched_http_client.set_handler(handler)
 
@@ -184,7 +189,7 @@ class TestIAMToolsEndToEnd:
             captured_method.append(request.method)
             body = json.loads(request.content)
             captured_body.update(body)
-            return httpx.Response(200, json=api_data['iam_user_updated'])
+            return httpx.Response(HTTPStatus.OK, json=api_data['iam_user_updated'])
 
         patched_http_client.set_handler(handler)
 
@@ -209,7 +214,7 @@ class TestIAMToolsEndToEnd:
         def handler(request: httpx.Request) -> httpx.Response:
             captured_method.append(request.method)
             assert f'/api/iam/users/{IAM_USER_UUID}/' in str(request.url)
-            return httpx.Response(204, text='')
+            return httpx.Response(HTTPStatus.NO_CONTENT, text='')
 
         patched_http_client.set_handler(handler)
 
@@ -233,7 +238,7 @@ class TestEventsEndToEnd:
 
         def handler(request: httpx.Request) -> httpx.Response:
             captured_params.update(dict(request.url.params))
-            return httpx.Response(200, json=api_data['events_list'])
+            return httpx.Response(HTTPStatus.OK, json=api_data['events_list'])
 
         patched_http_client.set_handler(handler)
 
@@ -256,7 +261,7 @@ class TestMetricsEndToEnd:
 
         def handler(request: httpx.Request) -> httpx.Response:
             assert '/api/metrics/realtime/cpu/' in str(request.url)
-            return httpx.Response(200, json=api_data['cpu_metrics'])
+            return httpx.Response(HTTPStatus.OK, json=api_data['cpu_metrics'])
 
         patched_http_client.set_handler(handler)
 

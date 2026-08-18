@@ -5,6 +5,7 @@ Uses MockTransport at the httpx transport layer so the real HTTP client code run
 """
 
 import logging
+from http import HTTPStatus
 from unittest.mock import patch
 
 import httpx
@@ -26,7 +27,7 @@ class TestDecoratorChainSuccess:
         servers_payload = api_data['servers_list']
 
         def handler(request: httpx.Request) -> httpx.Response:
-            return httpx.Response(200, json=servers_payload)
+            return httpx.Response(HTTPStatus.OK, json=servers_payload)
 
         patched_http_client.set_handler(handler)
 
@@ -44,7 +45,7 @@ class TestDecoratorChainSuccess:
 
         def handler(request: httpx.Request) -> httpx.Response:
             captured_headers.update(dict(request.headers))
-            return httpx.Response(200, json={'count': 0, 'results': []})
+            return httpx.Response(HTTPStatus.OK, json={'count': 0, 'results': []})
 
         patched_http_client.set_handler(handler)
 
@@ -64,7 +65,7 @@ class TestTokenValidation:
         def handler(request: httpx.Request) -> httpx.Response:
             nonlocal handler_called
             handler_called = True
-            return httpx.Response(200, json={})
+            return httpx.Response(HTTPStatus.OK, json={})
 
         patched_http_client.set_handler(handler)
 
@@ -135,7 +136,7 @@ class TestLoggingDecorator:
         """Logging decorator logs function entry and successful completion."""
 
         def handler(request: httpx.Request) -> httpx.Response:
-            return httpx.Response(200, json={'count': 0, 'results': []})
+            return httpx.Response(HTTPStatus.OK, json={'count': 0, 'results': []})
 
         patched_http_client.set_handler(handler)
 

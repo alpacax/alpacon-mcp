@@ -6,10 +6,6 @@ import threading
 import uuid
 from typing import Any
 
-from utils.logger import get_logger
-
-logger = get_logger('error_handler')
-
 # Module-level thread-safe dict for signaling upstream auth errors between
 # the ASGI middleware and MCP tool handlers. Uses a module-level dict
 # instead of contextvars because MCP streamable-http transport runs tool
@@ -179,92 +175,6 @@ def validate_file_path(file_path: str, allow_relative: bool = False) -> bool:
         return False
 
     return True
-
-
-def format_user_friendly_error(
-    error_code: str, context: dict[str, Any] | None = None
-) -> dict[str, Any]:
-    """Format technical errors into user-friendly messages.
-
-    Args:
-        error_code: HTTP status code or error type
-        context: Additional context for error formatting
-
-    Returns:
-        Formatted error response with user-friendly message and suggestions
-    """
-    context = context or {}
-
-    error_messages = {
-        '400': {
-            'message': 'Bad request.',
-            'suggestion': 'Please check your input and try again.',
-        },
-        '401': {
-            'message': 'Authentication failed.',
-            'suggestion': 'Please check your API token or set a new token.',
-        },
-        '403': {
-            'message': 'Access denied.',
-            'suggestion': 'Please check if you have permission to perform this action.',
-        },
-        '404': {
-            'message': 'Resource not found.',
-            'suggestion': 'Please check the server ID or resource name.',
-        },
-        '429': {
-            'message': 'Too many requests.',
-            'suggestion': 'Please wait a moment and try again.',
-        },
-        '500': {
-            'message': 'Server encountered a temporary problem.',
-            'suggestion': 'Please try again later. Contact support if the problem persists.',
-        },
-        '502': {
-            'message': 'Gateway error occurred.',
-            'suggestion': 'Service is temporarily unavailable. Please try again later.',
-        },
-        '503': {
-            'message': 'Service unavailable.',
-            'suggestion': 'Server is under maintenance or overloaded. Please try again later.',
-        },
-        'timeout': {
-            'message': 'Request timed out.',
-            'suggestion': 'Please check your network connection and try again.',
-        },
-        'network': {
-            'message': 'Network connection failed.',
-            'suggestion': 'Please check your internet connection and try again.',
-        },
-        'validation': {
-            'message': 'Invalid input.',
-            'suggestion': 'Please check the input format and try again.',
-        },
-    }
-
-    error_info = error_messages.get(
-        error_code,
-        {'message': 'Unknown error occurred.', 'suggestion': 'Please try again later.'},
-    )
-
-    # Add specific context if available
-    if error_code == '404' and context.get('server_id'):
-        error_info['message'] = f"Server '{context['server_id']}' not found."
-    elif error_code == '404' and context.get('workspace'):
-        error_info['message'] = f"Workspace '{context['workspace']}' not found."
-
-    result: dict[str, Any] = {
-        'status': 'error',
-        'error_code': error_code,
-        'message': error_info['message'],
-        'suggestion': error_info['suggestion'],
-    }
-
-    if context:
-        result['context'] = context
-
-    logger.debug(f'Formatted user-friendly error: {result}')
-    return result
 
 
 def format_validation_error(

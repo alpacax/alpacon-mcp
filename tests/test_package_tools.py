@@ -1,5 +1,6 @@
 """Unit tests for package management tools module."""
 
+from http import HTTPStatus
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -174,7 +175,7 @@ class TestSystemPackages:
         )
 
         assert result['status'] == 'error'
-        assert result['status_code'] == 404
+        assert result['status_code'] == HTTPStatus.NOT_FOUND
 
     @pytest.mark.asyncio
     async def test_install_system_package_error(
@@ -191,7 +192,7 @@ class TestSystemPackages:
         )
 
         assert result['status'] == 'error'
-        assert result['status_code'] == 404
+        assert result['status_code'] == HTTPStatus.NOT_FOUND
 
 
 class TestPythonPackages:
@@ -307,4 +308,4 @@ class TestPythonPackages:
         )
 
         assert result['status'] == 'error'
-        assert result['status_code'] == 404
+        assert result['status_code'] == HTTPStatus.NOT_FOUND

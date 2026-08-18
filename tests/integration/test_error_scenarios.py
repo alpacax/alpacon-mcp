@@ -4,6 +4,7 @@ Tests error handling through the full request path: timeout after retries,
 malformed JSON, empty body, connection errors, and various HTTP status codes.
 """
 
+from http import HTTPStatus
 from unittest.mock import patch
 
 import httpx
@@ -50,7 +51,7 @@ class TestMalformedResponses:
             # Return a response with a 200 status but content that will fail json()
             # httpx.Response with text content that is not valid JSON
             return httpx.Response(
-                200,
+                HTTPStatus.OK,
                 content=b'this is not valid json {{{',
                 headers={'content-type': 'text/plain'},
             )
@@ -72,7 +73,7 @@ class TestMalformedResponses:
         """Response with empty body returns status-only success dict."""
 
         def handler(request: httpx.Request) -> httpx.Response:
-            return httpx.Response(204, content=b'')
+            return httpx.Response(HTTPStatus.NO_CONTENT, content=b'')
 
         patched_http_client.set_handler(handler)
 
@@ -83,7 +84,7 @@ class TestMalformedResponses:
         )
 
         assert result['status'] == 'success'
-        assert result['status_code'] == 204
+        assert result['status_code'] == HTTPStatus.NO_CONTENT
 
 
 class TestConnectionErrors:
@@ -124,7 +125,8 @@ class TestHTTPStatusErrorHandling:
             nonlocal call_count
             call_count += 1
             return httpx.Response(
-                400, json={'detail': 'Invalid input', 'field': 'name'}
+                HTTPStatus.BAD_REQUEST,
+                json={'detail': 'Invalid input', 'field': 'name'},
             )
 
         patched_http_client.set_handler(handler)
@@ -138,7 +140,7 @@ class TestHTTPStatusErrorHandling:
 
         assert call_count == 1
         assert result['error'] == 'HTTP Error'
-        assert result['status_code'] == 400
+        assert result['status_code'] == HTTPStatus.BAD_REQUEST
 
     async def test_403_returns_error_not_retried(self, patched_http_client, no_sleep):
         """403 Forbidden returns error without retry."""
@@ -147,7 +149,9 @@ class TestHTTPStatusErrorHandling:
         def handler(request: httpx.Request) -> httpx.Response:
             nonlocal call_count
             call_count += 1
-            return httpx.Response(403, json={'detail': 'Permission denied'})
+            return httpx.Response(
+                HTTPStatus.FORBIDDEN, json={'detail': 'Permission denied'}
+            )
 
         patched_http_client.set_handler(handler)
 
@@ -159,7 +163,7 @@ class TestHTTPStatusErrorHandling:
 
         assert call_count == 1
         assert result['error'] == 'HTTP Error'
-        assert result['status_code'] == 403
+        assert result['status_code'] == HTTPStatus.FORBIDDEN
 
     async def test_500_retry_with_eventual_success(self, patched_http_client, no_sleep):
         """500 errors are retried and succeed if server recovers."""
@@ -169,8 +173,10 @@ class TestHTTPStatusErrorHandling:
             nonlocal call_count
             call_count += 1
             if call_count <= 2:
-                return httpx.Response(500, json={'error': 'Internal Error'})
-            return httpx.Response(200, json={'recovered': True})
+                return httpx.Response(
+                    HTTPStatus.INTERNAL_SERVER_ERROR, json={'error': 'Internal Error'}
+                )
+            return httpx.Response(HTTPStatus.OK, json={'recovered': True})
 
         patched_http_client.set_handler(handler)
 
@@ -187,7 +193,7 @@ class TestHTTPStatusErrorHandling:
         """Tool function correctly interprets http_client error dict."""
 
         def handler(request: httpx.Request) -> httpx.Response:
-            return httpx.Response(404, json={'detail': 'Not found'})
+            return httpx.Response(HTTPStatus.NOT_FOUND, json={'detail': 'Not found'})
 
         patched_http_client.set_handler(handler)
 

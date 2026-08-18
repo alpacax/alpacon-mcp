@@ -1,19 +1,18 @@
 """Recovery hints for error responses to help LLM self-recover."""
 
+from http import HTTPStatus
 from typing import Any
 
 # Hint registry: (status_code, domain) -> {recovery_hints, related_tools}
 _HINT_REGISTRY: dict[tuple[int, str], dict[str, list[str]]] = {
-    # 401 - Authentication
-    (401, 'general'): {
+    (HTTPStatus.UNAUTHORIZED, 'general'): {
         'recovery_hints': [
             'API token may be expired or invalid.',
             'Re-run setup to refresh your token: uvx alpacon-mcp setup',
         ],
         'related_tools': ['list_workspaces'],
     },
-    # 403 - Command ACL
-    (403, 'command'): {
+    (HTTPStatus.FORBIDDEN, 'command'): {
         'recovery_hints': [
             "Check if the API token has 'command_execute' ACL permission.",
             'Use list_command_acls to view current permissions.',
@@ -21,71 +20,62 @@ _HINT_REGISTRY: dict[tuple[int, str], dict[str, list[str]]] = {
         ],
         'related_tools': ['list_command_acls', 'create_command_acl'],
     },
-    # 403 - Server access
-    (403, 'server'): {
+    (HTTPStatus.FORBIDDEN, 'server'): {
         'recovery_hints': [
             'Check if you have access to this server.',
             'Use list_server_acls to view current server permissions.',
         ],
         'related_tools': ['list_server_acls', 'create_server_acl'],
     },
-    # 403 - File access
-    (403, 'file'): {
+    (HTTPStatus.FORBIDDEN, 'file'): {
         'recovery_hints': [
             'Check if you have file access permission for this server.',
             'Use list_file_acls to view current file permissions.',
         ],
         'related_tools': ['list_file_acls', 'create_file_acl'],
     },
-    # 403 - General
-    (403, 'general'): {
+    (HTTPStatus.FORBIDDEN, 'general'): {
         'recovery_hints': [
             'Check if your token has the required permissions for this action.',
             'Contact your workspace administrator for access.',
         ],
         'related_tools': [],
     },
-    # 404 - Server
-    (404, 'server'): {
+    (HTTPStatus.NOT_FOUND, 'server'): {
         'recovery_hints': [
             'The server ID may be incorrect. Server IDs must be UUIDs.',
             'Use list_servers to find the correct server UUID.',
         ],
         'related_tools': ['list_servers'],
     },
-    # 404 - User
-    (404, 'user'): {
+    (HTTPStatus.NOT_FOUND, 'user'): {
         'recovery_hints': [
             'The user may not exist in this workspace.',
             'Use list_iam_users to check available users.',
         ],
         'related_tools': ['list_iam_users'],
     },
-    # 404 - Alert
-    (404, 'alert'): {
+    (HTTPStatus.NOT_FOUND, 'alert'): {
         'recovery_hints': [
             'The alert or alert rule ID may be incorrect.',
             'Use list_alerts or get_alert_rules to find valid IDs.',
         ],
         'related_tools': ['list_alerts', 'get_alert_rules'],
     },
-    # 404 - General
-    (404, 'general'): {
+    (HTTPStatus.NOT_FOUND, 'general'): {
         'recovery_hints': [
             'The resource was not found. Check the ID or name.',
             'Use the corresponding list tool to find valid IDs.',
         ],
         'related_tools': [],
     },
-    # 429 - Rate limit
-    (429, 'general'): {
+    (HTTPStatus.TOO_MANY_REQUESTS, 'general'): {
         'recovery_hints': [
             'Too many requests. Wait a few seconds before retrying.',
         ],
         'related_tools': [],
     },
-    # 500 - Server error
-    (500, 'general'): {
+    (HTTPStatus.INTERNAL_SERVER_ERROR, 'general'): {
         'recovery_hints': [
             'The server encountered an internal error. Try again in a moment.',
             'If the issue persists, check server health.',

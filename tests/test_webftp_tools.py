@@ -6,6 +6,7 @@ file downloads, and file transfer history.
 """
 
 import base64
+from http import HTTPStatus
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -234,7 +235,7 @@ class TestWebFtpSessionsList:
         mock_http_client.get.return_value = {
             'error': 'Forbidden',
             'message': 'Permission denied',
-            'status_code': 403,
+            'status_code': HTTPStatus.FORBIDDEN,
         }
 
         result = await webftp_sessions_list(workspace='testworkspace', region='ap1')
@@ -271,7 +272,7 @@ class TestWebFtpUploadFile:
 
                 # Mock S3 upload response - use MagicMock not AsyncMock for response
                 mock_s3_response = MagicMock()
-                mock_s3_response.status_code = 200
+                mock_s3_response.status_code = HTTPStatus.OK
                 mock_s3_response.text = 'Success'
                 mock_client.put = AsyncMock(return_value=mock_s3_response)
 
@@ -371,7 +372,7 @@ class TestWebFtpUploadFile:
 
             # Mock S3 error response
             mock_s3_response = MagicMock()
-            mock_s3_response.status_code = 500
+            mock_s3_response.status_code = HTTPStatus.INTERNAL_SERVER_ERROR
             mock_s3_response.text = 'Internal Server Error'
             mock_httpx.put.return_value = mock_s3_response
 
@@ -774,7 +775,7 @@ class TestWebFtpCheckStatus:
         mock_http_client.get.return_value = {
             'error': 'Not found',
             'message': 'File not found',
-            'status_code': 404,
+            'status_code': HTTPStatus.NOT_FOUND,
         }
 
         result = await webftp_check_status(
@@ -821,7 +822,7 @@ class TestWebFtpBulkUpload:
         with is_file, os_access, os_stat, patch('httpx.AsyncClient') as httpx_cls:
             client = AsyncMock()
             httpx_cls.return_value.__aenter__.return_value = client
-            ok = MagicMock(status_code=200)
+            ok = MagicMock(status_code=HTTPStatus.OK)
             client.put = AsyncMock(return_value=ok)
 
             result = await webftp_bulk_upload(
@@ -850,9 +851,9 @@ class TestWebFtpBulkUpload:
             httpx_cls.return_value.__aenter__.return_value = client
             client.put = AsyncMock(
                 side_effect=[
-                    MagicMock(status_code=200),
-                    MagicMock(status_code=500),
-                    MagicMock(status_code=200),
+                    MagicMock(status_code=HTTPStatus.OK),
+                    MagicMock(status_code=HTTPStatus.INTERNAL_SERVER_ERROR),
+                    MagicMock(status_code=HTTPStatus.OK),
                 ]
             )
 
@@ -1194,7 +1195,7 @@ class TestUploadContent:
         mock_http_client.get.return_value = {}
 
         put_resp = AsyncMock()
-        put_resp.status_code = 200
+        put_resp.status_code = HTTPStatus.OK
         mock_httpx.put.return_value = put_resp
 
         result = await webftp_upload_content(
@@ -1550,7 +1551,7 @@ class TestWebFtpSessionCreateGateTranslation:
     ):
         mock_http_client.post.return_value = {
             'error': 'HTTP Error',
-            'status_code': 400,
+            'status_code': HTTPStatus.BAD_REQUEST,
             'response': '{"code":"work_session_required"}',
         }
 

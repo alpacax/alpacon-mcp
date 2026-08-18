@@ -153,7 +153,7 @@ def _forge_state_under_valid_signature():
     return f'{forged}.{signature}'
 
 
-def _mock_auth0_response(status_code=200, json_data=None):
+def _mock_auth0_response(status_code=HTTPStatus.OK, json_data=None):
     """Create a mock httpx AsyncClient that returns the given response."""
     mock_client = AsyncMock()
     mock_resp = MagicMock()
@@ -537,7 +537,7 @@ class TestOAuthMetadata:
 
     def test_metadata_returns_correct_endpoints(self, oauth_app):
         response = oauth_app.get('/.well-known/oauth-authorization-server')
-        assert response.status_code == 200
+        assert response.status_code == HTTPStatus.OK
         data = response.json()
 
         assert data['issuer'] == f'{TEST_RESOURCE_URL}/'
@@ -551,7 +551,7 @@ class TestOAuthMetadata:
     def test_metadata_advertises_none_auth_method(self, oauth_app):
         """Metadata should advertise 'none' since clients don't send client_secret."""
         response = oauth_app.get('/.well-known/oauth-authorization-server')
-        assert response.status_code == 200
+        assert response.status_code == HTTPStatus.OK
         data = response.json()
         assert data['token_endpoint_auth_methods_supported'] == ['none']
 
@@ -573,7 +573,7 @@ class TestOAuthMetadata:
         """Without the header a misconfigured deployment reads as a CORS failure."""
         with patch.dict('os.environ', {'AUTH0_DOMAIN': ''}):
             response = oauth_app.get('/.well-known/oauth-authorization-server')
-        assert response.status_code == 500
+        assert response.status_code == HTTPStatus.INTERNAL_SERVER_ERROR
         assert response.headers['access-control-allow-origin'] == '*'
 
 
@@ -590,7 +590,7 @@ class TestOAuthAuthorize:
             },
             follow_redirects=False,
         )
-        assert response.status_code == 302
+        assert response.status_code == HTTPStatus.FOUND
         location = response.headers['location']
         assert location.startswith(f'https://{TEST_AUTH0_DOMAIN}/authorize')
 
@@ -664,7 +664,7 @@ class TestOAuthAuthorize:
                 'redirect_uri': 'https://evil.com/callback',
             },
         )
-        assert response.status_code == 400
+        assert response.status_code == HTTPStatus.BAD_REQUEST
         data = response.json()
         assert data['error'] == 'invalid_request'
         assert 'allowlisted' in data['error_description']
@@ -678,7 +678,7 @@ class TestOAuthAuthorize:
             },
             follow_redirects=False,
         )
-        assert response.status_code == 400
+        assert response.status_code == HTTPStatus.BAD_REQUEST
 
     def test_authorize_reports_malformed_state_secret(self, oauth_app):
         """Signing is the first place a bad key raises; the message must survive."""
@@ -692,7 +692,7 @@ class TestOAuthAuthorize:
                 },
                 follow_redirects=False,
             )
-        assert response.status_code == 500
+        assert response.status_code == HTTPStatus.INTERNAL_SERVER_ERROR
         assert 'must be hex' in response.json()['error']
 
     def test_authorize_allows_claude_ai_redirect_uri(self, oauth_app):
@@ -706,7 +706,7 @@ class TestOAuthAuthorize:
             },
             follow_redirects=False,
         )
-        assert response.status_code == 302
+        assert response.status_code == HTTPStatus.FOUND
 
     def test_authorize_allows_chatgpt_redirect_uri(self, oauth_app):
         """ChatGPT redirect_uri is one of the allowlisted callback endpoints."""
@@ -719,7 +719,7 @@ class TestOAuthAuthorize:
             },
             follow_redirects=False,
         )
-        assert response.status_code == 302
+        assert response.status_code == HTTPStatus.FOUND
 
     def test_authorize_allows_custom_redirect_uris(self, oauth_app):
         """Overriding both env vars admits a custom endpoint and drops the defaults."""
@@ -739,7 +739,7 @@ class TestOAuthAuthorize:
                 },
                 follow_redirects=False,
             )
-            assert response.status_code == 302
+            assert response.status_code == HTTPStatus.FOUND
 
             response = oauth_app.get(
                 '/oauth/authorize',
@@ -748,7 +748,7 @@ class TestOAuthAuthorize:
                     'redirect_uri': LISTED_REDIRECT_URI,
                 },
             )
-            assert response.status_code == 400
+            assert response.status_code == HTTPStatus.BAD_REQUEST
 
     def test_authorize_rejects_domain_override_without_uri_override(self, oauth_app):
         """ALLOWED_REDIRECT_DOMAINS alone no longer admits a host.
@@ -767,7 +767,7 @@ class TestOAuthAuthorize:
                 },
                 follow_redirects=False,
             )
-        assert response.status_code == 400
+        assert response.status_code == HTTPStatus.BAD_REQUEST
 
     def test_authorize_rejects_http_trusted_domain(self, oauth_app):
         """Trusted domains must use https to prevent code leakage over plaintext."""
@@ -778,7 +778,7 @@ class TestOAuthAuthorize:
                 'redirect_uri': 'http://claude.ai/api/mcp/auth_callback',
             },
         )
-        assert response.status_code == 400
+        assert response.status_code == HTTPStatus.BAD_REQUEST
 
     def test_authorize_allows_127_0_0_1_redirect_uri(self, oauth_app):
         response = oauth_app.get(
@@ -790,7 +790,7 @@ class TestOAuthAuthorize:
             },
             follow_redirects=False,
         )
-        assert response.status_code == 302
+        assert response.status_code == HTTPStatus.FOUND
 
     def test_authorize_adds_offline_access_when_missing(self, oauth_app):
         """offline_access scope is added automatically for refresh token support."""
@@ -804,7 +804,7 @@ class TestOAuthAuthorize:
             },
             follow_redirects=False,
         )
-        assert response.status_code == 302
+        assert response.status_code == HTTPStatus.FOUND
         location = response.headers['location']
         assert 'offline_access' in location
 
@@ -820,7 +820,7 @@ class TestOAuthAuthorize:
             },
             follow_redirects=False,
         )
-        assert response.status_code == 302
+        assert response.status_code == HTTPStatus.FOUND
         location = response.headers['location']
         # Should appear exactly once
         assert location.count('offline_access') == 1
@@ -836,7 +836,7 @@ class TestOAuthAuthorize:
             },
             follow_redirects=False,
         )
-        assert response.status_code == 302
+        assert response.status_code == HTTPStatus.FOUND
         location = response.headers['location']
         assert 'offline_access' in location
 
@@ -852,7 +852,7 @@ class TestOAuthAuthorize:
             },
             follow_redirects=False,
         )
-        assert response.status_code == 302
+        assert response.status_code == HTTPStatus.FOUND
         location = response.headers['location']
         parsed = urlparse(location)
         params = parse_qs(parsed.query)
@@ -879,7 +879,7 @@ class TestOAuthAuthorize:
             },
             follow_redirects=False,
         )
-        assert response.status_code == 302
+        assert response.status_code == HTTPStatus.FOUND
         location = response.headers['location']
         parsed = urlparse(location)
         params = parse_qs(parsed.query)
@@ -1281,7 +1281,7 @@ class TestOAuthToken:
                 '/oauth/token',
                 data={'grant_type': 'authorization_code', 'code': 'test-code'},
             )
-        assert response.status_code == 200
+        assert response.status_code == HTTPStatus.OK
 
     def test_token_allows_refresh_token_grant(self, oauth_app):
         mock_client = _mock_auth0_response()
@@ -1290,14 +1290,14 @@ class TestOAuthToken:
                 '/oauth/token',
                 data={'grant_type': 'refresh_token', 'refresh_token': 'test-refresh'},
             )
-        assert response.status_code == 200
+        assert response.status_code == HTTPStatus.OK
 
     def test_token_rejects_client_credentials_grant(self, oauth_app):
         response = oauth_app.post(
             '/oauth/token',
             data={'grant_type': 'client_credentials'},
         )
-        assert response.status_code == 400
+        assert response.status_code == HTTPStatus.BAD_REQUEST
         assert response.json()['error'] == 'unsupported_grant_type'
 
     def test_token_rejects_password_grant(self, oauth_app):
@@ -1305,7 +1305,7 @@ class TestOAuthToken:
             '/oauth/token',
             data={'grant_type': 'password', 'username': 'user', 'password': 'pass'},
         )
-        assert response.status_code == 400
+        assert response.status_code == HTTPStatus.BAD_REQUEST
         assert response.json()['error'] == 'unsupported_grant_type'
 
     def test_token_rejects_mismatched_client_id(self, oauth_app):
@@ -1317,7 +1317,7 @@ class TestOAuthToken:
                 'client_id': 'wrong-client-id',
             },
         )
-        assert response.status_code == 400
+        assert response.status_code == HTTPStatus.BAD_REQUEST
         assert response.json()['error'] == 'invalid_client'
 
     def test_token_injects_configured_client_id(self, oauth_app):
@@ -1327,7 +1327,7 @@ class TestOAuthToken:
                 '/oauth/token',
                 data={'grant_type': 'authorization_code', 'code': 'test-code'},
             )
-        assert response.status_code == 200
+        assert response.status_code == HTTPStatus.OK
         call_kwargs = mock_client.post.call_args
         assert call_kwargs.kwargs['data']['client_id'] == TEST_CLIENT_ID
 
@@ -1339,7 +1339,7 @@ class TestOAuthToken:
                 '/oauth/token',
                 data={'grant_type': 'authorization_code', 'code': 'test-code'},
             )
-        assert response.status_code == 200
+        assert response.status_code == HTTPStatus.OK
         call_kwargs = mock_client.post.call_args
         assert call_kwargs.kwargs['data']['client_secret'] == TEST_CLIENT_SECRET
 
@@ -1364,7 +1364,7 @@ class TestOAuthToken:
                     '/oauth/token',
                     data={'grant_type': 'authorization_code', 'code': 'test-code'},
                 )
-        assert response.status_code == 500
+        assert response.status_code == HTTPStatus.INTERNAL_SERVER_ERROR
         data = response.json()
         assert 'AUTH0_CLIENT_SECRET' in data.get('error', '')
 
@@ -1380,7 +1380,7 @@ class TestOAuthToken:
                     'redirect_uri': 'http://localhost:52048/callback',
                 },
             )
-        assert response.status_code == 200
+        assert response.status_code == HTTPStatus.OK
         call_kwargs = mock_client.post.call_args
         assert call_kwargs.kwargs['data']['redirect_uri'] == (
             f'{TEST_RESOURCE_URL}/oauth/callback'
@@ -1394,7 +1394,7 @@ class TestOAuthToken:
                 '/oauth/token',
                 data={'grant_type': 'authorization_code', 'code': 'test-code'},
             )
-        assert response.status_code == 200
+        assert response.status_code == HTTPStatus.OK
         call_kwargs = mock_client.post.call_args
         assert call_kwargs.kwargs['data']['redirect_uri'] == (
             f'{TEST_RESOURCE_URL}/oauth/callback'
@@ -1406,7 +1406,7 @@ class TestOAuthToken:
             content=b'not valid json',
             headers={'content-type': 'application/json'},
         )
-        assert response.status_code == 400
+        assert response.status_code == HTTPStatus.BAD_REQUEST
         assert response.json()['error'] == 'invalid_request'
 
     def test_token_rejects_non_object_json(self, oauth_app):
@@ -1415,7 +1415,7 @@ class TestOAuthToken:
             content=json.dumps(['not', 'an', 'object']).encode(),
             headers={'content-type': 'application/json'},
         )
-        assert response.status_code == 400
+        assert response.status_code == HTTPStatus.BAD_REQUEST
         assert response.json()['error'] == 'invalid_request'
 
     def test_token_rejects_non_utf8_body(self, oauth_app):
@@ -1424,7 +1424,7 @@ class TestOAuthToken:
             content=b'\xff\xfe',
             headers={'content-type': 'application/x-www-form-urlencoded'},
         )
-        assert response.status_code == 400
+        assert response.status_code == HTTPStatus.BAD_REQUEST
         data = response.json()
         assert data['error'] == 'invalid_request'
         assert 'UTF-8' in data['error_description']
@@ -1444,7 +1444,7 @@ class TestOAuthRegister:
             ).encode(),
             headers={'content-type': 'application/json'},
         )
-        assert response.status_code == 201
+        assert response.status_code == HTTPStatus.CREATED
         data = response.json()
         assert data['client_id'] == TEST_CLIENT_ID
         assert data['token_endpoint_auth_method'] == 'none'
@@ -1457,7 +1457,7 @@ class TestOAuthRegister:
             content=json.dumps({'redirect_uris': uris}).encode(),
             headers={'content-type': 'application/json'},
         )
-        assert response.status_code == 201
+        assert response.status_code == HTTPStatus.CREATED
         assert response.json()['redirect_uris'] == uris
 
     def test_register_echoes_client_name(self, oauth_app):
@@ -1466,7 +1466,7 @@ class TestOAuthRegister:
             content=json.dumps({'client_name': 'my-app'}).encode(),
             headers={'content-type': 'application/json'},
         )
-        assert response.status_code == 201
+        assert response.status_code == HTTPStatus.CREATED
         assert response.json()['client_name'] == 'my-app'
         assert 'redirect_uris' not in response.json()
 
@@ -1476,7 +1476,7 @@ class TestOAuthRegister:
             content=json.dumps({}).encode(),
             headers={'content-type': 'application/json'},
         )
-        assert response.status_code == 201
+        assert response.status_code == HTTPStatus.CREATED
         assert 'no-store' in response.headers.get('cache-control', '')
 
     def test_register_rejects_non_json_content_type(self, oauth_app):
@@ -1485,7 +1485,7 @@ class TestOAuthRegister:
             data='client_name=test',
             headers={'content-type': 'application/x-www-form-urlencoded'},
         )
-        assert response.status_code == 400
+        assert response.status_code == HTTPStatus.BAD_REQUEST
         assert response.json()['error'] == 'invalid_request'
 
     def test_register_rejects_empty_body(self, oauth_app):
@@ -1494,7 +1494,7 @@ class TestOAuthRegister:
             content=b'',
             headers={'content-type': 'application/json'},
         )
-        assert response.status_code == 400
+        assert response.status_code == HTTPStatus.BAD_REQUEST
         assert response.json()['error'] == 'invalid_client_metadata'
 
     def test_register_rejects_invalid_json(self, oauth_app):
@@ -1503,7 +1503,7 @@ class TestOAuthRegister:
             content=b'not valid json',
             headers={'content-type': 'application/json'},
         )
-        assert response.status_code == 400
+        assert response.status_code == HTTPStatus.BAD_REQUEST
         assert response.json()['error'] == 'invalid_client_metadata'
 
     def test_register_rejects_non_object_json(self, oauth_app):
@@ -1512,7 +1512,7 @@ class TestOAuthRegister:
             content=json.dumps(['not', 'an', 'object']).encode(),
             headers={'content-type': 'application/json'},
         )
-        assert response.status_code == 400
+        assert response.status_code == HTTPStatus.BAD_REQUEST
         assert response.json()['error'] == 'invalid_client_metadata'
 
     def test_register_rejects_non_list_redirect_uris(self, oauth_app):
@@ -1521,7 +1521,7 @@ class TestOAuthRegister:
             content=json.dumps({'redirect_uris': LISTED_REDIRECT_URI}).encode(),
             headers={'content-type': 'application/json'},
         )
-        assert response.status_code == 400
+        assert response.status_code == HTTPStatus.BAD_REQUEST
         assert response.json()['error'] == 'invalid_client_metadata'
 
     def test_register_rejects_empty_redirect_uris(self, oauth_app):
@@ -1530,7 +1530,7 @@ class TestOAuthRegister:
             content=json.dumps({'redirect_uris': []}).encode(),
             headers={'content-type': 'application/json'},
         )
-        assert response.status_code == 400
+        assert response.status_code == HTTPStatus.BAD_REQUEST
         assert response.json()['error'] == 'invalid_client_metadata'
 
     def test_register_rejects_non_string_redirect_uri_entry(self, oauth_app):
@@ -1539,7 +1539,7 @@ class TestOAuthRegister:
             content=json.dumps({'redirect_uris': [LISTED_REDIRECT_URI, 42]}).encode(),
             headers={'content-type': 'application/json'},
         )
-        assert response.status_code == 400
+        assert response.status_code == HTTPStatus.BAD_REQUEST
         assert response.json()['error'] == 'invalid_client_metadata'
 
     def test_register_rejects_too_many_redirect_uris(self, oauth_app):
@@ -1550,7 +1550,7 @@ class TestOAuthRegister:
             content=json.dumps({'redirect_uris': uris}).encode(),
             headers={'content-type': 'application/json'},
         )
-        assert response.status_code == 400
+        assert response.status_code == HTTPStatus.BAD_REQUEST
         assert response.json()['error'] == 'invalid_client_metadata'
 
     def test_register_accepts_redirect_uris_at_the_cap(self, oauth_app):
@@ -1560,7 +1560,7 @@ class TestOAuthRegister:
             content=json.dumps({'redirect_uris': uris}).encode(),
             headers={'content-type': 'application/json'},
         )
-        assert response.status_code == 201
+        assert response.status_code == HTTPStatus.CREATED
 
     def test_register_rejects_null_redirect_uris(self, oauth_app):
         """A client that will use the code flow has to name where the code goes."""
@@ -1569,7 +1569,7 @@ class TestOAuthRegister:
             content=json.dumps({'redirect_uris': None}).encode(),
             headers={'content-type': 'application/json'},
         )
-        assert response.status_code == 400
+        assert response.status_code == HTTPStatus.BAD_REQUEST
         assert response.json()['error'] == 'invalid_client_metadata'
 
     def test_register_rejects_unlisted_redirect_uri(self, oauth_app):
@@ -1578,7 +1578,7 @@ class TestOAuthRegister:
             content=json.dumps({'redirect_uris': [EVIL_REDIRECT_URI]}).encode(),
             headers={'content-type': 'application/json'},
         )
-        assert response.status_code == 400
+        assert response.status_code == HTTPStatus.BAD_REQUEST
         assert response.json()['error'] == 'invalid_redirect_uri'
 
     def test_register_rejects_a_list_with_one_unlisted_uri(self, oauth_app):
@@ -1589,7 +1589,7 @@ class TestOAuthRegister:
             ).encode(),
             headers={'content-type': 'application/json'},
         )
-        assert response.status_code == 400
+        assert response.status_code == HTTPStatus.BAD_REQUEST
         assert response.json()['error'] == 'invalid_redirect_uri'
 
     def test_register_accepts_a_listed_redirect_uri(self, oauth_app):
@@ -1599,7 +1599,7 @@ class TestOAuthRegister:
             content=json.dumps({'redirect_uris': uris}).encode(),
             headers={'content-type': 'application/json'},
         )
-        assert response.status_code == 201
+        assert response.status_code == HTTPStatus.CREATED
         assert response.json()['redirect_uris'] == uris
 
     def test_register_accepts_a_domain_match_in_report_only(self, oauth_app):
@@ -1609,7 +1609,7 @@ class TestOAuthRegister:
                 content=json.dumps({'redirect_uris': [UNLISTED_PATH_URI]}).encode(),
                 headers={'content-type': 'application/json'},
             )
-        assert response.status_code == 201
+        assert response.status_code == HTTPStatus.CREATED
 
 
 class TestOAuthFallbackRoutes:
@@ -1623,7 +1623,7 @@ class TestOAuthFallbackRoutes:
                 '/token',
                 data={'grant_type': 'authorization_code', 'code': 'test-code'},
             )
-        assert response.status_code == 200
+        assert response.status_code == HTTPStatus.OK
         data = response.json()
         assert 'access_token' in data
 
@@ -1633,7 +1633,7 @@ class TestOAuthFallbackRoutes:
             '/token',
             data={'grant_type': 'client_credentials'},
         )
-        assert response.status_code == 400
+        assert response.status_code == HTTPStatus.BAD_REQUEST
         assert response.json()['error'] == 'unsupported_grant_type'
 
     def test_authorize_fallback_redirects_to_auth0(self, oauth_app):
@@ -1647,7 +1647,7 @@ class TestOAuthFallbackRoutes:
             },
             follow_redirects=False,
         )
-        assert response.status_code == 302
+        assert response.status_code == HTTPStatus.FOUND
         location = response.headers['location']
         assert location.startswith(f'https://{TEST_AUTH0_DOMAIN}/authorize')
 
@@ -1658,7 +1658,7 @@ class TestOAuthFallbackRoutes:
             content=json.dumps({'client_name': 'test'}).encode(),
             headers={'content-type': 'application/json'},
         )
-        assert response.status_code == 201
+        assert response.status_code == HTTPStatus.CREATED
         assert response.json()['client_id'] == TEST_CLIENT_ID
 
     def test_register_fallback_rejects_an_unlisted_redirect_uri(self, oauth_app):
@@ -1668,7 +1668,7 @@ class TestOAuthFallbackRoutes:
             content=json.dumps({'redirect_uris': [EVIL_REDIRECT_URI]}).encode(),
             headers={'content-type': 'application/json'},
         )
-        assert response.status_code == 400
+        assert response.status_code == HTTPStatus.BAD_REQUEST
         assert response.json()['error'] == 'invalid_redirect_uri'
 
 
@@ -1678,7 +1678,7 @@ class TestOAuthCors:
     @pytest.mark.parametrize('path', ['/oauth/register', '/oauth/token'])
     def test_preflight_is_answered(self, oauth_app, path):
         response = oauth_app.options(path)
-        assert response.status_code == 204
+        assert response.status_code == HTTPStatus.NO_CONTENT
         assert response.headers['access-control-allow-origin'] == '*'
         assert 'POST' in response.headers['access-control-allow-methods']
         assert 'content-type' in response.headers['access-control-allow-headers']
@@ -1692,7 +1692,7 @@ class TestOAuthCors:
         """
         with caplog.at_level(logging.INFO, logger='alpacon_mcp.oauth'):
             response = oauth_app.options(path)
-        assert response.status_code == 204
+        assert response.status_code == HTTPStatus.NO_CONTENT
         assert response.headers['access-control-allow-origin'] == '*'
         assert 'fallback hit' not in caplog.text
 
@@ -1706,7 +1706,7 @@ class TestOAuthCors:
             content=json.dumps({'client_name': 'my-app'}).encode(),
             headers={'content-type': 'application/json'},
         )
-        assert response.status_code == 201
+        assert response.status_code == HTTPStatus.CREATED
         assert response.headers['access-control-allow-origin'] == '*'
 
     def test_token_response_is_readable_cross_origin(self, oauth_app):
@@ -1716,7 +1716,7 @@ class TestOAuthCors:
                 '/oauth/token',
                 data={'grant_type': 'authorization_code', 'code': 'test-code'},
             )
-        assert response.status_code == 200
+        assert response.status_code == HTTPStatus.OK
         assert response.headers['access-control-allow-origin'] == '*'
 
     def test_rejected_register_is_readable_cross_origin(self, oauth_app):
@@ -1726,7 +1726,7 @@ class TestOAuthCors:
             content=json.dumps({'redirect_uris': [EVIL_REDIRECT_URI]}).encode(),
             headers={'content-type': 'application/json'},
         )
-        assert response.status_code == 400
+        assert response.status_code == HTTPStatus.BAD_REQUEST
         assert response.headers['access-control-allow-origin'] == '*'
 
     def test_navigation_endpoints_stay_closed(self, oauth_app):
@@ -1760,7 +1760,7 @@ class TestMfaPkceReplay:
             },
             follow_redirects=False,
         )
-        assert response.status_code == 302
+        assert response.status_code == HTTPStatus.FOUND
         stage1 = parse_qs(urlparse(response.headers['location']).query)
         assert 'code_challenge' not in stage1
 
@@ -1786,7 +1786,7 @@ class TestMfaPkceReplay:
                 follow_redirects=False,
             )
 
-        assert response.status_code == 302
+        assert response.status_code == HTTPStatus.FOUND
         stage2 = parse_qs(urlparse(response.headers['location']).query)
         assert stage2['code_challenge'] == [PKCE_PARAMS['code_challenge']]
         assert stage2['code_challenge_method'] == [PKCE_PARAMS['code_challenge_method']]
@@ -1808,7 +1808,7 @@ class TestMfaPkceReplay:
                 follow_redirects=False,
             )
 
-        assert response.status_code == 302
+        assert response.status_code == HTTPStatus.FOUND
         stage2 = parse_qs(urlparse(response.headers['location']).query)
         assert stage2['audience'] == ['https://alpacon.io/access/']
 
@@ -1824,7 +1824,7 @@ class TestOAuthCallback:
             params={'code': 'auth-code', 'state': composite},
             follow_redirects=False,
         )
-        assert response.status_code == 302
+        assert response.status_code == HTTPStatus.FOUND
         location = response.headers['location']
         assert location.startswith('http://localhost:52048/callback')
         assert 'code=auth-code' in location
@@ -1840,7 +1840,7 @@ class TestOAuthCallback:
             params={'code': 'auth-code', 'state': unsigned},
             follow_redirects=False,
         )
-        assert response.status_code == 400
+        assert response.status_code == HTTPStatus.BAD_REQUEST
         assert response.json()['error'] == 'invalid_request'
         assert 'location' not in response.headers
 
@@ -1851,7 +1851,7 @@ class TestOAuthCallback:
             params={'code': 'auth-code', 'state': _forge_state_under_valid_signature()},
             follow_redirects=False,
         )
-        assert response.status_code == 400
+        assert response.status_code == HTTPStatus.BAD_REQUEST
         assert 'location' not in response.headers
 
     def test_callback_rejects_expired_state(self, oauth_app):
@@ -1863,7 +1863,7 @@ class TestOAuthCallback:
             params={'code': 'auth-code', 'state': expired},
             follow_redirects=False,
         )
-        assert response.status_code == 400
+        assert response.status_code == HTTPStatus.BAD_REQUEST
 
     def test_callback_reports_missing_config_instead_of_crashing(self, oauth_app):
         """Missing client secret: same JSON 500 as other handlers, not a stack trace."""
@@ -1872,7 +1872,7 @@ class TestOAuthCallback:
                 '/oauth/callback',
                 params={'code': 'auth-code', 'state': 'aGVsbG8.c2ln'},
             )
-        assert response.status_code == 500
+        assert response.status_code == HTTPStatus.INTERNAL_SERVER_ERROR
         assert 'AUTH0_CLIENT_SECRET' in response.json()['error']
 
     def test_callback_returns_json_without_redirect_uri(self, oauth_app):
@@ -1882,14 +1882,14 @@ class TestOAuthCallback:
             '/oauth/callback',
             params={'code': 'auth-code', 'state': composite},
         )
-        assert response.status_code == 200
+        assert response.status_code == HTTPStatus.OK
         data = response.json()
         assert data['code'] == 'auth-code'
         assert data['state'] == 'xyz'
 
     def test_callback_missing_code(self, oauth_app):
         response = oauth_app.get('/oauth/callback', params={'state': 'xyz'})
-        assert response.status_code == 400
+        assert response.status_code == HTTPStatus.BAD_REQUEST
         assert response.json()['error'] == 'invalid_request'
 
     def test_callback_error_redirects_to_client(self, oauth_app):
@@ -1904,7 +1904,7 @@ class TestOAuthCallback:
             },
             follow_redirects=False,
         )
-        assert response.status_code == 302
+        assert response.status_code == HTTPStatus.FOUND
         location = response.headers['location']
         assert 'error=access_denied' in location
         assert 'state=xyz' in location
@@ -1915,7 +1915,7 @@ class TestOAuthCallback:
             '/oauth/callback',
             params={'error': 'access_denied', 'error_description': 'User denied'},
         )
-        assert response.status_code == 400
+        assert response.status_code == HTTPStatus.BAD_REQUEST
         assert response.json()['error'] == 'access_denied'
 
     def test_callback_rejects_opaque_state(self, oauth_app):
@@ -1924,7 +1924,7 @@ class TestOAuthCallback:
             '/oauth/callback',
             params={'code': 'auth-code', 'state': 'opaque-state-value'},
         )
-        assert response.status_code == 400
+        assert response.status_code == HTTPStatus.BAD_REQUEST
         assert response.json()['error'] == 'invalid_request'
 
     def test_callback_does_not_redirect_to_untrusted_uri(self, oauth_app):
@@ -1935,7 +1935,7 @@ class TestOAuthCallback:
             params={'code': 'auth-code', 'state': composite},
         )
         # Should fall back to JSON instead of redirecting to evil.com
-        assert response.status_code == 200
+        assert response.status_code == HTTPStatus.OK
         assert 'location' not in response.headers
         data = response.json()
         assert data['code'] == 'auth-code'
@@ -1948,7 +1948,7 @@ class TestOAuthCallback:
             follow_redirects=False,
         )
         # 200 as well as the missing header: a 500 would also have no location.
-        assert response.status_code == 200
+        assert response.status_code == HTTPStatus.OK
         assert 'location' not in response.headers
 
     def test_callback_redirects_to_allowlisted_endpoint(self, oauth_app):
@@ -1959,7 +1959,7 @@ class TestOAuthCallback:
             params={'code': 'auth-code', 'state': composite},
             follow_redirects=False,
         )
-        assert response.status_code == 302
+        assert response.status_code == HTTPStatus.FOUND
         location = response.headers['location']
         assert location.startswith(LISTED_REDIRECT_URI)
         assert 'code=auth-code' in location
@@ -1973,7 +1973,7 @@ class TestOAuthCallback:
             original_scope='openid profile email offline_access',
         )
 
-        mock_client = _mock_auth0_response(status_code=200)
+        mock_client = _mock_auth0_response(status_code=HTTPStatus.OK)
 
         with patch('httpx.AsyncClient', return_value=mock_client):
             response = oauth_app.get(
@@ -1982,7 +1982,7 @@ class TestOAuthCallback:
                 follow_redirects=False,
             )
 
-        assert response.status_code == 302
+        assert response.status_code == HTTPStatus.FOUND
         location = response.headers['location']
         parsed = urlparse(location)
         params = parse_qs(parsed.query)
@@ -2015,7 +2015,7 @@ class TestOAuthCallback:
             params={'code': 'auth-code', 'state': composite},
             follow_redirects=False,
         )
-        assert response.status_code == 302
+        assert response.status_code == HTTPStatus.FOUND
         raw = response.headers['set-cookie'].lower()
         assert NONCE_COOKIE_PREFIX in raw
         assert 'max-age=0' in raw or 'expires=' in raw
@@ -2026,7 +2026,7 @@ class TestOAuthCallback:
         response = oauth_app.get(
             '/oauth/callback', params={'code': 'auth-code', 'state': composite}
         )
-        assert response.status_code == 200
+        assert response.status_code == HTTPStatus.OK
         raw = response.headers['set-cookie'].lower()
         assert NONCE_COOKIE_PREFIX in raw
         assert 'max-age=0' in raw or 'expires=' in raw
@@ -2041,7 +2041,7 @@ class TestOAuthCallback:
             params={'code': 'auth-code', 'state': composite},
             follow_redirects=False,
         )
-        assert response.status_code == 400
+        assert response.status_code == HTTPStatus.BAD_REQUEST
         assert 'set-cookie' not in response.headers
 
     def test_mfa_stage2_state_keeps_the_same_binding(self, oauth_app):
@@ -2087,7 +2087,7 @@ class TestOAuthCallback:
             params={'code': 'auth-code', 'state': composite},
             follow_redirects=False,
         )
-        assert response.status_code == 400
+        assert response.status_code == HTTPStatus.BAD_REQUEST
         assert response.json()['error'] == 'invalid_request'
         assert 'location' not in response.headers
 
@@ -2101,7 +2101,7 @@ class TestOAuthCallback:
             params={'code': 'auth-code', 'state': composite},
             follow_redirects=False,
         )
-        assert response.status_code == 400
+        assert response.status_code == HTTPStatus.BAD_REQUEST
         assert 'location' not in response.headers
 
     def test_callback_rejects_state_without_a_binding(self, oauth_app):
@@ -2114,7 +2114,7 @@ class TestOAuthCallback:
             params={'code': 'auth-code', 'state': composite},
             follow_redirects=False,
         )
-        assert response.status_code == 400
+        assert response.status_code == HTTPStatus.BAD_REQUEST
         assert 'location' not in response.headers
 
     def test_callback_rejects_a_non_ascii_binding(self, oauth_app):
@@ -2127,7 +2127,7 @@ class TestOAuthCallback:
             params={'code': 'auth-code', 'state': composite},
             follow_redirects=False,
         )
-        assert response.status_code == 400
+        assert response.status_code == HTTPStatus.BAD_REQUEST
         assert response.json()['error'] == 'invalid_request'
         assert 'location' not in response.headers
 
@@ -2142,7 +2142,7 @@ class TestOAuthCallback:
             params={'code': 'auth-code', 'state': composite},
             follow_redirects=False,
         )
-        assert response.status_code == 400
+        assert response.status_code == HTTPStatus.BAD_REQUEST
         assert 'location' not in response.headers
 
     def test_error_callback_rejects_an_unbound_state(self, oauth_app):
@@ -2155,7 +2155,7 @@ class TestOAuthCallback:
             params={'error': 'access_denied', 'state': composite},
             follow_redirects=False,
         )
-        assert response.status_code == 400
+        assert response.status_code == HTTPStatus.BAD_REQUEST
         # invalid_request, not access_denied: the gate rejected it before the
         # error was relayed anywhere.
         assert response.json()['error'] == 'invalid_request'
@@ -2171,5 +2171,5 @@ class TestOAuthCallback:
             params={'code': 'auth-code', 'state': composite},
             follow_redirects=False,
         )
-        assert response.status_code == 400
+        assert response.status_code == HTTPStatus.BAD_REQUEST
         assert 'location' not in response.headers
