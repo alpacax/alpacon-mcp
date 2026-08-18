@@ -72,7 +72,7 @@ We use the following tools for code quality:
 - **ruff** for linting, import sorting, and formatting
 - **mypy** for type checking
 
-Both run as pre-commit hooks, and CI runs `ruff check`, `mypy`, and `pytest` under a coverage floor set in `.github/workflows/test.yml`.
+Both run as pre-commit hooks, and CI runs `ruff check`, `ruff format --check`, `mypy`, and `pytest` under a coverage floor set in `.github/workflows/test.yml`.
 
 ```bash
 # Format code

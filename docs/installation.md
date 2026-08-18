@@ -413,7 +413,7 @@ ruff format .
 mypy --ignore-missing-imports --no-strict-optional .
 ```
 
-CI runs the same three: `ruff check`, `mypy`, and `pytest` under a coverage floor. `.github/workflows/test.yml` holds the current threshold.
+CI runs the same checks: `ruff check`, `ruff format --check`, `mypy`, and `pytest` under a coverage floor. `.github/workflows/test.yml` holds the current threshold.
 
 ### Custom configuration
 
