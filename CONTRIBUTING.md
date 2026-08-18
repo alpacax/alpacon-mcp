@@ -58,8 +58,9 @@ Thank you for your interest in contributing to the Alpacon MCP server! This guid
    # Check a token against the API (prompts for region and workspace)
    python main.py test
 
-   # Lint and type check
+   # Lint, formatting, and type check
    ruff check .
+   ruff format --check .
    mypy --ignore-missing-imports --no-strict-optional .
    ```
 
