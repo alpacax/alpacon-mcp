@@ -390,7 +390,8 @@ sudo chown -R alpacon-mcp:alpacon-mcp /opt/alpacon-mcp
 git clone https://github.com/alpacax/alpacon-mcp.git
 cd alpacon-mcp
 
-# Install project dependencies
+# Install project dependencies. Keep --extra dev on every later uv sync
+# too: a bare one uninstalls them.
 uv venv
 source .venv/bin/activate
 uv sync --extra dev
@@ -461,7 +462,7 @@ echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"clientInfo":{"nam
 git pull origin main
 
 # Update dependencies to match the lockfile
-uv sync
+uv sync  # add --extra dev in a development checkout
 
 # Restart service if running
 sudo systemctl restart alpacon-mcp  # Linux service
@@ -518,7 +519,7 @@ chmod +x ~/.local/bin/uv
 rm -rf .venv
 uv venv
 source .venv/bin/activate
-uv sync
+uv sync  # add --extra dev in a development checkout
 ```
 
 ### Platform-specific issues

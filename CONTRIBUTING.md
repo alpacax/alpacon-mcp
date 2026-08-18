@@ -28,7 +28,8 @@ Thank you for your interest in contributing to the Alpacon MCP server! This guid
    uv venv
    source .venv/bin/activate
 
-   # Install development dependencies
+   # Install development dependencies. Keep --extra dev on every later
+   # uv sync too: a bare one uninstalls them.
    uv sync --extra dev
 
    # ruff and pre-commit ship as tools, not as dev dependencies.
