@@ -58,8 +58,9 @@ Thank you for your interest in contributing to the Alpacon MCP server! This guid
    # Check a token against the API (prompts for region and workspace)
    python main.py test
 
-   # Lint and type check
+   # Lint, formatting, and type check
    ruff check .
+   ruff format --check .
    mypy --ignore-missing-imports --no-strict-optional .
    ```
 
@@ -72,7 +73,7 @@ We use the following tools for code quality:
 - **ruff** for linting, import sorting, and formatting
 - **mypy** for type checking
 
-Both run as pre-commit hooks, and CI runs `ruff check`, `mypy`, and `pytest` under a coverage floor set in `.github/workflows/test.yml`.
+Both run as pre-commit hooks, and CI runs `ruff check`, `ruff format --check`, `mypy`, and `pytest` under a coverage floor set in `.github/workflows/test.yml`.
 
 ```bash
 # Format code
