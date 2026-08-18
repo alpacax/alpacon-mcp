@@ -29,7 +29,7 @@ Thank you for your interest in contributing to the Alpacon MCP server! This guid
    source .venv/bin/activate
 
    # Install development dependencies
-   uv pip install -e .[dev]
+   uv sync --extra dev
 
    # ruff and pre-commit ship as tools, not as dev dependencies
    uv tool install ruff

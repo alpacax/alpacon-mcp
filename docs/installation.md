@@ -393,7 +393,7 @@ cd alpacon-mcp
 # Install project dependencies
 uv venv
 source .venv/bin/activate
-uv pip install -e .[dev]
+uv sync --extra dev
 
 # ruff and pre-commit ship as tools, not as dev dependencies
 uv tool install ruff

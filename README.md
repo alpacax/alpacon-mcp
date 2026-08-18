@@ -298,7 +298,7 @@ Or via environment variable (wins over the config file):
 export ALPACON_MCP_US1_PRODUCTION_URL="https://production.us1.alpacon.io"
 ```
 
-### Option C: development installation
+### Option C: run from a checkout
 ```bash
 git clone https://github.com/alpacax/alpacon-mcp.git
 cd alpacon-mcp
