@@ -31,8 +31,9 @@ Thank you for your interest in contributing to the Alpacon MCP server! This guid
    # Install development dependencies
    uv sync --extra dev
 
-   # ruff and pre-commit ship as tools, not as dev dependencies
-   uv tool install ruff
+   # ruff and pre-commit ship as tools, not as dev dependencies.
+   # Keep the ruff pin in step with the rev in .pre-commit-config.yaml.
+   uv tool install ruff==0.15.13
    uv tool install pre-commit
 
    # Install pre-commit hooks
