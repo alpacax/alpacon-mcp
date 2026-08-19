@@ -390,13 +390,15 @@ sudo chown -R alpacon-mcp:alpacon-mcp /opt/alpacon-mcp
 git clone https://github.com/alpacax/alpacon-mcp.git
 cd alpacon-mcp
 
-# Install project dependencies
+# Install project dependencies. Keep --extra dev on every later uv sync
+# too: a bare one uninstalls them.
 uv venv
 source .venv/bin/activate
-uv pip install -e .[dev]
+uv sync --extra dev
 
-# ruff and pre-commit ship as tools, not as dev dependencies
-uv tool install ruff
+# ruff and pre-commit ship as tools, not as dev dependencies.
+# Keep the ruff pin in step with the rev in .pre-commit-config.yaml.
+uv tool install ruff==0.15.13
 uv tool install pre-commit
 
 # Install pre-commit hooks (ruff + mypy)
@@ -460,7 +462,7 @@ echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"clientInfo":{"nam
 git pull origin main
 
 # Update dependencies to match the lockfile
-uv sync
+uv sync  # add --extra dev in a development checkout
 
 # Restart service if running
 sudo systemctl restart alpacon-mcp  # Linux service
@@ -517,7 +519,7 @@ chmod +x ~/.local/bin/uv
 rm -rf .venv
 uv venv
 source .venv/bin/activate
-uv sync
+uv sync  # add --extra dev in a development checkout
 ```
 
 ### Platform-specific issues
