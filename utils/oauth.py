@@ -75,7 +75,10 @@ _ALLOWED_LOOPBACK_HOSTS = ('localhost', '127.0.0.1', '::1')
 
 # Remote MCP refreshes tokens server-side, so the Auth0 action's IP/UA
 # fingerprint never matches the login; bind presence to the client instead
-# (ADR 0054).
+# (ADR 0054). One constant for every remote MCP session makes presence shared
+# per user rather than per session: a password-only login by that user clears
+# the record its other sessions refresh against, which fails closed into a
+# re-auth.
 _DEVICE_ID = 'alpacon-mcp-remote'
 
 # Caps a client-supplied value in a log line. Escaping expands a byte up to
