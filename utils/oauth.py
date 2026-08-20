@@ -81,6 +81,11 @@ _ALLOWED_LOOPBACK_HOSTS = ('localhost', '127.0.0.1', '::1')
 # re-auth.
 _DEVICE_ID = 'alpacon-mcp-remote'
 
+# Mirrors the validator in the Auth0 action's code.js. The check and its
+# consumer sit in different repos, so a value we accept but the action rejects
+# would silently fall back to the fingerprint keying this fix exists to avoid.
+_DEVICE_ID_PATTERN = re.compile(r'^[A-Za-z0-9-]{8,64}$')
+
 # Caps a client-supplied value in a log line. Escaping expands a byte up to
 # sixfold, so an unbounded value on an unauthenticated route inflates log volume.
 _LOG_VALUE_MAX_CHARS = 512
@@ -455,6 +460,20 @@ def _build_state(redirect_uri: str, state: str, **extra) -> str:
     return _sign_state({'redirect_uri': redirect_uri, 'state': state, **extra})
 
 
+def _is_device_id(value: str) -> bool:
+    """Whether the Auth0 action will honor this as a client-supplied device id."""
+    return bool(_DEVICE_ID_PATTERN.match(value.strip()))
+
+
+def _has_client_device_scope(scope: str) -> bool:
+    """Whether the scope already grants a device id the Auth0 action accepts."""
+    return any(
+        _is_device_id(s[len('device:') :])
+        for s in scope.split()
+        if s.startswith('device:')
+    )
+
+
 def _new_nonce() -> str:
     """Mint the per-flow value that proves a callback reached the same browser."""
     return secrets.token_urlsafe(32)
@@ -577,7 +596,7 @@ def register_oauth_routes(mcp_server):
         scope = params.get('scope', '')
         if 'offline_access' not in scope:
             scope = f'{scope} offline_access'.strip()
-        if not any(s.startswith('device:') for s in scope.split()):
+        if not _has_client_device_scope(scope):
             scope = f'{scope} device:{_DEVICE_ID}'.strip()
 
         # Detect MFA pseudo-scope from re-auth flow.
@@ -809,10 +828,14 @@ def register_oauth_routes(mcp_server):
 
         # Refresh requests may omit scope, so carry the device id on the body
         # channel the Auth0 action also reads; a scope grant is not required.
-        # setdefault, not assignment: a client that logged in under its own
-        # device: scope has to refresh under that same id, or the restore misses.
-        if grant_type == 'refresh_token':
-            params.setdefault('device_id', _DEVICE_ID)
+        # A client that logged in under its own device id keeps it here, or the
+        # restore looks up a key that was never written. One the action would
+        # reject is replaced rather than kept: leaving it would resolve to no
+        # candidate at all, which is the fingerprint fallback.
+        if grant_type == 'refresh_token' and not _is_device_id(
+            params.get('device_id', '')
+        ):
+            params['device_id'] = _DEVICE_ID
 
         # Override redirect_uri to match what was sent to Auth0 during /authorize.
         # Auth0 requires the redirect_uri in token exchange to match exactly.
