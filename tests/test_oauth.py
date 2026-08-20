@@ -895,6 +895,24 @@ class TestOAuthAuthorize:
         scope_parts = _authorize_scope_parts(response)
         assert f'device:{_DEVICE_ID}' in scope_parts
 
+    def test_authorize_mfa_state_carries_device_scope(self, oauth_app):
+        """Stage 1 parks the device scope in the state so Stage 2 replays it."""
+        response = oauth_app.get(
+            '/oauth/authorize',
+            params={
+                'response_type': 'code',
+                'redirect_uri': 'http://localhost:8080/callback',
+                'scope': 'openid profile mfa',
+                **PKCE_PARAMS,
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == HTTPStatus.FOUND
+        query = parse_qs(urlparse(response.headers['location']).query)
+        state_data = _verify_state(query['state'][0])
+        assert state_data.get('stage') == 'mfa'
+        assert f'device:{_DEVICE_ID}' in state_data.get('original_scope', '').split()
+
     def test_authorize_mfa_scope_redirects_to_mfa_audience(self, oauth_app):
         """When 'mfa' pseudo-scope is present, redirects to Auth0 MFA audience."""
         response = oauth_app.get(
