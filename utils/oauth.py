@@ -806,6 +806,8 @@ def register_oauth_routes(mcp_server):
 
         # Refresh requests may omit scope, so carry the device id on the body
         # channel the Auth0 action also reads; a scope grant is not required.
+        # setdefault, not assignment: a client that logged in under its own
+        # device: scope has to refresh under that same id, or the restore misses.
         if grant_type == 'refresh_token':
             params.setdefault('device_id', _DEVICE_ID)
 

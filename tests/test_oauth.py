@@ -1408,7 +1408,23 @@ class TestOAuthToken:
             )
         assert response.status_code == HTTPStatus.OK
         call_kwargs = mock_client.post.call_args
-        assert call_kwargs.kwargs['data']['device_id'] == 'alpacon-mcp-remote'
+        assert call_kwargs.kwargs['data']['device_id'] == _DEVICE_ID
+
+    def test_token_refresh_keeps_client_device_id(self, oauth_app):
+        """A client that logged in under its own device id refreshes under it."""
+        mock_client = _mock_auth0_response()
+        with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
+            response = oauth_app.post(
+                '/oauth/token',
+                data={
+                    'grant_type': 'refresh_token',
+                    'refresh_token': 'test-refresh',
+                    'device_id': 'client-own-id',
+                },
+            )
+        assert response.status_code == HTTPStatus.OK
+        call_kwargs = mock_client.post.call_args
+        assert call_kwargs.kwargs['data']['device_id'] == 'client-own-id'
 
     def test_token_auth_code_grant_has_no_device_id(self, oauth_app):
         mock_client = _mock_auth0_response()
