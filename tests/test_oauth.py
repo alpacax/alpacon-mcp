@@ -840,6 +840,38 @@ class TestOAuthAuthorize:
         location = response.headers['location']
         assert 'offline_access' in location
 
+    def test_authorize_adds_device_scope(self, oauth_app):
+        """device scope is added so refreshed tokens keep the MFA claim."""
+        response = oauth_app.get(
+            '/oauth/authorize',
+            params={
+                'response_type': 'code',
+                'redirect_uri': 'http://localhost:8080/callback',
+                'scope': 'openid profile',
+                **PKCE_PARAMS,
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == HTTPStatus.FOUND
+        location = response.headers['location']
+        assert 'device%3Aalpacon-mcp-remote' in location
+
+    def test_authorize_preserves_client_device_scope(self, oauth_app):
+        response = oauth_app.get(
+            '/oauth/authorize',
+            params={
+                'response_type': 'code',
+                'redirect_uri': 'http://localhost:8080/callback',
+                'scope': 'openid device:client-own-id',
+                **PKCE_PARAMS,
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == HTTPStatus.FOUND
+        location = response.headers['location']
+        assert 'device%3Aclient-own-id' in location
+        assert 'alpacon-mcp-remote' not in location
+
     def test_authorize_mfa_scope_redirects_to_mfa_audience(self, oauth_app):
         """When 'mfa' pseudo-scope is present, redirects to Auth0 MFA audience."""
         response = oauth_app.get(
@@ -1342,6 +1374,29 @@ class TestOAuthToken:
         assert response.status_code == HTTPStatus.OK
         call_kwargs = mock_client.post.call_args
         assert call_kwargs.kwargs['data']['client_secret'] == TEST_CLIENT_SECRET
+
+    def test_token_refresh_carries_device_id(self, oauth_app):
+        """Refresh exchanges carry the device id the Auth0 action keys on."""
+        mock_client = _mock_auth0_response()
+        with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
+            response = oauth_app.post(
+                '/oauth/token',
+                data={'grant_type': 'refresh_token', 'refresh_token': 'test-refresh'},
+            )
+        assert response.status_code == HTTPStatus.OK
+        call_kwargs = mock_client.post.call_args
+        assert call_kwargs.kwargs['data']['device_id'] == 'alpacon-mcp-remote'
+
+    def test_token_auth_code_grant_has_no_device_id(self, oauth_app):
+        mock_client = _mock_auth0_response()
+        with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
+            response = oauth_app.post(
+                '/oauth/token',
+                data={'grant_type': 'authorization_code', 'code': 'test-code'},
+            )
+        assert response.status_code == HTTPStatus.OK
+        call_kwargs = mock_client.post.call_args
+        assert 'device_id' not in call_kwargs.kwargs['data']
 
     def test_token_fails_without_client_secret(self):
         """Token endpoint should return 500 when AUTH0_CLIENT_SECRET is missing."""

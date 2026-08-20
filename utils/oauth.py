@@ -73,6 +73,11 @@ _NONCE_COOKIE_ATTRS: _NonceCookieAttrs = {
 
 _ALLOWED_LOOPBACK_HOSTS = ('localhost', '127.0.0.1', '::1')
 
+# Remote MCP refreshes tokens server-side, so the Auth0 action's IP/UA
+# fingerprint never matches the login; bind presence to the client instead
+# (ADR 0054).
+_DEVICE_ID = 'alpacon-mcp-remote'
+
 # Caps a client-supplied value in a log line. Escaping expands a byte up to
 # sixfold, so an unbounded value on an unauthenticated route inflates log volume.
 _LOG_VALUE_MAX_CHARS = 512
@@ -569,6 +574,8 @@ def register_oauth_routes(mcp_server):
         scope = params.get('scope', '')
         if 'offline_access' not in scope:
             scope = f'{scope} offline_access'.strip()
+        if 'device:' not in scope:
+            scope = f'{scope} device:{_DEVICE_ID}'.strip()
 
         # Detect MFA pseudo-scope from re-auth flow.
         # When the ASGI middleware returns 401 with scope="... mfa",
@@ -796,6 +803,11 @@ def register_oauth_routes(mcp_server):
             )
         params['client_id'] = configured_client_id
         params['client_secret'] = config['client_secret']
+
+        # Refresh requests may omit scope, so carry the device id on the body
+        # channel the Auth0 action also reads; a scope grant is not required.
+        if grant_type == 'refresh_token':
+            params.setdefault('device_id', _DEVICE_ID)
 
         # Override redirect_uri to match what was sent to Auth0 during /authorize.
         # Auth0 requires the redirect_uri in token exchange to match exactly.
