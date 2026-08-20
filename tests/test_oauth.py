@@ -23,6 +23,7 @@ from starlette.testclient import TestClient
 
 from utils.oauth import (
     _CORS_PREFLIGHT_HEADERS,
+    _DEVICE_ID,
     _LOG_VALUE_MAX_CHARS,
     _MAX_REGISTERED_REDIRECT_URIS,
     _NONCE_COOKIE_NAME,
@@ -163,6 +164,12 @@ def _mock_auth0_response(status_code=HTTPStatus.OK, json_data=None):
     mock_client.__aenter__ = AsyncMock(return_value=mock_client)
     mock_client.__aexit__ = AsyncMock(return_value=None)
     return mock_client
+
+
+def _authorize_scope_parts(response):
+    """Return the scope tokens of an /oauth/authorize redirect."""
+    query = parse_qs(urlparse(response.headers['location']).query)
+    return query.get('scope', [''])[0].split()
 
 
 class TestAllowedRedirectUris:
@@ -853,8 +860,8 @@ class TestOAuthAuthorize:
             follow_redirects=False,
         )
         assert response.status_code == HTTPStatus.FOUND
-        location = response.headers['location']
-        assert 'device%3Aalpacon-mcp-remote' in location
+        scope_parts = _authorize_scope_parts(response)
+        assert f'device:{_DEVICE_ID}' in scope_parts
 
     def test_authorize_preserves_client_device_scope(self, oauth_app):
         response = oauth_app.get(
@@ -868,9 +875,25 @@ class TestOAuthAuthorize:
             follow_redirects=False,
         )
         assert response.status_code == HTTPStatus.FOUND
-        location = response.headers['location']
-        assert 'device%3Aclient-own-id' in location
-        assert 'alpacon-mcp-remote' not in location
+        scope_parts = _authorize_scope_parts(response)
+        assert 'device:client-own-id' in scope_parts
+        assert f'device:{_DEVICE_ID}' not in scope_parts
+
+    def test_authorize_adds_device_scope_despite_device_substring(self, oauth_app):
+        """A scope merely containing 'device:' is not a device id grant."""
+        response = oauth_app.get(
+            '/oauth/authorize',
+            params={
+                'response_type': 'code',
+                'redirect_uri': 'http://localhost:8080/callback',
+                'scope': 'openid read:device:status',
+                **PKCE_PARAMS,
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == HTTPStatus.FOUND
+        scope_parts = _authorize_scope_parts(response)
+        assert f'device:{_DEVICE_ID}' in scope_parts
 
     def test_authorize_mfa_scope_redirects_to_mfa_audience(self, oauth_app):
         """When 'mfa' pseudo-scope is present, redirects to Auth0 MFA audience."""

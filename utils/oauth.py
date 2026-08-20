@@ -574,7 +574,7 @@ def register_oauth_routes(mcp_server):
         scope = params.get('scope', '')
         if 'offline_access' not in scope:
             scope = f'{scope} offline_access'.strip()
-        if 'device:' not in scope:
+        if not any(s.startswith('device:') for s in scope.split()):
             scope = f'{scope} device:{_DEVICE_ID}'.strip()
 
         # Detect MFA pseudo-scope from re-auth flow.
