@@ -596,7 +596,10 @@ def register_oauth_routes(mcp_server):
         scope = params.get('scope', '')
         if 'offline_access' not in scope:
             scope = f'{scope} offline_access'.strip()
+        # The Auth0 action validates only the first `device:` token, so an
+        # unusable one has to go rather than sit ahead of ours.
         if not _has_client_device_scope(scope):
+            scope = ' '.join(s for s in scope.split() if not s.startswith('device:'))
             scope = f'{scope} device:{_DEVICE_ID}'.strip()
 
         # Detect MFA pseudo-scope from re-auth flow.

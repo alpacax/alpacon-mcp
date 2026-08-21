@@ -896,7 +896,10 @@ class TestOAuthAuthorize:
         )
         assert response.status_code == HTTPStatus.FOUND
         scope_parts = _authorize_scope_parts(response)
-        assert f'device:{_DEVICE_ID}' in scope_parts
+        # Equality, not membership: the unusable token must be gone.
+        assert [s for s in scope_parts if s.startswith('device:')] == [
+            f'device:{_DEVICE_ID}'
+        ]
 
     def test_authorize_adds_device_scope_despite_device_substring(self, oauth_app):
         """A scope merely containing 'device:' is not a device id grant."""
