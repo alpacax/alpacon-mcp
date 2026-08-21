@@ -12,6 +12,16 @@ _HINT_REGISTRY: dict[tuple[int, str], dict[str, list[str]]] = {
         ],
         'related_tools': ['list_workspaces'],
     },
+    (HTTPStatus.PAYMENT_REQUIRED, 'general'): {
+        'recovery_hints': [
+            'This action needs a paid plan. Creating and updating alert rules '
+            'and webhooks are gated; reading them, and attaching a rule to a '
+            'server, are not.',
+            'Retrying will not change the answer. Ask a workspace owner to '
+            'upgrade the plan.',
+        ],
+        'related_tools': ['get_workspace_preferences'],
+    },
     (HTTPStatus.FORBIDDEN, 'command'): {
         'recovery_hints': [
             "Check if the API token has 'command_execute' ACL permission.",
@@ -70,16 +80,6 @@ _HINT_REGISTRY: dict[tuple[int, str], dict[str, list[str]]] = {
             'Use the corresponding list tool to find valid IDs.',
         ],
         'related_tools': [],
-    },
-    (HTTPStatus.PAYMENT_REQUIRED, 'general'): {
-        'recovery_hints': [
-            'This action needs a paid plan. Creating and updating alert rules '
-            'and webhooks are gated; reading them, and attaching a rule to a '
-            'server, are not.',
-            'Retrying will not change the answer. Ask a workspace owner to '
-            'upgrade the plan.',
-        ],
-        'related_tools': ['get_workspace_preferences'],
     },
     (HTTPStatus.TOO_MANY_REQUESTS, 'general'): {
         'recovery_hints': [
