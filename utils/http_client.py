@@ -23,7 +23,8 @@ _ERR_REQUEST_EXCEPTION = 'Request Exception'
 _ERR_TIMEOUT = 'Timeout'
 _ERR_UNEXPECTED = 'Unexpected Error'
 
-# Prefix tuple (str.startswith needs a tuple); real-time metrics deliberately excluded.
+# Path prefixes, matched against a URL's path component, not the URL itself.
+# Real-time metrics are deliberately excluded.
 _CACHEABLE_ENDPOINTS = (
     '/api/servers/servers/',
     '/api/proc/',

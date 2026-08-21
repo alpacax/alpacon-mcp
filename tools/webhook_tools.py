@@ -8,6 +8,7 @@ from utils.error_handler import format_validation_error
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ_ONLY
 
+# Mirrors Webhook.Provider; omitting provider lets the server infer it from the URL.
 WEBHOOK_PROVIDERS = ('slack', 'discord', 'teams', 'telegram', 'custom')
 
 # ===============================

@@ -324,6 +324,10 @@ async def update_server_note(
 
     Returns:
         Server note update response
+
+    Note:
+        No mentioned_users here: the server routes only `create` to
+        NoteCreateSerializer, and the update path never sees that field.
     """
     token = kwargs.get('token')
 

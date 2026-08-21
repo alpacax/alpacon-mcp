@@ -136,6 +136,7 @@ async def get_alert(
     )
 
 
+# Mirrors AlertAcknowledgement.ACTION_TYPE_CHOICES; the server takes nothing else.
 ALERT_ACTION_TYPES = frozenset({'checked', 'dismissed'})
 
 
@@ -205,6 +206,7 @@ async def acknowledge_alert(
 # ===============================
 
 
+# Mirrors AlertRule.TARGET_METRICS; a value outside this list is a guaranteed 400.
 ALERT_RULE_TARGETS = (
     'cpu-usage',
     'memory-usage',
