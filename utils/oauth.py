@@ -384,31 +384,40 @@ def _get_oauth_config() -> dict[str, str]:
     }
 
 
-def _get_state_secret() -> bytes:
-    """Falls back to deriving from AUTH0_CLIENT_SECRET so no extra secret needs
-    provisioning; the derived key is identical across replicas, so state
-    verifies without shared server-side storage.
-    """
-    explicit = os.getenv(_STATE_SECRET_ENV, '')
-    if explicit:
-        # The state travels in URLs and proxy logs, so the key is an offline
-        # brute-force target; hex-only input keeps a typed passphrase out.
-        try:
-            key = bytes.fromhex(explicit)
-        except ValueError:
-            raise ValueError(
-                f'{_STATE_SECRET_ENV} must be hex; '
-                f'generate one with openssl rand -hex {_STATE_SECRET_MIN_BYTES}'
-            ) from None
-        if len(key) < _STATE_SECRET_MIN_BYTES:
-            raise ValueError(
-                f'{_STATE_SECRET_ENV} must decode to at least '
-                f'{_STATE_SECRET_MIN_BYTES} bytes'
-            )
-        return key
+def _explicit_hex_secret(env_name: str) -> bytes | None:
+    """The key an operator set, or None when the variable is unset."""
+    explicit = os.getenv(env_name, '')
+    if not explicit:
+        return None
+    # Signed values travel in URLs and proxy logs, so the key is an offline
+    # brute-force target; hex-only input keeps a typed passphrase out.
+    try:
+        key = bytes.fromhex(explicit)
+    except ValueError:
+        raise ValueError(
+            f'{env_name} must be hex; '
+            f'generate one with openssl rand -hex {_STATE_SECRET_MIN_BYTES}'
+        ) from None
+    if len(key) < _STATE_SECRET_MIN_BYTES:
+        raise ValueError(
+            f'{env_name} must decode to at least {_STATE_SECRET_MIN_BYTES} bytes'
+        )
+    return key
 
+
+def _derived_secret(info: bytes) -> bytes:
+    """Derive from AUTH0_CLIENT_SECRET so no extra secret needs provisioning;
+    the derived key is identical across replicas, so a signed value verifies
+    without shared server-side storage.
+    """
     client_secret = _get_oauth_config()['client_secret']
-    return hmac.new(client_secret.encode(), _STATE_SECRET_INFO, hashlib.sha256).digest()
+    return hmac.new(client_secret.encode(), info, hashlib.sha256).digest()
+
+
+def _get_state_secret() -> bytes:
+    return _explicit_hex_secret(_STATE_SECRET_ENV) or _derived_secret(
+        _STATE_SECRET_INFO
+    )
 
 
 def _sign_state(payload: dict) -> str:
