@@ -591,3 +591,73 @@ class TestHandleUpstream401:
         token_key = make_auth_error_key(token)
         error_info = consume_upstream_auth_error(token_key)
         assert error_info is None
+
+
+class TestCacheWhitelist:
+    def test_a_full_url_under_a_whitelisted_prefix_is_cacheable(self):
+        client = AlpaconHTTPClient()
+
+        assert client._is_cacheable(
+            'GET', 'https://ws.ap1.alpacon.io/api/servers/servers/'
+        )
+        assert client._is_cacheable('GET', 'https://ws.ap1.alpacon.io/api/proc/info/')
+
+    def test_a_full_url_outside_the_whitelist_is_not_cacheable(self):
+        client = AlpaconHTTPClient()
+
+        assert not client._is_cacheable(
+            'GET', 'https://ws.ap1.alpacon.io/api/metrics/realtime/cpu/'
+        )
+
+    def test_only_get_is_cacheable(self):
+        client = AlpaconHTTPClient()
+
+        assert not client._is_cacheable(
+            'POST', 'https://ws.ap1.alpacon.io/api/servers/servers/'
+        )
+
+    def test_every_whitelist_entry_is_a_prefix_of_an_endpoint_some_tool_calls(self):
+        import re
+        from pathlib import Path
+
+        from utils.http_client import _CACHEABLE_ENDPOINTS
+
+        called = set()
+        for path in Path('tools').glob('*.py'):
+            called.update(re.findall(r"'(/api/[^']*)'", path.read_text()))
+
+        for prefix in _CACHEABLE_ENDPOINTS:
+            assert any(endpoint.startswith(prefix) for endpoint in called), prefix
+
+
+class TestCacheInvalidation:
+    LIST_URL = 'https://ws.ap1.alpacon.io/api/servers/servers/'
+    STAR_URL = 'https://ws.ap1.alpacon.io/api/servers/servers/abc/star/'
+    OTHER_HOST_URL = 'https://other.ap1.alpacon.io/api/servers/servers/'
+
+    def test_a_write_clears_a_cached_read_beneath_the_same_prefix(self):
+        client = AlpaconHTTPClient()
+        key = client._get_cache_key('GET', self.LIST_URL, None)
+        client._set_cached_response(key, {'results': []})
+
+        client._invalidate_cache(self.STAR_URL)
+
+        assert client._get_cached_response(key) is None
+
+    def test_a_write_leaves_another_host_alone(self):
+        client = AlpaconHTTPClient()
+        key = client._get_cache_key('GET', self.OTHER_HOST_URL, None)
+        client._set_cached_response(key, {'results': []})
+
+        client._invalidate_cache(self.STAR_URL)
+
+        assert client._get_cached_response(key) == {'results': []}
+
+    def test_a_write_outside_the_whitelist_clears_nothing(self):
+        client = AlpaconHTTPClient()
+        key = client._get_cache_key('GET', self.LIST_URL, None)
+        client._set_cached_response(key, {'results': []})
+
+        client._invalidate_cache('https://ws.ap1.alpacon.io/api/servers/notes/')
+
+        assert client._get_cached_response(key) == {'results': []}
