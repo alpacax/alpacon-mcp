@@ -83,6 +83,7 @@ def mock_http_client():
                 'workspace': 'testworkspace',
                 'name': 'alerts',
                 'url': 'https://example.com/webhook',
+                'owner': '550e8400-e29b-41d4-a716-446655440999',
                 'region': 'ap1',
             },
             'post',
@@ -253,35 +254,78 @@ class TestWebhooks:
             params={},
         )
 
-    @pytest.mark.asyncio
-    async def test_create_webhook_success(self, mock_http_client, mock_token_manager):
-        """Test successful webhook creation."""
-        mock_http_client.post.return_value = {
-            'id': 'wh-1',
-            'name': 'alerts',
-            'url': 'https://example.com/webhook',
-        }
+    OWNER_ID = '550e8400-e29b-41d4-a716-446655440999'
 
-        result = await create_webhook(
+    @pytest.mark.asyncio
+    async def test_create_always_sends_owner(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = {'id': 'wh-1'}
+
+        await create_webhook(
             workspace='testworkspace',
-            name='alerts',
-            url='https://example.com/webhook',
-            ssl_verify=False,
+            name='alerts to slack',
+            url='https://hooks.slack.com/services/x',
+            owner=self.OWNER_ID,
             region='ap1',
         )
 
-        assert result['status'] == 'success'
         mock_http_client.post.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
             endpoint='/api/notifications/webhooks/',
             token='test-token',
             data={
-                'name': 'alerts',
-                'url': 'https://example.com/webhook',
-                'ssl_verify': False,
+                'name': 'alerts to slack',
+                'url': 'https://hooks.slack.com/services/x',
+                'owner': self.OWNER_ID,
+                'ssl_verify': True,
                 'enabled': True,
             },
+        )
+
+    @pytest.mark.asyncio
+    async def test_create_sends_provider_only_when_given(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = {'id': 'wh-1'}
+
+        await create_webhook(
+            workspace='testworkspace',
+            name='n',
+            url='https://example.test/hook',
+            owner=self.OWNER_ID,
+            provider='custom',
+        )
+
+        assert mock_http_client.post.call_args.kwargs['data']['provider'] == 'custom'
+
+    @pytest.mark.asyncio
+    async def test_create_without_owner_is_a_type_error(self):
+        with pytest.raises(TypeError):
+            await create_webhook(
+                workspace='testworkspace', name='n', url='https://example.test/hook'
+            )
+
+    @pytest.mark.asyncio
+    async def test_list_forwards_owner_and_provider(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.get.return_value = {'results': [], 'count': 0}
+
+        await list_webhooks(
+            workspace='testworkspace',
+            region='ap1',
+            owner=self.OWNER_ID,
+            provider='slack',
+        )
+
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/notifications/webhooks/',
+            token='test-token',
+            params={'owner': self.OWNER_ID, 'provider': 'slack'},
         )
 
     @pytest.mark.asyncio
