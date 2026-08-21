@@ -901,6 +901,24 @@ class TestOAuthAuthorize:
             f'device:{_DEVICE_ID}'
         ]
 
+    def test_authorize_replaces_a_device_scope_the_action_cannot_reach(self, oauth_app):
+        """A usable grant behind an unusable one is unreachable, so it does not count."""
+        response = oauth_app.get(
+            '/oauth/authorize',
+            params={
+                'response_type': 'code',
+                'redirect_uri': 'http://localhost:8080/callback',
+                'scope': 'openid device:ab device:good-id-1234',
+                **PKCE_PARAMS,
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == HTTPStatus.FOUND
+        scope_parts = _authorize_scope_parts(response)
+        assert [s for s in scope_parts if s.startswith('device:')] == [
+            f'device:{_DEVICE_ID}'
+        ]
+
     def test_authorize_adds_device_scope_despite_device_substring(self, oauth_app):
         """A scope merely containing 'device:' is not a device id grant."""
         response = oauth_app.get(

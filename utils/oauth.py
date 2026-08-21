@@ -466,12 +466,9 @@ def _is_device_id(value: str) -> bool:
 
 
 def _has_client_device_scope(scope: str) -> bool:
-    """Whether the scope already grants a device id the Auth0 action accepts."""
-    return any(
-        _is_device_id(s[len('device:') :])
-        for s in scope.split()
-        if s.startswith('device:')
-    )
+    """Whether the Auth0 action will resolve a device id out of this scope."""
+    first = next((s for s in scope.split() if s.startswith('device:')), None)
+    return first is not None and _is_device_id(first[len('device:') :])
 
 
 def _new_nonce() -> str:
