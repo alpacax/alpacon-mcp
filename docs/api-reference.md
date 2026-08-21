@@ -722,9 +722,9 @@ Command ACLs decide which commands a token may run, server ACLs which hosts it m
 - `get_webhook` / `delete_webhook`: by `webhook_id`
 - `create_webhook`: `workspace`, `name`, `url`, `owner` (user UUID, required), `provider` (optional), `ssl_verify`, `enabled`, `region` (optional). `provider` is one of `slack`, `discord`, `teams`, `telegram`, `custom`, and is detected from the URL when omitted
 - `update_webhook`: `webhook_id`, `workspace`, and any of `name`, `url`, `ssl_verify`, `enabled`
+- `list_event_subscriptions` / `create_event_subscription` (`channel`, `event_type`, `target_id`) / `delete_event_subscription`
 
 Webhook tools need an admin account, and creating or updating a webhook needs a paid plan.
-- `list_event_subscriptions` / `create_event_subscription` (`channel`, `event_type`, `target_id`) / `delete_event_subscription`
 
 ---
 
