@@ -523,7 +523,7 @@ def _unseal(kind: str, sealed: str) -> tuple[str, str] | None:
     code cannot be replayed as a refresh token.
     """
     prefix = f'{_SEALED_PREFIX}.'
-    if not sealed.startswith(prefix):
+    if not isinstance(sealed, str) or not sealed.startswith(prefix):
         return None
     signed, _, signature = sealed.rpartition('.')
     expected = base64.urlsafe_b64encode(
@@ -563,6 +563,20 @@ def _seal_refresh_token(refresh_token: str, device_id: str) -> str:
 
 def _unseal_refresh_token(sealed: str) -> tuple[str, str] | None:
     return _unseal(_SEAL_KIND_REFRESH, sealed)
+
+
+def _reject_unsealed(what: str, value: object) -> JSONResponse:
+    """Log and refuse a value this server did not seal.
+
+    One under our prefix that fails to verify is tampering or corruption and
+    worth a warning; a bare one is a session from before sealing, which every
+    client hits once at rollout, or an Auth0 token handed to the proxy directly.
+    """
+    if isinstance(value, str) and value.startswith(f'{_SEALED_PREFIX}.'):
+        logger.warning('Rejected a %s that failed seal verification', what)
+    else:
+        logger.info('Rejected an unsealed %s', what)
+    return _invalid_grant(what)
 
 
 def _invalid_grant(what: str) -> JSONResponse:
@@ -950,16 +964,12 @@ def register_oauth_routes(mcp_server):
         if grant_type == 'authorization_code':
             unsealed = _unseal_code(params.get('code', ''))
             if unsealed is None:
-                logger.warning(
-                    'Rejected an authorization code this server did not seal'
-                )
-                return _invalid_grant('authorization code')
+                return _reject_unsealed('authorization code', params.get('code'))
             params['code'], sealed_device_id = unsealed
         elif grant_type == 'refresh_token':
             unsealed = _unseal_refresh_token(params.get('refresh_token', ''))
             if unsealed is None:
-                logger.warning('Rejected a refresh token this server did not seal')
-                return _invalid_grant('refresh token')
+                return _reject_unsealed('refresh token', params.get('refresh_token'))
             params['refresh_token'], sealed_device_id = unsealed
             params['device_id'] = sealed_device_id
 

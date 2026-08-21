@@ -574,6 +574,12 @@ class TestSealedGrants:
         assert _unseal_refresh_token('v1.Mc-plain-auth0-token') is None
         assert _unseal_code('plain-auth0-code') is None
 
+    def test_non_string_values_are_not_sealed(self):
+        """A JSON body can carry any type; none of them is a seal."""
+        assert _unseal_code(123) is None
+        assert _unseal_refresh_token(None) is None
+        assert _unseal_refresh_token(['v1.refresh']) is None
+
 
 class TestNonceHelpers:
     """Tests for the per-flow nonce that binds a state to one browser."""
@@ -1607,14 +1613,52 @@ class TestOAuthToken:
         assert response.json()['error'] == 'invalid_grant'
         mock_client.post.assert_not_called()
 
-    def test_token_refresh_rejects_a_bare_refresh_token(self, oauth_app):
+    def test_token_refresh_rejects_a_bare_refresh_token(self, oauth_app, caplog):
         """A refresh token issued before sealing would refresh under a shared
-        key, so it is refused and the client logs in again."""
+        key, so it is refused and the client logs in again. Every pre-sealing
+        session hits this once at rollout, so it is not a warning."""
+        mock_client = _mock_auth0_response()
+        with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
+            with caplog.at_level('INFO'):
+                response = oauth_app.post(
+                    '/oauth/token',
+                    data={'grant_type': 'refresh_token', 'refresh_token': 'v1.legacy'},
+                )
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert response.json()['error'] == 'invalid_grant'
+        mock_client.post.assert_not_called()
+        [record] = [r for r in caplog.records if 'unsealed refresh token' in r.message]
+        assert record.levelname == 'INFO'
+
+    def test_token_refresh_warns_on_a_failed_seal(self, oauth_app, caplog):
+        """Under our prefix but not verifying is tampering or corruption."""
+        sealed = _seal_refresh_token('v1.refresh', DEVICE_ID)
+        prefix, encoded, signature = sealed.split('.')
+        mock_client = _mock_auth0_response()
+        with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
+            with caplog.at_level('INFO'):
+                response = oauth_app.post(
+                    '/oauth/token',
+                    data={
+                        'grant_type': 'refresh_token',
+                        'refresh_token': f'{prefix}.{encoded}.{signature[:-4]}AAAA',
+                    },
+                )
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        [record] = [r for r in caplog.records if 'seal verification' in r.message]
+        assert record.levelname == 'WARNING'
+
+    def test_token_refresh_rejects_a_non_string_refresh_token(self, oauth_app):
+        """A JSON body can type the field as anything; it must not reach a
+        string method and come back as a 500."""
         mock_client = _mock_auth0_response()
         with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
             response = oauth_app.post(
                 '/oauth/token',
-                data={'grant_type': 'refresh_token', 'refresh_token': 'v1.legacy'},
+                content=json.dumps(
+                    {'grant_type': 'refresh_token', 'refresh_token': 123}
+                ).encode(),
+                headers={'content-type': 'application/json'},
             )
         assert response.status_code == HTTPStatus.BAD_REQUEST
         assert response.json()['error'] == 'invalid_grant'
@@ -1702,6 +1746,20 @@ class TestOAuthToken:
             response = oauth_app.post(
                 '/oauth/token',
                 data={'grant_type': 'authorization_code', 'code': 'auth-code'},
+            )
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert response.json()['error'] == 'invalid_grant'
+        mock_client.post.assert_not_called()
+
+    def test_token_auth_code_rejects_a_non_string_code(self, oauth_app):
+        mock_client = _mock_auth0_response()
+        with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
+            response = oauth_app.post(
+                '/oauth/token',
+                content=json.dumps(
+                    {'grant_type': 'authorization_code', 'code': ['auth-code']}
+                ).encode(),
+                headers={'content-type': 'application/json'},
             )
         assert response.status_code == HTTPStatus.BAD_REQUEST
         assert response.json()['error'] == 'invalid_grant'
