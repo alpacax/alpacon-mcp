@@ -4,6 +4,7 @@ Unit tests for server tools module.
 Tests all server management functions including server listing, details, and notes management.
 """
 
+import inspect
 from http import HTTPStatus
 from unittest.mock import AsyncMock, patch
 
@@ -557,13 +558,14 @@ class TestServerNoteCRUD:
     ):
         mock_http_client.patch.return_value = {'id': 'note-1'}
 
-        await update_server_note(
+        result = await update_server_note(
             note_id='note-1',
             workspace='testworkspace',
             content='edited',
             pinned=True,
         )
 
+        assert result['status'] == 'success'
         mock_http_client.patch.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
@@ -573,8 +575,6 @@ class TestServerNoteCRUD:
         )
 
     def test_update_note_no_longer_accepts_title(self):
-        import inspect
-
         # update_server_note takes **kwargs, so a dead argument is swallowed
         # rather than rejected; assert on the signature instead.
         assert 'title' not in inspect.signature(update_server_note).parameters

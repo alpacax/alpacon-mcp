@@ -5,13 +5,15 @@ Tests the HTTP client functionality including GET, POST, PATCH, DELETE operation
 and error handling.
 """
 
+import re
 from http import HTTPStatus
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
 
-from utils.http_client import AlpaconHTTPClient, http_client
+from utils.http_client import _CACHEABLE_ENDPOINTS, AlpaconHTTPClient, http_client
 from utils.recovery_hints import _detect_error_domain, enrich_error_response
 
 
@@ -617,11 +619,6 @@ class TestCacheWhitelist:
         )
 
     def test_every_whitelist_entry_is_a_prefix_of_an_endpoint_some_tool_calls(self):
-        import re
-        from pathlib import Path
-
-        from utils.http_client import _CACHEABLE_ENDPOINTS
-
         called = set()
         for path in Path('tools').glob('*.py'):
             called.update(re.findall(r"'(/api/[^']*)'", path.read_text()))
