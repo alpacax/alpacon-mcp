@@ -518,7 +518,7 @@ def _seal(kind: str, value: str, device_id: str) -> str:
     return f'{signed}.{signature}'
 
 
-def _unseal(kind: str, sealed: str) -> tuple[str, str] | None:
+def _unseal(kind: str, sealed: object) -> tuple[str, str] | None:
     """(value, device_id), or None unless this server sealed it as `kind`, so a
     code cannot be replayed as a refresh token.
     """
@@ -553,7 +553,7 @@ def _seal_code(code: str, device_id: str) -> str:
     return _seal(_SEAL_KIND_CODE, code, device_id)
 
 
-def _unseal_code(sealed: str) -> tuple[str, str] | None:
+def _unseal_code(sealed: object) -> tuple[str, str] | None:
     return _unseal(_SEAL_KIND_CODE, sealed)
 
 
@@ -561,7 +561,7 @@ def _seal_refresh_token(refresh_token: str, device_id: str) -> str:
     return _seal(_SEAL_KIND_REFRESH, refresh_token, device_id)
 
 
-def _unseal_refresh_token(sealed: str) -> tuple[str, str] | None:
+def _unseal_refresh_token(sealed: object) -> tuple[str, str] | None:
     return _unseal(_SEAL_KIND_REFRESH, sealed)
 
 
