@@ -657,11 +657,15 @@ There is intentionally no `approve_request`/`reject_request` tool: the Alpacon s
 
 ## 🔔 Alert tools
 
-- `list_alerts`: `workspace`, `server_id`, `status`, `acknowledged`, `dismissed`, `region` (optional), `page`, `page_size`
+- `list_alerts`: `workspace`, `server_id`, `alert_type`, `severity` (`critical`, `warning`, `info`), `server_name`, `acknowledged`, `dismissed`, `region` (optional), `page`, `page_size`
 - `get_alert`: `alert_id`, `workspace`, `region` (optional)
-- `mute_alert`: `alert_id`, `workspace`, `duration`, `region` (optional)
-- `create_alert_rule`: `workspace`, `name`, `metric_type` (`cpu`, `memory`, `disk`, …), `condition` (`gt`, `lt`, `gte`, `lte`), `threshold`, `servers`, `notification_channels`, `description`, `enabled`, `region` (optional)
-- `update_alert_rule` / `delete_alert_rule`: by `rule_id`
+- `acknowledge_alert`: `alert_id`, `workspace`, `action_type` (`checked` or `dismissed`), `region` (optional). One acknowledgement per user per alert, and it cannot be changed afterwards
+- `create_alert_rule`: `workspace`, `name`, `target`, `threshold`, `is_default`, `region` (optional). `target` is one of `cpu-usage`, `memory-usage`, `disk-usage`, `peak-read-bps`, `peak-write-bps`, `avg-read-bps`, `avg-write-bps`, `peak-input-pps`, `peak-input-bps`, `peak-output-pps`, `peak-output-bps`, `avg-input-pps`, `avg-input-bps`, `avg-output-pps`, `avg-output-bps`
+- `update_alert_rule`: `rule_id`, `workspace`, and any of `name`, `target`, `threshold`, `is_default`
+- `delete_alert_rule`: by `rule_id`. A rule with `is_default=true` cannot be deleted
+- `attach_alert_rule` / `detach_alert_rule`: `server_id`, `rule_id`, `workspace`, `region` (optional). Both are no-ops when the rule is already attached or already absent
+
+Creating and updating a rule need a paid plan; reading, attaching and detaching work on any plan.
 
 ---
 

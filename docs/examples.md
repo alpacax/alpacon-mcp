@@ -222,17 +222,19 @@ The `incident_response` MCP prompt encodes exactly this discipline—read-only t
 ```
 create_alert_rule(
     workspace="production",
-    name="web-01 disk above 85%",
-    metric_type="disk",
-    condition="gt",
+    name="disk above 85%",
+    target="disk-usage",
     threshold=85,
-    servers=["<uuid>"],
-    notification_channels=["email"],
-    enabled=True,
+)
+
+attach_alert_rule(
+    server_id="<uuid>",
+    rule_id="<uuid>",
+    workspace="production",
 )
 ```
 
-`get_alert_rules(workspace)` lists what exists; `update_alert_rule` and `delete_alert_rule` change it. On the firing side: `list_alerts` (filter by `status`, `acknowledged`, `dismissed`), `get_alert` for one, `mute_alert(alert_id, workspace, duration=...)` to silence it for a while.
+`get_alert_rules(workspace)` lists what exists; `update_alert_rule` and `delete_alert_rule` change it, and a rule with `is_default=true` cannot be deleted. Authoring a rule needs a paid plan, while attaching one works on any plan. On the firing side: `list_alerts` (filter by `alert_type`, `severity`, `server_name`, `acknowledged`, `dismissed`), `get_alert` for one, and `acknowledge_alert(alert_id, workspace, action_type="checked")` to mark it seen. An acknowledgement is one per user per alert and cannot be changed afterwards.
 
 ---
 

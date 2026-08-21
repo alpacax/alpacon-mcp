@@ -6,11 +6,13 @@ import pytest
 
 from tests.conftest import HTTP_ERROR_ENVELOPE
 from tools.alert_tools import (
+    acknowledge_alert,
+    attach_alert_rule,
     create_alert_rule,
     delete_alert_rule,
+    detach_alert_rule,
     get_alert,
     list_alerts,
-    mute_alert,
     update_alert_rule,
 )
 
@@ -86,6 +88,39 @@ class TestListAlerts:
             params={'dismissed': False},
         )
 
+    @pytest.mark.asyncio
+    async def test_list_forwards_the_filters_alertfilter_declares(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.get.return_value = {'results': [], 'count': 0}
+
+        await list_alerts(
+            workspace='testworkspace',
+            region='ap1',
+            alert_type='metric_threshold',
+            severity='critical',
+            server_name='web-01',
+        )
+
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/alerts/',
+            token='test-token',
+            params={
+                'alert_type': 'metric_threshold',
+                'severity': 'critical',
+                'server_name': 'web-01',
+            },
+        )
+
+    def test_list_no_longer_accepts_status(self):
+        import inspect
+
+        # list_alerts takes **kwargs, so a dead argument is swallowed rather
+        # than rejected; the signature is the only thing that can be asserted.
+        assert 'status' not in inspect.signature(list_alerts).parameters
+
 
 class TestGetAlert:
     @pytest.mark.asyncio
@@ -106,83 +141,142 @@ class TestGetAlert:
         )
 
 
-class TestMuteAlert:
+class TestAcknowledgeAlert:
     @pytest.mark.asyncio
-    async def test_mute_success(self, mock_http_client, mock_token_manager):
-        mock_http_client.post.return_value = {'id': ALERT_ID, 'muted': True}
+    async def test_acknowledge_posts_only_the_action_type(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = {'message': 'Alert checked successfully'}
 
-        result = await mute_alert(
+        result = await acknowledge_alert(
             alert_id=ALERT_ID,
             workspace='testworkspace',
-            duration=30,
+            action_type='checked',
             region='ap1',
         )
 
         assert result['status'] == 'success'
-        assert result['alert_id'] == ALERT_ID
         mock_http_client.post.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint=f'/api/alerts/{ALERT_ID}/mute/',
+            endpoint=f'/api/alerts/{ALERT_ID}/acknowledge/',
             token='test-token',
-            data={'duration': 30},
+            data={'action_type': 'checked'},
         )
+
+    @pytest.mark.asyncio
+    async def test_acknowledge_rejects_an_unknown_action_before_calling(
+        self, mock_http_client, mock_token_manager
+    ):
+        result = await acknowledge_alert(
+            alert_id=ALERT_ID,
+            workspace='testworkspace',
+            action_type='muted',
+            region='ap1',
+        )
+
+        assert result['status'] == 'error'
+        assert result['error_code'] == 'validation'
+        assert result['field'] == 'action_type'
+        mock_http_client.post.assert_not_called()
+
+    def test_mute_alert_is_gone(self):
+        import tools.alert_tools as alert_tools
+
+        assert not hasattr(alert_tools, 'mute_alert')
 
 
 class TestCreateAlertRule:
     @pytest.mark.asyncio
-    async def test_create_success(self, mock_http_client, mock_token_manager):
-        mock_http_client.post.return_value = {'id': RULE_ID, 'name': 'cpu-high'}
+    async def test_create_sends_the_four_writable_fields(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = {'id': RULE_ID}
 
-        result = await create_alert_rule(
+        await create_alert_rule(
             workspace='testworkspace',
-            name='cpu-high',
-            metric_type='cpu',
-            condition='gt',
-            threshold=90.0,
+            name='disk above 85',
+            target='disk-usage',
+            threshold=85.0,
             region='ap1',
         )
 
-        assert result['status'] == 'success'
         mock_http_client.post.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
             endpoint='/api/metrics/alert-rules/',
             token='test-token',
             data={
-                'name': 'cpu-high',
-                'metric_type': 'cpu',
-                'condition': 'gt',
-                'threshold': 90.0,
-                'enabled': True,
+                'name': 'disk above 85',
+                'target': 'disk-usage',
+                'threshold': 85.0,
+                'is_default': False,
             },
         )
+
+    def test_create_no_longer_accepts_the_invented_fields(self):
+        import inspect
+
+        # create_alert_rule takes **kwargs, so a dead argument is swallowed
+        # rather than rejected; assert on the signature instead.
+        params = inspect.signature(create_alert_rule).parameters
+        for dead in (
+            'metric_type',
+            'condition',
+            'enabled',
+            'servers',
+            'notification_channels',
+            'description',
+        ):
+            assert dead not in params, dead
+
+    def test_every_target_metric_is_named_in_the_description(self):
+        from tools.alert_tools import ALERT_RULE_TARGETS
+
+        assert len(ALERT_RULE_TARGETS) == 15
+        assert 'cpu-usage' in ALERT_RULE_TARGETS
+        assert 'avg-output-bps' in ALERT_RULE_TARGETS
 
 
 class TestUpdateAlertRule:
     @pytest.mark.asyncio
-    async def test_update_success(self, mock_http_client, mock_token_manager):
-        mock_http_client.patch.return_value = {'id': RULE_ID, 'threshold': 80.0}
+    async def test_update_sends_only_what_it_was_given(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.patch.return_value = {'id': RULE_ID}
 
-        result = await update_alert_rule(
+        await update_alert_rule(
             rule_id=RULE_ID,
             workspace='testworkspace',
-            threshold=80.0,
+            threshold=90.0,
             region='ap1',
         )
 
-        assert result['status'] == 'success'
-        assert result['rule_id'] == RULE_ID
         mock_http_client.patch.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
             endpoint=f'/api/metrics/alert-rules/{RULE_ID}/',
             token='test-token',
-            data={'threshold': 80.0},
+            data={'threshold': 90.0},
         )
 
+    def test_update_no_longer_accepts_the_invented_fields(self):
+        import inspect
+
+        params = inspect.signature(update_alert_rule).parameters
+        assert set(params) == {
+            'rule_id',
+            'workspace',
+            'name',
+            'target',
+            'threshold',
+            'is_default',
+            'region',
+            'kwargs',
+        }
+
     @pytest.mark.asyncio
-    async def test_update_no_data_returns_error(
+    async def test_update_with_no_fields_is_a_validation_error(
         self, mock_http_client, mock_token_manager
     ):
         result = await update_alert_rule(
@@ -190,6 +284,7 @@ class TestUpdateAlertRule:
         )
 
         assert result['status'] == 'error'
+        assert result['error_code'] == 'validation'
         mock_http_client.patch.assert_not_called()
 
 
@@ -212,23 +307,95 @@ class TestDeleteAlertRule:
         )
 
 
-# Each endpoint's error-envelope path is identical; one parametrized case per
+class TestAttachDetachAlertRule:
+    SERVER_ID = '550e8400-e29b-41d4-a716-446655440123'
+
+    @pytest.mark.asyncio
+    async def test_attach_posts_the_rule_to_the_server_route(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = {'status': 'success', 'status_code': 204}
+
+        result = await attach_alert_rule(
+            server_id=self.SERVER_ID,
+            rule_id=RULE_ID,
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert result['status'] == 'success'
+        mock_http_client.post.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint=f'/api/servers/servers/{self.SERVER_ID}/attach-rule/',
+            token='test-token',
+            data={'rule': RULE_ID},
+        )
+
+    @pytest.mark.asyncio
+    async def test_detach_uses_the_detach_route(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = {'status': 'success', 'status_code': 204}
+
+        await detach_alert_rule(
+            server_id=self.SERVER_ID,
+            rule_id=RULE_ID,
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        mock_http_client.post.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint=f'/api/servers/servers/{self.SERVER_ID}/detach-rule/',
+            token='test-token',
+            data={'rule': RULE_ID},
+        )
+
+    @pytest.mark.asyncio
+    async def test_attaching_an_already_attached_rule_still_succeeds(
+        self, mock_http_client, mock_token_manager
+    ):
+        # The server backs attach with server.rules.add(), a Django M2M write
+        # that is a no-op when the rule is already there, so 204 comes back
+        # either way and the tool must report success rather than invent a
+        # "no change" outcome.
+        mock_http_client.post.return_value = {'status': 'success', 'status_code': 204}
+
+        first = await attach_alert_rule(
+            server_id=self.SERVER_ID,
+            rule_id=RULE_ID,
+            workspace='testworkspace',
+            region='ap1',
+        )
+        second = await attach_alert_rule(
+            server_id=self.SERVER_ID,
+            rule_id=RULE_ID,
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert first['status'] == 'success'
+        assert second['status'] == 'success'
+
+
+# Each endpoint's error-envelope path is identical;# Each endpoint's error-envelope path is identical; one parametrized case per
 # tool (with its HTTP verb) replaces six near-duplicate per-class tests.
 @pytest.mark.parametrize(
     'verb, func, kwargs',
     [
         ('get', list_alerts, {}),
         ('get', get_alert, {'alert_id': ALERT_ID}),
-        ('post', mute_alert, {'alert_id': ALERT_ID}),
+        (
+            'post',
+            acknowledge_alert,
+            {'alert_id': ALERT_ID, 'action_type': 'checked'},
+        ),
         (
             'post',
             create_alert_rule,
-            {
-                'name': 'cpu-high',
-                'metric_type': 'cpu',
-                'condition': 'gt',
-                'threshold': 90.0,
-            },
+            {'name': 'cpu-high', 'target': 'cpu-usage', 'threshold': 90.0},
         ),
         ('patch', update_alert_rule, {'rule_id': RULE_ID, 'threshold': 80.0}),
         ('delete', delete_alert_rule, {'rule_id': RULE_ID}),
@@ -236,7 +403,7 @@ class TestDeleteAlertRule:
     ids=[
         'list_alerts',
         'get_alert',
-        'mute_alert',
+        'acknowledge_alert',
         'create_alert_rule',
         'update_alert_rule',
         'delete_alert_rule',
