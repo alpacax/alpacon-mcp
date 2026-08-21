@@ -144,7 +144,7 @@ class TestResourceRegistrations:
 class TestCliWiring:
     @staticmethod
     def _load(filename):
-        # By path: the repo dir is named 'main', so `import main` hits that package.
+        # By path: each probe gets its own module, so a monkeypatch never lands on a cached `main`.
         path = Path(server.__file__).parent / filename
         spec = importlib.util.spec_from_file_location(f'_probe_{filename}', path)
         module = importlib.util.module_from_spec(spec)
