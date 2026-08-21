@@ -23,6 +23,7 @@ from starlette.testclient import TestClient
 
 from utils.oauth import (
     _CORS_PREFLIGHT_HEADERS,
+    _DEVICE_ID,
     _LOG_VALUE_MAX_CHARS,
     _MAX_REGISTERED_REDIRECT_URIS,
     _NONCE_COOKIE_NAME,
@@ -163,6 +164,12 @@ def _mock_auth0_response(status_code=HTTPStatus.OK, json_data=None):
     mock_client.__aenter__ = AsyncMock(return_value=mock_client)
     mock_client.__aexit__ = AsyncMock(return_value=None)
     return mock_client
+
+
+def _authorize_scope_parts(response):
+    """Return the scope tokens of an /oauth/authorize redirect."""
+    query = parse_qs(urlparse(response.headers['location']).query)
+    return query.get('scope', [''])[0].split()
 
 
 class TestAllowedRedirectUris:
@@ -840,6 +847,112 @@ class TestOAuthAuthorize:
         location = response.headers['location']
         assert 'offline_access' in location
 
+    def test_authorize_adds_device_scope(self, oauth_app):
+        """device scope is added so refreshed tokens keep the MFA claim."""
+        response = oauth_app.get(
+            '/oauth/authorize',
+            params={
+                'response_type': 'code',
+                'redirect_uri': 'http://localhost:8080/callback',
+                'scope': 'openid profile',
+                **PKCE_PARAMS,
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == HTTPStatus.FOUND
+        scope_parts = _authorize_scope_parts(response)
+        assert f'device:{_DEVICE_ID}' in scope_parts
+
+    def test_authorize_preserves_client_device_scope(self, oauth_app):
+        response = oauth_app.get(
+            '/oauth/authorize',
+            params={
+                'response_type': 'code',
+                'redirect_uri': 'http://localhost:8080/callback',
+                'scope': 'openid device:client-own-id',
+                **PKCE_PARAMS,
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == HTTPStatus.FOUND
+        scope_parts = _authorize_scope_parts(response)
+        assert 'device:client-own-id' in scope_parts
+        assert f'device:{_DEVICE_ID}' not in scope_parts
+
+    @pytest.mark.parametrize('client_scope', ['device:', 'device:ab', 'device:my_id'])
+    def test_authorize_adds_device_scope_over_unusable_grant(
+        self, oauth_app, client_scope
+    ):
+        """A grant the Auth0 action rejects must not suppress the stable one."""
+        response = oauth_app.get(
+            '/oauth/authorize',
+            params={
+                'response_type': 'code',
+                'redirect_uri': 'http://localhost:8080/callback',
+                'scope': f'openid {client_scope}',
+                **PKCE_PARAMS,
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == HTTPStatus.FOUND
+        scope_parts = _authorize_scope_parts(response)
+        # Equality, not membership: the unusable token must be gone.
+        assert [s for s in scope_parts if s.startswith('device:')] == [
+            f'device:{_DEVICE_ID}'
+        ]
+
+    def test_authorize_replaces_a_device_scope_the_action_cannot_reach(self, oauth_app):
+        """A usable grant behind an unusable one is unreachable, so it does not count."""
+        response = oauth_app.get(
+            '/oauth/authorize',
+            params={
+                'response_type': 'code',
+                'redirect_uri': 'http://localhost:8080/callback',
+                'scope': 'openid device:ab device:good-id-1234',
+                **PKCE_PARAMS,
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == HTTPStatus.FOUND
+        scope_parts = _authorize_scope_parts(response)
+        assert [s for s in scope_parts if s.startswith('device:')] == [
+            f'device:{_DEVICE_ID}'
+        ]
+
+    def test_authorize_adds_device_scope_despite_device_substring(self, oauth_app):
+        """A scope merely containing 'device:' is not a device id grant."""
+        response = oauth_app.get(
+            '/oauth/authorize',
+            params={
+                'response_type': 'code',
+                'redirect_uri': 'http://localhost:8080/callback',
+                'scope': 'openid read:device:status',
+                **PKCE_PARAMS,
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == HTTPStatus.FOUND
+        scope_parts = _authorize_scope_parts(response)
+        assert f'device:{_DEVICE_ID}' in scope_parts
+
+    def test_authorize_mfa_state_carries_device_scope(self, oauth_app):
+        """Stage 1 parks the device scope in the state so Stage 2 replays it."""
+        response = oauth_app.get(
+            '/oauth/authorize',
+            params={
+                'response_type': 'code',
+                'redirect_uri': 'http://localhost:8080/callback',
+                'scope': 'openid profile mfa',
+                **PKCE_PARAMS,
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == HTTPStatus.FOUND
+        query = parse_qs(urlparse(response.headers['location']).query)
+        state_data = _verify_state(query['state'][0])
+        assert state_data.get('stage') == 'mfa'
+        assert f'device:{_DEVICE_ID}' in state_data.get('original_scope', '').split()
+
     def test_authorize_mfa_scope_redirects_to_mfa_audience(self, oauth_app):
         """When 'mfa' pseudo-scope is present, redirects to Auth0 MFA audience."""
         response = oauth_app.get(
@@ -1342,6 +1455,61 @@ class TestOAuthToken:
         assert response.status_code == HTTPStatus.OK
         call_kwargs = mock_client.post.call_args
         assert call_kwargs.kwargs['data']['client_secret'] == TEST_CLIENT_SECRET
+
+    def test_token_refresh_carries_device_id(self, oauth_app):
+        """Refresh exchanges carry the device id the Auth0 action keys on."""
+        mock_client = _mock_auth0_response()
+        with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
+            response = oauth_app.post(
+                '/oauth/token',
+                data={'grant_type': 'refresh_token', 'refresh_token': 'test-refresh'},
+            )
+        assert response.status_code == HTTPStatus.OK
+        call_kwargs = mock_client.post.call_args
+        assert call_kwargs.kwargs['data']['device_id'] == _DEVICE_ID
+
+    def test_token_refresh_keeps_client_device_id(self, oauth_app):
+        """A client that logged in under its own device id refreshes under it."""
+        mock_client = _mock_auth0_response()
+        with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
+            response = oauth_app.post(
+                '/oauth/token',
+                data={
+                    'grant_type': 'refresh_token',
+                    'refresh_token': 'test-refresh',
+                    'device_id': 'client-own-id',
+                },
+            )
+        assert response.status_code == HTTPStatus.OK
+        call_kwargs = mock_client.post.call_args
+        assert call_kwargs.kwargs['data']['device_id'] == 'client-own-id'
+
+    def test_token_refresh_replaces_unusable_client_device_id(self, oauth_app):
+        """An id the Auth0 action rejects would resolve to the fingerprint."""
+        mock_client = _mock_auth0_response()
+        with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
+            response = oauth_app.post(
+                '/oauth/token',
+                data={
+                    'grant_type': 'refresh_token',
+                    'refresh_token': 'test-refresh',
+                    'device_id': 'my_id',
+                },
+            )
+        assert response.status_code == HTTPStatus.OK
+        call_kwargs = mock_client.post.call_args
+        assert call_kwargs.kwargs['data']['device_id'] == _DEVICE_ID
+
+    def test_token_auth_code_grant_has_no_device_id(self, oauth_app):
+        mock_client = _mock_auth0_response()
+        with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
+            response = oauth_app.post(
+                '/oauth/token',
+                data={'grant_type': 'authorization_code', 'code': 'test-code'},
+            )
+        assert response.status_code == HTTPStatus.OK
+        call_kwargs = mock_client.post.call_args
+        assert 'device_id' not in call_kwargs.kwargs['data']
 
     def test_token_fails_without_client_secret(self):
         """Token endpoint should return 500 when AUTH0_CLIENT_SECRET is missing."""

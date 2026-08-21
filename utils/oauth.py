@@ -73,6 +73,19 @@ _NONCE_COOKIE_ATTRS: _NonceCookieAttrs = {
 
 _ALLOWED_LOOPBACK_HOSTS = ('localhost', '127.0.0.1', '::1')
 
+# Remote MCP refreshes tokens server-side, so the Auth0 action's IP/UA
+# fingerprint never matches the login; bind presence to the client instead
+# (ADR 0054). One constant for every remote MCP session makes presence shared
+# per user rather than per session: a password-only login by that user clears
+# the record its other sessions refresh against, which fails closed into a
+# re-auth.
+_DEVICE_ID = 'alpacon-mcp-remote'
+
+# Mirrors the validator in the Auth0 action's code.js. The check and its
+# consumer sit in different repos, so a value we accept but the action rejects
+# would silently fall back to the fingerprint keying this fix exists to avoid.
+_DEVICE_ID_PATTERN = re.compile(r'^[A-Za-z0-9-]{8,64}$')
+
 # Caps a client-supplied value in a log line. Escaping expands a byte up to
 # sixfold, so an unbounded value on an unauthenticated route inflates log volume.
 _LOG_VALUE_MAX_CHARS = 512
@@ -447,6 +460,17 @@ def _build_state(redirect_uri: str, state: str, **extra) -> str:
     return _sign_state({'redirect_uri': redirect_uri, 'state': state, **extra})
 
 
+def _is_device_id(value: str) -> bool:
+    """Whether the Auth0 action will honor this as a client-supplied device id."""
+    return bool(_DEVICE_ID_PATTERN.match(value.strip()))
+
+
+def _has_client_device_scope(scope: str) -> bool:
+    """Whether the Auth0 action will resolve a device id out of this scope."""
+    first = next((s for s in scope.split() if s.startswith('device:')), None)
+    return first is not None and _is_device_id(first[len('device:') :])
+
+
 def _new_nonce() -> str:
     """Mint the per-flow value that proves a callback reached the same browser."""
     return secrets.token_urlsafe(32)
@@ -569,6 +593,11 @@ def register_oauth_routes(mcp_server):
         scope = params.get('scope', '')
         if 'offline_access' not in scope:
             scope = f'{scope} offline_access'.strip()
+        # The Auth0 action validates only the first `device:` token, so an
+        # unusable one has to go rather than sit ahead of ours.
+        if not _has_client_device_scope(scope):
+            scope = ' '.join(s for s in scope.split() if not s.startswith('device:'))
+            scope = f'{scope} device:{_DEVICE_ID}'.strip()
 
         # Detect MFA pseudo-scope from re-auth flow.
         # When the ASGI middleware returns 401 with scope="... mfa",
@@ -796,6 +825,17 @@ def register_oauth_routes(mcp_server):
             )
         params['client_id'] = configured_client_id
         params['client_secret'] = config['client_secret']
+
+        # Refresh requests may omit scope, so carry the device id on the body
+        # channel the Auth0 action also reads; a scope grant is not required.
+        # A client that logged in under its own device id keeps it here, or the
+        # restore looks up a key that was never written. One the action would
+        # reject is replaced rather than kept: leaving it would resolve to no
+        # candidate at all, which is the fingerprint fallback.
+        if grant_type == 'refresh_token' and not _is_device_id(
+            params.get('device_id', '')
+        ):
+            params['device_id'] = _DEVICE_ID
 
         # Override redirect_uri to match what was sent to Auth0 during /authorize.
         # Auth0 requires the redirect_uri in token exchange to match exactly.
