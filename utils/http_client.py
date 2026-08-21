@@ -5,7 +5,7 @@ import json
 import time
 from http import HTTPStatus
 from typing import Any
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlsplit
 
 import httpx
 
@@ -23,15 +23,13 @@ _ERR_REQUEST_EXCEPTION = 'Request Exception'
 _ERR_TIMEOUT = 'Timeout'
 _ERR_UNEXPECTED = 'Unexpected Error'
 
-# Prefix tuple (str.startswith needs a tuple); real-time metrics deliberately excluded.
+# Path prefixes, matched against a URL's path component, not the URL itself.
+# Real-time metrics are deliberately excluded.
 _CACHEABLE_ENDPOINTS = (
     '/api/servers/servers/',
-    '/api/system/info/',
-    '/api/system/users/',
-    '/api/system/packages/',
+    '/api/proc/',
     '/api/iam/users/',
     '/api/iam/groups/',
-    '/api/iam/roles/',
 )
 
 
@@ -226,6 +224,9 @@ class AlpaconHTTPClient:
 
                 # Check for success
                 response.raise_for_status()
+
+                if method != 'GET':
+                    self._invalidate_cache(url)
 
                 # Log successful response
                 logger.info(
@@ -556,12 +557,36 @@ class AlpaconHTTPClient:
             key_parts.append(json.dumps(params, sort_keys=True))
         return '|'.join(key_parts)
 
-    def _is_cacheable(self, method: str, endpoint: str) -> bool:
-        """Check if request should be cached."""
+    def _is_cacheable(self, method: str, url: str) -> bool:
+        """Whether a GET beneath a whitelisted path prefix may be cached.
+
+        Callers pass the full URL they are about to fetch, so this must compare
+        the path component; the whitelist holds paths, not absolute URLs.
+        """
         if method != 'GET':
             return False
 
-        return endpoint.startswith(_CACHEABLE_ENDPOINTS)
+        return urlsplit(url).path.startswith(_CACHEABLE_ENDPOINTS)
+
+    def _invalidate_cache(self, url: str) -> None:
+        """Drop cached reads a write beneath a whitelisted prefix made stale.
+
+        Nothing else clears the cache before its TTL, so without this a rename
+        through update_server would keep serving the old name from list_servers.
+        Scoped to the written URL's own host, so a write in one workspace does
+        not clear another workspace's cached reads.
+        """
+        parts = urlsplit(url)
+        prefix = next(
+            (p for p in _CACHEABLE_ENDPOINTS if parts.path.startswith(p)), None
+        )
+        if prefix is None:
+            return
+
+        stale = f'{parts.scheme}://{parts.netloc}{prefix}'
+        for key in [k for k in self._cache if k.split('|')[1].startswith(stale)]:
+            self._cache.pop(key, None)
+            self._cache_ttl.pop(key, None)
 
     def _get_cached_response(self, cache_key: str) -> dict[str, Any] | None:
         """Get cached response if still valid.

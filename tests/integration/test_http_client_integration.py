@@ -186,18 +186,12 @@ class TestRetryBehavior:
 
 
 class TestCacheBehavior:
-    """Test HTTP client caching with MockTransport.
+    """Test HTTP client caching with MockTransport."""
 
-    Note: _is_cacheable() checks url.startswith(path_prefix). When the
-    convenience methods (get/post) construct full URLs like
-    'https://ws.ap1.alpacon.io/api/servers/servers/', the cache check fails
-    because the full URL doesn't start with '/api/servers/servers/'.
-    These tests verify the actual cache behavior using get_base_url override
-    to produce URLs that match the cache prefix.
-    """
-
-    async def test_cache_miss_due_to_full_url_mismatch(self, patched_http_client):
-        """Full URLs do not match path-prefix cache keys, so no caching occurs."""
+    async def test_a_repeated_cacheable_get_is_served_from_cache(
+        self, patched_http_client
+    ):
+        """A second GET beneath a whitelisted prefix never reaches the network."""
         call_count = 0
 
         def handler(request: httpx.Request) -> httpx.Response:
@@ -209,8 +203,6 @@ class TestCacheBehavior:
 
         patched_http_client.set_handler(handler)
 
-        # Override get_base_url so the full URL becomes 'https://t.test/api/servers/servers/'
-        # which still does not start with '/api/servers/servers/', confirming no cache hit
         with patch.object(http_client, 'get_base_url', return_value='https://t.test'):
             await http_client.get(
                 region='ap1',
@@ -225,12 +217,7 @@ class TestCacheBehavior:
                 token='test-token',
             )
 
-        # The full URL is 'https://t.test/api/servers/servers/' which does NOT
-        # start with '/api/servers/servers/', so caching doesn't trigger.
-        # This verifies the actual behavior of the current code.
-        assert call_count == 2, (
-            'Full URLs do not match path-prefix cache check, so handler is called twice'
-        )
+        assert call_count == 1, 'the second GET should have been served from cache'
 
     async def test_cache_internal_api_works(self):
         """Internal cache API (set/get) works correctly for manual caching."""
@@ -334,21 +321,15 @@ class TestCacheBehavior:
 
     async def test_is_cacheable_logic(self):
         """_is_cacheable correctly identifies cacheable endpoints."""
-        # Cacheable endpoints (path-only)
-        assert http_client._is_cacheable('GET', '/api/servers/servers/')
-        assert http_client._is_cacheable('GET', '/api/iam/users/')
-        assert http_client._is_cacheable('GET', '/api/iam/groups/')
+        base = 'https://ws.ap1.alpacon.io'
 
-        # Non-cacheable: metrics endpoints
-        assert not http_client._is_cacheable('GET', '/api/metrics/realtime/cpu/')
+        assert http_client._is_cacheable('GET', f'{base}/api/servers/servers/')
+        assert http_client._is_cacheable('GET', f'{base}/api/proc/info/')
+        assert http_client._is_cacheable('GET', f'{base}/api/iam/users/')
+        assert http_client._is_cacheable('GET', f'{base}/api/iam/groups/')
 
-        # Non-cacheable: POST method
-        assert not http_client._is_cacheable('POST', '/api/servers/servers/')
-
-        # Non-cacheable: full URLs (current behavior)
-        assert not http_client._is_cacheable(
-            'GET', 'https://ws.ap1.alpacon.io/api/servers/servers/'
-        )
+        assert not http_client._is_cacheable('GET', f'{base}/api/metrics/realtime/cpu/')
+        assert not http_client._is_cacheable('POST', f'{base}/api/servers/servers/')
 
 
 class TestURLConstruction:
