@@ -76,13 +76,15 @@ Create a new note for a server.
 
 **Parameters:**
 - `server_id` (string): Server ID
-- `title` (string): Note title
-- `content` (string): Note content
+- `content` (string): Note content; capped at 512 characters
+- `private` (boolean, optional): Hide the note from other workspace members
+- `pinned` (boolean, optional): Pin the note; a server holds at most three pinned notes
+- `mentioned_users` (array of strings, optional): User UUIDs to notify; accepted on create only
 - `region` (string, optional): Region name; resolved from the workspace when omitted
 - `workspace` (string): Workspace name
 
 ### `get_server_note` / `update_server_note` / `delete_server_note`
-Read, partially update (`title`, `content`), or permanently delete a note by `note_id`.
+Read, partially update (`content`, `private`, `pinned`), or permanently delete a note by `note_id`.
 
 ### `update_server`
 Rename or relabel a server's Alpacon entry. Does not touch the host itself.

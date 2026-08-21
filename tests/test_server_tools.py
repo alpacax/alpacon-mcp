@@ -344,43 +344,48 @@ class TestServerNotes:
         mock_http_client.get.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_create_server_note_success(
+    async def test_create_note_sends_no_title(
         self, mock_http_client, mock_token_manager
     ):
-        """Test successful server note creation."""
-        created_note = {
-            'id': 'note-789',
-            'title': 'New Note',
-            'content': 'This is a new note about the server',
-            'created_at': '2024-01-03T00:00:00Z',
-            'updated_at': '2024-01-03T00:00:00Z',
-        }
-        mock_http_client.post.return_value = created_note
+        mock_http_client.post.return_value = {'id': 'note-1'}
 
-        result = await create_server_note(
+        await create_server_note(
             server_id='550e8400-e29b-41d4-a716-446655440123',
-            title='New Note',
             content='This is a new note about the server',
             workspace='testworkspace',
         )
-
-        assert result['status'] == 'success'
-        assert result['data'] == created_note
-        assert result['server_id'] == '550e8400-e29b-41d4-a716-446655440123'
-
-        expected_data = {
-            'server': '550e8400-e29b-41d4-a716-446655440123',
-            'title': 'New Note',
-            'content': 'This is a new note about the server',
-        }
 
         mock_http_client.post.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
             endpoint='/api/servers/notes/',
             token='test-token',
-            data=expected_data,
+            data={
+                'server': '550e8400-e29b-41d4-a716-446655440123',
+                'content': 'This is a new note about the server',
+            },
         )
+
+    @pytest.mark.asyncio
+    async def test_create_note_adds_the_optional_fields_when_given(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = {'id': 'note-1'}
+
+        await create_server_note(
+            server_id='550e8400-e29b-41d4-a716-446655440123',
+            content='pinned note',
+            workspace='testworkspace',
+            private=True,
+            pinned=True,
+            mentioned_users=['550e8400-e29b-41d4-a716-446655440999'],
+        )
+
+        sent = mock_http_client.post.call_args.kwargs['data']
+        assert sent['private'] is True
+        assert sent['pinned'] is True
+        assert sent['mentioned_users'] == ['550e8400-e29b-41d4-a716-446655440999']
+        assert 'title' not in sent
 
     @pytest.mark.asyncio
     async def test_create_server_note_http_error_envelope(
@@ -390,7 +395,6 @@ class TestServerNotes:
 
         result = await create_server_note(
             server_id='550e8400-e29b-41d4-a716-446655440123',
-            title='',
             content='This is a new note about the server',
             workspace='testworkspace',
             region='ap1',
@@ -412,7 +416,6 @@ class TestServerNotes:
 
         result = await create_server_note(
             server_id='550e8400-e29b-41d4-a716-446655440123',
-            title='New Note',
             content='This is a new note about the server',
             workspace='testworkspace',
         )
@@ -426,11 +429,10 @@ class TestServerNotes:
         self, mock_http_client, mock_token_manager
     ):
         """Test server note creation with validation error."""
-        mock_http_client.post.side_effect = Exception('HTTP 400: Title cannot be empty')
+        mock_http_client.post.side_effect = Exception('HTTP 400: content is required')
 
         result = await create_server_note(
             server_id='550e8400-e29b-41d4-a716-446655440123',
-            title='',
             content='This is a new note about the server',
             workspace='testworkspace',
         )
@@ -461,12 +463,13 @@ class TestParameterValidation:
         )
 
     @pytest.mark.asyncio
-    async def test_long_note_content(self, mock_http_client, mock_token_manager):
-        """Test server note creation with long content."""
-        long_content = 'x' * 10000
+    async def test_note_content_at_the_server_limit(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Note content is capped at 512 characters by the Note model."""
+        long_content = 'x' * 512
         created_note = {
             'id': 'note-789',
-            'title': 'Long Note',
             'content': long_content,
             'created_at': '2024-01-03T00:00:00Z',
             'updated_at': '2024-01-03T00:00:00Z',
@@ -475,13 +478,12 @@ class TestParameterValidation:
 
         result = await create_server_note(
             server_id='550e8400-e29b-41d4-a716-446655440123',
-            title='Long Note',
             content=long_content,
             workspace='testworkspace',
         )
 
         assert result['status'] == 'success'
-        assert len(result['data']['content']) == 10000
+        assert len(result['data']['content']) == 512
 
 
 class TestRegionHandling:
@@ -537,63 +539,42 @@ class TestServerNoteCRUD:
         )
 
     @pytest.mark.asyncio
-    async def test_update_server_note_success(
+    async def test_update_note_sends_only_the_writable_fields(
         self, mock_http_client, mock_token_manager
     ):
-        """Updates fields and returns updated note."""
-        mock_http_client.patch.return_value = {
-            'id': 'note-1',
-            'title': 'New title',
-            'content': 'New content',
-        }
+        mock_http_client.patch.return_value = {'id': 'note-1'}
 
-        result = await update_server_note(
+        await update_server_note(
             note_id='note-1',
             workspace='testworkspace',
-            region='ap1',
-            title='New title',
-            content='New content',
+            content='edited',
+            pinned=True,
         )
 
-        assert result['status'] == 'success'
         mock_http_client.patch.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
             endpoint='/api/servers/notes/note-1/',
             token='test-token',
-            data={'title': 'New title', 'content': 'New content'},
+            data={'content': 'edited', 'pinned': True},
         )
 
+    def test_update_note_no_longer_accepts_title(self):
+        import inspect
+
+        # update_server_note takes **kwargs, so a dead argument is swallowed
+        # rather than rejected; assert on the signature instead.
+        assert 'title' not in inspect.signature(update_server_note).parameters
+
     @pytest.mark.asyncio
-    async def test_update_server_note_no_fields_returns_error(
+    async def test_update_note_with_no_fields_is_a_validation_error(
         self, mock_http_client, mock_token_manager
     ):
-        """No update fields returns validation error and no API call."""
-        result = await update_server_note(
-            note_id='note-1', workspace='testworkspace', region='ap1'
-        )
+        result = await update_server_note(note_id='note-1', workspace='testworkspace')
 
         assert result['status'] == 'error'
-        assert result.get('error_code') == 'validation'
-        assert result.get('field') == 'title or content'
+        assert result['error_code'] == 'validation'
         mock_http_client.patch.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_update_server_note_partial(
-        self, mock_http_client, mock_token_manager
-    ):
-        """Only non-None fields are sent in PATCH body."""
-        mock_http_client.patch.return_value = {'id': 'note-1', 'title': 'Only title'}
-
-        await update_server_note(
-            note_id='note-1',
-            workspace='testworkspace',
-            region='ap1',
-            title='Only title',
-        )
-
-        _, kwargs = mock_http_client.patch.call_args
-        assert kwargs['data'] == {'title': 'Only title'}
 
     @pytest.mark.asyncio
     async def test_delete_server_note_success(

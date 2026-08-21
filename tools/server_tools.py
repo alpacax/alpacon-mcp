@@ -131,7 +131,7 @@ async def get_server(
 
 @mcp_tool_handler(
     description=(
-        'List documentation notes attached to a server. Returns note titles, content, and timestamps. '
+        'List documentation notes attached to a server. Returns note content, author, and timestamps. '
         'Use this to review existing server documentation or operational records. '
         'Related: create_server_note (add new notes).'
     ),
@@ -179,7 +179,7 @@ async def list_server_notes(
 
 @mcp_tool_handler(
     description=(
-        'Create a documentation note on a server with a title and content body. '
+        'Create a documentation note on a server. The content is capped at 512 characters and a server holds at most three pinned notes. '
         'Use this to record operational notes, maintenance logs, or configuration documentation for a server. '
         'Related: list_server_notes (view existing notes).'
     ),
@@ -188,9 +188,11 @@ async def list_server_notes(
 )
 async def create_server_note(
     server_id: str,
-    title: str,
     content: str,
     workspace: str,
+    private: bool | None = None,
+    pinned: bool | None = None,
+    mentioned_users: list[str] | None = None,
     region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
@@ -198,19 +200,25 @@ async def create_server_note(
 
     Args:
         server_id: Server ID
-        title: Note title
-        content: Note content
+        content: Note content; the server caps it at 512 characters
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        private: Hide the note from other workspace members (optional)
+        pinned: Pin the note; a server holds at most three pinned notes (optional)
+        mentioned_users: User UUIDs to notify; accepted on create only (optional)
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Note creation response
     """
-    # Get token (injected by decorator)
     token = kwargs.get('token')
 
-    # Prepare note data with server field
-    note_data = {'server': server_id, 'title': title, 'content': content}
+    note_data: dict[str, Any] = {'server': server_id, 'content': content}
+    if private is not None:
+        note_data['private'] = private
+    if pinned is not None:
+        note_data['pinned'] = pinned
+    if mentioned_users is not None:
+        note_data['mentioned_users'] = mentioned_users
 
     # Make async call to create note
     result = await http_client.post(
@@ -225,7 +233,6 @@ async def create_server_note(
         result,
         default_message='Failed to create server note',
         server_id=server_id,
-        note_title=title,
         region=region,
         workspace=workspace,
     )
@@ -235,7 +242,6 @@ async def create_server_note(
     return success_response(
         data=result,
         server_id=server_id,
-        note_title=title,
         region=region,
         workspace=workspace,
     )
@@ -244,7 +250,7 @@ async def create_server_note(
 @mcp_tool_handler(
     description=(
         'Get detailed information about a specific server note by its ID. '
-        'Returns the note title, content, server, author, timestamps, and privacy settings. '
+        'Returns the note content, server, author, timestamps, and privacy settings. '
         'Use this when you need full details about one note. '
         'Related: list_server_notes (find note ID first), update_server_note, delete_server_note.'
     ),
@@ -290,7 +296,7 @@ async def get_server_note(
 
 @mcp_tool_handler(
     description=(
-        'Update an existing server note by its ID. Can change title or content. '
+        'Update an existing server note by its ID. Can change content, private, or pinned. '
         'Only the fields you provide will be updated (partial update). '
         'Related: get_server_note (view existing note), delete_server_note.'
     ),
@@ -300,8 +306,9 @@ async def get_server_note(
 async def update_server_note(
     note_id: str,
     workspace: str,
-    title: str | None = None,
     content: str | None = None,
+    private: bool | None = None,
+    pinned: bool | None = None,
     region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
@@ -310,9 +317,10 @@ async def update_server_note(
     Args:
         note_id: Note ID
         workspace: Workspace name. Required parameter
-        title: New title (optional)
-        content: New content (optional)
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        content: New content; the server caps it at 512 characters (optional)
+        private: Hide the note from other workspace members (optional)
+        pinned: Pin the note; a server holds at most three pinned notes (optional)
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Server note update response
@@ -320,16 +328,18 @@ async def update_server_note(
     token = kwargs.get('token')
 
     update_data: dict[str, Any] = {}
-    if title is not None:
-        update_data['title'] = title
     if content is not None:
         update_data['content'] = content
+    if private is not None:
+        update_data['private'] = private
+    if pinned is not None:
+        update_data['pinned'] = pinned
 
     if not update_data:
         return format_validation_error(
-            'title or content',
+            'content, private or pinned',
             None,
-            'At least one of title or content must be provided.',
+            'At least one field must be provided.',
         )
 
     result = await http_client.patch(
