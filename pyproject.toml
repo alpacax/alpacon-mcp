@@ -73,7 +73,6 @@ source = "vcs"
 
 [tool.hatch.build.targets.wheel]
 include = [
-    "/__init__.py",
     "/py.typed",
     "/server.py",
     "/main.py",
