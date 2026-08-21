@@ -11,6 +11,11 @@ from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ
 # Mirrors Webhook.Provider; omitting provider lets the server infer it from the URL.
 WEBHOOK_PROVIDERS = ('slack', 'discord', 'teams', 'telegram', 'custom')
 
+_PROVIDERS_SENTENCE = (
+    f'provider must be one of: {", ".join(WEBHOOK_PROVIDERS)}, '
+    'or omitted to let the server detect it from the URL.'
+)
+
 # ===============================
 # EVENT SUBSCRIPTION TOOLS
 # ===============================
@@ -287,9 +292,7 @@ async def get_webhook(
     description=(
         'Create a webhook endpoint to receive HTTP callbacks when subscribed '
         'events occur. Requires a name, a URL, and an owner given as a user '
-        'UUID; a username is rejected. Omit provider to let the server detect '
-        'it from the URL, or set one of '
-        "'slack', 'discord', 'teams', 'telegram', 'custom'. Needs an admin "
+        f'UUID; a username is rejected. {_PROVIDERS_SENTENCE} Needs an admin '
         'account, and creating or updating a webhook needs a paid plan.'
     ),
     annotations=ADDITIVE,
@@ -321,6 +324,9 @@ async def create_webhook(
     Returns:
         Webhook creation response
     """
+    if provider is not None and provider not in WEBHOOK_PROVIDERS:
+        return format_validation_error('provider', provider, _PROVIDERS_SENTENCE)
+
     token = kwargs.get('token')
 
     webhook_data: dict[str, Any] = {
@@ -396,7 +402,7 @@ async def update_webhook(
 
     if not update_data:
         return format_validation_error(
-            'name, url, provider, ssl_verify or enabled',
+            'name, url, ssl_verify or enabled',
             None,
             'At least one field must be provided.',
         )

@@ -235,6 +235,8 @@ class TestEventSubscriptions:
 class TestWebhooks:
     """Test webhook tools."""
 
+    OWNER_ID = '550e8400-e29b-41d4-a716-446655440999'
+
     @pytest.mark.asyncio
     async def test_list_webhooks_success(self, mock_http_client, mock_token_manager):
         """Test successful webhooks list."""
@@ -254,15 +256,13 @@ class TestWebhooks:
             params={},
         )
 
-    OWNER_ID = '550e8400-e29b-41d4-a716-446655440999'
-
     @pytest.mark.asyncio
     async def test_create_always_sends_owner(
         self, mock_http_client, mock_token_manager
     ):
         mock_http_client.post.return_value = {'id': 'wh-1'}
 
-        await create_webhook(
+        result = await create_webhook(
             workspace='testworkspace',
             name='alerts to slack',
             url='https://hooks.slack.com/services/x',
@@ -270,6 +270,7 @@ class TestWebhooks:
             region='ap1',
         )
 
+        assert result['status'] == 'success'
         mock_http_client.post.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
@@ -283,6 +284,23 @@ class TestWebhooks:
                 'enabled': True,
             },
         )
+
+    @pytest.mark.asyncio
+    async def test_create_rejects_an_unknown_provider_before_calling(
+        self, mock_http_client, mock_token_manager
+    ):
+        result = await create_webhook(
+            workspace='testworkspace',
+            name='n',
+            url='https://example.test/hook',
+            owner=self.OWNER_ID,
+            provider='mattermost',
+        )
+
+        assert result['status'] == 'error'
+        assert result['error_code'] == 'validation'
+        assert result['field'] == 'provider'
+        mock_http_client.post.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_create_sends_provider_only_when_given(

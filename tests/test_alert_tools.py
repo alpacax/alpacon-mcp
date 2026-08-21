@@ -1,11 +1,16 @@
 """Unit tests for alert management tools."""
 
+import inspect
+from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
+import tools.alert_tools as alert_tools
 from tests.conftest import HTTP_ERROR_ENVELOPE
 from tools.alert_tools import (
+    _TARGETS_SENTENCE,
+    ALERT_RULE_TARGETS,
     acknowledge_alert,
     attach_alert_rule,
     create_alert_rule,
@@ -115,8 +120,6 @@ class TestListAlerts:
         )
 
     def test_list_no_longer_accepts_status(self):
-        import inspect
-
         # list_alerts takes **kwargs, so a dead argument is swallowed rather
         # than rejected; the signature is the only thing that can be asserted.
         assert 'status' not in inspect.signature(list_alerts).parameters
@@ -181,8 +184,6 @@ class TestAcknowledgeAlert:
         mock_http_client.post.assert_not_called()
 
     def test_mute_alert_is_gone(self):
-        import tools.alert_tools as alert_tools
-
         assert not hasattr(alert_tools, 'mute_alert')
 
 
@@ -193,7 +194,7 @@ class TestCreateAlertRule:
     ):
         mock_http_client.post.return_value = {'id': RULE_ID}
 
-        await create_alert_rule(
+        result = await create_alert_rule(
             workspace='testworkspace',
             name='disk above 85',
             target='disk-usage',
@@ -201,6 +202,7 @@ class TestCreateAlertRule:
             region='ap1',
         )
 
+        assert result['status'] == 'success'
         mock_http_client.post.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
@@ -215,8 +217,6 @@ class TestCreateAlertRule:
         )
 
     def test_create_no_longer_accepts_the_invented_fields(self):
-        import inspect
-
         # create_alert_rule takes **kwargs, so a dead argument is swallowed
         # rather than rejected; assert on the signature instead.
         params = inspect.signature(create_alert_rule).parameters
@@ -230,12 +230,33 @@ class TestCreateAlertRule:
         ):
             assert dead not in params, dead
 
-    def test_every_target_metric_is_named_in_the_description(self):
-        from tools.alert_tools import ALERT_RULE_TARGETS
+    @pytest.mark.asyncio
+    async def test_create_rejects_an_unknown_target_before_calling(
+        self, mock_http_client, mock_token_manager
+    ):
+        result = await create_alert_rule(
+            workspace='testworkspace',
+            name='disk above 85',
+            target='disk',
+            threshold=85.0,
+            region='ap1',
+        )
 
+        assert result['status'] == 'error'
+        assert result['error_code'] == 'validation'
+        assert result['field'] == 'target'
+        mock_http_client.post.assert_not_called()
+
+    def test_every_target_metric_reaches_both_descriptions(self):
+        # mcp.tool() hands back the bare function, so the description is not
+        # reachable from the tool object; assert on the sentence both
+        # descriptions interpolate, and that they both still interpolate it.
         assert len(ALERT_RULE_TARGETS) == 15
-        assert 'cpu-usage' in ALERT_RULE_TARGETS
-        assert 'avg-output-bps' in ALERT_RULE_TARGETS
+        for target in ALERT_RULE_TARGETS:
+            assert target in _TARGETS_SENTENCE, target
+
+        source = Path('tools/alert_tools.py').read_text()
+        assert source.count('{_TARGETS_SENTENCE}') == 2
 
 
 class TestUpdateAlertRule:
@@ -245,13 +266,14 @@ class TestUpdateAlertRule:
     ):
         mock_http_client.patch.return_value = {'id': RULE_ID}
 
-        await update_alert_rule(
+        result = await update_alert_rule(
             rule_id=RULE_ID,
             workspace='testworkspace',
             threshold=90.0,
             region='ap1',
         )
 
+        assert result['status'] == 'success'
         mock_http_client.patch.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
@@ -260,9 +282,23 @@ class TestUpdateAlertRule:
             data={'threshold': 90.0},
         )
 
-    def test_update_no_longer_accepts_the_invented_fields(self):
-        import inspect
+    @pytest.mark.asyncio
+    async def test_update_rejects_an_unknown_target_before_calling(
+        self, mock_http_client, mock_token_manager
+    ):
+        result = await update_alert_rule(
+            rule_id=RULE_ID,
+            workspace='testworkspace',
+            target='disk',
+            region='ap1',
+        )
 
+        assert result['status'] == 'error'
+        assert result['error_code'] == 'validation'
+        assert result['field'] == 'target'
+        mock_http_client.patch.assert_not_called()
+
+    def test_update_no_longer_accepts_the_invented_fields(self):
         params = inspect.signature(update_alert_rule).parameters
         assert set(params) == {
             'rule_id',
@@ -338,13 +374,14 @@ class TestAttachDetachAlertRule:
     ):
         mock_http_client.post.return_value = {'status': 'success', 'status_code': 204}
 
-        await detach_alert_rule(
+        result = await detach_alert_rule(
             server_id=self.SERVER_ID,
             rule_id=RULE_ID,
             workspace='testworkspace',
             region='ap1',
         )
 
+        assert result['status'] == 'success'
         mock_http_client.post.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
@@ -380,7 +417,7 @@ class TestAttachDetachAlertRule:
         assert second['status'] == 'success'
 
 
-# Each endpoint's error-envelope path is identical;# Each endpoint's error-envelope path is identical; one parametrized case per
+# Each endpoint's error-envelope path is identical; one parametrized case per
 # tool (with its HTTP verb) replaces six near-duplicate per-class tests.
 @pytest.mark.parametrize(
     'verb, func, kwargs',

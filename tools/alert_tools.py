@@ -262,6 +262,9 @@ async def create_alert_rule(
     Returns:
         Created alert rule
     """
+    if target not in ALERT_RULE_TARGETS:
+        return format_validation_error('target', target, _TARGETS_SENTENCE)
+
     token = kwargs.get('token')
 
     rule_data: dict[str, Any] = {
@@ -325,6 +328,9 @@ async def update_alert_rule(
     Returns:
         Updated alert rule
     """
+    if target is not None and target not in ALERT_RULE_TARGETS:
+        return format_validation_error('target', target, _TARGETS_SENTENCE)
+
     token = kwargs.get('token')
 
     update_data: dict[str, Any] = {}
