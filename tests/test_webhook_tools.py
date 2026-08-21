@@ -329,6 +329,16 @@ class TestWebhooks:
         )
 
     @pytest.mark.asyncio
+    async def test_update_webhook_with_no_fields_is_a_validation_error(
+        self, mock_http_client, mock_token_manager
+    ):
+        result = await update_webhook(webhook_id='wh-1', workspace='testworkspace')
+
+        assert result['status'] == 'error'
+        assert result['error_code'] == 'validation'
+        mock_http_client.patch.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_update_webhook_success(self, mock_http_client, mock_token_manager):
         """Test successful webhook update."""
         mock_http_client.patch.return_value = {
@@ -353,17 +363,6 @@ class TestWebhooks:
             token='test-token',
             data={'name': 'updated-alerts', 'enabled': False},
         )
-
-    @pytest.mark.asyncio
-    async def test_update_webhook_no_data(self, mock_http_client, mock_token_manager):
-        """Test webhook update with no data returns error."""
-        result = await update_webhook(
-            webhook_id='wh-1', workspace='testworkspace', region='ap1'
-        )
-
-        assert result['status'] == 'error'
-        assert 'No update data provided' in result['message']
-        mock_http_client.patch.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_delete_webhook_success(self, mock_http_client, mock_token_manager):

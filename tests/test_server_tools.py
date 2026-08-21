@@ -440,6 +440,19 @@ class TestServerNotes:
         assert result['status'] == 'error'
         assert 'HTTP 400' in result['message']
 
+    @pytest.mark.asyncio
+    async def test_update_server_with_no_fields_is_a_validation_error(
+        self, mock_http_client, mock_token_manager
+    ):
+        result = await update_server(
+            server_id='550e8400-e29b-41d4-a716-446655440123',
+            workspace='testworkspace',
+        )
+
+        assert result['status'] == 'error'
+        assert result['error_code'] == 'validation'
+        mock_http_client.patch.assert_not_called()
+
 
 class TestParameterValidation:
     """Test parameter validation and edge cases."""

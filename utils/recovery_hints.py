@@ -59,8 +59,10 @@ _HINT_REGISTRY: dict[tuple[int, str], dict[str, list[str]]] = {
         'recovery_hints': [
             'The alert or alert rule ID may be incorrect.',
             'Use list_alerts or get_alert_rules to find valid IDs.',
+            'On attach_alert_rule and detach_alert_rule a 404 means the '
+            'server_id is wrong; a bad rule ID gives a 400 instead.',
         ],
-        'related_tools': ['list_alerts', 'get_alert_rules'],
+        'related_tools': ['list_alerts', 'get_alert_rules', 'list_servers'],
     },
     (HTTPStatus.NOT_FOUND, 'general'): {
         'recovery_hints': [
@@ -68,6 +70,16 @@ _HINT_REGISTRY: dict[tuple[int, str], dict[str, list[str]]] = {
             'Use the corresponding list tool to find valid IDs.',
         ],
         'related_tools': [],
+    },
+    (HTTPStatus.PAYMENT_REQUIRED, 'general'): {
+        'recovery_hints': [
+            'This action needs a paid plan. Creating and updating alert rules '
+            'and webhooks are gated; reading them, and attaching a rule to a '
+            'server, are not.',
+            'Retrying will not change the answer. Ask a workspace owner to '
+            'upgrade the plan.',
+        ],
+        'related_tools': ['get_workspace_preferences'],
     },
     (HTTPStatus.TOO_MANY_REQUESTS, 'general'): {
         'recovery_hints': [

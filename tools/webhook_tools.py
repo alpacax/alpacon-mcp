@@ -2,8 +2,9 @@
 
 from typing import Any
 
-from utils.common import error_response, success_response, unwrap_http_result
+from utils.common import success_response, unwrap_http_result
 from utils.decorators import mcp_tool_handler
+from utils.error_handler import format_validation_error
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ_ONLY
 
@@ -393,7 +394,11 @@ async def update_webhook(
         update_data['enabled'] = enabled
 
     if not update_data:
-        return error_response('No update data provided')
+        return format_validation_error(
+            'name, url, provider, ssl_verify or enabled',
+            None,
+            'At least one field must be provided.',
+        )
 
     result = await http_client.patch(
         region=region,
