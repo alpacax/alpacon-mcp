@@ -41,9 +41,20 @@ _STAGE_REGULAR = 'regular'
 # Domain-separates the state key from other keys derived from the client secret.
 _STATE_SECRET_INFO = b'alpacon-mcp-oauth-state-v1'
 
-# Matches the 32 bytes the derived key always has, so an explicit key cannot be
+# Matches the 32 bytes a derived key always has, so an explicit key cannot be
 # weaker than leaving the variable unset.
-_STATE_SECRET_MIN_BYTES = 32
+_SECRET_MIN_BYTES = 32
+
+# Kept apart from the state key: a state lives ten minutes, a sealed refresh
+# token up to its Auth0 lifetime, so rotating one must not cost the other.
+_GRANT_SECRET_ENV = 'ALPACON_MCP_GRANT_SECRET'
+_GRANT_SECRET_INFO = b'alpacon-mcp-oauth-grant-v1'
+
+# Leads every value this server sealed, so a bare Auth0 token, which also
+# contains dots, is never mistaken for a tampered seal.
+_SEALED_PREFIX = 'amcp1'
+_SEAL_KIND_CODE = 'code'
+_SEAL_KIND_REFRESH = 'refresh'
 
 # Covers an Auth0 login plus MFA; keeps a leaked state only briefly usable.
 _STATE_TTL_SECONDS = 600
@@ -72,14 +83,6 @@ _NONCE_COOKIE_ATTRS: _NonceCookieAttrs = {
 }
 
 _ALLOWED_LOOPBACK_HOSTS = ('localhost', '127.0.0.1', '::1')
-
-# Remote MCP refreshes tokens server-side, so the Auth0 action's IP/UA
-# fingerprint never matches the login; bind presence to the client instead
-# (ADR 0054). One constant for every remote MCP session makes presence shared
-# per user rather than per session: a password-only login by that user clears
-# the record its other sessions refresh against, which fails closed into a
-# re-auth.
-_DEVICE_ID = 'alpacon-mcp-remote'
 
 # Mirrors the validator in the Auth0 action's code.js. The check and its
 # consumer sit in different repos, so a value we accept but the action rejects
@@ -396,19 +399,19 @@ def _explicit_hex_secret(env_name: str) -> bytes | None:
     except ValueError:
         raise ValueError(
             f'{env_name} must be hex; '
-            f'generate one with openssl rand -hex {_STATE_SECRET_MIN_BYTES}'
+            f'generate one with openssl rand -hex {_SECRET_MIN_BYTES}'
         ) from None
-    if len(key) < _STATE_SECRET_MIN_BYTES:
+    if len(key) < _SECRET_MIN_BYTES:
         raise ValueError(
-            f'{env_name} must decode to at least {_STATE_SECRET_MIN_BYTES} bytes'
+            f'{env_name} must decode to at least {_SECRET_MIN_BYTES} bytes'
         )
     return key
 
 
 def _derived_secret(info: bytes) -> bytes:
-    """Derive from AUTH0_CLIENT_SECRET so no extra secret needs provisioning;
-    the derived key is identical across replicas, so a signed value verifies
-    without shared server-side storage.
+    """Derived from AUTH0_CLIENT_SECRET so no extra secret needs provisioning,
+    and identical across replicas so a signed value verifies without shared
+    storage.
     """
     client_secret = _get_oauth_config()['client_secret']
     return hmac.new(client_secret.encode(), info, hashlib.sha256).digest()
@@ -417,6 +420,12 @@ def _derived_secret(info: bytes) -> bytes:
 def _get_state_secret() -> bytes:
     return _explicit_hex_secret(_STATE_SECRET_ENV) or _derived_secret(
         _STATE_SECRET_INFO
+    )
+
+
+def _get_grant_secret() -> bytes:
+    return _explicit_hex_secret(_GRANT_SECRET_ENV) or _derived_secret(
+        _GRANT_SECRET_INFO
     )
 
 
@@ -474,10 +483,97 @@ def _is_device_id(value: str) -> bool:
     return bool(_DEVICE_ID_PATTERN.match(value.strip()))
 
 
-def _has_client_device_scope(scope: str) -> bool:
-    """Whether the Auth0 action will resolve a device id out of this scope."""
+def _client_device_id(scope: str) -> str | None:
+    """The first `device:` token if the Auth0 action would accept it; the action
+    reads only the first, so a usable one behind an unusable one does not count.
+    """
     first = next((s for s in scope.split() if s.startswith('device:')), None)
-    return first is not None and _is_device_id(first[len('device:') :])
+    if first is None:
+        return None
+    candidate = first.removeprefix('device:').strip()
+    return candidate if _is_device_id(candidate) else None
+
+
+def _mint_device_id() -> str:
+    """One id per grant; 32 hex characters clear the Auth0 action's validator."""
+    return secrets.token_hex(16)
+
+
+def _seal(kind: str, value: str, device_id: str) -> str:
+    """Bind a value the client echoes back opaquely to its grant's device id.
+
+    Codes and refresh tokens are the only carrier for the id without server-side
+    storage; the signature keeps a client from pointing one at another grant's
+    record.
+    """
+    encoded = base64.urlsafe_b64encode(
+        json.dumps(
+            {'k': kind, 'v': value, 'd': device_id}, separators=(',', ':')
+        ).encode()
+    ).decode()
+    signed = f'{_SEALED_PREFIX}.{encoded}'
+    signature = base64.urlsafe_b64encode(
+        hmac.new(_get_grant_secret(), signed.encode(), hashlib.sha256).digest()
+    ).decode()
+    return f'{signed}.{signature}'
+
+
+def _unseal(kind: str, sealed: str) -> tuple[str, str] | None:
+    """(value, device_id), or None unless this server sealed it as `kind`, so a
+    code cannot be replayed as a refresh token.
+    """
+    prefix = f'{_SEALED_PREFIX}.'
+    if not sealed.startswith(prefix):
+        return None
+    signed, _, signature = sealed.rpartition('.')
+    expected = base64.urlsafe_b64encode(
+        hmac.new(_get_grant_secret(), signed.encode(), hashlib.sha256).digest()
+    )
+    # Compare bytes: compare_digest raises TypeError on non-ASCII str input.
+    if not hmac.compare_digest(expected, signature.encode()):
+        return None
+    try:
+        payload = json.loads(
+            base64.urlsafe_b64decode(signed.removeprefix(prefix).encode()).decode()
+        )
+    except (json.JSONDecodeError, UnicodeDecodeError, binascii.Error):
+        return None
+    if not isinstance(payload, dict) or payload.get('k') != kind:
+        return None
+    value = payload.get('v')
+    device_id = payload.get('d')
+    if not isinstance(value, str) or not value:
+        return None
+    if not isinstance(device_id, str) or not _is_device_id(device_id):
+        return None
+    return value, device_id
+
+
+def _seal_code(code: str, device_id: str) -> str:
+    return _seal(_SEAL_KIND_CODE, code, device_id)
+
+
+def _unseal_code(sealed: str) -> tuple[str, str] | None:
+    return _unseal(_SEAL_KIND_CODE, sealed)
+
+
+def _seal_refresh_token(refresh_token: str, device_id: str) -> str:
+    return _seal(_SEAL_KIND_REFRESH, refresh_token, device_id)
+
+
+def _unseal_refresh_token(sealed: str) -> tuple[str, str] | None:
+    return _unseal(_SEAL_KIND_REFRESH, sealed)
+
+
+def _invalid_grant(what: str) -> JSONResponse:
+    """The OAuth answer that makes a client start over with a fresh login."""
+    return JSONResponse(
+        {
+            'error': 'invalid_grant',
+            'error_description': f'The {what} was not issued by this server',
+        },
+        status_code=HTTPStatus.BAD_REQUEST,
+    )
 
 
 def _new_nonce() -> str:
@@ -517,14 +613,17 @@ def register_oauth_routes(mcp_server):
         mcp_server: FastMCP server instance
 
     Raises:
-        ValueError: ALPACON_MCP_STATE_SECRET is set to a malformed value.
+        ValueError: ALPACON_MCP_STATE_SECRET or ALPACON_MCP_GRANT_SECRET is set
+            to a malformed value.
     """
     # A malformed key otherwise surfaces on the first user's OAuth request,
-    # long after the deployment reported success. Only the explicit key is
+    # long after the deployment reported success. Only the explicit keys are
     # checked: the derived path needs OAuth config, and deployments that run
     # without it have to keep starting.
     if os.getenv(_STATE_SECRET_ENV):
         _get_state_secret()
+    if os.getenv(_GRANT_SECRET_ENV):
+        _get_grant_secret()
 
     # RFC 8414 metadata is public and carries no credentials. Decorating covers
     # the 500 path too, so a misconfiguration is readable rather than a CORS error.
@@ -602,11 +701,14 @@ def register_oauth_routes(mcp_server):
         scope = params.get('scope', '')
         if 'offline_access' not in scope:
             scope = f'{scope} offline_access'.strip()
-        # The Auth0 action validates only the first `device:` token, so an
-        # unusable one has to go rather than sit ahead of ours.
-        if not _has_client_device_scope(scope):
+        # The Auth0 action keys MFA presence on the first `device:` token, so
+        # an unusable one has to go rather than sit ahead of the minted id. The
+        # id rides the state so the callback can seal the code under it.
+        device_id = _client_device_id(scope)
+        if device_id is None:
+            device_id = _mint_device_id()
             scope = ' '.join(s for s in scope.split() if not s.startswith('device:'))
-            scope = f'{scope} device:{_DEVICE_ID}'.strip()
+            scope = f'{scope} device:{device_id}'.strip()
 
         # Detect MFA pseudo-scope from re-auth flow.
         # When the ASGI middleware returns 401 with scope="... mfa",
@@ -722,6 +824,7 @@ def register_oauth_routes(mcp_server):
                     original_scope=scope,
                     authorize_params=stage2_authorize_params,
                     nonce_hash=nonce_hash,
+                    device_id=device_id,
                 )
 
                 auth0_url = (
@@ -734,7 +837,10 @@ def register_oauth_routes(mcp_server):
                 # Standard single-stage OAuth flow (no MFA required)
                 params['redirect_uri'] = f'{server_url}/oauth/callback'
                 params['state'] = _build_state(
-                    client_redirect_uri, original_state, nonce_hash=nonce_hash
+                    client_redirect_uri,
+                    original_state,
+                    nonce_hash=nonce_hash,
+                    device_id=device_id,
                 )
 
                 auth0_url = f'{config["auth0_base_url"]}/authorize?{urlencode(params)}'
@@ -835,16 +941,27 @@ def register_oauth_routes(mcp_server):
         params['client_id'] = configured_client_id
         params['client_secret'] = config['client_secret']
 
-        # Refresh requests may omit scope, so carry the device id on the body
-        # channel the Auth0 action also reads; a scope grant is not required.
-        # A client that logged in under its own device id keeps it here, or the
-        # restore looks up a key that was never written. One the action would
-        # reject is replaced rather than kept: leaving it would resolve to no
-        # candidate at all, which is the fingerprint fallback.
-        if grant_type == 'refresh_token' and not _is_device_id(
-            params.get('device_id', '')
-        ):
-            params['device_id'] = _DEVICE_ID
+        # An unsealed value, whether tampered or issued before sealing, would
+        # refresh under a key shared by every session of the user; invalid_grant
+        # sends the client to a fresh login, which mints it an id. Refresh
+        # requests may omit scope, so the id rides the body channel the Auth0
+        # action also reads.
+        sealed_device_id = ''
+        if grant_type == 'authorization_code':
+            unsealed = _unseal_code(params.get('code', ''))
+            if unsealed is None:
+                logger.warning(
+                    'Rejected an authorization code this server did not seal'
+                )
+                return _invalid_grant('authorization code')
+            params['code'], sealed_device_id = unsealed
+        elif grant_type == 'refresh_token':
+            unsealed = _unseal_refresh_token(params.get('refresh_token', ''))
+            if unsealed is None:
+                logger.warning('Rejected a refresh token this server did not seal')
+                return _invalid_grant('refresh token')
+            params['refresh_token'], sealed_device_id = unsealed
+            params['device_id'] = sealed_device_id
 
         # Override redirect_uri to match what was sent to Auth0 during /authorize.
         # Auth0 requires the redirect_uri in token exchange to match exactly.
@@ -880,6 +997,18 @@ def register_oauth_routes(mcp_server):
                     'error': 'server_error',
                     'error_description': 'Auth0 returned unexpected response format',
                 }
+
+            # Auth0 rotates refresh tokens, so every one that leaves here is
+            # sealed under the grant's id or the next refresh loses it.
+            if (
+                sealed_device_id
+                and response.status_code == HTTPStatus.OK
+                and isinstance(response_data, dict)
+                and isinstance(response_data.get('refresh_token'), str)
+            ):
+                response_data['refresh_token'] = _seal_refresh_token(
+                    response_data['refresh_token'], sealed_device_id
+                )
 
             # Log token response details for debugging refresh issues
             if isinstance(response_data, dict):
@@ -1067,6 +1196,7 @@ def register_oauth_routes(mcp_server):
         stage = ''
         original_scope = ''
         nonce_hash = ''
+        device_id = ''
         authorize_params: dict = {}
         # An absent state is not rejected: Auth0 error callbacks can arrive
         # without one, and it names no redirect target a forgery could steer.
@@ -1106,6 +1236,18 @@ def register_oauth_routes(mcp_server):
             original_scope = state_data.get('original_scope', '')
             nonce_hash = state_data.get('nonce_hash', '')
             authorize_params = state_data.get('authorize_params', {})
+            # Every state this server mints carries an id; without one the
+            # code could not be sealed and the exchange would refuse it anyway.
+            device_id = state_data.get('device_id', '')
+            if not isinstance(device_id, str) or not _is_device_id(device_id):
+                logger.warning('Callback rejected a state without a device id')
+                return JSONResponse(
+                    {
+                        'error': 'invalid_request',
+                        'error_description': 'Invalid or expired state parameter',
+                    },
+                    status_code=HTTPStatus.BAD_REQUEST,
+                )
 
         # Defense-in-depth: re-validate redirect_uri from state is allowed.
         # The authorize endpoint already validates this, but an attacker could craft
@@ -1203,6 +1345,7 @@ def register_oauth_routes(mcp_server):
                     original_state,
                     stage=_STAGE_REGULAR,
                     nonce_hash=nonce_hash,
+                    device_id=device_id,
                 ),
             }
             # Replay PKCE and other client params preserved from Stage 1
@@ -1232,6 +1375,25 @@ def register_oauth_routes(mcp_server):
 
         # --- Standard callback (stage 'regular' or absent) ---
         logger.info('Auth0 callback received authorization code')
+
+        # The token exchange sees no state, so the code carries the id the
+        # refresh token is sealed under; a code that arrived without a state has
+        # none and would be dead on arrival at the exchange.
+        if not _is_device_id(device_id):
+            logger.warning('Callback rejected a code that arrived without a state')
+            return JSONResponse(
+                {
+                    'error': 'invalid_request',
+                    'error_description': 'Missing state parameter',
+                },
+                status_code=HTTPStatus.BAD_REQUEST,
+            )
+        try:
+            code = _seal_code(code, device_id)
+        except ValueError as e:
+            return JSONResponse(
+                {'error': str(e)}, status_code=HTTPStatus.INTERNAL_SERVER_ERROR
+            )
 
         # Redirect back to the MCP client's original redirect_uri with the code
         if client_redirect_uri:
@@ -1306,8 +1468,11 @@ def register_oauth_routes(mcp_server):
 
     logger.info(
         'OAuth proxy routes registered (including /token, /authorize, '
-        '/register fallbacks) - state secret: %s',
+        '/register fallbacks) - state secret: %s, grant secret: %s',
         'explicit env'
         if os.getenv(_STATE_SECRET_ENV)
+        else 'derived from client secret',
+        'explicit env'
+        if os.getenv(_GRANT_SECRET_ENV)
         else 'derived from client secret',
     )

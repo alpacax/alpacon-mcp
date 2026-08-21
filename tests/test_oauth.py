@@ -11,6 +11,7 @@ import hashlib
 import hmac
 import json
 import logging
+import re
 import time
 from http import HTTPStatus
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -23,7 +24,8 @@ from starlette.testclient import TestClient
 
 from utils.oauth import (
     _CORS_PREFLIGHT_HEADERS,
-    _DEVICE_ID,
+    _GRANT_SECRET_ENV,
+    _GRANT_SECRET_INFO,
     _LOG_VALUE_MAX_CHARS,
     _MAX_REGISTERED_REDIRECT_URIS,
     _NONCE_COOKIE_NAME,
@@ -35,12 +37,17 @@ from utils.oauth import (
     _check_redirect_uri,
     _escape_for_log,
     _get_allowed_redirect_uris,
+    _get_grant_secret,
     _get_state_secret,
     _hash_nonce,
     _is_exact_allowed_redirect_uri,
     _is_pkce_exempt_redirect_uri,
     _new_nonce,
+    _seal_code,
+    _seal_refresh_token,
     _sign_state,
+    _unseal_code,
+    _unseal_refresh_token,
     _verify_state,
     register_oauth_routes,
 )
@@ -54,6 +61,10 @@ TEST_RESOURCE_URL = 'https://mcp.test.alpacon.io'
 # Redirect targets used across the state tests
 TRUSTED_REDIRECT_URI = 'https://claude.ai/cb'
 EVIL_REDIRECT_URI = 'https://evil.com/cb'
+
+# Device ids the Auth0 action's validator accepts
+DEVICE_ID = 'a' * 32
+OTHER_DEVICE_ID = 'b' * 32
 
 # An exp far enough ahead that a forged payload is never rejected as expired
 FAR_FUTURE_EXP = 9999999999
@@ -170,6 +181,33 @@ def _authorize_scope_parts(response):
     """Return the scope tokens of an /oauth/authorize redirect."""
     query = parse_qs(urlparse(response.headers['location']).query)
     return query.get('scope', [''])[0].split()
+
+
+def _authorize_device_id(response):
+    """The one device id in the redirect's scope, checked against its state."""
+    scope_ids = [
+        s.removeprefix('device:')
+        for s in _authorize_scope_parts(response)
+        if s.startswith('device:')
+    ]
+    assert len(scope_ids) == 1, scope_ids
+    query = parse_qs(urlparse(response.headers['location']).query)
+    state_data = _verify_state(query['state'][0])
+    assert state_data.get('device_id') == scope_ids[0]
+    return scope_ids[0]
+
+
+def _authorize(oauth_app, scope='openid profile'):
+    return oauth_app.get(
+        '/oauth/authorize',
+        params={
+            'response_type': 'code',
+            'redirect_uri': 'http://localhost:8080/callback',
+            'scope': scope,
+            **PKCE_PARAMS,
+        },
+        follow_redirects=False,
+    )
 
 
 class TestAllowedRedirectUris:
@@ -457,6 +495,84 @@ class TestStateSecret:
             'os.environ', {_STATE_SECRET_ENV: '', 'AUTH0_CLIENT_SECRET': ''}
         ):
             register_oauth_routes(MockMCPServer())
+
+
+class TestGrantSecret:
+    """The key under which codes and refresh tokens are sealed."""
+
+    def test_explicit_env_secret_wins(self):
+        with patch.dict('os.environ', {_GRANT_SECRET_ENV: 'b2' * 32}):
+            assert _get_grant_secret() == b'\xb2' * 32
+
+    def test_rejects_non_hex_explicit_secret(self):
+        with patch.dict('os.environ', {_GRANT_SECRET_ENV: 'correct-horse-battery'}):
+            with pytest.raises(ValueError, match='must be hex'):
+                _get_grant_secret()
+
+    def test_rejects_short_explicit_secret(self):
+        with patch.dict('os.environ', {_GRANT_SECRET_ENV: 'b2' * 31}):
+            with pytest.raises(ValueError, match='at least 32 bytes'):
+                _get_grant_secret()
+
+    def test_derives_from_client_secret_when_env_unset(self):
+        expected = hmac.new(
+            TEST_CLIENT_SECRET.encode(), _GRANT_SECRET_INFO, hashlib.sha256
+        ).digest()
+        assert _get_grant_secret() == expected
+
+    def test_differs_from_the_state_secret(self):
+        """A state key that leaks must not also mint refresh tokens."""
+        assert _get_grant_secret() != _get_state_secret()
+
+    def test_registration_rejects_malformed_explicit_secret(self):
+        with patch.dict('os.environ', {_GRANT_SECRET_ENV: 'correct-horse-battery'}):
+            with pytest.raises(ValueError, match='must be hex'):
+                register_oauth_routes(MockMCPServer())
+
+
+class TestSealedGrants:
+    """Codes and refresh tokens carry their device id under this server's seal."""
+
+    def test_code_round_trips(self):
+        assert _unseal_code(_seal_code('auth-code', DEVICE_ID)) == (
+            'auth-code',
+            DEVICE_ID,
+        )
+
+    def test_refresh_token_round_trips(self):
+        sealed = _seal_refresh_token('v1.refresh', DEVICE_ID)
+        assert _unseal_refresh_token(sealed) == ('v1.refresh', DEVICE_ID)
+
+    def test_a_sealed_code_is_not_a_refresh_token(self):
+        assert _unseal_refresh_token(_seal_code('auth-code', DEVICE_ID)) is None
+
+    def test_a_sealed_refresh_token_is_not_a_code(self):
+        assert _unseal_code(_seal_refresh_token('v1.refresh', DEVICE_ID)) is None
+
+    def test_tampered_device_id_is_rejected(self):
+        sealed = _seal_refresh_token('v1.refresh', DEVICE_ID)
+        prefix, encoded, signature = sealed.split('.')
+        forged = base64.urlsafe_b64encode(
+            json.dumps(
+                {'k': 'refresh', 'v': 'v1.refresh', 'd': OTHER_DEVICE_ID}
+            ).encode()
+        ).decode()
+        assert _unseal_refresh_token(f'{prefix}.{forged}.{signature}') is None
+
+    def test_state_key_cannot_mint_a_grant(self):
+        """Sealing must not verify under the state key, or the two keys are one."""
+        sealed = _seal_refresh_token('v1.refresh', DEVICE_ID)
+        prefix, encoded, _ = sealed.split('.')
+        under_state_key = base64.urlsafe_b64encode(
+            hmac.new(
+                _get_state_secret(), f'{prefix}.{encoded}'.encode(), hashlib.sha256
+            ).digest()
+        ).decode()
+        assert _unseal_refresh_token(f'{prefix}.{encoded}.{under_state_key}') is None
+
+    def test_bare_values_are_not_sealed(self):
+        assert _unseal_refresh_token('v1.Mc-plain-auth0-token') is None
+        assert _unseal_code('plain-auth0-code') is None
 
 
 class TestNonceHelpers:
@@ -847,111 +963,53 @@ class TestOAuthAuthorize:
         location = response.headers['location']
         assert 'offline_access' in location
 
-    def test_authorize_adds_device_scope(self, oauth_app):
-        """device scope is added so refreshed tokens keep the MFA claim."""
-        response = oauth_app.get(
-            '/oauth/authorize',
-            params={
-                'response_type': 'code',
-                'redirect_uri': 'http://localhost:8080/callback',
-                'scope': 'openid profile',
-                **PKCE_PARAMS,
-            },
-            follow_redirects=False,
+    def test_authorize_mints_a_device_id_per_grant(self, oauth_app):
+        """Each grant gets its own id, so two clients never share an MFA record."""
+        first = _authorize_device_id(_authorize(oauth_app))
+        second = _authorize_device_id(_authorize(oauth_app))
+        assert first != second
+
+    def test_authorize_mints_an_id_the_action_accepts(self, oauth_app):
+        """The minted id has to clear the Auth0 action's validator."""
+        assert re.fullmatch(
+            r'[A-Za-z0-9-]{8,64}', _authorize_device_id(_authorize(oauth_app))
         )
-        assert response.status_code == HTTPStatus.FOUND
-        scope_parts = _authorize_scope_parts(response)
-        assert f'device:{_DEVICE_ID}' in scope_parts
 
     def test_authorize_preserves_client_device_scope(self, oauth_app):
-        response = oauth_app.get(
-            '/oauth/authorize',
-            params={
-                'response_type': 'code',
-                'redirect_uri': 'http://localhost:8080/callback',
-                'scope': 'openid device:client-own-id',
-                **PKCE_PARAMS,
-            },
-            follow_redirects=False,
-        )
+        response = _authorize(oauth_app, 'openid device:client-own-id')
         assert response.status_code == HTTPStatus.FOUND
-        scope_parts = _authorize_scope_parts(response)
-        assert 'device:client-own-id' in scope_parts
-        assert f'device:{_DEVICE_ID}' not in scope_parts
+        assert _authorize_device_id(response) == 'client-own-id'
 
     @pytest.mark.parametrize('client_scope', ['device:', 'device:ab', 'device:my_id'])
-    def test_authorize_adds_device_scope_over_unusable_grant(
-        self, oauth_app, client_scope
-    ):
-        """A grant the Auth0 action rejects must not suppress the stable one."""
-        response = oauth_app.get(
-            '/oauth/authorize',
-            params={
-                'response_type': 'code',
-                'redirect_uri': 'http://localhost:8080/callback',
-                'scope': f'openid {client_scope}',
-                **PKCE_PARAMS,
-            },
-            follow_redirects=False,
-        )
+    def test_authorize_mints_over_an_unusable_grant(self, oauth_app, client_scope):
+        """A grant the Auth0 action rejects must not suppress the minted one."""
+        response = _authorize(oauth_app, f'openid {client_scope}')
         assert response.status_code == HTTPStatus.FOUND
-        scope_parts = _authorize_scope_parts(response)
-        # Equality, not membership: the unusable token must be gone.
-        assert [s for s in scope_parts if s.startswith('device:')] == [
-            f'device:{_DEVICE_ID}'
-        ]
+        assert _authorize_device_id(response) != client_scope.removeprefix('device:')
 
     def test_authorize_replaces_a_device_scope_the_action_cannot_reach(self, oauth_app):
         """A usable grant behind an unusable one is unreachable, so it does not count."""
-        response = oauth_app.get(
-            '/oauth/authorize',
-            params={
-                'response_type': 'code',
-                'redirect_uri': 'http://localhost:8080/callback',
-                'scope': 'openid device:ab device:good-id-1234',
-                **PKCE_PARAMS,
-            },
-            follow_redirects=False,
-        )
+        response = _authorize(oauth_app, 'openid device:ab device:good-id-1234')
         assert response.status_code == HTTPStatus.FOUND
-        scope_parts = _authorize_scope_parts(response)
-        assert [s for s in scope_parts if s.startswith('device:')] == [
-            f'device:{_DEVICE_ID}'
-        ]
+        assert _authorize_device_id(response) != 'good-id-1234'
 
-    def test_authorize_adds_device_scope_despite_device_substring(self, oauth_app):
+    def test_authorize_mints_despite_device_substring(self, oauth_app):
         """A scope merely containing 'device:' is not a device id grant."""
-        response = oauth_app.get(
-            '/oauth/authorize',
-            params={
-                'response_type': 'code',
-                'redirect_uri': 'http://localhost:8080/callback',
-                'scope': 'openid read:device:status',
-                **PKCE_PARAMS,
-            },
-            follow_redirects=False,
-        )
+        response = _authorize(oauth_app, 'openid read:device:status')
         assert response.status_code == HTTPStatus.FOUND
-        scope_parts = _authorize_scope_parts(response)
-        assert f'device:{_DEVICE_ID}' in scope_parts
+        _authorize_device_id(response)
+        assert 'read:device:status' in _authorize_scope_parts(response)
 
-    def test_authorize_mfa_state_carries_device_scope(self, oauth_app):
-        """Stage 1 parks the device scope in the state so Stage 2 replays it."""
-        response = oauth_app.get(
-            '/oauth/authorize',
-            params={
-                'response_type': 'code',
-                'redirect_uri': 'http://localhost:8080/callback',
-                'scope': 'openid profile mfa',
-                **PKCE_PARAMS,
-            },
-            follow_redirects=False,
-        )
+    def test_authorize_mfa_state_carries_the_device_id(self, oauth_app):
+        """Stage 1 parks the id in the state so Stage 2 keys on the same record."""
+        response = _authorize(oauth_app, 'openid profile mfa')
         assert response.status_code == HTTPStatus.FOUND
         query = parse_qs(urlparse(response.headers['location']).query)
         state_data = _verify_state(query['state'][0])
         assert state_data.get('stage') == 'mfa'
-        assert f'device:{_DEVICE_ID}' in state_data.get('original_scope', '').split()
+        device_id = state_data.get('device_id')
+        assert re.fullmatch(r'[A-Za-z0-9-]{8,64}', device_id)
+        assert f'device:{device_id}' in state_data.get('original_scope', '').split()
 
     def test_authorize_mfa_scope_redirects_to_mfa_audience(self, oauth_app):
         """When 'mfa' pseudo-scope is present, redirects to Auth0 MFA audience."""
@@ -1392,7 +1450,10 @@ class TestOAuthToken:
         with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
             response = oauth_app.post(
                 '/oauth/token',
-                data={'grant_type': 'authorization_code', 'code': 'test-code'},
+                data={
+                    'grant_type': 'authorization_code',
+                    'code': _seal_code('test-code', DEVICE_ID),
+                },
             )
         assert response.status_code == HTTPStatus.OK
 
@@ -1401,7 +1462,10 @@ class TestOAuthToken:
         with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
             response = oauth_app.post(
                 '/oauth/token',
-                data={'grant_type': 'refresh_token', 'refresh_token': 'test-refresh'},
+                data={
+                    'grant_type': 'refresh_token',
+                    'refresh_token': _seal_refresh_token('test-refresh', DEVICE_ID),
+                },
             )
         assert response.status_code == HTTPStatus.OK
 
@@ -1426,7 +1490,7 @@ class TestOAuthToken:
             '/oauth/token',
             data={
                 'grant_type': 'authorization_code',
-                'code': 'test-code',
+                'code': _seal_code('test-code', DEVICE_ID),
                 'client_id': 'wrong-client-id',
             },
         )
@@ -1438,7 +1502,10 @@ class TestOAuthToken:
         with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
             response = oauth_app.post(
                 '/oauth/token',
-                data={'grant_type': 'authorization_code', 'code': 'test-code'},
+                data={
+                    'grant_type': 'authorization_code',
+                    'code': _seal_code('test-code', DEVICE_ID),
+                },
             )
         assert response.status_code == HTTPStatus.OK
         call_kwargs = mock_client.post.call_args
@@ -1450,69 +1517,219 @@ class TestOAuthToken:
         with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
             response = oauth_app.post(
                 '/oauth/token',
-                data={'grant_type': 'authorization_code', 'code': 'test-code'},
+                data={
+                    'grant_type': 'authorization_code',
+                    'code': _seal_code('test-code', DEVICE_ID),
+                },
             )
         assert response.status_code == HTTPStatus.OK
         call_kwargs = mock_client.post.call_args
         assert call_kwargs.kwargs['data']['client_secret'] == TEST_CLIENT_SECRET
 
-    def test_token_refresh_carries_device_id(self, oauth_app):
-        """Refresh exchanges carry the device id the Auth0 action keys on."""
-        mock_client = _mock_auth0_response()
+    def test_token_refresh_unseals_the_device_id(self, oauth_app):
+        """A sealed refresh token reaches Auth0 bare, with its device id beside it."""
+        mock_client = _mock_auth0_response(
+            json_data={'access_token': 'new-access', 'refresh_token': 'v1.rotated'}
+        )
         with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
             response = oauth_app.post(
                 '/oauth/token',
-                data={'grant_type': 'refresh_token', 'refresh_token': 'test-refresh'},
+                data={
+                    'grant_type': 'refresh_token',
+                    'refresh_token': _seal_refresh_token('v1.refresh', DEVICE_ID),
+                },
             )
         assert response.status_code == HTTPStatus.OK
-        call_kwargs = mock_client.post.call_args
-        assert call_kwargs.kwargs['data']['device_id'] == _DEVICE_ID
+        sent = mock_client.post.call_args.kwargs['data']
+        assert sent['refresh_token'] == 'v1.refresh'
+        assert sent['device_id'] == DEVICE_ID
 
-    def test_token_refresh_keeps_client_device_id(self, oauth_app):
-        """A client that logged in under its own device id refreshes under it."""
+    def test_token_refresh_reseals_the_rotated_token(self, oauth_app):
+        """Auth0 rotates refresh tokens, so the new one leaves under the same id."""
+        mock_client = _mock_auth0_response(
+            json_data={'access_token': 'new-access', 'refresh_token': 'v1.rotated'}
+        )
+        with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
+            response = oauth_app.post(
+                '/oauth/token',
+                data={
+                    'grant_type': 'refresh_token',
+                    'refresh_token': _seal_refresh_token('v1.refresh', DEVICE_ID),
+                },
+            )
+        body = response.json()
+        assert body['access_token'] == 'new-access'
+        assert _unseal_refresh_token(body['refresh_token']) == ('v1.rotated', DEVICE_ID)
+
+    def test_token_refresh_ignores_a_client_device_id_under_a_seal(self, oauth_app):
+        """The sealed id is the grant's; a body param cannot point at another record."""
+        mock_client = _mock_auth0_response()
+        with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
+            oauth_app.post(
+                '/oauth/token',
+                data={
+                    'grant_type': 'refresh_token',
+                    'refresh_token': _seal_refresh_token('v1.refresh', DEVICE_ID),
+                    'device_id': OTHER_DEVICE_ID,
+                },
+            )
+        assert mock_client.post.call_args.kwargs['data']['device_id'] == DEVICE_ID
+
+    def test_token_refresh_rejects_a_tampered_seal(self, oauth_app):
+        """A value under our prefix that does not verify never reaches Auth0."""
+        sealed = _seal_refresh_token('v1.refresh', DEVICE_ID)
+        prefix, encoded, signature = sealed.split('.')
         mock_client = _mock_auth0_response()
         with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
             response = oauth_app.post(
                 '/oauth/token',
                 data={
                     'grant_type': 'refresh_token',
-                    'refresh_token': 'test-refresh',
-                    'device_id': 'client-own-id',
+                    'refresh_token': f'{prefix}.{encoded}.{signature[:-4]}AAAA',
                 },
             )
-        assert response.status_code == HTTPStatus.OK
-        call_kwargs = mock_client.post.call_args
-        assert call_kwargs.kwargs['data']['device_id'] == 'client-own-id'
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert response.json()['error'] == 'invalid_grant'
+        mock_client.post.assert_not_called()
 
-    def test_token_refresh_replaces_unusable_client_device_id(self, oauth_app):
-        """An id the Auth0 action rejects would resolve to the fingerprint."""
+    def test_token_refresh_rejects_a_sealed_code(self, oauth_app):
+        """A code cannot be replayed as a refresh token."""
         mock_client = _mock_auth0_response()
         with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
             response = oauth_app.post(
                 '/oauth/token',
                 data={
                     'grant_type': 'refresh_token',
-                    'refresh_token': 'test-refresh',
-                    'device_id': 'my_id',
+                    'refresh_token': _seal_code('auth-code', DEVICE_ID),
                 },
             )
-        assert response.status_code == HTTPStatus.OK
-        call_kwargs = mock_client.post.call_args
-        assert call_kwargs.kwargs['data']['device_id'] == _DEVICE_ID
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert response.json()['error'] == 'invalid_grant'
+        mock_client.post.assert_not_called()
 
-    def test_token_auth_code_grant_has_no_device_id(self, oauth_app):
+    def test_token_refresh_rejects_a_bare_refresh_token(self, oauth_app):
+        """A refresh token issued before sealing would refresh under a shared
+        key, so it is refused and the client logs in again."""
         mock_client = _mock_auth0_response()
         with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
             response = oauth_app.post(
                 '/oauth/token',
-                data={'grant_type': 'authorization_code', 'code': 'test-code'},
+                data={'grant_type': 'refresh_token', 'refresh_token': 'v1.legacy'},
+            )
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert response.json()['error'] == 'invalid_grant'
+        mock_client.post.assert_not_called()
+
+    def test_token_refresh_rejects_a_missing_refresh_token(self, oauth_app):
+        mock_client = _mock_auth0_response()
+        with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
+            response = oauth_app.post(
+                '/oauth/token', data={'grant_type': 'refresh_token'}
+            )
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert response.json()['error'] == 'invalid_grant'
+        mock_client.post.assert_not_called()
+
+    def test_token_auth_code_unseals_the_code(self, oauth_app):
+        """Auth0 sees the code it issued, and no device_id on this grant."""
+        mock_client = _mock_auth0_response(
+            json_data={'access_token': 'jwt', 'refresh_token': 'v1.first'}
+        )
+        with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
+            response = oauth_app.post(
+                '/oauth/token',
+                data={
+                    'grant_type': 'authorization_code',
+                    'code': _seal_code('auth-code', DEVICE_ID),
+                },
             )
         assert response.status_code == HTTPStatus.OK
-        call_kwargs = mock_client.post.call_args
-        assert 'device_id' not in call_kwargs.kwargs['data']
+        sent = mock_client.post.call_args.kwargs['data']
+        assert sent['code'] == 'auth-code'
+        assert 'device_id' not in sent
+
+    def test_token_auth_code_seals_the_refresh_token(self, oauth_app):
+        """The refresh token leaves under the id the code came in with."""
+        mock_client = _mock_auth0_response(
+            json_data={'access_token': 'jwt', 'refresh_token': 'v1.first'}
+        )
+        with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
+            response = oauth_app.post(
+                '/oauth/token',
+                data={
+                    'grant_type': 'authorization_code',
+                    'code': _seal_code('auth-code', DEVICE_ID),
+                },
+            )
+        body = response.json()
+        assert body['access_token'] == 'jwt'
+        assert _unseal_refresh_token(body['refresh_token']) == ('v1.first', DEVICE_ID)
+
+    def test_token_auth_code_rejects_a_tampered_seal(self, oauth_app):
+        sealed = _seal_code('auth-code', DEVICE_ID)
+        prefix, encoded, signature = sealed.split('.')
+        mock_client = _mock_auth0_response()
+        with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
+            response = oauth_app.post(
+                '/oauth/token',
+                data={
+                    'grant_type': 'authorization_code',
+                    'code': f'{prefix}.{encoded}.{signature[:-4]}AAAA',
+                },
+            )
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert response.json()['error'] == 'invalid_grant'
+        mock_client.post.assert_not_called()
+
+    def test_token_auth_code_rejects_a_sealed_refresh_token(self, oauth_app):
+        mock_client = _mock_auth0_response()
+        with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
+            response = oauth_app.post(
+                '/oauth/token',
+                data={
+                    'grant_type': 'authorization_code',
+                    'code': _seal_refresh_token('v1.refresh', DEVICE_ID),
+                },
+            )
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert response.json()['error'] == 'invalid_grant'
+        mock_client.post.assert_not_called()
+
+    def test_token_auth_code_rejects_a_bare_code(self, oauth_app):
+        """A code that did not pass through the callback carries no id."""
+        mock_client = _mock_auth0_response()
+        with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
+            response = oauth_app.post(
+                '/oauth/token',
+                data={'grant_type': 'authorization_code', 'code': 'auth-code'},
+            )
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert response.json()['error'] == 'invalid_grant'
+        mock_client.post.assert_not_called()
+
+    def test_token_error_response_is_forwarded_unsealed(self, oauth_app):
+        """An Auth0 error body has no refresh token to seal and passes through."""
+        mock_client = _mock_auth0_response(
+            status_code=HTTPStatus.FORBIDDEN,
+            json_data={'error': 'invalid_grant', 'error_description': 'expired'},
+        )
+        with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
+            response = oauth_app.post(
+                '/oauth/token',
+                data={
+                    'grant_type': 'refresh_token',
+                    'refresh_token': _seal_refresh_token('v1.refresh', DEVICE_ID),
+                },
+            )
+        assert response.status_code == HTTPStatus.FORBIDDEN
+        assert response.json() == {
+            'error': 'invalid_grant',
+            'error_description': 'expired',
+        }
 
     def test_token_fails_without_client_secret(self):
         """Token endpoint should return 500 when AUTH0_CLIENT_SECRET is missing."""
+        sealed_code = _seal_code('test-code', DEVICE_ID)
         env_without_secret = {
             'AUTH0_DOMAIN': TEST_AUTH0_DOMAIN,
             'AUTH0_CLIENT_ID': TEST_CLIENT_ID,
@@ -1530,7 +1747,10 @@ class TestOAuthToken:
                 client = TestClient(app, raise_server_exceptions=False)
                 response = client.post(
                     '/oauth/token',
-                    data={'grant_type': 'authorization_code', 'code': 'test-code'},
+                    data={
+                        'grant_type': 'authorization_code',
+                        'code': sealed_code,
+                    },
                 )
         assert response.status_code == HTTPStatus.INTERNAL_SERVER_ERROR
         data = response.json()
@@ -1544,7 +1764,7 @@ class TestOAuthToken:
                 '/oauth/token',
                 data={
                     'grant_type': 'authorization_code',
-                    'code': 'test-code',
+                    'code': _seal_code('test-code', DEVICE_ID),
                     'redirect_uri': 'http://localhost:52048/callback',
                 },
             )
@@ -1560,7 +1780,10 @@ class TestOAuthToken:
         with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
             response = oauth_app.post(
                 '/oauth/token',
-                data={'grant_type': 'authorization_code', 'code': 'test-code'},
+                data={
+                    'grant_type': 'authorization_code',
+                    'code': _seal_code('test-code', DEVICE_ID),
+                },
             )
         assert response.status_code == HTTPStatus.OK
         call_kwargs = mock_client.post.call_args
@@ -1789,7 +2012,10 @@ class TestOAuthFallbackRoutes:
         with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
             response = oauth_app.post(
                 '/token',
-                data={'grant_type': 'authorization_code', 'code': 'test-code'},
+                data={
+                    'grant_type': 'authorization_code',
+                    'code': _seal_code('test-code', DEVICE_ID),
+                },
             )
         assert response.status_code == HTTPStatus.OK
         data = response.json()
@@ -1882,7 +2108,10 @@ class TestOAuthCors:
         with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
             response = oauth_app.post(
                 '/oauth/token',
-                data={'grant_type': 'authorization_code', 'code': 'test-code'},
+                data={
+                    'grant_type': 'authorization_code',
+                    'code': _seal_code('test-code', DEVICE_ID),
+                },
             )
         assert response.status_code == HTTPStatus.OK
         assert response.headers['access-control-allow-origin'] == '*'
@@ -1906,6 +2135,7 @@ class TestOAuthCors:
 def _make_composite_state(redirect_uri='', state='', **extra):
     """Helper to create signed composite state as the authorize endpoint does."""
     extra.setdefault('nonce_hash', _hash_nonce(TEST_NONCE))
+    extra.setdefault('device_id', DEVICE_ID)
     return _sign_state({'redirect_uri': redirect_uri, 'state': state, **extra})
 
 
@@ -1959,6 +2189,29 @@ class TestMfaPkceReplay:
         assert stage2['code_challenge'] == [PKCE_PARAMS['code_challenge']]
         assert stage2['code_challenge_method'] == [PKCE_PARAMS['code_challenge_method']]
 
+    def test_stage2_carries_the_device_id_forward(self, oauth_app):
+        """The id minted at stage 1 is the one the final code is sealed under."""
+        composite = _make_composite_state(
+            redirect_uri='http://localhost:8080/callback',
+            state='orig-state',
+            stage='mfa',
+            original_scope=f'openid offline_access device:{DEVICE_ID}',
+            authorize_params=dict(PKCE_PARAMS),
+            device_id=DEVICE_ID,
+        )
+
+        with patch('httpx.AsyncClient', return_value=_mock_auth0_response()):
+            response = oauth_app.get(
+                '/oauth/callback',
+                params={'code': 'mfa-auth-code', 'state': composite},
+                follow_redirects=False,
+            )
+
+        assert response.status_code == HTTPStatus.FOUND
+        stage2 = parse_qs(urlparse(response.headers['location']).query)
+        assert f'device:{DEVICE_ID}' in stage2['scope'][0].split()
+        assert _verify_state(stage2['state'][0]).get('device_id') == DEVICE_ID
+
     def test_stage2_replays_only_the_allowlisted_keys(self, oauth_app):
         """A key outside the replay allowlist cannot ride the state into stage 2."""
         composite = _make_composite_state(
@@ -1986,7 +2239,9 @@ class TestOAuthCallback:
 
     def test_callback_redirects_to_client(self, oauth_app):
         """Callback should redirect to the client's original redirect_uri."""
-        composite = _make_composite_state('http://localhost:52048/callback', 'xyz')
+        composite = _make_composite_state(
+            'http://localhost:52048/callback', 'xyz', device_id=DEVICE_ID
+        )
         response = oauth_app.get(
             '/oauth/callback',
             params={'code': 'auth-code', 'state': composite},
@@ -1995,8 +2250,28 @@ class TestOAuthCallback:
         assert response.status_code == HTTPStatus.FOUND
         location = response.headers['location']
         assert location.startswith('http://localhost:52048/callback')
-        assert 'code=auth-code' in location
-        assert 'state=xyz' in location
+        query = parse_qs(urlparse(location).query)
+        assert query['state'] == ['xyz']
+        assert _unseal_code(query['code'][0]) == ('auth-code', DEVICE_ID)
+
+    def test_callback_rejects_a_state_without_a_device_id(self, oauth_app):
+        """Every state this server mints carries an id; one without it cannot
+        seal the code, so it is refused like any other invalid state."""
+        composite = _sign_state(
+            {
+                'redirect_uri': 'http://localhost:52048/callback',
+                'state': 'xyz',
+                'nonce_hash': _hash_nonce(TEST_NONCE),
+            }
+        )
+        response = oauth_app.get(
+            '/oauth/callback',
+            params={'code': 'auth-code', 'state': composite},
+            follow_redirects=False,
+        )
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert response.json()['error'] == 'invalid_request'
+        assert 'location' not in response.headers
 
     def test_callback_rejects_unsigned_state(self, oauth_app):
         """A state we never signed must not steer the redirect."""
@@ -2045,18 +2320,24 @@ class TestOAuthCallback:
 
     def test_callback_returns_json_without_redirect_uri(self, oauth_app):
         """Without a client redirect_uri in state, return JSON as fallback."""
-        composite = _make_composite_state('', 'xyz')
+        composite = _make_composite_state('', 'xyz', device_id=DEVICE_ID)
         response = oauth_app.get(
             '/oauth/callback',
             params={'code': 'auth-code', 'state': composite},
         )
         assert response.status_code == HTTPStatus.OK
         data = response.json()
-        assert data['code'] == 'auth-code'
+        assert _unseal_code(data['code']) == ('auth-code', DEVICE_ID)
         assert data['state'] == 'xyz'
 
     def test_callback_missing_code(self, oauth_app):
         response = oauth_app.get('/oauth/callback', params={'state': 'xyz'})
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert response.json()['error'] == 'invalid_request'
+
+    def test_callback_rejects_a_code_without_a_state(self, oauth_app):
+        """No state means no device id, so the code could never be exchanged."""
+        response = oauth_app.get('/oauth/callback', params={'code': 'auth-code'})
         assert response.status_code == HTTPStatus.BAD_REQUEST
         assert response.json()['error'] == 'invalid_request'
 
@@ -2106,7 +2387,7 @@ class TestOAuthCallback:
         assert response.status_code == HTTPStatus.OK
         assert 'location' not in response.headers
         data = response.json()
-        assert data['code'] == 'auth-code'
+        assert _unseal_code(data['code']) == ('auth-code', DEVICE_ID)
 
     def test_callback_does_not_relay_to_untracked_path(self, oauth_app):
         composite = _make_composite_state(UNLISTED_PATH_URI, 'xyz')
@@ -2130,7 +2411,8 @@ class TestOAuthCallback:
         assert response.status_code == HTTPStatus.FOUND
         location = response.headers['location']
         assert location.startswith(LISTED_REDIRECT_URI)
-        assert 'code=auth-code' in location
+        query = parse_qs(urlparse(location).query)
+        assert _unseal_code(query['code'][0]) == ('auth-code', DEVICE_ID)
 
     def test_callback_mfa_stage_exchanges_code_and_redirects_to_stage2(self, oauth_app):
         """MFA stage callback should exchange MFA code and redirect to regular audience."""

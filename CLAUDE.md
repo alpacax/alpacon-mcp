@@ -66,6 +66,10 @@ Things the code will not tell you at a glance:
   presets catalogs are exempt.
 - **MFA re-authentication exists only in remote/streamable-http mode**, with a
   60-second cooldown against re-auth loops.
+- **The code and refresh token a remote client holds are sealed by this
+  server**, carrying the device id minted for that grant. Rotating
+  `ALPACON_MCP_GRANT_SECRET` (or `AUTH0_CLIENT_SECRET`, which it is derived
+  from by default) logs every remote session out.
 
 ## Language and writing style
 
