@@ -494,6 +494,11 @@ def _client_device_id(scope: str) -> str | None:
     return candidate if _is_device_id(candidate) else None
 
 
+def _strip_device_scopes(scope: str) -> str:
+    """The scope without any `device:` token, so a client's cannot outrank ours."""
+    return ' '.join(s for s in scope.split() if not s.startswith('device:'))
+
+
 def _mint_device_id() -> str:
     """One id per grant; 32 hex characters clear the Auth0 action's validator."""
     return secrets.token_hex(16)
@@ -721,8 +726,7 @@ def register_oauth_routes(mcp_server):
         device_id = _client_device_id(scope)
         if device_id is None:
             device_id = _mint_device_id()
-            scope = ' '.join(s for s in scope.split() if not s.startswith('device:'))
-            scope = f'{scope} device:{device_id}'.strip()
+            scope = f'{_strip_device_scopes(scope)} device:{device_id}'.strip()
 
         # Detect MFA pseudo-scope from re-auth flow.
         # When the ASGI middleware returns 401 with scope="... mfa",
@@ -966,13 +970,20 @@ def register_oauth_routes(mcp_server):
         params['client_id'] = configured_client_id
         params['client_secret'] = config['client_secret']
 
+        # The Auth0 action reads a `device:` scope ahead of the device_id field, so
+        # one left as the client sent it would outrank the sealed id below.
+        # /authorize normalizes its scope the same way.
+        scope = params.get('scope')
+        if isinstance(scope, str):
+            params['scope'] = _strip_device_scopes(scope)
+
         # An unsealed value, whether tampered or issued before sealing, would
         # refresh under a key shared by every session of the user; invalid_grant
         # sends the client to a fresh login, which mints it an id. Refresh
         # requests may omit scope, so the id rides the body channel the Auth0
         # action also reads; the code grant already carried it in the scope sent
         # to /authorize, so there the field is dropped rather than set. Either
-        # way a client-supplied device_id never reaches Auth0.
+        # way a client-supplied device id never reaches Auth0, on either channel.
         sealed_device_id = ''
         if grant_type == 'authorization_code':
             unsealed = _unseal_code(params.get('code', ''))

@@ -1593,6 +1593,22 @@ class TestOAuthToken:
             )
         assert mock_client.post.call_args.kwargs['data']['device_id'] == DEVICE_ID
 
+    def test_token_refresh_strips_a_client_device_scope(self, oauth_app):
+        """The action reads the scope ahead of the field, so it has to go too."""
+        mock_client = _mock_auth0_response()
+        with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
+            oauth_app.post(
+                '/oauth/token',
+                data={
+                    'grant_type': 'refresh_token',
+                    'refresh_token': _seal_refresh_token('v1.refresh', DEVICE_ID),
+                    'scope': f'openid offline_access device:{OTHER_DEVICE_ID}',
+                },
+            )
+        sent = mock_client.post.call_args.kwargs['data']
+        assert sent['scope'] == 'openid offline_access'
+        assert sent['device_id'] == DEVICE_ID
+
     def test_token_refresh_rejects_a_tampered_seal(self, oauth_app):
         """A value under our prefix that does not verify never reaches Auth0."""
         sealed = _seal_refresh_token('v1.refresh', DEVICE_ID)
@@ -1687,10 +1703,10 @@ class TestOAuthToken:
         mock_client.post.assert_not_called()
 
     def test_token_auth_code_unseals_the_code(self, oauth_app):
-        """Auth0 sees the code it issued, and no device_id on this grant.
+        """Auth0 sees the code it issued, and no client device id on this grant.
 
-        The scope sent to /authorize already carried the id, so a body param has
-        nothing to replace and does not ride through.
+        The scope sent to /authorize already carried the id, so neither the body
+        field nor a `device:` scope has anything to replace here.
         """
         mock_client = _mock_auth0_response(
             json_data={'access_token': 'jwt', 'refresh_token': 'v1.first'}
@@ -1702,12 +1718,14 @@ class TestOAuthToken:
                     'grant_type': 'authorization_code',
                     'code': _seal_code('auth-code', DEVICE_ID),
                     'device_id': OTHER_DEVICE_ID,
+                    'scope': f'openid device:{OTHER_DEVICE_ID}',
                 },
             )
         assert response.status_code == HTTPStatus.OK
         sent = mock_client.post.call_args.kwargs['data']
         assert sent['code'] == 'auth-code'
         assert 'device_id' not in sent
+        assert sent['scope'] == 'openid'
 
     def test_token_auth_code_seals_the_refresh_token(self, oauth_app):
         """The refresh token leaves under the id the code came in with."""
