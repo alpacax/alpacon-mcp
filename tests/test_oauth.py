@@ -1675,7 +1675,11 @@ class TestOAuthToken:
         mock_client.post.assert_not_called()
 
     def test_token_auth_code_unseals_the_code(self, oauth_app):
-        """Auth0 sees the code it issued, and no device_id on this grant."""
+        """Auth0 sees the code it issued, and no device_id on this grant.
+
+        The scope sent to /authorize already carried the id, so a body param has
+        nothing to replace and does not ride through.
+        """
         mock_client = _mock_auth0_response(
             json_data={'access_token': 'jwt', 'refresh_token': 'v1.first'}
         )
@@ -1685,6 +1689,7 @@ class TestOAuthToken:
                 data={
                     'grant_type': 'authorization_code',
                     'code': _seal_code('auth-code', DEVICE_ID),
+                    'device_id': OTHER_DEVICE_ID,
                 },
             )
         assert response.status_code == HTTPStatus.OK

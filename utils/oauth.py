@@ -959,13 +959,16 @@ def register_oauth_routes(mcp_server):
         # refresh under a key shared by every session of the user; invalid_grant
         # sends the client to a fresh login, which mints it an id. Refresh
         # requests may omit scope, so the id rides the body channel the Auth0
-        # action also reads.
+        # action also reads; the code grant already carried it in the scope sent
+        # to /authorize, so there the field is dropped rather than set. Either
+        # way a client-supplied device_id never reaches Auth0.
         sealed_device_id = ''
         if grant_type == 'authorization_code':
             unsealed = _unseal_code(params.get('code', ''))
             if unsealed is None:
                 return _reject_unsealed('authorization code', params.get('code'))
             params['code'], sealed_device_id = unsealed
+            params.pop('device_id', None)
         elif grant_type == 'refresh_token':
             unsealed = _unseal_refresh_token(params.get('refresh_token', ''))
             if unsealed is None:
