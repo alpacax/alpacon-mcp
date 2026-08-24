@@ -1003,6 +1003,12 @@ class TestOAuthAuthorize:
         assert response.status_code == HTTPStatus.FOUND
         assert _authorize_device_id(response) != 'good-id-1234'
 
+    def test_authorize_normalizes_a_second_device_scope_away(self, oauth_app):
+        """One token leaves, so nothing rests on which one the action reads."""
+        response = _authorize(oauth_app, 'openid device:good-id-1234 device:other-5678')
+        assert response.status_code == HTTPStatus.FOUND
+        assert _authorize_device_id(response) == 'good-id-1234'
+
     def test_authorize_mints_despite_device_substring(self, oauth_app):
         """A scope merely containing 'device:' is not a device id grant."""
         response = _authorize(oauth_app, 'openid read:device:status')

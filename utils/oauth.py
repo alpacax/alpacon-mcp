@@ -720,13 +720,13 @@ def register_oauth_routes(mcp_server):
         scope = params.get('scope', '')
         if 'offline_access' not in scope:
             scope = f'{scope} offline_access'.strip()
-        # The Auth0 action keys MFA presence on the first `device:` token, so
-        # an unusable one has to go rather than sit ahead of the minted id. The
+        # The Auth0 action keys MFA presence on the first `device:` token, so the
+        # scope leaves with exactly one rather than resting on that ordering. The
         # id rides the state so the callback can seal the code under it.
         device_id = _client_device_id(scope)
         if device_id is None:
             device_id = _mint_device_id()
-            scope = f'{_strip_device_scopes(scope)} device:{device_id}'.strip()
+        scope = f'{_strip_device_scopes(scope)} device:{device_id}'.strip()
 
         # Detect MFA pseudo-scope from re-auth flow.
         # When the ASGI middleware returns 401 with scope="... mfa",
