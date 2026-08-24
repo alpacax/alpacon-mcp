@@ -32,9 +32,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Dropped the root `__init__.py` that 0.4.1 added, together with its wheel include. It made the
   checkout directory a package, so under pytest `sys.modules['main']` was pre-registered with that
-  package and `import main` no longer reached `main.py` in a clone named anything other than
-  `alpacon-mcp` (#189). The console scripts and the Dockerfile load `main.py` as a top-level module
-  and are unaffected.
+  package and `import main` no longer reached `main.py` in a clone directory named `main` (#189).
+  The console scripts and the Dockerfile load `main.py` as a top-level module and are unaffected.
 
 ### Documentation
 - Documented the hosted remote MCP server (`https://mcp.alpacon.io/mcp`, streamable-http transport)
