@@ -930,12 +930,14 @@ def register_oauth_routes(mcp_server):
         # and the seal alike and reach Auth0 with the injected client_secret;
         # requiring it keeps the guarantee here rather than in Auth0's parser.
         allowed_grant_types = {'authorization_code', 'refresh_token'}
+        # A JSON body can put any type here, and an unhashable one would raise on
+        # the membership test below rather than answer 400.
         grant_type = params.get('grant_type', '')
-        if not grant_type:
+        if not isinstance(grant_type, str) or not grant_type:
             return JSONResponse(
                 {
                     'error': 'invalid_request',
-                    'error_description': 'grant_type is required',
+                    'error_description': 'grant_type must be a non-empty string',
                 },
                 status_code=HTTPStatus.BAD_REQUEST,
             )

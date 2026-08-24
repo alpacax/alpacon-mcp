@@ -1487,6 +1487,19 @@ class TestOAuthToken:
         assert response.json()['error'] == 'invalid_request'
         mock_client.post.assert_not_called()
 
+    def test_token_rejects_a_non_string_grant_type(self, oauth_app):
+        """An unhashable one would raise on the allow-list test instead of 400."""
+        mock_client = _mock_auth0_response()
+        with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
+            response = oauth_app.post(
+                '/oauth/token',
+                content=json.dumps({'grant_type': ['refresh_token']}).encode(),
+                headers={'content-type': 'application/json'},
+            )
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert response.json()['error'] == 'invalid_request'
+        mock_client.post.assert_not_called()
+
     def test_token_rejects_client_credentials_grant(self, oauth_app):
         response = oauth_app.post(
             '/oauth/token',
