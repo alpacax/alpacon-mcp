@@ -1475,6 +1475,18 @@ class TestOAuthToken:
             )
         assert response.status_code == HTTPStatus.OK
 
+    def test_token_requires_a_grant_type(self, oauth_app):
+        """The seal is keyed off grant_type, so an absent one cannot reach Auth0."""
+        mock_client = _mock_auth0_response()
+        with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
+            response = oauth_app.post(
+                '/oauth/token',
+                data={'code': _seal_code('test-code', DEVICE_ID)},
+            )
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert response.json()['error'] == 'invalid_request'
+        mock_client.post.assert_not_called()
+
     def test_token_rejects_client_credentials_grant(self, oauth_app):
         response = oauth_app.post(
             '/oauth/token',

@@ -921,10 +921,21 @@ def register_oauth_routes(mcp_server):
             parsed = parse_qs(decoded_body)
             params = {k: v[0] for k, v in parsed.items()}
 
-        # Restrict allowed grant types to prevent credential abuse
+        # Restrict allowed grant types to prevent credential abuse. Both unseal
+        # branches key off this value, so an absent one would skip the allow-list
+        # and the seal alike and reach Auth0 with the injected client_secret;
+        # requiring it keeps the guarantee here rather than in Auth0's parser.
         allowed_grant_types = {'authorization_code', 'refresh_token'}
         grant_type = params.get('grant_type', '')
-        if grant_type and grant_type not in allowed_grant_types:
+        if not grant_type:
+            return JSONResponse(
+                {
+                    'error': 'invalid_request',
+                    'error_description': 'grant_type is required',
+                },
+                status_code=HTTPStatus.BAD_REQUEST,
+            )
+        if grant_type not in allowed_grant_types:
             return JSONResponse(
                 {
                     'error': 'unsupported_grant_type',
