@@ -971,9 +971,13 @@ class TestOAuthAuthorize:
 
     def test_authorize_mints_a_device_id_per_grant(self, oauth_app):
         """Each grant gets its own id, so two clients never share an MFA record."""
-        first = _authorize_device_id(_authorize(oauth_app))
-        second = _authorize_device_id(_authorize(oauth_app))
-        assert first != second
+        with patch(
+            'utils.oauth._mint_device_id', side_effect=[DEVICE_ID, OTHER_DEVICE_ID]
+        ) as mint:
+            first = _authorize_device_id(_authorize(oauth_app))
+            second = _authorize_device_id(_authorize(oauth_app))
+        assert mint.call_count == 2
+        assert (first, second) == (DEVICE_ID, OTHER_DEVICE_ID)
 
     def test_authorize_mints_an_id_the_action_accepts(self, oauth_app):
         """The minted id has to clear the Auth0 action's validator."""
