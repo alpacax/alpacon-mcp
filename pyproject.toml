@@ -73,7 +73,6 @@ source = "vcs"
 
 [tool.hatch.build.targets.wheel]
 include = [
-    "/__init__.py",
     "/py.typed",
     "/server.py",
     "/main.py",
@@ -122,7 +121,6 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "*/test*.py" = ["S101", "S106", "S108", "S311", "S604"]
-"__init__.py" = ["N999"]
 
 [tool.ruff.lint.mccabe]
 max-complexity = 10
