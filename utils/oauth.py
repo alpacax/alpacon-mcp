@@ -977,11 +977,13 @@ def register_oauth_routes(mcp_server):
         # /authorize normalizes its scope the same way. A JSON body can type this
         # as a list, which httpx puts on the wire as a scope the action cannot tell
         # from a string one, so anything but a str is dropped rather than filtered.
-        scope = params.get('scope')
-        if scope is not None:
-            params['scope'] = (
-                _strip_device_scopes(scope) if isinstance(scope, str) else ''
-            )
+        # An empty result drops the key too: RFC 6749 reads an omitted scope as the
+        # one the grant already carries and says nothing about an empty one.
+        scope = params.pop('scope', None)
+        if isinstance(scope, str):
+            stripped = _strip_device_scopes(scope)
+            if stripped:
+                params['scope'] = stripped
 
         # An unsealed value, whether tampered or issued before sealing, would
         # refresh under a key shared by every session of the user; invalid_grant

@@ -1642,7 +1642,23 @@ class TestOAuthToken:
                 headers={'content-type': 'application/json'},
             )
         sent = mock_client.post.call_args.kwargs['data']
-        assert sent['scope'] == ''
+        assert 'scope' not in sent
+        assert sent['device_id'] == DEVICE_ID
+
+    def test_token_refresh_drops_a_scope_the_strip_empties(self, oauth_app):
+        """An omitted scope is the grant's own; RFC 6749 defines no empty one."""
+        mock_client = _mock_auth0_response()
+        with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
+            oauth_app.post(
+                '/oauth/token',
+                data={
+                    'grant_type': 'refresh_token',
+                    'refresh_token': _seal_refresh_token('v1.refresh', DEVICE_ID),
+                    'scope': f'device:{OTHER_DEVICE_ID}',
+                },
+            )
+        sent = mock_client.post.call_args.kwargs['data']
+        assert 'scope' not in sent
         assert sent['device_id'] == DEVICE_ID
 
     def test_token_refresh_rejects_a_tampered_seal(self, oauth_app):
