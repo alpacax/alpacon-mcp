@@ -1622,6 +1622,25 @@ class TestOAuthToken:
         assert sent['scope'] == 'openid offline_access'
         assert sent['device_id'] == DEVICE_ID
 
+    def test_token_refresh_drops_a_non_string_device_scope(self, oauth_app):
+        """httpx encodes a list scope as one the action reads like any other."""
+        mock_client = _mock_auth0_response()
+        with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
+            oauth_app.post(
+                '/oauth/token',
+                content=json.dumps(
+                    {
+                        'grant_type': 'refresh_token',
+                        'refresh_token': _seal_refresh_token('v1.refresh', DEVICE_ID),
+                        'scope': [f'device:{OTHER_DEVICE_ID}'],
+                    }
+                ).encode(),
+                headers={'content-type': 'application/json'},
+            )
+        sent = mock_client.post.call_args.kwargs['data']
+        assert sent['scope'] == ''
+        assert sent['device_id'] == DEVICE_ID
+
     def test_token_refresh_rejects_a_tampered_seal(self, oauth_app):
         """A value under our prefix that does not verify never reaches Auth0."""
         sealed = _seal_refresh_token('v1.refresh', DEVICE_ID)

@@ -974,10 +974,14 @@ def register_oauth_routes(mcp_server):
 
         # The Auth0 action reads a `device:` scope ahead of the device_id field, so
         # one left as the client sent it would outrank the sealed id below.
-        # /authorize normalizes its scope the same way.
+        # /authorize normalizes its scope the same way. A JSON body can type this
+        # as a list, which httpx puts on the wire as a scope the action cannot tell
+        # from a string one, so anything but a str is dropped rather than filtered.
         scope = params.get('scope')
-        if isinstance(scope, str):
-            params['scope'] = _strip_device_scopes(scope)
+        if scope is not None:
+            params['scope'] = (
+                _strip_device_scopes(scope) if isinstance(scope, str) else ''
+            )
 
         # An unsealed value, whether tampered or issued before sealing, would
         # refresh under a key shared by every session of the user; invalid_grant
