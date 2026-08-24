@@ -1510,6 +1510,37 @@ class TestOAuthToken:
         assert response.json()['error'] == 'invalid_request'
         mock_client.post.assert_not_called()
 
+    def test_token_refuses_an_oversized_body(self, oauth_app):
+        """The route takes no auth, so one caller cannot pick the allocation."""
+        mock_client = _mock_auth0_response()
+        with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
+            response = oauth_app.post(
+                '/oauth/token',
+                content=b'grant_type=refresh_token&refresh_token=' + b'a' * 20000,
+                headers={'content-type': 'application/x-www-form-urlencoded'},
+            )
+        assert response.status_code == HTTPStatus.REQUEST_ENTITY_TOO_LARGE
+        assert response.json()['error'] == 'invalid_request'
+        mock_client.post.assert_not_called()
+
+    def test_token_refuses_an_oversized_chunked_body(self, oauth_app):
+        """A chunked request declares no length, so the cap has to count bytes."""
+
+        def chunks():
+            for _ in range(4):
+                yield b'a' * 8192
+
+        mock_client = _mock_auth0_response()
+        with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
+            response = oauth_app.post(
+                '/oauth/token',
+                content=chunks(),
+                headers={'content-type': 'application/x-www-form-urlencoded'},
+            )
+        assert 'content-length' not in response.request.headers
+        assert response.status_code == HTTPStatus.REQUEST_ENTITY_TOO_LARGE
+        mock_client.post.assert_not_called()
+
     def test_token_rejects_client_credentials_grant(self, oauth_app):
         response = oauth_app.post(
             '/oauth/token',
@@ -2020,6 +2051,16 @@ class TestOAuthRegister:
         )
         assert response.status_code == HTTPStatus.CREATED
         assert 'no-store' in response.headers.get('cache-control', '')
+
+    def test_register_refuses_an_oversized_body(self, oauth_app):
+        """Registration takes no auth either, and the cap is shared with /token."""
+        response = oauth_app.post(
+            '/oauth/register',
+            content=json.dumps({'redirect_uris': ['https://claude.ai/' + 'a' * 20000]}),
+            headers={'content-type': 'application/json'},
+        )
+        assert response.status_code == HTTPStatus.REQUEST_ENTITY_TOO_LARGE
+        assert response.json()['error'] == 'invalid_client_metadata'
 
     def test_register_rejects_non_json_content_type(self, oauth_app):
         response = oauth_app.post(

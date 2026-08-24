@@ -97,6 +97,11 @@ _LOG_VALUE_MAX_CHARS = 512
 # registration from driving a check — and in report-only mode a warning — per entry.
 _MAX_REGISTERED_REDIRECT_URIS = 20
 
+# Both routes that read a body are unauthenticated, and a real token request or
+# client registration is well under a kilobyte. Without a cap, one request decides
+# how much the server allocates.
+_MAX_REQUEST_BODY_BYTES = 16 * 1024
+
 # Both the authorize gate and the discovery document use this, so the enforced
 # and the advertised method cannot drift apart. plain is not accepted: its
 # challenge is the verifier itself, so whoever reads the authorization request
@@ -427,6 +432,25 @@ def _get_grant_secret() -> bytes:
     return _explicit_hex_secret(_GRANT_SECRET_ENV) or _derived_secret(
         _GRANT_SECRET_INFO
     )
+
+
+async def _read_bounded_body(request: Request) -> bytes | None:
+    """The body, or None once it passes `_MAX_REQUEST_BODY_BYTES`.
+
+    Streamed rather than read whole: a chunked request declares no length, so a
+    Content-Length check alone would still buffer everything before rejecting it.
+    """
+    declared = request.headers.get('content-length', '')
+    if declared.isdigit() and int(declared) > _MAX_REQUEST_BODY_BYTES:
+        return None
+    chunks: list[bytes] = []
+    size = 0
+    async for chunk in request.stream():
+        size += len(chunk)
+        if size > _MAX_REQUEST_BODY_BYTES:
+            return None
+        chunks.append(chunk)
+    return b''.join(chunks)
 
 
 def _sign_state(payload: dict) -> str:
@@ -889,7 +913,15 @@ def register_oauth_routes(mcp_server):
             )
 
         # Parse request body
-        body = await request.body()
+        body = await _read_bounded_body(request)
+        if body is None:
+            return JSONResponse(
+                {
+                    'error': 'invalid_request',
+                    'error_description': 'Request body is too large',
+                },
+                status_code=HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
+            )
         content_type = request.headers.get('content-type', '')
 
         if 'application/json' in content_type:
@@ -1125,7 +1157,15 @@ def register_oauth_routes(mcp_server):
             )
 
         # Parse and validate client metadata from request body (RFC 7591)
-        body = await request.body()
+        body = await _read_bounded_body(request)
+        if body is None:
+            return JSONResponse(
+                {
+                    'error': 'invalid_client_metadata',
+                    'error_description': 'Request body is too large',
+                },
+                status_code=HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
+            )
         content_type = request.headers.get('content-type', '')
 
         if 'application/json' not in content_type:
