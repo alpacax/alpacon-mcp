@@ -2,7 +2,8 @@
 
 from typing import Any
 
-from utils.common import error_response, success_response, unwrap_http_result
+from utils.api_call import http_call_response
+from utils.common import error_response
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ_ONLY
@@ -62,26 +63,15 @@ async def list_alerts(
     if dismissed is not None:
         params['dismissed'] = dismissed
 
-    result = await http_client.get(
+    return await http_call_response(
+        http_client.get,
         region=region,
         workspace=workspace,
         endpoint='/api/alerts/',
         token=token,
-        params=params,
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to list alerts',
+        params=params,
         server_id=server_id,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(
-        data=result, server_id=server_id, region=region, workspace=workspace
     )
 
 
@@ -105,25 +95,14 @@ async def get_alert(
     """
     token = kwargs.get('token')
 
-    result = await http_client.get(
+    return await http_call_response(
+        http_client.get,
         region=region,
         workspace=workspace,
         endpoint=f'/api/alerts/{alert_id}/',
         token=token,
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to get alert',
         alert_id=alert_id,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(
-        data=result, alert_id=alert_id, region=region, workspace=workspace
     )
 
 
@@ -156,26 +135,15 @@ async def mute_alert(
     if duration is not None:
         mute_data['duration'] = duration
 
-    result = await http_client.post(
+    return await http_call_response(
+        http_client.post,
         region=region,
         workspace=workspace,
         endpoint=f'/api/alerts/{alert_id}/mute/',
         token=token,
-        data=mute_data,
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to mute alert',
+        data=mute_data,
         alert_id=alert_id,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(
-        data=result, alert_id=alert_id, region=region, workspace=workspace
     )
 
 
@@ -238,24 +206,15 @@ async def create_alert_rule(
     if description is not None:
         rule_data['description'] = description
 
-    result = await http_client.post(
+    return await http_call_response(
+        http_client.post,
         region=region,
         workspace=workspace,
         endpoint='/api/metrics/alert-rules/',
         token=token,
+        default_message='Failed to create alert rule',
         data=rule_data,
     )
-
-    err = unwrap_http_result(
-        result,
-        default_message='Failed to create alert rule',
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(data=result, region=region, workspace=workspace)
 
 
 @mcp_tool_handler(
@@ -318,26 +277,15 @@ async def update_alert_rule(
     if not update_data:
         return error_response('No update data provided')
 
-    result = await http_client.patch(
+    return await http_call_response(
+        http_client.patch,
         region=region,
         workspace=workspace,
         endpoint=f'/api/metrics/alert-rules/{rule_id}/',
         token=token,
-        data=update_data,
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to update alert rule',
+        data=update_data,
         rule_id=rule_id,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(
-        data=result, rule_id=rule_id, region=region, workspace=workspace
     )
 
 
@@ -361,23 +309,12 @@ async def delete_alert_rule(
     """
     token = kwargs.get('token')
 
-    result = await http_client.delete(
+    return await http_call_response(
+        http_client.delete,
         region=region,
         workspace=workspace,
         endpoint=f'/api/metrics/alert-rules/{rule_id}/',
         token=token,
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to delete alert rule',
         rule_id=rule_id,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(
-        data=result, rule_id=rule_id, region=region, workspace=workspace
     )

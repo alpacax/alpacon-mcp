@@ -2,7 +2,8 @@
 
 from typing import Any
 
-from utils.common import error_response, success_response, unwrap_http_result
+from utils.api_call import http_call_response
+from utils.common import error_response
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ_ONLY
@@ -67,24 +68,15 @@ async def list_command_acls(
     if page_size is not None:
         params['page_size'] = page_size
 
-    result = await http_client.get(
+    return await http_call_response(
+        http_client.get,
         region=region,
         workspace=workspace,
         endpoint=_API_COMMAND_ACL,
         token=token,
         params=params,
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to list command ACLs',
-        region=region,
-        workspace=workspace,
     )
-    if err:
-        return err
-
-    return success_response(data=result, region=region, workspace=workspace)
 
 
 @mcp_tool_handler(
@@ -135,24 +127,15 @@ async def create_command_acl(
     else:
         acl_data['service_token'] = service_token_id
 
-    result = await http_client.post(
+    return await http_call_response(
+        http_client.post,
         region=region,
         workspace=workspace,
         endpoint=_API_COMMAND_ACL,
         token=token,
         data=acl_data,
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to create command ACL',
-        region=region,
-        workspace=workspace,
     )
-    if err:
-        return err
-
-    return success_response(data=result, region=region, workspace=workspace)
 
 
 @mcp_tool_handler(
@@ -197,26 +180,15 @@ async def update_command_acl(
     if not update_data:
         return error_response('No update data provided')
 
-    result = await http_client.patch(
+    return await http_call_response(
+        http_client.patch,
         region=region,
         workspace=workspace,
         endpoint=f'{_API_COMMAND_ACL}{acl_id}/',
         token=token,
         data=update_data,
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to update command ACL',
         acl_id=acl_id,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(
-        data=result, acl_id=acl_id, region=region, workspace=workspace
     )
 
 
@@ -240,25 +212,14 @@ async def delete_command_acl(
     """
     token = kwargs.get('token')
 
-    result = await http_client.delete(
+    return await http_call_response(
+        http_client.delete,
         region=region,
         workspace=workspace,
         endpoint=f'{_API_COMMAND_ACL}{acl_id}/',
         token=token,
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to delete command ACL',
         acl_id=acl_id,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(
-        data=result, acl_id=acl_id, region=region, workspace=workspace
     )
 
 
@@ -304,24 +265,15 @@ async def list_server_acls(
     if page_size is not None:
         params['page_size'] = page_size
 
-    result = await http_client.get(
+    return await http_call_response(
+        http_client.get,
         region=region,
         workspace=workspace,
         endpoint=_API_SERVER_ACL,
         token=token,
         params=params,
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to list server ACLs',
-        region=region,
-        workspace=workspace,
     )
-    if err:
-        return err
-
-    return success_response(data=result, region=region, workspace=workspace)
 
 
 @mcp_tool_handler(
@@ -365,24 +317,15 @@ async def create_server_acl(
     else:
         acl_data['service_token'] = service_token_id
 
-    result = await http_client.post(
+    return await http_call_response(
+        http_client.post,
         region=region,
         workspace=workspace,
         endpoint=_API_SERVER_ACL,
         token=token,
         data=acl_data,
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to create server ACL',
-        region=region,
-        workspace=workspace,
     )
-    if err:
-        return err
-
-    return success_response(data=result, region=region, workspace=workspace)
 
 
 @mcp_tool_handler(
@@ -434,26 +377,15 @@ async def update_server_acl(
     if not update_data:
         return error_response('No update data provided')
 
-    result = await http_client.patch(
+    return await http_call_response(
+        http_client.patch,
         region=region,
         workspace=workspace,
         endpoint=f'{_API_SERVER_ACL}{acl_id}/',
         token=token,
         data=update_data,
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to update server ACL',
         acl_id=acl_id,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(
-        data=result, acl_id=acl_id, region=region, workspace=workspace
     )
 
 
@@ -477,25 +409,14 @@ async def delete_server_acl(
     """
     token = kwargs.get('token')
 
-    result = await http_client.delete(
+    return await http_call_response(
+        http_client.delete,
         region=region,
         workspace=workspace,
         endpoint=f'{_API_SERVER_ACL}{acl_id}/',
         token=token,
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to delete server ACL',
         acl_id=acl_id,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(
-        data=result, acl_id=acl_id, region=region, workspace=workspace
     )
 
 
@@ -554,26 +475,15 @@ async def bulk_server_acl(
 
     endpoint = _API_SERVER_ACL_BULK if action == 'add' else _API_SERVER_ACL_BULK_DELETE
 
-    result = await http_client.post(
+    return await http_call_response(
+        http_client.post,
         region=region,
         workspace=workspace,
         endpoint=endpoint,
         token=token,
         data=body,
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to bulk update server ACLs',
         action=action,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(
-        data=result, action=action, region=region, workspace=workspace
     )
 
 
@@ -619,24 +529,15 @@ async def list_file_acls(
     if page_size is not None:
         params['page_size'] = page_size
 
-    result = await http_client.get(
+    return await http_call_response(
+        http_client.get,
         region=region,
         workspace=workspace,
         endpoint=_API_FILE_ACL,
         token=token,
         params=params,
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to list file ACLs',
-        region=region,
-        workspace=workspace,
     )
-    if err:
-        return err
-
-    return success_response(data=result, region=region, workspace=workspace)
 
 
 @mcp_tool_handler(
@@ -696,24 +597,15 @@ async def create_file_acl(
     else:
         acl_data['service_token'] = service_token_id
 
-    result = await http_client.post(
+    return await http_call_response(
+        http_client.post,
         region=region,
         workspace=workspace,
         endpoint=_API_FILE_ACL,
         token=token,
         data=acl_data,
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to create file ACL',
-        region=region,
-        workspace=workspace,
     )
-    if err:
-        return err
-
-    return success_response(data=result, region=region, workspace=workspace)
 
 
 @mcp_tool_handler(
@@ -767,26 +659,15 @@ async def update_file_acl(
     if not update_data:
         return error_response('No update data provided')
 
-    result = await http_client.patch(
+    return await http_call_response(
+        http_client.patch,
         region=region,
         workspace=workspace,
         endpoint=f'{_API_FILE_ACL}{acl_id}/',
         token=token,
         data=update_data,
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to update file ACL',
         acl_id=acl_id,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(
-        data=result, acl_id=acl_id, region=region, workspace=workspace
     )
 
 
@@ -810,23 +691,12 @@ async def delete_file_acl(
     """
     token = kwargs.get('token')
 
-    result = await http_client.delete(
+    return await http_call_response(
+        http_client.delete,
         region=region,
         workspace=workspace,
         endpoint=f'{_API_FILE_ACL}{acl_id}/',
         token=token,
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to delete file ACL',
         acl_id=acl_id,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(
-        data=result, acl_id=acl_id, region=region, workspace=workspace
     )

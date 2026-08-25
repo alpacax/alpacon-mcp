@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from utils.common import success_response, unwrap_http_result
+from utils.api_call import http_call_response
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, READ_ONLY
@@ -45,26 +45,15 @@ async def list_system_package_entries(
     if page_size is not None:
         params['page_size'] = page_size
 
-    result = await http_client.get(
+    return await http_call_response(
+        http_client.get,
         region=region,
         workspace=workspace,
         endpoint='/api/packages/system/entries/',
         token=token,
-        params=params,
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to list system package entries',
+        params=params,
         server_id=server_id,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(
-        data=result, server_id=server_id, region=region, workspace=workspace
     )
 
 
@@ -103,26 +92,15 @@ async def install_system_package(
     if version is not None:
         package_data['version'] = version
 
-    result = await http_client.post(
+    return await http_call_response(
+        http_client.post,
         region=region,
         workspace=workspace,
         endpoint='/api/packages/system/entries/',
         token=token,
-        data=package_data,
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to install system package',
+        data=package_data,
         server_id=server_id,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(
-        data=result, server_id=server_id, region=region, workspace=workspace
     )
 
 
@@ -146,25 +124,14 @@ async def remove_system_package(
     """
     token = kwargs.get('token')
 
-    result = await http_client.delete(
+    return await http_call_response(
+        http_client.delete,
         region=region,
         workspace=workspace,
         endpoint=f'/api/packages/system/entries/{entry_id}/',
         token=token,
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to remove system package',
         entry_id=entry_id,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(
-        data=result, entry_id=entry_id, region=region, workspace=workspace
     )
 
 
@@ -206,26 +173,15 @@ async def list_python_packages(
     if page_size is not None:
         params['page_size'] = page_size
 
-    result = await http_client.get(
+    return await http_call_response(
+        http_client.get,
         region=region,
         workspace=workspace,
         endpoint='/api/packages/python/entries/',
         token=token,
-        params=params,
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to list Python packages',
+        params=params,
         server_id=server_id,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(
-        data=result, server_id=server_id, region=region, workspace=workspace
     )
 
 
@@ -264,26 +220,15 @@ async def install_python_package(
     if version is not None:
         package_data['version'] = version
 
-    result = await http_client.post(
+    return await http_call_response(
+        http_client.post,
         region=region,
         workspace=workspace,
         endpoint='/api/packages/python/entries/',
         token=token,
-        data=package_data,
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to install Python package',
+        data=package_data,
         server_id=server_id,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(
-        data=result, server_id=server_id, region=region, workspace=workspace
     )
 
 
@@ -307,23 +252,12 @@ async def remove_python_package(
     """
     token = kwargs.get('token')
 
-    result = await http_client.delete(
+    return await http_call_response(
+        http_client.delete,
         region=region,
         workspace=workspace,
         endpoint=f'/api/packages/python/entries/{entry_id}/',
         token=token,
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to remove Python package',
         entry_id=entry_id,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(
-        data=result, entry_id=entry_id, region=region, workspace=workspace
     )

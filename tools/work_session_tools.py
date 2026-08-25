@@ -2,6 +2,7 @@
 
 from typing import Any
 
+from utils.api_call import http_call_response
 from utils.common import (
     error_response,
     pending_approval_response,
@@ -115,25 +116,15 @@ async def work_session_close(
     """Complete a Work Session."""
     token = kwargs.get('token')
 
-    result = await http_client.post(
+    return await http_call_response(
+        http_client.post,
         region=region,
         workspace=workspace,
         endpoint=f'{_API_SESSIONS}{session_id}/complete/',
         token=token,
-        data={},
-    )
-
-    if err := unwrap_http_result(
-        result,
         default_message='Failed to close Work Session',
+        data={},
         session_id=session_id,
-        region=region,
-        workspace=workspace,
-    ):
-        return err
-
-    return success_response(
-        data=result, session_id=session_id, region=region, workspace=workspace
     )
 
 
@@ -155,24 +146,14 @@ async def work_session_get(
     """Get detailed information about a specific Work Session."""
     token = kwargs.get('token')
 
-    result = await http_client.get(
+    return await http_call_response(
+        http_client.get,
         region=region,
         workspace=workspace,
         endpoint=f'{_API_SESSIONS}{session_id}/',
         token=token,
-    )
-
-    if err := unwrap_http_result(
-        result,
         default_message='Failed to get Work Session',
         session_id=session_id,
-        region=region,
-        workspace=workspace,
-    ):
-        return err
-
-    return success_response(
-        data=result, session_id=session_id, region=region, workspace=workspace
     )
 
 
@@ -204,23 +185,15 @@ async def work_session_list(
     if requester_type:
         params['requester_type'] = requester_type
 
-    result = await http_client.get(
+    return await http_call_response(
+        http_client.get,
         region=region,
         workspace=workspace,
         endpoint=_API_SESSIONS,
         token=token,
+        default_message='Failed to list Work Sessions',
         params=params,
     )
-
-    if err := unwrap_http_result(
-        result,
-        default_message='Failed to list Work Sessions',
-        region=region,
-        workspace=workspace,
-    ):
-        return err
-
-    return success_response(data=result, region=region, workspace=workspace)
 
 
 # IDEMPOTENT_WRITE: repeated PATCH cannot stack approval requests (server WORK_SESSION_MOD_ALREADY_PENDING guard).
@@ -337,25 +310,15 @@ async def work_session_extend(
     """Extend a Work Session's expiry time."""
     token = kwargs.get('token')
 
-    result = await http_client.post(
+    return await http_call_response(
+        http_client.post,
         region=region,
         workspace=workspace,
         endpoint=f'{_API_SESSIONS}{session_id}/extend/',
         token=token,
-        data={'expires_at': expires_at},
-    )
-
-    if err := unwrap_http_result(
-        result,
         default_message='Failed to extend Work Session',
+        data={'expires_at': expires_at},
         session_id=session_id,
-        region=region,
-        workspace=workspace,
-    ):
-        return err
-
-    return success_response(
-        data=result, session_id=session_id, region=region, workspace=workspace
     )
 
 
@@ -382,25 +345,15 @@ async def work_session_timeline(
     """Get the unified timeline of a Work Session."""
     token = kwargs.get('token')
 
-    result = await http_client.get(
+    return await http_call_response(
+        http_client.get,
         region=region,
         workspace=workspace,
         endpoint=f'{_API_SESSIONS}{session_id}/timeline/',
         token=token,
-        params={'include_records': 'true' if include_records else 'false'},
-    )
-
-    if err := unwrap_http_result(
-        result,
         default_message='Failed to get Work Session timeline',
+        params={'include_records': 'true' if include_records else 'false'},
         session_id=session_id,
-        region=region,
-        workspace=workspace,
-    ):
-        return err
-
-    return success_response(
-        data=result, session_id=session_id, region=region, workspace=workspace
     )
 
 
@@ -429,24 +382,14 @@ async def work_session_analyze(
     """Manually trigger AI analysis for a terminal Work Session."""
     token = kwargs.get('token')
 
-    result = await http_client.post(
+    return await http_call_response(
+        http_client.post,
         region=region,
         workspace=workspace,
         endpoint=f'{_API_SESSIONS}{session_id}/analyze/',
         token=token,
+        default_message='Failed to trigger Work Session analysis',
         data={},
         params={'force': 'true'} if force else None,
-    )
-
-    if err := unwrap_http_result(
-        result,
-        default_message='Failed to trigger Work Session analysis',
         session_id=session_id,
-        region=region,
-        workspace=workspace,
-    ):
-        return err
-
-    return success_response(
-        data=result, session_id=session_id, region=region, workspace=workspace
     )
