@@ -1,12 +1,12 @@
 """Unit tests for alert management tools."""
 
 import inspect
+import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
-import tools.alert_tools as alert_tools
 from tests.conftest import HTTP_ERROR_ENVELOPE
 from tools.alert_tools import (
     _TARGETS_SENTENCE,
@@ -184,7 +184,8 @@ class TestAcknowledgeAlert:
         mock_http_client.post.assert_not_called()
 
     def test_mute_alert_is_gone(self):
-        assert not hasattr(alert_tools, 'mute_alert')
+        module = sys.modules[acknowledge_alert.__module__]
+        assert not hasattr(module, 'mute_alert')
 
 
 class TestCreateAlertRule:
@@ -321,6 +322,11 @@ class TestUpdateAlertRule:
 
         assert result['status'] == 'error'
         assert result['error_code'] == 'validation'
+        assert result['field'] == 'payload'
+        assert (
+            'At least one of name, target, threshold or is_default must be provided.'
+            in result['suggestion']
+        )
         mock_http_client.patch.assert_not_called()
 
 
