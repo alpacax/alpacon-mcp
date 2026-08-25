@@ -1,7 +1,7 @@
 """Shared call-unwrap-respond pipeline for MCP tool implementations.
 
-Lives in its own module because utils.http_client imports utils.common;
-placing this in either would create a circular import.
+Lives in its own module to keep the call pipeline out of the grab-bag
+utils.common module.
 """
 
 from collections.abc import Awaitable, Callable
