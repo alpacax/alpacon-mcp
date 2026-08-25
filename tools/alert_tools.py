@@ -8,6 +8,30 @@ from utils.error_handler import format_validation_error
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ_ONLY
 
+# Mirrors AlertAcknowledgement.ACTION_TYPE_CHOICES; the server takes nothing else.
+ALERT_ACTION_TYPES = frozenset({'checked', 'dismissed'})
+_ACTION_TYPES_SENTENCE = f'One of {", ".join(sorted(ALERT_ACTION_TYPES))}.'
+
+# Mirrors AlertRule.TARGET_METRICS; a value outside this list is a guaranteed 400.
+ALERT_RULE_TARGETS = (
+    'cpu-usage',
+    'memory-usage',
+    'disk-usage',
+    'peak-read-bps',
+    'peak-write-bps',
+    'avg-read-bps',
+    'avg-write-bps',
+    'peak-input-pps',
+    'peak-input-bps',
+    'peak-output-pps',
+    'peak-output-bps',
+    'avg-input-pps',
+    'avg-input-bps',
+    'avg-output-pps',
+    'avg-output-bps',
+)
+_TARGETS_SENTENCE = f'target must be one of: {", ".join(ALERT_RULE_TARGETS)}.'
+
 # ===============================
 # ALERT TOOLS
 # ===============================
@@ -136,10 +160,6 @@ async def get_alert(
     )
 
 
-# Mirrors AlertAcknowledgement.ACTION_TYPE_CHOICES; the server takes nothing else.
-ALERT_ACTION_TYPES = frozenset({'checked', 'dismissed'})
-
-
 @mcp_tool_handler(
     description=(
         'Record an acknowledgement against an alert. When to use: marking an '
@@ -163,7 +183,7 @@ async def acknowledge_alert(
     Args:
         alert_id: Alert ID to acknowledge
         workspace: Workspace name. Required parameter
-        action_type: 'checked' or 'dismissed'
+        action_type: One of ALERT_ACTION_TYPES ('checked' or 'dismissed')
         region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
@@ -173,7 +193,7 @@ async def acknowledge_alert(
         return format_validation_error(
             'action_type',
             action_type,
-            "One of 'checked' or 'dismissed'.",
+            _ACTION_TYPES_SENTENCE,
         )
 
     token = kwargs.get('token')
@@ -204,28 +224,6 @@ async def acknowledge_alert(
 # ===============================
 # ALERT RULE TOOLS
 # ===============================
-
-
-# Mirrors AlertRule.TARGET_METRICS; a value outside this list is a guaranteed 400.
-ALERT_RULE_TARGETS = (
-    'cpu-usage',
-    'memory-usage',
-    'disk-usage',
-    'peak-read-bps',
-    'peak-write-bps',
-    'avg-read-bps',
-    'avg-write-bps',
-    'peak-input-pps',
-    'peak-input-bps',
-    'peak-output-pps',
-    'peak-output-bps',
-    'avg-input-pps',
-    'avg-input-bps',
-    'avg-output-pps',
-    'avg-output-bps',
-)
-
-_TARGETS_SENTENCE = f'target must be one of: {", ".join(ALERT_RULE_TARGETS)}.'
 
 
 @mcp_tool_handler(
