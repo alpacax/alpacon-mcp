@@ -12,10 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and `update_alert_rule` now take a `target` metric (one of a fixed set mirroring the
   server's `AlertRule.TARGET_METRICS`) instead of the invented `metric_type`/`condition`
   fields, aligning the request payload with what the server actually accepts.
-- `create_webhook` and `list_webhooks` now accept `provider` and require `owner`, matching
-  the server's webhook payload.
-- `create_server_note` and `update_server_note` now take `private`, `pinned`, and
-  `mentioned_users`; the invented `title` field is gone.
+- `create_webhook` now requires `owner` and accepts `provider`, matching the server's
+  webhook payload. `list_webhooks` takes the same two as optional filters.
+- `create_server_note` and `update_server_note` now take `private` and `pinned`, and
+  `create_server_note` alone takes `mentioned_users`, which the update serializer never
+  reads; the invented `title` field is gone.
 - Per-grant device ids for OAuth: each grant mints its own device id, sealed inside the
   authorization code and refresh token with an HMAC key derived from
   `AUTH0_CLIENT_SECRET` (overridable via `ALPACON_MCP_GRANT_SECRET`), so Auth0's MFA
@@ -46,10 +47,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   model, serializer, viewset and route were deleted server-side (alpacax/alpacon-server#2832)
   because the two fields had no runtime consumer, so both tools returned 404. Server
   disconnection still raises an alert in the notification bell; that path is unaffected,
-  as are the `notification_channels` parameters on `create_alert_rule`/`update_alert_rule`,
-  which belong to the unrelated metrics `AlertRule`.
+  as is the unrelated metrics `AlertRule` behind the alert rule tools, whose own payload
+  correction is the first entry under Added.
 
 ### Fixed
+- The GET response cache matched the whitelisted path prefixes against the whole URL, so it
+  never cached anything; it now compares the URL's path component. Entries are keyed by an
+  opaque digest of the calling token as well, because one process serves many callers in
+  remote mode and a whitelisted read such as the server or IAM user list comes back filtered
+  by the caller's own permissions.
 - Dropped the root `__init__.py` that 0.4.1 added, together with its wheel include. It made the
   checkout directory a package, so under pytest `sys.modules['main']` was pre-registered with that
   package and `import main` no longer reached `main.py` in a clone directory named `main` (#189).

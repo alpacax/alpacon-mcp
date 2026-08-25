@@ -56,6 +56,11 @@ Things the code will not tell you at a glance:
   `workspace`, `server_id`, `server_ids`, `servers`, and `session_id` are
   validated before the token lookup; file paths are not—call
   `validate_file_path()` inline in any tool taking a path.
+- **A GET beneath `/api/servers/servers/`, `/api/proc/`, `/api/iam/users/` or
+  `/api/iam/groups/` can be served from a 5-minute in-process cache.** A
+  non-GET beneath the same prefix drops those entries for every caller on that
+  host; nothing else does before the TTL. Keys carry a digest of the calling
+  token, so a response is never replayed to a different one.
 - **The WorkSession gate applies to OAuth/browser callers only.** Static API and
   service tokens bypass it, so a flow that works in stdio mode can be blocked in
   remote mode. `ALPACON_WORK_SESSION` supplies a default session id; an explicit
