@@ -41,7 +41,7 @@ sequenceDiagram
     Note over C: SDK starts full OAuth re-auth
 
     C->>S: GET /oauth/authorize?scope=...+mfa
-    S->>S: Detect 'mfa' in scope
+    S->>S: Mint device id, park it in state<br/>Detect 'mfa' in scope
 
     rect rgb(255, 240, 230)
         Note over S,B: Stage 1 — MFA verification
@@ -55,16 +55,16 @@ sequenceDiagram
 
     rect rgb(230, 245, 255)
         Note over S,B: Stage 2 — regular token (silent)
-        S->>A0: 302 Redirect<br/>audience=alpacon.io/access/<br/>scope=openid profile email offline_access
+        S->>A0: 302 Redirect<br/>audience=alpacon.io/access/<br/>scope=openid profile email offline_access device:{id}
         Note over A0: SSO session alive<br/>→ silent pass-through
         A0->>S: /oauth/callback?code=REGULAR_CODE<br/>state={stage:'regular'}
     end
 
-    S-->>C: Forward code + state
-    C->>S: POST /oauth/token
-    S->>A0: Proxy token exchange
-    A0-->>S: JWT (with completed_mfa_methods)
-    S-->>C: access_token
+    S-->>C: Forward sealed code {code, device id} + state
+    C->>S: POST /oauth/token (sealed code)
+    S->>A0: Proxy token exchange (bare code)
+    A0-->>S: JWT (with completed_mfa_methods) + refresh_token
+    S-->>C: access_token + sealed refresh_token {token, device id}
 
     Note over C: SDK retries original tool call
 
@@ -92,6 +92,12 @@ sequenceDiagram
     S-->>C: Tool Result
 ```
 
+## Device id per grant
+
+The Auth0 action stores MFA presence under a key named by the `device:<id>` scope and restores the claim from it on refresh. Remote MCP refreshes server-side and stores nothing, so the id has to come back with every refresh: `/oauth/authorize` mints one per grant and parks it in the signed state, `/oauth/callback` seals the code with it, and `/oauth/token` seals every refresh token it returns under the same id and forwards it as `device_id` on every refresh. The client only echoes back what it received.
+
+One id per grant means one MFA record per MCP client installation: a step-up in one client does not refresh another's presence, and a password-only login in one does not clear the record another refreshes against. The sealed value's shape and key are described in [configuration.md](configuration.md).
+
 ## Key components
 
 | Component | File | Role |
@@ -109,3 +115,4 @@ sequenceDiagram
 | `ALPACON_ACCOUNT_URL` | Account service base URL | `https://account.alpacax.com` |
 | `AUTH0_MFA_AUDIENCE` | Auth0 MFA API audience | `https://{domain}/mfa/` |
 | `AUTH0_NAMESPACE` | JWT custom claim namespace | `https://alpacon.io/` |
+| `ALPACON_MCP_GRANT_SECRET` | Key that seals codes and refresh tokens (optional; derived from the client secret otherwise) | `openssl rand -hex 32` |
