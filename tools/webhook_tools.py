@@ -402,9 +402,9 @@ async def update_webhook(
 
     if not update_data:
         return format_validation_error(
-            'name, url, ssl_verify or enabled',
+            'payload',
             None,
-            'At least one field must be provided.',
+            'At least one of name, url, ssl_verify or enabled must be provided.',
         )
 
     result = await http_client.patch(

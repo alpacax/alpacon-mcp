@@ -343,9 +343,9 @@ async def update_alert_rule(
 
     if not update_data:
         return format_validation_error(
-            'name, target, threshold or is_default',
+            'payload',
             None,
-            'At least one field must be provided.',
+            'At least one of name, target, threshold or is_default must be provided.',
         )
 
     result = await http_client.patch(

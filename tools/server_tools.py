@@ -341,9 +341,9 @@ async def update_server_note(
 
     if not update_data:
         return format_validation_error(
-            'content, private or pinned',
+            'payload',
             None,
-            'At least one field must be provided.',
+            'At least one of content, private or pinned must be provided.',
         )
 
     result = await http_client.patch(
@@ -726,7 +726,7 @@ async def update_server(
 
     if not update_data:
         return format_validation_error(
-            'name or description',
+            'payload',
             None,
             'At least one of name or description must be provided.',
         )

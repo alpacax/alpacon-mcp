@@ -574,6 +574,11 @@ class TestServerNoteCRUD:
 
         assert result['status'] == 'error'
         assert result['error_code'] == 'validation'
+        assert result['field'] == 'payload'
+        assert (
+            'At least one of content, private or pinned must be provided.'
+            in result['suggestion']
+        )
         mock_http_client.patch.assert_not_called()
 
     @pytest.mark.asyncio
@@ -653,6 +658,7 @@ class TestUpdateServer:
 
         assert result['status'] == 'error'
         assert result['error_code'] == 'validation'
+        assert result['field'] == 'payload'
         assert (
             'At least one of name or description must be provided.'
             in result['suggestion']

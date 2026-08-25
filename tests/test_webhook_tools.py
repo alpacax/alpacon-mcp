@@ -356,7 +356,11 @@ class TestWebhooks:
 
         assert result['status'] == 'error'
         assert result['error_code'] == 'validation'
-        assert result['field'] == 'name, url, ssl_verify or enabled'
+        assert result['field'] == 'payload'
+        assert (
+            'At least one of name, url, ssl_verify or enabled must be provided.'
+            in result['suggestion']
+        )
         mock_http_client.patch.assert_not_called()
 
     @pytest.mark.asyncio
