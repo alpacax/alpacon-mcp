@@ -1,11 +1,9 @@
 """HTTP client for Alpacon API interactions."""
 
 import asyncio
-import json
-import time
 from http import HTTPStatus
 from typing import Any
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import urljoin
 
 import httpx
 
@@ -24,18 +22,16 @@ _ERR_REQUEST_EXCEPTION = 'Request Exception'
 _ERR_TIMEOUT = 'Timeout'
 _ERR_UNEXPECTED = 'Unexpected Error'
 
-# Path prefixes, matched against a URL's path component, not the URL itself.
-# Real-time metrics are deliberately excluded.
-_CACHEABLE_ENDPOINTS = (
-    '/api/servers/servers/',
-    '/api/proc/',
-    '/api/iam/users/',
-    '/api/iam/groups/',
-)
-
 
 class AlpaconHTTPClient:
-    """Async HTTP client for Alpacon API with connection pooling and caching."""
+    """Async HTTP client for Alpacon API with connection pooling.
+
+    Responses are never cached. Every endpoint worth caching here—the server
+    list, process info, IAM users and groups—comes back filtered by the calling
+    token's permissions, and no in-process scheme can see a grant revoked
+    elsewhere (the web console, Slack, another MCP process), so a cached read
+    would keep answering with access the caller has already lost.
+    """
 
     def __init__(self):
         """Initialize HTTP client."""
@@ -49,13 +45,8 @@ class AlpaconHTTPClient:
         self._client: httpx.AsyncClient | None = None
         self._client_lock = asyncio.Lock()
 
-        # Simple TTL cache
-        self._cache: dict[str, dict[str, Any]] = {}
-        self._cache_ttl: dict[str, float] = {}
-        self.default_cache_ttl = 300  # 5 minutes
-
         logger.info(
-            f'AlpaconHTTPClient initialized - timeout: {self.base_timeout.read}s, max_retries: {self.max_retries}, caching enabled'
+            f'AlpaconHTTPClient initialized - timeout: {self.base_timeout.read}s, max_retries: {self.max_retries}'
         )
 
     async def __aenter__(self):
@@ -69,7 +60,7 @@ class AlpaconHTTPClient:
     # __del__ removed: lifespan handles cleanup via close()
 
     async def close(self):
-        """Close the HTTP client and clear caches.
+        """Close the HTTP client.
 
         This is the primary public method for cleanup. Safe to call
         multiple times (idempotent).
@@ -78,9 +69,7 @@ class AlpaconHTTPClient:
             if self._client and not self._client.is_closed:
                 await self._client.aclose()
                 logger.debug('Closed HTTP client')
-            self._cache.clear()
-            self._cache_ttl.clear()
-        logger.info('HTTP client closed and caches cleared')
+        logger.info('HTTP client closed')
 
     async def _close_client(self):
         """Close the shared client. Alias for close() for backward compatibility."""
@@ -90,11 +79,6 @@ class AlpaconHTTPClient:
     def pool_active(self) -> bool:
         """Whether the HTTP connection pool has an active client."""
         return self._client is not None and not self._client.is_closed
-
-    @property
-    def cache_size(self) -> int:
-        """Number of entries in the response cache."""
-        return len(self._cache)
 
     def get_base_url(self, region: str, workspace: str) -> str:
         """Get base URL for API calls.
@@ -203,14 +187,6 @@ class AlpaconHTTPClient:
         if json_data:
             logger.debug(f'Request body: {json_data}')
 
-        # Check cache for GET requests
-        cache_key = self._get_cache_key(method, url, params, token)
-        if self._is_cacheable(method, url):
-            cached_response = self._get_cached_response(cache_key)
-            if cached_response:
-                logger.info(f'Returning cached response for {method} {url}')
-                return cached_response
-
         while retry_count < self.max_retries:
             try:
                 client = await self._get_client()
@@ -226,9 +202,6 @@ class AlpaconHTTPClient:
                 # Check for success
                 response.raise_for_status()
 
-                if method != 'GET':
-                    self._invalidate_cache(url)
-
                 # Log successful response
                 logger.info(
                     f'HTTP {method} success - Status: {response.status_code}, Content-Length: {len(response.content)}'
@@ -239,20 +212,10 @@ class AlpaconHTTPClient:
                 if response.text:
                     result = response.json()
                     logger.debug(f'Response body: {result}')
-
-                    # Cache successful GET responses
-                    if self._is_cacheable(method, url):
-                        self._set_cached_response(cache_key, result)
-
                     return result
                 else:
                     result = {'status': 'success', 'status_code': response.status_code}
                     logger.debug(f'Empty response, returning: {result}')
-
-                    # Cache successful empty responses too
-                    if self._is_cacheable(method, url):
-                        self._set_cached_response(cache_key, result)
-
                     return result
 
             except httpx.HTTPStatusError as e:
@@ -550,102 +513,6 @@ class AlpaconHTTPClient:
                 )
                 logger.debug('Created new HTTP client with connection pooling')
             return self._client
-
-    @staticmethod
-    def _cache_identity(token: str | None) -> str:
-        """Opaque per-caller cache partition derived from the request token.
-
-        Reuses the derivation that already keys the upstream-401 registry, so
-        the codebase digests a token in one place only.
-        """
-        if not token:
-            return 'anonymous'
-        return make_auth_error_key(token)
-
-    def _get_cache_key(
-        self,
-        method: str,
-        url: str,
-        params: dict | None = None,
-        token: str | None = None,
-    ) -> str:
-        """Generate cache key for request.
-
-        The identity comes first so a response is only ever replayed to the
-        token that fetched it: one process serves many callers in remote mode,
-        and a whitelisted read such as the server or IAM user list is filtered
-        by the caller's own permissions.
-        """
-        key_parts = [self._cache_identity(token), method, url]
-        if params:
-            key_parts.append(json.dumps(params, sort_keys=True))
-        return '|'.join(key_parts)
-
-    def _is_cacheable(self, method: str, url: str) -> bool:
-        """Whether a GET beneath a whitelisted path prefix may be cached.
-
-        Callers pass the full URL they are about to fetch, so this must compare
-        the path component; the whitelist holds paths, not absolute URLs.
-        """
-        if method != 'GET':
-            return False
-
-        return urlsplit(url).path.startswith(_CACHEABLE_ENDPOINTS)
-
-    def _invalidate_cache(self, url: str) -> None:
-        """Drop cached reads a write beneath a whitelisted prefix made stale.
-
-        Nothing else clears the cache before its TTL, so without this a rename
-        through update_server would keep serving the old name from list_servers.
-        Scoped to the written URL's own host, so a write in one workspace does
-        not clear another workspace's cached reads.
-        """
-        parts = urlsplit(url)
-        prefix = next(
-            (p for p in _CACHEABLE_ENDPOINTS if parts.path.startswith(p)), None
-        )
-        if prefix is None:
-            return
-
-        stale = f'{parts.scheme}://{parts.netloc}{prefix}'
-        for key in [k for k in self._cache if k.split('|')[2].startswith(stale)]:
-            self._cache.pop(key, None)
-            self._cache_ttl.pop(key, None)
-
-    def _get_cached_response(self, cache_key: str) -> dict[str, Any] | None:
-        """Get cached response if still valid.
-
-        Uses .get() for resilient reads to avoid KeyError if close()
-        clears the cache concurrently.
-        """
-        if time.time() > self._cache_ttl.get(cache_key, 0):
-            # Cache expired or missing
-            self._cache.pop(cache_key, None)
-            self._cache_ttl.pop(cache_key, None)
-            return None
-
-        result = self._cache.get(cache_key)
-        if result is not None:
-            logger.debug(f'Cache hit for key: {cache_key}')
-        return result
-
-    def _set_cached_response(
-        self, cache_key: str, response: dict[str, Any], ttl: float | None = None
-    ):
-        """Cache response with TTL, dropping entries that have already expired.
-
-        A read is only ever looked up under its own caller's key, so an expired
-        entry belonging to a token that never returns would otherwise sit in the
-        dict until close().
-        """
-        now = time.time()
-        for expired in [k for k, expiry in self._cache_ttl.items() if expiry <= now]:
-            self._cache.pop(expired, None)
-            self._cache_ttl.pop(expired, None)
-
-        self._cache[cache_key] = response
-        self._cache_ttl[cache_key] = now + (ttl or self.default_cache_ttl)
-        logger.debug(f'Cached response for key: {cache_key}')
 
     @staticmethod
     def _is_jwt(token: str) -> bool:

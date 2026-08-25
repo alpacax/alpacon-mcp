@@ -30,7 +30,6 @@ def mock_http_client():
     """Mock HTTP client with pool state."""
     mock_client = MagicMock()
     mock_client.pool_active = True
-    mock_client.cache_size = 2
     return mock_client
 
 
@@ -127,21 +126,18 @@ class TestGetHealthInfoLocal:
 
     @pytest.mark.asyncio
     async def test_http_client_info(self, _patched_health_local):
-        """HTTP client section must report pool_active and cache_size."""
+        """HTTP client section must report pool_active and nothing else."""
         from utils.health import get_health_info
 
         result = await get_health_info()
 
-        http_info = result['http_client']
-        assert http_info['pool_active'] is True
-        assert http_info['cache_size'] == 2
+        assert result['http_client'] == {'pool_active': True}
 
     @pytest.mark.asyncio
     async def test_http_client_no_pool(self, mock_token_manager):
         """HTTP client reports pool_active=False when no client exists."""
         mock_client = MagicMock()
         mock_client.pool_active = False
-        mock_client.cache_size = 0
 
         with (
             patch.dict('os.environ', {'ALPACON_MCP_AUTH_ENABLED': ''}, clear=False),
@@ -155,8 +151,7 @@ class TestGetHealthInfoLocal:
 
             result = await get_health_info()
 
-        assert result['http_client']['pool_active'] is False
-        assert result['http_client']['cache_size'] == 0
+        assert result['http_client'] == {'pool_active': False}
 
 
 class TestGetHealthInfoRemote:

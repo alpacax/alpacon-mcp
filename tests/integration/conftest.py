@@ -68,10 +68,8 @@ def patched_http_client(make_mock_transport):
     patcher = _Patcher()
     yield patcher
 
-    # Teardown: stop patches and clear cache
+    # Teardown: stop patches
     patcher.cleanup()
-    http_client._cache.clear()
-    http_client._cache_ttl.clear()
 
 
 @pytest.fixture

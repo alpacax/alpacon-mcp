@@ -5,15 +5,13 @@ Tests the HTTP client functionality including GET, POST, PATCH, DELETE operation
 and error handling.
 """
 
-import re
 from http import HTTPStatus
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
 
-from utils.http_client import _CACHEABLE_ENDPOINTS, AlpaconHTTPClient, http_client
+from utils.http_client import AlpaconHTTPClient, http_client
 from utils.recovery_hints import _detect_error_domain, enrich_error_response
 
 
@@ -595,120 +593,40 @@ class TestHandleUpstream401:
         assert error_info is None
 
 
-class TestCacheWhitelist:
-    def test_a_full_url_under_a_whitelisted_prefix_is_cacheable(self):
-        client = AlpaconHTTPClient()
+class TestNoResponseCache:
+    """The client must not answer a read from an earlier response.
 
-        assert client._is_cacheable(
-            'GET', 'https://ws.ap1.alpacon.io/api/servers/servers/'
-        )
-        assert client._is_cacheable('GET', 'https://ws.ap1.alpacon.io/api/proc/info/')
+    Every read worth caching comes back filtered by the caller's permissions,
+    and a grant revoked outside this process is invisible here, so a cached
+    read would keep serving access the caller has already lost.
+    """
 
-    def test_a_full_url_outside_the_whitelist_is_not_cacheable(self):
-        client = AlpaconHTTPClient()
-
-        assert not client._is_cacheable(
-            'GET', 'https://ws.ap1.alpacon.io/api/metrics/realtime/cpu/'
-        )
-
-    def test_only_get_is_cacheable(self):
-        client = AlpaconHTTPClient()
-
-        assert not client._is_cacheable(
-            'POST', 'https://ws.ap1.alpacon.io/api/servers/servers/'
-        )
-
-    def test_every_whitelist_entry_is_a_prefix_of_an_endpoint_some_tool_calls(self):
-        called = set()
-        for path in Path('tools').glob('*.py'):
-            called.update(re.findall(r"'(/api/[^']*)'", path.read_text()))
-
-        for prefix in _CACHEABLE_ENDPOINTS:
-            assert any(endpoint.startswith(prefix) for endpoint in called), prefix
-
-
-class TestCacheInvalidation:
     LIST_URL = 'https://ws.ap1.alpacon.io/api/servers/servers/'
-    STAR_URL = 'https://ws.ap1.alpacon.io/api/servers/servers/abc/star/'
-    OTHER_HOST_URL = 'https://other.ap1.alpacon.io/api/servers/servers/'
 
-    def test_a_write_clears_a_cached_read_beneath_the_same_prefix(self):
-        client = AlpaconHTTPClient()
-        key = client._get_cache_key('GET', self.LIST_URL, None)
-        client._set_cached_response(key, {'results': []})
+    @pytest.mark.asyncio
+    async def test_a_repeated_read_goes_to_the_network_every_time(
+        self, mock_httpx_client
+    ):
+        mock_httpx_client.request.return_value = create_mock_response(
+            json_data={'results': []}
+        )
 
-        client._invalidate_cache(self.STAR_URL)
+        for _ in range(2):
+            await http_client.request(method='GET', url=self.LIST_URL)
 
-        assert client._get_cached_response(key) is None
+        assert mock_httpx_client.request.call_count == 2
 
-    def test_a_write_leaves_another_host_alone(self):
-        client = AlpaconHTTPClient()
-        key = client._get_cache_key('GET', self.OTHER_HOST_URL, None)
-        client._set_cached_response(key, {'results': []})
+    @pytest.mark.asyncio
+    async def test_a_second_token_gets_its_own_request(self, mock_httpx_client):
+        mock_httpx_client.request.return_value = create_mock_response(
+            json_data={'results': []}
+        )
 
-        client._invalidate_cache(self.STAR_URL)
+        for token in ('token-a', 'token-b'):
+            await http_client.request(method='GET', url=self.LIST_URL, token=token)
 
-        assert client._get_cached_response(key) == {'results': []}
-
-    def test_a_write_outside_the_whitelist_clears_nothing(self):
-        client = AlpaconHTTPClient()
-        key = client._get_cache_key('GET', self.LIST_URL, None)
-        client._set_cached_response(key, {'results': []})
-
-        client._invalidate_cache('https://ws.ap1.alpacon.io/api/servers/notes/')
-
-        assert client._get_cached_response(key) == {'results': []}
-
-
-class TestCachePartitioning:
-    LIST_URL = 'https://ws.ap1.alpacon.io/api/servers/servers/'
-    STAR_URL = 'https://ws.ap1.alpacon.io/api/servers/servers/abc/star/'
-
-    def test_two_tokens_get_two_keys_for_the_same_request(self):
-        client = AlpaconHTTPClient()
-
-        assert client._get_cache_key(
-            'GET', self.LIST_URL, None, 'token-a'
-        ) != client._get_cache_key('GET', self.LIST_URL, None, 'token-b')
-
-    def test_a_cached_read_is_not_replayed_to_another_token(self):
-        client = AlpaconHTTPClient()
-        mine = client._get_cache_key('GET', self.LIST_URL, None, 'token-a')
-        client._set_cached_response(mine, {'results': ['my-server']})
-
-        theirs = client._get_cache_key('GET', self.LIST_URL, None, 'token-b')
-
-        assert client._get_cached_response(theirs) is None
-
-    def test_the_key_carries_no_recoverable_token(self):
-        client = AlpaconHTTPClient()
-        token = 'header.payload.signature'
-
-        key = client._get_cache_key('GET', self.LIST_URL, None, token)
-
-        assert token not in key
-        assert key.split('|')[0] != token
-
-    def test_a_write_clears_every_token_that_cached_the_prefix(self):
-        client = AlpaconHTTPClient()
-        keys = [
-            client._get_cache_key('GET', self.LIST_URL, None, token)
-            for token in ('token-a', 'token-b')
+        sent = [
+            call.kwargs['headers']['Authorization']
+            for call in mock_httpx_client.request.call_args_list
         ]
-        for key in keys:
-            client._set_cached_response(key, {'results': []})
-
-        client._invalidate_cache(self.STAR_URL)
-
-        assert [client._get_cached_response(key) for key in keys] == [None, None]
-
-    def test_a_new_entry_evicts_the_entries_that_already_expired(self):
-        client = AlpaconHTTPClient()
-        stale = client._get_cache_key('GET', self.LIST_URL, None, 'token-a')
-        client._set_cached_response(stale, {'results': []}, ttl=-1)
-
-        fresh = client._get_cache_key('GET', self.LIST_URL, None, 'token-b')
-        client._set_cached_response(fresh, {'results': []})
-
-        assert stale not in client._cache
-        assert stale not in client._cache_ttl
+        assert sent == ['token=token-a', 'token=token-b']

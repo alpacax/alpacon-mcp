@@ -5,7 +5,6 @@ behavior including retry logic, exponential backoff, caching, URL construction,
 and authorization headers.
 """
 
-import time
 from http import HTTPStatus
 from unittest.mock import patch
 
@@ -185,44 +184,36 @@ class TestRetryBehavior:
         assert result['error'] == 'Max retries exceeded'
 
 
-class TestCacheBehavior:
-    """Test HTTP client caching with MockTransport."""
+class TestNoResponseCache:
+    """Every read reaches the network; nothing is served from an earlier one."""
 
-    async def test_a_repeated_cacheable_get_is_served_from_cache(
+    LIST_ENDPOINT = '/api/servers/servers/'
+
+    async def test_a_repeated_read_reaches_the_network_every_time(
         self, patched_http_client
     ):
-        """A second GET beneath a whitelisted prefix never reaches the network."""
-        call_count = 0
+        seen = 0
 
         def handler(request: httpx.Request) -> httpx.Response:
-            nonlocal call_count
-            call_count += 1
-            return httpx.Response(
-                HTTPStatus.OK, json={'count': call_count, 'results': []}
-            )
+            nonlocal seen
+            seen += 1
+            return httpx.Response(HTTPStatus.OK, json={'count': seen, 'results': []})
 
         patched_http_client.set_handler(handler)
 
         with patch.object(http_client, 'get_base_url', return_value='https://t.test'):
-            await http_client.get(
-                region='ap1',
-                workspace='test',
-                endpoint='/api/servers/servers/',
-                token='test-token',
-            )
-            await http_client.get(
-                region='ap1',
-                workspace='test',
-                endpoint='/api/servers/servers/',
-                token='test-token',
-            )
+            for _ in range(2):
+                await http_client.get(
+                    region='ap1',
+                    workspace='test',
+                    endpoint=self.LIST_ENDPOINT,
+                    token='test-token',
+                )
 
-        assert call_count == 1, 'the second GET should have been served from cache'
+        assert seen == 2
 
-    async def test_a_second_token_is_not_served_the_first_token_response(
-        self, patched_http_client
-    ):
-        """One process serves many callers, so a cached read stays with its token."""
+    async def test_a_second_token_gets_its_own_answer(self, patched_http_client):
+        """One process serves many callers, each with its own permissions."""
         seen = []
 
         def handler(request: httpx.Request) -> httpx.Response:
@@ -235,131 +226,40 @@ class TestCacheBehavior:
             first = await http_client.get(
                 region='ap1',
                 workspace='test',
-                endpoint='/api/servers/servers/',
+                endpoint=self.LIST_ENDPOINT,
                 token='token-a',
             )
             second = await http_client.get(
                 region='ap1',
                 workspace='test',
-                endpoint='/api/servers/servers/',
+                endpoint=self.LIST_ENDPOINT,
                 token='token-b',
             )
 
-        assert len(seen) == 2, 'the second caller must reach the network'
-        assert seen[0] != seen[1]
+        assert seen == ['token=token-a', 'token=token-b']
         assert first != second
 
-    async def test_cache_internal_api_works(self):
-        """Internal cache API (set/get) works correctly for manual caching."""
-        cache_key = http_client._get_cache_key('GET', '/api/servers/servers/')
-        test_data = {'count': 1, 'results': []}
-
-        try:
-            # Verify cache is empty
-            assert http_client._get_cached_response(cache_key) is None
-
-            # Set cache
-            http_client._set_cached_response(cache_key, test_data)
-
-            # Verify cache hit
-            cached = http_client._get_cached_response(cache_key)
-            assert cached == test_data
-        finally:
-            http_client._cache.clear()
-            http_client._cache_ttl.clear()
-
-    async def test_cache_miss_for_non_cacheable_endpoint(self, patched_http_client):
-        """Non-cacheable endpoint always hits the handler."""
-        call_count = 0
+    async def test_a_read_after_a_write_sees_the_write(self, patched_http_client):
+        """No invalidation to get wrong: the read was never answered from a cache."""
+        names = ['old', 'new']
 
         def handler(request: httpx.Request) -> httpx.Response:
-            nonlocal call_count
-            call_count += 1
-            return httpx.Response(HTTPStatus.OK, json={'data': call_count})
+            if request.method != 'GET':
+                names.pop(0)
+                return httpx.Response(HTTPStatus.OK, json={'name': names[0]})
+            return httpx.Response(HTTPStatus.OK, json={'name': names[0]})
 
         patched_http_client.set_handler(handler)
 
-        url = 'https://test.ap1.alpacon.io/api/metrics/realtime/cpu/'
-
-        await http_client.request(method='GET', url=url, token='test-token')
-        await http_client.request(method='GET', url=url, token='test-token')
-
-        assert call_count == 2, (
-            'Handler should be called twice (no caching for metrics)'
-        )
-
-    async def test_cache_miss_after_ttl_expiry(self):
-        """Cache entries expire after TTL and trigger cache miss."""
-        cache_key = http_client._get_cache_key('GET', '/api/servers/servers/')
-        test_data = {'count': 1, 'results': []}
-
-        try:
-            # Set cache with data
-            http_client._set_cached_response(cache_key, test_data, ttl=0.1)
-
-            # Verify cache hit before expiry
-            assert http_client._get_cached_response(cache_key) == test_data
-
-            # Manually expire the cache
-            http_client._cache_ttl[cache_key] = time.time() - 1
-
-            # Verify cache miss after expiry
-            assert http_client._get_cached_response(cache_key) is None
-        finally:
-            http_client._cache.clear()
-            http_client._cache_ttl.clear()
-
-    async def test_post_never_cached(self, patched_http_client):
-        """POST requests are never cached."""
-        call_count = 0
-
-        def handler(request: httpx.Request) -> httpx.Response:
-            nonlocal call_count
-            call_count += 1
-            return httpx.Response(HTTPStatus.CREATED, json={'id': call_count})
-
-        patched_http_client.set_handler(handler)
-
-        url = 'https://test.ap1.alpacon.io/api/servers/servers/'
-
+        url = f'https://test.ap1.alpacon.io{self.LIST_ENDPOINT}'
+        before = await http_client.request(method='GET', url=url, token='tok')
         await http_client.request(
-            method='POST', url=url, token='test-token', json_data={'name': 'test'}
+            method='PATCH', url=url, token='tok', json_data={'name': 'new'}
         )
-        await http_client.request(
-            method='POST', url=url, token='test-token', json_data={'name': 'test'}
-        )
+        after = await http_client.request(method='GET', url=url, token='tok')
 
-        assert call_count == 2
-
-    async def test_cache_isolation_by_params(self):
-        """Different query params produce separate cache entries."""
-        key1 = http_client._get_cache_key('GET', '/api/servers/servers/', {'page': '1'})
-        key2 = http_client._get_cache_key('GET', '/api/servers/servers/', {'page': '2'})
-
-        try:
-            assert key1 != key2, 'Different params should produce different cache keys'
-
-            # Verify they store independently
-            http_client._set_cached_response(key1, {'page': 1})
-            http_client._set_cached_response(key2, {'page': 2})
-
-            assert http_client._get_cached_response(key1) == {'page': 1}
-            assert http_client._get_cached_response(key2) == {'page': 2}
-        finally:
-            http_client._cache.clear()
-            http_client._cache_ttl.clear()
-
-    async def test_is_cacheable_logic(self):
-        """_is_cacheable correctly identifies cacheable endpoints."""
-        base = 'https://ws.ap1.alpacon.io'
-
-        assert http_client._is_cacheable('GET', f'{base}/api/servers/servers/')
-        assert http_client._is_cacheable('GET', f'{base}/api/proc/info/')
-        assert http_client._is_cacheable('GET', f'{base}/api/iam/users/')
-        assert http_client._is_cacheable('GET', f'{base}/api/iam/groups/')
-
-        assert not http_client._is_cacheable('GET', f'{base}/api/metrics/realtime/cpu/')
-        assert not http_client._is_cacheable('POST', f'{base}/api/servers/servers/')
+        assert before['name'] == 'old'
+        assert after['name'] == 'new'
 
 
 class TestURLConstruction:

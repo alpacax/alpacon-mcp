@@ -43,6 +43,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   for a while. `acknowledge_alert` is the closest thing and is not a substitute: it records
   one permanent acknowledgement per user per alert—`action_type='checked'` for seen,
   `'dismissed'` for not worth acting on—and that choice cannot be changed afterwards.
+- The GET response cache, and the `cache_size` field it contributed to the health payload.
+  It had never actually cached anything, since the whitelisted path prefixes were compared
+  against whole URLs, and every read it covered—the server list, process info, IAM users
+  and groups—comes back filtered by the calling token's permissions. Nothing in the process
+  sees a grant revoked in the web console, in Slack, or by another MCP process, so a hit
+  would have kept answering with access the caller had already lost. Reads now always go to
+  the server, the only place that decision is current.
 - `get_workspace_notifications` and `update_workspace_notifications`, along with the
   `alpacon://workspace-settings/notifications/{region}/{workspace}` resource. The upstream
   `/api/workspaces/notifications/-/` endpoint no longer exists—the `NotificationSettings`
@@ -53,11 +60,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   correction is the first entry under Added.
 
 ### Fixed
-- The GET response cache matched the whitelisted path prefixes against the whole URL, so it
-  never cached anything; it now compares the URL's path component. Entries are keyed by an
-  opaque digest of the calling token as well, because one process serves many callers in
-  remote mode and a whitelisted read such as the server or IAM user list comes back filtered
-  by the caller's own permissions.
 - Dropped the root `__init__.py` that 0.4.1 added, together with its wheel include. It made the
   checkout directory a package, so under pytest `sys.modules['main']` was pre-registered with that
   package and `import main` no longer reached `main.py` in a clone directory named `main` (#189).
