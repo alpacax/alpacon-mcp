@@ -83,6 +83,15 @@ Things the code will not tell you at a glance:
   `` - `list_servers`: List all servers in workspace ``.
 - Spell it "WebFTP", "Websh", and "MCP".
 
+## Changelog
+
+A change to the tool surface a client can see—a tool added or removed, a newly
+accepted parameter value, a renamed argument, a changed response field—carries
+its `CHANGELOG.md` entry under `[Unreleased]` in the same diff. Two or three
+sentences: what changed, the issue number, and whether a client parsing the
+response has to handle anything new. Refactors, test-only changes, and CI edits
+get no entry.
+
 ## GitHub Actions conventions
 
 Keep `permissions: contents: read` at the workflow level; add extra scopes on

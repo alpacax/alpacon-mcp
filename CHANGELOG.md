@@ -18,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Security and access-control writes are intentionally omitted from the tool surface; on SaaS the server gates them behind a superuser session with fresh MFA (unsatisfiable by a static API token), and even where an on-premise admin token could write them, keeping governance-level settings human-only via the web console is the safer default
   - `get_workspace_security` and `list_workspace_mfa_methods` require JWT (OAuth/SSO) authentication and short-circuit a static API token before any request, and are SaaS-only (a clear not-available message on on-premise 404)
   - The list fields on the update tools (`notification_channels`, `enabled_extensions`, `allowed_domains`) replace the whole array rather than appending; documented the read-merge-write pattern
+- `suse` (openSUSE / SLES) as a `platform` value on `get_registration_guide`, matching
+  the platform choices the server offers for token-based installs (#182). The guide
+  response keeps its existing shape—the zypper commands arrive in the same
+  `install_commands` list every other platform uses.
 
 ### Removed
 - `get_workspace_notifications` and `update_workspace_notifications`, along with the

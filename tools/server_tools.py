@@ -8,7 +8,7 @@ from utils.error_handler import format_validation_error, validate_server_id_form
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ_ONLY
 
-VALID_PLATFORMS = frozenset({'debian', 'rhel', 'darwin', 'windows'})
+VALID_PLATFORMS = frozenset({'debian', 'rhel', 'suse', 'darwin', 'windows'})
 _PLATFORM_LIST_STR = ', '.join(f'"{p}"' for p in sorted(VALID_PLATFORMS))
 
 
@@ -1030,7 +1030,7 @@ async def get_registration_guide(
     Args:
         token_id: Registration token UUID to embed in the install script
         workspace: Workspace name. Required parameter
-        platform: Target platform ("debian" | "rhel" | "darwin" | "windows")
+        platform: Target platform ("debian" | "rhel" | "suse" | "darwin" | "windows")
         server_name: Optional server name to pre-configure during installation
         region: Region (ap1, us1, eu1). Auto-detected if not provided
 
