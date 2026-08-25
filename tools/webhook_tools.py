@@ -360,7 +360,7 @@ async def create_webhook(
 
 
 @mcp_tool_handler(
-    description='Update an existing webhook configuration by its ID. Can change name, URL, SSL verification, or enabled status. Only the fields you provide will be updated (partial update). Requires admin permission.',
+    description='Update an existing webhook configuration by its ID. Can change name, URL, SSL verification, or enabled status. Only the fields you provide will be updated (partial update). Needs an admin account and a paid plan.',
     annotations=IDEMPOTENT_WRITE,
     meta={'anthropic/searchHint': 'webhook update modify'},
 )
