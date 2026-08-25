@@ -383,7 +383,7 @@ async def update_webhook(
         url: URL to receive webhook callbacks (optional)
         ssl_verify: Whether to verify SSL certificates (optional)
         enabled: Whether the webhook is enabled (optional)
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Webhook update response
