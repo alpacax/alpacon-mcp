@@ -1069,6 +1069,24 @@ class TestGetRegistrationGuide:
         mock_http_client.post.assert_not_called()
 
     @pytest.mark.asyncio
+    async def test_get_registration_guide_suse(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Passes the suse platform through to the API."""
+        mock_http_client.post.return_value = {'platform': 'suse', 'commands': []}
+
+        result = await get_registration_guide(
+            workspace='testworkspace',
+            platform='suse',
+            token_id='a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+            region='ap1',
+        )
+
+        assert result['status'] == 'success'
+        _, kwargs = mock_http_client.post.call_args
+        assert kwargs['data']['platform'] == 'suse'
+
+    @pytest.mark.asyncio
     async def test_get_registration_guide_invalid_platform(
         self, mock_http_client, mock_token_manager
     ):

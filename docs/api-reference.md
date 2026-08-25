@@ -121,7 +121,7 @@ Each takes `server_id`, `workspace`, and an optional `region`.
 - `list_registration_tokens`: `workspace`, `region` (optional), `page`, `page_size`
 - `create_registration_token`: `workspace`, `name`, `description` (optional), `region` (optional)
 - `delete_registration_token`: `token_id`, `workspace`, `region` (optional)
-- `get_registration_guide`: `token_id`, `workspace`, `platform` (`debian`, `rhel`, `darwin`, `windows`), `server_name` (optional), `region` (optional). Returns the platform-specific install command
+- `get_registration_guide`: `token_id`, `workspace`, `platform` (`debian`, `rhel`, `suse`, `darwin`, `windows`), `server_name` (optional), `region` (optional). Returns the platform-specific install command
 
 ---
 
