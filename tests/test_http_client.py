@@ -658,3 +658,57 @@ class TestCacheInvalidation:
         client._invalidate_cache('https://ws.ap1.alpacon.io/api/servers/notes/')
 
         assert client._get_cached_response(key) == {'results': []}
+
+
+class TestCachePartitioning:
+    LIST_URL = 'https://ws.ap1.alpacon.io/api/servers/servers/'
+    STAR_URL = 'https://ws.ap1.alpacon.io/api/servers/servers/abc/star/'
+
+    def test_two_tokens_get_two_keys_for_the_same_request(self):
+        client = AlpaconHTTPClient()
+
+        assert client._get_cache_key(
+            'GET', self.LIST_URL, None, 'token-a'
+        ) != client._get_cache_key('GET', self.LIST_URL, None, 'token-b')
+
+    def test_a_cached_read_is_not_replayed_to_another_token(self):
+        client = AlpaconHTTPClient()
+        mine = client._get_cache_key('GET', self.LIST_URL, None, 'token-a')
+        client._set_cached_response(mine, {'results': ['my-server']})
+
+        theirs = client._get_cache_key('GET', self.LIST_URL, None, 'token-b')
+
+        assert client._get_cached_response(theirs) is None
+
+    def test_the_key_carries_no_recoverable_token(self):
+        client = AlpaconHTTPClient()
+        token = 'header.payload.signature'
+
+        key = client._get_cache_key('GET', self.LIST_URL, None, token)
+
+        assert token not in key
+        assert key.split('|')[0] != token
+
+    def test_a_write_clears_every_token_that_cached_the_prefix(self):
+        client = AlpaconHTTPClient()
+        keys = [
+            client._get_cache_key('GET', self.LIST_URL, None, token)
+            for token in ('token-a', 'token-b')
+        ]
+        for key in keys:
+            client._set_cached_response(key, {'results': []})
+
+        client._invalidate_cache(self.STAR_URL)
+
+        assert [client._get_cached_response(key) for key in keys] == [None, None]
+
+    def test_a_new_entry_evicts_the_entries_that_already_expired(self):
+        client = AlpaconHTTPClient()
+        stale = client._get_cache_key('GET', self.LIST_URL, None, 'token-a')
+        client._set_cached_response(stale, {'results': []}, ttl=-1)
+
+        fresh = client._get_cache_key('GET', self.LIST_URL, None, 'token-b')
+        client._set_cached_response(fresh, {'results': []})
+
+        assert stale not in client._cache
+        assert stale not in client._cache_ttl

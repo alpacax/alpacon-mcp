@@ -1,6 +1,7 @@
 """HTTP client for Alpacon API interactions."""
 
 import asyncio
+import hashlib
 import json
 import time
 from http import HTTPStatus
@@ -203,7 +204,7 @@ class AlpaconHTTPClient:
             logger.debug(f'Request body: {json_data}')
 
         # Check cache for GET requests
-        cache_key = self._get_cache_key(method, url, params)
+        cache_key = self._get_cache_key(method, url, params, token)
         if self._is_cacheable(method, url):
             cached_response = self._get_cached_response(cache_key)
             if cached_response:
@@ -550,9 +551,28 @@ class AlpaconHTTPClient:
                 logger.debug('Created new HTTP client with connection pooling')
             return self._client
 
-    def _get_cache_key(self, method: str, url: str, params: dict | None = None) -> str:
-        """Generate cache key for request."""
-        key_parts = [method, url]
+    @staticmethod
+    def _cache_identity(token: str | None) -> str:
+        """Opaque per-caller cache partition derived from the request token."""
+        if not token:
+            return 'anonymous'
+        return hashlib.sha256(token.encode()).hexdigest()[:32]
+
+    def _get_cache_key(
+        self,
+        method: str,
+        url: str,
+        params: dict | None = None,
+        token: str | None = None,
+    ) -> str:
+        """Generate cache key for request.
+
+        The identity comes first so a response is only ever replayed to the
+        token that fetched it: one process serves many callers in remote mode,
+        and a whitelisted read such as the server or IAM user list is filtered
+        by the caller's own permissions.
+        """
+        key_parts = [self._cache_identity(token), method, url]
         if params:
             key_parts.append(json.dumps(params, sort_keys=True))
         return '|'.join(key_parts)
@@ -584,7 +604,7 @@ class AlpaconHTTPClient:
             return
 
         stale = f'{parts.scheme}://{parts.netloc}{prefix}'
-        for key in [k for k in self._cache if k.split('|')[1].startswith(stale)]:
+        for key in [k for k in self._cache if k.split('|')[2].startswith(stale)]:
             self._cache.pop(key, None)
             self._cache_ttl.pop(key, None)
 
@@ -608,9 +628,19 @@ class AlpaconHTTPClient:
     def _set_cached_response(
         self, cache_key: str, response: dict[str, Any], ttl: float | None = None
     ):
-        """Cache response with TTL."""
+        """Cache response with TTL, dropping entries that have already expired.
+
+        A read is only ever looked up under its own caller's key, so an expired
+        entry belonging to a token that never returns would otherwise sit in the
+        dict until close().
+        """
+        now = time.time()
+        for expired in [k for k, expiry in self._cache_ttl.items() if expiry <= now]:
+            self._cache.pop(expired, None)
+            self._cache_ttl.pop(expired, None)
+
         self._cache[cache_key] = response
-        self._cache_ttl[cache_key] = time.time() + (ttl or self.default_cache_ttl)
+        self._cache_ttl[cache_key] = now + (ttl or self.default_cache_ttl)
         logger.debug(f'Cached response for key: {cache_key}')
 
     @staticmethod

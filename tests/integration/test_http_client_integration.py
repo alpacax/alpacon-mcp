@@ -219,6 +219,36 @@ class TestCacheBehavior:
 
         assert call_count == 1, 'the second GET should have been served from cache'
 
+    async def test_a_second_token_is_not_served_the_first_token_response(
+        self, patched_http_client
+    ):
+        """One process serves many callers, so a cached read stays with its token."""
+        seen = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen.append(request.headers['Authorization'])
+            return httpx.Response(HTTPStatus.OK, json={'results': [len(seen)]})
+
+        patched_http_client.set_handler(handler)
+
+        with patch.object(http_client, 'get_base_url', return_value='https://t.test'):
+            first = await http_client.get(
+                region='ap1',
+                workspace='test',
+                endpoint='/api/servers/servers/',
+                token='token-a',
+            )
+            second = await http_client.get(
+                region='ap1',
+                workspace='test',
+                endpoint='/api/servers/servers/',
+                token='token-b',
+            )
+
+        assert len(seen) == 2, 'the second caller must reach the network'
+        assert seen[0] != seen[1]
+        assert first != second
+
     async def test_cache_internal_api_works(self):
         """Internal cache API (set/get) works correctly for manual caching."""
         cache_key = http_client._get_cache_key('GET', '/api/servers/servers/')
