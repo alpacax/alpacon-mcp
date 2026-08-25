@@ -280,6 +280,27 @@ def test_a_402_explains_the_paid_plan_gate():
 
     assert hints['recovery_hints']
     assert any('paid plan' in h.lower() for h in hints['recovery_hints'])
+    assert 'attach_alert_rule' in hints['related_tools']
+
+
+def test_a_402_on_a_webhook_names_the_webhook_gate():
+    hints = get_recovery_hints(status_code=402, tool_name='create_webhook')
+
+    assert any('webhook' in h.lower() for h in hints['recovery_hints'])
+    assert 'list_webhooks' in hints['related_tools']
+
+
+def test_a_402_outside_a_known_domain_stays_plan_neutral():
+    hints = get_recovery_hints(
+        status_code=402, tool_name='update_workspace_preferences'
+    )
+
+    assert any('paid plan' in h.lower() for h in hints['recovery_hints'])
+    assert not any(
+        word in h.lower()
+        for h in hints['recovery_hints']
+        for word in ('alert rule', 'webhook')
+    )
 
 
 def test_a_404_from_attach_alert_rule_points_at_list_servers():
