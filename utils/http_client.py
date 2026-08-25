@@ -1,7 +1,6 @@
 """HTTP client for Alpacon API interactions."""
 
 import asyncio
-import hashlib
 import json
 import time
 from http import HTTPStatus
@@ -11,6 +10,7 @@ from urllib.parse import urljoin, urlsplit
 import httpx
 
 from utils.common import MCP_USER_AGENT, is_auth_enabled
+from utils.error_handler import make_auth_error_key
 from utils.logger import get_logger
 
 logger = get_logger('http_client')
@@ -553,10 +553,14 @@ class AlpaconHTTPClient:
 
     @staticmethod
     def _cache_identity(token: str | None) -> str:
-        """Opaque per-caller cache partition derived from the request token."""
+        """Opaque per-caller cache partition derived from the request token.
+
+        Reuses the derivation that already keys the upstream-401 registry, so
+        the codebase digests a token in one place only.
+        """
         if not token:
             return 'anonymous'
-        return hashlib.sha256(token.encode()).hexdigest()[:32]
+        return make_auth_error_key(token)
 
     def _get_cache_key(
         self,
@@ -701,7 +705,6 @@ class AlpaconHTTPClient:
         if auth_enabled and token and is_jwt:
             from utils.error_handler import (
                 UpstreamAuthError,
-                make_auth_error_key,
                 signal_upstream_auth_error,
             )
 
