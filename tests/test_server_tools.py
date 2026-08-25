@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from server import mcp
 from tests.conftest import HTTP_ERROR_ENVELOPE
 from tools.server_tools import (
     create_registration_token,
@@ -1085,6 +1086,22 @@ class TestGetRegistrationGuide:
         assert result['status'] == 'success'
         _, kwargs = mock_http_client.post.call_args
         assert kwargs['data']['platform'] == 'suse'
+        # The server offers suse on token-install only, not on ansible.
+        assert (
+            kwargs['endpoint']
+            == '/api/servers/registration-methods/token-install/guide/'
+        )
+
+    @pytest.mark.asyncio
+    async def test_description_lists_every_valid_platform(self):
+        """A client reading only the tool schema must see every platform."""
+        descriptions = {t.name: t.description for t in await mcp.list_tools()}
+
+        assert (
+            'The `platform` must be one of: '
+            '"darwin", "debian", "rhel", "suse", "windows".'
+            in descriptions['get_registration_guide']
+        )
 
     @pytest.mark.asyncio
     async def test_get_registration_guide_invalid_platform(
