@@ -484,7 +484,7 @@ class TestParameterValidation:
         )
 
         assert result['status'] == 'success'
-        assert len(result['data']['content']) == 512
+        assert mock_http_client.post.call_args.kwargs['data']['content'] == long_content
 
 
 class TestRegionHandling:

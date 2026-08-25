@@ -23,6 +23,7 @@ from tools.alert_tools import (
 
 ALERT_ID = 'alert-1'
 RULE_ID = 'rule-1'
+SERVER_ID = '550e8400-e29b-41d4-a716-446655440123'
 
 
 @pytest.fixture
@@ -350,8 +351,6 @@ class TestDeleteAlertRule:
 
 
 class TestAttachDetachAlertRule:
-    SERVER_ID = '550e8400-e29b-41d4-a716-446655440123'
-
     @pytest.mark.asyncio
     async def test_attach_posts_the_rule_to_the_server_route(
         self, mock_http_client, mock_token_manager
@@ -359,7 +358,7 @@ class TestAttachDetachAlertRule:
         mock_http_client.post.return_value = {'status': 'success', 'status_code': 204}
 
         result = await attach_alert_rule(
-            server_id=self.SERVER_ID,
+            server_id=SERVER_ID,
             rule_id=RULE_ID,
             workspace='testworkspace',
             region='ap1',
@@ -369,7 +368,7 @@ class TestAttachDetachAlertRule:
         mock_http_client.post.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint=f'/api/servers/servers/{self.SERVER_ID}/attach-rule/',
+            endpoint=f'/api/servers/servers/{SERVER_ID}/attach-rule/',
             token='test-token',
             data={'rule': RULE_ID},
         )
@@ -381,7 +380,7 @@ class TestAttachDetachAlertRule:
         mock_http_client.post.return_value = {'status': 'success', 'status_code': 204}
 
         result = await detach_alert_rule(
-            server_id=self.SERVER_ID,
+            server_id=SERVER_ID,
             rule_id=RULE_ID,
             workspace='testworkspace',
             region='ap1',
@@ -391,7 +390,7 @@ class TestAttachDetachAlertRule:
         mock_http_client.post.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint=f'/api/servers/servers/{self.SERVER_ID}/detach-rule/',
+            endpoint=f'/api/servers/servers/{SERVER_ID}/detach-rule/',
             token='test-token',
             data={'rule': RULE_ID},
         )
@@ -407,13 +406,13 @@ class TestAttachDetachAlertRule:
         mock_http_client.post.return_value = {'status': 'success', 'status_code': 204}
 
         first = await attach_alert_rule(
-            server_id=self.SERVER_ID,
+            server_id=SERVER_ID,
             rule_id=RULE_ID,
             workspace='testworkspace',
             region='ap1',
         )
         second = await attach_alert_rule(
-            server_id=self.SERVER_ID,
+            server_id=SERVER_ID,
             rule_id=RULE_ID,
             workspace='testworkspace',
             region='ap1',
@@ -443,6 +442,8 @@ class TestAttachDetachAlertRule:
         ),
         ('patch', update_alert_rule, {'rule_id': RULE_ID, 'threshold': 80.0}),
         ('delete', delete_alert_rule, {'rule_id': RULE_ID}),
+        ('post', attach_alert_rule, {'server_id': SERVER_ID, 'rule_id': RULE_ID}),
+        ('post', detach_alert_rule, {'server_id': SERVER_ID, 'rule_id': RULE_ID}),
     ],
     ids=[
         'list_alerts',
@@ -451,6 +452,8 @@ class TestAttachDetachAlertRule:
         'create_alert_rule',
         'update_alert_rule',
         'delete_alert_rule',
+        'attach_alert_rule',
+        'detach_alert_rule',
     ],
 )
 @pytest.mark.asyncio
