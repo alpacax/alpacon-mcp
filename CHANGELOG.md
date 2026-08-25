@@ -39,8 +39,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `update_server_note`, and `update_webhook`.
 
 ### Removed
-- `mute_alert`. The server has no mute endpoint; use `acknowledge_alert` with
-  `action_type='dismissed'` instead.
+- `mute_alert`. The server has no endpoint behind it, and no way at all to silence an alert
+  for a while. `acknowledge_alert` is the closest thing and is not a substitute: it records
+  one permanent acknowledgement per user per alert—`action_type='checked'` for seen,
+  `'dismissed'` for not worth acting on—and that choice cannot be changed afterwards.
 - `get_workspace_notifications` and `update_workspace_notifications`, along with the
   `alpacon://workspace-settings/notifications/{region}/{workspace}` resource. The upstream
   `/api/workspaces/notifications/-/` endpoint no longer exists—the `NotificationSettings`

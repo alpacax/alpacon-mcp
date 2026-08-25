@@ -665,7 +665,7 @@ There is intentionally no `approve_request`/`reject_request` tool: the Alpacon s
 - `create_alert_rule`: `workspace`, `name`, `target`, `threshold`, `is_default`, `region` (optional). `target` is one of `cpu-usage`, `memory-usage`, `disk-usage`, `peak-read-bps`, `peak-write-bps`, `avg-read-bps`, `avg-write-bps`, `peak-input-pps`, `peak-input-bps`, `peak-output-pps`, `peak-output-bps`, `avg-input-pps`, `avg-input-bps`, `avg-output-pps`, `avg-output-bps`
 - `update_alert_rule`: `rule_id`, `workspace`, and any of `name`, `target`, `threshold`, `is_default`
 - `delete_alert_rule`: by `rule_id`. A rule with `is_default=true` cannot be deleted
-- `attach_alert_rule` / `detach_alert_rule`: `server_id`, `rule_id`, `workspace`, `region` (optional). Both are no-ops when the rule is already attached or already absent
+- `attach_alert_rule` / `detach_alert_rule`: `server_id`, `rule_id`, `workspace`, `region` (optional). Each is idempotent in the state it aims at: attaching a rule the server already has changes nothing, and so does detaching a rule the server does not have
 
 Creating and updating a rule need a paid plan; reading, attaching and detaching work on any plan.
 
