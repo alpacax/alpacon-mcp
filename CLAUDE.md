@@ -56,11 +56,14 @@ Things the code will not tell you at a glance:
   `workspace`, `server_id`, `server_ids`, `servers`, and `session_id` are
   validated before the token lookup; file paths are not—call
   `validate_file_path()` inline in any tool taking a path.
-- **No response is ever cached, deliberately.** Every read worth caching—the
-  server list, process info, IAM users and groups—comes back filtered by the
-  calling token's permissions, and nothing in this process sees a grant revoked
-  in the web console, in Slack, or by another MCP process. Do not reintroduce a
-  response cache here: a hit would answer with access the caller has lost.
+- **`AlpaconHTTPClient` never caches a response, deliberately.** Every read worth
+  caching—the server list, process info, IAM users and groups—comes back filtered
+  by the calling token's permissions, and nothing in this process sees a grant
+  revoked in the web console, in Slack, or by another MCP process. Do not
+  reintroduce a response cache in the shared client: a hit would answer with
+  access the caller has lost. The auth-path caches stay: the JWKS keys in
+  `utils/auth.py` and the workspace security settings in
+  `utils/security_settings.py` are not permission-filtered tool data.
 - **The WorkSession gate applies to OAuth/browser callers only.** Static API and
   service tokens bypass it, so a flow that works in stdio mode can be blocked in
   remote mode. `ALPACON_WORK_SESSION` supplies a default session id; an explicit
