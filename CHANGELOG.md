@@ -31,6 +31,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `get_workspace_security` and `list_workspace_mfa_methods` require JWT (OAuth/SSO) authentication and short-circuit a static API token before any request, and are SaaS-only (a clear not-available message on on-premise 404)
   - The list fields on the update tools (`notification_channels`, `enabled_extensions`, `allowed_domains`) replace the whole array rather than appending; documented the read-merge-write pattern
 
+### Changed
+- The validation error an update tool returns when it receives no writable field now reports
+  `field: "payload"` and names the accepted fields in the `suggestion` sentence, rather than
+  packing the whole list into `field`. Affects `update_alert_rule`, `update_server`,
+  `update_server_note`, and `update_webhook`.
+
 ### Removed
 - `mute_alert`. The server has no mute endpoint; use `acknowledge_alert` with
   `action_type='dismissed'` instead.
