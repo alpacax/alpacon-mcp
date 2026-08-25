@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `acknowledge_alert`, `attach_alert_rule`, and `detach_alert_rule` tools. `create_alert_rule`
+  and `update_alert_rule` now take a `target` metric (one of a fixed set mirroring the
+  server's `AlertRule.TARGET_METRICS`) instead of the invented `metric_type`/`condition`
+  fields, aligning the request payload with what the server actually accepts.
+- `create_webhook` and `list_webhooks` now accept `provider` and require `owner`, matching
+  the server's webhook payload.
+- `create_server_note` and `update_server_note` now take `private`, `pinned`, and
+  `mentioned_users`; the invented `title` field is gone.
+- Per-grant device ids for OAuth: each grant mints its own device id, sealed inside the
+  authorization code and refresh token with an HMAC key derived from
+  `AUTH0_CLIENT_SECRET` (overridable via `ALPACON_MCP_GRANT_SECRET`), so Auth0's MFA
+  gate keys off the MCP client installation rather than the user (ADR 0054).
 - `--toolsets` CLI argument (and `ALPACON_MCP_TOOLSETS` env var) for local
   stdio/SSE mode: selectively register toolsets; default remains `all`
   (#34). Remote mode is unaffected and always registers every tool.
@@ -20,6 +32,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - The list fields on the update tools (`notification_channels`, `enabled_extensions`, `allowed_domains`) replace the whole array rather than appending; documented the read-merge-write pattern
 
 ### Removed
+- `mute_alert`. The server has no mute endpoint; use `acknowledge_alert` with
+  `action_type='dismissed'` instead.
 - `get_workspace_notifications` and `update_workspace_notifications`, along with the
   `alpacon://workspace-settings/notifications/{region}/{workspace}` resource. The upstream
   `/api/workspaces/notifications/-/` endpoint no longer exists—the `NotificationSettings`
