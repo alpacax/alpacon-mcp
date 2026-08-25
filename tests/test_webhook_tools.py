@@ -350,10 +350,13 @@ class TestWebhooks:
     async def test_update_webhook_with_no_fields_is_a_validation_error(
         self, mock_http_client, mock_token_manager
     ):
-        result = await update_webhook(webhook_id='wh-1', workspace='testworkspace')
+        result = await update_webhook(
+            webhook_id='wh-1', workspace='testworkspace', region='ap1'
+        )
 
         assert result['status'] == 'error'
         assert result['error_code'] == 'validation'
+        assert result['field'] == 'name, url, ssl_verify or enabled'
         mock_http_client.patch.assert_not_called()
 
     @pytest.mark.asyncio

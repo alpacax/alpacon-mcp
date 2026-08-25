@@ -415,6 +415,7 @@ class TestAttachDetachAlertRule:
 
         assert first['status'] == 'success'
         assert second['status'] == 'success'
+        assert mock_http_client.post.call_count == 2
 
 
 # Each endpoint's error-envelope path is identical; one parametrized case per
