@@ -30,7 +30,7 @@ async def list_system_package_entries(
     Args:
         server_id: Server ID to list packages for
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
         page: Page number for pagination (optional)
         page_size: Number of items per page (optional)
 
@@ -77,7 +77,7 @@ async def install_system_package(
         package_name: Name of the package to install
         workspace: Workspace name. Required parameter
         version: Specific version to install (optional)
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Package installation response
@@ -117,7 +117,7 @@ async def remove_system_package(
     Args:
         entry_id: Package entry ID to remove
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Package removal response
@@ -158,7 +158,7 @@ async def list_python_packages(
     Args:
         server_id: Server ID to list Python packages for
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
         page: Page number for pagination (optional)
         page_size: Number of items per page (optional)
 
@@ -205,7 +205,7 @@ async def install_python_package(
         package_name: Name of the Python package to install
         workspace: Workspace name. Required parameter
         version: Specific version to install (optional)
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Python package installation response
@@ -245,7 +245,7 @@ async def remove_python_package(
     Args:
         entry_id: Python package entry ID to remove
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Python package removal response

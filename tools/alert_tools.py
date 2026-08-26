@@ -38,7 +38,7 @@ async def list_alerts(
         workspace: Workspace name. Required parameter
         server_id: Filter by server ID (optional)
         status: Filter by alert status (optional)
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
         page: Page number for pagination (optional)
         page_size: Number of items per page (optional)
         acknowledged: Filter by acknowledgement state (False = active/unacknowledged)
@@ -88,7 +88,7 @@ async def get_alert(
     Args:
         alert_id: Alert ID to retrieve
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Alert details response
@@ -124,7 +124,7 @@ async def mute_alert(
         alert_id: Alert ID to mute
         workspace: Workspace name. Required parameter
         duration: Mute duration in minutes (optional)
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Alert mute response
@@ -184,7 +184,7 @@ async def create_alert_rule(
         notification_channels: List of notification channel IDs (optional)
         description: Description of the alert rule (optional)
         enabled: Whether the rule is enabled (default: True)
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Alert rule creation response
@@ -249,7 +249,7 @@ async def update_alert_rule(
         notification_channels: List of notification channel IDs (optional)
         description: Description of the alert rule (optional)
         enabled: Whether the rule is enabled (optional)
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Alert rule update response
@@ -302,7 +302,7 @@ async def delete_alert_rule(
     Args:
         rule_id: Alert rule ID to delete
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Alert rule deletion response

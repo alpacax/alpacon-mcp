@@ -28,7 +28,7 @@ async def list_activity_logs(
 
     Args:
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
         page: Page number for pagination (optional)
         page_size: Number of items per page (optional)
 
@@ -67,7 +67,7 @@ async def get_activity_log(
     Args:
         log_id: Activity log entry ID
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Activity log details response
@@ -108,7 +108,7 @@ async def list_server_logs(
     Args:
         workspace: Workspace name. Required parameter
         server_id: Filter by server ID (optional)
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
         page: Page number for pagination (optional)
         page_size: Number of items per page (optional)
 
@@ -155,7 +155,7 @@ async def list_webftp_logs(
     Args:
         workspace: Workspace name. Required parameter
         server_id: Filter by server ID (optional)
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
         page: Page number for pagination (optional)
         page_size: Number of items per page (optional)
 
@@ -211,7 +211,7 @@ async def list_session_analyses(
         server_id: Filter by server ID (optional)
         status: Filter by analysis status - "pending", "processing", "completed", "failed" (optional)
         risk_score: Filter by risk score - "low", "medium", "high", "critical" (optional)
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
         page: Page number for pagination (optional)
         page_size: Number of items per page (optional)
 
@@ -260,7 +260,7 @@ async def get_session_analysis_detail(
     Args:
         analysis_id: Session analysis record ID
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Full session analysis with risk factors, threat indicators, and recommendations

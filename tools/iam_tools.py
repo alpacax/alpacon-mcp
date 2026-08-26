@@ -46,7 +46,7 @@ async def list_iam_users(
 
     Args:
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
         page: Page number for pagination (optional)
         page_size: Number of users per page (optional)
 
@@ -89,7 +89,7 @@ async def get_iam_user(
     Args:
         user_id: IAM user ID
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         IAM user details response
@@ -138,7 +138,7 @@ async def create_iam_user(
         first_name: First name (optional)
         last_name: Last name (optional)
         is_active: Whether user is active (default: True)
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         User creation response
@@ -191,7 +191,7 @@ async def update_iam_user(
         first_name: New first name (optional)
         last_name: New last name (optional)
         is_active: New active status (optional)
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         User update response
@@ -240,7 +240,7 @@ async def delete_iam_user(
     Args:
         user_id: IAM user ID to delete
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         User deletion response
@@ -283,7 +283,7 @@ async def list_iam_groups(
 
     Args:
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
         page: Page number for pagination (optional)
         page_size: Number of groups per page (optional)
 
@@ -329,7 +329,7 @@ async def create_iam_group(
         workspace: Workspace name. Required parameter
         display_name: Human-readable display name (optional)
         description: Description of the group (optional)
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Group creation response
@@ -391,7 +391,7 @@ async def get_iam_group(
     Args:
         group_id: Group ID
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         IAM group detail response
@@ -435,7 +435,7 @@ async def update_iam_group(
         workspace: Workspace name. Required parameter
         display_name: New display name (optional)
         description: New group description (optional)
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         IAM group update response
@@ -483,7 +483,7 @@ async def delete_iam_group(
     Args:
         group_id: Group ID to delete
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         IAM group deletion response
@@ -527,7 +527,7 @@ async def list_iam_memberships(
     Args:
         workspace: Workspace name. Required parameter
         group_id: Filter by group ID (optional)
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
         page: Page number for pagination (optional)
         page_size: Number of memberships per page (optional)
 
@@ -580,7 +580,7 @@ async def add_iam_member(
         user_id: User ID to add to the group
         workspace: Workspace name. Required parameter
         role: Role in the group: member, manager, or owner (default: member)
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         IAM membership creation response
@@ -623,7 +623,7 @@ async def remove_iam_member(
     Args:
         membership_id: Membership ID to delete
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         IAM membership deletion response
@@ -668,7 +668,7 @@ async def invite_workspace_user(
     Args:
         email: Email address to send the invitation to
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Invitation response
@@ -707,7 +707,7 @@ async def list_iam_applications(
 
     Args:
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
         page: Page number for pagination (optional)
         page_size: Number of applications per page (optional)
 
@@ -754,7 +754,7 @@ async def create_iam_application(
         description: Description of the application (optional)
         service_type: ci_cd, monitoring, automation, or integration
             (optional; server defaults to integration)
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         IAM application creation response
@@ -802,7 +802,7 @@ async def get_iam_application(
     Args:
         app_id: Application ID
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         IAM application detail response
@@ -843,7 +843,7 @@ async def update_iam_application(
         workspace: Workspace name. Required parameter
         name: New application name (optional)
         description: New application description (optional)
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         IAM application update response
@@ -891,7 +891,7 @@ async def delete_iam_application(
     Args:
         app_id: Application ID to delete
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         IAM application deletion response
@@ -932,7 +932,7 @@ async def assign_application_system_users(
         app_id: Application ID to assign system users to
         system_user_ids: List of system user IDs (UUIDs) to bind
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Assigned system users response
@@ -984,7 +984,7 @@ async def unassign_application_system_users(
         app_id: Application ID to unassign system users from
         system_user_ids: List of system user IDs (UUIDs) to release
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Unassigned system users response

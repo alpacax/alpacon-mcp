@@ -93,7 +93,7 @@ async def get_cpu_usage(
         workspace: Workspace name. Required parameter
         start_date: Start date in ISO format (e.g., '2024-01-01T00:00:00Z')
         end_date: End date in ISO format (e.g., '2024-01-02T00:00:00Z')
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         CPU usage metrics with parsed statistics (current, average, min, max)
@@ -223,7 +223,7 @@ async def get_memory_usage(
         workspace: Workspace name. Required parameter
         start_date: Start date in ISO format (e.g., '2024-01-01T00:00:00Z')
         end_date: End date in ISO format (e.g., '2024-01-02T00:00:00Z')
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Memory usage metrics with parsed statistics (current, average, min, max)
@@ -351,7 +351,7 @@ async def get_disk_usage(
         partition: Optional partition path (e.g., '/')
         start_date: Start date in ISO format (e.g., '2024-01-01T00:00:00Z')
         end_date: End date in ISO format (e.g., '2024-01-02T00:00:00Z')
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Disk usage metrics with parsed statistics (current, average, min, max, space info)
@@ -571,7 +571,7 @@ async def get_disk_io(
         device: Optional disk device name (e.g., 'sda', 'nvme0n1')
         start_date: Start date for metrics (ISO 8601 format). Defaults to last 24 hours
         end_date: End date for metrics (ISO 8601 format)
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Disk I/O metrics response with device, read/write rates, and timestamps
@@ -642,7 +642,7 @@ async def get_network_traffic(
         interface: Optional network interface (e.g., 'eth0')
         start_date: Start date in ISO format (e.g., '2024-01-01T00:00:00Z')
         end_date: End date in ISO format (e.g., '2024-01-02T00:00:00Z')
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Network traffic metrics with parsed statistics (current, averages, peaks for bps/pps)
@@ -712,7 +712,7 @@ async def get_top_servers(
         workspace: Workspace name. Required parameter
         metric_types: Comma-separated metric types (e.g., "cpu,memory,disk_io,traffic").
                      Leave empty to get all metrics. Valid values: cpu, memory, disk_io, traffic
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Top servers response with usage/performance statistics for requested metrics.
@@ -826,7 +826,7 @@ async def get_alert_rules(
     Args:
         workspace: Workspace name. Required parameter
         server_id: Optional server ID to filter rules
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Alert rules response
@@ -868,7 +868,7 @@ async def get_server_metrics_summary(
         server_id: Server ID to get metrics for
         workspace: Workspace name. Required parameter
         hours: Number of hours back to get metrics (default: 24, max: 168)
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Comprehensive server metrics summary (limited size response)

@@ -252,7 +252,7 @@ def validate_token(region: str, workspace: str) -> str | None:
     """Validate and retrieve token for given region and workspace.
 
     Args:
-        region: Region (ap1, us1, eu1, etc.)
+        region: Region (ap1, us1)
         workspace: Workspace name
 
     Returns:

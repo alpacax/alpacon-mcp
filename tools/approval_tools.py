@@ -40,7 +40,7 @@ async def list_approval_requests(
     Args:
         workspace: Workspace name. Required parameter
         status: Filter by status: pending, approved, rejected (optional)
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
         page: Page number for pagination (optional)
         page_size: Number of items per page (optional)
 
@@ -81,7 +81,7 @@ async def get_approval_request(
     Args:
         request_id: Approval request ID to retrieve
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Approval request details response
@@ -133,7 +133,7 @@ async def explain_approval_decision(
     Args:
         workspace: Workspace name. Required parameter
         request_id: Approval request ID this guidance refers to (optional)
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Structured pending-approval guidance (no approve/reject is performed)
@@ -173,7 +173,7 @@ async def list_sudo_policies(
 
     Args:
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
         page: Page number for pagination (optional)
         page_size: Number of items per page (optional)
 
@@ -229,7 +229,7 @@ async def create_sudo_policy(
         run_as: User to run commands as (optional)
         no_password: Whether to allow passwordless sudo (default: False)
         description: Description of the sudo policy (optional)
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Sudo policy creation response

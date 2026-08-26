@@ -108,7 +108,7 @@ class AlpaconHTTPClient:
         Falls back to the default Alpacon Cloud host derivation.
 
         Args:
-            region: Region (ap1, us1, eu1, etc.)
+            region: Region (ap1, us1)
             workspace: Workspace name
 
         Returns:
@@ -412,7 +412,7 @@ class AlpaconHTTPClient:
         """Execute GET request.
 
         Args:
-            region: Region (ap1, us1, eu1, etc.)
+            region: Region (ap1, us1)
             workspace: Workspace name
             endpoint: API endpoint path
             token: API token
@@ -440,7 +440,7 @@ class AlpaconHTTPClient:
         """Execute POST request.
 
         Args:
-            region: Region (ap1, us1, eu1, etc.)
+            region: Region (ap1, us1)
             workspace: Workspace name
             endpoint: API endpoint path
             token: API token
@@ -468,7 +468,7 @@ class AlpaconHTTPClient:
         """Execute PUT request.
 
         Args:
-            region: Region (ap1, us1, eu1, etc.)
+            region: Region (ap1, us1)
             workspace: Workspace name
             endpoint: API endpoint path
             token: API token
@@ -495,7 +495,7 @@ class AlpaconHTTPClient:
         """Execute PATCH request.
 
         Args:
-            region: Region (ap1, us1, eu1, etc.)
+            region: Region (ap1, us1)
             workspace: Workspace name
             endpoint: API endpoint path
             token: API token
@@ -517,7 +517,7 @@ class AlpaconHTTPClient:
         """Execute DELETE request.
 
         Args:
-            region: Region (ap1, us1, eu1, etc.)
+            region: Region (ap1, us1)
             workspace: Workspace name
             endpoint: API endpoint path
             token: API token

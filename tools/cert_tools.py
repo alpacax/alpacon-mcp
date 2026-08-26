@@ -29,7 +29,7 @@ async def list_certificate_authorities(
 
     Args:
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
         page: Page number for pagination (optional)
         page_size: Number of items per page (optional)
 
@@ -91,7 +91,7 @@ async def create_certificate_authority(
         key_algorithm: Key algorithm, 'rsa' or 'ecdsa' (optional)
         key_size: Key size in bits, 2048/4096 for RSA or 256/384 for ECDSA (optional)
         install: Install the CA automatically on the agent (optional)
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Certificate authority creation response
@@ -146,7 +146,7 @@ async def get_certificate_authority(
     Args:
         ca_id: Certificate authority ID
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Certificate authority details response
@@ -186,7 +186,7 @@ async def update_certificate_authority(
         default_valid_days: New default validity for child certificates in days (optional)
         max_valid_days: New maximum validity users can request in days (optional)
         owner: New owner user UUID (optional)
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Updated certificate authority response
@@ -232,7 +232,7 @@ async def delete_certificate_authority(
     Args:
         ca_id: Certificate authority ID to delete
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Deletion confirmation response
@@ -271,7 +271,7 @@ async def list_sign_requests(
 
     Args:
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
         page: Page number for pagination (optional)
         page_size: Number of items per page (optional)
 
@@ -317,7 +317,7 @@ async def create_sign_request(
         domain_list: Subject Alternative Names - DNS entries (optional)
         ip_list: Subject Alternative Names - IP addresses (optional)
         valid_days: Certificate validity in days (optional)
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Certificate signing request creation response
@@ -366,7 +366,7 @@ async def get_sign_request(
     Args:
         csr_id: Certificate signing request ID
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Certificate signing request details response
@@ -400,7 +400,7 @@ async def delete_sign_request(
     Args:
         csr_id: Certificate signing request ID to cancel
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Cancellation confirmation response
@@ -434,7 +434,7 @@ async def approve_sign_request(
     Args:
         csr_id: Certificate signing request ID to approve
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Approval response
@@ -469,7 +469,7 @@ async def deny_sign_request(
     Args:
         csr_id: Certificate signing request ID to deny
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Denial response
@@ -506,7 +506,7 @@ async def retry_sign_request(
     Args:
         csr_id: Certificate signing request ID to retry
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Retry response
@@ -548,7 +548,7 @@ async def list_certificates(
     Args:
         workspace: Workspace name. Required parameter
         authority_id: Filter by certificate authority ID (optional)
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
         page: Page number for pagination (optional)
         page_size: Number of items per page (optional)
 
@@ -592,7 +592,7 @@ async def get_certificate(
     Args:
         certificate_id: Certificate ID
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Certificate details response
@@ -634,7 +634,7 @@ async def revoke_certificate(
         reason: RFC 5280 revocation reason code (optional, default 0=unspecified).
             One of 0,1,2,3,4,5,6,9,10
         requested_reason: Free-text explanation for the revocation (optional)
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Certificate revocation request response
@@ -682,7 +682,7 @@ async def list_revoke_requests(
 
     Args:
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
         page: Page number for pagination (optional)
         page_size: Number of items per page (optional)
 
@@ -724,7 +724,7 @@ async def get_revoke_request(
     Args:
         revoke_id: Revocation request ID
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Revocation request details response
@@ -758,7 +758,7 @@ async def approve_revoke_request(
     Args:
         revoke_id: Revocation request ID to approve
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Approval response
@@ -793,7 +793,7 @@ async def deny_revoke_request(
     Args:
         revoke_id: Revocation request ID to deny
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Denial response
@@ -830,7 +830,7 @@ async def retry_revoke_request(
     Args:
         revoke_id: Revocation request ID to retry
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Retry response
@@ -865,7 +865,7 @@ async def cancel_revoke_request(
     Args:
         revoke_id: Revocation request ID to cancel
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Cancellation response
