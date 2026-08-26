@@ -294,7 +294,7 @@ Python packages have the same trio: `list_python_packages`, `install_python_pack
 ## 🖥️ Bringing a new host in
 
 1. `create_registration_token(workspace, name="batch-2026-08")`
-2. `get_registration_guide(token_id, workspace, platform="debian", server_name="web-04")`—returns the install command to run on the host. Valid platforms: `debian`, `rhel`, `darwin`, `windows`
+2. `get_registration_guide(token_id, workspace, platform="debian", server_name="web-04")`—returns the install command to run on the host. Valid platforms: `debian`, `rhel`, `suse`, `darwin`, `windows`
 3. The host appears in `list_servers` once the agent registers
 4. `update_server(server_id, workspace, name=..., description=...)` to label it, `star_server` to pin it for yourself
 5. `delete_registration_token(token_id, workspace)` once the batch is done

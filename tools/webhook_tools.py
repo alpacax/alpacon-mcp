@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from utils.common import success_response, unwrap_http_result
+from utils.api_call import http_call_response
 from utils.decorators import mcp_tool_handler
 from utils.error_handler import format_validation_error
 from utils.http_client import http_client
@@ -52,24 +52,15 @@ async def list_event_subscriptions(
     if page_size is not None:
         params['page_size'] = page_size
 
-    result = await http_client.get(
+    return await http_call_response(
+        http_client.get,
         region=region,
         workspace=workspace,
         endpoint='/api/events/subscriptions/',
         token=token,
+        default_message='Failed to list event subscriptions',
         params=params,
     )
-
-    err = unwrap_http_result(
-        result,
-        default_message='Failed to list event subscriptions',
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(data=result, region=region, workspace=workspace)
 
 
 @mcp_tool_handler(
@@ -107,24 +98,15 @@ async def create_event_subscription(
     if target_id is not None:
         subscription_data['target_id'] = target_id
 
-    result = await http_client.post(
+    return await http_call_response(
+        http_client.post,
         region=region,
         workspace=workspace,
         endpoint='/api/events/subscriptions/',
         token=token,
+        default_message='Failed to create event subscription',
         data=subscription_data,
     )
-
-    err = unwrap_http_result(
-        result,
-        default_message='Failed to create event subscription',
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(data=result, region=region, workspace=workspace)
 
 
 @mcp_tool_handler(
@@ -147,28 +129,14 @@ async def delete_event_subscription(
     """
     token = kwargs.get('token')
 
-    result = await http_client.delete(
+    return await http_call_response(
+        http_client.delete,
         region=region,
         workspace=workspace,
         endpoint=f'/api/events/subscriptions/{subscription_id}/',
         token=token,
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to delete event subscription',
         subscription_id=subscription_id,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(
-        data=result,
-        subscription_id=subscription_id,
-        region=region,
-        workspace=workspace,
     )
 
 
@@ -221,24 +189,15 @@ async def list_webhooks(
     if page_size is not None:
         params['page_size'] = page_size
 
-    result = await http_client.get(
+    return await http_call_response(
+        http_client.get,
         region=region,
         workspace=workspace,
         endpoint='/api/notifications/webhooks/',
         token=token,
+        default_message='Failed to list webhooks',
         params=params,
     )
-
-    err = unwrap_http_result(
-        result,
-        default_message='Failed to list webhooks',
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(data=result, region=region, workspace=workspace)
 
 
 @mcp_tool_handler(
@@ -266,25 +225,14 @@ async def get_webhook(
     """
     token = kwargs.get('token')
 
-    result = await http_client.get(
+    return await http_call_response(
+        http_client.get,
         region=region,
         workspace=workspace,
         endpoint=f'/api/notifications/webhooks/{webhook_id}/',
         token=token,
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to get webhook details',
         webhook_id=webhook_id,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(
-        data=result, webhook_id=webhook_id, region=region, workspace=workspace
     )
 
 
@@ -339,24 +287,15 @@ async def create_webhook(
     if provider is not None:
         webhook_data['provider'] = provider
 
-    result = await http_client.post(
+    return await http_call_response(
+        http_client.post,
         region=region,
         workspace=workspace,
         endpoint='/api/notifications/webhooks/',
         token=token,
+        default_message='Failed to create webhook',
         data=webhook_data,
     )
-
-    err = unwrap_http_result(
-        result,
-        default_message='Failed to create webhook',
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(data=result, region=region, workspace=workspace)
 
 
 @mcp_tool_handler(
@@ -407,26 +346,15 @@ async def update_webhook(
             'At least one of name, url, ssl_verify or enabled must be provided.',
         )
 
-    result = await http_client.patch(
+    return await http_call_response(
+        http_client.patch,
         region=region,
         workspace=workspace,
         endpoint=f'/api/notifications/webhooks/{webhook_id}/',
         token=token,
-        data=update_data,
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to update webhook',
+        data=update_data,
         webhook_id=webhook_id,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(
-        data=result, webhook_id=webhook_id, region=region, workspace=workspace
     )
 
 
@@ -450,23 +378,12 @@ async def delete_webhook(
     """
     token = kwargs.get('token')
 
-    result = await http_client.delete(
+    return await http_call_response(
+        http_client.delete,
         region=region,
         workspace=workspace,
         endpoint=f'/api/notifications/webhooks/{webhook_id}/',
         token=token,
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to delete webhook',
         webhook_id=webhook_id,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(
-        data=result, webhook_id=webhook_id, region=region, workspace=workspace
     )

@@ -4,6 +4,7 @@ import asyncio
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from utils.api_call import http_call_response
 from utils.common import error_response, success_response, unwrap_http_result
 from utils.decorators import mcp_tool_handler
 from utils.error_handler import UpstreamAuthError
@@ -838,26 +839,15 @@ async def get_alert_rules(
         params['server'] = server_id
 
     # Make async call to get alert rules
-    result = await http_client.get(
+    return await http_call_response(
+        http_client.get,
         region=region,
         workspace=workspace,
         endpoint='/api/metrics/alert-rules/',
         token=token,
-        params=params,
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to get alert rules',
+        params=params,
         server_id=server_id,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(
-        data=result, server_id=server_id, region=region, workspace=workspace
     )
 
 

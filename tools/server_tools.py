@@ -2,13 +2,14 @@
 
 from typing import Any
 
-from utils.common import error_response, success_response, unwrap_http_result
+from utils.api_call import http_call_response
+from utils.common import error_response, success_response
 from utils.decorators import mcp_tool_handler
 from utils.error_handler import format_validation_error, validate_server_id_format
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ_ONLY
 
-VALID_PLATFORMS = frozenset({'debian', 'rhel', 'darwin', 'windows'})
+VALID_PLATFORMS = frozenset({'debian', 'rhel', 'suse', 'darwin', 'windows'})
 _PLATFORM_LIST_STR = ', '.join(f'"{p}"' for p in sorted(VALID_PLATFORMS))
 
 
@@ -107,25 +108,14 @@ async def get_server(
 
     # The list endpoint has no 'id' filter, so filtering there is silently ignored
     # and returns the first server of the default ordering. Address the server directly.
-    result = await http_client.get(
+    return await http_call_response(
+        http_client.get,
         region=region,
         workspace=workspace,
         endpoint=f'/api/servers/servers/{server_id}/',
         token=token,
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to get server details',
         server_id=server_id,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(
-        data=result, server_id=server_id, region=region, workspace=workspace
     )
 
 
@@ -155,25 +145,14 @@ async def list_server_notes(
     token = kwargs.get('token')
 
     # Make async call to server notes endpoint with server filter
-    result = await http_client.get(
+    return await http_call_response(
+        http_client.get,
         region=region,
         workspace=workspace,
         endpoint=f'/api/servers/notes/?server={server_id}',
         token=token,
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to list server notes',
         server_id=server_id,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(
-        data=result, server_id=server_id, region=region, workspace=workspace
     )
 
 
@@ -221,29 +200,15 @@ async def create_server_note(
         note_data['mentioned_users'] = mentioned_users
 
     # Make async call to create note
-    result = await http_client.post(
+    return await http_call_response(
+        http_client.post,
         region=region,
         workspace=workspace,
         endpoint='/api/servers/notes/',
         token=token,
         data=note_data,
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to create server note',
         server_id=server_id,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(
-        data=result,
-        server_id=server_id,
-        region=region,
-        workspace=workspace,
     )
 
 
@@ -272,25 +237,14 @@ async def get_server_note(
     """
     token = kwargs.get('token')
 
-    result = await http_client.get(
+    return await http_call_response(
+        http_client.get,
         region=region,
         workspace=workspace,
         endpoint=f'/api/servers/notes/{note_id}/',
         token=token,
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to get server note details',
         note_id=note_id,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(
-        data=result, note_id=note_id, region=region, workspace=workspace
     )
 
 
@@ -346,26 +300,15 @@ async def update_server_note(
             'At least one of content, private or pinned must be provided.',
         )
 
-    result = await http_client.patch(
+    return await http_call_response(
+        http_client.patch,
         region=region,
         workspace=workspace,
         endpoint=f'/api/servers/notes/{note_id}/',
         token=token,
         data=update_data,
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to update server note',
         note_id=note_id,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(
-        data=result, note_id=note_id, region=region, workspace=workspace
     )
 
 
@@ -392,25 +335,14 @@ async def delete_server_note(
     """
     token = kwargs.get('token')
 
-    result = await http_client.delete(
+    return await http_call_response(
+        http_client.delete,
         region=region,
         workspace=workspace,
         endpoint=f'/api/servers/notes/{note_id}/',
         token=token,
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to delete server note',
         note_id=note_id,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(
-        data=result, note_id=note_id, region=region, workspace=workspace
     )
 
 
@@ -423,26 +355,15 @@ async def _server_action(
     default_message: str,
     token: str | None,
 ) -> dict[str, Any]:
-    result = await http_client.post(
+    return await http_call_response(
+        http_client.post,
         region=region,
         workspace=workspace,
         endpoint=f'/api/servers/servers/{server_id}/actions/',
         token=token,
         data={'action': action},
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message=default_message,
         server_id=server_id,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(
-        data=result, server_id=server_id, region=region, workspace=workspace
     )
 
 
@@ -731,26 +652,15 @@ async def update_server(
             'At least one of name or description must be provided.',
         )
 
-    result = await http_client.patch(
+    return await http_call_response(
+        http_client.patch,
         region=region,
         workspace=workspace,
         endpoint=f'/api/servers/servers/{server_id}/',
         token=token,
         data=update_data,
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to update server',
         server_id=server_id,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(
-        data=result, server_id=server_id, region=region, workspace=workspace
     )
 
 
@@ -781,25 +691,14 @@ async def unregister_server(
     """
     token = kwargs.get('token')
 
-    result = await http_client.delete(
+    return await http_call_response(
+        http_client.delete,
         region=region,
         workspace=workspace,
         endpoint=f'/api/servers/servers/{server_id}/',
         token=token,
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to unregister server',
         server_id=server_id,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(
-        data=result, server_id=server_id, region=region, workspace=workspace
     )
 
 
@@ -829,26 +728,15 @@ async def star_server(
     """
     token = kwargs.get('token')
 
-    result = await http_client.post(
+    return await http_call_response(
+        http_client.post,
         region=region,
         workspace=workspace,
         endpoint=f'/api/servers/servers/{server_id}/star/',
         token=token,
         data={'status': status},
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to update server star status',
         server_id=server_id,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(
-        data=result, server_id=server_id, region=region, workspace=workspace
     )
 
 
@@ -889,24 +777,15 @@ async def list_registration_tokens(
     if page_size is not None:
         params['page_size'] = page_size
 
-    result = await http_client.get(
+    return await http_call_response(
+        http_client.get,
         region=region,
         workspace=workspace,
         endpoint='/api/servers/registration-tokens/',
         token=token,
         params=params,
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to list registration tokens',
-        region=region,
-        workspace=workspace,
     )
-    if err:
-        return err
-
-    return success_response(data=result, region=region, workspace=workspace)
 
 
 @mcp_tool_handler(
@@ -946,24 +825,15 @@ async def create_registration_token(
     if description is not None:
         data['description'] = description
 
-    result = await http_client.post(
+    return await http_call_response(
+        http_client.post,
         region=region,
         workspace=workspace,
         endpoint='/api/servers/registration-tokens/',
         token=token,
         data=data,
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to create registration token',
-        region=region,
-        workspace=workspace,
     )
-    if err:
-        return err
-
-    return success_response(data=result, region=region, workspace=workspace)
 
 
 @mcp_tool_handler(
@@ -995,25 +865,14 @@ async def delete_registration_token(
     if err:
         return err
 
-    result = await http_client.delete(
+    return await http_call_response(
+        http_client.delete,
         region=region,
         workspace=workspace,
         endpoint=f'/api/servers/registration-tokens/{token_id}/',
         token=token,
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to delete registration token',
         token_id=token_id,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(
-        data=result, token_id=token_id, region=region, workspace=workspace
     )
 
 
@@ -1044,7 +903,7 @@ async def get_registration_guide(
     Args:
         token_id: Registration token UUID to embed in the install script
         workspace: Workspace name. Required parameter
-        platform: Target platform ("debian" | "rhel" | "darwin" | "windows")
+        platform: Target platform ("debian" | "rhel" | "suse" | "darwin" | "windows")
         server_name: Optional server name to pre-configure during installation
         region: Region (ap1, us1, eu1). Auto-detected if not provided
 
@@ -1064,25 +923,16 @@ async def get_registration_guide(
     if server_name is not None:
         data['server_name'] = server_name
 
-    result = await http_client.post(
+    return await http_call_response(
+        http_client.post,
         region=region,
         workspace=workspace,
         endpoint='/api/servers/registration-methods/token-install/guide/',
         token=token,
         data=data,
         params={'response_type': 'json'},
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to get registration guide',
-        region=region,
-        workspace=workspace,
     )
-    if err:
-        return err
-
-    return success_response(data=result, region=region, workspace=workspace)
 
 
 def _validate_platform(platform: str) -> dict[str, Any] | None:

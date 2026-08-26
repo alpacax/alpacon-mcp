@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from utils.common import success_response, unwrap_http_result
+from utils.api_call import http_call_response
 from utils.decorators import mcp_tool_handler
 from utils.error_handler import format_validation_error
 from utils.http_client import http_client
@@ -95,26 +95,15 @@ async def list_alerts(
     if dismissed is not None:
         params['dismissed'] = dismissed
 
-    result = await http_client.get(
+    return await http_call_response(
+        http_client.get,
         region=region,
         workspace=workspace,
         endpoint='/api/alerts/',
         token=token,
-        params=params,
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to list alerts',
+        params=params,
         server_id=server_id,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(
-        data=result, server_id=server_id, region=region, workspace=workspace
     )
 
 
@@ -138,25 +127,14 @@ async def get_alert(
     """
     token = kwargs.get('token')
 
-    result = await http_client.get(
+    return await http_call_response(
+        http_client.get,
         region=region,
         workspace=workspace,
         endpoint=f'/api/alerts/{alert_id}/',
         token=token,
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to get alert',
         alert_id=alert_id,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(
-        data=result, alert_id=alert_id, region=region, workspace=workspace
     )
 
 
@@ -198,26 +176,15 @@ async def acknowledge_alert(
 
     token = kwargs.get('token')
 
-    result = await http_client.post(
+    return await http_call_response(
+        http_client.post,
         region=region,
         workspace=workspace,
         endpoint=f'/api/alerts/{alert_id}/acknowledge/',
         token=token,
-        data={'action_type': action_type},
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to acknowledge alert',
+        data={'action_type': action_type},
         alert_id=alert_id,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(
-        data=result, alert_id=alert_id, region=region, workspace=workspace
     )
 
 
@@ -272,24 +239,15 @@ async def create_alert_rule(
         'is_default': is_default,
     }
 
-    result = await http_client.post(
+    return await http_call_response(
+        http_client.post,
         region=region,
         workspace=workspace,
         endpoint='/api/metrics/alert-rules/',
         token=token,
+        default_message='Failed to create alert rule',
         data=rule_data,
     )
-
-    err = unwrap_http_result(
-        result,
-        default_message='Failed to create alert rule',
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(data=result, region=region, workspace=workspace)
 
 
 @mcp_tool_handler(
@@ -348,26 +306,15 @@ async def update_alert_rule(
             'At least one of name, target, threshold or is_default must be provided.',
         )
 
-    result = await http_client.patch(
+    return await http_call_response(
+        http_client.patch,
         region=region,
         workspace=workspace,
         endpoint=f'/api/metrics/alert-rules/{rule_id}/',
         token=token,
-        data=update_data,
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to update alert rule',
+        data=update_data,
         rule_id=rule_id,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(
-        data=result, rule_id=rule_id, region=region, workspace=workspace
     )
 
 
@@ -398,31 +345,16 @@ async def attach_alert_rule(
     """
     token = kwargs.get('token')
 
-    result = await http_client.post(
+    return await http_call_response(
+        http_client.post,
         region=region,
         workspace=workspace,
         endpoint=f'/api/servers/servers/{server_id}/attach-rule/',
         token=token,
-        data={'rule': rule_id},
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to attach alert rule',
+        data={'rule': rule_id},
         server_id=server_id,
         rule_id=rule_id,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(
-        data=result,
-        server_id=server_id,
-        rule_id=rule_id,
-        region=region,
-        workspace=workspace,
     )
 
 
@@ -453,31 +385,16 @@ async def detach_alert_rule(
     """
     token = kwargs.get('token')
 
-    result = await http_client.post(
+    return await http_call_response(
+        http_client.post,
         region=region,
         workspace=workspace,
         endpoint=f'/api/servers/servers/{server_id}/detach-rule/',
         token=token,
-        data={'rule': rule_id},
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to detach alert rule',
+        data={'rule': rule_id},
         server_id=server_id,
         rule_id=rule_id,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(
-        data=result,
-        server_id=server_id,
-        rule_id=rule_id,
-        region=region,
-        workspace=workspace,
     )
 
 
@@ -501,23 +418,12 @@ async def delete_alert_rule(
     """
     token = kwargs.get('token')
 
-    result = await http_client.delete(
+    return await http_call_response(
+        http_client.delete,
         region=region,
         workspace=workspace,
         endpoint=f'/api/metrics/alert-rules/{rule_id}/',
         token=token,
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to delete alert rule',
         rule_id=rule_id,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(
-        data=result, rule_id=rule_id, region=region, workspace=workspace
     )

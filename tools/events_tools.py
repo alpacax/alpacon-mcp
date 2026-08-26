@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from utils.common import success_response, unwrap_http_result
+from utils.api_call import http_call_response
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import READ_ONLY
@@ -31,33 +31,17 @@ async def list_events(
     if reporter:
         params['reporter'] = reporter
 
-    result = await http_client.get(
+    return await http_call_response(
+        http_client.get,
         region=region,
         workspace=workspace,
         endpoint='/api/events/events/',
         token=token,
-        params=params,
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to list events',
+        params=params,
         server_id=server_id,
         reporter=reporter,
         limit=limit,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(
-        data=result,
-        server_id=server_id,
-        reporter=reporter,
-        limit=limit,
-        region=region,
-        workspace=workspace,
     )
 
 
@@ -72,25 +56,14 @@ async def get_event(
     """Get detailed information about a specific event."""
     token = kwargs.get('token')
 
-    result = await http_client.get(
+    return await http_call_response(
+        http_client.get,
         region=region,
         workspace=workspace,
         endpoint=f'/api/events/events/{event_id}/',
         token=token,
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to get event',
         event_id=event_id,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(
-        data=result, event_id=event_id, region=region, workspace=workspace
     )
 
 
@@ -115,31 +88,15 @@ async def search_events(
     if server_id:
         params['server'] = server_id
 
-    result = await http_client.get(
+    return await http_call_response(
+        http_client.get,
         region=region,
         workspace=workspace,
         endpoint='/api/events/events/',
         token=token,
-        params=params,
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to search events',
+        params=params,
         search_query=search_query,
         server_id=server_id,
         limit=limit,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(
-        data=result,
-        search_query=search_query,
-        server_id=server_id,
-        limit=limit,
-        region=region,
-        workspace=workspace,
     )

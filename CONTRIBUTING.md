@@ -201,9 +201,9 @@ async def test_list_servers_success():
    ```python
    # tools/your_feature_tools.py
    from typing import Dict, Any, Optional
-   from utils.http_client import http_client
-   from utils.common import success_response, error_response
+   from utils.api_call import http_call_response
    from utils.decorators import mcp_tool_handler
+   from utils.http_client import http_client
 
 
    @mcp_tool_handler(description='Your tool description')
@@ -225,20 +225,19 @@ async def test_list_servers_success():
        """
        token = kwargs.get('token')
 
-       result = await http_client.get(
+       return await http_call_response(
+           http_client.get,
            region=region,
            workspace=workspace,
            endpoint='/api/your-endpoint/',
            token=token,
+           default_message='Failed to call your endpoint',
            params={'param': parameter},
-       )
-
-       return success_response(
-           data=result, parameter=parameter, region=region, workspace=workspace
+           parameter=parameter,
        )
    ```
 
-   **Note**: Error handling is automatically managed by the `@mcp_tool_handler` decorator. No need for manual try-except blocks.
+   **Note**: Error handling is automatically managed by the `@mcp_tool_handler` decorator—no manual try-except blocks. `http_call_response` runs the request, converts an HTTP error envelope via `unwrap_http_result`, and wraps the payload with `success_response`; trailing kwargs (`parameter` above) are merged into both the error and the success response. Pass the bound `http_client` method from your module so tests can keep patching `tools.<module>.http_client`. Drop to the explicit `http_client` + `unwrap_http_result` + `success_response` sequence only when the result needs post-processing or the error and success responses carry different fields.
 
 2. **Register the Module**
 

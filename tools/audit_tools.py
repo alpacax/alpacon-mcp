@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from utils.common import success_response, unwrap_http_result
+from utils.api_call import http_call_response
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import READ_ONLY
@@ -43,24 +43,15 @@ async def list_activity_logs(
     if page_size is not None:
         params['page_size'] = page_size
 
-    result = await http_client.get(
+    return await http_call_response(
+        http_client.get,
         region=region,
         workspace=workspace,
         endpoint='/api/audit/activity/',
         token=token,
+        default_message='Failed to list activity logs',
         params=params,
     )
-
-    err = unwrap_http_result(
-        result,
-        default_message='Failed to list activity logs',
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(data=result, region=region, workspace=workspace)
 
 
 @mcp_tool_handler(
@@ -83,25 +74,14 @@ async def get_activity_log(
     """
     token = kwargs.get('token')
 
-    result = await http_client.get(
+    return await http_call_response(
+        http_client.get,
         region=region,
         workspace=workspace,
         endpoint=f'/api/audit/activity/{log_id}/',
         token=token,
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to get activity log details',
         log_id=log_id,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(
-        data=result, log_id=log_id, region=region, workspace=workspace
     )
 
 
@@ -145,26 +125,15 @@ async def list_server_logs(
     if page_size is not None:
         params['page_size'] = page_size
 
-    result = await http_client.get(
+    return await http_call_response(
+        http_client.get,
         region=region,
         workspace=workspace,
         endpoint='/api/history/logs/',
         token=token,
-        params=params,
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to list server logs',
+        params=params,
         server_id=server_id,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(
-        data=result, server_id=server_id, region=region, workspace=workspace
     )
 
 
@@ -203,26 +172,15 @@ async def list_webftp_logs(
     if page_size is not None:
         params['page_size'] = page_size
 
-    result = await http_client.get(
+    return await http_call_response(
+        http_client.get,
         region=region,
         workspace=workspace,
         endpoint='/api/history/webftp-logs/',
         token=token,
-        params=params,
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to list WebFTP logs',
+        params=params,
         server_id=server_id,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(
-        data=result, server_id=server_id, region=region, workspace=workspace
     )
 
 
@@ -274,26 +232,15 @@ async def list_session_analyses(
     if page_size is not None:
         params['page_size'] = page_size
 
-    result = await http_client.get(
+    return await http_call_response(
+        http_client.get,
         region=region,
         workspace=workspace,
         endpoint='/api/history/session-analyses/',
         token=token,
-        params=params,
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to list session analyses',
+        params=params,
         server_id=server_id,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(
-        data=result, server_id=server_id, region=region, workspace=workspace
     )
 
 
@@ -320,23 +267,12 @@ async def get_session_analysis_detail(
     """
     token = kwargs.get('token')
 
-    result = await http_client.get(
+    return await http_call_response(
+        http_client.get,
         region=region,
         workspace=workspace,
         endpoint=f'/api/history/session-analyses/{analysis_id}/',
         token=token,
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to get session analysis details',
         analysis_id=analysis_id,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(
-        data=result, analysis_id=analysis_id, region=region, workspace=workspace
     )

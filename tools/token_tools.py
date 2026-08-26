@@ -13,7 +13,8 @@ this restriction.
 
 from typing import Any
 
-from utils.common import error_response, success_response, unwrap_http_result
+from utils.api_call import http_call_response
+from utils.common import error_response
 from utils.decorators import mcp_tool_handler, require_jwt_auth
 from utils.error_handler import format_validation_error, validate_server_id_format
 from utils.http_client import http_client
@@ -103,24 +104,15 @@ async def list_api_tokens(
     if ordering is not None:
         params['ordering'] = ordering
 
-    result = await http_client.get(
+    return await http_call_response(
+        http_client.get,
         region=region,
         workspace=workspace,
         endpoint=_API_TOKENS,
         token=token,
+        default_message='Failed to list API tokens',
         params=params,
     )
-
-    err = unwrap_http_result(
-        result,
-        default_message='Failed to list API tokens',
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(data=result, region=region, workspace=workspace)
 
 
 @mcp_tool_handler(
@@ -154,25 +146,14 @@ async def get_api_token(
     if err:
         return err
 
-    result = await http_client.get(
+    return await http_call_response(
+        http_client.get,
         region=region,
         workspace=workspace,
         endpoint=f'{_API_TOKENS}{token_id}/',
         token=token,
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to get API token',
         token_id=token_id,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(
-        data=result, token_id=token_id, region=region, workspace=workspace
     )
 
 
@@ -225,24 +206,15 @@ async def create_api_token(
     if presets is not None:
         token_data['presets'] = presets
 
-    result = await http_client.post(
+    return await http_call_response(
+        http_client.post,
         region=region,
         workspace=workspace,
         endpoint=_API_TOKENS,
         token=token,
+        default_message='Failed to create API token',
         data=token_data,
     )
-
-    err = unwrap_http_result(
-        result,
-        default_message='Failed to create API token',
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(data=result, region=region, workspace=workspace)
 
 
 @mcp_tool_handler(
@@ -315,26 +287,15 @@ async def update_api_token(
     if not update_data:
         return error_response('No update data provided')
 
-    result = await http_client.patch(
+    return await http_call_response(
+        http_client.patch,
         region=region,
         workspace=workspace,
         endpoint=f'{_API_TOKENS}{token_id}/',
         token=token,
-        data=update_data,
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to update API token',
+        data=update_data,
         token_id=token_id,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(
-        data=result, token_id=token_id, region=region, workspace=workspace
     )
 
 
@@ -370,25 +331,14 @@ async def delete_api_token(
     if err:
         return err
 
-    result = await http_client.delete(
+    return await http_call_response(
+        http_client.delete,
         region=region,
         workspace=workspace,
         endpoint=f'{_API_TOKENS}{token_id}/',
         token=token,
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to delete API token',
         token_id=token_id,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(
-        data=result, token_id=token_id, region=region, workspace=workspace
     )
 
 
@@ -434,26 +384,15 @@ async def duplicate_api_token(
     if name is not None:
         data['name'] = name
 
-    result = await http_client.post(
+    return await http_call_response(
+        http_client.post,
         region=region,
         workspace=workspace,
         endpoint=f'{_API_TOKENS}{token_id}/duplicate/',
         token=token,
-        data=data,
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to duplicate API token',
+        data=data,
         token_id=token_id,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(
-        data=result, token_id=token_id, region=region, workspace=workspace
     )
 
 
@@ -478,23 +417,14 @@ async def list_api_token_scopes(
     """
     token = kwargs.get('token')
 
-    result = await http_client.get(
+    return await http_call_response(
+        http_client.get,
         region=region,
         workspace=workspace,
         endpoint=_API_TOKEN_SCOPES,
         token=token,
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to list API token scopes',
-        region=region,
-        workspace=workspace,
     )
-    if err:
-        return err
-
-    return success_response(data=result, region=region, workspace=workspace)
 
 
 @mcp_tool_handler(
@@ -518,20 +448,11 @@ async def list_api_token_presets(
     """
     token = kwargs.get('token')
 
-    result = await http_client.get(
+    return await http_call_response(
+        http_client.get,
         region=region,
         workspace=workspace,
         endpoint=_API_TOKEN_PRESETS,
         token=token,
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to list API token presets',
-        region=region,
-        workspace=workspace,
     )
-    if err:
-        return err
-
-    return success_response(data=result, region=region, workspace=workspace)

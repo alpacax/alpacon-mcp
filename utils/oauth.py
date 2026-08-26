@@ -619,6 +619,17 @@ def _invalid_grant(what: str) -> JSONResponse:
     )
 
 
+def _oauth_error(
+    error: str,
+    description: str,
+    status: HTTPStatus = HTTPStatus.BAD_REQUEST,
+) -> JSONResponse:
+    """Build a standard OAuth error response (RFC 6749 section 5.2 shape)."""
+    return JSONResponse(
+        {'error': error, 'error_description': description}, status_code=status
+    )
+
+
 def _new_nonce() -> str:
     """Mint the per-flow value that proves a callback reached the same browser."""
     return secrets.token_urlsafe(32)
@@ -774,50 +785,30 @@ def register_oauth_routes(mcp_server):
             client_redirect_uri, params.get('code_challenge_method', '')
         )
         if client_redirect_uri and not _check_redirect_uri(client_redirect_uri):
-            return JSONResponse(
-                {
-                    'error': 'invalid_request',
-                    'error_description': (
-                        'redirect_uri must be a loopback URL or an allowlisted '
-                        'callback endpoint'
-                    ),
-                },
-                status_code=HTTPStatus.BAD_REQUEST,
+            return _oauth_error(
+                'invalid_request',
+                'redirect_uri must be a loopback URL or an allowlisted '
+                'callback endpoint',
             )
 
         code_challenge = params.get('code_challenge', '')
         code_challenge_method = params.get('code_challenge_method', '')
         if not code_challenge and not _is_pkce_exempt_redirect_uri(client_redirect_uri):
-            return JSONResponse(
-                {
-                    'error': 'invalid_request',
-                    'error_description': (
-                        'code_challenge is required; this server accepts only '
-                        f'{_PKCE_CHALLENGE_METHOD} PKCE'
-                    ),
-                },
-                status_code=HTTPStatus.BAD_REQUEST,
+            return _oauth_error(
+                'invalid_request',
+                'code_challenge is required; this server accepts only '
+                f'{_PKCE_CHALLENGE_METHOD} PKCE',
             )
         if code_challenge and code_challenge_method != _PKCE_CHALLENGE_METHOD:
-            return JSONResponse(
-                {
-                    'error': 'invalid_request',
-                    'error_description': (
-                        f'code_challenge_method must be {_PKCE_CHALLENGE_METHOD}'
-                    ),
-                },
-                status_code=HTTPStatus.BAD_REQUEST,
+            return _oauth_error(
+                'invalid_request',
+                f'code_challenge_method must be {_PKCE_CHALLENGE_METHOD}',
             )
         if code_challenge and not _PKCE_CHALLENGE_PATTERN.match(code_challenge):
-            return JSONResponse(
-                {
-                    'error': 'invalid_request',
-                    'error_description': (
-                        'code_challenge must be 43 to 128 characters from the '
-                        'RFC 7636 unreserved set'
-                    ),
-                },
-                status_code=HTTPStatus.BAD_REQUEST,
+            return _oauth_error(
+                'invalid_request',
+                'code_challenge must be 43 to 128 characters from the '
+                'RFC 7636 unreserved set',
             )
         if not code_challenge:
             # Only an exempt destination gets here, and nothing inspected its
@@ -915,12 +906,10 @@ def register_oauth_routes(mcp_server):
         # Parse request body
         body = await _read_bounded_body(request)
         if body is None:
-            return JSONResponse(
-                {
-                    'error': 'invalid_request',
-                    'error_description': 'Request body is too large',
-                },
-                status_code=HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
+            return _oauth_error(
+                'invalid_request',
+                'Request body is too large',
+                status=HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
             )
         content_type = request.headers.get('content-type', '')
 
@@ -928,30 +917,19 @@ def register_oauth_routes(mcp_server):
             try:
                 params = json.loads(body)
             except json.JSONDecodeError:
-                return JSONResponse(
-                    {'error': 'invalid_request', 'error_description': 'Invalid JSON'},
-                    status_code=HTTPStatus.BAD_REQUEST,
-                )
+                return _oauth_error('invalid_request', 'Invalid JSON')
 
             if not isinstance(params, dict):
-                return JSONResponse(
-                    {
-                        'error': 'invalid_request',
-                        'error_description': 'Request body must be a JSON object',
-                    },
-                    status_code=HTTPStatus.BAD_REQUEST,
+                return _oauth_error(
+                    'invalid_request', 'Request body must be a JSON object'
                 )
         else:
             # application/x-www-form-urlencoded (standard OAuth)
             try:
                 decoded_body = body.decode('utf-8')
             except UnicodeDecodeError:
-                return JSONResponse(
-                    {
-                        'error': 'invalid_request',
-                        'error_description': 'Request body must be UTF-8 encoded',
-                    },
-                    status_code=HTTPStatus.BAD_REQUEST,
+                return _oauth_error(
+                    'invalid_request', 'Request body must be UTF-8 encoded'
                 )
 
             parsed = parse_qs(decoded_body)
@@ -966,23 +944,14 @@ def register_oauth_routes(mcp_server):
         # the membership test below rather than answer 400.
         grant_type = params.get('grant_type', '')
         if not isinstance(grant_type, str) or not grant_type:
-            return JSONResponse(
-                {
-                    'error': 'invalid_request',
-                    'error_description': 'grant_type must be a non-empty string',
-                },
-                status_code=HTTPStatus.BAD_REQUEST,
+            return _oauth_error(
+                'invalid_request', 'grant_type must be a non-empty string'
             )
         if grant_type not in allowed_grant_types:
-            return JSONResponse(
-                {
-                    'error': 'unsupported_grant_type',
-                    'error_description': (
-                        f'Grant type "{grant_type}" is not supported. '
-                        f'Allowed: {", ".join(sorted(allowed_grant_types))}'
-                    ),
-                },
-                status_code=HTTPStatus.BAD_REQUEST,
+            return _oauth_error(
+                'unsupported_grant_type',
+                f'Grant type "{grant_type}" is not supported. '
+                f'Allowed: {", ".join(sorted(allowed_grant_types))}',
             )
 
         # Enforce configured client_id to prevent this endpoint from
@@ -994,12 +963,8 @@ def register_oauth_routes(mcp_server):
                 'Rejected /oauth/token request with mismatched client_id: %s',
                 provided_client_id,
             )
-            return JSONResponse(
-                {
-                    'error': 'invalid_client',
-                    'error_description': 'client_id is not allowed for this endpoint',
-                },
-                status_code=HTTPStatus.BAD_REQUEST,
+            return _oauth_error(
+                'invalid_client', 'client_id is not allowed for this endpoint'
             )
         params['client_id'] = configured_client_id
         params['client_secret'] = config['client_secret']
@@ -1127,12 +1092,10 @@ def register_oauth_routes(mcp_server):
             )
         except httpx.HTTPError as e:
             logger.error(f'Auth0 token request failed: {e}')
-            return JSONResponse(
-                {
-                    'error': 'server_error',
-                    'error_description': 'Failed to communicate with Auth0',
-                },
-                status_code=HTTPStatus.BAD_GATEWAY,
+            return _oauth_error(
+                'server_error',
+                'Failed to communicate with Auth0',
+                status=HTTPStatus.BAD_GATEWAY,
             )
 
     @mcp_server.custom_route('/oauth/register', methods=['POST', 'OPTIONS'])
@@ -1148,90 +1111,59 @@ def register_oauth_routes(mcp_server):
             config = _get_oauth_config()
         except ValueError as e:
             logger.error(f'OAuth config error in /oauth/register: {e}')
-            return JSONResponse(
-                {
-                    'error': 'server_error',
-                    'error_description': 'OAuth configuration is incomplete',
-                },
-                status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
+            return _oauth_error(
+                'server_error',
+                'OAuth configuration is incomplete',
+                status=HTTPStatus.INTERNAL_SERVER_ERROR,
             )
 
         # Parse and validate client metadata from request body (RFC 7591)
         body = await _read_bounded_body(request)
         if body is None:
-            return JSONResponse(
-                {
-                    'error': 'invalid_client_metadata',
-                    'error_description': 'Request body is too large',
-                },
-                status_code=HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
+            return _oauth_error(
+                'invalid_client_metadata',
+                'Request body is too large',
+                status=HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
             )
         content_type = request.headers.get('content-type', '')
 
         if 'application/json' not in content_type:
-            return JSONResponse(
-                {
-                    'error': 'invalid_request',
-                    'error_description': 'Content-Type must be application/json',
-                },
-                status_code=HTTPStatus.BAD_REQUEST,
+            return _oauth_error(
+                'invalid_request', 'Content-Type must be application/json'
             )
 
         if not body:
-            return JSONResponse(
-                {
-                    'error': 'invalid_client_metadata',
-                    'error_description': (
-                        'Request body must be a JSON object with client metadata'
-                    ),
-                },
-                status_code=HTTPStatus.BAD_REQUEST,
+            return _oauth_error(
+                'invalid_client_metadata',
+                'Request body must be a JSON object with client metadata',
             )
 
         try:
             client_metadata = json.loads(body)
         except (json.JSONDecodeError, UnicodeDecodeError):
-            return JSONResponse(
-                {
-                    'error': 'invalid_client_metadata',
-                    'error_description': 'Request body must be valid JSON',
-                },
-                status_code=HTTPStatus.BAD_REQUEST,
+            return _oauth_error(
+                'invalid_client_metadata', 'Request body must be valid JSON'
             )
 
         if not isinstance(client_metadata, dict):
-            return JSONResponse(
-                {
-                    'error': 'invalid_client_metadata',
-                    'error_description': 'Client metadata must be a JSON object',
-                },
-                status_code=HTTPStatus.BAD_REQUEST,
+            return _oauth_error(
+                'invalid_client_metadata', 'Client metadata must be a JSON object'
             )
 
         if 'redirect_uris' in client_metadata:
             redirect_uris = client_metadata['redirect_uris']
             # The shape check comes first: _check_redirect_uri parses a str.
             if not _is_registrable_uri_list(redirect_uris):
-                return JSONResponse(
-                    {
-                        'error': 'invalid_client_metadata',
-                        'error_description': (
-                            'redirect_uris must be an array of 1 to '
-                            f'{_MAX_REGISTERED_REDIRECT_URIS} strings'
-                        ),
-                    },
-                    status_code=HTTPStatus.BAD_REQUEST,
+                return _oauth_error(
+                    'invalid_client_metadata',
+                    'redirect_uris must be an array of 1 to '
+                    f'{_MAX_REGISTERED_REDIRECT_URIS} strings',
                 )
             if not all(_check_redirect_uri(uri) for uri in redirect_uris):
-                return JSONResponse(
-                    {
-                        'error': 'invalid_redirect_uri',
-                        'error_description': (
-                            'One or more redirect_uris are invalid or not allowed '
-                            'by this server'
-                        ),
-                    },
-                    status_code=HTTPStatus.BAD_REQUEST,
+                return _oauth_error(
+                    'invalid_redirect_uri',
+                    'One or more redirect_uris are invalid or not allowed '
+                    'by this server',
                 )
 
         # Return pre-configured client_id with metadata echoed back
@@ -1295,23 +1227,15 @@ def register_oauth_routes(mcp_server):
                 )
             if state_data is None:
                 logger.warning('Callback rejected an invalid or expired state')
-                return JSONResponse(
-                    {
-                        'error': 'invalid_request',
-                        'error_description': 'Invalid or expired state parameter',
-                    },
-                    status_code=HTTPStatus.BAD_REQUEST,
+                return _oauth_error(
+                    'invalid_request', 'Invalid or expired state parameter'
                 )
             # Placed before the error branch so the gate lives in one spot; an
             # error callback carries no code, so nothing is lost by rejecting it.
             if not _nonce_cookie_matches(request, state_data):
                 logger.warning('Callback rejected a state not bound to this browser')
-                return JSONResponse(
-                    {
-                        'error': 'invalid_request',
-                        'error_description': 'Invalid or expired state parameter',
-                    },
-                    status_code=HTTPStatus.BAD_REQUEST,
+                return _oauth_error(
+                    'invalid_request', 'Invalid or expired state parameter'
                 )
             client_redirect_uri = state_data.get('redirect_uri', '')
             original_state = state_data.get('state', '')
@@ -1324,12 +1248,8 @@ def register_oauth_routes(mcp_server):
             device_id = state_data.get('device_id', '')
             if not isinstance(device_id, str) or not _is_device_id(device_id):
                 logger.warning('Callback rejected a state without a device id')
-                return JSONResponse(
-                    {
-                        'error': 'invalid_request',
-                        'error_description': 'Invalid or expired state parameter',
-                    },
-                    status_code=HTTPStatus.BAD_REQUEST,
+                return _oauth_error(
+                    'invalid_request', 'Invalid or expired state parameter'
                 )
 
         # Defense-in-depth: re-validate redirect_uri from state is allowed.
@@ -1352,19 +1272,10 @@ def register_oauth_routes(mcp_server):
                     url=_build_redirect_url(client_redirect_uri, params),
                     status_code=HTTPStatus.FOUND,
                 )
-            return JSONResponse(
-                {'error': error, 'error_description': error_description},
-                status_code=HTTPStatus.BAD_REQUEST,
-            )
+            return _oauth_error(error, error_description)
 
         if not code:
-            return JSONResponse(
-                {
-                    'error': 'invalid_request',
-                    'error_description': 'Missing authorization code',
-                },
-                status_code=HTTPStatus.BAD_REQUEST,
-            )
+            return _oauth_error('invalid_request', 'Missing authorization code')
 
         # --- Two-stage MFA flow: Stage 1 callback ---
         if stage == _STAGE_MFA:
@@ -1464,13 +1375,7 @@ def register_oauth_routes(mcp_server):
         # none and would be dead on arrival at the exchange.
         if not _is_device_id(device_id):
             logger.warning('Callback rejected a code that arrived without a state')
-            return JSONResponse(
-                {
-                    'error': 'invalid_request',
-                    'error_description': 'Missing state parameter',
-                },
-                status_code=HTTPStatus.BAD_REQUEST,
-            )
+            return _oauth_error('invalid_request', 'Missing state parameter')
         try:
             code = _seal_code(code, device_id)
         except ValueError as e:
