@@ -12,6 +12,10 @@ from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ
 VALID_PLATFORMS = frozenset({'debian', 'rhel', 'suse', 'darwin', 'windows'})
 _PLATFORM_LIST_STR = ', '.join(f'"{p}"' for p in sorted(VALID_PLATFORMS))
 
+# Mirrors Note.content max_length; a longer body is a guaranteed 400.
+NOTE_CONTENT_MAX_LENGTH = 512
+_CONTENT_SENTENCE = f'content must be at most {NOTE_CONTENT_MAX_LENGTH} characters.'
+
 
 @mcp_tool_handler(
     description=(
@@ -158,7 +162,7 @@ async def list_server_notes(
 
 @mcp_tool_handler(
     description=(
-        'Create a documentation note on a server. The content is capped at 512 characters and a server holds at most three pinned notes. '
+        f'Create a documentation note on a server. The content is capped at {NOTE_CONTENT_MAX_LENGTH} characters, and a server holds at most three pinned notes—a limit only the server can enforce. '
         'Use this to record operational notes, maintenance logs, or configuration documentation for a server. '
         'Related: list_server_notes (view existing notes).'
     ),
@@ -179,7 +183,7 @@ async def create_server_note(
 
     Args:
         server_id: Server ID
-        content: Note content; the server caps it at 512 characters
+        content: Note content; capped at NOTE_CONTENT_MAX_LENGTH characters
         workspace: Workspace name. Required parameter
         private: Hide the note from other workspace members (optional)
         pinned: Pin the note; a server holds at most three pinned notes (optional)
@@ -189,6 +193,9 @@ async def create_server_note(
     Returns:
         Note creation response
     """
+    if len(content) > NOTE_CONTENT_MAX_LENGTH:
+        return format_validation_error('content', content, _CONTENT_SENTENCE)
+
     token = kwargs.get('token')
 
     note_data: dict[str, Any] = {'server': server_id, 'content': content}
@@ -271,7 +278,7 @@ async def update_server_note(
     Args:
         note_id: Note ID
         workspace: Workspace name. Required parameter
-        content: New content; the server caps it at 512 characters (optional)
+        content: New content; capped at NOTE_CONTENT_MAX_LENGTH characters (optional)
         private: Hide the note from other workspace members (optional)
         pinned: Pin the note; a server holds at most three pinned notes (optional)
         region: Region (ap1, us1). Auto-detected if not provided
@@ -283,6 +290,9 @@ async def update_server_note(
         No mentioned_users here: the server routes only `create` to
         NoteCreateSerializer, and the update path never sees that field.
     """
+    if content is not None and len(content) > NOTE_CONTENT_MAX_LENGTH:
+        return format_validation_error('content', content, _CONTENT_SENTENCE)
+
     token = kwargs.get('token')
 
     update_data: dict[str, Any] = {}

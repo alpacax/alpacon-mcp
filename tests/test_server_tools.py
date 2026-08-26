@@ -487,6 +487,35 @@ class TestParameterValidation:
         assert result['status'] == 'success'
         assert mock_http_client.post.call_args.kwargs['data']['content'] == long_content
 
+    @pytest.mark.asyncio
+    async def test_note_content_over_the_limit_is_rejected_before_calling(
+        self, mock_http_client, mock_token_manager
+    ):
+        result = await create_server_note(
+            server_id='550e8400-e29b-41d4-a716-446655440123',
+            content='x' * 513,
+            workspace='testworkspace',
+        )
+
+        assert result['status'] == 'error'
+        assert result['error_code'] == 'validation'
+        assert result['field'] == 'content'
+        mock_http_client.post.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_update_note_content_over_the_limit_is_rejected(
+        self, mock_http_client, mock_token_manager
+    ):
+        result = await update_server_note(
+            note_id='note-789',
+            content='x' * 513,
+            workspace='testworkspace',
+        )
+
+        assert result['status'] == 'error'
+        assert result['field'] == 'content'
+        mock_http_client.patch.assert_not_called()
+
 
 class TestRegionHandling:
     """Test region parameter handling."""
