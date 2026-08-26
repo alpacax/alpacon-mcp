@@ -110,6 +110,11 @@ def validate_workspace_format(workspace: str) -> bool:
     return bool(re.match(pattern, workspace)) and len(workspace) <= 63
 
 
+# 'dev' is internal-only: the validator accepts it, but it is never advertised.
+SERVED_REGIONS = ('ap1', 'us1')
+VALID_REGIONS = (*SERVED_REGIONS, 'dev')
+
+
 def validate_region_format(region: str) -> bool:
     """Validate region format.
 
@@ -122,9 +127,7 @@ def validate_region_format(region: str) -> bool:
     if not region or not isinstance(region, str):
         return False
 
-    # Production regions: ap1, us1 (dev is also valid but internal-only)
-    valid_regions = {'ap1', 'us1', 'dev'}
-    return region in valid_regions
+    return region in VALID_REGIONS
 
 
 def validate_server_id_format(server_id: str) -> bool:
@@ -197,7 +200,7 @@ def format_validation_error(
     else:
         suggestions = {
             'workspace': 'Only alphanumeric characters, hyphens (-), and underscores (_) allowed. Length: 1-63 characters.',
-            'region': 'Supported regions: ap1, us1',
+            'region': f'Supported regions: {", ".join(SERVED_REGIONS)}',
             'server_id': 'Server ID must be in UUID format. (e.g., 550e8400-e29b-41d4-a716-446655440000)',
             'session_id': 'Session ID must be in UUID format. (e.g., 550e8400-e29b-41d4-a716-446655440000)',
             'file_path': 'Use absolute paths and avoid dangerous characters (.., <, >, |, *, ?).',
