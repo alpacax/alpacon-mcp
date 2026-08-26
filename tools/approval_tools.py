@@ -158,7 +158,7 @@ async def explain_approval_decision(
 
 
 @mcp_tool_handler(
-    description='List sudo policies that define elevated privilege rules. Returns policy names, allowed commands, assigned users/servers, and validity periods. Filterable by user or server ID. Use this to audit which sudo privileges are configured in the workspace.',
+    description='List sudo policies that define elevated privilege rules. Returns policy names, allowed commands, assigned users/servers, and validity periods. Filterable by user UUID or server UUID. Use this to audit which sudo privileges are configured in the workspace.',
     annotations=READ_ONLY,
     meta={'anthropic/searchHint': 'sudo policy privilege elevation rules'},
 )
@@ -167,6 +167,8 @@ async def list_sudo_policies(
     region: str = '',
     page: int | None = None,
     page_size: int | None = None,
+    user: str | None = None,
+    server: str | None = None,
     **kwargs,
 ) -> dict[str, Any]:
     """List sudo policies.
@@ -176,6 +178,8 @@ async def list_sudo_policies(
         region: Region (ap1, us1, eu1). Auto-detected if not provided
         page: Page number for pagination (optional)
         page_size: Number of items per page (optional)
+        user: Filter by user UUID the policy applies to (optional)
+        server: Filter by server UUID the policy applies to (optional)
 
     Returns:
         Sudo policies list response
@@ -187,12 +191,16 @@ async def list_sudo_policies(
         params['page'] = page
     if page_size is not None:
         params['page_size'] = page_size
+    if user is not None:
+        params['user'] = user
+    if server is not None:
+        params['server'] = server
 
     return await http_call_response(
         http_client.get,
         region=region,
         workspace=workspace,
-        endpoint='/api/approvals/sudo-policies/',
+        endpoint='/api/sudo/policies/',
         token=token,
         default_message='Failed to list sudo policies',
         params=params,

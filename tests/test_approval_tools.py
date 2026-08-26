@@ -209,7 +209,7 @@ class TestSudoPolicies:
         mock_http_client.get.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/approvals/sudo-policies/',
+            endpoint='/api/sudo/policies/',
             token='test-token',
             params={},
         )
@@ -226,6 +226,44 @@ class TestSudoPolicies:
         assert result['status'] == 'error'
         assert result['status_code'] == HTTPStatus.NOT_FOUND
         assert result['message'] == 'Not found'
+
+    @pytest.mark.asyncio
+    async def test_list_sudo_policies_uses_sudo_app_path(
+        self, mock_http_client, mock_token_manager
+    ):
+        """The sudo app owns policies now: /api/sudo/policies/, not the approvals app."""
+        mock_http_client.get.return_value = {'count': 0, 'results': []}
+
+        result = await list_sudo_policies(workspace='testworkspace', region='ap1')
+
+        assert result['status'] == 'success'
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/sudo/policies/',
+            token='test-token',
+            params={},
+        )
+
+    @pytest.mark.asyncio
+    async def test_list_sudo_policies_forwards_user_and_server_filters(
+        self, mock_http_client, mock_token_manager
+    ):
+        """SudoPolicyFilter accepts user and server; both reach the query string."""
+        mock_http_client.get.return_value = {'count': 0, 'results': []}
+
+        result = await list_sudo_policies(
+            workspace='testworkspace',
+            region='ap1',
+            user='550e8400-e29b-41d4-a716-446655440001',
+            server='550e8400-e29b-41d4-a716-446655440002',
+        )
+
+        assert result['status'] == 'success'
+        assert mock_http_client.get.call_args.kwargs['params'] == {
+            'user': '550e8400-e29b-41d4-a716-446655440001',
+            'server': '550e8400-e29b-41d4-a716-446655440002',
+        }
 
     @pytest.mark.asyncio
     async def test_create_sudo_policy_success(

@@ -648,7 +648,7 @@ Close a session (triggers AI security analysis) or re-run analysis on a terminal
 - `list_approval_requests`: `workspace`, `status` (optional), `region` (optional), `page`, `page_size`
 - `get_approval_request`: `request_id`, `workspace`, `region` (optional)
 - `explain_approval_decision`: `workspace`, `request_id` (optional), `region` (optional). Explains that deciding is human-only and out of band; performs no mutation
-- `list_sudo_policies`: `workspace`, `region` (optional), `page`, `page_size`
+- `list_sudo_policies`: `workspace`, `region` (optional), `page`, `page_size`, `user` (UUID), `server` (UUID)
 - `create_sudo_policy`: `workspace`, `name`, `commands`, `users`, `groups`, `servers`, `run_as`, `no_password`, `description`, `region` (optional)
 
 There is intentionally no `approve_request`/`reject_request` tool: the Alpacon server refuses approve/reject from agent and token channels with HTTP 403. Approval happens in the web console or Slack.
