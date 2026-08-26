@@ -4,17 +4,20 @@ from typing import Any
 
 from utils.api_call import http_call_response
 from utils.decorators import mcp_tool_handler
-from utils.error_handler import format_validation_error
+from utils.error_handler import format_validation_error, validate_uuid_format
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ_ONLY
 
 # Mirrors Webhook.Provider; omitting provider lets the server infer it from the URL.
 WEBHOOK_PROVIDERS = ('slack', 'discord', 'teams', 'telegram', 'custom')
 
+_PROVIDERS_LIST = ', '.join(WEBHOOK_PROVIDERS)
 _PROVIDERS_SENTENCE = (
-    f'provider must be one of: {", ".join(WEBHOOK_PROVIDERS)}, '
+    f'provider must be one of: {_PROVIDERS_LIST}, '
     'or omitted to let the server detect it from the URL.'
 )
+_PROVIDERS_FILTER_SENTENCE = f'provider must be one of: {_PROVIDERS_LIST}.'
+_OWNER_SENTENCE = "owner must be a user's UUID; a username is rejected."
 
 # ===============================
 # EVENT SUBSCRIPTION TOOLS
@@ -148,9 +151,10 @@ async def delete_event_subscription(
 @mcp_tool_handler(
     description=(
         'List configured webhooks in a workspace, optionally filtered by owner '
-        'or provider. Returns webhook ID, name, URL, provider, SSL '
-        'verification setting, and enabled status. Needs an admin account. '
-        'Related: create_webhook, list_event_subscriptions.'
+        f'or provider. {_OWNER_SENTENCE} {_PROVIDERS_FILTER_SENTENCE} Returns '
+        'webhook ID, name, URL, provider, SSL verification setting, and '
+        'enabled status. Needs an admin account. Related: create_webhook, '
+        'list_event_subscriptions.'
     ),
     annotations=READ_ONLY,
     meta={'anthropic/searchHint': 'webhooks list endpoints callbacks'},
@@ -169,7 +173,8 @@ async def list_webhooks(
     Args:
         workspace: Workspace name. Required parameter
         owner: Filter by the owning user's UUID (optional)
-        provider: Filter by provider; one of WEBHOOK_PROVIDERS (optional)
+        provider: Filter by provider; one of slack, discord, teams, telegram,
+            custom (optional)
         region: Region (ap1, us1). Auto-detected if not provided
         page: Page number for pagination (optional)
         page_size: Number of items per page (optional)
@@ -177,6 +182,12 @@ async def list_webhooks(
     Returns:
         Webhooks list response
     """
+    if owner is not None and not validate_uuid_format(owner):
+        return format_validation_error('owner', owner, _OWNER_SENTENCE)
+
+    if provider is not None and provider not in WEBHOOK_PROVIDERS:
+        return format_validation_error('provider', provider, _PROVIDERS_FILTER_SENTENCE)
+
     token = kwargs.get('token')
 
     params: dict[str, Any] = {}
@@ -239,9 +250,9 @@ async def get_webhook(
 @mcp_tool_handler(
     description=(
         'Create a webhook endpoint to receive HTTP callbacks when subscribed '
-        'events occur. Requires a name, a URL, and an owner given as a user '
-        f'UUID; a username is rejected. {_PROVIDERS_SENTENCE} Needs an admin '
-        'account, and creating or updating a webhook needs a paid plan.'
+        f'events occur. Requires a name, a URL, and an owner. {_OWNER_SENTENCE} '
+        f'{_PROVIDERS_SENTENCE} Needs an admin account, and creating or '
+        'updating a webhook needs a paid plan.'
     ),
     annotations=ADDITIVE,
     meta={'anthropic/searchHint': 'webhook create endpoint callback'},
@@ -272,6 +283,9 @@ async def create_webhook(
     Returns:
         Webhook creation response
     """
+    if not validate_uuid_format(owner):
+        return format_validation_error('owner', owner, _OWNER_SENTENCE)
+
     if provider is not None and provider not in WEBHOOK_PROVIDERS:
         return format_validation_error('provider', provider, _PROVIDERS_SENTENCE)
 

@@ -326,6 +326,43 @@ class TestWebhooks:
             )
 
     @pytest.mark.asyncio
+    async def test_create_rejects_a_username_as_owner(
+        self, mock_http_client, mock_token_manager
+    ):
+        result = await create_webhook(
+            workspace='testworkspace',
+            name='n',
+            url='https://example.test/hook',
+            owner='alice',
+        )
+
+        assert result['status'] == 'error'
+        assert result['error_code'] == 'validation'
+        assert result['field'] == 'owner'
+        mock_http_client.post.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_list_rejects_an_unknown_provider_before_calling(
+        self, mock_http_client, mock_token_manager
+    ):
+        result = await list_webhooks(workspace='testworkspace', provider='mattermost')
+
+        assert result['status'] == 'error'
+        assert result['error_code'] == 'validation'
+        assert result['field'] == 'provider'
+        mock_http_client.get.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_list_rejects_a_username_as_owner(
+        self, mock_http_client, mock_token_manager
+    ):
+        result = await list_webhooks(workspace='testworkspace', owner='alice')
+
+        assert result['status'] == 'error'
+        assert result['field'] == 'owner'
+        mock_http_client.get.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_list_forwards_owner_and_provider(
         self, mock_http_client, mock_token_manager
     ):

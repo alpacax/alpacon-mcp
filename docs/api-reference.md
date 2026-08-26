@@ -718,7 +718,7 @@ Command ACLs decide which commands a token may run, server ACLs which hosts it m
 
 ## 🔗 Webhook tools
 
-- `list_webhooks`: `workspace`, `owner` (user UUID), `provider`, `region` (optional), `page`, `page_size`
+- `list_webhooks`: `workspace`, `owner` (user UUID), `provider` (one of `slack`, `discord`, `teams`, `telegram`, `custom`), `region` (optional), `page`, `page_size`
 - `get_webhook` / `delete_webhook`: by `webhook_id`
 - `create_webhook`: `workspace`, `name`, `url`, `owner` (user UUID, required), `provider` (optional), `ssl_verify`, `enabled`, `region` (optional). `provider` is one of `slack`, `discord`, `teams`, `telegram`, `custom`, and is detected from the URL when omitted
 - `update_webhook`: `webhook_id`, `workspace`, and any of `name`, `url`, `ssl_verify`, `enabled`
