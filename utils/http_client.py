@@ -8,7 +8,11 @@ from urllib.parse import urljoin
 import httpx
 
 from utils.common import MCP_USER_AGENT, is_auth_enabled
-from utils.error_handler import make_auth_error_key
+from utils.error_handler import (
+    UpstreamAuthError,
+    make_auth_error_key,
+    signal_upstream_auth_error,
+)
 from utils.logger import get_logger
 
 logger = get_logger('http_client')
@@ -570,11 +574,6 @@ class AlpaconHTTPClient:
         # Token-hash dict, not contextvars: streamable-http runs handlers in a separate anyio task where ContextVar writes are invisible to the ASGI middleware.
         # JWT only — the middleware cannot derive a matching key from API tokens, so their entries would go unconsumed.
         if auth_enabled and token and is_jwt:
-            from utils.error_handler import (
-                UpstreamAuthError,
-                signal_upstream_auth_error,
-            )
-
             token_key = make_auth_error_key(token)
             logger.warning(
                 '[DEBUG-401] Setting dict signal with token_key=%s',
