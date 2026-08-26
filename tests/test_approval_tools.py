@@ -1,5 +1,6 @@
 """Unit tests for approval and sudo policy tools module."""
 
+import inspect
 from http import HTTPStatus
 from unittest.mock import AsyncMock, patch
 
@@ -197,7 +198,7 @@ class TestSudoPolicies:
     async def test_list_sudo_policies_success(
         self, mock_http_client, mock_token_manager
     ):
-        """Test successful sudo policies list retrieval."""
+        """The sudo app owns policies now: /api/sudo/policies/, not the approvals app."""
         mock_http_client.get.return_value = {
             'count': 1,
             'results': [{'id': 'policy-1', 'name': 'admin-sudo'}],
@@ -226,24 +227,6 @@ class TestSudoPolicies:
         assert result['status'] == 'error'
         assert result['status_code'] == HTTPStatus.NOT_FOUND
         assert result['message'] == 'Not found'
-
-    @pytest.mark.asyncio
-    async def test_list_sudo_policies_uses_sudo_app_path(
-        self, mock_http_client, mock_token_manager
-    ):
-        """The sudo app owns policies now: /api/sudo/policies/, not the approvals app."""
-        mock_http_client.get.return_value = {'count': 0, 'results': []}
-
-        result = await list_sudo_policies(workspace='testworkspace', region='ap1')
-
-        assert result['status'] == 'success'
-        mock_http_client.get.assert_called_once_with(
-            region='ap1',
-            workspace='testworkspace',
-            endpoint='/api/sudo/policies/',
-            token='test-token',
-            params={},
-        )
 
     @pytest.mark.asyncio
     async def test_list_sudo_policies_forwards_user_and_server_filters(
@@ -359,17 +342,13 @@ class TestRequestSudoPolicy:
 
         assert result['status'] == 'error'
 
-    @pytest.mark.asyncio
-    async def test_request_sudo_policy_takes_no_bypass_parameter(self):
+    def test_request_sudo_policy_takes_no_bypass_parameter(self):
         """The server rejects allow_bypass_mfa on this endpoint, so the tool never offers it."""
-        import inspect
-
         assert (
             'allow_bypass_mfa' not in inspect.signature(request_sudo_policy).parameters
         )
 
-    @pytest.mark.asyncio
-    async def test_create_sudo_policy_is_gone(self):
+    def test_create_sudo_policy_is_gone(self):
         """The direct-write policy tool is no longer part of the tool surface."""
         import tools.approval_tools as approval_tools
 

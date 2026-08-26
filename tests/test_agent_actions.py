@@ -1,5 +1,6 @@
 """Unit tests for agent action tools in server_tools module."""
 
+import inspect
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -301,11 +302,8 @@ class TestDisruptiveActionForce:
             'force': True,
         }
 
-    @pytest.mark.asyncio
-    async def test_update_information_has_no_force(self):
+    def test_update_information_has_no_force(self):
         """update_information is not disruptive server-side, so it offers no force."""
-        import inspect
-
         assert 'force' not in inspect.signature(update_information).parameters
 
     @pytest.mark.asyncio

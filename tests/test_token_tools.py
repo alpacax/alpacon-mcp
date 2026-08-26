@@ -1,5 +1,6 @@
 """Unit tests for API token management tools."""
 
+import inspect
 from http import HTTPStatus
 from unittest.mock import AsyncMock, patch
 
@@ -41,11 +42,8 @@ def mock_token_manager():
 class TestListApiTokens:
     """Tests for list_api_tokens tool."""
 
-    @pytest.mark.asyncio
-    async def test_list_api_tokens_has_no_remote_ip_filter(self):
+    def test_list_api_tokens_has_no_remote_ip_filter(self):
         """The server dropped remote_ip, and django-filter discards it silently."""
-        import inspect
-
         assert 'remote_ip' not in inspect.signature(list_api_tokens).parameters
 
     @pytest.mark.asyncio
