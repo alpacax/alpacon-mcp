@@ -11,7 +11,19 @@ import sys
 from getpass import getpass
 from pathlib import Path
 
+from .error_handler import SERVED_REGIONS, validate_region_format
 from .token_manager import TokenManager
+
+
+def _region_accepted(region: str) -> bool:
+    """Report an unserved region to the user and return False."""
+    if validate_region_format(region):
+        return True
+    print(
+        f"❌ Error: '{region}' is not a valid region. "
+        f'Supported regions: {", ".join(SERVED_REGIONS)}'
+    )
+    return False
 
 
 def get_global_config_path() -> Path:
@@ -117,6 +129,8 @@ def run_setup_wizard(force_local: bool = False, custom_path: str | None = None) 
     # Get region
     print('\n' + '-' * 60)
     region = input('Enter region (default: ap1): ').strip() or 'ap1'
+    if not _region_accepted(region):
+        sys.exit(1)
 
     # Get workspace
     workspace = input('Enter workspace name: ').strip()
@@ -215,6 +229,9 @@ def add_workspace() -> None:
     config = load_existing_config(config_path)
 
     region = input('\nEnter region (default: ap1): ').strip() or 'ap1'
+    if not _region_accepted(region):
+        return
+
     workspace = input('Enter workspace name: ').strip()
     if not workspace:
         print('❌ Error: Workspace name is required')
@@ -263,6 +280,9 @@ def test_credentials() -> None:
     print('=' * 60)
 
     region = input('\nEnter region (default: ap1): ').strip() or 'ap1'
+    if not _region_accepted(region):
+        return
+
     workspace = input('Enter workspace name: ').strip()
 
     if not workspace:
