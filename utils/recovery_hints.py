@@ -137,12 +137,14 @@ def _detect_error_domain(
         or 'webftp' in tool_lower
     ):
         return 'file'
-    if any(k in msg_lower for k in ('server',)) or 'server' in tool_lower:
+    # Before the server check: attach_alert_rule resolves the server first, so its
+    # 404 message names the server while the alert hints are the useful ones.
+    if 'alert' in msg_lower or 'alert' in tool_lower:
+        return 'alert'
+    if 'server' in msg_lower or 'server' in tool_lower:
         return 'server'
     if 'user' in msg_lower or 'iam' in tool_lower:
         return 'user'
-    if 'alert' in msg_lower or 'alert' in tool_lower:
-        return 'alert'
     if '/api/events/commands/' in ep_lower:
         return 'command'
     if '/api/webftp/' in ep_lower:

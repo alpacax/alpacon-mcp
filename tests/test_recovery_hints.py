@@ -303,11 +303,24 @@ def test_a_402_outside_a_known_domain_stays_plan_neutral():
     )
 
 
+def test_an_alert_message_naming_the_server_stays_in_the_alert_domain():
+    assert (
+        _detect_error_domain(
+            HTTPStatus.NOT_FOUND,
+            'No Server matches the given query.',
+            tool_name='attach_alert_rule',
+        )
+        == 'alert'
+    )
+
+
 def test_a_404_from_attach_alert_rule_points_at_list_servers():
     hints = get_recovery_hints(
         status_code=404,
+        message='No Server matches the given query.',
         tool_name='attach_alert_rule',
         endpoint='/api/servers/servers/abc/attach-rule/',
     )
 
     assert 'list_servers' in hints['related_tools']
+    assert any('attach_alert_rule' in h for h in hints['recovery_hints'])
