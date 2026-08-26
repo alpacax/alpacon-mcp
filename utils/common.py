@@ -65,9 +65,11 @@ _NEXT_ACTION_BY_CATEGORY: dict[str, str] = {
         'cannot complete MFA yourself.'
     ),
     'SUDO_NO_WORKSESSION_POLICY': (
-        'This command is not covered by the Work Session sudo policy. A human '
-        'must add it to the session scope (which may itself require approval), '
-        'then retry. You cannot grant it yourself.'
+        'This command is not covered by the Work Session sudo policy. You can '
+        'submit a request with request_sudo_policy, but a human must approve it '
+        'before it takes effect, and an MFA-bypass policy cannot be requested '
+        'that way at all. Retry once the policy is live; you cannot grant it '
+        'yourself.'
     ),
     'SUDO_POLICY_REQUEST_PENDING': (
         'The policy does not exist yet: an admin must approve this request '
