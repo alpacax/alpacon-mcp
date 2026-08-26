@@ -38,6 +38,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   checkout directory a package, so under pytest `sys.modules['main']` was pre-registered with that
   package and `import main` no longer reached `main.py` in a clone directory named `main` (#189).
   The console scripts and the Dockerfile load `main.py` as a top-level module and are unaffected.
+- `eu1` is no longer accepted as a `region`. Only `ap1` and `us1` are served, so `eu1` now fails
+  validation before any HTTP call instead of dying at DNS on `{workspace}.eu1.alpacon.io`, and every
+  docstring that advertised it as a choice reads `Region (ap1, us1)` instead (#165). A client that
+  sends `eu1` gets an error response with `field: "region"` rather than a connection error; nothing
+  else about the response shape changed.
+- The setup wizard checks the region it prompts for instead of writing whatever is typed into
+  `token.json`. A typo such as `eu1` or `ap` is now reported at the prompt rather than surfacing as a
+  validation error on the first tool call (#165).
 
 ### Documentation
 - Documented the hosted remote MCP server (`https://mcp.alpacon.io/mcp`, streamable-http transport)
