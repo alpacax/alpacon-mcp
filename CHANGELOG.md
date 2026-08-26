@@ -12,7 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `POST /api/auth/tokens/{id}/rotate/` (#140). Unlike `duplicate_api_token`, which mints a second
   token and leaves the original live, rotation overwrites the secret on the same row, so the old
   one stops authenticating immediately with no grace period. The response carries the new secret;
-  the token id, name, scopes and ACLs are unchanged. Paid plans only.
+  the token id, name, scopes and ACLs are unchanged. Paid plans only. The tool is annotated
+  destructive rather than idempotent, so a client that auto-retries on idempotent hints will not
+  silently invalidate a secret the first call already issued.
 - `force` on the six disruptive server actions: `restart_agent`, `shutdown_agent`, `upgrade_agent`,
   `upgrade_system`, `reboot_system` and `shutdown_system` (#140). The server has refused these while
   a host is busy with an open Websh/WebFTP session or an in-flight command since alpacon-server

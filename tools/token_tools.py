@@ -404,7 +404,7 @@ async def duplicate_api_token(
         'delete_api_token (revoke outright). '
         f'{_JWT_REQUIRED_NOTE}'
     ),
-    annotations=IDEMPOTENT_WRITE,
+    annotations=DESTRUCTIVE,
     meta={'anthropic/searchHint': 'api token rotate regenerate reissue key secret'},
 )
 @require_jwt_auth

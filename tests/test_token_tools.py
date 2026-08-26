@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from server import mcp
 from tools.token_tools import (
     create_api_token,
     delete_api_token,
@@ -1091,3 +1092,12 @@ class TestRotateApiToken:
 
         assert result['status'] == 'error'
         mock_http_client.post.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_rotate_api_token_is_annotated_destructive(self):
+        """idempotentHint would invite a retry that kills the secret the first call issued."""
+        tools = {t.name: t for t in await mcp.list_tools()}
+
+        annotations = tools['rotate_api_token'].annotations
+        assert annotations.destructiveHint is True
+        assert annotations.idempotentHint is not True
