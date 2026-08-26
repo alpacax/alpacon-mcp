@@ -591,3 +591,24 @@ class TestHandleUpstream401:
         token_key = make_auth_error_key(token)
         error_info = consume_upstream_auth_error(token_key)
         assert error_info is None
+
+
+@pytest.mark.asyncio
+async def test_delete_forwards_query_parameters():
+    """A DELETE whose behavior is decided by the query string must carry it."""
+    from unittest.mock import AsyncMock, patch
+
+    from utils.http_client import http_client
+
+    with patch.object(
+        http_client, 'request', new=AsyncMock(return_value={})
+    ) as mock_request:
+        await http_client.delete(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/servers/servers/550e8400-e29b-41d4-a716-446655440123/',
+            token='test-token',
+            params={'auto': 'true'},
+        )
+
+    assert mock_request.call_args.kwargs['params'] == {'auto': 'true'}
