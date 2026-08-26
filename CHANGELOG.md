@@ -16,10 +16,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `create_server_note` and `update_server_note` gained `private` and `pinned`, and
   `create_server_note` alone gained `mentioned_users`, which only the create serializer
   reads.
-- Per-grant device ids for OAuth: each grant mints its own device id, sealed inside the
-  authorization code and refresh token with an HMAC key derived from
-  `AUTH0_CLIENT_SECRET` (overridable via `ALPACON_MCP_GRANT_SECRET`), so Auth0's MFA
-  gate keys off the MCP client installation rather than the user (ADR 0054).
 - `--toolsets` CLI argument (and `ALPACON_MCP_TOOLSETS` env var) for local
   stdio/SSE mode: selectively register toolsets; default remains `all`
   (#34). Remote mode is unaffected and always registers every tool.
