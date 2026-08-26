@@ -106,7 +106,7 @@ Pin or unpin a server for the calling user. A personal preference flag, not a fl
 
 ### Agent and host actions
 
-Each takes `server_id`, `workspace`, and an optional `region`.
+Each takes `server_id`, `workspace`, and an optional `region`. The six disruptive ones also take `force` (boolean, default `false`), which runs the action even while the host is busy with an open Websh or WebFTP session or an in-flight command, tearing that work down. `update_information` is not disruptive and takes no `force`.
 
 - `restart_agent`: Restart the Alpacon agent process
 - `shutdown_agent`: Stop the agent process

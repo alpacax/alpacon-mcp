@@ -58,7 +58,7 @@ async def test_agent_action_http_error_envelope_returns_error(
         workspace='testworkspace',
         endpoint=f'/api/servers/servers/{SERVER_ID}/actions/',
         token='test-token',
-        data={'action': action},
+        data={'action': action, 'force': False},
     )
 
 
@@ -81,7 +81,7 @@ class TestRestartAgent:
             workspace='testworkspace',
             endpoint=f'/api/servers/servers/{SERVER_ID}/actions/',
             token='test-token',
-            data={'action': 'restart_agent'},
+            data={'action': 'restart_agent', 'force': False},
         )
 
     @pytest.mark.asyncio
@@ -116,7 +116,7 @@ class TestShutdownAgent:
             workspace='testworkspace',
             endpoint=f'/api/servers/servers/{SERVER_ID}/actions/',
             token='test-token',
-            data={'action': 'shutdown_agent'},
+            data={'action': 'shutdown_agent', 'force': False},
         )
 
 
@@ -139,7 +139,7 @@ class TestUpgradeAgent:
             workspace='testworkspace',
             endpoint=f'/api/servers/servers/{SERVER_ID}/actions/',
             token='test-token',
-            data={'action': 'upgrade_agent'},
+            data={'action': 'upgrade_agent', 'force': False},
         )
 
     @pytest.mark.asyncio
@@ -177,7 +177,7 @@ class TestUpdateInformation:
             workspace='testworkspace',
             endpoint=f'/api/servers/servers/{SERVER_ID}/actions/',
             token='test-token',
-            data={'action': 'update_information'},
+            data={'action': 'update_information', 'force': False},
         )
 
 
@@ -200,7 +200,7 @@ class TestUpgradeSystem:
             workspace='testworkspace',
             endpoint=f'/api/servers/servers/{SERVER_ID}/actions/',
             token='test-token',
-            data={'action': 'upgrade_system'},
+            data={'action': 'upgrade_system', 'force': False},
         )
 
 
@@ -223,7 +223,7 @@ class TestRebootSystem:
             workspace='testworkspace',
             endpoint=f'/api/servers/servers/{SERVER_ID}/actions/',
             token='test-token',
-            data={'action': 'reboot_system'},
+            data={'action': 'reboot_system', 'force': False},
         )
 
 
@@ -246,5 +246,63 @@ class TestShutdownSystem:
             workspace='testworkspace',
             endpoint=f'/api/servers/servers/{SERVER_ID}/actions/',
             token='test-token',
-            data={'action': 'shutdown_system'},
+            data={'action': 'shutdown_system', 'force': False},
         )
+
+
+class TestDisruptiveActionForce:
+    """Tests for the force flag on disruptive server actions."""
+
+    DISRUPTIVE = [
+        (restart_agent, 'restart_agent'),
+        (shutdown_agent, 'shutdown_agent'),
+        (upgrade_agent, 'upgrade_agent'),
+        (upgrade_system, 'upgrade_system'),
+        (reboot_system, 'reboot_system'),
+        (shutdown_system, 'shutdown_system'),
+    ]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(('tool', 'action'), DISRUPTIVE)
+    async def test_force_defaults_to_false(
+        self, tool, action, mock_http_client, mock_token_manager
+    ):
+        """Every disruptive action sends force, defaulting to False."""
+        mock_http_client.post.return_value = {'id': 'cmd-1'}
+
+        result = await tool(
+            server_id=SERVER_ID, workspace='testworkspace', region='ap1'
+        )
+
+        assert result['status'] == 'success'
+        assert mock_http_client.post.call_args.kwargs['data'] == {
+            'action': action,
+            'force': False,
+        }
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(('tool', 'action'), DISRUPTIVE)
+    async def test_force_true_is_forwarded(
+        self, tool, action, mock_http_client, mock_token_manager
+    ):
+        """force=True reaches the server, which is what gets past a busy host."""
+        mock_http_client.post.return_value = {'id': 'cmd-1'}
+
+        await tool(
+            server_id=SERVER_ID,
+            workspace='testworkspace',
+            region='ap1',
+            force=True,
+        )
+
+        assert mock_http_client.post.call_args.kwargs['data'] == {
+            'action': action,
+            'force': True,
+        }
+
+    @pytest.mark.asyncio
+    async def test_update_information_has_no_force(self):
+        """update_information is not disruptive server-side, so it offers no force."""
+        import inspect
+
+        assert 'force' not in inspect.signature(update_information).parameters

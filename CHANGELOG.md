@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `force` on the six disruptive server actions: `restart_agent`, `shutdown_agent`, `upgrade_agent`,
+  `upgrade_system`, `reboot_system` and `shutdown_system` (#140). The server has refused these while
+  a host is busy with an open Websh/WebFTP session or an in-flight command since alpacon-server
+  #2553, and `force=true` is the only way through. It defaults to `false`, so an existing caller
+  sends the same effective request as before; `update_information` is not disruptive and gains
+  nothing.
 - `request_sudo_policy`: ask for a sudo policy through `/api/sudo/policy-requests/`, which mints an
   approval request an admin has to approve before the policy exists (#140). The tool returns
   `status="pending_approval"` with category `SUDO_POLICY_REQUEST_PENDING`, so a client that already
