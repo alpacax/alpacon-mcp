@@ -78,7 +78,7 @@ async def list_alerts(
     token = kwargs.get('token')
 
     params: dict[str, Any] = {}
-    if server_id:
+    if server_id is not None:
         params['server'] = server_id
     if alert_type is not None:
         params['alert_type'] = alert_type
