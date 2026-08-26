@@ -11,6 +11,11 @@ from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ
 
 VALID_PLATFORMS = frozenset({'debian', 'rhel', 'suse', 'darwin', 'windows'})
 _PLATFORM_LIST_STR = ', '.join(f'"{p}"' for p in sorted(VALID_PLATFORMS))
+_FORCE_BUSY_NOTE = (
+    'The server refuses this action while the host is busy with an open Websh or WebFTP '
+    'session or an in-flight command; pass force=True to run anyway, which tears that live '
+    'work down. '
+)
 
 
 @mcp_tool_handler(
@@ -357,7 +362,7 @@ async def _server_action(
     description=(
         'Restart the Alpacon agent process on a server. The agent will briefly go offline during restart. '
         'Use this when the agent is unresponsive or after configuration changes. Returns a command object tracking the restart operation. '
-        'The server refuses this action while the host is busy with an open Websh or WebFTP session or an in-flight command; pass force=True to run anyway, which tears that live work down. '
+        f'{_FORCE_BUSY_NOTE}'
         'Related: shutdown_agent, upgrade_agent. Note: Server will briefly go offline.'
     ),
     annotations=DESTRUCTIVE,
@@ -396,7 +401,7 @@ async def restart_agent(
     description=(
         'Shut down the Alpacon agent process on a server. The server will appear offline in the workspace until the agent is manually restarted. '
         'Use with caution as remote access will be lost. Returns a command object tracking the shutdown operation. '
-        'The server refuses this action while the host is busy with an open Websh or WebFTP session or an in-flight command; pass force=True to run anyway, which tears that live work down. '
+        f'{_FORCE_BUSY_NOTE}'
         'Related: restart_agent. Note: Remote access will be lost until manual restart.'
     ),
     annotations=DESTRUCTIVE,
@@ -435,7 +440,7 @@ async def shutdown_agent(
     description=(
         'Upgrade the Alpacon agent on a server to the latest available version. The agent will briefly restart during the upgrade process. '
         'Use this to keep agents up to date with the latest features and security patches. Returns a command object tracking the upgrade operation. '
-        'The server refuses this action while the host is busy with an open Websh or WebFTP session or an in-flight command; pass force=True to run anyway, which tears that live work down. '
+        f'{_FORCE_BUSY_NOTE}'
         'Related: restart_agent. Note: Agent briefly restarts during upgrade.'
     ),
     annotations=DESTRUCTIVE,
@@ -509,7 +514,7 @@ async def update_information(
         'Upgrade all system packages on a server via the OS package manager (e.g., apt upgrade, yum update). '
         'This may take several minutes depending on the number of pending updates. Use with caution in production environments. '
         'Returns a command object tracking the upgrade operation. '
-        'The server refuses this action while the host is busy with an open Websh or WebFTP session or an in-flight command; pass force=True to run anyway, which tears that live work down. '
+        f'{_FORCE_BUSY_NOTE}'
         'Related: list_system_packages (check pending updates), reboot_system (may be required after kernel updates). Note: May take several minutes.'
     ),
     annotations=DESTRUCTIVE,
@@ -548,7 +553,7 @@ async def upgrade_system(
     description=(
         'Reboot a server. The server will go offline briefly during the reboot process and reconnect automatically when the agent starts back up. '
         'Use this after kernel updates or when a full system restart is required. Returns a command object tracking the reboot operation. '
-        'The server refuses this action while the host is busy with an open Websh or WebFTP session or an in-flight command; pass force=True to run anyway, which tears that live work down. '
+        f'{_FORCE_BUSY_NOTE}'
         'Related: shutdown_system (full power off), upgrade_system (often precedes reboot). Note: Server reconnects automatically.'
     ),
     annotations=DESTRUCTIVE,
@@ -588,7 +593,7 @@ async def reboot_system(
         'Shut down a server completely. The server will power off and will NOT automatically reconnect. '
         'Manual intervention is required to bring the server back online. Use with extreme caution. '
         'Returns a command object tracking the shutdown operation. '
-        'The server refuses this action while the host is busy with an open Websh or WebFTP session or an in-flight command; pass force=True to run anyway, which tears that live work down. '
+        f'{_FORCE_BUSY_NOTE}'
         'Related: reboot_system (use if you want the server to come back). Note: Requires manual intervention to power on again.'
     ),
     annotations=DESTRUCTIVE,

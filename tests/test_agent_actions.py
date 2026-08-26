@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from server import mcp
 from tests.conftest import HTTP_ERROR_ENVELOPE
 from tools.server_tools import (
     reboot_system,
@@ -306,3 +307,15 @@ class TestDisruptiveActionForce:
         import inspect
 
         assert 'force' not in inspect.signature(update_information).parameters
+
+    @pytest.mark.asyncio
+    async def test_every_disruptive_description_carries_the_force_note(self):
+        """The note lives in one constant; a client must still read it on all six tools."""
+        descriptions = {t.name: t.description for t in await mcp.list_tools()}
+
+        for _, action in self.DISRUPTIVE:
+            assert (
+                'pass force=True to run anyway, which tears that live work down.'
+                in descriptions[action]
+            )
+        assert 'force=True' not in descriptions['update_information']
