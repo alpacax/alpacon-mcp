@@ -69,6 +69,12 @@ _NEXT_ACTION_BY_CATEGORY: dict[str, str] = {
         'must add it to the session scope (which may itself require approval), '
         'then retry. You cannot grant it yourself.'
     ),
+    'SUDO_POLICY_REQUEST_PENDING': (
+        'The policy does not exist yet: an admin must approve this request '
+        'out-of-band (Alpacon web console or Slack). You cannot approve it '
+        'yourself. Wait for the decision, then retry the sudo command; do not '
+        'resubmit, which only creates a duplicate request.'
+    ),
     'SUDO_POLICY_MFA_REQUIRED': (
         'A sudo policy covers this command but is not an MFA-bypass policy, and '
         'a command runs non-interactively so it can never supply MFA. A human '

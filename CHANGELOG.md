@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `request_sudo_policy`: ask for a sudo policy through `/api/sudo/policy-requests/`, which mints an
+  approval request an admin has to approve before the policy exists (#140). The tool returns
+  `status="pending_approval"` with category `SUDO_POLICY_REQUEST_PENDING`, so a client that already
+  branches on the pending-approval shape needs no new handling. `allow_bypass_mfa` is deliberately
+  not a parameter: the server refuses it on this endpoint.
 - `--toolsets` CLI argument (and `ALPACON_MCP_TOOLSETS` env var) for local
   stdio/SSE mode: selectively register toolsets; default remains `all`
   (#34). Remote mode is unaffected and always registers every tool.
@@ -24,6 +29,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `install_commands` list every other platform uses.
 
 ### Removed
+- `create_sudo_policy`. It posted five fields (`name`, `groups`, `run_as`, `no_password`,
+  `description`) that no longer exist on the server's serializer, to a path that had been 404 for
+  four months. Its replacement is `request_sudo_policy`, which routes through human approval instead
+  of writing a live policy; the direct-write endpoint `/api/sudo/policies/` demands owner or manager
+  rights on every target server and stays off the MCP tool surface on purpose (#140).
 - `get_workspace_notifications` and `update_workspace_notifications`, along with the
   `alpacon://workspace-settings/notifications/{region}/{workspace}` resource. The upstream
   `/api/workspaces/notifications/-/` endpoint no longer exists—the `NotificationSettings`
