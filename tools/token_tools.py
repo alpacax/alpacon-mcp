@@ -393,6 +393,52 @@ async def duplicate_api_token(
 
 
 @mcp_tool_handler(
+    description=(
+        'Rotate an API token: regenerate its secret in place. The old secret stops '
+        'authenticating the moment this returns, with no grace period, so anything still using it '
+        'breaks until it is given the new one. The token id, name, scopes, expiry and Command/'
+        'Server/File ACLs are preserved—only the secret and the usage counters change. Requires a '
+        'paid plan. Prefer this over duplicate_api_token when rolling a leaked or aging key: '
+        'duplicate leaves the old key live. '
+        'Related: list_api_tokens (find token ID), duplicate_api_token (copy instead of rotate), '
+        'delete_api_token (revoke outright). '
+        f'{_JWT_REQUIRED_NOTE}'
+    ),
+    annotations=IDEMPOTENT_WRITE,
+    meta={'anthropic/searchHint': 'api token rotate regenerate reissue key secret'},
+)
+@require_jwt_auth
+async def rotate_api_token(
+    token_id: str, workspace: str, region: str = '', **kwargs
+) -> dict[str, Any]:
+    """Rotate an API token's secret in place.
+
+    Args:
+        token_id: ID of the API token to rotate
+        workspace: Workspace name. Required parameter
+        region: Region (ap1, us1, eu1). Auto-detected if not provided
+
+    Returns:
+        Rotated API token response carrying the new secret
+    """
+    token = kwargs.get('token')
+
+    err = _validate_token_id(token_id)
+    if err:
+        return err
+
+    return await http_call_response(
+        http_client.post,
+        region=region,
+        workspace=workspace,
+        endpoint=f'{_API_TOKENS}{token_id}/rotate/',
+        token=token,
+        default_message='Failed to rotate API token',
+        token_id=token_id,
+    )
+
+
+@mcp_tool_handler(
     description='List available API token scopes. When to use: before creating a token, to see which permission scopes can be assigned. Related: create_api_token (use scopes when creating), list_api_token_presets (bundled preset keys), list_api_tokens (view tokens and their scopes).',
     annotations=READ_ONLY,
     meta={'anthropic/searchHint': 'api token scopes permissions available'},

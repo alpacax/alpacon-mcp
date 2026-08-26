@@ -13,6 +13,7 @@ from tools.token_tools import (
     list_api_token_presets,
     list_api_token_scopes,
     list_api_tokens,
+    rotate_api_token,
     update_api_token,
 )
 
@@ -1049,3 +1050,46 @@ class TestApiTokenMutationAuthGuard:
 
         assert result['status'] == 'success'
         mock_http_client.post.assert_called_once()
+
+
+class TestRotateApiToken:
+    """Tests for rotate_api_token tool."""
+
+    @pytest.mark.asyncio
+    async def test_rotate_api_token_success(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Rotation posts to the rotate action on the same token id."""
+        mock_http_client.post.return_value = {
+            'id': '550e8400-e29b-41d4-a716-446655440003',
+            'key': 'new-secret',
+        }
+
+        result = await rotate_api_token(
+            token_id='550e8400-e29b-41d4-a716-446655440003',
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert result['status'] == 'success'
+        assert result['token_id'] == '550e8400-e29b-41d4-a716-446655440003'
+        mock_http_client.post.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/auth/tokens/550e8400-e29b-41d4-a716-446655440003/rotate/',
+            token='header.payload.signature',
+        )
+
+    @pytest.mark.asyncio
+    async def test_rotate_api_token_invalid_token_id(
+        self, mock_http_client, mock_token_manager
+    ):
+        """A non-UUID token id is refused before any request goes out."""
+        result = await rotate_api_token(
+            token_id='not-a-uuid',
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert result['status'] == 'error'
+        mock_http_client.post.assert_not_called()

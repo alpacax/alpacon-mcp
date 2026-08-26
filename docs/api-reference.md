@@ -724,6 +724,7 @@ Command ACLs decide which commands a token may run, server ACLs which hosts it m
 - `create_api_token`: `workspace`, `name`, `scopes`, `presets`, `expires_at`, `enabled`, `region` (optional)
 - `update_api_token`: `token_id`, `name`, `enabled`, `expires_at`, `clear_expires_at`, `scopes`
 - `delete_api_token` / `duplicate_api_token`: by `token_id`
+- `rotate_api_token`: `token_id`, `workspace`, `region` (optional). Regenerates the secret in place; the old secret dies immediately, and the id, name, scopes and ACLs survive. Paid plans only
 - `list_api_token_scopes` / `list_api_token_presets`: catalogs for building a token
 
 **Authentication note:** the server rejects these calls when the request is authenticated with a `source='api'` token, so in stdio mode with a `token.json` token they return `403 Forbidden`. Use the hosted server (JWT/OAuth), a browser session, or a login-source token. The scopes and presets catalogs are exempt.
