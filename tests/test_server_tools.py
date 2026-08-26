@@ -748,6 +748,7 @@ class TestUnregisterServer:
             workspace='testworkspace',
             endpoint='/api/servers/servers/550e8400-e29b-41d4-a716-446655440123/',
             token='test-token',
+            params={'auto': True, 'purge_provisioned_accounts': False},
         )
 
     @pytest.mark.asyncio
@@ -765,6 +766,45 @@ class TestUnregisterServer:
         assert result['status'] == 'error'
         assert 'No token found' in result['message']
         mock_http_client.delete.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_unregister_server_sends_auto_by_default(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Without auto the server 400s on every connected host, so it defaults to true."""
+        mock_http_client.delete.return_value = {}
+
+        result = await unregister_server(
+            server_id='550e8400-e29b-41d4-a716-446655440123',
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert result['status'] == 'success'
+        assert mock_http_client.delete.call_args.kwargs['params'] == {
+            'auto': True,
+            'purge_provisioned_accounts': False,
+        }
+
+    @pytest.mark.asyncio
+    async def test_unregister_server_forwards_purge_and_auto_false(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Both flags are caller-controlled and both reach the query string."""
+        mock_http_client.delete.return_value = {}
+
+        await unregister_server(
+            server_id='550e8400-e29b-41d4-a716-446655440123',
+            workspace='testworkspace',
+            region='ap1',
+            auto=False,
+            purge_provisioned_accounts=True,
+        )
+
+        assert mock_http_client.delete.call_args.kwargs['params'] == {
+            'auto': False,
+            'purge_provisioned_accounts': True,
+        }
 
 
 class TestStarServer:

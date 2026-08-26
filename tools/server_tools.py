@@ -682,18 +682,25 @@ async def update_server(
 
 @mcp_tool_handler(
     description=(
-        'Unregister a host from this workspace by UUID. The host is removed from '
-        'all listings and no new Work Sessions can target it, but the Alpamon agent '
-        'on the host keeps running until uninstalled. Cannot be undone by this '
-        'tool—re-enrolling the host requires running the install script with a '
-        'registration token again. '
+        'Unregister a host from this workspace by UUID. With `auto` left at its default the '
+        'server tears the Alpamon agent off a still-connected host; set it to False to refuse '
+        'unless the host is already disconnected. `purge_provisioned_accounts` also deletes the '
+        'OS accounts Alpacon provisioned on that host—on an already-disconnected host the purge '
+        'is skipped, because the host cannot be reached. The host is removed from all listings '
+        'and no new Work Sessions can target it. Cannot be undone by this tool—re-enrolling the '
+        'host requires running the install script with a registration token again. '
         'Related: list_servers (find UUID), get_server (confirm before unregistering).'
     ),
     annotations=DESTRUCTIVE,
     meta={'anthropic/searchHint': 'server unregister deregister delete remove'},
 )
 async def unregister_server(
-    server_id: str, workspace: str, region: str = '', **kwargs
+    server_id: str,
+    workspace: str,
+    region: str = '',
+    auto: bool = True,
+    purge_provisioned_accounts: bool = False,
+    **kwargs,
 ) -> dict[str, Any]:
     """Unregister a server from the workspace.
 
@@ -701,6 +708,11 @@ async def unregister_server(
         server_id: Server UUID
         workspace: Workspace name. Required parameter
         region: Region (ap1, us1, eu1). Auto-detected if not provided
+        auto: Remove the agent from a still-connected host. False refuses the
+            removal unless the host is already disconnected (default: True)
+        purge_provisioned_accounts: Also delete the OS accounts Alpacon
+            provisioned on the host. Skipped when the host is already
+            disconnected (default: False)
 
     Returns:
         Unregister confirmation
@@ -713,6 +725,7 @@ async def unregister_server(
         workspace=workspace,
         endpoint=f'/api/servers/servers/{server_id}/',
         token=token,
+        params={'auto': auto, 'purge_provisioned_accounts': purge_provisioned_accounts},
         default_message='Failed to unregister server',
         server_id=server_id,
     )
