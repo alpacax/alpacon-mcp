@@ -37,7 +37,7 @@ async def list_event_subscriptions(
 
     Args:
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
         page: Page number for pagination (optional)
         page_size: Number of items per page (optional)
 
@@ -83,7 +83,7 @@ async def create_event_subscription(
         channel: Notification channel ID to deliver events to
         event_type: Type of event to subscribe to (command_fin, servers_commit, sudo)
         target_id: Target resource ID to filter events for (optional)
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Event subscription creation response
@@ -122,7 +122,7 @@ async def delete_event_subscription(
     Args:
         subscription_id: Event subscription ID to delete
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Event subscription deletion response
@@ -218,7 +218,7 @@ async def get_webhook(
     Args:
         webhook_id: Webhook ID
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Webhook detail response
@@ -371,7 +371,7 @@ async def delete_webhook(
     Args:
         webhook_id: Webhook ID to delete
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Webhook deletion response

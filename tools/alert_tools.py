@@ -66,7 +66,7 @@ async def list_alerts(
         alert_type: Filter by alert type, e.g. metric_threshold, server_disconnected (optional)
         severity: Filter by severity: critical, warning, info (optional)
         server_name: Filter by a substring of the server name (optional)
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
         page: Page number for pagination (optional)
         page_size: Number of items per page (optional)
         acknowledged: Filter by acknowledgement state (False = active/unacknowledged)
@@ -120,7 +120,7 @@ async def get_alert(
     Args:
         alert_id: Alert ID to retrieve
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Alert details response
@@ -411,7 +411,7 @@ async def delete_alert_rule(
     Args:
         rule_id: Alert rule ID to delete
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Alert rule deletion response

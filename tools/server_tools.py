@@ -39,7 +39,7 @@ async def list_servers(
 
     Args:
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
         page: Page number for pagination (optional)
         page_size: Number of results per page, up to 100 (optional)
 
@@ -98,7 +98,7 @@ async def get_server(
     Args:
         server_id: Server ID
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Server details response
@@ -136,7 +136,7 @@ async def list_server_notes(
     Args:
         server_id: Server ID
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Server notes list response
@@ -230,7 +230,7 @@ async def get_server_note(
     Args:
         note_id: Note ID
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Server note detail response
@@ -328,7 +328,7 @@ async def delete_server_note(
     Args:
         note_id: Note ID
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Server note delete response
@@ -384,7 +384,7 @@ async def restart_agent(
     Args:
         server_id: Server ID
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Agent restart response
@@ -418,7 +418,7 @@ async def shutdown_agent(
     Args:
         server_id: Server ID
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Agent shutdown response
@@ -452,7 +452,7 @@ async def upgrade_agent(
     Args:
         server_id: Server ID
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Agent upgrade response
@@ -486,7 +486,7 @@ async def update_information(
     Args:
         server_id: Server ID
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Update information response
@@ -521,7 +521,7 @@ async def upgrade_system(
     Args:
         server_id: Server ID
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         System upgrade response
@@ -555,7 +555,7 @@ async def reboot_system(
     Args:
         server_id: Server ID
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         System reboot response
@@ -590,7 +590,7 @@ async def shutdown_system(
     Args:
         server_id: Server ID
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         System shutdown response
@@ -632,7 +632,7 @@ async def update_server(
         workspace: Workspace name. Required parameter
         name: New server name (optional)
         description: New server description (optional)
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Updated server data
@@ -684,7 +684,7 @@ async def unregister_server(
     Args:
         server_id: Server UUID
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Unregister confirmation
@@ -721,7 +721,7 @@ async def star_server(
         server_id: Server UUID
         status: True to star, False to unstar
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Star update response
@@ -762,7 +762,7 @@ async def list_registration_tokens(
 
     Args:
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
         page: Page number for pagination (optional)
         page_size: Number of results per page (optional)
 
@@ -814,7 +814,7 @@ async def create_registration_token(
         workspace: Workspace name. Required parameter
         name: Token name
         description: Optional token description
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Created registration token data
@@ -854,7 +854,7 @@ async def delete_registration_token(
     Args:
         token_id: Registration token UUID
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Deletion confirmation
@@ -905,7 +905,7 @@ async def get_registration_guide(
         workspace: Workspace name. Required parameter
         platform: Target platform ("debian" | "rhel" | "suse" | "darwin" | "windows")
         server_name: Optional server name to pre-configure during installation
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Installation guide with commands/instructions
