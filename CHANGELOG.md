@@ -8,15 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- `acknowledge_alert`, `attach_alert_rule`, and `detach_alert_rule` tools. `create_alert_rule`
-  and `update_alert_rule` now take a `target` metric (one of a fixed set mirroring the
-  server's `AlertRule.TARGET_METRICS`) instead of the invented `metric_type`/`condition`
-  fields, aligning the request payload with what the server actually accepts.
-- `create_webhook` now requires `owner` and accepts `provider`, matching the server's
-  webhook payload. `list_webhooks` takes the same two as optional filters.
-- `create_server_note` and `update_server_note` now take `private` and `pinned`, and
-  `create_server_note` alone takes `mentioned_users`, which the update serializer never
-  reads; the invented `title` field is gone.
+- `acknowledge_alert`, `attach_alert_rule`, and `detach_alert_rule` tools.
+- `list_alerts` gained the `alert_type`, `severity`, and `server_name` filters that
+  `AlertFilter` defines.
+- `list_webhooks` gained the `owner` and `provider` filters that
+  `WebhookViewSet.filterset_fields` already exposed.
+- `create_server_note` and `update_server_note` gained `private` and `pinned`, and
+  `create_server_note` alone gained `mentioned_users`, which only the create serializer
+  reads.
 - Per-grant device ids for OAuth: each grant mints its own device id, sealed inside the
   authorization code and refresh token with an HMAC key derived from
   `AUTH0_CLIENT_SECRET` (overridable via `ALPACON_MCP_GRANT_SECRET`), so Auth0's MFA
@@ -37,12 +36,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `install_commands` list every other platform uses.
 
 ### Changed
+- BREAKING: `create_alert_rule` and `update_alert_rule` now take a `target` metric (one of
+  a fixed set mirroring the server's `AlertRule.TARGET_METRICS`) and a `threshold`, instead
+  of the invented `metric_type` and `condition`, which the serializer never read. A call
+  still passing the old names now fails outright instead of being accepted and dropped.
+- BREAKING: `create_webhook` now requires `owner`, a user UUID, because `WebhookSerializer`
+  requires it. A call without it is a TypeError, and a username in its place is rejected
+  before the request goes out.
+- Values a closed server-side set defines are now checked in the tool rather than at the
+  API: `target`, `action_type`, `provider`, the webhook `owner` UUID, and the 512-character
+  cap on note `content`. Each returns a validation error naming the accepted values, in
+  place of an opaque 400.
 - The validation error an update tool returns when it receives no writable field now reports
   `field: "payload"` and names the accepted fields in the `suggestion` sentence, rather than
   packing the whole list into `field`. Affects `update_alert_rule`, `update_server`,
   `update_server_note`, and `update_webhook`.
 
 ### Removed
+- BREAKING: the invented `title` on `create_server_note` and `update_server_note`. The note
+  serializer has no such field, so the server discarded whatever was sent.
+- BREAKING: `mentioned_users` on `update_server_note`. Only the `create` action routes to
+  `NoteCreateSerializer`, so the update path never read it.
+- BREAKING: the `status` filter on `list_alerts`, which `AlertFilter` does not define.
+  `acknowledged` and `dismissed` are the filters that work.
 - `mute_alert`. The server has no endpoint behind it, and no way at all to silence an alert
   for a while. `acknowledge_alert` is the closest thing and is not a substitute: it records
   one permanent acknowledgement per user per alert—`action_type='checked'` for seen,
