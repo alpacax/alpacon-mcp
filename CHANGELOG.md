@@ -70,9 +70,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   response sees no new fields.
 - `list_sudo_policies` now calls `/api/sudo/policies/`. The server moved sudo policies out of the
   `approvals` app and renamed the URL prefix, so the old `/api/approvals/sudo-policies/` path had
-  been returning 404 unconditionally (#140). The tool also accepts the `user` and `server` UUID
-  filters the server's `SudoPolicyFilter` exposes, which its description already claimed. The
-  response shape is unchanged.
+  been returning 404 unconditionally (#140). The tool also accepts the `user` and `server_id` UUID
+  filters the server's `SudoPolicyFilter` exposes, which its description already claimed;
+  `server_id` carries the repo's usual name so a server name is rejected by the input validator
+  rather than by the API. The response shape is unchanged.
 - Dropped the root `__init__.py` that 0.4.1 added, together with its wheel include. It made the
   checkout directory a package, so under pytest `sys.modules['main']` was pre-registered with that
   package and `import main` no longer reached `main.py` in a clone directory named `main` (#189).

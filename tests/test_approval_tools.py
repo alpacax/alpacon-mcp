@@ -256,7 +256,7 @@ class TestSudoPolicies:
             workspace='testworkspace',
             region='ap1',
             user='550e8400-e29b-41d4-a716-446655440001',
-            server='550e8400-e29b-41d4-a716-446655440002',
+            server_id='550e8400-e29b-41d4-a716-446655440002',
         )
 
         assert result['status'] == 'success'
@@ -264,6 +264,20 @@ class TestSudoPolicies:
             'user': '550e8400-e29b-41d4-a716-446655440001',
             'server': '550e8400-e29b-41d4-a716-446655440002',
         }
+
+    @pytest.mark.asyncio
+    async def test_list_sudo_policies_rejects_a_server_name(
+        self, mock_http_client, mock_token_manager
+    ):
+        """The filter is named server_id so a name dies at the validator, not at the API."""
+        result = await list_sudo_policies(
+            workspace='testworkspace',
+            region='ap1',
+            server_id='web-server-01',
+        )
+
+        assert result['status'] == 'error'
+        mock_http_client.get.assert_not_called()
 
 
 class TestRequestSudoPolicy:

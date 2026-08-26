@@ -648,7 +648,7 @@ Close a session (triggers AI security analysis) or re-run analysis on a terminal
 - `list_approval_requests`: `workspace`, `status` (optional), `region` (optional), `page`, `page_size`
 - `get_approval_request`: `request_id`, `workspace`, `region` (optional)
 - `explain_approval_decision`: `workspace`, `request_id` (optional), `region` (optional). Explains that deciding is human-only and out of band; performs no mutation
-- `list_sudo_policies`: `workspace`, `region` (optional), `page`, `page_size`, `user` (UUID), `server` (UUID)
+- `list_sudo_policies`: `workspace`, `region` (optional), `page`, `page_size`, `user` (UUID), `server_id` (UUID)
 - `request_sudo_policy`: `workspace`, `servers` (UUID list), `commands`, `reason`, `users` (optional UUID list), `valid_from`, `valid_until`, `region` (optional). Creates an approval request, not a policy; returns `status="pending_approval"`. Omitting `users` requests a policy covering every user. `allow_bypass_mfa` is not accepted: the server refuses it on this endpoint
 
 There is intentionally no `approve_request`/`reject_request` tool: the Alpacon server refuses approve/reject from agent and token channels with HTTP 403. Approval happens in the web console or Slack.

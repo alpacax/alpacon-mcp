@@ -168,7 +168,7 @@ async def list_sudo_policies(
     page: int | None = None,
     page_size: int | None = None,
     user: str | None = None,
-    server: str | None = None,
+    server_id: str | None = None,
     **kwargs,
 ) -> dict[str, Any]:
     """List sudo policies.
@@ -179,7 +179,7 @@ async def list_sudo_policies(
         page: Page number for pagination (optional)
         page_size: Number of items per page (optional)
         user: Filter by user UUID the policy applies to (optional)
-        server: Filter by server UUID the policy applies to (optional)
+        server_id: Filter by server UUID the policy applies to (optional)
 
     Returns:
         Sudo policies list response
@@ -193,8 +193,8 @@ async def list_sudo_policies(
         params['page_size'] = page_size
     if user is not None:
         params['user'] = user
-    if server is not None:
-        params['server'] = server
+    if server_id is not None:
+        params['server'] = server_id
 
     return await http_call_response(
         http_client.get,
