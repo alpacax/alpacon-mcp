@@ -1056,9 +1056,7 @@ class TestRotateApiToken:
     """Tests for rotate_api_token tool."""
 
     @pytest.mark.asyncio
-    async def test_rotate_api_token_success(
-        self, mock_http_client, mock_token_manager
-    ):
+    async def test_rotate_api_token_success(self, mock_http_client, mock_token_manager):
         """Rotation posts to the rotate action on the same token id."""
         mock_http_client.post.return_value = {
             'id': '550e8400-e29b-41d4-a716-446655440003',

@@ -351,8 +351,7 @@ class TestRequestSudoPolicy:
         import inspect
 
         assert (
-            'allow_bypass_mfa'
-            not in inspect.signature(request_sudo_policy).parameters
+            'allow_bypass_mfa' not in inspect.signature(request_sudo_policy).parameters
         )
 
     @pytest.mark.asyncio
