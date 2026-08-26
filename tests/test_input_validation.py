@@ -68,10 +68,21 @@ class TestRegionValidation:
         assert result['status'] == 'success'
 
     @pytest.mark.asyncio
+    async def test_eu1_rejected(self):
+        """eu1 is not a served region, so it fails validation instead of DNS.
+
+        No token patch: rejection must happen before the token lookup.
+        """
+        func = _make_decorated_func()
+        result = await func(workspace='demo', region='eu1')
+        assert result['status'] == 'error'
+        assert result['field'] == 'region'
+
+    @pytest.mark.asyncio
     @patch('utils.decorators.validate_token', return_value='fake-token')
     async def test_all_valid_regions_pass(self, mock_token):
         func = _make_decorated_func()
-        for region in ('ap1', 'us1', 'eu1', 'dev'):
+        for region in ('ap1', 'us1', 'dev'):
             result = await func(workspace='demo', region=region)
             assert result['status'] == 'success', f"Region '{region}' should be valid"
 

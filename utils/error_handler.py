@@ -122,8 +122,8 @@ def validate_region_format(region: str) -> bool:
     if not region or not isinstance(region, str):
         return False
 
-    # Production regions: ap1, us1, eu1 (dev is also valid but internal-only)
-    valid_regions = {'ap1', 'us1', 'eu1', 'dev'}
+    # Production regions: ap1, us1 (dev is also valid but internal-only)
+    valid_regions = {'ap1', 'us1', 'dev'}
     return region in valid_regions
 
 
@@ -197,7 +197,7 @@ def format_validation_error(
     else:
         suggestions = {
             'workspace': 'Only alphanumeric characters, hyphens (-), and underscores (_) allowed. Length: 1-63 characters.',
-            'region': 'Supported regions: ap1, us1, eu1',
+            'region': 'Supported regions: ap1, us1',
             'server_id': 'Server ID must be in UUID format. (e.g., 550e8400-e29b-41d4-a716-446655440000)',
             'session_id': 'Session ID must be in UUID format. (e.g., 550e8400-e29b-41d4-a716-446655440000)',
             'file_path': 'Use absolute paths and avoid dangerous characters (.., <, >, |, *, ?).',

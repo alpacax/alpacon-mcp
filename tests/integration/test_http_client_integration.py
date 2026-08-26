@@ -371,12 +371,12 @@ class TestURLConstruction:
             region='us1', workspace='myworkspace', endpoint='/api/test/', token='tok'
         )
         await http_client.get(
-            region='eu1', workspace='other-ws', endpoint='/api/test/', token='tok'
+            region='us1', workspace='other-ws', endpoint='/api/test/', token='tok'
         )
 
         assert captured_urls[0] == 'https://myworkspace.ap1.alpacon.io/api/test/'
         assert captured_urls[1] == 'https://myworkspace.us1.alpacon.io/api/test/'
-        assert captured_urls[2] == 'https://other-ws.eu1.alpacon.io/api/test/'
+        assert captured_urls[2] == 'https://other-ws.us1.alpacon.io/api/test/'
 
     async def test_authorization_header_format(self, patched_http_client):
         """Authorization header uses 'token=<value>' format."""

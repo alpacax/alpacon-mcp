@@ -261,12 +261,12 @@ class TestGetServer:
         result = await get_server(
             server_id='550e8400-e29b-41d4-a716-446655440123',
             workspace='testworkspace',
-            region='eu1',
+            region='us1',
         )
 
         assert result['status'] == 'success'
         mock_http_client.get.assert_called_once_with(
-            region='eu1',
+            region='us1',
             workspace='testworkspace',
             endpoint='/api/servers/servers/550e8400-e29b-41d4-a716-446655440123/',
             token='test-token',
@@ -494,7 +494,7 @@ class TestRegionHandling:
     ):
         """Test with all supported regions."""
         mock_http_client.get.return_value = sample_servers_list
-        regions = ['ap1', 'us1', 'eu1', 'dev']
+        regions = ['ap1', 'us1', 'dev']
 
         for region in regions:
             result = await list_servers(workspace='testworkspace', region=region)
