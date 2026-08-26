@@ -1,6 +1,7 @@
 """Unit tests for approval and sudo policy tools module."""
 
 import inspect
+import sys
 from http import HTTPStatus
 from unittest.mock import AsyncMock, patch
 
@@ -14,6 +15,10 @@ from tools.approval_tools import (
     list_sudo_policies,
     request_sudo_policy,
 )
+
+# Reached through an already-imported symbol so this file keeps one import style
+# for tools.approval_tools.
+_APPROVAL_TOOLS = sys.modules[list_sudo_policies.__module__]
 
 
 @pytest.fixture
@@ -147,10 +152,8 @@ class TestApprovalDecisionIsHumanOnly:
 
     def test_no_approve_or_reject_tool_exists(self):
         """The approve/reject mutation tools must not be importable."""
-        import tools.approval_tools as approval_tools
-
-        assert not hasattr(approval_tools, 'approve_request')
-        assert not hasattr(approval_tools, 'reject_request')
+        assert not hasattr(_APPROVAL_TOOLS, 'approve_request')
+        assert not hasattr(_APPROVAL_TOOLS, 'reject_request')
 
     @pytest.mark.asyncio
     async def test_explain_returns_structured_pending_guidance(
@@ -350,6 +353,4 @@ class TestRequestSudoPolicy:
 
     def test_create_sudo_policy_is_gone(self):
         """The direct-write policy tool is no longer part of the tool surface."""
-        import tools.approval_tools as approval_tools
-
-        assert not hasattr(approval_tools, 'create_sudo_policy')
+        assert not hasattr(_APPROVAL_TOOLS, 'create_sudo_policy')
