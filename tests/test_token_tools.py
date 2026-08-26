@@ -40,6 +40,13 @@ class TestListApiTokens:
     """Tests for list_api_tokens tool."""
 
     @pytest.mark.asyncio
+    async def test_list_api_tokens_has_no_remote_ip_filter(self):
+        """The server dropped remote_ip, and django-filter discards it silently."""
+        import inspect
+
+        assert 'remote_ip' not in inspect.signature(list_api_tokens).parameters
+
+    @pytest.mark.asyncio
     async def test_list_api_tokens_success(self, mock_http_client, mock_token_manager):
         """Test successful API tokens list retrieval."""
         mock_http_client.get.return_value = {
@@ -96,7 +103,6 @@ class TestListApiTokens:
             region='ap1',
             name='deploy-bot',
             enabled=True,
-            remote_ip='10.0.0.5',
             search='deploy',
             ordering='-updated_at',
         )
@@ -110,7 +116,6 @@ class TestListApiTokens:
             params={
                 'name': 'deploy-bot',
                 'enabled': True,
-                'remote_ip': '10.0.0.5',
                 'search': 'deploy',
                 'ordering': '-updated_at',
             },

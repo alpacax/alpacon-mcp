@@ -719,7 +719,7 @@ Command ACLs decide which commands a token may run, server ACLs which hosts it m
 
 ## 🎫 API token tools
 
-- `list_api_tokens`: `workspace`, `region` (optional), `page`, `page_size`, `name`, `enabled`, `remote_ip`, `search`, `ordering`
+- `list_api_tokens`: `workspace`, `region` (optional), `page`, `page_size`, `name`, `enabled`, `search` (name only), `ordering` (`added_at`, `updated_at`, `last_used_at`)
 - `get_api_token`: `token_id`, `workspace`, `region` (optional)
 - `create_api_token`: `workspace`, `name`, `scopes`, `presets`, `expires_at`, `enabled`, `region` (optional)
 - `update_api_token`: `token_id`, `name`, `enabled`, `expires_at`, `clear_expires_at`, `scopes`

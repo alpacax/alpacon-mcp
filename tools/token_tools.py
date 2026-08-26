@@ -62,7 +62,6 @@ async def list_api_tokens(
     page_size: int | None = None,
     name: str | None = None,
     enabled: bool | None = None,
-    remote_ip: str | None = None,
     search: str | None = None,
     ordering: str | None = None,
     **kwargs,
@@ -76,12 +75,11 @@ async def list_api_tokens(
         page_size: Number of items per page (optional)
         name: Filter by exact token name (optional)
         enabled: Filter by enabled status (optional)
-        remote_ip: Filter by remote IP that last used the token (optional)
-        search: Free-text search across name, user_agent, remote_ip (optional)
+        search: Free-text search across name (optional)
         ordering: Sort field, e.g. "-updated_at" (server default), "added_at".
             Multiple fields may be comma-separated. Available fields:
-            updated_at, added_at. Not validated client-side - the server
-            rejects unknown fields (optional)
+            added_at, updated_at, last_used_at. Not validated client-side - the
+            server rejects unknown fields (optional)
 
     Returns:
         API tokens list response
@@ -97,8 +95,6 @@ async def list_api_tokens(
         params['name'] = name
     if enabled is not None:
         params['enabled'] = enabled
-    if remote_ip is not None:
-        params['remote_ip'] = remote_ip
     if search is not None:
         params['search'] = search
     if ordering is not None:

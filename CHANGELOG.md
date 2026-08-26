@@ -35,6 +35,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `install_commands` list every other platform uses.
 
 ### Removed
+- The `remote_ip` parameter on `list_api_tokens`. The server narrowed the viewset's filters to
+  `name` and `enabled` because `remote_ip` and `user_agent` are only ever populated for
+  `source='login'` tokens, and this endpoint lists `source='api'` ones (#140). django-filter
+  discarded the parameter silently, so a caller passing it got an unnarrowed result set that looked
+  filtered. The `search` and `ordering` documentation now matches the server as well: search covers
+  `name` alone, and the orderable fields are `added_at`, `updated_at` and `last_used_at`.
 - `create_sudo_policy`. It posted five fields (`name`, `groups`, `run_as`, `no_password`,
   `description`) that no longer exist on the server's serializer, to a path that had been 404 for
   four months. Its replacement is `request_sudo_policy`, which routes through human approval instead
