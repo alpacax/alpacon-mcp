@@ -3,7 +3,8 @@
 import re
 from typing import Any
 
-from utils.common import error_response, success_response, unwrap_http_result
+from utils.api_call import http_call_response
+from utils.common import error_response
 from utils.decorators import mcp_tool_handler
 from utils.error_handler import format_validation_error, validate_server_id_format
 from utils.http_client import http_client
@@ -60,24 +61,15 @@ async def list_iam_users(
     if page_size is not None:
         params['page_size'] = page_size
 
-    result = await http_client.get(
+    return await http_call_response(
+        http_client.get,
         region=region,
         workspace=workspace,
         endpoint='/api/iam/users/',
         token=token,
+        default_message='Failed to list IAM users',
         params=params,
     )
-
-    err = unwrap_http_result(
-        result,
-        default_message='Failed to list IAM users',
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(data=result, region=region, workspace=workspace)
 
 
 @mcp_tool_handler(
@@ -108,25 +100,14 @@ async def get_iam_user(
 
     token = kwargs.get('token')
 
-    result = await http_client.get(
+    return await http_call_response(
+        http_client.get,
         region=region,
         workspace=workspace,
         endpoint=f'/api/iam/users/{user_id}/',
         token=token,
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to get IAM user',
         user_id=user_id,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(
-        data=result, user_id=user_id, region=region, workspace=workspace
     )
 
 
@@ -171,26 +152,15 @@ async def create_iam_user(
     if last_name is not None:
         user_data['last_name'] = last_name
 
-    result = await http_client.post(
+    return await http_call_response(
+        http_client.post,
         region=region,
         workspace=workspace,
         endpoint='/api/iam/users/',
         token=token,
-        data=user_data,
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to create IAM user',
+        data=user_data,
         username=username,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(
-        data=result, username=username, region=region, workspace=workspace
     )
 
 
@@ -245,26 +215,15 @@ async def update_iam_user(
     if not update_data:
         return error_response('No update data provided')
 
-    result = await http_client.patch(
+    return await http_call_response(
+        http_client.patch,
         region=region,
         workspace=workspace,
         endpoint=f'/api/iam/users/{user_id}/',
         token=token,
-        data=update_data,
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to update IAM user',
+        data=update_data,
         user_id=user_id,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(
-        data=result, user_id=user_id, region=region, workspace=workspace
     )
 
 
@@ -292,25 +251,14 @@ async def delete_iam_user(
 
     token = kwargs.get('token')
 
-    result = await http_client.delete(
+    return await http_call_response(
+        http_client.delete,
         region=region,
         workspace=workspace,
         endpoint=f'/api/iam/users/{user_id}/',
         token=token,
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to delete IAM user',
         user_id=user_id,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(
-        data=result, user_id=user_id, region=region, workspace=workspace
     )
 
 
@@ -350,24 +298,15 @@ async def list_iam_groups(
     if page_size is not None:
         params['page_size'] = page_size
 
-    result = await http_client.get(
+    return await http_call_response(
+        http_client.get,
         region=region,
         workspace=workspace,
         endpoint='/api/iam/groups/',
         token=token,
+        default_message='Failed to list IAM groups',
         params=params,
     )
-
-    err = unwrap_http_result(
-        result,
-        default_message='Failed to list IAM groups',
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(data=result, region=region, workspace=workspace)
 
 
 @mcp_tool_handler(
@@ -411,26 +350,15 @@ async def create_iam_group(
     if description is not None:
         group_data['description'] = description
 
-    result = await http_client.post(
+    return await http_call_response(
+        http_client.post,
         region=region,
         workspace=workspace,
         endpoint='/api/iam/groups/',
         token=token,
-        data=group_data,
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to create IAM group',
+        data=group_data,
         group_name=name,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(
-        data=result, group_name=name, region=region, workspace=workspace
     )
 
 
@@ -473,23 +401,14 @@ async def get_iam_group(
         return err
 
     token = kwargs.get('token')
-    result = await http_client.get(
+    return await http_call_response(
+        http_client.get,
         region=region,
         workspace=workspace,
         endpoint=f'/api/iam/groups/{group_id}/',
         token=token,
-    )
-    err = unwrap_http_result(
-        result,
         default_message='Failed to get IAM group',
         group_id=group_id,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-    return success_response(
-        data=result, group_id=group_id, region=region, workspace=workspace
     )
 
 
@@ -536,24 +455,15 @@ async def update_iam_group(
     if not update_data:
         return error_response('No update data provided')
 
-    result = await http_client.patch(
+    return await http_call_response(
+        http_client.patch,
         region=region,
         workspace=workspace,
         endpoint=f'/api/iam/groups/{group_id}/',
         token=token,
-        data=update_data,
-    )
-    err = unwrap_http_result(
-        result,
         default_message='Failed to update IAM group',
+        data=update_data,
         group_id=group_id,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-    return success_response(
-        data=result, group_id=group_id, region=region, workspace=workspace
     )
 
 
@@ -583,23 +493,14 @@ async def delete_iam_group(
         return err
 
     token = kwargs.get('token')
-    result = await http_client.delete(
+    return await http_call_response(
+        http_client.delete,
         region=region,
         workspace=workspace,
         endpoint=f'/api/iam/groups/{group_id}/',
         token=token,
-    )
-    err = unwrap_http_result(
-        result,
         default_message='Failed to delete IAM group',
         group_id=group_id,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-    return success_response(
-        data=result, group_id=group_id, region=region, workspace=workspace
     )
 
 
@@ -648,22 +549,15 @@ async def list_iam_memberships(
     if page_size is not None:
         params['page_size'] = page_size
 
-    result = await http_client.get(
+    return await http_call_response(
+        http_client.get,
         region=region,
         workspace=workspace,
         endpoint='/api/iam/memberships/',
         token=token,
+        default_message='Failed to list IAM memberships',
         params=params,
     )
-    err = unwrap_http_result(
-        result,
-        default_message='Failed to list IAM memberships',
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-    return success_response(data=result, region=region, workspace=workspace)
 
 
 @mcp_tool_handler(
@@ -700,29 +594,16 @@ async def add_iam_member(
         )
 
     token = kwargs.get('token')
-    result = await http_client.post(
+    return await http_call_response(
+        http_client.post,
         region=region,
         workspace=workspace,
         endpoint='/api/iam/memberships/',
         token=token,
-        data={'group': group_id, 'user': user_id, 'role': role},
-    )
-    err = unwrap_http_result(
-        result,
         default_message='Failed to add IAM member',
+        data={'group': group_id, 'user': user_id, 'role': role},
         group_id=group_id,
         user_id=user_id,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-    return success_response(
-        data=result,
-        group_id=group_id,
-        user_id=user_id,
-        region=region,
-        workspace=workspace,
     )
 
 
@@ -752,26 +633,14 @@ async def remove_iam_member(
         return err
 
     token = kwargs.get('token')
-    result = await http_client.delete(
+    return await http_call_response(
+        http_client.delete,
         region=region,
         workspace=workspace,
         endpoint=f'/api/iam/memberships/{membership_id}/',
         token=token,
-    )
-    err = unwrap_http_result(
-        result,
         default_message='Failed to remove IAM member',
         membership_id=membership_id,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-    return success_response(
-        data=result,
-        membership_id=membership_id,
-        region=region,
-        workspace=workspace,
     )
 
 
@@ -805,24 +674,15 @@ async def invite_workspace_user(
         Invitation response
     """
     token = kwargs.get('token')
-    result = await http_client.post(
+    return await http_call_response(
+        http_client.post,
         region=region,
         workspace=workspace,
         endpoint='/api/workspaces/users/invite/',
         token=token,
-        data={'email': email},
-    )
-    err = unwrap_http_result(
-        result,
         default_message='Failed to invite workspace user',
+        data={'email': email},
         email=email,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-    return success_response(
-        data=result, email=email, region=region, workspace=workspace
     )
 
 
@@ -862,22 +722,15 @@ async def list_iam_applications(
     if page_size is not None:
         params['page_size'] = page_size
 
-    result = await http_client.get(
+    return await http_call_response(
+        http_client.get,
         region=region,
         workspace=workspace,
         endpoint='/api/iam/applications/',
         token=token,
+        default_message='Failed to list IAM applications',
         params=params,
     )
-    err = unwrap_http_result(
-        result,
-        default_message='Failed to list IAM applications',
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-    return success_response(data=result, region=region, workspace=workspace)
 
 
 @mcp_tool_handler(
@@ -921,24 +774,15 @@ async def create_iam_application(
     if service_type is not None:
         app_data['service_type'] = service_type
 
-    result = await http_client.post(
+    return await http_call_response(
+        http_client.post,
         region=region,
         workspace=workspace,
         endpoint='/api/iam/applications/',
         token=token,
-        data=app_data,
-    )
-    err = unwrap_http_result(
-        result,
         default_message='Failed to create IAM application',
+        data=app_data,
         app_name=name,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-    return success_response(
-        data=result, app_name=name, region=region, workspace=workspace
     )
 
 
@@ -968,23 +812,14 @@ async def get_iam_application(
         return err
 
     token = kwargs.get('token')
-    result = await http_client.get(
+    return await http_call_response(
+        http_client.get,
         region=region,
         workspace=workspace,
         endpoint=f'/api/iam/applications/{app_id}/',
         token=token,
-    )
-    err = unwrap_http_result(
-        result,
         default_message='Failed to get IAM application',
         app_id=app_id,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-    return success_response(
-        data=result, app_id=app_id, region=region, workspace=workspace
     )
 
 
@@ -1028,24 +863,15 @@ async def update_iam_application(
     if not update_data:
         return error_response('No update data provided')
 
-    result = await http_client.patch(
+    return await http_call_response(
+        http_client.patch,
         region=region,
         workspace=workspace,
         endpoint=f'/api/iam/applications/{app_id}/',
         token=token,
-        data=update_data,
-    )
-    err = unwrap_http_result(
-        result,
         default_message='Failed to update IAM application',
+        data=update_data,
         app_id=app_id,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-    return success_response(
-        data=result, app_id=app_id, region=region, workspace=workspace
     )
 
 
@@ -1075,23 +901,14 @@ async def delete_iam_application(
         return err
 
     token = kwargs.get('token')
-    result = await http_client.delete(
+    return await http_call_response(
+        http_client.delete,
         region=region,
         workspace=workspace,
         endpoint=f'/api/iam/applications/{app_id}/',
         token=token,
-    )
-    err = unwrap_http_result(
-        result,
         default_message='Failed to delete IAM application',
         app_id=app_id,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-    return success_response(
-        data=result, app_id=app_id, region=region, workspace=workspace
     )
 
 
@@ -1135,24 +952,15 @@ async def assign_application_system_users(
             return err
 
     token = kwargs.get('token')
-    result = await http_client.post(
+    return await http_call_response(
+        http_client.post,
         region=region,
         workspace=workspace,
         endpoint=f'/api/iam/applications/{app_id}/system-users/',
         token=token,
-        data={'system_user_ids': system_user_ids},
-    )
-    err = unwrap_http_result(
-        result,
         default_message='Failed to assign system users to IAM application',
+        data={'system_user_ids': system_user_ids},
         app_id=app_id,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-    return success_response(
-        data=result, app_id=app_id, region=region, workspace=workspace
     )
 
 
@@ -1196,22 +1004,13 @@ async def unassign_application_system_users(
             return err
 
     token = kwargs.get('token')
-    result = await http_client.post(
+    return await http_call_response(
+        http_client.post,
         region=region,
         workspace=workspace,
         endpoint=f'/api/iam/applications/{app_id}/system-users/unassign/',
         token=token,
-        data={'system_user_ids': system_user_ids},
-    )
-    err = unwrap_http_result(
-        result,
         default_message='Failed to unassign system users from IAM application',
+        data={'system_user_ids': system_user_ids},
         app_id=app_id,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-    return success_response(
-        data=result, app_id=app_id, region=region, workspace=workspace
     )

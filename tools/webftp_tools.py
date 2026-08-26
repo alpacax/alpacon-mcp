@@ -11,6 +11,7 @@ from typing import Any, cast
 
 import httpx
 
+from utils.api_call import http_call_response
 from utils.common import (
     error_response,
     is_auth_enabled,
@@ -301,25 +302,15 @@ async def webftp_sessions_list(
     if server_id:
         params['server'] = server_id
 
-    result = await http_client.get(
+    return await http_call_response(
+        http_client.get,
         region=region,
         workspace=workspace,
         endpoint=_API_SESSIONS,
         token=token,
         params=params,
-    )
-
-    if err := unwrap_http_result(
-        result,
         default_message='Failed to list WebFTP sessions',
         server_id=server_id,
-        region=region,
-        workspace=workspace,
-    ):
-        return err
-
-    return success_response(
-        data=result, server_id=server_id, region=region, workspace=workspace
     )
 
 
@@ -678,25 +669,15 @@ async def webftp_uploads_list(
     if server_id:
         params['server'] = server_id
 
-    result = await http_client.get(
+    return await http_call_response(
+        http_client.get,
         region=region,
         workspace=workspace,
         endpoint=_API_UPLOADS,
         token=token,
         params=params,
-    )
-
-    if err := unwrap_http_result(
-        result,
         default_message='Failed to list uploads',
         server_id=server_id,
-        region=region,
-        workspace=workspace,
-    ):
-        return err
-
-    return success_response(
-        data=result, server_id=server_id, region=region, workspace=workspace
     )
 
 
@@ -715,25 +696,15 @@ async def webftp_downloads_list(
     if server_id:
         params['server'] = server_id
 
-    result = await http_client.get(
+    return await http_call_response(
+        http_client.get,
         region=region,
         workspace=workspace,
         endpoint=_API_DOWNLOADS,
         token=token,
         params=params,
-    )
-
-    if err := unwrap_http_result(
-        result,
         default_message='Failed to list downloads',
         server_id=server_id,
-        region=region,
-        workspace=workspace,
-    ):
-        return err
-
-    return success_response(
-        data=result, server_id=server_id, region=region, workspace=workspace
     )
 
 

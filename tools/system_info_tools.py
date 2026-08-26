@@ -3,6 +3,7 @@
 import asyncio
 from typing import Any
 
+from utils.api_call import http_call_response
 from utils.common import error_response, success_response, unwrap_http_result
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
@@ -30,26 +31,15 @@ async def get_system_info(
     token = kwargs.get('token')
 
     # Make async call to get system info
-    result = await http_client.get(
+    return await http_call_response(
+        http_client.get,
         region=region,
         workspace=workspace,
         endpoint='/api/proc/info/',
         token=token,
-        params={'server': server_id},
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to get system info',
+        params={'server': server_id},
         server_id=server_id,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(
-        data=result, server_id=server_id, region=region, workspace=workspace
     )
 
 
@@ -74,26 +64,15 @@ async def get_os_version(
     token = kwargs.get('token')
 
     # Make async call to get OS version
-    result = await http_client.get(
+    return await http_call_response(
+        http_client.get,
         region=region,
         workspace=workspace,
         endpoint='/api/proc/os/',
         token=token,
-        params={'server': server_id},
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to get OS version',
+        params={'server': server_id},
         server_id=server_id,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(
-        data=result, server_id=server_id, region=region, workspace=workspace
     )
 
 
@@ -305,26 +284,15 @@ async def get_network_interfaces(
     token = kwargs.get('token')
 
     # Make async call to get network interfaces
-    result = await http_client.get(
+    return await http_call_response(
+        http_client.get,
         region=region,
         workspace=workspace,
         endpoint='/api/proc/interfaces/',
         token=token,
-        params={'server': server_id},
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to get network interfaces',
+        params={'server': server_id},
         server_id=server_id,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(
-        data=result, server_id=server_id, region=region, workspace=workspace
     )
 
 
@@ -433,26 +401,15 @@ async def get_system_time(
     token = kwargs.get('token')
 
     # Make async call to get system time
-    result = await http_client.get(
+    return await http_call_response(
+        http_client.get,
         region=region,
         workspace=workspace,
         endpoint='/api/proc/time/',
         token=token,
-        params={'server': server_id},
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to get system time',
+        params={'server': server_id},
         server_id=server_id,
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(
-        data=result, server_id=server_id, region=region, workspace=workspace
     )
 
 

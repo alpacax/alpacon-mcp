@@ -6,6 +6,7 @@ from typing import Any
 from mcp.types import ToolAnnotations
 
 from server import mcp
+from utils.api_call import http_call_response
 from utils.common import (
     error_response,
     is_auth_enabled,
@@ -198,23 +199,14 @@ async def get_current_user(
     """
     token = kwargs.get('token')
 
-    result = await http_client.get(
+    return await http_call_response(
+        http_client.get,
         region=region,
         workspace=workspace,
         endpoint='/api/iam/users/-/',
         token=token,
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to get current user',
-        region=region,
-        workspace=workspace,
     )
-    if err:
-        return err
-
-    return success_response(data=result, region=region, workspace=workspace)
 
 
 @mcp_tool_handler(
@@ -248,23 +240,14 @@ async def get_workspace_access_control(
     """
     token = kwargs.get('token')
 
-    result = await http_client.get(
+    return await http_call_response(
+        http_client.get,
         region=region,
         workspace=workspace,
         endpoint='/api/workspaces/access-control/-/',
         token=token,
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to get workspace access control settings',
-        region=region,
-        workspace=workspace,
     )
-    if err:
-        return err
-
-    return success_response(data=result, region=region, workspace=workspace)
 
 
 @mcp_tool_handler(
@@ -409,23 +392,14 @@ async def get_workspace_preferences(
     """
     token = kwargs.get('token')
 
-    result = await http_client.get(
+    return await http_call_response(
+        http_client.get,
         region=region,
         workspace=workspace,
         endpoint='/api/workspaces/preferences/-/',
         token=token,
-    )
-
-    err = unwrap_http_result(
-        result,
         default_message='Failed to get workspace preferences',
-        region=region,
-        workspace=workspace,
     )
-    if err:
-        return err
-
-    return success_response(data=result, region=region, workspace=workspace)
 
 
 @mcp_tool_handler(
@@ -521,21 +495,12 @@ async def update_workspace_preferences(
             'No update data provided', region=region, workspace=workspace
         )
 
-    result = await http_client.patch(
+    return await http_call_response(
+        http_client.patch,
         region=region,
         workspace=workspace,
         endpoint='/api/workspaces/preferences/-/',
         token=token,
+        default_message='Failed to update workspace preferences',
         data=update_data,
     )
-
-    err = unwrap_http_result(
-        result,
-        default_message='Failed to update workspace preferences',
-        region=region,
-        workspace=workspace,
-    )
-    if err:
-        return err
-
-    return success_response(data=result, region=region, workspace=workspace)

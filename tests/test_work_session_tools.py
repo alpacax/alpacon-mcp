@@ -603,7 +603,6 @@ class TestWorkSessionAnalyze:
             endpoint='/api/work-sessions/sessions/550e8400-e29b-41d4-a716-446655440020/analyze/',
             token='test-token',
             data={},
-            params=None,
         )
 
     @pytest.mark.asyncio
