@@ -153,8 +153,6 @@ def _detect_error_domain(
         return 'server'
     if '/api/iam/' in ep_lower:
         return 'user'
-    if '/api/notifications/webhooks/' in ep_lower:
-        return 'webhook'
 
     return 'general'
 
