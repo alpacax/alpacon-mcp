@@ -449,7 +449,7 @@ OAuth/browser callers must scope command execution and file transfers under an a
 ### ✅ Approvals & sudo
 - **list_approval_requests** / **get_approval_request**: Pending and historical approval requests
 - **explain_approval_decision**: Why an agent cannot approve, and who can
-- **list_sudo_policies** / **create_sudo_policy**: Elevated-privilege policies
+- **list_sudo_policies** / **request_sudo_policy**: Elevated-privilege policies; requesting one needs a human approval
 
 Approving or rejecting a request is deliberately human-only and happens out of band (web console or Slack).
 

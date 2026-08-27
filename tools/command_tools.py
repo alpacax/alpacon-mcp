@@ -22,10 +22,13 @@ from utils.tool_annotations import ADDITIVE, READ_ONLY
 _SUDO_DENIAL_HINTS: dict[str, str] = {
     'SUDO_NO_WORKSESSION_POLICY': (
         'sudo was denied: this command is not covered by an MFA-bypass policy '
-        'in the Work Session. There is no MCP tool to add one—a human must add '
-        'the command to the Work Session sudo policy (via the Alpacon web '
-        "console or the CLI's 'work-session update --sudo'). Re-run once it is "
-        'added.'
+        'in the Work Session. You can ask for a policy with '
+        'request_sudo_policy, but an admin has to approve that request before '
+        'it takes effect, and the request cannot carry MFA bypass—the server '
+        'refuses it on that endpoint. A bypass policy still needs a human, who '
+        'sets allow_bypass_mfa on a Work Session policy in the Alpacon web '
+        "console or with the CLI's 'work-session update --sudo'. Re-run once "
+        'the policy is live.'
     ),
     'SUDO_PRESENCE_REQUIRED': (
         'sudo needs a recent human MFA: a human must complete a step-up, then '

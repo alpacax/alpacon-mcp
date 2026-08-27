@@ -158,7 +158,7 @@ async def explain_approval_decision(
 
 
 @mcp_tool_handler(
-    description='List sudo policies that define elevated privilege rules. Returns policy names, allowed commands, assigned users/servers, and validity periods. Filterable by user or server ID. Use this to audit which sudo privileges are configured in the workspace.',
+    description='List sudo policies that define elevated privilege rules. Returns policy names, allowed commands, assigned users/servers, and validity periods. Filterable by user UUID or server UUID. Use this to audit which sudo privileges are configured in the workspace.',
     annotations=READ_ONLY,
     meta={'anthropic/searchHint': 'sudo policy privilege elevation rules'},
 )
@@ -167,6 +167,8 @@ async def list_sudo_policies(
     region: str = '',
     page: int | None = None,
     page_size: int | None = None,
+    user: str | None = None,
+    server_id: str | None = None,
     **kwargs,
 ) -> dict[str, Any]:
     """List sudo policies.
@@ -176,6 +178,8 @@ async def list_sudo_policies(
         region: Region (ap1, us1, eu1). Auto-detected if not provided
         page: Page number for pagination (optional)
         page_size: Number of items per page (optional)
+        user: Filter by user UUID the policy applies to (optional)
+        server_id: Filter by server UUID the policy applies to (optional)
 
     Returns:
         Sudo policies list response
@@ -187,12 +191,16 @@ async def list_sudo_policies(
         params['page'] = page
     if page_size is not None:
         params['page_size'] = page_size
+    if user is not None:
+        params['user'] = user
+    if server_id is not None:
+        params['server'] = server_id
 
     return await http_call_response(
         http_client.get,
         region=region,
         workspace=workspace,
-        endpoint='/api/approvals/sudo-policies/',
+        endpoint='/api/sudo/policies/',
         token=token,
         default_message='Failed to list sudo policies',
         params=params,
@@ -200,65 +208,81 @@ async def list_sudo_policies(
 
 
 @mcp_tool_handler(
-    description='Create a sudo policy to define elevated privilege rules. Specify allowed commands, target users/servers, and whether passwordless sudo is permitted. Empty users or servers fields mean the policy applies to all. Requires superuser permission.',
+    description=(
+        'Request a sudo policy: ask for named commands to be allowed under sudo on named servers. '
+        'This creates an approval request, not a policy—an admin must approve it out-of-band '
+        '(Alpacon web console or Slack) before the policy exists, and the tool returns '
+        'status="pending_approval". Omitting users scopes the approved policy to the requester '
+        'alone, not to the whole workspace, and the server reports no error when it narrows it '
+        'that way; a non-superuser may name only themselves. An MFA-bypass policy cannot be '
+        'requested here at all—the server refuses it on this endpoint, and such a policy needs an '
+        'enterprise plan and a Work Session binding a human sets up. '
+        'Related: list_sudo_policies (audit existing policies), list_approval_requests (watch the '
+        'request), explain_approval_decision (what a human has to do).'
+    ),
     annotations=ADDITIVE,
-    meta={'anthropic/searchHint': 'sudo policy create privilege elevation'},
+    meta={'anthropic/searchHint': 'sudo policy request privilege elevation approval'},
 )
-async def create_sudo_policy(
+async def request_sudo_policy(
     workspace: str,
-    name: str,
+    servers: list[str],
     commands: list[str],
+    reason: str,
     users: list[str] | None = None,
-    groups: list[str] | None = None,
-    servers: list[str] | None = None,
-    run_as: str | None = None,
-    no_password: bool = False,
-    description: str | None = None,
+    valid_from: str | None = None,
+    valid_until: str | None = None,
     region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
-    """Create a sudo policy.
+    """Request a sudo policy that an admin must approve.
 
     Args:
         workspace: Workspace name. Required parameter
-        name: Name of the sudo policy
-        commands: List of commands allowed by this policy
-        users: List of user IDs to apply the policy to (optional)
-        groups: List of group IDs to apply the policy to (optional)
-        servers: List of server IDs to apply the policy to (optional)
-        run_as: User to run commands as (optional)
-        no_password: Whether to allow passwordless sudo (default: False)
-        description: Description of the sudo policy (optional)
+        servers: Server UUIDs the policy should cover. Required parameter
+        commands: Command patterns to allow under sudo. Required parameter
+        reason: Justification shown to the approver. Required parameter
+        users: User UUIDs the policy should cover (optional; omitting it scopes
+            the approved policy to the requester alone, and a non-superuser may
+            name only themselves)
+        valid_from: ISO 8601 start of the validity window (optional)
+        valid_until: ISO 8601 end of the validity window (optional)
         region: Region (ap1, us1, eu1). Auto-detected if not provided
 
     Returns:
-        Sudo policy creation response
+        Pending-approval response carrying the created approval request
     """
     token = kwargs.get('token')
 
-    policy_data: dict[str, Any] = {
-        'name': name,
+    policy_request: dict[str, Any] = {
+        'servers': servers,
         'commands': commands,
-        'no_password': no_password,
+        'reason': reason,
     }
-
     if users is not None:
-        policy_data['users'] = users
-    if groups is not None:
-        policy_data['groups'] = groups
-    if servers is not None:
-        policy_data['servers'] = servers
-    if run_as is not None:
-        policy_data['run_as'] = run_as
-    if description is not None:
-        policy_data['description'] = description
+        policy_request['users'] = users
+    if valid_from is not None:
+        policy_request['valid_from'] = valid_from
+    if valid_until is not None:
+        policy_request['valid_until'] = valid_until
 
-    return await http_call_response(
+    result = await http_call_response(
         http_client.post,
         region=region,
         workspace=workspace,
-        endpoint='/api/approvals/sudo-policies/',
+        endpoint='/api/sudo/policy-requests/',
         token=token,
-        default_message='Failed to create sudo policy',
-        data=policy_data,
+        default_message='Failed to request sudo policy',
+        data=policy_request,
+    )
+    if result.get('status') != 'success':
+        return result
+
+    return pending_approval_response(
+        'The sudo policy was requested, not created. An admin must approve the '
+        'request out-of-band (Alpacon web console or Slack); the policy takes '
+        'effect only after that.',
+        category='SUDO_POLICY_REQUEST_PENDING',
+        data=result.get('data'),
+        region=result.get('region'),
+        workspace=workspace,
     )

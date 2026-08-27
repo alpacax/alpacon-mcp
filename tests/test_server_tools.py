@@ -749,7 +749,7 @@ class TestUnregisterServer:
     async def test_unregister_server_success(
         self, mock_http_client, mock_token_manager
     ):
-        """Unregisters server by UUID and returns success."""
+        """Unregisters by UUID; auto defaults to false, matching the server's own default."""
         mock_http_client.delete.return_value = {}
 
         result = await unregister_server(
@@ -764,6 +764,7 @@ class TestUnregisterServer:
             workspace='testworkspace',
             endpoint='/api/servers/servers/550e8400-e29b-41d4-a716-446655440123/',
             token='test-token',
+            params={'auto': False, 'purge_provisioned_accounts': False},
         )
 
     @pytest.mark.asyncio
@@ -781,6 +782,26 @@ class TestUnregisterServer:
         assert result['status'] == 'error'
         assert 'No token found' in result['message']
         mock_http_client.delete.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_unregister_server_forwards_purge_and_auto_true(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Both flags are caller-controlled and both reach the query string."""
+        mock_http_client.delete.return_value = {}
+
+        await unregister_server(
+            server_id='550e8400-e29b-41d4-a716-446655440123',
+            workspace='testworkspace',
+            region='ap1',
+            auto=True,
+            purge_provisioned_accounts=True,
+        )
+
+        assert mock_http_client.delete.call_args.kwargs['params'] == {
+            'auto': True,
+            'purge_provisioned_accounts': True,
+        }
 
 
 class TestStarServer:

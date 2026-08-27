@@ -1,5 +1,7 @@
 """Unit tests for approval and sudo policy tools module."""
 
+import inspect
+import sys
 from http import HTTPStatus
 from unittest.mock import AsyncMock, patch
 
@@ -7,12 +9,16 @@ import pytest
 
 from tests.conftest import HTTP_ERROR_ENVELOPE
 from tools.approval_tools import (
-    create_sudo_policy,
     explain_approval_decision,
     get_approval_request,
     list_approval_requests,
     list_sudo_policies,
+    request_sudo_policy,
 )
+
+# Reached through an already-imported symbol so this file keeps one import style
+# for tools.approval_tools.
+_APPROVAL_TOOLS = sys.modules[list_sudo_policies.__module__]
 
 
 @pytest.fixture
@@ -146,10 +152,8 @@ class TestApprovalDecisionIsHumanOnly:
 
     def test_no_approve_or_reject_tool_exists(self):
         """The approve/reject mutation tools must not be importable."""
-        import tools.approval_tools as approval_tools
-
-        assert not hasattr(approval_tools, 'approve_request')
-        assert not hasattr(approval_tools, 'reject_request')
+        assert not hasattr(_APPROVAL_TOOLS, 'approve_request')
+        assert not hasattr(_APPROVAL_TOOLS, 'reject_request')
 
     @pytest.mark.asyncio
     async def test_explain_returns_structured_pending_guidance(
@@ -197,7 +201,7 @@ class TestSudoPolicies:
     async def test_list_sudo_policies_success(
         self, mock_http_client, mock_token_manager
     ):
-        """Test successful sudo policies list retrieval."""
+        """The sudo app owns policies now: /api/sudo/policies/, not the approvals app."""
         mock_http_client.get.return_value = {
             'count': 1,
             'results': [{'id': 'policy-1', 'name': 'admin-sudo'}],
@@ -209,7 +213,7 @@ class TestSudoPolicies:
         mock_http_client.get.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/approvals/sudo-policies/',
+            endpoint='/api/sudo/policies/',
             token='test-token',
             params={},
         )
@@ -228,81 +232,125 @@ class TestSudoPolicies:
         assert result['message'] == 'Not found'
 
     @pytest.mark.asyncio
-    async def test_create_sudo_policy_success(
+    async def test_list_sudo_policies_forwards_user_and_server_filters(
         self, mock_http_client, mock_token_manager
     ):
-        """Test successful sudo policy creation."""
-        mock_http_client.post.return_value = {
-            'id': 'policy-1',
-            'name': 'deploy-sudo',
+        """SudoPolicyFilter accepts user and server; both reach the query string."""
+        mock_http_client.get.return_value = {'count': 0, 'results': []}
+
+        result = await list_sudo_policies(
+            workspace='testworkspace',
+            region='ap1',
+            user='550e8400-e29b-41d4-a716-446655440001',
+            server_id='550e8400-e29b-41d4-a716-446655440002',
+        )
+
+        assert result['status'] == 'success'
+        assert mock_http_client.get.call_args.kwargs['params'] == {
+            'user': '550e8400-e29b-41d4-a716-446655440001',
+            'server': '550e8400-e29b-41d4-a716-446655440002',
         }
 
-        result = await create_sudo_policy(
+    @pytest.mark.asyncio
+    async def test_list_sudo_policies_rejects_a_server_name(
+        self, mock_http_client, mock_token_manager
+    ):
+        """The filter is named server_id so a name dies at the validator, not at the API."""
+        result = await list_sudo_policies(
             workspace='testworkspace',
-            name='deploy-sudo',
-            commands=['/usr/bin/systemctl restart *'],
-            users=['user-1'],
-            servers=['550e8400-e29b-41d4-a716-446655440000'],
-            no_password=True,
+            region='ap1',
+            server_id='web-server-01',
+        )
+
+        assert result['status'] == 'error'
+        mock_http_client.get.assert_not_called()
+
+
+class TestRequestSudoPolicy:
+    """Tests for request_sudo_policy tool."""
+
+    @pytest.mark.asyncio
+    async def test_request_sudo_policy_posts_required_fields(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Required fields reach the policy-requests endpoint verbatim."""
+        mock_http_client.post.return_value = {'id': 'apr-1', 'status': 'pending'}
+
+        result = await request_sudo_policy(
+            workspace='testworkspace',
+            servers=['550e8400-e29b-41d4-a716-446655440002'],
+            commands=['/usr/bin/systemctl restart nginx'],
+            reason='Deploy window for the nginx config rollout',
             region='ap1',
         )
 
-        assert result['status'] == 'success'
+        assert result['status'] == 'pending_approval'
+        assert result['category'] == 'SUDO_POLICY_REQUEST_PENDING'
+        assert result['requires_human_approval'] is True
+        assert result['approvable_by_agent'] is False
+        assert result['data'] == {'id': 'apr-1', 'status': 'pending'}
         mock_http_client.post.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/approvals/sudo-policies/',
+            endpoint='/api/sudo/policy-requests/',
             token='test-token',
             data={
-                'name': 'deploy-sudo',
-                'commands': ['/usr/bin/systemctl restart *'],
-                'no_password': True,
-                'users': ['user-1'],
-                'servers': ['550e8400-e29b-41d4-a716-446655440000'],
+                'servers': ['550e8400-e29b-41d4-a716-446655440002'],
+                'commands': ['/usr/bin/systemctl restart nginx'],
+                'reason': 'Deploy window for the nginx config rollout',
             },
         )
 
     @pytest.mark.asyncio
-    async def test_create_sudo_policy_minimal(
+    async def test_request_sudo_policy_forwards_optional_fields(
         self, mock_http_client, mock_token_manager
     ):
-        """Test sudo policy creation with minimal params."""
-        mock_http_client.post.return_value = {'id': 'policy-2', 'name': 'basic'}
+        """users and the validity window are sent only when supplied."""
+        mock_http_client.post.return_value = {'id': 'apr-2'}
 
-        result = await create_sudo_policy(
+        await request_sudo_policy(
             workspace='testworkspace',
-            name='basic',
-            commands=['/usr/bin/apt update'],
+            servers=['550e8400-e29b-41d4-a716-446655440002'],
+            commands=['/usr/bin/systemctl restart nginx'],
+            reason='Deploy window for the nginx config rollout',
+            users=['550e8400-e29b-41d4-a716-446655440001'],
+            valid_from='2026-08-26T09:00:00Z',
+            valid_until='2026-08-26T18:00:00Z',
             region='ap1',
         )
 
-        assert result['status'] == 'success'
-        mock_http_client.post.assert_called_once_with(
-            region='ap1',
-            workspace='testworkspace',
-            endpoint='/api/approvals/sudo-policies/',
-            token='test-token',
-            data={
-                'name': 'basic',
-                'commands': ['/usr/bin/apt update'],
-                'no_password': False,
-            },
-        )
+        assert mock_http_client.post.call_args.kwargs['data'] == {
+            'servers': ['550e8400-e29b-41d4-a716-446655440002'],
+            'commands': ['/usr/bin/systemctl restart nginx'],
+            'reason': 'Deploy window for the nginx config rollout',
+            'users': ['550e8400-e29b-41d4-a716-446655440001'],
+            'valid_from': '2026-08-26T09:00:00Z',
+            'valid_until': '2026-08-26T18:00:00Z',
+        }
 
     @pytest.mark.asyncio
-    async def test_create_sudo_policy_http_error(
+    async def test_request_sudo_policy_http_error_stays_an_error(
         self, mock_http_client, mock_token_manager
     ):
-        """An http_client error envelope must surface as status='error'."""
+        """A failed call is not dressed up as a pending approval."""
         mock_http_client.post.return_value = HTTP_ERROR_ENVELOPE
 
-        result = await create_sudo_policy(
+        result = await request_sudo_policy(
             workspace='testworkspace',
-            name='basic',
-            commands=['/usr/bin/apt update'],
+            servers=['550e8400-e29b-41d4-a716-446655440002'],
+            commands=['/usr/bin/systemctl restart nginx'],
+            reason='Deploy window for the nginx config rollout',
             region='ap1',
         )
 
         assert result['status'] == 'error'
-        assert result['status_code'] == HTTPStatus.NOT_FOUND
-        assert result['message'] == 'Not found'
+
+    def test_request_sudo_policy_takes_no_bypass_parameter(self):
+        """The server rejects allow_bypass_mfa on this endpoint, so the tool never offers it."""
+        assert (
+            'allow_bypass_mfa' not in inspect.signature(request_sudo_policy).parameters
+        )
+
+    def test_create_sudo_policy_is_gone(self):
+        """The direct-write policy tool is no longer part of the tool surface."""
+        assert not hasattr(_APPROVAL_TOOLS, 'create_sudo_policy')

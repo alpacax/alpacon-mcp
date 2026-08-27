@@ -99,7 +99,7 @@ Rename or relabel a server's Alpacon entry. Does not touch the host itself.
 ### `unregister_server`
 Unregister a host from the workspace. The agent stays installed; bringing the host back needs a registration token.
 
-**Parameters:** `server_id`, `workspace`, `region` (optional)
+**Parameters:** `server_id`, `workspace`, `auto` (boolean, default `false`: refuses a still-connected host with 400 `SERVER_CANNOT_BE_DELETED`; `true` tears the agent off a host that is still running), `purge_provisioned_accounts` (boolean, default `false`: also deletes the OS accounts Alpacon provisioned on the host, skipped when the host is unreachable), `region` (optional)
 
 ### `star_server`
 Pin or unpin a server for the calling user. A personal preference flag, not a fleet-wide setting.
@@ -108,7 +108,7 @@ Pin or unpin a server for the calling user. A personal preference flag, not a fl
 
 ### Agent and host actions
 
-Each takes `server_id`, `workspace`, and an optional `region`.
+Each takes `server_id`, `workspace`, and an optional `region`. The six disruptive ones also take `force` (boolean, default `false`), which runs the action even while the host is busy with an open Websh or WebFTP session or an in-flight command, tearing that work down. `update_information` is not disruptive and takes no `force`.
 
 - `restart_agent`: Restart the Alpacon agent process
 - `shutdown_agent`: Stop the agent process
@@ -650,8 +650,8 @@ Close a session (triggers AI security analysis) or re-run analysis on a terminal
 - `list_approval_requests`: `workspace`, `status` (optional), `region` (optional), `page`, `page_size`
 - `get_approval_request`: `request_id`, `workspace`, `region` (optional)
 - `explain_approval_decision`: `workspace`, `request_id` (optional), `region` (optional). Explains that deciding is human-only and out of band; performs no mutation
-- `list_sudo_policies`: `workspace`, `region` (optional), `page`, `page_size`
-- `create_sudo_policy`: `workspace`, `name`, `commands`, `users`, `groups`, `servers`, `run_as`, `no_password`, `description`, `region` (optional)
+- `list_sudo_policies`: `workspace`, `region` (optional), `page`, `page_size`, `user` (UUID), `server_id` (UUID)
+- `request_sudo_policy`: `workspace`, `servers` (UUID list), `commands`, `reason`, `users` (optional UUID list), `valid_from`, `valid_until`, `region` (optional). Creates an approval request, not a policy; returns `status="pending_approval"`. Omitting `users` scopes the approved policy to the requester alone, not to the whole workspace. `allow_bypass_mfa` is not accepted: the server refuses it on this endpoint
 
 There is intentionally no `approve_request`/`reject_request` tool: the Alpacon server refuses approve/reject from agent and token channels with HTTP 403. Approval happens in the web console or Slack.
 
@@ -730,11 +730,12 @@ Webhook tools need an admin account, and creating or updating a webhook needs a 
 
 ## 🎫 API token tools
 
-- `list_api_tokens`: `workspace`, `region` (optional), `page`, `page_size`, `name`, `enabled`, `remote_ip`, `search`, `ordering`
+- `list_api_tokens`: `workspace`, `region` (optional), `page`, `page_size`, `name`, `enabled`, `search` (name only), `ordering` (`added_at`, `updated_at`, `last_used_at`)
 - `get_api_token`: `token_id`, `workspace`, `region` (optional)
 - `create_api_token`: `workspace`, `name`, `scopes`, `presets`, `expires_at`, `enabled`, `region` (optional)
 - `update_api_token`: `token_id`, `name`, `enabled`, `expires_at`, `clear_expires_at`, `scopes`
 - `delete_api_token` / `duplicate_api_token`: by `token_id`
+- `rotate_api_token`: `token_id`, `workspace`, `region` (optional). Regenerates the secret in place; the old secret dies immediately, and the id, name, scopes and ACLs survive. A token that had no expiry comes back with the workspace maximum expiry, and one already past its expiry is refused with 400 `API_TOKEN_ALREADY_EXPIRED`. Paid plans only
 - `list_api_token_scopes` / `list_api_token_presets`: catalogs for building a token
 
 **Authentication note:** the server rejects these calls when the request is authenticated with a `source='api'` token, so in stdio mode with a `token.json` token they return `403 Forbidden`. Use the hosted server (JWT/OAuth), a browser session, or a login-source token. The scopes and presets catalogs are exempt.

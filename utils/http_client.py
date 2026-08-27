@@ -481,7 +481,12 @@ class AlpaconHTTPClient:
         )
 
     async def delete(
-        self, region: str, workspace: str, endpoint: str, token: str | None = None
+        self,
+        region: str,
+        workspace: str,
+        endpoint: str,
+        token: str | None = None,
+        params: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Execute DELETE request.
 
@@ -490,6 +495,7 @@ class AlpaconHTTPClient:
             workspace: Workspace name
             endpoint: API endpoint path
             token: API token
+            params: Query parameters
 
         Returns:
             Response data
@@ -497,7 +503,9 @@ class AlpaconHTTPClient:
         base_url = self.get_base_url(region, workspace)
         full_url = urljoin(base_url, endpoint)
 
-        return await self.request(method='DELETE', url=full_url, token=token)
+        return await self.request(
+            method='DELETE', url=full_url, token=token, params=params
+        )
 
     async def _get_client(self) -> httpx.AsyncClient:
         """Get or create shared async client for connection pooling."""

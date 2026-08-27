@@ -34,8 +34,10 @@ _SCOPE_NOT_ALLOWED_NEXT_ACTION = (
 
 # The human-resolvable next action differs by category: SUDO_APPROVAL_REQUIRED /
 # WORK_SESSION_PENDING need an out-of-band approval, while SUDO_PRESENCE_REQUIRED
-# is an MFA step-up and SUDO_NO_WORKSESSION_POLICY is a scope addition — none of
-# which the agent can perform itself. COMMAND_AWAITING_APPROVAL is the
+# is an MFA step-up—neither of which the agent can perform itself.
+# SUDO_NO_WORKSESSION_POLICY and SUDO_POLICY_REQUEST_PENDING are the two ends of
+# the policy-request path: the agent may submit one with request_sudo_policy, but
+# only an admin's approval makes the policy live. COMMAND_AWAITING_APPROVAL is the
 # command-level analogue of WORK_SESSION_PENDING. APPROVAL_DECISION_HUMAN_ONLY is
 # a pure explanation that approving/rejecting is human-only; nothing to retry.
 # SUDO_POLICY_MFA_REQUIRED needs a policy edit, not a step-up (a Command is
@@ -65,9 +67,17 @@ _NEXT_ACTION_BY_CATEGORY: dict[str, str] = {
         'cannot complete MFA yourself.'
     ),
     'SUDO_NO_WORKSESSION_POLICY': (
-        'This command is not covered by the Work Session sudo policy. A human '
-        'must add it to the session scope (which may itself require approval), '
-        'then retry. You cannot grant it yourself.'
+        'This command is not covered by the Work Session sudo policy. You can '
+        'submit a request with request_sudo_policy, but a human must approve it '
+        'before it takes effect, and an MFA-bypass policy cannot be requested '
+        'that way at all. Retry once the policy is live; you cannot grant it '
+        'yourself.'
+    ),
+    'SUDO_POLICY_REQUEST_PENDING': (
+        'The policy does not exist yet: an admin must approve this request '
+        'out-of-band (Alpacon web console or Slack). You cannot approve it '
+        'yourself. Wait for the decision, then retry the sudo command; do not '
+        'resubmit, which only creates a duplicate request.'
     ),
     'SUDO_POLICY_MFA_REQUIRED': (
         'A sudo policy covers this command but is not an MFA-bypass policy, and '

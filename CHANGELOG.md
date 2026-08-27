@@ -16,6 +16,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `create_server_note` and `update_server_note` gained `private` and `pinned`, and
   `create_server_note` alone gained `mentioned_users`, which only the create serializer
   reads.
+- `rotate_api_token`: regenerate an API token's secret in place through
+  `POST /api/auth/tokens/{id}/rotate/` (#140). Unlike `duplicate_api_token`, which mints a second
+  token and leaves the original live, rotation overwrites the secret on the same row, so the old
+  one stops authenticating immediately with no grace period. The response carries the new secret;
+  the token id, name, scopes and ACLs are unchanged. An expiry the token already had survives too,
+  but a token with no expiry comes back carrying the workspace maximum, and a token already past
+  its expiry is refused with `400 API_TOKEN_ALREADY_EXPIRED`. Paid plans only. The tool is annotated
+  destructive rather than idempotent, so a client that auto-retries on idempotent hints will not
+  silently invalidate a secret the first call already issued.
+- `force` on the six disruptive server actions: `restart_agent`, `shutdown_agent`, `upgrade_agent`,
+  `upgrade_system`, `reboot_system` and `shutdown_system` (#140). The server has refused these while
+  a host is busy with an open Websh/WebFTP session or an in-flight command since alpacon-server
+  #2553, and `force=true` is the only way through. It defaults to `false`, so an existing caller
+  sends the same effective request as before; `update_information` is not disruptive and gains
+  nothing.
+- `request_sudo_policy`: ask for a sudo policy through `/api/sudo/policy-requests/`, which mints an
+  approval request an admin has to approve before the policy exists (#140). The tool returns
+  `status="pending_approval"` with category `SUDO_POLICY_REQUEST_PENDING`, so a client that already
+  branches on the pending-approval shape needs no new handling. Omitting `users` scopes the
+  approved policy to the requester alone rather than to the whole workspace, which is how the
+  server narrows an approved request. `allow_bypass_mfa` is deliberately not a parameter: the
+  server refuses it on this endpoint.
 - `--toolsets` CLI argument (and `ALPACON_MCP_TOOLSETS` env var) for local
   stdio/SSE mode: selectively register toolsets; default remains `all`
   (#34). Remote mode is unaffected and always registers every tool.
@@ -66,6 +88,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   sees a grant revoked in the web console, in Slack, or by another MCP process, so a hit
   would have kept answering with access the caller had already lost. Reads now always go to
   the server, the only place that decision is current.
+- The `remote_ip` parameter on `list_api_tokens`. The server narrowed the viewset's filters to
+  `name` and `enabled` because `remote_ip` and `user_agent` are only ever populated for
+  `source='login'` tokens, and this endpoint lists `source='api'` ones (#140). django-filter
+  discarded the parameter silently, so a caller passing it got an unnarrowed result set that looked
+  filtered. The `search` and `ordering` documentation now matches the server as well: search covers
+  `name` alone, and the orderable fields are `added_at`, `updated_at` and `last_used_at`.
+- `create_sudo_policy`. It posted five fields (`name`, `groups`, `run_as`, `no_password`,
+  `description`) that no longer exist on the server's serializer, to a path that had been 404 for
+  four months. Its replacement is `request_sudo_policy`, which routes through human approval instead
+  of writing a live policy; the direct-write endpoint `/api/sudo/policies/` demands owner or manager
+  rights on every target server and stays off the MCP tool surface on purpose (#140).
 - `get_workspace_notifications` and `update_workspace_notifications`, along with the
   `alpacon://workspace-settings/notifications/{region}/{workspace}` resource. The upstream
   `/api/workspaces/notifications/-/` endpoint no longer exists—the `NotificationSettings`
@@ -76,6 +109,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   correction is the first entry under Changed.
 
 ### Fixed
+- `unregister_server` now sends the `auto` and `purge_provisioned_accounts` query parameters the
+  server's delete endpoint reads (#140). Both default to `false`, matching the server, so an
+  existing caller sends the same effective request as before and a still-connected host is still
+  refused with `400 SERVER_CANNOT_BE_DELETED`. Pass `auto=true` to tear the agent off a host that
+  is still running. A client parsing the response sees no new fields.
+- `list_sudo_policies` now calls `/api/sudo/policies/`. The server moved sudo policies out of the
+  `approvals` app and renamed the URL prefix, so the old `/api/approvals/sudo-policies/` path had
+  been returning 404 unconditionally (#140). The tool also accepts the `user` and `server_id` UUID
+  filters the server's `SudoPolicyFilter` exposes, which its description already claimed;
+  `server_id` carries the repo's usual name so a server name is rejected by the input validator
+  rather than by the API. The response shape is unchanged.
 - Dropped the root `__init__.py` that 0.4.1 added, together with its wheel include. It made the
   checkout directory a package, so under pytest `sys.modules['main']` was pre-registered with that
   package and `import main` no longer reached `main.py` in a clone directory named `main` (#189).
