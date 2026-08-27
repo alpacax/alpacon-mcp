@@ -54,6 +54,11 @@ _DOT_SEGMENTS = frozenset({'.', '..'})
 # Validated above as UUIDs, which is stricter than the path check.
 _UUID_IDENTIFIERS = frozenset({'server_id', 'session_id'})
 
+# Never in a path: sent in the request body after resolve_work_session_id
+# strips it. Gating it would reject the padding that resolution deliberately
+# tolerates, while the same value through ALPACON_WORK_SESSION passed.
+_BODY_IDENTIFIERS = frozenset({'work_session_id'})
+
 
 def _get_jwt_token() -> str | None:
     """Get JWT token from FastMCP auth context if available.
@@ -273,7 +278,9 @@ def with_token_validation(func: Callable) -> Callable:
     the tools interpolate today—a path parameter named otherwise, ``username``
     say, would reach the URL unchecked. Only declared parameters are walked,
     so an ``_id`` nested inside the ``**kwargs`` dict is not seen either; no
-    tool schema exposes that route today.
+    tool schema exposes that route today. ``work_session_id`` is exempt: it
+    is sent in a request body after ``resolve_work_session_id`` strips it,
+    and the gate would break that padding tolerance.
 
     Transport mode is determined by ALPACON_MCP_AUTH_ENABLED env var:
     - 'true' (streamable-http): Uses JWT from auth context only.
@@ -361,7 +368,11 @@ def with_token_validation(func: Callable) -> Callable:
         # upstream format is not always a UUID, so reject only what escapes the
         # path segment rather than requiring one.
         for field, value in arguments.items():
-            if field in _UUID_IDENTIFIERS or not field.endswith('_id'):
+            if (
+                field in _UUID_IDENTIFIERS
+                or field in _BODY_IDENTIFIERS
+                or not field.endswith('_id')
+            ):
                 continue
             if isinstance(value, str):
                 path_error = _validate_path_identifier(field, value)

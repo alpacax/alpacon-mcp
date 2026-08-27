@@ -596,6 +596,21 @@ class TestPathIdentifierValidation:
         result = await func(workspace='demo', region='ap1', ca_id=value)
         assert result['status'] == 'success'
 
+    @pytest.mark.asyncio
+    @patch('utils.decorators.validate_token', return_value='fake-token')
+    async def test_padded_work_session_id_still_accepted(self, mock_token):
+        # Never in a path: it is sent in the request body after
+        # resolve_work_session_id strips it, and the same padded value through
+        # ALPACON_WORK_SESSION never meets the gate, so rejecting it here
+        # would make the argument stricter than the env var route.
+        func = _make_decorated_func(extra_params=['work_session_id'])
+        result = await func(
+            workspace='demo',
+            region='ap1',
+            work_session_id=' 550e8400-e29b-41d4-a716-446655440000\n',
+        )
+        assert result['status'] == 'success'
+
     # 'result' holds an API response, not an argument the client sends.
     NON_ARGUMENT_NAMES = frozenset({'result'})
 
