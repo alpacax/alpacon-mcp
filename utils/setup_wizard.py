@@ -16,7 +16,7 @@ from .token_manager import TokenManager
 
 
 def _region_accepted(region: str) -> bool:
-    """Report an unserved region to the user and return False."""
+    """Return True if the region is served, else print an error and return False."""
     if validate_region_format(region):
         return True
     print(
