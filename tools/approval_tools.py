@@ -212,8 +212,9 @@ async def list_sudo_policies(
         'Request a sudo policy: ask for named commands to be allowed under sudo on named servers. '
         'This creates an approval request, not a policy—an admin must approve it out-of-band '
         '(Alpacon web console or Slack) before the policy exists, and the tool returns '
-        'status="pending_approval". Omitting users requests a policy covering every user in the '
-        'workspace; a non-superuser may name only themselves. An MFA-bypass policy cannot be '
+        'status="pending_approval". Omitting users scopes the approved policy to the requester '
+        'alone, not to the whole workspace, and the server reports no error when it narrows it '
+        'that way; a non-superuser may name only themselves. An MFA-bypass policy cannot be '
         'requested here at all—the server refuses it on this endpoint, and such a policy needs an '
         'enterprise plan and a Work Session binding a human sets up. '
         'Related: list_sudo_policies (audit existing policies), list_approval_requests (watch the '
@@ -240,9 +241,9 @@ async def request_sudo_policy(
         servers: Server UUIDs the policy should cover. Required parameter
         commands: Command patterns to allow under sudo. Required parameter
         reason: Justification shown to the approver. Required parameter
-        users: User UUIDs the policy should cover (optional; omitting it requests
-            a policy covering every user, and a non-superuser may name only
-            themselves)
+        users: User UUIDs the policy should cover (optional; omitting it scopes
+            the approved policy to the requester alone, and a non-superuser may
+            name only themselves)
         valid_from: ISO 8601 start of the validity window (optional)
         valid_until: ISO 8601 end of the validity window (optional)
         region: Region (ap1, us1, eu1). Auto-detected if not provided

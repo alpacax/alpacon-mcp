@@ -24,8 +24,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `request_sudo_policy`: ask for a sudo policy through `/api/sudo/policy-requests/`, which mints an
   approval request an admin has to approve before the policy exists (#140). The tool returns
   `status="pending_approval"` with category `SUDO_POLICY_REQUEST_PENDING`, so a client that already
-  branches on the pending-approval shape needs no new handling. `allow_bypass_mfa` is deliberately
-  not a parameter: the server refuses it on this endpoint.
+  branches on the pending-approval shape needs no new handling. Omitting `users` scopes the
+  approved policy to the requester alone rather than to the whole workspace, which is how the
+  server narrows an approved request. `allow_bypass_mfa` is deliberately not a parameter: the
+  server refuses it on this endpoint.
 - `--toolsets` CLI argument (and `ALPACON_MCP_TOOLSETS` env var) for local
   stdio/SSE mode: selectively register toolsets; default remains `all`
   (#34). Remote mode is unaffected and always registers every tool.
