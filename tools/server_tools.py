@@ -688,8 +688,9 @@ async def update_server(
 @mcp_tool_handler(
     description=(
         'Unregister a host from this workspace by UUID. With `auto` left at its default the '
-        'server tears the Alpamon agent off a still-connected host; set it to False to refuse '
-        'unless the host is already disconnected. `purge_provisioned_accounts` also deletes the '
+        'server refuses a still-connected host with 400 SERVER_CANNOT_BE_DELETED; set it to True '
+        'to tear the Alpamon agent off a host that is still running. '
+        '`purge_provisioned_accounts` also deletes the '
         'OS accounts Alpacon provisioned on that host—on an already-disconnected host the purge '
         'is skipped, because the host cannot be reached. The host is removed from all listings '
         'and no new Work Sessions can target it. Cannot be undone by this tool—re-enrolling the '
@@ -703,7 +704,7 @@ async def unregister_server(
     server_id: str,
     workspace: str,
     region: str = '',
-    auto: bool = True,
+    auto: bool = False,
     purge_provisioned_accounts: bool = False,
     **kwargs,
 ) -> dict[str, Any]:
@@ -714,7 +715,8 @@ async def unregister_server(
         workspace: Workspace name. Required parameter
         region: Region (ap1, us1, eu1). Auto-detected if not provided
         auto: Remove the agent from a still-connected host. False refuses the
-            removal unless the host is already disconnected (default: True)
+            removal unless the host is already disconnected (default: False,
+            matching the server)
         purge_provisioned_accounts: Also delete the OS accounts Alpacon
             provisioned on the host. Skipped when the host is already
             disconnected (default: False)

@@ -733,7 +733,7 @@ class TestUnregisterServer:
     async def test_unregister_server_success(
         self, mock_http_client, mock_token_manager
     ):
-        """Unregisters by UUID; auto defaults to true, or the server 400s on a connected host."""
+        """Unregisters by UUID; auto defaults to false, matching the server's own default."""
         mock_http_client.delete.return_value = {}
 
         result = await unregister_server(
@@ -748,7 +748,7 @@ class TestUnregisterServer:
             workspace='testworkspace',
             endpoint='/api/servers/servers/550e8400-e29b-41d4-a716-446655440123/',
             token='test-token',
-            params={'auto': True, 'purge_provisioned_accounts': False},
+            params={'auto': False, 'purge_provisioned_accounts': False},
         )
 
     @pytest.mark.asyncio
@@ -768,7 +768,7 @@ class TestUnregisterServer:
         mock_http_client.delete.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_unregister_server_forwards_purge_and_auto_false(
+    async def test_unregister_server_forwards_purge_and_auto_true(
         self, mock_http_client, mock_token_manager
     ):
         """Both flags are caller-controlled and both reach the query string."""
@@ -778,12 +778,12 @@ class TestUnregisterServer:
             server_id='550e8400-e29b-41d4-a716-446655440123',
             workspace='testworkspace',
             region='ap1',
-            auto=False,
+            auto=True,
             purge_provisioned_accounts=True,
         )
 
         assert mock_http_client.delete.call_args.kwargs['params'] == {
-            'auto': False,
+            'auto': True,
             'purge_provisioned_accounts': True,
         }
 

@@ -66,10 +66,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - `unregister_server` now sends the `auto` and `purge_provisioned_accounts` query parameters the
-  server's delete endpoint reads (#140). Without `auto` the server answers `400
-  SERVER_CANNOT_BE_DELETED` for every connected host, so the tool used to work only on
-  already-disconnected servers; `auto` defaults to `true` here for that reason. A client parsing the
-  response sees no new fields.
+  server's delete endpoint reads (#140). Both default to `false`, matching the server, so an
+  existing caller sends the same effective request as before and a still-connected host is still
+  refused with `400 SERVER_CANNOT_BE_DELETED`. Pass `auto=true` to tear the agent off a host that
+  is still running. A client parsing the response sees no new fields.
 - `list_sudo_policies` now calls `/api/sudo/policies/`. The server moved sudo policies out of the
   `approvals` app and renamed the URL prefix, so the old `/api/approvals/sudo-policies/` path had
   been returning 404 unconditionally (#140). The tool also accepts the `user` and `server_id` UUID

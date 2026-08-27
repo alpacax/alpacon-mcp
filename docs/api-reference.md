@@ -97,7 +97,7 @@ Rename or relabel a server's Alpacon entry. Does not touch the host itself.
 ### `unregister_server`
 Unregister a host from the workspace. The agent stays installed; bringing the host back needs a registration token.
 
-**Parameters:** `server_id`, `workspace`, `auto` (boolean, default `true`: removes the agent from a still-connected host; `false` refuses unless the host is already disconnected), `purge_provisioned_accounts` (boolean, default `false`: also deletes the OS accounts Alpacon provisioned on the host, skipped when the host is unreachable), `region` (optional)
+**Parameters:** `server_id`, `workspace`, `auto` (boolean, default `false`: refuses a still-connected host with 400 `SERVER_CANNOT_BE_DELETED`; `true` tears the agent off a host that is still running), `purge_provisioned_accounts` (boolean, default `false`: also deletes the OS accounts Alpacon provisioned on the host, skipped when the host is unreachable), `region` (optional)
 
 ### `star_server`
 Pin or unpin a server for the calling user. A personal preference flag, not a fleet-wide setting.
