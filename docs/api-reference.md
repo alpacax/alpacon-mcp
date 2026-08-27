@@ -76,13 +76,15 @@ Create a new note for a server.
 
 **Parameters:**
 - `server_id` (string): Server ID
-- `title` (string): Note title
-- `content` (string): Note content
+- `content` (string): Note content; capped at 512 characters
+- `private` (boolean, optional): Hide the note from other workspace members
+- `pinned` (boolean, optional): Pin the note; a server holds at most three pinned notes
+- `mentioned_users` (array of strings, optional): User UUIDs to notify; accepted on create only
 - `region` (string, optional): Region name; resolved from the workspace when omitted
 - `workspace` (string): Workspace name
 
 ### `get_server_note` / `update_server_note` / `delete_server_note`
-Read, partially update (`title`, `content`), or permanently delete a note by `note_id`.
+Read, partially update (`content`, `private`, `pinned`), or permanently delete a note by `note_id`.
 
 ### `update_server`
 Rename or relabel a server's Alpacon entry. Does not touch the host itself.
@@ -657,11 +659,15 @@ There is intentionally no `approve_request`/`reject_request` tool: the Alpacon s
 
 ## 🔔 Alert tools
 
-- `list_alerts`: `workspace`, `server_id`, `status`, `acknowledged`, `dismissed`, `region` (optional), `page`, `page_size`
+- `list_alerts`: `workspace`, `server_id`, `alert_type`, `severity` (`critical`, `warning`, `info`), `server_name`, `acknowledged`, `dismissed`, `region` (optional), `page`, `page_size`
 - `get_alert`: `alert_id`, `workspace`, `region` (optional)
-- `mute_alert`: `alert_id`, `workspace`, `duration`, `region` (optional)
-- `create_alert_rule`: `workspace`, `name`, `metric_type` (`cpu`, `memory`, `disk`, …), `condition` (`gt`, `lt`, `gte`, `lte`), `threshold`, `servers`, `notification_channels`, `description`, `enabled`, `region` (optional)
-- `update_alert_rule` / `delete_alert_rule`: by `rule_id`
+- `acknowledge_alert`: `alert_id`, `workspace`, `action_type` (`checked` or `dismissed`), `region` (optional). One acknowledgement per user per alert, and it cannot be changed afterwards
+- `create_alert_rule`: `workspace`, `name`, `target`, `threshold`, `is_default`, `region` (optional). `target` is one of `cpu-usage`, `memory-usage`, `disk-usage`, `peak-read-bps`, `peak-write-bps`, `avg-read-bps`, `avg-write-bps`, `peak-input-pps`, `peak-input-bps`, `peak-output-pps`, `peak-output-bps`, `avg-input-pps`, `avg-input-bps`, `avg-output-pps`, `avg-output-bps`
+- `update_alert_rule`: `rule_id`, `workspace`, and any of `name`, `target`, `threshold`, `is_default`
+- `delete_alert_rule`: by `rule_id`. A rule with `is_default=true` cannot be deleted
+- `attach_alert_rule` / `detach_alert_rule`: `server_id`, `rule_id`, `workspace`, `region` (optional). Each is idempotent in the state it aims at: attaching a rule the server already has changes nothing, and so does detaching a rule the server does not have
+
+Creating and updating a rule need a paid plan; reading, attaching and detaching work on any plan.
 
 ---
 
@@ -712,8 +718,13 @@ Command ACLs decide which commands a token may run, server ACLs which hosts it m
 
 ## 🔗 Webhook tools
 
-- `list_webhooks` / `get_webhook` / `create_webhook` (`name`, `url`, `ssl_verify`, `enabled`) / `update_webhook` / `delete_webhook`
+- `list_webhooks`: `workspace`, `owner` (user UUID), `provider` (one of `slack`, `discord`, `teams`, `telegram`, `custom`), `region` (optional), `page`, `page_size`
+- `get_webhook` / `delete_webhook`: by `webhook_id`
+- `create_webhook`: `workspace`, `name`, `url`, `owner` (user UUID, required), `provider` (optional), `ssl_verify`, `enabled`, `region` (optional). `provider` is one of `slack`, `discord`, `teams`, `telegram`, `custom`, and is detected from the URL when omitted
+- `update_webhook`: `webhook_id`, `workspace`, and any of `name`, `url`, `ssl_verify`, `enabled`
 - `list_event_subscriptions` / `create_event_subscription` (`channel`, `event_type`, `target_id`) / `delete_event_subscription`
+
+Webhook tools need an admin account, and creating or updating a webhook needs a paid plan.
 
 ---
 

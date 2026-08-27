@@ -12,6 +12,10 @@ from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ
 VALID_PLATFORMS = frozenset({'debian', 'rhel', 'suse', 'darwin', 'windows'})
 _PLATFORM_LIST_STR = ', '.join(f'"{p}"' for p in sorted(VALID_PLATFORMS))
 
+# Mirrors Note.content max_length; a longer body is a guaranteed 400.
+NOTE_CONTENT_MAX_LENGTH = 512
+_CONTENT_SENTENCE = f'content must be at most {NOTE_CONTENT_MAX_LENGTH} characters.'
+
 
 @mcp_tool_handler(
     description=(
@@ -39,7 +43,7 @@ async def list_servers(
 
     Args:
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
         page: Page number for pagination (optional)
         page_size: Number of results per page, up to 100 (optional)
 
@@ -98,7 +102,7 @@ async def get_server(
     Args:
         server_id: Server ID
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Server details response
@@ -121,7 +125,7 @@ async def get_server(
 
 @mcp_tool_handler(
     description=(
-        'List documentation notes attached to a server. Returns note titles, content, and timestamps. '
+        'List documentation notes attached to a server. Returns note content, author, and timestamps. '
         'Use this to review existing server documentation or operational records. '
         'Related: create_server_note (add new notes).'
     ),
@@ -136,7 +140,7 @@ async def list_server_notes(
     Args:
         server_id: Server ID
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Server notes list response
@@ -158,7 +162,7 @@ async def list_server_notes(
 
 @mcp_tool_handler(
     description=(
-        'Create a documentation note on a server with a title and content body. '
+        f'Create a documentation note on a server. The content is capped at {NOTE_CONTENT_MAX_LENGTH} characters, and a server holds at most three pinned notes—a limit only the server can enforce. '
         'Use this to record operational notes, maintenance logs, or configuration documentation for a server. '
         'Related: list_server_notes (view existing notes).'
     ),
@@ -167,9 +171,11 @@ async def list_server_notes(
 )
 async def create_server_note(
     server_id: str,
-    title: str,
     content: str,
     workspace: str,
+    private: bool | None = None,
+    pinned: bool | None = None,
+    mentioned_users: list[str] | None = None,
     region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
@@ -177,19 +183,28 @@ async def create_server_note(
 
     Args:
         server_id: Server ID
-        title: Note title
-        content: Note content
+        content: Note content; capped at NOTE_CONTENT_MAX_LENGTH characters
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        private: Hide the note from other workspace members (optional)
+        pinned: Pin the note; a server holds at most three pinned notes (optional)
+        mentioned_users: User UUIDs to notify; accepted on create only (optional)
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Note creation response
     """
-    # Get token (injected by decorator)
+    if len(content) > NOTE_CONTENT_MAX_LENGTH:
+        return format_validation_error('content', content, _CONTENT_SENTENCE)
+
     token = kwargs.get('token')
 
-    # Prepare note data with server field
-    note_data = {'server': server_id, 'title': title, 'content': content}
+    note_data: dict[str, Any] = {'server': server_id, 'content': content}
+    if private is not None:
+        note_data['private'] = private
+    if pinned is not None:
+        note_data['pinned'] = pinned
+    if mentioned_users is not None:
+        note_data['mentioned_users'] = mentioned_users
 
     # Make async call to create note
     return await http_call_response(
@@ -201,14 +216,13 @@ async def create_server_note(
         data=note_data,
         default_message='Failed to create server note',
         server_id=server_id,
-        note_title=title,
     )
 
 
 @mcp_tool_handler(
     description=(
         'Get detailed information about a specific server note by its ID. '
-        'Returns the note title, content, server, author, timestamps, and privacy settings. '
+        'Returns the note content, server, author, timestamps, and privacy settings. '
         'Use this when you need full details about one note. '
         'Related: list_server_notes (find note ID first), update_server_note, delete_server_note.'
     ),
@@ -223,7 +237,7 @@ async def get_server_note(
     Args:
         note_id: Note ID
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Server note detail response
@@ -243,7 +257,7 @@ async def get_server_note(
 
 @mcp_tool_handler(
     description=(
-        'Update an existing server note by its ID. Can change title or content. '
+        'Update an existing server note by its ID. Can change content, private, or pinned. '
         'Only the fields you provide will be updated (partial update). '
         'Related: get_server_note (view existing note), delete_server_note.'
     ),
@@ -253,8 +267,9 @@ async def get_server_note(
 async def update_server_note(
     note_id: str,
     workspace: str,
-    title: str | None = None,
     content: str | None = None,
+    private: bool | None = None,
+    pinned: bool | None = None,
     region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
@@ -263,26 +278,36 @@ async def update_server_note(
     Args:
         note_id: Note ID
         workspace: Workspace name. Required parameter
-        title: New title (optional)
-        content: New content (optional)
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        content: New content; capped at NOTE_CONTENT_MAX_LENGTH characters (optional)
+        private: Hide the note from other workspace members (optional)
+        pinned: Pin the note; a server holds at most three pinned notes (optional)
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Server note update response
+
+    Note:
+        No mentioned_users here: the server routes only `create` to
+        NoteCreateSerializer, and the update path never sees that field.
     """
+    if content is not None and len(content) > NOTE_CONTENT_MAX_LENGTH:
+        return format_validation_error('content', content, _CONTENT_SENTENCE)
+
     token = kwargs.get('token')
 
     update_data: dict[str, Any] = {}
-    if title is not None:
-        update_data['title'] = title
     if content is not None:
         update_data['content'] = content
+    if private is not None:
+        update_data['private'] = private
+    if pinned is not None:
+        update_data['pinned'] = pinned
 
     if not update_data:
         return format_validation_error(
-            'title or content',
+            'payload',
             None,
-            'At least one of title or content must be provided.',
+            'At least one of content, private or pinned must be provided.',
         )
 
     return await http_call_response(
@@ -313,7 +338,7 @@ async def delete_server_note(
     Args:
         note_id: Note ID
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Server note delete response
@@ -369,7 +394,7 @@ async def restart_agent(
     Args:
         server_id: Server ID
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Agent restart response
@@ -403,7 +428,7 @@ async def shutdown_agent(
     Args:
         server_id: Server ID
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Agent shutdown response
@@ -437,7 +462,7 @@ async def upgrade_agent(
     Args:
         server_id: Server ID
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Agent upgrade response
@@ -471,7 +496,7 @@ async def update_information(
     Args:
         server_id: Server ID
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Update information response
@@ -506,7 +531,7 @@ async def upgrade_system(
     Args:
         server_id: Server ID
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         System upgrade response
@@ -540,7 +565,7 @@ async def reboot_system(
     Args:
         server_id: Server ID
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         System reboot response
@@ -575,7 +600,7 @@ async def shutdown_system(
     Args:
         server_id: Server ID
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         System shutdown response
@@ -617,7 +642,7 @@ async def update_server(
         workspace: Workspace name. Required parameter
         name: New server name (optional)
         description: New server description (optional)
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Updated server data
@@ -632,7 +657,7 @@ async def update_server(
 
     if not update_data:
         return format_validation_error(
-            'name or description',
+            'payload',
             None,
             'At least one of name or description must be provided.',
         )
@@ -669,7 +694,7 @@ async def unregister_server(
     Args:
         server_id: Server UUID
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Unregister confirmation
@@ -706,7 +731,7 @@ async def star_server(
         server_id: Server UUID
         status: True to star, False to unstar
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Star update response
@@ -747,7 +772,7 @@ async def list_registration_tokens(
 
     Args:
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
         page: Page number for pagination (optional)
         page_size: Number of results per page (optional)
 
@@ -799,7 +824,7 @@ async def create_registration_token(
         workspace: Workspace name. Required parameter
         name: Token name
         description: Optional token description
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Created registration token data
@@ -839,7 +864,7 @@ async def delete_registration_token(
     Args:
         token_id: Registration token UUID
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Deletion confirmation
@@ -890,7 +915,7 @@ async def get_registration_guide(
         workspace: Workspace name. Required parameter
         platform: Target platform ("debian" | "rhel" | "suse" | "darwin" | "windows")
         server_name: Optional server name to pre-configure during installation
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Installation guide with commands/instructions

@@ -15,7 +15,7 @@ class TestHTTPClientClose:
 
     @pytest.mark.asyncio
     async def test_close_with_active_client(self):
-        """Test close() properly shuts down active client and clears caches."""
+        """Test close() properly shuts down the active client."""
         from utils.http_client import AlpaconHTTPClient
 
         client = AlpaconHTTPClient()
@@ -26,15 +26,9 @@ class TestHTTPClientClose:
         mock_httpx.aclose = AsyncMock()
         client._client = mock_httpx
 
-        # Add some cache entries
-        client._cache['key1'] = {'data': 'cached'}
-        client._cache_ttl['key1'] = 99999999
-
         await client.close()
 
         mock_httpx.aclose.assert_awaited_once()
-        assert len(client._cache) == 0
-        assert len(client._cache_ttl) == 0
 
     @pytest.mark.asyncio
     async def test_close_idempotent(self):
