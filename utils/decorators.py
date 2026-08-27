@@ -234,15 +234,21 @@ async def _check_mfa_requirement(
         logger.debug('MFA pre-check failed (non-fatal): %s', e)
 
 
-def _validate_path_identifier(field: str, value: str) -> dict[str, Any] | None:
+def _validate_path_identifier(field: str, value: Any) -> dict[str, Any] | None:
     """Returns an error response, or None if valid."""
+    # A non-str never matches the pattern, but the f-string that builds the
+    # endpoint stringifies it anyway, so its separators reach the path.
     # fullmatch, not match: '$' also matches before a trailing newline.
-    if not _PATH_IDENTIFIER_RE.fullmatch(value) or value in _DOT_SEGMENTS:
+    if (
+        not isinstance(value, str)
+        or not _PATH_IDENTIFIER_RE.fullmatch(value)
+        or value in _DOT_SEGMENTS
+    ):
         return format_validation_error(
             field,
             value,
-            'Must be one or more letters, digits, ".", "_", "~" or "-", '
-            'and must not be "." or "..". '
+            'Must be a string of one or more letters, digits, ".", "_", '
+            '"~" or "-", and must not be "." or "..". '
             'Identifiers accept only characters that cannot retarget '
             'the API request.',
         )
@@ -379,10 +385,12 @@ def with_token_validation(func: Callable) -> Callable:
                 or not field.endswith('_id')
             ):
                 continue
-            if isinstance(value, str):
-                path_error = _validate_path_identifier(field, value)
-                if path_error:
-                    return path_error
+            # None is an omitted optional argument, not a bad type.
+            if value is None:
+                continue
+            path_error = _validate_path_identifier(field, value)
+            if path_error:
+                return path_error
 
         # Get the **kwargs dict from bound arguments to inject token
         extra_kwargs = bound_args.arguments.get('kwargs', {})

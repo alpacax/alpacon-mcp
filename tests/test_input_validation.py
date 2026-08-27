@@ -533,6 +533,15 @@ class TestPathIdentifierValidation:
         '..\n',
     ]
 
+    # Not a str, so the pattern never runs—but the f-string that builds the
+    # endpoint stringifies it anyway, putting the separators back in the path.
+    NON_STRING_VALUES = [
+        ['../../iam/users'],
+        {'id': '../../iam/users'},
+        ('../../iam/users',),
+        123,
+    ]
+
     @pytest.mark.asyncio
     @pytest.mark.parametrize('field', PATH_IDENTIFIERS)
     @patch('utils.decorators.validate_token', return_value='fake-token')
@@ -587,6 +596,40 @@ class TestPathIdentifierValidation:
         result = await func(workspace='demo', region='ap1', ca_id=value)
         assert result['status'] == 'error'
         assert result['field'] == 'ca_id'
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('value', NON_STRING_VALUES)
+    @patch('utils.decorators.validate_token', return_value='fake-token')
+    async def test_non_string_identifier_rejected(self, mock_token, value):
+        func = _make_decorated_func(extra_params=['ca_id'])
+        result = await func(workspace='demo', region='ap1', ca_id=value)
+        assert result['status'] == 'error'
+        assert result['field'] == 'ca_id'
+
+    @pytest.mark.asyncio
+    @patch('utils.decorators.validate_token', return_value='fake-token')
+    async def test_non_string_traversal_never_reaches_http_client(self, mock_token):
+        with patch('tools.cert_tools.http_client') as mock_client:
+            mock_client.get = AsyncMock(return_value={})
+
+            result = await get_certificate_authority(
+                ca_id=['../../iam/users'],
+                workspace='demo',
+                region='ap1',
+            )
+
+        assert result['status'] == 'error'
+        mock_client.get.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch('utils.decorators.validate_token', return_value='fake-token')
+    async def test_omitted_identifier_still_accepted(self, mock_token):
+        # An optional identifier defaults to None, which means the argument was
+        # never sent—the gate must let it through rather than read it as a type
+        # violation.
+        func = _make_decorated_func(extra_params=['ca_id'])
+        result = await func(workspace='demo', region='ap1')
+        assert result['status'] == 'success'
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize('value', SAFE_VALUES)
