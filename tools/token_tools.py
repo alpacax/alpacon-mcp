@@ -396,8 +396,12 @@ async def duplicate_api_token(
     description=(
         'Rotate an API token: regenerate its secret in place. The old secret stops '
         'authenticating the moment this returns, with no grace period, so anything still using it '
-        'breaks until it is given the new one. The token id, name, scopes, expiry and Command/'
-        'Server/File ACLs are preserved—only the secret and the usage counters change. Requires a '
+        'breaks until it is given the new one. The token id, name, scopes and Command/Server/'
+        'File ACLs are preserved, and so is an expiry the token already had—but a token with no '
+        'expiry comes back carrying the workspace maximum, so rotation cannot keep a '
+        'never-expiring key never-expiring. A token already past its expiry is refused with 400 '
+        'API_TOKEN_ALREADY_EXPIRED, so this is not a way to revive one. Otherwise only the secret '
+        'and the usage counters change. Requires a '
         'paid plan. Prefer this over duplicate_api_token when rolling a leaked or aging key: '
         'duplicate leaves the old key live. '
         'Related: list_api_tokens (find token ID), duplicate_api_token (copy instead of rotate), '
@@ -412,6 +416,9 @@ async def rotate_api_token(
     token_id: str, workspace: str, region: str = '', **kwargs
 ) -> dict[str, Any]:
     """Rotate an API token's secret in place.
+
+    A token that had no expiry comes back with the workspace maximum expiry, and
+    a token already past its expiry is refused with 400 API_TOKEN_ALREADY_EXPIRED.
 
     Args:
         token_id: ID of the API token to rotate
