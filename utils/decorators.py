@@ -43,8 +43,9 @@ _SPECIFY_REGION_HINT = 'Please specify a region parameter.'
 
 _SENSITIVE_LOG_KEYS = frozenset({'_token', 'password', 'secret', 'key'})
 
-# RFC 3986 unreserved characters. Upstream routes every detail endpoint with
-# DRF's default lookup regex, '[^/.]+', so no real identifier is wider than this.
+# RFC 3986 unreserved characters—nothing in this set can restructure a URL.
+# Wide enough in practice: every identifier upstream mints is a UUID or an
+# opaque slug, and both sit well inside it.
 _PATH_IDENTIFIER_RE = re.compile(r'[A-Za-z0-9._~-]+')
 
 # Nothing above can hold a separator or an escape, so the value is always a
@@ -242,7 +243,8 @@ def _validate_path_identifier(field: str, value: str) -> dict[str, Any] | None:
             value,
             'Must be one or more letters, digits, ".", "_", "~" or "-", '
             'and must not be "." or "..". '
-            'The value is interpolated into an API URL path.',
+            'Identifiers accept only characters that cannot retarget '
+            'the API request.',
         )
     return None
 
@@ -271,16 +273,19 @@ def with_token_validation(func: Callable) -> Callable:
     """Validate a tool's inputs, then resolve and inject its auth token.
 
     Despite the name, this is the single validation gate for MCP tools:
-    workspace, region, and the identifiers interpolated into a URL path are
-    rejected here, before the token lookup runs.
+    workspace, region, and every ``_id``-suffixed identifier are checked
+    here, before the token lookup runs.
 
-    Path identifiers are matched by an ``_id`` suffix, which covers every one
-    the tools interpolate today—a path parameter named otherwise, ``username``
-    say, would reach the URL unchecked. Only declared parameters are walked,
-    so an ``_id`` nested inside the ``**kwargs`` dict is not seen either; no
-    tool schema exposes that route today. ``work_session_id`` is exempt: it
-    is sent in a request body after ``resolve_work_session_id`` strips it,
-    and the gate would break that padding tolerance.
+    Identifiers are picked by the ``_id`` suffix of the name, not by where
+    the value ends up, so the check also covers ones that only reach a query
+    parameter or a request body—today those are all UUIDs, so nothing valid
+    is rejected. The suffix covers every path-interpolated identifier the
+    tools have; a path parameter named otherwise, ``username`` say, would
+    reach the URL unchecked. Only declared parameters are walked, so an
+    ``_id`` nested inside the ``**kwargs`` dict is not seen either; no tool
+    schema exposes that route today. ``work_session_id`` is exempt: it is
+    sent in a request body after ``resolve_work_session_id`` strips it, and
+    the gate would break that padding tolerance.
 
     Transport mode is determined by ALPACON_MCP_AUTH_ENABLED env var:
     - 'true' (streamable-http): Uses JWT from auth context only.
@@ -364,7 +369,7 @@ def with_token_validation(func: Callable) -> Callable:
         if session_id is not None and not validate_server_id_format(session_id):
             return format_validation_error('session_id', session_id)
 
-        # Tools interpolate every other *_id into an endpoint path too. Their
+        # Every other *_id may be interpolated into an endpoint path. Their
         # upstream format is not always a UUID, so reject only what escapes the
         # path segment rather than requiring one.
         for field, value in arguments.items():

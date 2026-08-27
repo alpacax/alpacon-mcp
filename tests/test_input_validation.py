@@ -615,7 +615,9 @@ class TestPathIdentifierValidation:
     NON_ARGUMENT_NAMES = frozenset({'result'})
 
     # Each picks a whole endpoint out of a fixed set of constants, so nothing the
-    # client sends is interpolated into the path.
+    # client sends is interpolated into the path. Matched by source text, so a
+    # rename lands here as a failure: re-read the site before re-adding it, and
+    # never grow this set just to turn the test green.
     ENDPOINT_CHOICES = frozenset(
         {
             'metrics_tools.py: metric_endpoints[metric]',
@@ -632,6 +634,12 @@ class TestPathIdentifierValidation:
         way—``.format()``, a template constant used bare—is caught too. A way of
         building an endpoint that this does not recognize fails as well: it has
         to be read before it can be trusted.
+
+        What this holds is the naming convention at the interpolation site:
+        the name read there ends in ``_id``. It does not trace where the value
+        came from, so a client value rebound to a local ``_id`` name, or one
+        smuggled into a constant behind an ``ENDPOINT_CHOICES`` entry, passes
+        unseen. That provenance is what review is for.
         """
 
         def root_name(node):
