@@ -284,14 +284,16 @@ def with_token_validation(func: Callable) -> Callable:
 
     Identifiers are picked by the ``_id`` suffix of the name, not by where
     the value ends up, so the check also covers ones that only reach a query
-    parameter or a request body—today those are all UUIDs, so nothing valid
-    is rejected. The suffix covers every path-interpolated identifier the
-    tools have; a path parameter named otherwise, ``username`` say, would
-    reach the URL unchecked. Only declared parameters are walked, so an
-    ``_id`` nested inside the ``**kwargs`` dict is not seen either; no tool
-    schema exposes that route today. ``work_session_id`` is exempt: it is
-    sent in a request body after ``resolve_work_session_id`` strips it, and
-    the gate would break that padding tolerance.
+    parameter or a request body. That is deliberate—a ``#`` or an ``&`` in a
+    query value corrupts the request it rides on—but it does leave the rule
+    tighter than a filter strictly needs. The suffix covers every
+    path-interpolated identifier the tools have; a path parameter named
+    otherwise, ``username`` say, would reach the URL unchecked. Only declared
+    parameters are walked, so an ``_id`` nested inside the ``**kwargs`` dict is
+    not seen either; no tool schema exposes that route today.
+    ``work_session_id`` is exempt: it is sent in a request body after
+    ``resolve_work_session_id`` strips it, and the gate would break that
+    padding tolerance.
 
     Transport mode is determined by ALPACON_MCP_AUTH_ENABLED env var:
     - 'true' (streamable-http): Uses JWT from auth context only.
