@@ -40,7 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The console scripts and the Dockerfile load `main.py` as a top-level module and are unaffected.
 - `eu1` is no longer accepted as a `region`. Only `ap1` and `us1` are served, so `eu1` now fails
   validation before any HTTP call instead of dying at DNS on `{workspace}.eu1.alpacon.io`, and every
-  docstring that advertised it as a choice reads `Region (ap1, us1)` instead (#165). A client that
+  docstring that advertised it as a choice now lists only `ap1` and `us1` (#165). A client that
   sends `eu1` gets an error response with `field: "region"` rather than a connection error; nothing
   else about the response shape changed. A workspace that pinned its host explicitly—the `token.json`
   object form or `ALPACON_MCP_<REGION>_<WORKSPACE>_URL`—loses access too, even though that host never
