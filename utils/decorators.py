@@ -55,10 +55,10 @@ _DOT_SEGMENTS = frozenset({'.', '..'})
 # Validated above as UUIDs, which is stricter than the path check.
 _UUID_IDENTIFIERS = frozenset({'server_id', 'session_id'})
 
-# Never in a path: sent in the request body after resolve_work_session_id
-# strips it. Gating it would reject the padding that resolution deliberately
-# tolerates, while the same value through ALPACON_WORK_SESSION passed.
-_BODY_IDENTIFIERS = frozenset({'work_session_id'})
+# Exempt because resolve_work_session_id strips the value's padding on
+# purpose. Gating it would reject padding that resolution tolerates, while the
+# same value through ALPACON_WORK_SESSION passed.
+_EXEMPT_IDENTIFIERS = frozenset({'work_session_id'})
 
 
 def _get_jwt_token() -> str | None:
@@ -383,7 +383,7 @@ def with_token_validation(func: Callable) -> Callable:
         for field, value in arguments.items():
             if (
                 field in _UUID_IDENTIFIERS
-                or field in _BODY_IDENTIFIERS
+                or field in _EXEMPT_IDENTIFIERS
                 or not field.endswith('_id')
             ):
                 continue
