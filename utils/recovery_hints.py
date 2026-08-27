@@ -3,6 +3,12 @@
 from http import HTTPStatus
 from typing import Any
 
+# Closing advice every plan gate shares: the call is settled, only a plan change moves it.
+_PLAN_HINTS = [
+    'Retrying will not change the answer.',
+    'Ask a workspace owner to upgrade the plan.',
+]
+
 # Hint registry: (status_code, domain) -> {recovery_hints, related_tools}
 _HINT_REGISTRY: dict[tuple[int, str], dict[str, list[str]]] = {
     (HTTPStatus.UNAUTHORIZED, 'general'): {
@@ -11,6 +17,29 @@ _HINT_REGISTRY: dict[tuple[int, str], dict[str, list[str]]] = {
             'Re-run setup to refresh your token: uvx alpacon-mcp setup',
         ],
         'related_tools': ['list_workspaces'],
+    },
+    (HTTPStatus.PAYMENT_REQUIRED, 'alert'): {
+        'recovery_hints': [
+            'Creating and updating an alert rule needs a paid plan.',
+            'Reading a rule, and attaching one to a server, work on any plan.',
+            *_PLAN_HINTS,
+        ],
+        'related_tools': ['get_alert_rules', 'attach_alert_rule'],
+    },
+    (HTTPStatus.PAYMENT_REQUIRED, 'webhook'): {
+        'recovery_hints': [
+            'Creating and updating a webhook needs a paid plan.',
+            'Listing and reading webhooks work on any plan.',
+            *_PLAN_HINTS,
+        ],
+        'related_tools': ['list_webhooks', 'get_webhook'],
+    },
+    (HTTPStatus.PAYMENT_REQUIRED, 'general'): {
+        'recovery_hints': [
+            'This action needs a paid plan; reading the same resource may not.',
+            *_PLAN_HINTS,
+        ],
+        'related_tools': ['get_workspace_preferences'],
     },
     (HTTPStatus.FORBIDDEN, 'command'): {
         'recovery_hints': [
@@ -59,8 +88,10 @@ _HINT_REGISTRY: dict[tuple[int, str], dict[str, list[str]]] = {
         'recovery_hints': [
             'The alert or alert rule ID may be incorrect.',
             'Use list_alerts or get_alert_rules to find valid IDs.',
+            'A 404 on attach_alert_rule or detach_alert_rule means a wrong server_id.',
+            'A bad alert rule ID gives a 400 instead of a 404.',
         ],
-        'related_tools': ['list_alerts', 'get_alert_rules'],
+        'related_tools': ['list_alerts', 'get_alert_rules', 'list_servers'],
     },
     (HTTPStatus.NOT_FOUND, 'general'): {
         'recovery_hints': [
@@ -98,17 +129,22 @@ def _detect_error_domain(
 
     if 'command' in msg_lower or 'command' in tool_lower:
         return 'command'
+    # Before the server and user checks: a webhook message may name either.
+    if 'webhook' in msg_lower or 'webhook' in tool_lower:
+        return 'webhook'
     if (
         any(k in msg_lower for k in ('webftp', 'upload', 'download', 'file'))
         or 'webftp' in tool_lower
     ):
         return 'file'
-    if any(k in msg_lower for k in ('server',)) or 'server' in tool_lower:
+    # Before the server check: attach_alert_rule resolves the server first, so its
+    # 404 message names the server while the alert hints are the useful ones.
+    if 'alert' in msg_lower or 'alert' in tool_lower:
+        return 'alert'
+    if 'server' in msg_lower or 'server' in tool_lower:
         return 'server'
     if 'user' in msg_lower or 'iam' in tool_lower:
         return 'user'
-    if 'alert' in msg_lower or 'alert' in tool_lower:
-        return 'alert'
     if '/api/events/commands/' in ep_lower:
         return 'command'
     if '/api/webftp/' in ep_lower:

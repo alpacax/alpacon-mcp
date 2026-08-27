@@ -273,3 +273,54 @@ class TestEnrichErrorResponse:
         }
         enriched = enrich_error_response(resp)
         assert 'recovery_hints' not in enriched
+
+
+def test_a_402_explains_the_paid_plan_gate():
+    hints = get_recovery_hints(status_code=402, tool_name='create_alert_rule')
+
+    assert hints['recovery_hints']
+    assert any('paid plan' in h.lower() for h in hints['recovery_hints'])
+    assert 'attach_alert_rule' in hints['related_tools']
+
+
+def test_a_402_on_a_webhook_names_the_webhook_gate():
+    hints = get_recovery_hints(status_code=402, tool_name='create_webhook')
+
+    assert any('webhook' in h.lower() for h in hints['recovery_hints'])
+    assert 'list_webhooks' in hints['related_tools']
+
+
+def test_a_402_outside_a_known_domain_stays_plan_neutral():
+    hints = get_recovery_hints(
+        status_code=402, tool_name='update_workspace_preferences'
+    )
+
+    assert any('paid plan' in h.lower() for h in hints['recovery_hints'])
+    assert not any(
+        word in h.lower()
+        for h in hints['recovery_hints']
+        for word in ('alert rule', 'webhook')
+    )
+
+
+def test_an_alert_message_naming_the_server_stays_in_the_alert_domain():
+    assert (
+        _detect_error_domain(
+            HTTPStatus.NOT_FOUND,
+            'No Server matches the given query.',
+            tool_name='attach_alert_rule',
+        )
+        == 'alert'
+    )
+
+
+def test_a_404_from_attach_alert_rule_points_at_list_servers():
+    hints = get_recovery_hints(
+        status_code=404,
+        message='No Server matches the given query.',
+        tool_name='attach_alert_rule',
+        endpoint='/api/servers/servers/abc/attach-rule/',
+    )
+
+    assert 'list_servers' in hints['related_tools']
+    assert any('attach_alert_rule' in h for h in hints['recovery_hints'])

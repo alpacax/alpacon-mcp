@@ -434,7 +434,9 @@ OAuth/browser callers must scope command execution and file transfers under an a
 ### 🔔 Alert management
 - **list_alerts**: List alerts with optional filtering
 - **get_alert**: Get alert details
-- **mute_alert**: Mute an alert temporarily
+- **acknowledge_alert**: Record an acknowledgement against an alert
+- **attach_alert_rule**: Attach an alert rule to a server
+- **detach_alert_rule**: Detach an alert rule from a server
 - **create_alert_rule**: Create monitoring thresholds
 - **update_alert_rule**: Update alert rule configuration
 - **delete_alert_rule**: Delete an alert rule

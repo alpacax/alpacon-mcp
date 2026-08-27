@@ -115,10 +115,10 @@ class TestServerToolsEndToEnd:
 
         result = await create_server_note(
             server_id=SERVER_UUID,
-            title='Test Note',
             content='Test content',
             workspace='production',
             region='ap1',
+            pinned=True,
         )
 
         assert result['status'] == 'success'
@@ -126,8 +126,9 @@ class TestServerToolsEndToEnd:
 
         # Verify the POST body
         assert captured_body['server'] == SERVER_UUID
-        assert captured_body['title'] == 'Test Note'
         assert captured_body['content'] == 'Test content'
+        assert captured_body['pinned'] is True
+        assert 'title' not in captured_body
 
 
 class TestIAMToolsEndToEnd:

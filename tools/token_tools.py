@@ -423,7 +423,7 @@ async def rotate_api_token(
     Args:
         token_id: ID of the API token to rotate
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Rotated API token response carrying the new secret

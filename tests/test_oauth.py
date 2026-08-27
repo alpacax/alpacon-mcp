@@ -562,7 +562,7 @@ class TestSealedGrants:
 
     def test_tampered_device_id_is_rejected(self):
         sealed = _seal_refresh_token('v1.refresh', DEVICE_ID)
-        prefix, encoded, signature = sealed.split('.')
+        prefix, _, signature = sealed.split('.')
         forged = base64.urlsafe_b64encode(
             json.dumps(
                 {'k': 'refresh', 'v': 'v1.refresh', 'd': OTHER_DEVICE_ID}
