@@ -16,7 +16,10 @@ from .token_manager import TokenManager
 
 
 def _region_accepted(region: str) -> bool:
-    """Return True if the region is served, else print an error and return False."""
+    """Return True if the region validator accepts it, else print an error and return False.
+
+    The internal-only `dev` region passes too; the error message advertises only the served ones.
+    """
     if validate_region_format(region):
         return True
     print(
