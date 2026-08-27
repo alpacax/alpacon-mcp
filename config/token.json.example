@@ -5,8 +5,5 @@
   },
   "us1": {
     "backup-site": "your-us1-backup-token-here"
-  },
-  "eu1": {
-    "enterprise": "your-eu1-enterprise-token-here"
   }
 }

@@ -105,7 +105,7 @@ class TokenManager:
         """Set token for specific region and workspace.
 
         Args:
-            region: Region (ap1, us1, eu1, etc.)
+            region: Region (ap1, us1)
             workspace: Workspace name
             token: API token
 
@@ -146,7 +146,7 @@ class TokenManager:
         """Get token for specific region and workspace.
 
         Args:
-            region: Region (ap1, us1, eu1, etc.)
+            region: Region (ap1, us1)
             workspace: Workspace name
 
         Returns:
@@ -265,7 +265,7 @@ class TokenManager:
         """Remove token for specific region and workspace.
 
         Args:
-            region: Region (ap1, us1, eu1, etc.)
+            region: Region (ap1, us1)
             workspace: Workspace name
 
         Returns:

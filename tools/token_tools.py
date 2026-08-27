@@ -70,7 +70,7 @@ async def list_api_tokens(
 
     Args:
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
         page: Page number for pagination (optional)
         page_size: Number of items per page (optional)
         name: Filter by exact token name (optional)
@@ -131,7 +131,7 @@ async def get_api_token(
     Args:
         token_id: ID of the API token to retrieve
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         API token detail response
@@ -185,7 +185,7 @@ async def create_api_token(
         presets: Preset scope keys resolved server-side. Merged with explicit
             scopes; stored as granular scope strings. Call
             list_api_token_presets to discover available keys (optional)
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         API token creation response
@@ -254,7 +254,7 @@ async def update_api_token(
             expires. Mutually exclusive with expires_at (optional)
         scopes: Replacement scope list. Re-validated against the caller's
             RBAC ceiling (optional)
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         API token update response
@@ -316,7 +316,7 @@ async def delete_api_token(
     Args:
         token_id: ID of the API token to delete
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         API token deletion response
@@ -365,7 +365,7 @@ async def duplicate_api_token(
         token_id: ID of the API token to duplicate
         workspace: Workspace name. Required parameter
         name: Name for the duplicated token (optional; server auto-generates if omitted)
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Duplicated API token response
@@ -459,7 +459,7 @@ async def list_api_token_scopes(
 
     Args:
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Available API token scopes response
@@ -490,7 +490,7 @@ async def list_api_token_presets(
 
     Args:
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Available API token presets response

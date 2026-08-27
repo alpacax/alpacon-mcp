@@ -82,8 +82,8 @@ Things the code will not tell you at a glance:
 ## Language and writing style
 
 - English only: code, comments, docstrings, documentation, commit messages, PR
-  titles and bodies, and every identifier. User-facing CLI/console output is
-  Korean.
+  titles and bodies, every identifier, and the user-facing CLI/console output
+  the setup wizard and the entry points print.
 - Sentence case for all headings and titles: "## Available MCP tools", not
   "## Available MCP Tools".
 - Em-dashes take no surrounding spaces: "remote mode—not stdio".

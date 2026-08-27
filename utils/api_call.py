@@ -34,7 +34,7 @@ async def http_call_response(
         method: Bound http_client method (``http_client.get``, ``.post``, ...).
             Passed from the tool module so tests patching that module's
             ``http_client`` name keep intercepting the call.
-        region: Region (ap1, us1, eu1, etc.)
+        region: Region (ap1, us1)
         workspace: Workspace name
         endpoint: API endpoint path
         token: API token (injected by @mcp_tool_handler)

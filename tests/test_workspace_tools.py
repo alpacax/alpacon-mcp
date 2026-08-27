@@ -39,7 +39,6 @@ def mock_token_manager():
             'backup': {'token': 'token4'},
             'disaster-recovery': {'token': 'token5'},
         },
-        'eu1': {'compliance': {'token': 'token6'}},
     }
     # No pinned host override by default; list_workspaces falls back to the
     # derived {workspace}.{region}.alpacon.io host.
@@ -215,8 +214,8 @@ class TestListWorkspaces:
         assert result['data']['source'] == 'token_file'
 
         workspaces = result['data']['workspaces']
-        # Should include all workspaces from all regions (3 + 2 + 1 = 6)
-        assert len(workspaces) == 6
+        # Should include all workspaces from all regions (3 + 2 = 5)
+        assert len(workspaces) == 5
 
 
 @pytest.fixture

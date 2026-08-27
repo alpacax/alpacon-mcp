@@ -110,20 +110,20 @@ class TestSystemInfoEdgeCases:
         """Test system info with different region."""
         from tools.system_info_tools import get_system_info
 
-        mock_http_client.get.return_value = {'hostname': 'eu-server'}
+        mock_http_client.get.return_value = {'hostname': 'us-server'}
 
         result = await get_system_info(
             server_id='550e8400-e29b-41d4-a716-446655440001',
             workspace='testworkspace',
-            region='eu1',
+            region='us1',
         )
 
         assert result['status'] == 'success'
-        assert result['region'] == 'eu1'
+        assert result['region'] == 'us1'
 
         # Verify correct region was used
         call_args = mock_http_client.get.call_args
-        assert call_args[1]['region'] == 'eu1'
+        assert call_args[1]['region'] == 'us1'
 
 
 class TestListSystemUsersEdgeCases:
@@ -410,14 +410,14 @@ class TestCrossFunctionScenarios:
         for func in [get_system_info, list_system_users]:
             result = await func(
                 server_id='660e8400-e29b-41d4-a716-446655440001',
-                workspace='eu-workspace',
-                region='eu1',
+                workspace='us-workspace',
+                region='us1',
             )
 
             assert result['status'] == 'success'
             assert result['server_id'] == '660e8400-e29b-41d4-a716-446655440001'
-            assert result['workspace'] == 'eu-workspace'
-            assert result['region'] == 'eu1'
+            assert result['workspace'] == 'us-workspace'
+            assert result['region'] == 'us1'
 
     @pytest.mark.asyncio
     async def test_server_not_found_errors(self, mock_http_client, mock_token_manager):

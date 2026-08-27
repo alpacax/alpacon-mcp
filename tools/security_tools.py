@@ -44,7 +44,7 @@ async def list_command_acls(
 
     Args:
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
         api_token_id: Filter by API token ID (optional)
         service_token_id: Filter by service token ID (optional)
         page: Page number for pagination (optional)
@@ -105,7 +105,7 @@ async def create_command_acl(
         service_token_id: Service token ID this rule applies to (mutually exclusive with api_token_id)
         username: System username restriction. Empty = token owner only, '*' = any user (optional)
         groupname: System groupname restriction. Empty = no restriction (any group), exact name to restrict (optional)
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Command ACL creation response
@@ -162,7 +162,7 @@ async def update_command_acl(
         command: Command pattern to allow (optional)
         username: System username restriction. Pass '' explicitly to clear an existing restriction; omit to leave unchanged (optional)
         groupname: System groupname restriction. Pass '' explicitly to clear an existing restriction; omit to leave unchanged (optional)
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Command ACL update response
@@ -205,7 +205,7 @@ async def delete_command_acl(
     Args:
         acl_id: Command ACL rule ID to delete
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Command ACL deletion response
@@ -241,7 +241,7 @@ async def list_server_acls(
 
     Args:
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
         api_token_id: Filter by API token ID (optional)
         service_token_id: Filter by service token ID (optional)
         page: Page number for pagination (optional)
@@ -299,7 +299,7 @@ async def create_server_acl(
         server_id: Server UUID to grant access to
         api_token_id: API token ID to grant access (mutually exclusive with service_token_id)
         service_token_id: Service token ID to grant access (mutually exclusive with api_token_id)
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Server ACL creation response
@@ -352,7 +352,7 @@ async def update_server_acl(
         server_id: New server UUID (optional)
         api_token_id: New API token ID to rebind this rule to (optional)
         service_token_id: New service token ID to rebind this rule to (optional)
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Server ACL update response
@@ -402,7 +402,7 @@ async def delete_server_acl(
     Args:
         acl_id: Server ACL rule ID to delete
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Server ACL deletion response
@@ -445,7 +445,7 @@ async def bulk_server_acl(
         server_ids: List of server UUIDs to add or remove access for (1-100 items)
         api_token_id: API token ID to operate on (mutually exclusive with service_token_id)
         service_token_id: Service token ID to operate on (mutually exclusive with api_token_id)
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Bulk server ACL operation response
@@ -505,7 +505,7 @@ async def list_file_acls(
 
     Args:
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
         api_token_id: Filter by API token ID (optional)
         service_token_id: Filter by service token ID (optional)
         page: Page number for pagination (optional)
@@ -570,7 +570,7 @@ async def create_file_acl(
         service_token_id: Service token ID this rule applies to (mutually exclusive with api_token_id)
         username: System username restriction. Empty = token owner only, '*' = any user (optional)
         groupname: System groupname restriction. Empty = no restriction (any group), exact name to restrict (optional)
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         File ACL creation response
@@ -634,7 +634,7 @@ async def update_file_acl(
         action: New allowed action - 'upload', 'download', or '*' (optional)
         username: System username restriction. Pass '' explicitly to clear an existing restriction; omit to leave unchanged (optional)
         groupname: System groupname restriction. Pass '' explicitly to clear an existing restriction; omit to leave unchanged (optional)
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         File ACL update response
@@ -684,7 +684,7 @@ async def delete_file_acl(
     Args:
         acl_id: File ACL rule ID to delete
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         File ACL deletion response

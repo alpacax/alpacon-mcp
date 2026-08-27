@@ -117,7 +117,7 @@ async def list_workspaces(region: str = '') -> dict[str, Any]:
     If region is provided, it filters results to that region only.
 
     Args:
-        region: Region filter (e.g., ap1, us1, eu1). Empty string means all regions.
+        region: Region filter (e.g., ap1, us1). Empty string means all regions.
 
     Returns:
         Workspaces list response
@@ -192,7 +192,7 @@ async def get_current_user(
 
     Args:
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Current user info response
@@ -233,7 +233,7 @@ async def get_workspace_access_control(
 
     Args:
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Workspace access control settings response
@@ -278,7 +278,7 @@ async def get_workspace_security(
 
     Args:
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Workspace security settings response
@@ -335,7 +335,7 @@ async def list_workspace_mfa_methods(
 
     Args:
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Allowed MFA methods response
@@ -385,7 +385,7 @@ async def get_workspace_preferences(
 
     Args:
         workspace: Workspace name. Required parameter
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Workspace preferences response
@@ -459,7 +459,7 @@ async def update_workspace_preferences(
         allowed_domains: Allowed email domains for invites; SaaS-only field. Replaces the
             whole list (not additive); read via get_workspace_preferences and merge before
             sending (optional)
-        region: Region (ap1, us1, eu1). Auto-detected if not provided
+        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Workspace preferences update response

@@ -307,7 +307,7 @@ class TestURLConstruction:
         )
         mock_httpx_client.request.return_value = mock_response
 
-        regions = ['ap1', 'us1', 'eu1']
+        regions = ['ap1', 'us1']
         for region in regions:
             await http_client.get(
                 region=region,
@@ -321,7 +321,6 @@ class TestURLConstruction:
         expected_urls = [
             'https://testworkspace.ap1.alpacon.io/api/test/',
             'https://testworkspace.us1.alpacon.io/api/test/',
-            'https://testworkspace.eu1.alpacon.io/api/test/',
         ]
         for i, expected_url in enumerate(expected_urls):
             assert calls[i][1]['url'] == expected_url
