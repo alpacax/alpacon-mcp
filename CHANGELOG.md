@@ -73,7 +73,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   because the two fields had no runtime consumer, so both tools returned 404. Server
   disconnection still raises an alert in the notification bell; that path is unaffected,
   as is the unrelated metrics `AlertRule` behind the alert rule tools, whose own payload
-  correction is the first entry under Added.
+  correction is the first entry under Changed.
 
 ### Fixed
 - Dropped the root `__init__.py` that 0.4.1 added, together with its wheel include. It made the
