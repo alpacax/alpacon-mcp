@@ -123,10 +123,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Arguments whose name ends in `_id` are now validated before any request is built: the value must
   match `[A-Za-z0-9._~-]+` and must not be `.` or `..`, because tools interpolate these identifiers
   into endpoint paths, where `urljoin` resolves `..` as a path climb and carries percent-encoded
-  climbs such as `%2e%2e%2f` to the wire still encoded (#204). A client sending anything else—a separator,
-  a `?` or `#`, a trailing newline—receives the usual validation error envelope naming the field
-  instead of a response from another resource. `server_id` and `session_id` keep their stricter
-  UUID check, and `work_session_id` is exempt, keeping its documented whitespace tolerance.
+  climbs such as `%2e%2e%2f` to the wire still encoded (#204). A client sending anything else—a
+  separator, a `?` or `#`, a trailing newline—receives the usual validation error envelope naming
+  the field instead of a response from another resource. `server_id` and `session_id` keep their
+  stricter UUID check, and `work_session_id` is exempt, keeping its documented whitespace
+  tolerance.
 - Dropped the root `__init__.py` that 0.4.1 added, together with its wheel include. It made the
   checkout directory a package, so under pytest `sys.modules['main']` was pre-registered with that
   package and `import main` no longer reached `main.py` in a clone directory named `main` (#189).
