@@ -4,12 +4,17 @@ from __future__ import annotations
 
 import inspect
 import os
+import re
 from collections.abc import Callable
 from functools import wraps
 from typing import Any
 
+import jwt as pyjwt
+from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.types import ToolAnnotations
 
+from utils import error_handler, token_manager
+from utils.auth import extract_workspaces, match_workspace
 from utils.common import (
     error_response,
     is_auth_enabled,
@@ -25,12 +30,35 @@ from utils.error_handler import (
 )
 from utils.http_client import AlpaconHTTPClient
 from utils.logger import get_logger
+from utils.recovery_hints import enrich_error_response
+from utils.security_settings import (
+    check_mfa_completed,
+    get_action_for_tool,
+    security_cache,
+)
 
 logger = get_logger('decorators')
 
 _SPECIFY_REGION_HINT = 'Please specify a region parameter.'
 
 _SENSITIVE_LOG_KEYS = frozenset({'_token', 'password', 'secret', 'key'})
+
+# RFC 3986 unreserved characters—nothing in this set can restructure a URL.
+# Wide enough in practice: every identifier upstream mints is a UUID or an
+# opaque slug, and both sit well inside it.
+_PATH_IDENTIFIER_RE = re.compile(r'[A-Za-z0-9._~-]+')
+
+# Nothing above can hold a separator or an escape, so the value is always a
+# single path segment and only the two dot-segments still retarget the request.
+_DOT_SEGMENTS = frozenset({'.', '..'})
+
+# Validated above as UUIDs, which is stricter than the path check.
+_UUID_IDENTIFIERS = frozenset({'server_id', 'session_id'})
+
+# Exempt because resolve_work_session_id strips the value's padding on
+# purpose. Gating it would reject padding that resolution tolerates, while the
+# same value through ALPACON_WORK_SESSION passed.
+_EXEMPT_IDENTIFIERS = frozenset({'work_session_id'})
 
 
 def _get_jwt_token() -> str | None:
@@ -39,22 +67,13 @@ def _get_jwt_token() -> str | None:
     Returns the raw JWT string when running in HTTP transport mode
     with JWT authentication. Returns None in stdio/SSE mode.
     """
-    try:
-        from mcp.server.auth.middleware.auth_context import get_access_token
-
-        access_token = get_access_token()
-        if access_token is not None:
-            return access_token.token
-    except ImportError:
-        pass
-    return None
+    access_token = get_access_token()
+    return access_token.token if access_token is not None else None
 
 
 def _decode_jwt_claims(jwt_token: str) -> dict | None:
     """Decode JWT claims without verification (already verified by middleware)."""
     try:
-        import jwt as pyjwt
-
         return pyjwt.decode(
             jwt_token,
             options={
@@ -71,8 +90,6 @@ def _decode_jwt_claims(jwt_token: str) -> dict | None:
 
 def _get_jwt_workspaces(jwt_token: str) -> list[dict[str, str]]:
     """Extract workspace list from JWT claims."""
-    from utils.auth import extract_workspaces
-
     claims = _decode_jwt_claims(jwt_token)
     if not claims:
         return []
@@ -84,8 +101,6 @@ def _get_jwt_workspaces(jwt_token: str) -> list[dict[str, str]]:
 def _validate_jwt_workspace(jwt_token: str, region: str, workspace: str) -> bool:
     """Validate that the JWT authorizes access to the given workspace/region."""
     try:
-        from utils.auth import match_workspace
-
         workspaces = _get_jwt_workspaces(jwt_token)
         return match_workspace(workspaces, region, workspace)
     except Exception as e:
@@ -148,9 +163,7 @@ def _resolve_region_local(workspace: str | None) -> tuple[str | None, str | None
     Returns:
         (resolved_region, error_message) - one of them will be None
     """
-    from utils.token_manager import get_token_manager
-
-    tm = get_token_manager()
+    tm = token_manager.get_token_manager()
 
     if workspace:
         region = tm.find_region_for_workspace(workspace)
@@ -185,12 +198,6 @@ async def _check_mfa_requirement(
     Raises:
         UpstreamAuthError: If MFA is required but not completed.
     """
-    from utils.security_settings import (
-        check_mfa_completed,
-        get_action_for_tool,
-        security_cache,
-    )
-
     action = get_action_for_tool(tool_name)
     if not action:
         return
@@ -208,10 +215,8 @@ async def _check_mfa_requirement(
             return
 
         # MFA required but not completed — also set dict signal as fallback
-        from utils.error_handler import make_auth_error_key, signal_upstream_auth_error
-
-        token_key = make_auth_error_key(jwt_token)
-        signal_upstream_auth_error(
+        token_key = error_handler.make_auth_error_key(jwt_token)
+        error_handler.signal_upstream_auth_error(
             token_key,
             {'mfa_required': True, 'source': action},
         )
@@ -227,6 +232,27 @@ async def _check_mfa_requirement(
         # Fail-open: if pre-check fails, let the API call proceed.
         # The upstream API's own MFA check will catch it as a fallback.
         logger.debug('MFA pre-check failed (non-fatal): %s', e)
+
+
+def _validate_path_identifier(field: str, value: Any) -> dict[str, Any] | None:
+    """Returns an error response, or None if valid."""
+    # A non-str never matches the pattern, but the f-string that builds the
+    # endpoint stringifies it anyway, so its separators reach the path.
+    # fullmatch, not match: '$' also matches before a trailing newline.
+    if (
+        not isinstance(value, str)
+        or not _PATH_IDENTIFIER_RE.fullmatch(value)
+        or value in _DOT_SEGMENTS
+    ):
+        return format_validation_error(
+            field,
+            value,
+            'Must be a string of one or more letters, digits, ".", "_", '
+            '"~" or "-", and must not be "." or "..". '
+            'Identifiers accept only characters that cannot retarget '
+            'the API request.',
+        )
+    return None
 
 
 def _validate_uuid_list(field: str, value: Any) -> dict[str, Any] | None:
@@ -250,7 +276,24 @@ def _validate_uuid_list(field: str, value: Any) -> dict[str, Any] | None:
 
 
 def with_token_validation(func: Callable) -> Callable:
-    """Decorator to add automatic token validation to MCP tools.
+    """Validate a tool's inputs, then resolve and inject its auth token.
+
+    Despite the name, this is the single validation gate for MCP tools:
+    workspace, region, and every ``_id``-suffixed identifier are checked
+    here, before the token lookup runs.
+
+    Identifiers are picked by the ``_id`` suffix of the name, not by where
+    the value ends up, so the check also covers ones that only reach a query
+    parameter or a request body. That is deliberate—a ``#`` or an ``&`` in a
+    query value corrupts the request it rides on—but it does leave the rule
+    tighter than a filter strictly needs. The suffix covers every
+    path-interpolated identifier the tools have; a path parameter named
+    otherwise, ``username`` say, would reach the URL unchecked. Only declared
+    parameters are walked, so an ``_id`` nested inside the ``**kwargs`` dict is
+    not seen either; no tool schema exposes that route today.
+    ``work_session_id`` is exempt: it is sent in a request body after
+    ``resolve_work_session_id`` strips it, and the gate would break that
+    padding tolerance.
 
     Transport mode is determined by ALPACON_MCP_AUTH_ENABLED env var:
     - 'true' (streamable-http): Uses JWT from auth context only.
@@ -334,6 +377,23 @@ def with_token_validation(func: Callable) -> Callable:
         if session_id is not None and not validate_server_id_format(session_id):
             return format_validation_error('session_id', session_id)
 
+        # Every other *_id may be interpolated into an endpoint path. Their
+        # upstream format is not always a UUID, so reject only what escapes the
+        # path segment rather than requiring one.
+        for field, value in arguments.items():
+            if (
+                field in _UUID_IDENTIFIERS
+                or field in _EXEMPT_IDENTIFIERS
+                or not field.endswith('_id')
+            ):
+                continue
+            # None is an omitted optional argument, not a bad type.
+            if value is None:
+                continue
+            path_error = _validate_path_identifier(field, value)
+            if path_error:
+                return path_error
+
         # Get the **kwargs dict from bound arguments to inject token
         extra_kwargs = bound_args.arguments.get('kwargs', {})
 
@@ -390,8 +450,6 @@ def with_error_handling(func: Callable) -> Callable:
 
     @wraps(func)
     async def wrapper(*args, **kwargs):
-        from utils.recovery_hints import enrich_error_response
-
         # Extract function name for logging
         func_name = func.__name__
 
@@ -519,7 +577,7 @@ def mcp_tool_handler(
 
     This decorator combines:
     1. MCP tool registration (with optional annotations and meta)
-    2. Token validation (JWT for streamable-http, token.json for stdio)
+    2. Input validation, then token injection (JWT for streamable-http, token.json for stdio)
     3. Error handling
     4. Logging
 
@@ -538,7 +596,10 @@ def mcp_tool_handler(
         func = with_token_validation(func)
         func = with_logging(func)
 
-        # Register with MCP
+        # Deliberately local: server.py builds the FastMCP instance at module
+        # level from ALPACON_MCP_AUTH_ENABLED, which main_http.py sets just
+        # before importing it. Hoisting this would decide the auth mode
+        # whenever anything first reaches this module.
         from server import mcp
 
         return mcp.tool(
