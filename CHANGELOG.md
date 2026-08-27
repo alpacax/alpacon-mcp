@@ -123,9 +123,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Identifiers interpolated into an API URL path can no longer retarget the request. Tools build
   endpoints as `/api/cert/authorities/{ca_id}/` and `urljoin` resolves `..` as a path climb, so
   `ca_id='../../servers/servers/<uuid>'` reached the server endpoint instead and reported success.
-  Every argument whose name ends in `_id` is now rejected when it contains `..`, a path separator,
-  `?` or `#`, so a client sending such a value receives the usual validation error envelope rather
-  than a response from another resource.
+  Every argument whose name ends in `_id` must now match `[A-Za-z0-9._~-]+` and must not be `.` or
+  `..`, so a client sending anything else receives the usual validation error envelope rather than a
+  response from another resource. The accepted set matches what upstream can route—every detail
+  endpoint uses DRF's default `[^/.]+` lookup—and it closes percent-encoded attempts such as
+  `ca_id='%2e%2e%2fiam'`, which `urljoin` leaves encoded so that a literal-character check misses it
+  and the path climbs wherever the URL is decoded upstream. A trailing newline is rejected too, so
+  `ca_id='abc\n'` now returns that same envelope instead of letting httpx raise `InvalidURL`.
 - Dropped the root `__init__.py` that 0.4.1 added, together with its wheel include. It made the
   checkout directory a package, so under pytest `sys.modules['main']` was pre-registered with that
   package and `import main` no longer reached `main.py` in a clone directory named `main` (#189).

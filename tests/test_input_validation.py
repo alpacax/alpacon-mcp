@@ -492,9 +492,38 @@ class TestPathIdentifierValidation:
         'x#frag',
     ]
 
-    # Not a UUID on purpose: no evidence the API uses UUIDs for every identifier,
-    # so the fix must not tighten these.
+    # urljoin leaves these encoded, so the climb happens only once something
+    # upstream decodes the path; rejecting them here keeps that off the wire.
+    ENCODED_RETARGETING_VALUES = [
+        '%2e%2e%2f%2e%2e%2fiam%2fusers',
+        '%2E%2E%2Fiam%2Fusers',
+        '%252e%252e%252fiam',
+        'x%3Fadmin=true',
+        'x%23frag',
+    ]
+
+    # Not a UUID on purpose: upstream routes detail endpoints with DRF's default
+    # '[^/.]+' lookup, so the gate must not tighten these to a UUID.
     SAFE_ID = 'ca-1'
+
+    # 'a..b' is not a dot-segment, so the gate must not reject it for holding '..'.
+    SAFE_VALUES = [SAFE_ID, '550e8400-e29b-41d4-a716-446655440000', 'a..b', '~x']
+
+    # Everything outside the unreserved set, plus the two dot-segments. The
+    # trailing newlines are here because '$' also matches before a final one,
+    # so an anchored search would let them through and httpx would raise
+    # InvalidURL instead of the gate returning a validation error.
+    UNRESERVED_VIOLATIONS = [
+        '.',
+        '..',
+        'x:y',
+        'a b',
+        'x@y',
+        '',
+        'x+y',
+        'abc\n',
+        '..\n',
+    ]
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize('field', PATH_IDENTIFIERS)
@@ -517,10 +546,48 @@ class TestPathIdentifierValidation:
         assert result['field'] == 'ca_id'
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize('value', ENCODED_RETARGETING_VALUES)
     @patch('utils.decorators.validate_token', return_value='fake-token')
-    async def test_safe_non_uuid_identifier_still_accepted(self, mock_token):
+    async def test_percent_encoded_retargeting_rejected(self, mock_token, value):
         func = _make_decorated_func(extra_params=['ca_id'])
-        result = await func(workspace='demo', region='ap1', ca_id=self.SAFE_ID)
+        result = await func(workspace='demo', region='ap1', ca_id=value)
+        assert result['status'] == 'error'
+        assert result['field'] == 'ca_id'
+
+    @pytest.mark.asyncio
+    @patch('utils.decorators.validate_token', return_value='fake-token')
+    async def test_percent_encoded_traversal_never_reaches_http_client(
+        self, mock_token
+    ):
+        from tools.cert_tools import get_certificate_authority
+
+        with patch('tools.cert_tools.http_client') as mock_client:
+            mock_client.get = AsyncMock(return_value={})
+
+            result = await get_certificate_authority(
+                ca_id='%2e%2e%2f%2e%2e%2fiam%2fusers',
+                workspace='demo',
+                region='ap1',
+            )
+
+        assert result['status'] == 'error'
+        mock_client.get.assert_not_called()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('value', UNRESERVED_VIOLATIONS)
+    @patch('utils.decorators.validate_token', return_value='fake-token')
+    async def test_non_unreserved_identifier_rejected(self, mock_token, value):
+        func = _make_decorated_func(extra_params=['ca_id'])
+        result = await func(workspace='demo', region='ap1', ca_id=value)
+        assert result['status'] == 'error'
+        assert result['field'] == 'ca_id'
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('value', SAFE_VALUES)
+    @patch('utils.decorators.validate_token', return_value='fake-token')
+    async def test_safe_non_uuid_identifier_still_accepted(self, mock_token, value):
+        func = _make_decorated_func(extra_params=['ca_id'])
+        result = await func(workspace='demo', region='ap1', ca_id=value)
         assert result['status'] == 'success'
 
     @pytest.mark.asyncio

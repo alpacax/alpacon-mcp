@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import inspect
 import os
+import re
 from collections.abc import Callable
 from functools import wraps
 from typing import Any
@@ -32,9 +33,13 @@ _SPECIFY_REGION_HINT = 'Please specify a region parameter.'
 
 _SENSITIVE_LOG_KEYS = frozenset({'_token', 'password', 'secret', 'key'})
 
-# A path separator lets a value append segments, '?' and '#' start a query or
-# fragment, and urljoin resolves '..' as a climb out of the intended endpoint.
-_PATH_UNSAFE_CHARS = ('/', '\\', '?', '#')
+# RFC 3986 unreserved characters. Upstream routes every detail endpoint with
+# DRF's default lookup regex, '[^/.]+', so no real identifier is wider than this.
+_PATH_IDENTIFIER_RE = re.compile(r'[A-Za-z0-9._~-]+')
+
+# Nothing above can hold a separator or an escape, so the value is always a
+# single path segment and only the two dot-segments still retarget the request.
+_DOT_SEGMENTS = frozenset({'.', '..'})
 
 # Validated above as UUIDs, which is stricter than the path check.
 _UUID_IDENTIFIERS = frozenset({'server_id', 'session_id'})
@@ -238,11 +243,13 @@ async def _check_mfa_requirement(
 
 def _validate_path_identifier(field: str, value: str) -> dict[str, Any] | None:
     """Returns an error response, or None if valid."""
-    if '..' in value or any(char in value for char in _PATH_UNSAFE_CHARS):
+    # fullmatch, not match: '$' also matches before a trailing newline.
+    if not _PATH_IDENTIFIER_RE.fullmatch(value) or value in _DOT_SEGMENTS:
         return format_validation_error(
             field,
             value,
-            'Must not contain "..", a path separator, "?" or "#". '
+            'Must be one or more letters, digits, ".", "_", "~" or "-", '
+            'and must not be "." or "..". '
             'The value is interpolated into an API URL path.',
         )
     return None
@@ -272,7 +279,7 @@ def with_token_validation(func: Callable) -> Callable:
     """Validate a tool's inputs, then resolve and inject its auth token.
 
     Despite the name, this is the single validation gate for MCP tools:
-    workspace, region, and every identifier interpolated into a URL path are
+    workspace, region, and the identifiers interpolated into a URL path are
     rejected here, before the token lookup runs.
 
     Transport mode is determined by ALPACON_MCP_AUTH_ENABLED env var:
