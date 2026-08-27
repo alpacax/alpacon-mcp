@@ -42,7 +42,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   validation before any HTTP call instead of dying at DNS on `{workspace}.eu1.alpacon.io`, and every
   docstring that advertised it as a choice reads `Region (ap1, us1)` instead (#165). A client that
   sends `eu1` gets an error response with `field: "region"` rather than a connection error; nothing
-  else about the response shape changed.
+  else about the response shape changed. A workspace that pinned its host explicitly—the `token.json`
+  object form or `ALPACON_MCP_<REGION>_<WORKSPACE>_URL`—loses access too, even though that host never
+  resolved `*.eu1.alpacon.io`: the region check runs before the override is read. Re-register such an
+  entry under `ap1` or `us1` and keep its `url` as it is.
 - The setup wizard checks the region it prompts for instead of writing whatever is typed into
   `token.json`. A typo such as `eu1` or `ap` is now reported at the prompt rather than surfacing as a
   validation error on the first tool call (#165).
