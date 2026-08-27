@@ -487,6 +487,21 @@ class TestPathIdentifierValidation:
         'webhook_id',
     ]
 
+    # Handled before the suffix loop: the first two as UUIDs, the third exempt
+    # because it travels in a request body after its padding is stripped.
+    DECORATOR_IDENTIFIERS = frozenset({'server_id', 'session_id', 'work_session_id'})
+
+    # None of these reaches a path: each is sent as a query filter or a request
+    # body field. The gate still checks them, because it picks arguments by the
+    # suffix rather than by destination, and a `#` or an `&` in a query value
+    # corrupts the request it rides on just as a `..` retargets a path.
+    NON_PATH_IDENTIFIERS = [
+        'api_token_id',
+        'authority_id',
+        'service_token_id',
+        'target_id',
+    ]
+
     TRAVERSAL_ID = '../../servers/servers/550e8400-e29b-41d4-a716-446655440000'
 
     # Each was observed rewriting the outgoing URL: bare '..' climbs a level and
@@ -546,6 +561,17 @@ class TestPathIdentifierValidation:
     @pytest.mark.parametrize('field', PATH_IDENTIFIERS)
     @patch('utils.decorators.validate_token', return_value='fake-token')
     async def test_path_traversal_identifier_rejected(self, mock_token, field):
+        func = _make_decorated_func(extra_params=[field])
+        result = await func(
+            workspace='demo', region='ap1', **{field: self.TRAVERSAL_ID}
+        )
+        assert result['status'] == 'error'
+        assert result['field'] == field
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('field', NON_PATH_IDENTIFIERS)
+    @patch('utils.decorators.validate_token', return_value='fake-token')
+    async def test_non_path_identifier_gated_too(self, mock_token, field):
         func = _make_decorated_func(extra_params=[field])
         result = await func(
             workspace='demo', region='ap1', **{field: self.TRAVERSAL_ID}
@@ -777,6 +803,42 @@ class TestPathIdentifierValidation:
         assert not unchecked, (
             'These reach an endpoint path but skip the _id gate in '
             f'with_token_validation: {sorted(unchecked)}'
+        )
+
+    def test_every_id_parameter_appears_in_a_case_list(self):
+        """The case lists above are hand-written, so they drift as tools land.
+
+        The gate picks arguments by the ``_id`` suffix, not by where the value
+        ends up, so an identifier missing from both lists is one the suite never
+        holds the gate to. Reading the parameters out of ``tools/`` is what keeps
+        the lists honest; the split between them still has to be made by hand,
+        because only reading the tool says whether a value reaches a path.
+        """
+        tools_dir = Path(__file__).resolve().parent.parent / 'tools'
+        declared = set()
+
+        for module in sorted(tools_dir.glob('*.py')):
+            tree = ast.parse(module.read_text(encoding='utf-8'), str(module))
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.AsyncFunctionDef | ast.FunctionDef):
+                    continue
+                args = node.args
+                for arg in args.posonlyargs + args.args + args.kwonlyargs:
+                    if arg.arg.endswith('_id'):
+                        declared.add(arg.arg)
+
+        covered = (
+            set(self.PATH_IDENTIFIERS)
+            | set(self.NON_PATH_IDENTIFIERS)
+            | self.DECORATOR_IDENTIFIERS
+        )
+        assert not declared - covered, (
+            'These *_id parameters are validated by with_token_validation but '
+            f'appear in no case list: {sorted(declared - covered)}'
+        )
+        assert not covered - declared, (
+            'These case-list entries name no tool parameter, so the case is '
+            f'dead: {sorted(covered - declared)}'
         )
 
     @pytest.mark.asyncio
