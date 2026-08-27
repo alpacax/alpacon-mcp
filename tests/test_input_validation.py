@@ -1,6 +1,6 @@
 """Tests for input validation wired into MCP tool functions."""
 
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -439,6 +439,149 @@ class TestSessionIdValidation:
         func = _make_decorated_func(extra_params=['session_id'])
         result = await func(workspace='demo', region='ap1')
         assert result['status'] == 'success'
+
+
+# ---------------------------------------------------------------------------
+# Path-interpolated identifier validation
+# ---------------------------------------------------------------------------
+
+
+class TestPathIdentifierValidation:
+    """Tests that identifiers interpolated into URL paths cannot retarget a request.
+
+    ``http_client`` resolves endpoints with ``urljoin``, which treats ``..`` as a
+    path climb, so an unvalidated value rewrites the endpoint the request reaches.
+    """
+
+    # server_id and session_id are absent: the decorator already validates them.
+    PATH_IDENTIFIERS = [
+        'acl_id',
+        'alert_id',
+        'analysis_id',
+        'app_id',
+        'ca_id',
+        'certificate_id',
+        'command_id',
+        'csr_id',
+        'entry_id',
+        'event_id',
+        'file_id',
+        'group_id',
+        'log_id',
+        'membership_id',
+        'note_id',
+        'request_id',
+        'revoke_id',
+        'rule_id',
+        'subscription_id',
+        'token_id',
+        'user_id',
+        'webhook_id',
+    ]
+
+    TRAVERSAL_ID = '../../servers/servers/550e8400-e29b-41d4-a716-446655440000'
+
+    # Each was observed rewriting the outgoing URL: bare '..' climbs a level and
+    # '#' truncates the path, so rejecting only '../' leaves both open.
+    RETARGETING_VALUES = [
+        TRAVERSAL_ID,
+        '..',
+        '../certificates/abc',
+        'a/b',
+        'x?admin=true',
+        'x#frag',
+    ]
+
+    # Not a UUID on purpose: no evidence the API uses UUIDs for every identifier,
+    # so the fix must not tighten these.
+    SAFE_ID = 'ca-1'
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('field', PATH_IDENTIFIERS)
+    @patch('utils.decorators.validate_token', return_value='fake-token')
+    async def test_path_traversal_identifier_rejected(self, mock_token, field):
+        func = _make_decorated_func(extra_params=[field])
+        result = await func(
+            workspace='demo', region='ap1', **{field: self.TRAVERSAL_ID}
+        )
+        assert result['status'] == 'error'
+        assert result['field'] == field
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('value', RETARGETING_VALUES)
+    @patch('utils.decorators.validate_token', return_value='fake-token')
+    async def test_every_retargeting_shape_rejected(self, mock_token, value):
+        func = _make_decorated_func(extra_params=['ca_id'])
+        result = await func(workspace='demo', region='ap1', ca_id=value)
+        assert result['status'] == 'error'
+        assert result['field'] == 'ca_id'
+
+    @pytest.mark.asyncio
+    @patch('utils.decorators.validate_token', return_value='fake-token')
+    async def test_safe_non_uuid_identifier_still_accepted(self, mock_token):
+        func = _make_decorated_func(extra_params=['ca_id'])
+        result = await func(workspace='demo', region='ap1', ca_id=self.SAFE_ID)
+        assert result['status'] == 'success'
+
+    @pytest.mark.asyncio
+    @patch('utils.decorators.validate_token', return_value='fake-token')
+    async def test_absent_identifier_accepted(self, mock_token):
+        func = _make_decorated_func(extra_params=['ca_id'])
+        result = await func(workspace='demo', region='ap1')
+        assert result['status'] == 'success'
+
+    @pytest.mark.asyncio
+    @patch('utils.decorators.validate_token', return_value='fake-token')
+    async def test_traversal_ca_id_never_reaches_http_client(self, mock_token):
+        from tools.cert_tools import delete_certificate_authority
+
+        with patch('tools.cert_tools.http_client') as mock_client:
+            mock_client.delete = AsyncMock(return_value={})
+
+            result = await delete_certificate_authority(
+                ca_id=self.TRAVERSAL_ID,
+                workspace='demo',
+                region='ap1',
+            )
+
+        assert result['status'] == 'error'
+        mock_client.delete.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch('utils.decorators.validate_token', return_value='fake-token')
+    async def test_traversal_ca_id_cannot_read_another_endpoint(self, mock_token):
+        from tools.cert_tools import get_certificate_authority
+
+        with patch('tools.cert_tools.http_client') as mock_client:
+            mock_client.get = AsyncMock(return_value={})
+
+            result = await get_certificate_authority(
+                ca_id='../../iam/users',
+                workspace='demo',
+                region='ap1',
+            )
+
+        assert result['status'] == 'error'
+        mock_client.get.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch('utils.decorators.validate_token', return_value='fake-token')
+    async def test_traversal_rule_id_cannot_retarget_update(self, mock_token):
+        """An update tool retargets only once a body field is supplied."""
+        from tools.alert_tools import update_alert_rule
+
+        with patch('tools.alert_tools.http_client') as mock_client:
+            mock_client.patch = AsyncMock(return_value={})
+
+            result = await update_alert_rule(
+                rule_id=self.TRAVERSAL_ID,
+                workspace='demo',
+                region='ap1',
+                name='renamed',
+            )
+
+        assert result['status'] == 'error'
+        mock_client.patch.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
