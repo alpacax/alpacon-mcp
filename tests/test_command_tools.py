@@ -1093,3 +1093,23 @@ class TestSudoGuidanceInToolDescriptions:
         assert 'sudo policy already covers' in text
         assert 'denied outright' in text
         assert 'sudo_denial.category' in text
+
+
+def test_no_worksession_policy_hint_names_the_request_tool():
+    """The hint must not claim a policy cannot be asked for through MCP anymore."""
+    from tools.command_tools import _SUDO_DENIAL_HINTS
+
+    hint = _SUDO_DENIAL_HINTS['SUDO_NO_WORKSESSION_POLICY']
+
+    assert 'request_sudo_policy' in hint
+    assert 'no MCP tool' not in hint
+    assert 'approve' in hint
+
+
+def test_no_worksession_policy_next_action_names_the_request_tool():
+    """The structured next action carries the same route as the hint."""
+    from utils.common import _NEXT_ACTION_BY_CATEGORY
+
+    next_action = _NEXT_ACTION_BY_CATEGORY['SUDO_NO_WORKSESSION_POLICY']
+
+    assert 'request_sudo_policy' in next_action

@@ -11,6 +11,15 @@ from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ
 
 VALID_PLATFORMS = frozenset({'debian', 'rhel', 'suse', 'darwin', 'windows'})
 _PLATFORM_LIST_STR = ', '.join(f'"{p}"' for p in sorted(VALID_PLATFORMS))
+_FORCE_BUSY_NOTE = (
+    'The server refuses this action while the host is busy with an open Websh or WebFTP '
+    'session or an in-flight command; pass force=True to run anyway, which tears that live '
+    'work down. '
+)
+
+# Mirrors Note.content max_length; a longer body is a guaranteed 400.
+NOTE_CONTENT_MAX_LENGTH = 512
+_CONTENT_SENTENCE = f'content must be at most {NOTE_CONTENT_MAX_LENGTH} characters.'
 
 
 @mcp_tool_handler(
@@ -121,7 +130,7 @@ async def get_server(
 
 @mcp_tool_handler(
     description=(
-        'List documentation notes attached to a server. Returns note titles, content, and timestamps. '
+        'List documentation notes attached to a server. Returns note content, author, and timestamps. '
         'Use this to review existing server documentation or operational records. '
         'Related: create_server_note (add new notes).'
     ),
@@ -158,7 +167,7 @@ async def list_server_notes(
 
 @mcp_tool_handler(
     description=(
-        'Create a documentation note on a server with a title and content body. '
+        f'Create a documentation note on a server. The content is capped at {NOTE_CONTENT_MAX_LENGTH} characters, and a server holds at most three pinned notes—a limit only the server can enforce. '
         'Use this to record operational notes, maintenance logs, or configuration documentation for a server. '
         'Related: list_server_notes (view existing notes).'
     ),
@@ -167,9 +176,11 @@ async def list_server_notes(
 )
 async def create_server_note(
     server_id: str,
-    title: str,
     content: str,
     workspace: str,
+    private: bool | None = None,
+    pinned: bool | None = None,
+    mentioned_users: list[str] | None = None,
     region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
@@ -177,19 +188,28 @@ async def create_server_note(
 
     Args:
         server_id: Server ID
-        title: Note title
-        content: Note content
+        content: Note content; capped at NOTE_CONTENT_MAX_LENGTH characters
         workspace: Workspace name. Required parameter
+        private: Hide the note from other workspace members (optional)
+        pinned: Pin the note; a server holds at most three pinned notes (optional)
+        mentioned_users: User UUIDs to notify; accepted on create only (optional)
         region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Note creation response
     """
-    # Get token (injected by decorator)
+    if len(content) > NOTE_CONTENT_MAX_LENGTH:
+        return format_validation_error('content', content, _CONTENT_SENTENCE)
+
     token = kwargs.get('token')
 
-    # Prepare note data with server field
-    note_data = {'server': server_id, 'title': title, 'content': content}
+    note_data: dict[str, Any] = {'server': server_id, 'content': content}
+    if private is not None:
+        note_data['private'] = private
+    if pinned is not None:
+        note_data['pinned'] = pinned
+    if mentioned_users is not None:
+        note_data['mentioned_users'] = mentioned_users
 
     # Make async call to create note
     return await http_call_response(
@@ -201,14 +221,13 @@ async def create_server_note(
         data=note_data,
         default_message='Failed to create server note',
         server_id=server_id,
-        note_title=title,
     )
 
 
 @mcp_tool_handler(
     description=(
         'Get detailed information about a specific server note by its ID. '
-        'Returns the note title, content, server, author, timestamps, and privacy settings. '
+        'Returns the note content, server, author, timestamps, and privacy settings. '
         'Use this when you need full details about one note. '
         'Related: list_server_notes (find note ID first), update_server_note, delete_server_note.'
     ),
@@ -243,7 +262,7 @@ async def get_server_note(
 
 @mcp_tool_handler(
     description=(
-        'Update an existing server note by its ID. Can change title or content. '
+        'Update an existing server note by its ID. Can change content, private, or pinned. '
         'Only the fields you provide will be updated (partial update). '
         'Related: get_server_note (view existing note), delete_server_note.'
     ),
@@ -253,8 +272,9 @@ async def get_server_note(
 async def update_server_note(
     note_id: str,
     workspace: str,
-    title: str | None = None,
     content: str | None = None,
+    private: bool | None = None,
+    pinned: bool | None = None,
     region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
@@ -263,26 +283,36 @@ async def update_server_note(
     Args:
         note_id: Note ID
         workspace: Workspace name. Required parameter
-        title: New title (optional)
-        content: New content (optional)
+        content: New content; capped at NOTE_CONTENT_MAX_LENGTH characters (optional)
+        private: Hide the note from other workspace members (optional)
+        pinned: Pin the note; a server holds at most three pinned notes (optional)
         region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Server note update response
+
+    Note:
+        No mentioned_users here: the server routes only `create` to
+        NoteCreateSerializer, and the update path never sees that field.
     """
+    if content is not None and len(content) > NOTE_CONTENT_MAX_LENGTH:
+        return format_validation_error('content', content, _CONTENT_SENTENCE)
+
     token = kwargs.get('token')
 
     update_data: dict[str, Any] = {}
-    if title is not None:
-        update_data['title'] = title
     if content is not None:
         update_data['content'] = content
+    if private is not None:
+        update_data['private'] = private
+    if pinned is not None:
+        update_data['pinned'] = pinned
 
     if not update_data:
         return format_validation_error(
-            'title or content',
+            'payload',
             None,
-            'At least one of title or content must be provided.',
+            'At least one of content, private or pinned must be provided.',
         )
 
     return await http_call_response(
@@ -339,6 +369,7 @@ async def _server_action(
     action: str,
     default_message: str,
     token: str | None,
+    force: bool = False,
 ) -> dict[str, Any]:
     return await http_call_response(
         http_client.post,
@@ -346,7 +377,7 @@ async def _server_action(
         workspace=workspace,
         endpoint=f'/api/servers/servers/{server_id}/actions/',
         token=token,
-        data={'action': action},
+        data={'action': action, 'force': force},
         default_message=default_message,
         server_id=server_id,
     )
@@ -356,13 +387,14 @@ async def _server_action(
     description=(
         'Restart the Alpacon agent process on a server. The agent will briefly go offline during restart. '
         'Use this when the agent is unresponsive or after configuration changes. Returns a command object tracking the restart operation. '
+        f'{_FORCE_BUSY_NOTE}'
         'Related: shutdown_agent, upgrade_agent. Note: Server will briefly go offline.'
     ),
     annotations=DESTRUCTIVE,
     meta={'anthropic/searchHint': 'agent restart alpacon process'},
 )
 async def restart_agent(
-    server_id: str, workspace: str, region: str = '', **kwargs
+    server_id: str, workspace: str, region: str = '', force: bool = False, **kwargs
 ) -> dict[str, Any]:
     """Restart the Alpacon agent on a server.
 
@@ -370,6 +402,9 @@ async def restart_agent(
         server_id: Server ID
         workspace: Workspace name. Required parameter
         region: Region (ap1, us1). Auto-detected if not provided
+        force: Run even when the server is busy with an open Websh/WebFTP
+            session or an in-flight command, tearing that work down
+            (default: False)
 
     Returns:
         Agent restart response
@@ -383,6 +418,7 @@ async def restart_agent(
         action='restart_agent',
         default_message='Failed to restart agent',
         token=token,
+        force=force,
     )
 
 
@@ -390,13 +426,14 @@ async def restart_agent(
     description=(
         'Shut down the Alpacon agent process on a server. The server will appear offline in the workspace until the agent is manually restarted. '
         'Use with caution as remote access will be lost. Returns a command object tracking the shutdown operation. '
+        f'{_FORCE_BUSY_NOTE}'
         'Related: restart_agent. Note: Remote access will be lost until manual restart.'
     ),
     annotations=DESTRUCTIVE,
     meta={'anthropic/searchHint': 'agent shutdown stop process'},
 )
 async def shutdown_agent(
-    server_id: str, workspace: str, region: str = '', **kwargs
+    server_id: str, workspace: str, region: str = '', force: bool = False, **kwargs
 ) -> dict[str, Any]:
     """Shut down the Alpacon agent on a server.
 
@@ -404,6 +441,9 @@ async def shutdown_agent(
         server_id: Server ID
         workspace: Workspace name. Required parameter
         region: Region (ap1, us1). Auto-detected if not provided
+        force: Run even when the server is busy with an open Websh/WebFTP
+            session or an in-flight command, tearing that work down
+            (default: False)
 
     Returns:
         Agent shutdown response
@@ -417,6 +457,7 @@ async def shutdown_agent(
         action='shutdown_agent',
         default_message='Failed to shutdown agent',
         token=token,
+        force=force,
     )
 
 
@@ -424,13 +465,14 @@ async def shutdown_agent(
     description=(
         'Upgrade the Alpacon agent on a server to the latest available version. The agent will briefly restart during the upgrade process. '
         'Use this to keep agents up to date with the latest features and security patches. Returns a command object tracking the upgrade operation. '
+        f'{_FORCE_BUSY_NOTE}'
         'Related: restart_agent. Note: Agent briefly restarts during upgrade.'
     ),
     annotations=DESTRUCTIVE,
     meta={'anthropic/searchHint': 'agent upgrade update version'},
 )
 async def upgrade_agent(
-    server_id: str, workspace: str, region: str = '', **kwargs
+    server_id: str, workspace: str, region: str = '', force: bool = False, **kwargs
 ) -> dict[str, Any]:
     """Upgrade the Alpacon agent on a server to the latest version.
 
@@ -438,6 +480,9 @@ async def upgrade_agent(
         server_id: Server ID
         workspace: Workspace name. Required parameter
         region: Region (ap1, us1). Auto-detected if not provided
+        force: Run even when the server is busy with an open Websh/WebFTP
+            session or an in-flight command, tearing that work down
+            (default: False)
 
     Returns:
         Agent upgrade response
@@ -451,6 +496,7 @@ async def upgrade_agent(
         action='upgrade_agent',
         default_message='Failed to upgrade agent',
         token=token,
+        force=force,
     )
 
 
@@ -493,13 +539,14 @@ async def update_information(
         'Upgrade all system packages on a server via the OS package manager (e.g., apt upgrade, yum update). '
         'This may take several minutes depending on the number of pending updates. Use with caution in production environments. '
         'Returns a command object tracking the upgrade operation. '
+        f'{_FORCE_BUSY_NOTE}'
         'Related: list_system_packages (check pending updates), reboot_system (may be required after kernel updates). Note: May take several minutes.'
     ),
     annotations=DESTRUCTIVE,
     meta={'anthropic/searchHint': 'system packages upgrade apt yum update all'},
 )
 async def upgrade_system(
-    server_id: str, workspace: str, region: str = '', **kwargs
+    server_id: str, workspace: str, region: str = '', force: bool = False, **kwargs
 ) -> dict[str, Any]:
     """Upgrade all system packages on a server.
 
@@ -507,6 +554,9 @@ async def upgrade_system(
         server_id: Server ID
         workspace: Workspace name. Required parameter
         region: Region (ap1, us1). Auto-detected if not provided
+        force: Run even when the server is busy with an open Websh/WebFTP
+            session or an in-flight command, tearing that work down
+            (default: False)
 
     Returns:
         System upgrade response
@@ -520,6 +570,7 @@ async def upgrade_system(
         action='upgrade_system',
         default_message='Failed to upgrade system',
         token=token,
+        force=force,
     )
 
 
@@ -527,13 +578,14 @@ async def upgrade_system(
     description=(
         'Reboot a server. The server will go offline briefly during the reboot process and reconnect automatically when the agent starts back up. '
         'Use this after kernel updates or when a full system restart is required. Returns a command object tracking the reboot operation. '
+        f'{_FORCE_BUSY_NOTE}'
         'Related: shutdown_system (full power off), upgrade_system (often precedes reboot). Note: Server reconnects automatically.'
     ),
     annotations=DESTRUCTIVE,
     meta={'anthropic/searchHint': 'server reboot restart machine'},
 )
 async def reboot_system(
-    server_id: str, workspace: str, region: str = '', **kwargs
+    server_id: str, workspace: str, region: str = '', force: bool = False, **kwargs
 ) -> dict[str, Any]:
     """Reboot a server.
 
@@ -541,6 +593,9 @@ async def reboot_system(
         server_id: Server ID
         workspace: Workspace name. Required parameter
         region: Region (ap1, us1). Auto-detected if not provided
+        force: Run even when the server is busy with an open Websh/WebFTP
+            session or an in-flight command, tearing that work down
+            (default: False)
 
     Returns:
         System reboot response
@@ -554,6 +609,7 @@ async def reboot_system(
         action='reboot_system',
         default_message='Failed to reboot system',
         token=token,
+        force=force,
     )
 
 
@@ -562,13 +618,14 @@ async def reboot_system(
         'Shut down a server completely. The server will power off and will NOT automatically reconnect. '
         'Manual intervention is required to bring the server back online. Use with extreme caution. '
         'Returns a command object tracking the shutdown operation. '
+        f'{_FORCE_BUSY_NOTE}'
         'Related: reboot_system (use if you want the server to come back). Note: Requires manual intervention to power on again.'
     ),
     annotations=DESTRUCTIVE,
     meta={'anthropic/searchHint': 'server shutdown power off halt'},
 )
 async def shutdown_system(
-    server_id: str, workspace: str, region: str = '', **kwargs
+    server_id: str, workspace: str, region: str = '', force: bool = False, **kwargs
 ) -> dict[str, Any]:
     """Shut down a server.
 
@@ -576,6 +633,9 @@ async def shutdown_system(
         server_id: Server ID
         workspace: Workspace name. Required parameter
         region: Region (ap1, us1). Auto-detected if not provided
+        force: Run even when the server is busy with an open Websh/WebFTP
+            session or an in-flight command, tearing that work down
+            (default: False)
 
     Returns:
         System shutdown response
@@ -589,6 +649,7 @@ async def shutdown_system(
         action='shutdown_system',
         default_message='Failed to shutdown system',
         token=token,
+        force=force,
     )
 
 
@@ -632,7 +693,7 @@ async def update_server(
 
     if not update_data:
         return format_validation_error(
-            'name or description',
+            'payload',
             None,
             'At least one of name or description must be provided.',
         )
@@ -651,18 +712,26 @@ async def update_server(
 
 @mcp_tool_handler(
     description=(
-        'Unregister a host from this workspace by UUID. The host is removed from '
-        'all listings and no new Work Sessions can target it, but the Alpamon agent '
-        'on the host keeps running until uninstalled. Cannot be undone by this '
-        'tool—re-enrolling the host requires running the install script with a '
-        'registration token again. '
+        'Unregister a host from this workspace by UUID. With `auto` left at its default the '
+        'server refuses a still-connected host with 400 SERVER_CANNOT_BE_DELETED; set it to True '
+        'to tear the Alpamon agent off a host that is still running. '
+        '`purge_provisioned_accounts` also deletes the '
+        'OS accounts Alpacon provisioned on that host—on an already-disconnected host the purge '
+        'is skipped, because the host cannot be reached. The host is removed from all listings '
+        'and no new Work Sessions can target it. Cannot be undone by this tool—re-enrolling the '
+        'host requires running the install script with a registration token again. '
         'Related: list_servers (find UUID), get_server (confirm before unregistering).'
     ),
     annotations=DESTRUCTIVE,
     meta={'anthropic/searchHint': 'server unregister deregister delete remove'},
 )
 async def unregister_server(
-    server_id: str, workspace: str, region: str = '', **kwargs
+    server_id: str,
+    workspace: str,
+    region: str = '',
+    auto: bool = False,
+    purge_provisioned_accounts: bool = False,
+    **kwargs,
 ) -> dict[str, Any]:
     """Unregister a server from the workspace.
 
@@ -670,6 +739,12 @@ async def unregister_server(
         server_id: Server UUID
         workspace: Workspace name. Required parameter
         region: Region (ap1, us1). Auto-detected if not provided
+        auto: Remove the agent from a still-connected host. False refuses the
+            removal unless the host is already disconnected (default: False,
+            matching the server)
+        purge_provisioned_accounts: Also delete the OS accounts Alpacon
+            provisioned on the host. Skipped when the host is already
+            disconnected (default: False)
 
     Returns:
         Unregister confirmation
@@ -682,6 +757,7 @@ async def unregister_server(
         workspace=workspace,
         endpoint=f'/api/servers/servers/{server_id}/',
         token=token,
+        params={'auto': auto, 'purge_provisioned_accounts': purge_provisioned_accounts},
         default_message='Failed to unregister server',
         server_id=server_id,
     )

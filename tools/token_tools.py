@@ -62,7 +62,6 @@ async def list_api_tokens(
     page_size: int | None = None,
     name: str | None = None,
     enabled: bool | None = None,
-    remote_ip: str | None = None,
     search: str | None = None,
     ordering: str | None = None,
     **kwargs,
@@ -76,12 +75,11 @@ async def list_api_tokens(
         page_size: Number of items per page (optional)
         name: Filter by exact token name (optional)
         enabled: Filter by enabled status (optional)
-        remote_ip: Filter by remote IP that last used the token (optional)
-        search: Free-text search across name, user_agent, remote_ip (optional)
+        search: Free-text search across name (optional)
         ordering: Sort field, e.g. "-updated_at" (server default), "added_at".
             Multiple fields may be comma-separated. Available fields:
-            updated_at, added_at. Not validated client-side - the server
-            rejects unknown fields (optional)
+            added_at, updated_at, last_used_at. Not validated client-side - the
+            server rejects unknown fields (optional)
 
     Returns:
         API tokens list response
@@ -97,8 +95,6 @@ async def list_api_tokens(
         params['name'] = name
     if enabled is not None:
         params['enabled'] = enabled
-    if remote_ip is not None:
-        params['remote_ip'] = remote_ip
     if search is not None:
         params['search'] = search
     if ordering is not None:
@@ -392,6 +388,59 @@ async def duplicate_api_token(
         token=token,
         default_message='Failed to duplicate API token',
         data=data,
+        token_id=token_id,
+    )
+
+
+@mcp_tool_handler(
+    description=(
+        'Rotate an API token: regenerate its secret in place. The old secret stops '
+        'authenticating the moment this returns, with no grace period, so anything still using it '
+        'breaks until it is given the new one. The token id, name, scopes and Command/Server/'
+        'File ACLs are preserved, and so is an expiry the token already had—but a token with no '
+        'expiry comes back carrying the workspace maximum, so rotation cannot keep a '
+        'never-expiring key never-expiring. A token already past its expiry is refused with 400 '
+        'API_TOKEN_ALREADY_EXPIRED, so this is not a way to revive one. Otherwise only the secret '
+        'and the usage counters change. Requires a '
+        'paid plan. Prefer this over duplicate_api_token when rolling a leaked or aging key: '
+        'duplicate leaves the old key live. '
+        'Related: list_api_tokens (find token ID), duplicate_api_token (copy instead of rotate), '
+        'delete_api_token (revoke outright). '
+        f'{_JWT_REQUIRED_NOTE}'
+    ),
+    annotations=DESTRUCTIVE,
+    meta={'anthropic/searchHint': 'api token rotate regenerate reissue key secret'},
+)
+@require_jwt_auth
+async def rotate_api_token(
+    token_id: str, workspace: str, region: str = '', **kwargs
+) -> dict[str, Any]:
+    """Rotate an API token's secret in place.
+
+    A token that had no expiry comes back with the workspace maximum expiry, and
+    a token already past its expiry is refused with 400 API_TOKEN_ALREADY_EXPIRED.
+
+    Args:
+        token_id: ID of the API token to rotate
+        workspace: Workspace name. Required parameter
+        region: Region (ap1, us1). Auto-detected if not provided
+
+    Returns:
+        Rotated API token response carrying the new secret
+    """
+    token = kwargs.get('token')
+
+    err = _validate_token_id(token_id)
+    if err:
+        return err
+
+    return await http_call_response(
+        http_client.post,
+        region=region,
+        workspace=workspace,
+        endpoint=f'{_API_TOKENS}{token_id}/rotate/',
+        token=token,
+        default_message='Failed to rotate API token',
         token_id=token_id,
     )
 

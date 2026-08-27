@@ -590,3 +590,59 @@ class TestHandleUpstream401:
         token_key = make_auth_error_key(token)
         error_info = consume_upstream_auth_error(token_key)
         assert error_info is None
+
+
+class TestNoResponseCache:
+    """The client must not answer a read from an earlier response.
+
+    Every read worth caching comes back filtered by the caller's permissions,
+    and a grant revoked outside this process is invisible here, so a cached
+    read would keep serving access the caller has already lost.
+    """
+
+    LIST_URL = 'https://ws.ap1.alpacon.io/api/servers/servers/'
+
+    @pytest.mark.asyncio
+    async def test_a_repeated_read_goes_to_the_network_every_time(
+        self, mock_httpx_client
+    ):
+        mock_httpx_client.request.return_value = create_mock_response(
+            json_data={'results': []}
+        )
+
+        for _ in range(2):
+            await http_client.request(method='GET', url=self.LIST_URL)
+
+        assert mock_httpx_client.request.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_a_second_token_gets_its_own_request(self, mock_httpx_client):
+        mock_httpx_client.request.return_value = create_mock_response(
+            json_data={'results': []}
+        )
+
+        for token in ('token-a', 'token-b'):
+            await http_client.request(method='GET', url=self.LIST_URL, token=token)
+
+        sent = [
+            call.kwargs['headers']['Authorization']
+            for call in mock_httpx_client.request.call_args_list
+        ]
+        assert sent == ['token=token-a', 'token=token-b']
+
+
+@pytest.mark.asyncio
+async def test_delete_forwards_query_parameters():
+    """A DELETE whose behavior is decided by the query string must carry it."""
+    with patch.object(
+        http_client, 'request', new=AsyncMock(return_value={})
+    ) as mock_request:
+        await http_client.delete(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/servers/servers/550e8400-e29b-41d4-a716-446655440123/',
+            token='test-token',
+            params={'auto': 'true'},
+        )
+
+    assert mock_request.call_args.kwargs['params'] == {'auto': 'true'}

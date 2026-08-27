@@ -3,10 +3,21 @@
 from typing import Any
 
 from utils.api_call import http_call_response
-from utils.common import error_response
 from utils.decorators import mcp_tool_handler
+from utils.error_handler import format_validation_error, validate_uuid_format
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ_ONLY
+
+# Mirrors Webhook.Provider; omitting provider lets the server infer it from the URL.
+WEBHOOK_PROVIDERS = ('slack', 'discord', 'teams', 'telegram', 'custom')
+
+_PROVIDERS_LIST = ', '.join(WEBHOOK_PROVIDERS)
+_PROVIDERS_SENTENCE = (
+    f'provider must be one of: {_PROVIDERS_LIST}, '
+    'or omitted to let the server detect it from the URL.'
+)
+_PROVIDERS_FILTER_SENTENCE = f'provider must be one of: {_PROVIDERS_LIST}.'
+_OWNER_SENTENCE = "owner must be a user's UUID; a username is rejected."
 
 # ===============================
 # EVENT SUBSCRIPTION TOOLS
@@ -138,12 +149,20 @@ async def delete_event_subscription(
 
 
 @mcp_tool_handler(
-    description='List configured webhooks in a workspace. Returns webhook ID, name, URL, SSL verification setting, and enabled status. Webhooks receive event notifications via HTTP callbacks. Requires admin permission. Related: create_webhook, list_event_subscriptions (subscriptions using webhooks).',
+    description=(
+        'List configured webhooks in a workspace, optionally filtered by owner '
+        f'or provider. {_OWNER_SENTENCE} {_PROVIDERS_FILTER_SENTENCE} Returns '
+        'webhook ID, name, URL, provider, SSL verification setting, and '
+        'enabled status. Needs an admin account. Related: create_webhook, '
+        'list_event_subscriptions.'
+    ),
     annotations=READ_ONLY,
     meta={'anthropic/searchHint': 'webhooks list endpoints callbacks'},
 )
 async def list_webhooks(
     workspace: str,
+    owner: str | None = None,
+    provider: str | None = None,
     region: str = '',
     page: int | None = None,
     page_size: int | None = None,
@@ -153,6 +172,9 @@ async def list_webhooks(
 
     Args:
         workspace: Workspace name. Required parameter
+        owner: Filter by the owning user's UUID (optional)
+        provider: Filter by provider; one of slack, discord, teams, telegram,
+            custom (optional)
         region: Region (ap1, us1). Auto-detected if not provided
         page: Page number for pagination (optional)
         page_size: Number of items per page (optional)
@@ -160,9 +182,19 @@ async def list_webhooks(
     Returns:
         Webhooks list response
     """
+    if owner is not None and not validate_uuid_format(owner):
+        return format_validation_error('owner', owner, _OWNER_SENTENCE)
+
+    if provider is not None and provider not in WEBHOOK_PROVIDERS:
+        return format_validation_error('provider', provider, _PROVIDERS_FILTER_SENTENCE)
+
     token = kwargs.get('token')
 
     params: dict[str, Any] = {}
+    if owner is not None:
+        params['owner'] = owner
+    if provider is not None:
+        params['provider'] = provider
     if page is not None:
         params['page'] = page
     if page_size is not None:
@@ -216,7 +248,12 @@ async def get_webhook(
 
 
 @mcp_tool_handler(
-    description='Create a webhook endpoint to receive HTTP callbacks when subscribed events occur. Requires a name and URL. Optionally configure SSL verification and enabled status. Requires admin permission.',
+    description=(
+        'Create a webhook endpoint to receive HTTP callbacks when subscribed '
+        f'events occur. Requires a name, a URL, and an owner. {_OWNER_SENTENCE} '
+        f'{_PROVIDERS_SENTENCE} Needs an admin account, and creating or '
+        'updating a webhook needs a paid plan.'
+    ),
     annotations=ADDITIVE,
     meta={'anthropic/searchHint': 'webhook create endpoint callback'},
 )
@@ -224,6 +261,8 @@ async def create_webhook(
     workspace: str,
     name: str,
     url: str,
+    owner: str,
+    provider: str | None = None,
     ssl_verify: bool = True,
     enabled: bool = True,
     region: str = '',
@@ -235,6 +274,8 @@ async def create_webhook(
         workspace: Workspace name. Required parameter
         name: Name of the webhook
         url: URL to receive webhook callbacks
+        owner: Owning user's UUID; the server looks it up by primary key
+        provider: One of WEBHOOK_PROVIDERS; detected from the URL when omitted
         ssl_verify: Whether to verify SSL certificates (default: True)
         enabled: Whether the webhook is enabled (default: True)
         region: Region (ap1, us1). Auto-detected if not provided
@@ -242,14 +283,23 @@ async def create_webhook(
     Returns:
         Webhook creation response
     """
+    if not validate_uuid_format(owner):
+        return format_validation_error('owner', owner, _OWNER_SENTENCE)
+
+    if provider is not None and provider not in WEBHOOK_PROVIDERS:
+        return format_validation_error('provider', provider, _PROVIDERS_SENTENCE)
+
     token = kwargs.get('token')
 
     webhook_data: dict[str, Any] = {
         'name': name,
         'url': url,
+        'owner': owner,
         'ssl_verify': ssl_verify,
         'enabled': enabled,
     }
+    if provider is not None:
+        webhook_data['provider'] = provider
 
     return await http_call_response(
         http_client.post,
@@ -263,7 +313,7 @@ async def create_webhook(
 
 
 @mcp_tool_handler(
-    description='Update an existing webhook configuration by its ID. Can change name, URL, SSL verification, or enabled status. Only the fields you provide will be updated (partial update). Requires admin permission.',
+    description='Update an existing webhook configuration by its ID. Can change name, URL, SSL verification, or enabled status. Only the fields you provide will be updated (partial update). Needs an admin account and a paid plan.',
     annotations=IDEMPOTENT_WRITE,
     meta={'anthropic/searchHint': 'webhook update modify'},
 )
@@ -304,7 +354,11 @@ async def update_webhook(
         update_data['enabled'] = enabled
 
     if not update_data:
-        return error_response('No update data provided')
+        return format_validation_error(
+            'payload',
+            None,
+            'At least one of name, url, ssl_verify or enabled must be provided.',
+        )
 
     return await http_call_response(
         http_client.patch,

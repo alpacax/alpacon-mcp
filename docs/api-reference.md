@@ -76,13 +76,15 @@ Create a new note for a server.
 
 **Parameters:**
 - `server_id` (string): Server ID
-- `title` (string): Note title
-- `content` (string): Note content
+- `content` (string): Note content; capped at 512 characters
+- `private` (boolean, optional): Hide the note from other workspace members
+- `pinned` (boolean, optional): Pin the note; a server holds at most three pinned notes
+- `mentioned_users` (array of strings, optional): User UUIDs to notify; accepted on create only
 - `region` (string, optional): Region name; resolved from the workspace when omitted
 - `workspace` (string): Workspace name
 
 ### `get_server_note` / `update_server_note` / `delete_server_note`
-Read, partially update (`title`, `content`), or permanently delete a note by `note_id`.
+Read, partially update (`content`, `private`, `pinned`), or permanently delete a note by `note_id`.
 
 ### `update_server`
 Rename or relabel a server's Alpacon entry. Does not touch the host itself.
@@ -97,7 +99,7 @@ Rename or relabel a server's Alpacon entry. Does not touch the host itself.
 ### `unregister_server`
 Unregister a host from the workspace. The agent stays installed; bringing the host back needs a registration token.
 
-**Parameters:** `server_id`, `workspace`, `region` (optional)
+**Parameters:** `server_id`, `workspace`, `auto` (boolean, default `false`: refuses a still-connected host with 400 `SERVER_CANNOT_BE_DELETED`; `true` tears the agent off a host that is still running), `purge_provisioned_accounts` (boolean, default `false`: also deletes the OS accounts Alpacon provisioned on the host, skipped when the host is unreachable), `region` (optional)
 
 ### `star_server`
 Pin or unpin a server for the calling user. A personal preference flag, not a fleet-wide setting.
@@ -106,7 +108,7 @@ Pin or unpin a server for the calling user. A personal preference flag, not a fl
 
 ### Agent and host actions
 
-Each takes `server_id`, `workspace`, and an optional `region`.
+Each takes `server_id`, `workspace`, and an optional `region`. The six disruptive ones also take `force` (boolean, default `false`), which runs the action even while the host is busy with an open Websh or WebFTP session or an in-flight command, tearing that work down. `update_information` is not disruptive and takes no `force`.
 
 - `restart_agent`: Restart the Alpacon agent process
 - `shutdown_agent`: Stop the agent process
@@ -648,8 +650,8 @@ Close a session (triggers AI security analysis) or re-run analysis on a terminal
 - `list_approval_requests`: `workspace`, `status` (optional), `region` (optional), `page`, `page_size`
 - `get_approval_request`: `request_id`, `workspace`, `region` (optional)
 - `explain_approval_decision`: `workspace`, `request_id` (optional), `region` (optional). Explains that deciding is human-only and out of band; performs no mutation
-- `list_sudo_policies`: `workspace`, `region` (optional), `page`, `page_size`
-- `create_sudo_policy`: `workspace`, `name`, `commands`, `users`, `groups`, `servers`, `run_as`, `no_password`, `description`, `region` (optional)
+- `list_sudo_policies`: `workspace`, `region` (optional), `page`, `page_size`, `user` (UUID), `server_id` (UUID)
+- `request_sudo_policy`: `workspace`, `servers` (UUID list), `commands`, `reason`, `users` (optional UUID list), `valid_from`, `valid_until`, `region` (optional). Creates an approval request, not a policy; returns `status="pending_approval"`. Omitting `users` scopes the approved policy to the requester alone, not to the whole workspace. `allow_bypass_mfa` is not accepted: the server refuses it on this endpoint
 
 There is intentionally no `approve_request`/`reject_request` tool: the Alpacon server refuses approve/reject from agent and token channels with HTTP 403. Approval happens in the web console or Slack.
 
@@ -657,11 +659,15 @@ There is intentionally no `approve_request`/`reject_request` tool: the Alpacon s
 
 ## 🔔 Alert tools
 
-- `list_alerts`: `workspace`, `server_id`, `status`, `acknowledged`, `dismissed`, `region` (optional), `page`, `page_size`
+- `list_alerts`: `workspace`, `server_id`, `alert_type`, `severity` (`critical`, `warning`, `info`), `server_name`, `acknowledged`, `dismissed`, `region` (optional), `page`, `page_size`
 - `get_alert`: `alert_id`, `workspace`, `region` (optional)
-- `mute_alert`: `alert_id`, `workspace`, `duration`, `region` (optional)
-- `create_alert_rule`: `workspace`, `name`, `metric_type` (`cpu`, `memory`, `disk`, …), `condition` (`gt`, `lt`, `gte`, `lte`), `threshold`, `servers`, `notification_channels`, `description`, `enabled`, `region` (optional)
-- `update_alert_rule` / `delete_alert_rule`: by `rule_id`
+- `acknowledge_alert`: `alert_id`, `workspace`, `action_type` (`checked` or `dismissed`), `region` (optional). One acknowledgement per user per alert, and it cannot be changed afterwards
+- `create_alert_rule`: `workspace`, `name`, `target`, `threshold`, `is_default`, `region` (optional). `target` is one of `cpu-usage`, `memory-usage`, `disk-usage`, `peak-read-bps`, `peak-write-bps`, `avg-read-bps`, `avg-write-bps`, `peak-input-pps`, `peak-input-bps`, `peak-output-pps`, `peak-output-bps`, `avg-input-pps`, `avg-input-bps`, `avg-output-pps`, `avg-output-bps`
+- `update_alert_rule`: `rule_id`, `workspace`, and any of `name`, `target`, `threshold`, `is_default`
+- `delete_alert_rule`: by `rule_id`. A rule with `is_default=true` cannot be deleted
+- `attach_alert_rule` / `detach_alert_rule`: `server_id`, `rule_id`, `workspace`, `region` (optional). Each is idempotent in the state it aims at: attaching a rule the server already has changes nothing, and so does detaching a rule the server does not have
+
+Creating and updating a rule need a paid plan; reading, attaching and detaching work on any plan.
 
 ---
 
@@ -712,18 +718,24 @@ Command ACLs decide which commands a token may run, server ACLs which hosts it m
 
 ## 🔗 Webhook tools
 
-- `list_webhooks` / `get_webhook` / `create_webhook` (`name`, `url`, `ssl_verify`, `enabled`) / `update_webhook` / `delete_webhook`
+- `list_webhooks`: `workspace`, `owner` (user UUID), `provider` (one of `slack`, `discord`, `teams`, `telegram`, `custom`), `region` (optional), `page`, `page_size`
+- `get_webhook` / `delete_webhook`: by `webhook_id`
+- `create_webhook`: `workspace`, `name`, `url`, `owner` (user UUID, required), `provider` (optional), `ssl_verify`, `enabled`, `region` (optional). `provider` is one of `slack`, `discord`, `teams`, `telegram`, `custom`, and is detected from the URL when omitted
+- `update_webhook`: `webhook_id`, `workspace`, and any of `name`, `url`, `ssl_verify`, `enabled`
 - `list_event_subscriptions` / `create_event_subscription` (`channel`, `event_type`, `target_id`) / `delete_event_subscription`
+
+Webhook tools need an admin account, and creating or updating a webhook needs a paid plan.
 
 ---
 
 ## 🎫 API token tools
 
-- `list_api_tokens`: `workspace`, `region` (optional), `page`, `page_size`, `name`, `enabled`, `remote_ip`, `search`, `ordering`
+- `list_api_tokens`: `workspace`, `region` (optional), `page`, `page_size`, `name`, `enabled`, `search` (name only), `ordering` (`added_at`, `updated_at`, `last_used_at`)
 - `get_api_token`: `token_id`, `workspace`, `region` (optional)
 - `create_api_token`: `workspace`, `name`, `scopes`, `presets`, `expires_at`, `enabled`, `region` (optional)
 - `update_api_token`: `token_id`, `name`, `enabled`, `expires_at`, `clear_expires_at`, `scopes`
 - `delete_api_token` / `duplicate_api_token`: by `token_id`
+- `rotate_api_token`: `token_id`, `workspace`, `region` (optional). Regenerates the secret in place; the old secret dies immediately, and the id, name, scopes and ACLs survive. A token that had no expiry comes back with the workspace maximum expiry, and one already past its expiry is refused with 400 `API_TOKEN_ALREADY_EXPIRED`. Paid plans only
 - `list_api_token_scopes` / `list_api_token_presets`: catalogs for building a token
 
 **Authentication note:** the server rejects these calls when the request is authenticated with a `source='api'` token, so in stdio mode with a `token.json` token they return `403 Forbidden`. Use the hosted server (JWT/OAuth), a browser session, or a login-source token. The scopes and presets catalogs are exempt.

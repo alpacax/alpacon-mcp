@@ -58,7 +58,6 @@ async def get_health_info() -> dict[str, Any]:
 
     # HTTP client pool status
     http_pool_active = http_client.pool_active
-    http_cache_size = http_client.cache_size
 
     health_info = {
         'status': 'ok',
@@ -68,7 +67,6 @@ async def get_health_info() -> dict[str, Any]:
         'auth': auth_info,
         'http_client': {
             'pool_active': http_pool_active,
-            'cache_size': http_cache_size,
         },
     }
     logger.debug(

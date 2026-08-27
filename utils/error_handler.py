@@ -130,6 +130,25 @@ def validate_region_format(region: str) -> bool:
     return region in VALID_REGIONS
 
 
+def validate_uuid_format(value: str) -> bool:
+    """Validate that a value is a UUID.
+
+    Args:
+        value: Value to validate
+
+    Returns:
+        True if valid UUID, False otherwise
+    """
+    if not value or not isinstance(value, str):
+        return False
+
+    try:
+        uuid.UUID(value)
+        return True
+    except ValueError:
+        return False
+
+
 def validate_server_id_format(server_id: str) -> bool:
     """Validate server ID (should be UUID format).
 
@@ -139,14 +158,7 @@ def validate_server_id_format(server_id: str) -> bool:
     Returns:
         True if valid UUID, False otherwise
     """
-    if not server_id or not isinstance(server_id, str):
-        return False
-
-    try:
-        uuid.UUID(server_id)
-        return True
-    except ValueError:
-        return False
+    return validate_uuid_format(server_id)
 
 
 def validate_file_path(file_path: str, allow_relative: bool = False) -> bool:

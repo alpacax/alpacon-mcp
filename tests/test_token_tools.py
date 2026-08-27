@@ -1,10 +1,12 @@
 """Unit tests for API token management tools."""
 
+import inspect
 from http import HTTPStatus
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from server import mcp
 from tools.token_tools import (
     create_api_token,
     delete_api_token,
@@ -13,6 +15,7 @@ from tools.token_tools import (
     list_api_token_presets,
     list_api_token_scopes,
     list_api_tokens,
+    rotate_api_token,
     update_api_token,
 )
 
@@ -38,6 +41,10 @@ def mock_token_manager():
 
 class TestListApiTokens:
     """Tests for list_api_tokens tool."""
+
+    def test_list_api_tokens_has_no_remote_ip_filter(self):
+        """The server dropped remote_ip, and django-filter discards it silently."""
+        assert 'remote_ip' not in inspect.signature(list_api_tokens).parameters
 
     @pytest.mark.asyncio
     async def test_list_api_tokens_success(self, mock_http_client, mock_token_manager):
@@ -96,7 +103,6 @@ class TestListApiTokens:
             region='ap1',
             name='deploy-bot',
             enabled=True,
-            remote_ip='10.0.0.5',
             search='deploy',
             ordering='-updated_at',
         )
@@ -110,7 +116,6 @@ class TestListApiTokens:
             params={
                 'name': 'deploy-bot',
                 'enabled': True,
-                'remote_ip': '10.0.0.5',
                 'search': 'deploy',
                 'ordering': '-updated_at',
             },
@@ -1044,3 +1049,53 @@ class TestApiTokenMutationAuthGuard:
 
         assert result['status'] == 'success'
         mock_http_client.post.assert_called_once()
+
+
+class TestRotateApiToken:
+    """Tests for rotate_api_token tool."""
+
+    @pytest.mark.asyncio
+    async def test_rotate_api_token_success(self, mock_http_client, mock_token_manager):
+        """Rotation posts to the rotate action on the same token id."""
+        mock_http_client.post.return_value = {
+            'id': '550e8400-e29b-41d4-a716-446655440003',
+            'key': 'new-secret',
+        }
+
+        result = await rotate_api_token(
+            token_id='550e8400-e29b-41d4-a716-446655440003',
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert result['status'] == 'success'
+        assert result['token_id'] == '550e8400-e29b-41d4-a716-446655440003'
+        mock_http_client.post.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/auth/tokens/550e8400-e29b-41d4-a716-446655440003/rotate/',
+            token='header.payload.signature',
+        )
+
+    @pytest.mark.asyncio
+    async def test_rotate_api_token_invalid_token_id(
+        self, mock_http_client, mock_token_manager
+    ):
+        """A non-UUID token id is refused before any request goes out."""
+        result = await rotate_api_token(
+            token_id='not-a-uuid',
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert result['status'] == 'error'
+        mock_http_client.post.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_rotate_api_token_is_annotated_destructive(self):
+        """idempotentHint would invite a retry that kills the secret the first call issued."""
+        tools = {t.name: t for t in await mcp.list_tools()}
+
+        annotations = tools['rotate_api_token'].annotations
+        assert annotations.destructiveHint is True
+        assert annotations.idempotentHint is not True

@@ -1,8 +1,6 @@
 """HTTP client for Alpacon API interactions."""
 
 import asyncio
-import json
-import time
 from http import HTTPStatus
 from typing import Any
 from urllib.parse import urljoin
@@ -10,6 +8,11 @@ from urllib.parse import urljoin
 import httpx
 
 from utils.common import MCP_USER_AGENT, is_auth_enabled
+from utils.error_handler import (
+    UpstreamAuthError,
+    make_auth_error_key,
+    signal_upstream_auth_error,
+)
 from utils.logger import get_logger
 
 logger = get_logger('http_client')
@@ -23,20 +26,16 @@ _ERR_REQUEST_EXCEPTION = 'Request Exception'
 _ERR_TIMEOUT = 'Timeout'
 _ERR_UNEXPECTED = 'Unexpected Error'
 
-# Prefix tuple (str.startswith needs a tuple); real-time metrics deliberately excluded.
-_CACHEABLE_ENDPOINTS = (
-    '/api/servers/servers/',
-    '/api/system/info/',
-    '/api/system/users/',
-    '/api/system/packages/',
-    '/api/iam/users/',
-    '/api/iam/groups/',
-    '/api/iam/roles/',
-)
-
 
 class AlpaconHTTPClient:
-    """Async HTTP client for Alpacon API with connection pooling and caching."""
+    """Async HTTP client for Alpacon API with connection pooling.
+
+    Responses are never cached. Every endpoint worth caching here—the server
+    list, process info, IAM users and groups—comes back filtered by the calling
+    token's permissions, and no in-process scheme can see a grant revoked
+    elsewhere (the web console, Slack, another MCP process), so a cached read
+    would keep answering with access the caller has already lost.
+    """
 
     def __init__(self):
         """Initialize HTTP client."""
@@ -50,13 +49,8 @@ class AlpaconHTTPClient:
         self._client: httpx.AsyncClient | None = None
         self._client_lock = asyncio.Lock()
 
-        # Simple TTL cache
-        self._cache: dict[str, dict[str, Any]] = {}
-        self._cache_ttl: dict[str, float] = {}
-        self.default_cache_ttl = 300  # 5 minutes
-
         logger.info(
-            f'AlpaconHTTPClient initialized - timeout: {self.base_timeout.read}s, max_retries: {self.max_retries}, caching enabled'
+            f'AlpaconHTTPClient initialized - timeout: {self.base_timeout.read}s, max_retries: {self.max_retries}'
         )
 
     async def __aenter__(self):
@@ -70,7 +64,7 @@ class AlpaconHTTPClient:
     # __del__ removed: lifespan handles cleanup via close()
 
     async def close(self):
-        """Close the HTTP client and clear caches.
+        """Close the HTTP client.
 
         This is the primary public method for cleanup. Safe to call
         multiple times (idempotent).
@@ -79,9 +73,7 @@ class AlpaconHTTPClient:
             if self._client and not self._client.is_closed:
                 await self._client.aclose()
                 logger.debug('Closed HTTP client')
-            self._cache.clear()
-            self._cache_ttl.clear()
-        logger.info('HTTP client closed and caches cleared')
+        logger.info('HTTP client closed')
 
     async def _close_client(self):
         """Close the shared client. Alias for close() for backward compatibility."""
@@ -91,11 +83,6 @@ class AlpaconHTTPClient:
     def pool_active(self) -> bool:
         """Whether the HTTP connection pool has an active client."""
         return self._client is not None and not self._client.is_closed
-
-    @property
-    def cache_size(self) -> int:
-        """Number of entries in the response cache."""
-        return len(self._cache)
 
     def get_base_url(self, region: str, workspace: str) -> str:
         """Get base URL for API calls.
@@ -204,14 +191,6 @@ class AlpaconHTTPClient:
         if json_data:
             logger.debug(f'Request body: {json_data}')
 
-        # Check cache for GET requests
-        cache_key = self._get_cache_key(method, url, params)
-        if self._is_cacheable(method, url):
-            cached_response = self._get_cached_response(cache_key)
-            if cached_response:
-                logger.info(f'Returning cached response for {method} {url}')
-                return cached_response
-
         while retry_count < self.max_retries:
             try:
                 client = await self._get_client()
@@ -237,20 +216,10 @@ class AlpaconHTTPClient:
                 if response.text:
                     result = response.json()
                     logger.debug(f'Response body: {result}')
-
-                    # Cache successful GET responses
-                    if self._is_cacheable(method, url):
-                        self._set_cached_response(cache_key, result)
-
                     return result
                 else:
                     result = {'status': 'success', 'status_code': response.status_code}
                     logger.debug(f'Empty response, returning: {result}')
-
-                    # Cache successful empty responses too
-                    if self._is_cacheable(method, url):
-                        self._set_cached_response(cache_key, result)
-
                     return result
 
             except httpx.HTTPStatusError as e:
@@ -512,7 +481,12 @@ class AlpaconHTTPClient:
         )
 
     async def delete(
-        self, region: str, workspace: str, endpoint: str, token: str | None = None
+        self,
+        region: str,
+        workspace: str,
+        endpoint: str,
+        token: str | None = None,
+        params: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Execute DELETE request.
 
@@ -521,6 +495,7 @@ class AlpaconHTTPClient:
             workspace: Workspace name
             endpoint: API endpoint path
             token: API token
+            params: Query parameters
 
         Returns:
             Response data
@@ -528,7 +503,9 @@ class AlpaconHTTPClient:
         base_url = self.get_base_url(region, workspace)
         full_url = urljoin(base_url, endpoint)
 
-        return await self.request(method='DELETE', url=full_url, token=token)
+        return await self.request(
+            method='DELETE', url=full_url, token=token, params=params
+        )
 
     async def _get_client(self) -> httpx.AsyncClient:
         """Get or create shared async client for connection pooling."""
@@ -548,45 +525,6 @@ class AlpaconHTTPClient:
                 )
                 logger.debug('Created new HTTP client with connection pooling')
             return self._client
-
-    def _get_cache_key(self, method: str, url: str, params: dict | None = None) -> str:
-        """Generate cache key for request."""
-        key_parts = [method, url]
-        if params:
-            key_parts.append(json.dumps(params, sort_keys=True))
-        return '|'.join(key_parts)
-
-    def _is_cacheable(self, method: str, endpoint: str) -> bool:
-        """Check if request should be cached."""
-        if method != 'GET':
-            return False
-
-        return endpoint.startswith(_CACHEABLE_ENDPOINTS)
-
-    def _get_cached_response(self, cache_key: str) -> dict[str, Any] | None:
-        """Get cached response if still valid.
-
-        Uses .get() for resilient reads to avoid KeyError if close()
-        clears the cache concurrently.
-        """
-        if time.time() > self._cache_ttl.get(cache_key, 0):
-            # Cache expired or missing
-            self._cache.pop(cache_key, None)
-            self._cache_ttl.pop(cache_key, None)
-            return None
-
-        result = self._cache.get(cache_key)
-        if result is not None:
-            logger.debug(f'Cache hit for key: {cache_key}')
-        return result
-
-    def _set_cached_response(
-        self, cache_key: str, response: dict[str, Any], ttl: float | None = None
-    ):
-        """Cache response with TTL."""
-        self._cache[cache_key] = response
-        self._cache_ttl[cache_key] = time.time() + (ttl or self.default_cache_ttl)
-        logger.debug(f'Cached response for key: {cache_key}')
 
     @staticmethod
     def _is_jwt(token: str) -> bool:
@@ -644,12 +582,6 @@ class AlpaconHTTPClient:
         # Token-hash dict, not contextvars: streamable-http runs handlers in a separate anyio task where ContextVar writes are invisible to the ASGI middleware.
         # JWT only — the middleware cannot derive a matching key from API tokens, so their entries would go unconsumed.
         if auth_enabled and token and is_jwt:
-            from utils.error_handler import (
-                UpstreamAuthError,
-                make_auth_error_key,
-                signal_upstream_auth_error,
-            )
-
             token_key = make_auth_error_key(token)
             logger.warning(
                 '[DEBUG-401] Setting dict signal with token_key=%s',

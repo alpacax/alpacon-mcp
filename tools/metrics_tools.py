@@ -812,7 +812,7 @@ async def get_top_servers(
 
 
 @mcp_tool_handler(
-    description='Get monitoring alert rules and notification thresholds configured for servers. Returns rule conditions, severity levels, and notification settings. When to use: reviewing what alerts are configured or checking thresholds. Related: list_alerts (triggered alerts), create_alert_rule (create new rules in alert_tools). Note: This is in metrics_tools; alert CRUD operations are in alert_tools.',
+    description='Get the monitoring alert rules configured for servers. Each rule carries a name, a target metric, a threshold, and whether it is the workspace default. When to use: reviewing what alerts are configured or checking thresholds. Related: list_alerts (triggered alerts), create_alert_rule (create new rules in alert_tools). Note: This is in metrics_tools; alert CRUD operations are in alert_tools.',
     annotations=READ_ONLY,
     meta={
         'anthropic/searchHint': 'alert rules monitoring threshold notification configuration'
