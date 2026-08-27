@@ -1,9 +1,17 @@
 """Tests for input validation wired into MCP tool functions."""
 
+import ast
+from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from tools.alert_tools import update_alert_rule
+from tools.cert_tools import (
+    delete_certificate_authority,
+    get_certificate_authority,
+)
+from tools.webftp_tools import webftp_download_file, webftp_upload_file
 from utils.decorators import with_token_validation
 
 # --- Helper: create a dummy async function decorated with with_token_validation ---
@@ -559,8 +567,6 @@ class TestPathIdentifierValidation:
     async def test_percent_encoded_traversal_never_reaches_http_client(
         self, mock_token
     ):
-        from tools.cert_tools import get_certificate_authority
-
         with patch('tools.cert_tools.http_client') as mock_client:
             mock_client.get = AsyncMock(return_value={})
 
@@ -612,8 +618,6 @@ class TestPathIdentifierValidation:
         building an endpoint that this does not recognize fails as well: it has
         to be read before it can be trusted.
         """
-        import ast
-        from pathlib import Path
 
         def root_name(node):
             """The leftmost name an expression reads, or None."""
@@ -719,8 +723,6 @@ class TestPathIdentifierValidation:
     @pytest.mark.asyncio
     @patch('utils.decorators.validate_token', return_value='fake-token')
     async def test_traversal_ca_id_never_reaches_http_client(self, mock_token):
-        from tools.cert_tools import delete_certificate_authority
-
         with patch('tools.cert_tools.http_client') as mock_client:
             mock_client.delete = AsyncMock(return_value={})
 
@@ -736,8 +738,6 @@ class TestPathIdentifierValidation:
     @pytest.mark.asyncio
     @patch('utils.decorators.validate_token', return_value='fake-token')
     async def test_traversal_ca_id_cannot_read_another_endpoint(self, mock_token):
-        from tools.cert_tools import get_certificate_authority
-
         with patch('tools.cert_tools.http_client') as mock_client:
             mock_client.get = AsyncMock(return_value={})
 
@@ -754,8 +754,6 @@ class TestPathIdentifierValidation:
     @patch('utils.decorators.validate_token', return_value='fake-token')
     async def test_traversal_rule_id_cannot_retarget_update(self, mock_token):
         """An update tool retargets only once a body field is supplied."""
-        from tools.alert_tools import update_alert_rule
-
         with patch('tools.alert_tools.http_client') as mock_client:
             mock_client.patch = AsyncMock(return_value={})
 
@@ -781,8 +779,6 @@ class TestFilePathValidation:
     @pytest.mark.asyncio
     @patch('utils.decorators.validate_token', return_value='fake-token')
     async def test_upload_rejects_relative_local_path(self, mock_token):
-        from tools.webftp_tools import webftp_upload_file
-
         result = await webftp_upload_file(
             server_id='550e8400-e29b-41d4-a716-446655440000',
             local_file_path='relative/path.txt',
@@ -796,8 +792,6 @@ class TestFilePathValidation:
     @pytest.mark.asyncio
     @patch('utils.decorators.validate_token', return_value='fake-token')
     async def test_upload_rejects_traversal_in_remote_path(self, mock_token):
-        from tools.webftp_tools import webftp_upload_file
-
         result = await webftp_upload_file(
             server_id='550e8400-e29b-41d4-a716-446655440000',
             local_file_path='/tmp/safe.txt',
@@ -811,8 +805,6 @@ class TestFilePathValidation:
     @pytest.mark.asyncio
     @patch('utils.decorators.validate_token', return_value='fake-token')
     async def test_download_rejects_relative_remote_path(self, mock_token):
-        from tools.webftp_tools import webftp_download_file
-
         result = await webftp_download_file(
             server_id='550e8400-e29b-41d4-a716-446655440000',
             remote_file_path='relative/path.log',
@@ -826,8 +818,6 @@ class TestFilePathValidation:
     @pytest.mark.asyncio
     @patch('utils.decorators.validate_token', return_value='fake-token')
     async def test_download_rejects_traversal_in_local_path(self, mock_token):
-        from tools.webftp_tools import webftp_download_file
-
         result = await webftp_download_file(
             server_id='550e8400-e29b-41d4-a716-446655440000',
             remote_file_path='/var/log/app.log',
@@ -841,8 +831,6 @@ class TestFilePathValidation:
     @pytest.mark.asyncio
     @patch('utils.decorators.validate_token', return_value='fake-token')
     async def test_upload_rejects_null_byte_path(self, mock_token):
-        from tools.webftp_tools import webftp_upload_file
-
         result = await webftp_upload_file(
             server_id='550e8400-e29b-41d4-a716-446655440000',
             local_file_path='/tmp/file\x00.txt',
