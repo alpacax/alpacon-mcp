@@ -120,6 +120,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   filters the server's `SudoPolicyFilter` exposes, which its description already claimed;
   `server_id` carries the repo's usual name so a server name is rejected by the input validator
   rather than by the API. The response shape is unchanged.
+- Identifiers interpolated into an API URL path can no longer retarget the request. Tools build
+  endpoints as `/api/cert/authorities/{ca_id}/` and `urljoin` resolves `..` as a path climb, so
+  `ca_id='../../servers/servers/<uuid>'` reached the server endpoint instead and reported success.
+  Every argument whose name ends in `_id` is now rejected when it contains `..`, a path separator,
+  `?` or `#`, so a client sending such a value receives the usual validation error envelope rather
+  than a response from another resource.
 - Dropped the root `__init__.py` that 0.4.1 added, together with its wheel include. It made the
   checkout directory a package, so under pytest `sys.modules['main']` was pre-registered with that
   package and `import main` no longer reached `main.py` in a clone directory named `main` (#189).

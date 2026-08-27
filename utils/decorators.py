@@ -32,6 +32,13 @@ _SPECIFY_REGION_HINT = 'Please specify a region parameter.'
 
 _SENSITIVE_LOG_KEYS = frozenset({'_token', 'password', 'secret', 'key'})
 
+# A path separator lets a value append segments, '?' and '#' start a query or
+# fragment, and urljoin resolves '..' as a climb out of the intended endpoint.
+_PATH_UNSAFE_CHARS = ('/', '\\', '?', '#')
+
+# Validated above as UUIDs, which is stricter than the path check.
+_UUID_IDENTIFIERS = frozenset({'server_id', 'session_id'})
+
 
 def _get_jwt_token() -> str | None:
     """Get JWT token from FastMCP auth context if available.
@@ -229,6 +236,18 @@ async def _check_mfa_requirement(
         logger.debug('MFA pre-check failed (non-fatal): %s', e)
 
 
+def _validate_path_identifier(field: str, value: str) -> dict[str, Any] | None:
+    """Returns an error response, or None if valid."""
+    if '..' in value or any(char in value for char in _PATH_UNSAFE_CHARS):
+        return format_validation_error(
+            field,
+            value,
+            'Must not contain "..", a path separator, "?" or "#". '
+            'The value is interpolated into an API URL path.',
+        )
+    return None
+
+
 def _validate_uuid_list(field: str, value: Any) -> dict[str, Any] | None:
     """Returns an error response, or None if valid."""
     if not isinstance(value, list):
@@ -250,7 +269,11 @@ def _validate_uuid_list(field: str, value: Any) -> dict[str, Any] | None:
 
 
 def with_token_validation(func: Callable) -> Callable:
-    """Decorator to add automatic token validation to MCP tools.
+    """Validate a tool's inputs, then resolve and inject its auth token.
+
+    Despite the name, this is the single validation gate for MCP tools:
+    workspace, region, and every identifier interpolated into a URL path are
+    rejected here, before the token lookup runs.
 
     Transport mode is determined by ALPACON_MCP_AUTH_ENABLED env var:
     - 'true' (streamable-http): Uses JWT from auth context only.
@@ -333,6 +356,17 @@ def with_token_validation(func: Callable) -> Callable:
         session_id = arguments.get('session_id')
         if session_id is not None and not validate_server_id_format(session_id):
             return format_validation_error('session_id', session_id)
+
+        # Tools interpolate every other *_id into an endpoint path too. Their
+        # upstream format is not always a UUID, so reject only what escapes the
+        # path segment rather than requiring one.
+        for field, value in arguments.items():
+            if field in _UUID_IDENTIFIERS or not field.endswith('_id'):
+                continue
+            if isinstance(value, str):
+                path_error = _validate_path_identifier(field, value)
+                if path_error:
+                    return path_error
 
         # Get the **kwargs dict from bound arguments to inject token
         extra_kwargs = bound_args.arguments.get('kwargs', {})
@@ -519,7 +553,7 @@ def mcp_tool_handler(
 
     This decorator combines:
     1. MCP tool registration (with optional annotations and meta)
-    2. Token validation (JWT for streamable-http, token.json for stdio)
+    2. Input validation, then token injection (JWT for streamable-http, token.json for stdio)
     3. Error handling
     4. Logging
 
