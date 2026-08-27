@@ -22,4 +22,4 @@
 
 ## Language guidelines
 - All code comments, documentation, commit messages, PR titles/descriptions, docstrings, and variable/function/class names: English only
-- User-facing output messages: Korean for better user experience in CLI/console output
+- User-facing CLI/console output messages: English, matching the rest of the project
