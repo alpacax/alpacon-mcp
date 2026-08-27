@@ -282,6 +282,12 @@ def with_token_validation(func: Callable) -> Callable:
     workspace, region, and the identifiers interpolated into a URL path are
     rejected here, before the token lookup runs.
 
+    Path identifiers are matched by an ``_id`` suffix, which covers every one
+    the tools interpolate today—a path parameter named otherwise, ``username``
+    say, would reach the URL unchecked. Only declared parameters are walked,
+    so an ``_id`` nested inside the ``**kwargs`` dict is not seen either; no
+    tool schema exposes that route today.
+
     Transport mode is determined by ALPACON_MCP_AUTH_ENABLED env var:
     - 'true' (streamable-http): Uses JWT from auth context only.
       Never falls back to token.json.

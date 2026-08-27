@@ -129,7 +129,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   endpoint uses DRF's default `[^/.]+` lookup—and it closes percent-encoded attempts such as
   `ca_id='%2e%2e%2fiam'`, which `urljoin` leaves encoded so that a literal-character check misses it
   and the path climbs wherever the URL is decoded upstream. A trailing newline is rejected too, so
-  `ca_id='abc\n'` now returns that same envelope instead of letting httpx raise `InvalidURL`.
+  `ca_id='abc\n'` now returns that same envelope instead of letting httpx raise `InvalidURL`. Note
+  the gate matches on the `_id` suffix: a future path parameter named otherwise would not be
+  covered.
 - Dropped the root `__init__.py` that 0.4.1 added, together with its wheel include. It made the
   checkout directory a package, so under pytest `sys.modules['main']` was pre-registered with that
   package and `import main` no longer reached `main.py` in a clone directory named `main` (#189).

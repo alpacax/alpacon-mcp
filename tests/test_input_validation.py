@@ -590,6 +590,125 @@ class TestPathIdentifierValidation:
         result = await func(workspace='demo', region='ap1', ca_id=value)
         assert result['status'] == 'success'
 
+    # 'result' holds an API response, not an argument the client sends.
+    NON_ARGUMENT_NAMES = frozenset({'result'})
+
+    # Each picks a whole endpoint out of a fixed set of constants, so nothing the
+    # client sends is interpolated into the path.
+    ENDPOINT_CHOICES = frozenset(
+        {
+            'metrics_tools.py: metric_endpoints[metric]',
+            'security_tools.py: endpoint',
+            'webftp_tools.py: endpoint_map[transfer_type]',
+        }
+    )
+
+    def test_every_interpolated_endpoint_name_ends_in_id(self):
+        """The gate matches on an ``_id`` suffix, so a path parameter named
+        otherwise would reach the URL unchecked.
+
+        Walks the syntax tree rather than the text, so a path built any other
+        way—``.format()``, a template constant used bare—is caught too. A way of
+        building an endpoint that this does not recognize fails as well: it has
+        to be read before it can be trusted.
+        """
+        import ast
+        from pathlib import Path
+
+        def root_name(node):
+            """The leftmost name an expression reads, or None."""
+            while isinstance(node, ast.Attribute | ast.Subscript):
+                node = node.value
+            if isinstance(node, ast.Call):
+                return root_name(node.func)
+            return node.id if isinstance(node, ast.Name) else None
+
+        def fold(node, table):
+            """The string a module-level expression resolves to, or None."""
+            if isinstance(node, ast.Constant):
+                return node.value if isinstance(node.value, str) else None
+            if isinstance(node, ast.Name):
+                return table.get(node.id)
+            if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+                left, right = fold(node.left, table), fold(node.right, table)
+                return None if left is None or right is None else left + right
+            if isinstance(node, ast.JoinedStr):
+                pieces = [
+                    fold(
+                        part.value if isinstance(part, ast.FormattedValue) else part,
+                        table,
+                    )
+                    for part in node.values
+                ]
+                return None if None in pieces else ''.join(pieces)
+            return None
+
+        tools_dir = Path(__file__).resolve().parent.parent / 'tools'
+        unchecked = set()
+
+        for module in sorted(tools_dir.glob('*.py')):
+            tree = ast.parse(module.read_text(encoding='utf-8'), str(module))
+
+            # Anything assigned at module level is fixed at import, so it is
+            # never a value the client sent. Only the strings can be resolved.
+            module_names, constants = set(), {}
+            for node in tree.body:
+                if not isinstance(node, ast.Assign):
+                    continue
+                resolved = fold(node.value, constants)
+                for target in node.targets:
+                    if isinstance(target, ast.Name):
+                        module_names.add(target.id)
+                        if resolved is not None:
+                            constants[target.id] = resolved
+
+            def report(what, module=module, unchecked=unchecked):
+                unchecked.add(f'{module.name}: {what}')
+
+            def check_name(node, report=report, module_names=module_names):
+                name = root_name(node)
+                exempt = module_names | self.NON_ARGUMENT_NAMES
+                if name is None:
+                    report(f'{ast.unparse(node)} (reads no name)')
+                elif not name.endswith('_id') and name not in exempt:
+                    report(name)
+
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call):
+                    continue
+                for keyword in node.keywords:
+                    if keyword.arg != 'endpoint':
+                        continue
+                    value = keyword.value
+                    resolved = fold(value, constants)
+                    if resolved is not None:
+                        # A '{}' left in a resolved path is a template, so the
+                        # value filling it never passed through this check.
+                        if '{' in resolved:
+                            report(f'{ast.unparse(value)} (template used bare)')
+                    elif isinstance(value, ast.JoinedStr):
+                        for part in value.values:
+                            if isinstance(part, ast.FormattedValue):
+                                check_name(part.value)
+                    elif (
+                        isinstance(value, ast.Call)
+                        and isinstance(value.func, ast.Attribute)
+                        and value.func.attr == 'format'
+                    ):
+                        for arg in value.args:
+                            check_name(arg)
+                    elif (
+                        f'{module.name}: {ast.unparse(value)}' in self.ENDPOINT_CHOICES
+                    ):
+                        continue
+                    else:
+                        report(f'{ast.unparse(value)} (unrecognized endpoint shape)')
+
+        assert not unchecked, (
+            'These reach an endpoint path but skip the _id gate in '
+            f'with_token_validation: {sorted(unchecked)}'
+        )
+
     @pytest.mark.asyncio
     @patch('utils.decorators.validate_token', return_value='fake-token')
     async def test_absent_identifier_accepted(self, mock_token):
