@@ -410,7 +410,7 @@ ruff format .
 mypy .
 ```
 
-These tools live only in `.venv`, so activate it in every new shell before running them. If you installed ruff or pre-commit with `uv tool install` under earlier instructions, run `uv tool uninstall ruff pre-commit`.
+These tools live only in `.venv`, so activate it in every new shell. If you ran `uv tool install` under earlier instructions, undo it with `uv tool uninstall ruff pre-commit`—that copy sits outside `uv.lock`, so a shell without the venv active runs an unpinned version.
 
 CI runs the same checks: `ruff check`, `ruff format --check`, `mypy`, and `pytest` under a coverage floor. `.github/workflows/test.yml` holds the current threshold.
 

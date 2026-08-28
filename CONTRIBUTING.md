@@ -36,7 +36,7 @@ Thank you for your interest in contributing to the Alpacon MCP server! This guid
    pre-commit install
    ```
 
-   ruff, mypy, and pre-commit live only in `.venv`, so activate it in every new shell before running them. If you installed ruff or pre-commit with `uv tool install` under earlier instructions, run `uv tool uninstall ruff pre-commit`—a shell without the venv active would find that stale copy instead.
+   ruff, mypy, and pre-commit live only in `.venv`, so activate it in every new shell. If you ran `uv tool install` under earlier instructions, undo it with `uv tool uninstall ruff pre-commit`—that copy sits outside `uv.lock`, so a shell without the venv active runs an unpinned version.
 
 3. **Configure Development Tokens**
    ```bash
