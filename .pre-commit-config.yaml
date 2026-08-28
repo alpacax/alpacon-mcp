@@ -19,7 +19,7 @@ repos:
       # Blocks the commit, unlike the advisory CI step (continue-on-error).
       - id: mypy
         name: mypy
-        entry: uv run --no-sync python -m mypy --ignore-missing-imports --no-strict-optional .
+        entry: uv run --no-sync python -m mypy .
         language: system
         types_or: [python, pyi]
         pass_filenames: false

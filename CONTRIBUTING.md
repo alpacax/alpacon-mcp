@@ -60,7 +60,7 @@ Thank you for your interest in contributing to the Alpacon MCP server! This guid
    # Lint, formatting, and type check
    ruff check .
    ruff format --check .
-   mypy --ignore-missing-imports --no-strict-optional .
+   mypy .
    ```
 
 ## 📋 Development guidelines
@@ -84,7 +84,7 @@ ruff format .
 ruff check .
 
 # Type checking
-mypy --ignore-missing-imports --no-strict-optional .
+mypy .
 
 # Or run all at once
 pre-commit run --all-files

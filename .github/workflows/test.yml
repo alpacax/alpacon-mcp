@@ -45,7 +45,7 @@ jobs:
       run: uv run --no-sync python -m ruff format --check .
 
     - name: Type check with mypy
-      run: uv run --no-sync python -m mypy --ignore-missing-imports --no-strict-optional .
+      run: uv run --no-sync python -m mypy .
       continue-on-error: true
 
     - name: Test with pytest

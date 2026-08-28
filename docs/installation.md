@@ -407,7 +407,7 @@ ruff check .
 ruff format .
 
 # Type check
-mypy --ignore-missing-imports --no-strict-optional .
+mypy .
 ```
 
 These tools live only in `.venv`, so activate it in every new shell before running them. If you installed ruff or pre-commit with `uv tool install` under earlier instructions, run `uv tool uninstall ruff pre-commit`.

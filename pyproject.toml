@@ -137,5 +137,6 @@ line-ending = "auto"
 [tool.mypy]
 python_version = "3.12"
 ignore_missing_imports = true
+strict_optional = false
 namespace_packages = true
 explicit_package_bases = true
