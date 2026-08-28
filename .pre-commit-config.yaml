@@ -1,6 +1,8 @@
 # No `rev:`: uv.lock pins these tools, so bump one with `uv lock --upgrade-package <tool>`.
 # `python -m` is deliberate—plain `uv run --no-sync ruff` falls back to any ruff on
-# PATH when the venv has none, and dropping `--no-sync` uninstalls the dev extra.
+# PATH when the venv has none. `--no-sync` keeps the hook out of the environment: without
+# it, a commit that edits pyproject.toml gets its own dependency change installed by the
+# hook checking it.
 repos:
   - repo: local
     hooks:
