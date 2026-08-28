@@ -41,10 +41,10 @@ def _patched_health_local(mock_token_manager, mock_http_client):
     with (
         patch.dict('os.environ', {'ALPACON_MCP_AUTH_ENABLED': ''}, clear=False),
         patch(
-            'utils.token_manager.get_token_manager',
+            'utils.health.get_token_manager',
             return_value=mock_token_manager,
         ),
-        patch('utils.http_client.http_client', mock_http_client),
+        patch('utils.health.http_client', mock_http_client),
     ):
         yield
 
@@ -54,7 +54,7 @@ def _patched_health_remote(mock_http_client):
     """Patch dependencies for remote (streamable-http) mode health checks."""
     with (
         patch.dict('os.environ', {'ALPACON_MCP_AUTH_ENABLED': 'true'}, clear=False),
-        patch('utils.http_client.http_client', mock_http_client),
+        patch('utils.health.http_client', mock_http_client),
     ):
         yield
 
@@ -137,10 +137,10 @@ class TestGetHealthInfoLocal:
         with (
             patch.dict('os.environ', {'ALPACON_MCP_AUTH_ENABLED': ''}, clear=False),
             patch(
-                'utils.token_manager.get_token_manager',
+                'utils.health.get_token_manager',
                 return_value=mock_token_manager,
             ),
-            patch('utils.http_client.http_client', mock_client),
+            patch('utils.health.http_client', mock_client),
         ):
             result = await get_health_info()
 

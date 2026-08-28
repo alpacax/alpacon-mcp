@@ -5,10 +5,14 @@ import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Literal
+from urllib.parse import urlparse
 
 from mcp.server.fastmcp import FastMCP
+from starlette.responses import JSONResponse
 
 from utils.common import is_auth_enabled
+from utils.health import get_health_info
+from utils.http_client import http_client
 from utils.logger import get_logger
 
 logger = get_logger('server')
@@ -38,8 +42,6 @@ async def app_lifespan(app: FastMCP) -> AsyncIterator[None]:
         yield
     finally:
         logger.info('Application shutting down, cleaning up resources...')
-        from utils.http_client import http_client
-
         try:
             await http_client.close()
         except Exception as e:
@@ -103,8 +105,6 @@ def _create_mcp_server() -> FastMCP:
             raise RuntimeError(message)
 
         # Validate resource_url with proper URL parsing before passing to AnyHttpUrl
-        from urllib.parse import urlparse
-
         parsed_url = urlparse(resource_url)
         if parsed_url.scheme != 'https' or not parsed_url.netloc:
             message = (
@@ -301,10 +301,6 @@ def _register_http_health_endpoint():
 
     @mcp.custom_route('/health', methods=['GET'])
     async def health_endpoint(request):
-        from starlette.responses import JSONResponse
-
-        from utils.health import get_health_info
-
         health = await get_health_info()
         return JSONResponse(
             health,

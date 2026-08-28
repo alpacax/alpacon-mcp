@@ -13,9 +13,14 @@ from utils.common import (
     success_response,
     unwrap_http_result,
 )
-from utils.decorators import mcp_tool_handler, require_jwt_auth
+from utils.decorators import (
+    _get_jwt_token,
+    _get_jwt_workspaces,
+    mcp_tool_handler,
+    require_jwt_auth,
+)
 from utils.http_client import http_client
-from utils.token_manager import TokenManager
+from utils.token_manager import TokenManager, get_token_manager
 from utils.tool_annotations import IDEMPOTENT_WRITE, READ_ONLY
 
 
@@ -122,8 +127,6 @@ async def list_workspaces(region: str = '') -> dict[str, Any]:
     Returns:
         Workspaces list response
     """
-    from utils.decorators import _get_jwt_token, _get_jwt_workspaces
-
     # Use explicit transport mode check, not JWT presence
     if is_auth_enabled():
         jwt_token = _get_jwt_token()
@@ -158,8 +161,6 @@ async def list_workspaces(region: str = '') -> dict[str, Any]:
         )
 
     # Local mode: read from token.json
-    from utils.token_manager import get_token_manager
-
     token_manager = get_token_manager()
     workspaces = _collect_workspaces_from_tokens(token_manager, target_region=region)
 

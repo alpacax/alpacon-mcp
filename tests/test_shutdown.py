@@ -72,7 +72,7 @@ class TestAppLifespan:
         """Test that lifespan teardown calls cleanup functions."""
         mock_app = MagicMock()
 
-        with patch('utils.http_client.http_client') as mock_http:
+        with patch('server.http_client') as mock_http:
             mock_http.close = AsyncMock()
 
             async with app_lifespan(mock_app):
@@ -86,7 +86,7 @@ class TestAppLifespan:
         """Test that lifespan teardown runs even after an exception."""
         mock_app = MagicMock()
 
-        with patch('utils.http_client.http_client') as mock_http:
+        with patch('server.http_client') as mock_http:
             mock_http.close = AsyncMock()
 
             with pytest.raises(RuntimeError, match='test error'):
@@ -104,7 +104,7 @@ class TestAppLifespan:
         if sys.platform == 'win32':
             pytest.skip('SIGTERM handler test only runs on Unix')
 
-        with patch('utils.http_client.http_client') as mock_http:
+        with patch('server.http_client') as mock_http:
             mock_http.close = AsyncMock()
 
             async with app_lifespan(mock_app):

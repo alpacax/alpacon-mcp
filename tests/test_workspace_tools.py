@@ -28,8 +28,8 @@ from utils.token_manager import TokenManager
 def mock_token_manager():
     """Mock token manager for testing.
 
-    list_workspaces does a local import: from utils.token_manager import get_token_manager
-    So we need to mock at utils.token_manager.get_token_manager.
+    tools.workspace_tools imports get_token_manager at module top level, so
+    the mock must be patched there rather than at utils.token_manager.
     """
     mock_manager = MagicMock()
     mock_manager.get_all_tokens.return_value = {
@@ -48,8 +48,8 @@ def mock_token_manager():
     mock_manager.get_base_url_override.return_value = None
 
     with (
-        patch('utils.token_manager.get_token_manager', return_value=mock_manager),
-        patch('utils.decorators._get_jwt_token', return_value=None),
+        patch('tools.workspace_tools.get_token_manager', return_value=mock_manager),
+        patch('tools.workspace_tools._get_jwt_token', return_value=None),
     ):
         yield mock_manager
 
@@ -177,8 +177,8 @@ class TestListWorkspaces:
         real_manager = TokenManager(config_file=str(config_path))
 
         with (
-            patch('utils.token_manager.get_token_manager', return_value=real_manager),
-            patch('utils.decorators._get_jwt_token', return_value=None),
+            patch('tools.workspace_tools.get_token_manager', return_value=real_manager),
+            patch('tools.workspace_tools._get_jwt_token', return_value=None),
         ):
             result = await list_workspaces(region='us1')
 

@@ -1,6 +1,7 @@
 """Auth0 JWT verification for remote MCP server mode."""
 
 import asyncio
+import json
 import os
 import time
 from typing import Any
@@ -90,8 +91,6 @@ def _get_signing_key(jwks: dict[str, Any], token: str) -> Any | None:
 
     for key in jwks.get('keys', []):
         if key.get('kid') == kid:
-            import json
-
             return jwt.algorithms.RSAAlgorithm.from_jwk(json.dumps(key))
 
     logger.error(f'No matching key found for kid: {kid}')
