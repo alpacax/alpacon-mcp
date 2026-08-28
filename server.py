@@ -80,6 +80,7 @@ def _create_mcp_server() -> FastMCP:
     auth_enabled = is_auth_enabled()
 
     if auth_enabled:
+        # Local: only runs in remote/JWT mode; Auth0TokenVerifier needs AUTH0_DOMAIN set, which stdio/SSE mode never has.
         from mcp.server.auth.settings import AuthSettings
         from pydantic import AnyHttpUrl
 
@@ -262,6 +263,7 @@ def _install_upstream_auth_middleware():
     replaces the HTTP 200 JSON-RPC response with HTTP 401, triggering
     the MCP client's automatic OAuth re-authentication flow.
     """
+    # Local: this whole function only runs in remote mode (see the `if remote_mode:` call site below).
     from utils.auth_error_middleware import UpstreamAuthErrorMiddleware
 
     resource_url = os.getenv('ALPACON_MCP_RESOURCE_URL', 'https://mcp.alpacon.io')
@@ -270,6 +272,7 @@ def _install_upstream_auth_middleware():
     )
 
     async def patched_run():
+        # Local: uvicorn is only needed for HTTP transports, never stdio (mcp's own FastMCP defers it the same way).
         import uvicorn
 
         starlette_app = mcp.streamable_http_app()
@@ -366,6 +369,7 @@ def run(
         importlib.import_module(f'{TOOLS_PACKAGE}.{module_name}')
     logger.info('Registered tool modules: %s', ', '.join(ordered))
 
+    # Local: real circular import—tools/resources.py does `from server import TOOLS_PACKAGE, mcp` at its own top level.
     from tools.resources import register_resources
 
     register_resources(modules)
