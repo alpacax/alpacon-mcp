@@ -5,9 +5,13 @@ Tests http_client.close() idempotency and the app_lifespan teardown sequence.
 """
 
 import signal
+import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
+from server import _sigterm_handler, app_lifespan
+from utils.http_client import AlpaconHTTPClient
 
 
 class TestHTTPClientClose:
@@ -16,8 +20,6 @@ class TestHTTPClientClose:
     @pytest.mark.asyncio
     async def test_close_with_active_client(self):
         """Test close() properly shuts down the active client."""
-        from utils.http_client import AlpaconHTTPClient
-
         client = AlpaconHTTPClient()
 
         # Simulate an active httpx client
@@ -33,8 +35,6 @@ class TestHTTPClientClose:
     @pytest.mark.asyncio
     async def test_close_idempotent(self):
         """Test that close() can be called multiple times safely."""
-        from utils.http_client import AlpaconHTTPClient
-
         client = AlpaconHTTPClient()
 
         # First close with no client initialized
@@ -52,8 +52,6 @@ class TestHTTPClientClose:
     @pytest.mark.asyncio
     async def test_close_client_backward_compat(self):
         """Test that _close_client() still works as alias for close()."""
-        from utils.http_client import AlpaconHTTPClient
-
         client = AlpaconHTTPClient()
 
         mock_httpx = AsyncMock()
@@ -72,11 +70,9 @@ class TestAppLifespan:
     @pytest.mark.asyncio
     async def test_lifespan_teardown_calls_cleanup(self):
         """Test that lifespan teardown calls cleanup functions."""
-        from server import app_lifespan
-
         mock_app = MagicMock()
 
-        with patch('utils.http_client.http_client') as mock_http:
+        with patch('server.http_client') as mock_http:
             mock_http.close = AsyncMock()
 
             async with app_lifespan(mock_app):
@@ -88,11 +84,9 @@ class TestAppLifespan:
     @pytest.mark.asyncio
     async def test_lifespan_teardown_on_exception(self):
         """Test that lifespan teardown runs even after an exception."""
-        from server import app_lifespan
-
         mock_app = MagicMock()
 
-        with patch('utils.http_client.http_client') as mock_http:
+        with patch('server.http_client') as mock_http:
             mock_http.close = AsyncMock()
 
             with pytest.raises(RuntimeError, match='test error'):
@@ -105,16 +99,12 @@ class TestAppLifespan:
     @pytest.mark.asyncio
     async def test_sigterm_handler_installed_on_unix(self):
         """Test that SIGTERM handler is installed on non-Windows platforms."""
-        import sys
-
-        from server import _sigterm_handler, app_lifespan
-
         mock_app = MagicMock()
 
         if sys.platform == 'win32':
             pytest.skip('SIGTERM handler test only runs on Unix')
 
-        with patch('utils.http_client.http_client') as mock_http:
+        with patch('server.http_client') as mock_http:
             mock_http.close = AsyncMock()
 
             async with app_lifespan(mock_app):

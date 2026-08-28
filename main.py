@@ -67,7 +67,7 @@ Examples:
 
     args = parser.parse_args()
 
-    # Handle commands
+    # Handle commands. Each utils.setup_wizard import below stays local: rarely-used CLI paths shouldn't cost the common case.
     if args.command == 'setup':
         from utils.setup_wizard import run_setup_wizard
 

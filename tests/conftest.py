@@ -46,5 +46,11 @@ def mock_region_auto_detect():
     # explicit keeps the mock's behavior obvious.)
     mock_tm.get_base_url_override.return_value = None
 
-    with patch('utils.token_manager.get_token_manager', return_value=mock_tm):
+    # patch() rebinds one name at a time, so every module that imported
+    # get_token_manager at its own top level needs its own entry here.
+    with (
+        patch('utils.token_manager.get_token_manager', return_value=mock_tm),
+        patch('utils.health.get_token_manager', return_value=mock_tm),
+        patch('tools.workspace_tools.get_token_manager', return_value=mock_tm),
+    ):
         yield mock_tm

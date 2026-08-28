@@ -11,6 +11,10 @@ from pathlib import Path
 
 import pytest
 
+from tools.server_tools import list_servers
+from utils.logger import get_logger
+from utils.token_manager import TokenManager, get_token_manager
+
 
 @pytest.fixture
 def temp_config_file():
@@ -43,8 +47,6 @@ class TestTokenManagement:
 
     def test_token_configuration_loading(self, temp_config_file):
         """Test token configuration file loading."""
-        from utils.token_manager import TokenManager
-
         tm = TokenManager()
 
         # Test token retrieval
@@ -60,8 +62,6 @@ class TestTokenManagement:
 
     def test_token_manager_singleton(self):
         """Test that token manager works as expected."""
-        from utils.token_manager import get_token_manager
-
         tm1 = get_token_manager()
         tm2 = get_token_manager()
 
@@ -71,8 +71,6 @@ class TestTokenManagement:
     @pytest.mark.asyncio
     async def test_missing_token_error_flow(self, temp_config_file):
         """Test error handling when token is missing."""
-        from tools.server_tools import list_servers
-
         # Try to use a workspace/region combination that doesn't exist
         result = await list_servers(workspace='nonexistent_workspace', region='ap1')
 
@@ -82,7 +80,12 @@ class TestTokenManagement:
 
 
 class TestModuleImports:
-    """Test that all modules can be imported successfully."""
+    """Test that all modules can be imported successfully.
+
+    Each import stays local: the import succeeding is the assertion under
+    test, so hoisting it would turn an import failure into a
+    collection-time crash for the whole file instead of one failing test.
+    """
 
     def test_server_tools_import(self):
         """Test server tools module import."""
@@ -128,7 +131,12 @@ class TestModuleImports:
 
 
 class TestMCPServerConfiguration:
-    """Test MCP server configuration and setup."""
+    """Test MCP server configuration and setup.
+
+    Each import stays local: the import succeeding is the assertion under
+    test, so hoisting it would turn an import failure into a
+    collection-time crash for the whole file instead of one failing test.
+    """
 
     def test_mcp_server_import(self):
         """Test MCP server can be imported."""
@@ -150,8 +158,6 @@ class TestUtilityFunctions:
 
     def test_logger_functionality(self):
         """Test logger creates different loggers."""
-        from utils.logger import get_logger
-
         logger1 = get_logger('module1')
         logger2 = get_logger('module2')
         logger3 = get_logger('module1')  # Same name
@@ -164,8 +170,6 @@ class TestUtilityFunctions:
 
     def test_token_manager_methods(self):
         """Test token manager has required methods."""
-        from utils.token_manager import TokenManager
-
         tm = TokenManager()
 
         # Check required methods exist

@@ -8,6 +8,7 @@ import pytest
 from utils.auth_error_middleware import UpstreamAuthErrorMiddleware
 from utils.error_handler import (
     UpstreamAuthError,
+    consume_upstream_auth_error,
     make_auth_error_key,
     signal_upstream_auth_error,
 )
@@ -373,8 +374,6 @@ async def test_exception_consumes_dict_signal():
     await _run(mw)
 
     # Dict signal should be consumed
-    from utils.error_handler import consume_upstream_auth_error
-
     token_key = make_auth_error_key(token)
     assert consume_upstream_auth_error(token_key) is None
 

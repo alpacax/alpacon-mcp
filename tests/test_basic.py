@@ -1,4 +1,9 @@
-"""Basic tests for alpacon-mcp package."""
+"""Basic tests for alpacon-mcp package.
+
+The imports below stay local to each test: the import succeeding is the
+assertion under test, so hoisting them would turn an import failure into a
+collection-time crash for the whole file instead of one failing test.
+"""
 
 import pytest
 

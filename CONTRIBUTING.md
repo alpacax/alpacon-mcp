@@ -77,6 +77,8 @@ We use the following tools for code quality:
 
 Both run as pre-commit hooks, and CI runs `ruff check`, `ruff format --check`, `mypy`, and `pytest` under a coverage floor set in `.github/workflows/test.yml`.
 
+Keep imports at the top of the file. A function/method-local import needs a real reason—breaking a circular import, gating an optional/heavy dependency, or deferring for a documented ordering hazard—and a one-line comment stating that reason.
+
 ```bash
 # Format code
 ruff format .

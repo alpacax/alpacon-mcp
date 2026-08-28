@@ -5,6 +5,7 @@ This module provides a user-friendly CLI interface for configuring the MCP serve
 eliminating the need for manual JSON editing.
 """
 
+import asyncio
 import json
 import os
 import sys
@@ -12,6 +13,7 @@ from getpass import getpass
 from pathlib import Path
 
 from .error_handler import SERVED_REGIONS, validate_region_format
+from .http_client import AlpaconHTTPClient
 from .token_manager import TokenManager
 
 
@@ -63,9 +65,6 @@ def save_config(config: dict[str, dict[str, str]], config_path: Path) -> None:
 def test_connection(region: str, workspace: str, token: str) -> bool:
     """Test API connection with provided credentials."""
     try:
-        import asyncio
-
-        from .http_client import AlpaconHTTPClient
 
         async def _test():
             client = AlpaconHTTPClient()

@@ -5,6 +5,7 @@ Tests workspace management functionality including workspace listing.
 Note: User settings and profile endpoints have been removed from the server.
 """
 
+import json
 from http import HTTPStatus
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -17,16 +18,18 @@ from tools.workspace_tools import (
     get_workspace_preferences,
     get_workspace_security,
     list_workspace_mfa_methods,
+    list_workspaces,
     update_workspace_preferences,
 )
+from utils.token_manager import TokenManager
 
 
 @pytest.fixture
 def mock_token_manager():
     """Mock token manager for testing.
 
-    list_workspaces does a local import: from utils.token_manager import get_token_manager
-    So we need to mock at utils.token_manager.get_token_manager.
+    tools.workspace_tools imports get_token_manager at module top level, so
+    the mock must be patched there rather than at utils.token_manager.
     """
     mock_manager = MagicMock()
     mock_manager.get_all_tokens.return_value = {
@@ -45,8 +48,8 @@ def mock_token_manager():
     mock_manager.get_base_url_override.return_value = None
 
     with (
-        patch('utils.token_manager.get_token_manager', return_value=mock_manager),
-        patch('utils.decorators._get_jwt_token', return_value=None),
+        patch('tools.workspace_tools.get_token_manager', return_value=mock_manager),
+        patch('tools.workspace_tools._get_jwt_token', return_value=None),
     ):
         yield mock_manager
 
@@ -57,8 +60,6 @@ class TestListWorkspaces:
     @pytest.mark.asyncio
     async def test_list_workspaces_success(self, mock_token_manager):
         """Test successful workspace listing."""
-        from tools.workspace_tools import list_workspaces
-
         result = await list_workspaces(region='ap1')
 
         # Verify response structure
@@ -89,8 +90,6 @@ class TestListWorkspaces:
     @pytest.mark.asyncio
     async def test_list_workspaces_different_region(self, mock_token_manager):
         """Test workspace listing for different region."""
-        from tools.workspace_tools import list_workspaces
-
         result = await list_workspaces(region='us1')
 
         assert result['status'] == 'success'
@@ -110,8 +109,6 @@ class TestListWorkspaces:
     @pytest.mark.asyncio
     async def test_list_workspaces_empty_region(self, mock_token_manager):
         """Test workspace listing for region with no workspaces."""
-        from tools.workspace_tools import list_workspaces
-
         # Mock empty tokens for unknown region
         mock_token_manager.get_all_tokens.return_value = {
             'ap1': {'production': {'token': 'token1'}}
@@ -126,8 +123,6 @@ class TestListWorkspaces:
     @pytest.mark.asyncio
     async def test_list_workspaces_workspace_without_token(self, mock_token_manager):
         """Test workspace listing with workspace that has no token."""
-        from tools.workspace_tools import list_workspaces
-
         # Mock tokens with empty token value
         mock_token_manager.get_all_tokens.return_value = {
             'ap1': {
@@ -163,11 +158,6 @@ class TestListWorkspaces:
         precedence (env var over config) and normalization (scheme added,
         trailing slash dropped) as actual request routing.
         """
-        import json
-
-        from tools.workspace_tools import list_workspaces
-        from utils.token_manager import TokenManager
-
         config_path = tmp_path / 'token.json'
         config_path.write_text(
             json.dumps(
@@ -187,8 +177,8 @@ class TestListWorkspaces:
         real_manager = TokenManager(config_file=str(config_path))
 
         with (
-            patch('utils.token_manager.get_token_manager', return_value=real_manager),
-            patch('utils.decorators._get_jwt_token', return_value=None),
+            patch('tools.workspace_tools.get_token_manager', return_value=real_manager),
+            patch('tools.workspace_tools._get_jwt_token', return_value=None),
         ):
             result = await list_workspaces(region='us1')
 
@@ -205,8 +195,6 @@ class TestListWorkspaces:
     @pytest.mark.asyncio
     async def test_list_workspaces_default_region(self, mock_token_manager):
         """Test workspace listing without region returns all regions."""
-        from tools.workspace_tools import list_workspaces
-
         result = await list_workspaces()
 
         assert result['status'] == 'success'
