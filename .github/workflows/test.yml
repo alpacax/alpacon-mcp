@@ -20,9 +20,6 @@ jobs:
 
     env:
       UV_PYTHON: python${{ matrix.python-version }}
-      # Formatter output differs between releases; keep in step with the rev
-      # in .pre-commit-config.yaml.
-      RUFF_VERSION: "0.15.13"
 
     steps:
     - uses: actions/checkout@v6
@@ -42,15 +39,13 @@ jobs:
       run: uv sync --extra dev --locked
 
     - name: Lint with ruff
-      run: |
-        uv pip install ruff==${{ env.RUFF_VERSION }}
-        uv run --no-sync ruff check .
+      run: uv run --no-sync python -m ruff check .
 
     - name: Check formatting with ruff
-      run: uv run --no-sync ruff format --check .
+      run: uv run --no-sync python -m ruff format --check .
 
     - name: Type check with mypy
-      run: uv run --no-sync mypy --ignore-missing-imports --no-strict-optional .
+      run: uv run --no-sync python -m mypy .
       continue-on-error: true
 
     - name: Test with pytest

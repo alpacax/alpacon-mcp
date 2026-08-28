@@ -32,14 +32,11 @@ Thank you for your interest in contributing to the Alpacon MCP server! This guid
    # uv sync too: a bare one uninstalls them.
    uv sync --extra dev
 
-   # ruff and pre-commit ship as tools, not as dev dependencies.
-   # Keep the ruff pin in step with the rev in .pre-commit-config.yaml.
-   uv tool install ruff==0.15.13
-   uv tool install pre-commit
-
    # Install pre-commit hooks
    pre-commit install
    ```
+
+   ruff, mypy, and pre-commit live only in `.venv`, so activate it in every new shell. If you ran `uv tool install` under earlier instructions, undo it with `uv tool uninstall ruff pre-commit`—that copy sits outside `uv.lock`, so a shell without the venv active runs an unpinned version.
 
 3. **Configure Development Tokens**
    ```bash
@@ -63,7 +60,7 @@ Thank you for your interest in contributing to the Alpacon MCP server! This guid
    # Lint, formatting, and type check
    ruff check .
    ruff format --check .
-   mypy --ignore-missing-imports --no-strict-optional .
+   mypy .
    ```
 
 ## 📋 Development guidelines
@@ -77,6 +74,8 @@ We use the following tools for code quality:
 
 Both run as pre-commit hooks, and CI runs `ruff check`, `ruff format --check`, `mypy`, and `pytest` under a coverage floor set in `.github/workflows/test.yml`.
 
+`uv.lock` pins both versions, so `pre-commit autoupdate` has nothing to update. Upgrade one with `uv lock --upgrade-package ruff` and commit the lockfile.
+
 Keep imports at the top of the file. A function/method-local import needs a real reason—breaking a circular import, gating an optional/heavy dependency, or deferring for a documented ordering hazard—and a one-line comment stating that reason.
 
 ```bash
@@ -87,7 +86,7 @@ ruff format .
 ruff check .
 
 # Type checking
-mypy --ignore-missing-imports --no-strict-optional .
+mypy .
 
 # Or run all at once
 pre-commit run --all-files

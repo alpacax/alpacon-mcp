@@ -60,12 +60,13 @@ alpacon-mcp-http = "main_http:main"
 
 [project.optional-dependencies]
 dev = [
+    # Floors only: uv.lock pins the version every environment installs.
     "pytest>=8.4.2",
     "pytest-asyncio>=1.2.0",
     "pytest-cov>=6.0.0",
-    # Floor only: the mypy step is advisory (continue-on-error), so CI need
-    # not match the pre-commit rev exactly.
     "mypy>=1.15.0",
+    "ruff>=0.15.13",
+    "pre-commit>=4.0.0",
 ]
 
 [tool.hatch.version]
@@ -136,5 +137,6 @@ line-ending = "auto"
 [tool.mypy]
 python_version = "3.12"
 ignore_missing_imports = true
+strict_optional = false
 namespace_packages = true
 explicit_package_bases = true
