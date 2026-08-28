@@ -15,7 +15,7 @@ import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa as rsa_mod
 from jwt.algorithms import RSAAlgorithm
 
-import utils.auth as auth_mod
+from utils import auth as auth_mod
 from utils.auth import (
     Auth0TokenVerifier,
     _fetch_jwks,
