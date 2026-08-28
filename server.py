@@ -80,7 +80,7 @@ def _create_mcp_server() -> FastMCP:
     auth_enabled = is_auth_enabled()
 
     if auth_enabled:
-        # Local: only runs in remote/JWT mode; Auth0TokenVerifier needs AUTH0_DOMAIN set, which stdio/SSE mode never has.
+        # Local: only remote/JWT mode reaches this branch, so stdio/SSE startup does not pay to import pydantic's auth settings or the Auth0 verifier.
         from mcp.server.auth.settings import AuthSettings
         from pydantic import AnyHttpUrl
 
