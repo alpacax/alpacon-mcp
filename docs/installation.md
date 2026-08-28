@@ -396,11 +396,6 @@ uv venv
 source .venv/bin/activate
 uv sync --extra dev
 
-# ruff and pre-commit ship as tools, not as dev dependencies.
-# Keep the ruff pin in step with the rev in .pre-commit-config.yaml.
-uv tool install ruff==0.15.13
-uv tool install pre-commit
-
 # Install pre-commit hooks (ruff + mypy)
 pre-commit install
 
@@ -414,6 +409,8 @@ ruff format .
 # Type check
 mypy --ignore-missing-imports --no-strict-optional .
 ```
+
+These tools live only in `.venv`, so activate it in every new shell before running them. If you installed ruff or pre-commit with `uv tool install` under earlier instructions, run `uv tool uninstall ruff pre-commit`.
 
 CI runs the same checks: `ruff check`, `ruff format --check`, `mypy`, and `pytest` under a coverage floor. `.github/workflows/test.yml` holds the current threshold.
 

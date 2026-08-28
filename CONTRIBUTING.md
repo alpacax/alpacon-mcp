@@ -32,14 +32,11 @@ Thank you for your interest in contributing to the Alpacon MCP server! This guid
    # uv sync too: a bare one uninstalls them.
    uv sync --extra dev
 
-   # ruff and pre-commit ship as tools, not as dev dependencies.
-   # Keep the ruff pin in step with the rev in .pre-commit-config.yaml.
-   uv tool install ruff==0.15.13
-   uv tool install pre-commit
-
    # Install pre-commit hooks
    pre-commit install
    ```
+
+   ruff, mypy, and pre-commit live only in `.venv`, so activate it in every new shell before running them. If you installed ruff or pre-commit with `uv tool install` under earlier instructions, run `uv tool uninstall ruff pre-commit`—a shell without the venv active would find that stale copy instead.
 
 3. **Configure Development Tokens**
    ```bash
@@ -76,6 +73,8 @@ We use the following tools for code quality:
 - **mypy** for type checking
 
 Both run as pre-commit hooks, and CI runs `ruff check`, `ruff format --check`, `mypy`, and `pytest` under a coverage floor set in `.github/workflows/test.yml`.
+
+`uv.lock` pins both versions, so `pre-commit autoupdate` has nothing to update. Upgrade one with `uv lock --upgrade-package ruff` and commit the lockfile.
 
 ```bash
 # Format code

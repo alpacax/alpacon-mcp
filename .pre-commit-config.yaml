@@ -1,14 +1,25 @@
+# No `rev:`: uv.lock pins these tools, so bump one with `uv lock --upgrade-package <tool>`.
+# `python -m` is deliberate—plain `uv run --no-sync ruff` falls back to any ruff on
+# PATH when the venv has none, and dropping `--no-sync` uninstalls the dev extra.
 repos:
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.13
+  - repo: local
     hooks:
       - id: ruff
-        args: [--fix]
-      - id: ruff-format
+        name: ruff
+        entry: uv run --no-sync python -m ruff check --force-exclude --fix
+        language: system
+        types_or: [python, pyi, jupyter]
 
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.15.0
-    hooks:
+      - id: ruff-format
+        name: ruff-format
+        entry: uv run --no-sync python -m ruff format --force-exclude
+        language: system
+        types_or: [python, pyi, jupyter]
+
+      # Blocks the commit, unlike the advisory CI step (continue-on-error).
       - id: mypy
-        args: [--ignore-missing-imports, --no-strict-optional]
-        additional_dependencies: []
+        name: mypy
+        entry: uv run --no-sync python -m mypy --ignore-missing-imports --no-strict-optional .
+        language: system
+        types_or: [python, pyi]
+        pass_filenames: false
