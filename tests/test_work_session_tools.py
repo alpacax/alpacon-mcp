@@ -6,7 +6,16 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from server import mcp
-from tools import work_session_tools  # noqa: F401  (registers the tools)
+from tools.work_session_tools import (
+    work_session_analyze,
+    work_session_close,
+    work_session_create,
+    work_session_extend,
+    work_session_get,
+    work_session_list,
+    work_session_timeline,
+    work_session_update,
+)
 
 
 @pytest.fixture
@@ -28,7 +37,6 @@ def mock_token_manager():
 class TestWorkSessionCreate:
     @pytest.mark.asyncio
     async def test_create_success(self, mock_http_client, mock_token_manager):
-        from tools.work_session_tools import work_session_create
 
         # Verifies the request payload sent to the server. Use an active session
         # so the success path is exercised; the pending path is covered by
@@ -69,7 +77,6 @@ class TestWorkSessionCreate:
         self, mock_http_client, mock_token_manager
     ):
         """A pending Work Session is surfaced as a structured approval signal."""
-        from tools.work_session_tools import work_session_create
 
         mock_http_client.post.return_value = {
             'id': 'ws-uuid-pending',
@@ -99,7 +106,6 @@ class TestWorkSessionCreate:
         self, mock_http_client, mock_token_manager
     ):
         """A non-pending session (e.g. auto-approved) returns a normal success."""
-        from tools.work_session_tools import work_session_create
 
         mock_http_client.post.return_value = {
             'id': 'ws-uuid-active',
@@ -122,7 +128,6 @@ class TestWorkSessionCreate:
     async def test_create_with_title_and_description(
         self, mock_http_client, mock_token_manager
     ):
-        from tools.work_session_tools import work_session_create
 
         mock_http_client.post.return_value = {'id': 'ws-uuid-5678', 'status': 'pending'}
 
@@ -143,7 +148,6 @@ class TestWorkSessionCreate:
 
     @pytest.mark.asyncio
     async def test_create_omits_empty_title(self, mock_http_client, mock_token_manager):
-        from tools.work_session_tools import work_session_create
 
         mock_http_client.post.return_value = {'id': 'ws-uuid-0000', 'status': 'pending'}
 
@@ -164,7 +168,6 @@ class TestWorkSessionCreate:
 class TestWorkSessionClose:
     @pytest.mark.asyncio
     async def test_close_success(self, mock_http_client, mock_token_manager):
-        from tools.work_session_tools import work_session_close
 
         mock_http_client.post.return_value = {
             'id': '550e8400-e29b-41d4-a716-446655440020',
@@ -190,7 +193,6 @@ class TestWorkSessionClose:
 class TestWorkSessionGet:
     @pytest.mark.asyncio
     async def test_get_success(self, mock_http_client, mock_token_manager):
-        from tools.work_session_tools import work_session_get
 
         mock_http_client.get.return_value = {
             'id': '550e8400-e29b-41d4-a716-446655440020',
@@ -215,7 +217,6 @@ class TestWorkSessionGet:
 
     @pytest.mark.asyncio
     async def test_get_propagates_api_error(self, mock_http_client, mock_token_manager):
-        from tools.work_session_tools import work_session_get
 
         mock_http_client.get.return_value = {
             'error': 'Not found',
@@ -236,7 +237,6 @@ class TestWorkSessionGet:
 class TestWorkSessionList:
     @pytest.mark.asyncio
     async def test_list_success(self, mock_http_client, mock_token_manager):
-        from tools.work_session_tools import work_session_list
 
         mock_http_client.get.return_value = {
             'count': 2,
@@ -260,7 +260,6 @@ class TestWorkSessionList:
 
     @pytest.mark.asyncio
     async def test_list_with_status_filter(self, mock_http_client, mock_token_manager):
-        from tools.work_session_tools import work_session_list
 
         mock_http_client.get.return_value = {'count': 1, 'results': []}
 
@@ -275,7 +274,6 @@ class TestWorkSessionList:
     async def test_list_with_requester_type_filter(
         self, mock_http_client, mock_token_manager
     ):
-        from tools.work_session_tools import work_session_list
 
         mock_http_client.get.return_value = {'count': 1, 'results': []}
 
@@ -291,7 +289,6 @@ class TestWorkSessionList:
     async def test_list_propagates_api_error(
         self, mock_http_client, mock_token_manager
     ):
-        from tools.work_session_tools import work_session_list
 
         mock_http_client.get.return_value = {
             'error': 'Forbidden',
@@ -308,7 +305,6 @@ class TestWorkSessionList:
 class TestWorkSessionUpdate:
     @pytest.mark.asyncio
     async def test_update_success(self, mock_http_client, mock_token_manager):
-        from tools.work_session_tools import work_session_update
 
         # Applied immediately: no modification request was queued.
         mock_http_client.patch.return_value = {
@@ -348,7 +344,6 @@ class TestWorkSessionUpdate:
     async def test_update_sends_only_provided_fields(
         self, mock_http_client, mock_token_manager
     ):
-        from tools.work_session_tools import work_session_update
 
         mock_http_client.patch.return_value = {
             'id': '550e8400-e29b-41d4-a716-446655440020'
@@ -368,7 +363,6 @@ class TestWorkSessionUpdate:
     async def test_update_rejects_empty_update(
         self, mock_http_client, mock_token_manager
     ):
-        from tools.work_session_tools import work_session_update
 
         result = await work_session_update(
             session_id='550e8400-e29b-41d4-a716-446655440020',
@@ -385,7 +379,6 @@ class TestWorkSessionUpdate:
         self, mock_http_client, mock_token_manager
     ):
         """An explicit empty string is sent so the server clears the title."""
-        from tools.work_session_tools import work_session_update
 
         mock_http_client.patch.return_value = {
             'id': '550e8400-e29b-41d4-a716-446655440020',
@@ -412,7 +405,6 @@ class TestWorkSessionUpdate:
         immediately—the server queues a ``work_session_mod`` approval request
         and reports it via a non-null ``pending_modification_request``.
         """
-        from tools.work_session_tools import work_session_update
 
         mock_http_client.patch.return_value = {
             'id': '550e8400-e29b-41d4-a716-446655440020',
@@ -443,7 +435,6 @@ class TestWorkSessionUpdate:
     async def test_update_propagates_api_error(
         self, mock_http_client, mock_token_manager
     ):
-        from tools.work_session_tools import work_session_update
 
         mock_http_client.patch.return_value = {
             'error': 'Validation error',
@@ -465,7 +456,6 @@ class TestWorkSessionUpdate:
 class TestWorkSessionExtend:
     @pytest.mark.asyncio
     async def test_extend_success(self, mock_http_client, mock_token_manager):
-        from tools.work_session_tools import work_session_extend
 
         mock_http_client.post.return_value = {
             'id': '550e8400-e29b-41d4-a716-446655440020',
@@ -493,7 +483,6 @@ class TestWorkSessionExtend:
     async def test_extend_propagates_api_error(
         self, mock_http_client, mock_token_manager
     ):
-        from tools.work_session_tools import work_session_extend
 
         mock_http_client.post.return_value = {
             'error': 'Validation error',
@@ -517,7 +506,6 @@ class TestWorkSessionTimeline:
     async def test_timeline_success_includes_records_by_default(
         self, mock_http_client, mock_token_manager
     ):
-        from tools.work_session_tools import work_session_timeline
 
         mock_http_client.get.return_value = {
             'results': [
@@ -544,7 +532,6 @@ class TestWorkSessionTimeline:
 
     @pytest.mark.asyncio
     async def test_timeline_without_records(self, mock_http_client, mock_token_manager):
-        from tools.work_session_tools import work_session_timeline
 
         mock_http_client.get.return_value = {'results': []}
 
@@ -562,7 +549,6 @@ class TestWorkSessionTimeline:
     async def test_timeline_propagates_api_error(
         self, mock_http_client, mock_token_manager
     ):
-        from tools.work_session_tools import work_session_timeline
 
         mock_http_client.get.return_value = {
             'error': 'Not found',
@@ -583,7 +569,6 @@ class TestWorkSessionTimeline:
 class TestWorkSessionAnalyze:
     @pytest.mark.asyncio
     async def test_analyze_success(self, mock_http_client, mock_token_manager):
-        from tools.work_session_tools import work_session_analyze
 
         mock_http_client.post.return_value = {
             'status': 'accepted',
@@ -607,7 +592,6 @@ class TestWorkSessionAnalyze:
 
     @pytest.mark.asyncio
     async def test_analyze_with_force(self, mock_http_client, mock_token_manager):
-        from tools.work_session_tools import work_session_analyze
 
         mock_http_client.post.return_value = {
             'status': 'accepted',
@@ -628,7 +612,6 @@ class TestWorkSessionAnalyze:
     async def test_analyze_propagates_api_error(
         self, mock_http_client, mock_token_manager
     ):
-        from tools.work_session_tools import work_session_analyze
 
         mock_http_client.post.return_value = {
             'error': 'Validation error',

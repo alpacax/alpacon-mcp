@@ -6,6 +6,8 @@ import pytest
 
 import server
 from tools.health_tools import health_check
+from utils.common import MCP_VERSION
+from utils.health import get_health_info
 
 
 @pytest.fixture
@@ -63,7 +65,6 @@ class TestGetHealthInfoLocal:
     @pytest.mark.asyncio
     async def test_returns_required_fields(self, _patched_health_local):
         """Health info must contain all required top-level keys."""
-        from utils.health import get_health_info
 
         result = await get_health_info()
 
@@ -80,7 +81,6 @@ class TestGetHealthInfoLocal:
     @pytest.mark.asyncio
     async def test_status_is_ok(self, _patched_health_local):
         """Status field must always be 'ok'."""
-        from utils.health import get_health_info
 
         result = await get_health_info()
 
@@ -89,8 +89,6 @@ class TestGetHealthInfoLocal:
     @pytest.mark.asyncio
     async def test_version_matches_mcp_version(self, _patched_health_local):
         """Version must match the MCP_VERSION constant."""
-        from utils.common import MCP_VERSION
-        from utils.health import get_health_info
 
         result = await get_health_info()
 
@@ -99,7 +97,6 @@ class TestGetHealthInfoLocal:
     @pytest.mark.asyncio
     async def test_uptime_is_positive(self, _patched_health_local):
         """Uptime must be a positive number."""
-        from utils.health import get_health_info
 
         result = await get_health_info()
 
@@ -109,7 +106,6 @@ class TestGetHealthInfoLocal:
     @pytest.mark.asyncio
     async def test_local_auth_info(self, _patched_health_local):
         """Local mode auth must report token_file info without secrets."""
-        from utils.health import get_health_info
 
         result = await get_health_info()
 
@@ -127,7 +123,6 @@ class TestGetHealthInfoLocal:
     @pytest.mark.asyncio
     async def test_http_client_info(self, _patched_health_local):
         """HTTP client section must report pool_active and nothing else."""
-        from utils.health import get_health_info
 
         result = await get_health_info()
 
@@ -147,8 +142,6 @@ class TestGetHealthInfoLocal:
             ),
             patch('utils.http_client.http_client', mock_client),
         ):
-            from utils.health import get_health_info
-
             result = await get_health_info()
 
         assert result['http_client'] == {'pool_active': False}
@@ -160,7 +153,6 @@ class TestGetHealthInfoRemote:
     @pytest.mark.asyncio
     async def test_remote_auth_info(self, _patched_health_remote):
         """Remote mode auth must report JWT mode without token.json info."""
-        from utils.health import get_health_info
 
         result = await get_health_info()
 

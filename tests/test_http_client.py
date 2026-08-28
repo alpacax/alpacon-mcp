@@ -11,6 +11,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
+from utils.error_handler import (
+    UpstreamAuthError,
+    consume_upstream_auth_error,
+    make_auth_error_key,
+)
 from utils.http_client import AlpaconHTTPClient, http_client
 from utils.recovery_hints import _detect_error_domain, enrich_error_response
 
@@ -497,8 +502,6 @@ class TestHTTPClientJWTAuth:
 
     def test_is_jwt_detection(self):
         """Test JWT format detection logic."""
-        from utils.http_client import AlpaconHTTPClient
-
         assert AlpaconHTTPClient._is_jwt('a.b.c') is True
         assert AlpaconHTTPClient._is_jwt('eyJ.eyJ.sig') is True
         assert AlpaconHTTPClient._is_jwt('simple-token') is False
@@ -556,12 +559,6 @@ class TestHandleUpstream401:
     @patch.dict('os.environ', {'ALPACON_MCP_AUTH_ENABLED': 'true'})
     def test_raises_and_signals_in_remote_mode(self):
         """Raises UpstreamAuthError and signals dict in remote mode."""
-        from utils.error_handler import (
-            UpstreamAuthError,
-            consume_upstream_auth_error,
-            make_auth_error_key,
-        )
-
         token = 'header.payload.signature'  # Must pass _is_jwt() check
         exc = self._make_401_exc({'code': 'auth_mfa_required', 'source': 'websh'})
 
@@ -581,8 +578,6 @@ class TestHandleUpstream401:
     @patch.dict('os.environ', {'ALPACON_MCP_AUTH_ENABLED': 'false'})
     def test_no_signal_in_stdio_mode(self):
         """Does NOT signal error when auth is disabled (stdio mode)."""
-        from utils.error_handler import consume_upstream_auth_error, make_auth_error_key
-
         token = 'header.payload.signature'
         exc = self._make_401_exc({'code': 'auth_mfa_required', 'source': 'websh'})
         AlpaconHTTPClient._handle_upstream_401(exc, token=token)
