@@ -80,7 +80,12 @@ class TestTokenManagement:
 
 
 class TestModuleImports:
-    """Test that all modules can be imported successfully."""
+    """Test that all modules can be imported successfully.
+
+    Each import stays local: the import succeeding is the assertion under
+    test, so hoisting it would turn an import failure into a
+    collection-time crash for the whole file instead of one failing test.
+    """
 
     def test_server_tools_import(self):
         """Test server tools module import."""
@@ -126,7 +131,12 @@ class TestModuleImports:
 
 
 class TestMCPServerConfiguration:
-    """Test MCP server configuration and setup."""
+    """Test MCP server configuration and setup.
+
+    Each import stays local: the import succeeding is the assertion under
+    test, so hoisting it would turn an import failure into a
+    collection-time crash for the whole file instead of one failing test.
+    """
 
     def test_mcp_server_import(self):
         """Test MCP server can be imported."""
