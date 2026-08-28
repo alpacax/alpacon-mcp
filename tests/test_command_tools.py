@@ -7,12 +7,14 @@ import pytest
 
 from server import mcp
 from tools.command_tools import (
+    _SUDO_DENIAL_HINTS,
     _submit_command,
     _sudo_denial,
     execute_command,
     execute_command_multi_server,
     list_commands,
 )
+from utils.common import _NEXT_ACTION_BY_CATEGORY
 
 _GATE_ENVELOPE_REQUIRED = {
     'error': 'HTTP Error',
@@ -1097,8 +1099,6 @@ class TestSudoGuidanceInToolDescriptions:
 
 def test_no_worksession_policy_hint_names_the_request_tool():
     """The hint must not claim a policy cannot be asked for through MCP anymore."""
-    from tools.command_tools import _SUDO_DENIAL_HINTS
-
     hint = _SUDO_DENIAL_HINTS['SUDO_NO_WORKSESSION_POLICY']
 
     assert 'request_sudo_policy' in hint
@@ -1108,8 +1108,6 @@ def test_no_worksession_policy_hint_names_the_request_tool():
 
 def test_no_worksession_policy_next_action_names_the_request_tool():
     """The structured next action carries the same route as the hint."""
-    from utils.common import _NEXT_ACTION_BY_CATEGORY
-
     next_action = _NEXT_ACTION_BY_CATEGORY['SUDO_NO_WORKSESSION_POLICY']
 
     assert 'request_sudo_policy' in next_action

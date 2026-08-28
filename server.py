@@ -5,10 +5,14 @@ import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Literal
+from urllib.parse import urlparse
 
 from mcp.server.fastmcp import FastMCP
+from starlette.responses import JSONResponse
 
 from utils.common import is_auth_enabled
+from utils.health import get_health_info
+from utils.http_client import http_client
 from utils.logger import get_logger
 
 logger = get_logger('server')
@@ -38,8 +42,6 @@ async def app_lifespan(app: FastMCP) -> AsyncIterator[None]:
         yield
     finally:
         logger.info('Application shutting down, cleaning up resources...')
-        from utils.http_client import http_client
-
         try:
             await http_client.close()
         except Exception as e:
@@ -78,6 +80,7 @@ def _create_mcp_server() -> FastMCP:
     auth_enabled = is_auth_enabled()
 
     if auth_enabled:
+        # Local: only remote/JWT mode reaches this branch, so stdio/SSE startup does not pay the Auth0 verifier's import cost (30 ms, 50 modules).
         from mcp.server.auth.settings import AuthSettings
         from pydantic import AnyHttpUrl
 
@@ -103,8 +106,6 @@ def _create_mcp_server() -> FastMCP:
             raise RuntimeError(message)
 
         # Validate resource_url with proper URL parsing before passing to AnyHttpUrl
-        from urllib.parse import urlparse
-
         parsed_url = urlparse(resource_url)
         if parsed_url.scheme != 'https' or not parsed_url.netloc:
             message = (
@@ -262,6 +263,7 @@ def _install_upstream_auth_middleware():
     replaces the HTTP 200 JSON-RPC response with HTTP 401, triggering
     the MCP client's automatic OAuth re-authentication flow.
     """
+    # Local: this whole function only runs in remote mode (see the `if remote_mode:` call site below).
     from utils.auth_error_middleware import UpstreamAuthErrorMiddleware
 
     resource_url = os.getenv('ALPACON_MCP_RESOURCE_URL', 'https://mcp.alpacon.io')
@@ -270,6 +272,7 @@ def _install_upstream_auth_middleware():
     )
 
     async def patched_run():
+        # Local: uvicorn is only needed for HTTP transports, never stdio (mcp's own FastMCP defers it the same way).
         import uvicorn
 
         starlette_app = mcp.streamable_http_app()
@@ -301,10 +304,6 @@ def _register_http_health_endpoint():
 
     @mcp.custom_route('/health', methods=['GET'])
     async def health_endpoint(request):
-        from starlette.responses import JSONResponse
-
-        from utils.health import get_health_info
-
         health = await get_health_info()
         return JSONResponse(
             health,
@@ -370,6 +369,7 @@ def run(
         importlib.import_module(f'{TOOLS_PACKAGE}.{module_name}')
     logger.info('Registered tool modules: %s', ', '.join(ordered))
 
+    # Local: real circular import—tools/resources.py does `from server import TOOLS_PACKAGE, mcp` at its own top level.
     from tools.resources import register_resources
 
     register_resources(modules)

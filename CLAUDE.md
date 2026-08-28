@@ -113,6 +113,8 @@ the job that needs them, never at the workflow level.
 - `CONTRIBUTING.md` (`## 🔧 Adding new features`): the full recipe for a new
   tool—module skeleton, `TOOLSET_REGISTRY` entry, `tools/resources.py` row,
   test, docs. Follow it whenever you add a tool.
+- `CONTRIBUTING.md` (`### Code style`): the import rule—function/method-local
+  imports need a stated reason, not habit.
 - `docs/configuration.md`: token discovery order, transports, `--toolsets`,
   client config. Read it when authentication or startup misbehaves.
 - `README.md` (`Pinning a workspace API host`): the object form of a token entry

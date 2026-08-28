@@ -11,6 +11,17 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from tests.conftest import HTTP_ERROR_ENVELOPE
+from tools.system_info_tools import (
+    get_disk_info,
+    get_network_interfaces,
+    get_os_version,
+    get_server_overview,
+    get_system_info,
+    get_system_time,
+    list_system_groups,
+    list_system_packages,
+    list_system_users,
+)
 
 
 @pytest.fixture
@@ -36,7 +47,6 @@ class TestGetSystemInfo:
     @pytest.mark.asyncio
     async def test_system_info_success(self, mock_http_client, mock_token_manager):
         """Test successful system information retrieval."""
-        from tools.system_info_tools import get_system_info
 
         # Mock successful response
         mock_http_client.get.return_value = {
@@ -76,7 +86,6 @@ class TestGetSystemInfo:
     @pytest.mark.asyncio
     async def test_system_info_no_token(self, mock_http_client, mock_token_manager):
         """Test system info when no token is available."""
-        from tools.system_info_tools import get_system_info
 
         mock_token_manager.get_token.return_value = None
 
@@ -91,7 +100,6 @@ class TestGetSystemInfo:
     @pytest.mark.asyncio
     async def test_system_info_http_error(self, mock_http_client, mock_token_manager):
         """Test system info with HTTP error."""
-        from tools.system_info_tools import get_system_info
 
         mock_http_client.get.side_effect = Exception('HTTP 500 Internal Server Error')
 
@@ -107,7 +115,6 @@ class TestGetSystemInfo:
         self, mock_http_client, mock_token_manager
     ):
         """Test that an http_client error envelope returns an error response."""
-        from tools.system_info_tools import get_system_info
 
         mock_http_client.get.return_value = HTTP_ERROR_ENVELOPE
 
@@ -132,7 +139,6 @@ class TestGetOsVersion:
     @pytest.mark.asyncio
     async def test_os_version_success(self, mock_http_client, mock_token_manager):
         """Test successful OS version retrieval."""
-        from tools.system_info_tools import get_os_version
 
         # Mock successful response
         mock_http_client.get.return_value = {
@@ -171,7 +177,6 @@ class TestGetOsVersion:
     @pytest.mark.asyncio
     async def test_os_version_no_token(self, mock_http_client, mock_token_manager):
         """Test OS version when no token is available."""
-        from tools.system_info_tools import get_os_version
 
         mock_token_manager.get_token.return_value = None
 
@@ -189,7 +194,6 @@ class TestListSystemUsers:
     @pytest.mark.asyncio
     async def test_list_users_success(self, mock_http_client, mock_token_manager):
         """Test successful system users listing."""
-        from tools.system_info_tools import list_system_users
 
         # Mock successful response
         mock_http_client.get.return_value = {
@@ -256,7 +260,6 @@ class TestListSystemUsers:
         self, mock_http_client, mock_token_manager
     ):
         """Test users listing with minimal parameters."""
-        from tools.system_info_tools import list_system_users
 
         mock_http_client.get.return_value = {'count': 10, 'results': []}
 
@@ -277,7 +280,6 @@ class TestListSystemUsers:
     @pytest.mark.asyncio
     async def test_list_users_no_token(self, mock_http_client, mock_token_manager):
         """Test users listing when no token is available."""
-        from tools.system_info_tools import list_system_users
 
         mock_token_manager.get_token.return_value = None
 
@@ -293,7 +295,6 @@ class TestListSystemUsers:
         self, mock_http_client, mock_token_manager
     ):
         """Test that an http_client error envelope returns an error response."""
-        from tools.system_info_tools import list_system_users
 
         mock_http_client.get.return_value = HTTP_ERROR_ENVELOPE
 
@@ -316,7 +317,6 @@ class TestListSystemGroups:
     @pytest.mark.asyncio
     async def test_list_groups_success(self, mock_http_client, mock_token_manager):
         """Test successful system groups listing."""
-        from tools.system_info_tools import list_system_groups
 
         # Mock successful response
         mock_http_client.get.return_value = {
@@ -358,7 +358,6 @@ class TestListSystemGroups:
     @pytest.mark.asyncio
     async def test_list_groups_no_filter(self, mock_http_client, mock_token_manager):
         """Test groups listing without filter."""
-        from tools.system_info_tools import list_system_groups
 
         mock_http_client.get.return_value = {'count': 0, 'results': []}
 
@@ -378,7 +377,6 @@ class TestListSystemGroups:
     @pytest.mark.asyncio
     async def test_list_groups_no_token(self, mock_http_client, mock_token_manager):
         """Test groups listing when no token is available."""
-        from tools.system_info_tools import list_system_groups
 
         mock_token_manager.get_token.return_value = None
 
@@ -396,7 +394,6 @@ class TestListSystemPackages:
     @pytest.mark.asyncio
     async def test_list_packages_success(self, mock_http_client, mock_token_manager):
         """Test successful system packages listing."""
-        from tools.system_info_tools import list_system_packages
 
         # Mock successful response
         mock_http_client.get.return_value = {
@@ -456,7 +453,6 @@ class TestListSystemPackages:
         self, mock_http_client, mock_token_manager
     ):
         """Test packages listing with minimal parameters."""
-        from tools.system_info_tools import list_system_packages
 
         mock_http_client.get.return_value = {'count': 500, 'results': []}
 
@@ -480,7 +476,6 @@ class TestListSystemPackages:
     @pytest.mark.asyncio
     async def test_list_packages_no_token(self, mock_http_client, mock_token_manager):
         """Test packages listing when no token is available."""
-        from tools.system_info_tools import list_system_packages
 
         mock_token_manager.get_token.return_value = None
 
@@ -500,7 +495,6 @@ class TestGetNetworkInterfaces:
         self, mock_http_client, mock_token_manager
     ):
         """Test successful network interfaces retrieval."""
-        from tools.system_info_tools import get_network_interfaces
 
         # Mock successful response
         mock_http_client.get.return_value = {
@@ -550,7 +544,6 @@ class TestGetNetworkInterfaces:
         self, mock_http_client, mock_token_manager
     ):
         """Test network interfaces when no token is available."""
-        from tools.system_info_tools import get_network_interfaces
 
         mock_token_manager.get_token.return_value = None
 
@@ -566,7 +559,6 @@ class TestGetNetworkInterfaces:
         self, mock_http_client, mock_token_manager
     ):
         """Test that an http_client error envelope returns an error response."""
-        from tools.system_info_tools import get_network_interfaces
 
         mock_http_client.get.return_value = HTTP_ERROR_ENVELOPE
 
@@ -589,7 +581,6 @@ class TestGetDiskInfo:
     @pytest.mark.asyncio
     async def test_disk_info_success(self, mock_http_client, mock_token_manager):
         """Test successful disk info retrieval."""
-        from tools.system_info_tools import get_disk_info
 
         # Mock successful responses for both disks and partitions
         disks_data = {
@@ -649,7 +640,6 @@ class TestGetDiskInfo:
         self, mock_http_client, mock_token_manager
     ):
         """A raised exception in one sub-call fails the whole call, not partial success."""
-        from tools.system_info_tools import get_disk_info
 
         disks_data = {'disks': [{'device': '/dev/sda'}]}
         partitions_error = Exception('Partitions service unavailable')
@@ -674,7 +664,6 @@ class TestGetDiskInfo:
     @pytest.mark.asyncio
     async def test_disk_info_error_envelope(self, mock_http_client, mock_token_manager):
         """An http error envelope in a sub-call is not wrapped as success."""
-        from tools.system_info_tools import get_disk_info
 
         disks_data = {'disks': [{'device': '/dev/sda'}]}
 
@@ -696,7 +685,6 @@ class TestGetDiskInfo:
     @pytest.mark.asyncio
     async def test_disk_info_no_token(self, mock_http_client, mock_token_manager):
         """Test disk info when no token is available."""
-        from tools.system_info_tools import get_disk_info
 
         mock_token_manager.get_token.return_value = None
 
@@ -714,7 +702,6 @@ class TestGetSystemTime:
     @pytest.mark.asyncio
     async def test_system_time_success(self, mock_http_client, mock_token_manager):
         """Test successful system time retrieval."""
-        from tools.system_info_tools import get_system_time
 
         # Mock successful response
         mock_http_client.get.return_value = {
@@ -750,7 +737,6 @@ class TestGetSystemTime:
     @pytest.mark.asyncio
     async def test_system_time_no_token(self, mock_http_client, mock_token_manager):
         """Test system time when no token is available."""
-        from tools.system_info_tools import get_system_time
 
         mock_token_manager.get_token.return_value = None
 
@@ -768,7 +754,6 @@ class TestGetServerOverview:
     @pytest.mark.asyncio
     async def test_server_overview_success(self, mock_http_client, mock_token_manager):
         """Test successful server overview retrieval."""
-        from tools.system_info_tools import get_server_overview
 
         # Mock successful responses for all individual functions
         with (
@@ -828,7 +813,6 @@ class TestGetServerOverview:
         self, mock_http_client, mock_token_manager
     ):
         """Test server overview with some functions failing."""
-        from tools.system_info_tools import get_server_overview
 
         with (
             patch('tools.system_info_tools.get_system_info') as mock_sys_info,
@@ -875,7 +859,6 @@ class TestGetServerOverview:
         self, mock_http_client, mock_token_manager
     ):
         """Test server overview with general exception."""
-        from tools.system_info_tools import get_server_overview
 
         with patch('asyncio.gather') as mock_gather:
             # Mock asyncio.gather to raise an exception

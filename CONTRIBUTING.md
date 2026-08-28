@@ -76,6 +76,8 @@ Both run as pre-commit hooks, and CI runs `ruff check`, `ruff format --check`, `
 
 `uv.lock` pins both versions, so `pre-commit autoupdate` has nothing to update. Upgrade one with `uv lock --upgrade-package ruff` and commit the lockfile.
 
+Keep imports at the top of the file. A function/method-local import needs a real reason—breaking a circular import, gating an optional/heavy dependency, or deferring for a documented ordering hazard—and a one-line comment stating that reason.
+
 ```bash
 # Format code
 ruff format .

@@ -1,14 +1,18 @@
 """Tests for MFA pre-check in the tool handler decorator."""
 
+import asyncio
 import os
+import time
 from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from utils.decorators import _check_mfa_requirement
 from utils.error_handler import UpstreamAuthError
 from utils.security_settings import (
+    SecuritySettingsCache,
     WorkspaceSecuritySettings,
     check_mfa_completed,
     get_action_for_tool,
@@ -153,8 +157,6 @@ class TestMfaPrecheck:
     @pytest.mark.asyncio
     async def test_mfa_required_raises_upstream_auth_error(self):
         """When MFA is required but not completed, should raise UpstreamAuthError."""
-        from utils.decorators import _check_mfa_requirement
-
         settings = WorkspaceSecuritySettings(
             {
                 'mfa_required': True,
@@ -192,8 +194,6 @@ class TestMfaPrecheck:
     @pytest.mark.asyncio
     async def test_mfa_not_required_no_raise(self):
         """When MFA is not required, should return without raising."""
-        from utils.decorators import _check_mfa_requirement
-
         settings = WorkspaceSecuritySettings(
             {
                 'mfa_required': False,
@@ -219,8 +219,6 @@ class TestMfaPrecheck:
     @pytest.mark.asyncio
     async def test_non_mfa_tool_no_raise(self):
         """Non-MFA tools should return without raising."""
-        from utils.decorators import _check_mfa_requirement
-
         with patch(
             'utils.security_settings.security_cache.get_settings',
             new_callable=AsyncMock,
@@ -233,8 +231,6 @@ class TestMfaPrecheck:
     @pytest.mark.asyncio
     async def test_mfa_completed_no_raise(self):
         """When MFA is required and completed, should not raise."""
-        from utils.decorators import _check_mfa_requirement
-
         recent = (
             (datetime.now(tz=UTC) - timedelta(seconds=60))
             .isoformat()
@@ -274,8 +270,6 @@ class TestSecuritySettingsCache:
     """Tests for SecuritySettingsCache TTL, pruning, and deduplication."""
 
     def test_cache_hit(self):
-        from utils.security_settings import SecuritySettingsCache
-
         cache = SecuritySettingsCache(ttl=60)
         settings = WorkspaceSecuritySettings({'mfa_required': True, 'mfa_timeout': 900})
         cache._put_bulk('token-a', {'ws1': settings})
@@ -284,16 +278,10 @@ class TestSecuritySettingsCache:
         assert result.mfa_required is True
 
     def test_cache_miss(self):
-        from utils.security_settings import SecuritySettingsCache
-
         cache = SecuritySettingsCache(ttl=60)
         assert cache.get_cached('token-a', 'ws1') is None
 
     def test_expired_entry(self):
-        import time
-
-        from utils.security_settings import SecuritySettingsCache
-
         cache = SecuritySettingsCache(ttl=0)
         settings = WorkspaceSecuritySettings({'mfa_required': True})
         cache._put_bulk('token-a', {'ws1': settings})
@@ -301,10 +289,6 @@ class TestSecuritySettingsCache:
         assert cache.get_cached('token-a', 'ws1') is None
 
     def test_prune_removes_all_expired(self):
-        import time
-
-        from utils.security_settings import SecuritySettingsCache
-
         cache = SecuritySettingsCache(ttl=0)
         settings = WorkspaceSecuritySettings({'mfa_required': True})
         cache._put_bulk('token-a', {'ws1': settings, 'ws2': settings})
@@ -315,10 +299,6 @@ class TestSecuritySettingsCache:
 
     @pytest.mark.asyncio
     async def test_fetch_on_cache_miss(self):
-        from unittest.mock import MagicMock
-
-        from utils.security_settings import SecuritySettingsCache
-
         cache = SecuritySettingsCache(ttl=60)
 
         # httpx.Response methods (json, raise_for_status) are sync
@@ -352,10 +332,6 @@ class TestSecuritySettingsCache:
     @pytest.mark.asyncio
     async def test_concurrent_misses_deduplicate(self):
         """Multiple concurrent get_settings for same token should only fetch once."""
-        import asyncio
-
-        from utils.security_settings import SecuritySettingsCache
-
         cache = SecuritySettingsCache(ttl=60)
         fetch_count = 0
 

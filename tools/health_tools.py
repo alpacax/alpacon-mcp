@@ -6,6 +6,7 @@ from mcp.types import ToolAnnotations
 
 from server import mcp
 from utils.common import success_response
+from utils.health import get_health_info
 
 
 @mcp.tool(
@@ -25,7 +26,5 @@ async def health_check() -> dict[str, Any]:
     Returns:
         Health status dictionary with server metrics
     """
-    from utils.health import get_health_info
-
     health = await get_health_info()
     return success_response(data=health)

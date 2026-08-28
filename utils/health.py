@@ -1,11 +1,14 @@
 """Health check utilities for Alpacon MCP server."""
 
+import importlib.metadata
 import os
 import time
 from typing import Any
 
 from utils.common import is_auth_enabled
+from utils.http_client import http_client
 from utils.logger import get_logger
+from utils.token_manager import get_token_manager
 
 logger = get_logger('health')
 
@@ -23,8 +26,6 @@ def _get_auth_info_remote() -> dict[str, Any]:
 
 def _get_auth_info_local() -> dict[str, Any]:
     """Get auth info for local (token.json) mode."""
-    from utils.token_manager import get_token_manager
-
     token_manager = get_token_manager()
     auth_status = token_manager.get_auth_status()
     return {
@@ -44,10 +45,6 @@ async def get_health_info() -> dict[str, Any]:
     Returns:
         Health status dictionary
     """
-    import importlib.metadata
-
-    from utils.http_client import http_client
-
     try:
         MCP_VERSION = importlib.metadata.version('alpacon-mcp')
     except importlib.metadata.PackageNotFoundError:
