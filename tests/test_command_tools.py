@@ -8,11 +8,14 @@ import pytest
 from server import mcp
 from tools.command_tools import (
     _SUDO_DENIAL_HINTS,
+    PURPOSE_DEADLINE_SECONDS,
+    PURPOSE_MAX_LENGTH,
     _submit_command,
     _sudo_denial,
     execute_command,
     execute_command_multi_server,
     list_commands,
+    state_command_purpose,
 )
 from utils.common import _NEXT_ACTION_BY_CATEGORY
 
@@ -1111,3 +1114,236 @@ def test_no_worksession_policy_next_action_names_the_request_tool():
     next_action = _NEXT_ACTION_BY_CATEGORY['SUDO_NO_WORKSESSION_POLICY']
 
     assert 'request_sudo_policy' in next_action
+
+
+class TestPurposeDemand:
+    """The client half of the ADR 0052 purpose gate."""
+
+    @pytest.mark.asyncio
+    async def test_execute_command_declares_demand_support(
+        self, mock_http_client, mock_token_manager
+    ):
+        # The gate arms only for a client that declares it answers. Without
+        # this field the server feature is unreachable from MCP.
+        with (
+            patch('tools.command_tools._submit_command') as mock_submit,
+            patch('tools.command_tools._get_command_result') as mock_poll,
+        ):
+            mock_submit.return_value = {'id': 'cmd-500'}
+            mock_poll.return_value = {
+                'id': 'cmd-500',
+                'handled_at': '2026-04-03T03:00:01Z',
+            }
+
+            await execute_command(
+                server_id='550e8400-e29b-41d4-a716-446655440001',
+                command='ls -la',
+                workspace='testworkspace',
+                timeout=10,
+            )
+
+        assert mock_submit.call_args.kwargs['purpose_demand_supported'] is True
+
+    @pytest.mark.asyncio
+    async def test_multi_server_does_not_declare_demand_support(
+        self, mock_http_client, mock_token_manager
+    ):
+        # Nothing waits on a fleet submission, so a demand would park every
+        # command for the deadline with no one to answer it.
+        with patch('tools.command_tools._submit_command') as mock_submit:
+            mock_submit.return_value = {'id': 'cmd-501'}
+
+            await execute_command_multi_server(
+                server_ids=['550e8400-e29b-41d4-a716-446655440001'],
+                command='uptime',
+                workspace='testworkspace',
+                purpose='Confirm the reboot window actually took.',
+            )
+
+        assert mock_submit.call_args.kwargs.get('purpose_demand_supported') is None
+        assert (
+            mock_submit.call_args.kwargs['purpose']
+            == 'Confirm the reboot window actually took.'
+        )
+
+    @pytest.mark.asyncio
+    async def test_submit_sends_purpose_and_capability(self, mock_http_client):
+        mock_http_client.post.return_value = {'id': 'cmd-502'}
+
+        await _submit_command(
+            server_id='550e8400-e29b-41d4-a716-446655440001',
+            command='systemctl restart chronyd',
+            workspace='testworkspace',
+            purpose='The host clock is 40s ahead, so the cert reads as not-yet-valid.',
+            purpose_demand_supported=True,
+            region='ap1',
+            token='test-token',
+        )
+
+        sent = mock_http_client.post.call_args.kwargs['data']
+        assert sent['purpose'] == (
+            'The host clock is 40s ahead, so the cert reads as not-yet-valid.'
+        )
+        assert sent['purpose_demand_supported'] is True
+
+    @pytest.mark.asyncio
+    async def test_submit_truncates_purpose_to_the_server_ceiling(
+        self, mock_http_client
+    ):
+        # A purpose over the ceiling is a 400, and a 400 costs the command its
+        # one demand—so trim rather than let the server refuse.
+        mock_http_client.post.return_value = {'id': 'cmd-503'}
+
+        await _submit_command(
+            server_id='550e8400-e29b-41d4-a716-446655440001',
+            command='true',
+            workspace='testworkspace',
+            purpose='x' * (PURPOSE_MAX_LENGTH + 500),
+            region='ap1',
+            token='test-token',
+        )
+
+        sent = mock_http_client.post.call_args.kwargs['data']
+        assert len(sent['purpose']) == PURPOSE_MAX_LENGTH
+
+    @pytest.mark.asyncio
+    async def test_awaiting_purpose_is_the_agents_move_not_a_humans(
+        self, mock_http_client, mock_token_manager
+    ):
+        # No ApprovalRequest exists while the demand is open, so an agent that
+        # reads this as "wait for a human" strands a command nobody was asked
+        # about. The flags must say the opposite of the approval shape.
+        with (
+            patch('tools.command_tools._submit_command') as mock_submit,
+            patch('tools.command_tools._get_command_result') as mock_poll,
+        ):
+            mock_submit.return_value = {'id': 'cmd-504'}
+            mock_poll.return_value = {
+                'id': 'cmd-504',
+                'status': 'awaiting_purpose',
+                'handled_at': None,
+            }
+
+            result = await execute_command(
+                server_id='550e8400-e29b-41d4-a716-446655440001',
+                command='bash /tmp/rotate.sh',
+                workspace='testworkspace',
+                timeout=10,
+            )
+
+        assert result['status'] == 'purpose_required'
+        assert result['category'] == 'COMMAND_PURPOSE_REQUIRED'
+        assert result['requires_human_approval'] is False
+        assert result['answerable_by_agent'] is True
+        assert result['command_id'] == 'cmd-504'
+        assert 'state_command_purpose' in result['next_action']
+        assert result['deadline_seconds'] == PURPOSE_DEADLINE_SECONDS
+
+    @pytest.mark.asyncio
+    async def test_awaiting_purpose_returns_without_burning_the_window(
+        self, mock_http_client, mock_token_manager
+    ):
+        # One poll, then out. Sleeping through a 60s demand spends the only
+        # chance the command gets to be explained.
+        with (
+            patch('tools.command_tools._submit_command') as mock_submit,
+            patch('tools.command_tools._get_command_result') as mock_poll,
+        ):
+            mock_submit.return_value = {'id': 'cmd-505'}
+            mock_poll.return_value = {
+                'id': 'cmd-505',
+                'status': 'awaiting_purpose',
+                'handled_at': None,
+            }
+
+            await execute_command(
+                server_id='550e8400-e29b-41d4-a716-446655440001',
+                command='bash /tmp/rotate.sh',
+                workspace='testworkspace',
+                timeout=10,
+            )
+
+        assert mock_poll.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_state_purpose_answers_then_waits_for_the_rejudgment(
+        self, mock_http_client, mock_token_manager
+    ):
+        with (
+            patch('tools.command_tools._answer_purpose_demand') as mock_answer,
+            patch('tools.command_tools._get_command_result') as mock_poll,
+        ):
+            mock_answer.return_value = {'status': 'success', 'status_code': 202}
+            mock_poll.return_value = {
+                'id': 'cmd-506',
+                'status': 'success',
+                'handled_at': '2026-04-03T03:00:01Z',
+                'result': 'ok',
+            }
+
+            result = await state_command_purpose(
+                command_id='cmd-506',
+                purpose='chronyd drifted 40s, so the renewed cert reads as future-dated.',
+                workspace='testworkspace',
+                timeout=10,
+            )
+
+        assert result['status'] == 'success'
+        assert mock_answer.call_args.kwargs['command_id'] == 'cmd-506'
+        # The wait after the answer is the same wait a never-parked command gets.
+        assert mock_poll.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_state_purpose_rejects_a_blank_answer_before_spending_the_demand(
+        self, mock_http_client, mock_token_manager
+    ):
+        with patch('tools.command_tools._answer_purpose_demand') as mock_answer:
+            result = await state_command_purpose(
+                command_id='cmd-507',
+                purpose='   ',
+                workspace='testworkspace',
+            )
+
+        assert result['status'] == 'error'
+        mock_answer.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_state_purpose_refusal_does_not_tell_the_agent_to_resubmit(
+        self, mock_http_client, mock_token_manager
+    ):
+        # A settled command and a bystander's answer share one error code, so
+        # the guidance cannot claim which happened—and must not send the agent
+        # into a resubmission, which needs its own approval and may run twice.
+        with (
+            patch('tools.command_tools._answer_purpose_demand') as mock_answer,
+            patch('tools.command_tools._get_command_result') as mock_poll,
+        ):
+            mock_answer.return_value = {
+                'error': 'HTTP Error',
+                'status_code': HTTPStatus.BAD_REQUEST,
+                'response': '{"code":"command_purpose_not_demanded"}',
+            }
+
+            result = await state_command_purpose(
+                command_id='cmd-508',
+                purpose='Too late.',
+                workspace='testworkspace',
+            )
+
+        assert result['status'] == 'error'
+        assert 'Do not resubmit' in result['message']
+        mock_poll.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_tool_descriptions_teach_the_demand(self):
+        descriptions = {t.name: t.description for t in await mcp.list_tools()}
+
+        exec_text = descriptions['execute_command']
+        assert 'purpose_required' in exec_text
+        assert 'state_command_purpose' in exec_text
+        # What makes a purpose useful, not just that the field exists.
+        assert 'local to this host' in exec_text
+
+        answer_text = descriptions['state_command_purpose']
+        assert 'one demand per command' in answer_text
+        assert 'cannot lower' in answer_text

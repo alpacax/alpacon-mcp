@@ -15,6 +15,16 @@ from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, READ_ONLY
 
+#: Ceiling the server puts on a stated purpose, on both write paths (ADR 0052).
+#: Truncating here rather than letting the server refuse keeps a long purpose
+#: from costing the command its one demand.
+PURPOSE_MAX_LENGTH = 2000
+
+#: The server's default COMMAND_PURPOSE_DEADLINE. Reported to the agent so it
+#: knows the answer is urgent; the server owns the real clock, so this is copy,
+#: never a timer this client enforces.
+PURPOSE_DEADLINE_SECONDS = 60
+
 # Non-interactive sudo denial codes, as they reach the command output via
 # alpacon_approval.c's [A-Z0-9_] sanitizer (UPPERCASE). Kept in sync with
 # alpacon-server utils/error_codes.py. Surfaced to the agent as category-level
@@ -179,6 +189,8 @@ async def _submit_command(
     scheduled_at: str | None = None,
     data: str | None = None,
     work_session_id: str | None = None,
+    purpose: str | None = None,
+    purpose_demand_supported: bool = False,
     region: str = '',
     *,
     token: str | None = None,
@@ -202,6 +214,14 @@ async def _submit_command(
         command_data['data'] = data
     if ws_id := resolve_work_session_id(work_session_id):
         command_data['work_session'] = ws_id
+    if purpose:
+        command_data['purpose'] = purpose[:PURPOSE_MAX_LENGTH]
+    # Declared only by a caller that will actually answer the demand (ADR 0052).
+    # The gate parks the command for COMMAND_PURPOSE_DEADLINE and nobody is
+    # listening on a fire-and-forget submit, so declaring it there would buy a
+    # silent 60-second delay per command and nothing else.
+    if purpose_demand_supported:
+        command_data['purpose_demand_supported'] = True
 
     return await http_client.post(
         region=region,
@@ -225,6 +245,78 @@ async def _get_command_result(
         endpoint=f'/api/events/commands/{command_id}/',
         token=token,
     )
+
+
+async def _answer_purpose_demand(
+    command_id: str,
+    purpose: str,
+    workspace: str,
+    region: str = '',
+    *,
+    token: str | None = None,
+) -> dict[str, Any]:
+    return await http_client.post(
+        region=region,
+        workspace=workspace,
+        endpoint=f'/api/events/commands/{command_id}/purpose/',
+        token=token,
+        data={'purpose': purpose[:PURPOSE_MAX_LENGTH]},
+    )
+
+
+def _purpose_required_response(**kwargs: Any) -> dict[str, Any]:
+    """Report an open purpose demand as something this agent must answer itself.
+
+    Deliberately not ``pending_approval_response``: that shape says a human
+    holds the next move (``requires_human_approval``, ``approvable_by_agent:
+    False``), and here the opposite is true. No approval request exists yet—the
+    whole point of ADR 0052 is that the approver is not notified while the
+    demand is open—so an agent that reads this as "wait for a human" strands a
+    command nobody was asked about.
+
+    The response carries the instructions rather than leaving them to the tool
+    description. An agent reads the answer to its own call far more reliably
+    than it recalls a description that context compaction may have dropped.
+    """
+    response: dict[str, Any] = {**kwargs}
+    response.update(
+        {
+            'status': 'purpose_required',
+            'category': 'COMMAND_PURPOSE_REQUIRED',
+            'message': (
+                'The verification gate held this command and is asking what it '
+                'is for. State the purpose now with state_command_purpose; the '
+                'assessor then re-judges the command once with the purpose in '
+                'hand and that call returns the outcome. Answer immediately: '
+                'the demand expires in about '
+                f'{PURPOSE_DEADLINE_SECONDS} seconds, after which the command '
+                'takes the ordinary path (a human approval queue, most likely) '
+                'and the chance to explain it is gone. Do not resubmit the '
+                'command: there is one demand per command, and a resubmission '
+                'may double-execute it.'
+            ),
+            'purpose_guidance': (
+                'A useful purpose states a fact local to this host that the '
+                'work session description does not already imply—clock skew '
+                "against a certificate's notBefore window, a duplicate config "
+                'block overriding the edited value, contention for a single '
+                'JVM attach slot. General knowledge is no help: the assessor '
+                'already has it, so it was never yours to supply. A purpose '
+                'cannot lower intrinsic risk, cannot outrank the session '
+                'description, and cannot make an unmeasurable command '
+                'measurable. Attempting to talk the assessor out of its verdict '
+                'is itself reported and denied, so describe the situation and '
+                'nothing else.'
+            ),
+            # Machine-actionable flags, inverted from the approval shape: this
+            # is the agent's move and no human has been asked anything.
+            'requires_human_approval': False,
+            'answerable_by_agent': True,
+            'next_action': 'call state_command_purpose with command_id and purpose',
+            'deadline_seconds': PURPOSE_DEADLINE_SECONDS,
+        }
+    )
+    return response
 
 
 @mcp_tool_handler(
@@ -280,7 +372,7 @@ async def list_commands(
 
 
 @mcp_tool_handler(
-    description='Run a shell command on a server and wait for the result (up to 5 minutes by default). Returns stdout, stderr, and exit code in a single call. Requires ACL permission. Do not prefix the command with sudo by default: unless a Work Session sudo policy already covers the command, a sudo invocation either routes to human-in-the-loop approval and blocks until a human acts, or is denied outright with no request anyone can approve. Check sudo_denial.category before waiting; a sudo_hint with no sudo_denial is a hard denial that creates no request, so do not wait on it. Use sudo only when the command genuinely requires root and the Work Session carries the "sudo" scope. The timeout resets when the command is actively running. Supports dependency chains (run_after), scheduled execution (scheduled_at), and stdin data. Pass work_session_id to link this command to a Work Session for audit—the server enforces this for MCP OAuth and browser-based auth. When to use: the recommended way to run a command on a server. Related: execute_command_multi_server (run on multiple servers), list_commands (browse history), work_session_create (create a Work Session). Note: Default timeout is 300 seconds (5 minutes).',
+    description='Run a shell command on a server and wait for the result (up to 5 minutes by default). Returns stdout, stderr, and exit code in a single call. Requires ACL permission. Do not prefix the command with sudo by default: unless a Work Session sudo policy already covers the command, a sudo invocation either routes to human-in-the-loop approval and blocks until a human acts, or is denied outright with no request anyone can approve. Check sudo_denial.category before waiting; a sudo_hint with no sudo_denial is a hard denial that creates no request, so do not wait on it. Use sudo only when the command genuinely requires root and the Work Session carries the "sudo" scope. The timeout resets when the command is actively running. Supports dependency chains (run_after), scheduled execution (scheduled_at), and stdin data. Pass work_session_id to link this command to a Work Session for audit—the server enforces this for MCP OAuth and browser-based auth. Pass purpose to say what this particular command is for, in one or two sentences, whenever the command is not trivially routine: the assessor judges it with the purpose in hand, and a command that would otherwise queue for a human may clear on its own. State a fact local to this host that the Work Session description does not already imply; general knowledge adds nothing the assessor does not have, and a purpose cannot lower a command\'s intrinsic risk. If you omit it the gate may hold the command and ask—a status of purpose_required, which you answer with state_command_purpose within about a minute. When to use: the recommended way to run a command on a server. Related: execute_command_multi_server (run on multiple servers), state_command_purpose (answer a held command\'s purpose demand), list_commands (browse history), work_session_create (create a Work Session). Note: Default timeout is 300 seconds (5 minutes).',
     annotations=ADDITIVE,
     meta={
         'anthropic/alwaysLoad': True,
@@ -300,6 +392,7 @@ async def execute_command(
     data: str | None = None,
     timeout: int = 300,
     work_session_id: str | None = None,
+    purpose: str | None = None,
     region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
@@ -318,6 +411,11 @@ async def execute_command(
         scheduled_at=scheduled_at,
         data=data,
         work_session_id=work_session_id,
+        purpose=purpose,
+        # This tool waits on the command, so it is in a position to answer a
+        # demand; the fire-and-forget fleet tool below is not, and so does not
+        # declare it.
+        purpose_demand_supported=True,
         region=region,
         token=token,
     )
@@ -359,6 +457,34 @@ async def execute_command(
             details=exec_data,
         )
 
+    return await _poll_command_result(
+        command_id=command_id,
+        server_id=server_id,
+        command=command,
+        workspace=workspace,
+        shell=shell,
+        timeout=timeout,
+        region=region,
+        token=token,
+    )
+
+
+async def _poll_command_result(
+    command_id: str,
+    workspace: str,
+    timeout: int,
+    region: str,
+    token: str | None,
+    server_id: str = '',
+    command: str = '',
+    shell: str = 'system',
+) -> dict[str, Any]:
+    """Wait for a submitted command to reach a state worth reporting.
+
+    Shared by ``execute_command`` and ``state_command_purpose``: answering a
+    purpose demand puts the command back on exactly the path a never-parked one
+    takes, so the wait after the answer has to be the same wait.
+    """
     # Poll for command completion with progress-based timeout reset
     # Hard cap at 3x timeout to prevent indefinite waiting
     loop = asyncio.get_running_loop()
@@ -400,6 +526,20 @@ async def execute_command(
                 )
                 _attach_sudo_denial(response, result)
                 return response
+
+            if status == 'awaiting_purpose':
+                # Parked for its purpose (ADR 0052). No approval request exists
+                # and none will until the re-judgment says so, so this returns
+                # rather than polling: the demand is answered by this agent, and
+                # the window is short enough that burning it on sleep wastes the
+                # one chance the command gets.
+                return _purpose_required_response(
+                    command_id=command_id,
+                    server_id=server_id,
+                    command=command,
+                    region=region,
+                    workspace=workspace,
+                )
 
             if status == 'awaiting_approval':
                 # HITL verification gate: a human must approve out-of-band
@@ -466,7 +606,68 @@ async def execute_command(
 
 
 @mcp_tool_handler(
-    description='Run the same shell command on multiple servers simultaneously or sequentially. Returns per-server results with success/failure status. Requires ACL permission. Do not prefix the command with sudo by default: unless a Work Session sudo policy already covers the command, a sudo invocation either routes to human-in-the-loop approval and stalls that server\'s command until a human acts—once per server—or is denied outright with no request anyone can approve. The denial surfaces on that server\'s list_commands entry: check sudo_denial.category there before waiting; a sudo_hint with no sudo_denial is a hard denial that creates no request, so do not wait on it. Use sudo only when the command genuinely requires root and the Work Session carries the "sudo" scope. Pass work_session_id to link commands to a Work Session for audit—the server enforces this for MCP OAuth and browser-based auth. When to use: batch operations like deploying configs, checking status, or running diagnostics across a fleet. Related: execute_command (single server), work_session_create (create a Work Session). Note: Set parallel=false for sequential execution. This submits commands without waiting for results—use list_commands to check status.',
+    description='Answer the purpose demand on a command the verification gate is holding, then wait for the outcome. Use this when execute_command returned status "purpose_required"; the command_id is in that response. The command re-enters judgment once with your purpose attached and this call returns whatever that second verdict produces—the command output when it clears, an approval-pending result when a human is still needed, or an error when it is denied. Answer promptly: the demand expires in about a minute, and there is exactly one demand per command, so a late or second answer is refused. Write a purpose that states a fact local to this host which the Work Session description does not already imply. General knowledge carries nothing the assessor lacks, a purpose cannot lower the command\'s intrinsic risk or outrank the session description, and an attempt to argue the verdict down is reported and denied. Only the principal that submitted the command may answer. When to use: only in response to a purpose_required result. Related: execute_command (pass purpose up front and skip this round trip entirely).',
+    annotations=ADDITIVE,
+    meta={'anthropic/searchHint': 'command purpose demand answer held justification'},
+)
+async def state_command_purpose(
+    command_id: str,
+    purpose: str,
+    workspace: str,
+    timeout: int = 300,
+    region: str = '',
+    **kwargs,
+) -> dict[str, Any]:
+    """Answer a parked command's purpose demand and wait for the re-judgment."""
+    token = kwargs.get('token')
+
+    if not purpose.strip():
+        return error_response(
+            'purpose cannot be empty: the server refuses a blank answer and the '
+            'command only gets one demand.',
+            command_id=command_id,
+            region=region,
+            workspace=workspace,
+        )
+
+    answer = await _answer_purpose_demand(
+        command_id=command_id,
+        purpose=purpose,
+        workspace=workspace,
+        region=region,
+        token=token,
+    )
+
+    if err := unwrap_http_result(
+        answer,
+        # The server answers a settled command and a bystander's answer with the
+        # same code on purpose, so this cannot tell the agent which it was.
+        default_message=(
+            'The purpose was not accepted. Either the demand already expired and '
+            'the command moved on, it was already answered, or this credential '
+            'did not submit the command. Do not resubmit the command: check its '
+            'state with list_commands.'
+        ),
+        command_id=command_id,
+        region=region,
+        workspace=workspace,
+    ):
+        return err
+
+    # The polled row carries the server and the command line, so neither has to
+    # be re-stated here—and `server_id` is a validated tool parameter, so
+    # accepting one this call does not need would only invite a rejected UUID.
+    return await _poll_command_result(
+        command_id=command_id,
+        workspace=workspace,
+        timeout=timeout,
+        region=region,
+        token=token,
+    )
+
+
+@mcp_tool_handler(
+    description='Run the same shell command on multiple servers simultaneously or sequentially. Returns per-server results with success/failure status. Requires ACL permission. Do not prefix the command with sudo by default: unless a Work Session sudo policy already covers the command, a sudo invocation either routes to human-in-the-loop approval and stalls that server\'s command until a human acts—once per server—or is denied outright with no request anyone can approve. The denial surfaces on that server\'s list_commands entry: check sudo_denial.category there before waiting; a sudo_hint with no sudo_denial is a hard denial that creates no request, so do not wait on it. Use sudo only when the command genuinely requires root and the Work Session carries the "sudo" scope. Pass work_session_id to link commands to a Work Session for audit—the server enforces this for MCP OAuth and browser-based auth. Pass purpose to state what the batch is for; it rides every submission and the assessor judges each command with it in hand. Unlike execute_command this tool never waits, so it is never asked for a purpose after the fact—stating it up front is the only chance. When to use: batch operations like deploying configs, checking status, or running diagnostics across a fleet. Related: execute_command (single server), work_session_create (create a Work Session). Note: Set parallel=false for sequential execution. This submits commands without waiting for results—use list_commands to check status.',
     annotations=ADDITIVE,
     meta={'anthropic/searchHint': 'command multi server batch deploy fleet parallel'},
 )
@@ -481,6 +682,7 @@ async def execute_command_multi_server(
     region: str = '',
     parallel: bool = True,
     work_session_id: str | None = None,
+    purpose: str | None = None,
     **kwargs,
 ) -> dict[str, Any]:
     """Execute a command on multiple servers using Command API (requires ACL permission)."""
@@ -499,6 +701,9 @@ async def execute_command_multi_server(
             groupname=groupname,
             env=env,
             work_session_id=work_session_id,
+            purpose=purpose,
+            # Nothing here waits on a submission, so a demand would hold every
+            # command for the deadline and be answered by no one (ADR 0052).
             region=region,
             token=token,
         )
