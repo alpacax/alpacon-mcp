@@ -9,20 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - `state_command_purpose`, and a `purpose` argument on `execute_command` and
-  `execute_command_multi_server` (#186). When the verification gate would send an agent's
-  command to the human approval queue, the server now holds it and asks what the command is
-  for instead of opening an approval request (ADR 0052). The assessor re-judges once with the
-  purpose in hand, and only a verdict that survives that second pass reaches an approver—who
-  then reads the stated purpose on the card. The gate arms only for a client that declares
-  `purpose_demand_supported`, so before this change turning the server flag on exercised the
-  path zero times from MCP. `execute_command` declares it and reports an open demand as
-  `status: "purpose_required"`, which `state_command_purpose` answers and then waits on;
-  passing `purpose` up front skips the round trip entirely and is the intended steady state.
-  `execute_command_multi_server` carries a `purpose` but does not declare demand support:
-  nothing waits on a fleet submission, so a demand there would park every command for the
-  deadline with no one to answer it. There is one demand per command and it expires in about
-  60 seconds; a late or second answer is refused, and only the principal that submitted the
-  command may answer.
+  `execute_command_multi_server` (#186). When the verification gate holds an agent's command
+  and asks what it is for (ADR 0052), `execute_command` now reports it as
+  `status: "purpose_required"` instead of a result, and `state_command_purpose` answers it.
+  A client parsing command responses has to handle that status: it is not a pending approval,
+  and no approver has been notified.
 - `acknowledge_alert`, `attach_alert_rule`, and `detach_alert_rule` tools.
 - `list_alerts` gained the `alert_type`, `severity`, and `server_name` filters that
   `AlertFilter` defines.

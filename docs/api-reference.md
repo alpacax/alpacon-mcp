@@ -354,7 +354,14 @@ Execute a command on a server and wait for the result.
 - `data` (string, optional): Stdin data
 - `timeout` (integer, default: 300): Timeout in seconds
 - `work_session_id` (string, optional): Work Session to run under; falls back to `ALPACON_WORK_SESSION`
+- `purpose` (string, optional): What this particular command is for (ADR 0052). The assessor judges the command with it in hand, so one that would otherwise queue for a human may clear on its own. State a fact local to this host that the Work Session description does not already imply; general knowledge adds nothing the assessor lacks, and a purpose cannot lower a command's intrinsic risk. Trimmed to 2000 characters rather than refused, and the response then carries `purpose_truncated: true`
 - `region` (string, optional): Region name; resolved from the workspace when omitted
+
+**Held for its purpose:** when no `purpose` was stated and the gate holds the command, the response is
+`status: "purpose_required"` rather than a result. It carries `command_id`, `requires_human_approval: false`,
+`answerable_by_agent: true`, `purpose_guidance`, and—when the server reports when the demand opened—
+`deadline_seconds`. No approval request exists at that point, so a client must not treat it as a pending
+approval: answer it with `state_command_purpose`.
 
 ### `list_commands`
 List recent command history.
@@ -378,6 +385,27 @@ Execute a command on multiple servers simultaneously.
 - `env` (object, optional): Environment variables
 - `parallel` (boolean, default: true): Execute in parallel
 - `work_session_id` (string, optional): Work Session to run under
+- `purpose` (string, optional): What this particular command is for (ADR 0052). The assessor judges the command with it in hand, so one that would otherwise queue for a human may clear on its own. State a fact local to this host that the Work Session description does not already imply; general knowledge adds nothing the assessor lacks, and a purpose cannot lower a command's intrinsic risk. Trimmed to 2000 characters rather than refused, and the response then carries `purpose_truncated: true`. This tool never waits, so it is never asked for a purpose after the fact—stating it up front is the only chance
+- `region` (string, optional): Region name; resolved from the workspace when omitted
+
+### `state_command_purpose`
+Answer the purpose demand on a command the verification gate is holding, then wait for the outcome.
+
+Use it when `execute_command` returned `status: "purpose_required"`; the `command_id` is in that response.
+The command re-enters judgment once with the purpose attached, and this call returns whatever that second
+verdict produces—the command output when it clears, a `pending_approval` result when a human is still
+needed, or an error when it is denied.
+
+There is exactly one demand per command and it expires shortly, so a late or second answer is refused.
+Only the principal that submitted the command may answer. A settled command and an answer from the wrong
+principal share one server error, so a refusal cannot say which happened: read the command's state with
+`list_commands` rather than re-submitting it.
+
+**Parameters:**
+- `command_id` (string): The held command, from the `purpose_required` response
+- `purpose` (string): What the command is for. Trimmed to 2000 characters rather than refused
+- `workspace` (string): Workspace name
+- `timeout` (integer, default: 300): Timeout in seconds for the wait after the answer
 - `region` (string, optional): Region name; resolved from the workspace when omitted
 
 ---
