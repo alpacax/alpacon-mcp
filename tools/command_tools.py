@@ -214,8 +214,12 @@ async def _submit_command(
         command_data['data'] = data
     if ws_id := resolve_work_session_id(work_session_id):
         command_data['work_session'] = ws_id
-    if purpose:
-        command_data['purpose'] = purpose[:PURPOSE_MAX_LENGTH]
+    # Strip first: a whitespace-only purpose is truthy, so without this it is
+    # sent, refused with a 400, and the 400 costs the command its one demand.
+    # Blank means unstated, and unstated has to arrive as an absent field—the
+    # arming check reads absence, not emptiness.
+    if stated := (purpose or '').strip():
+        command_data['purpose'] = stated[:PURPOSE_MAX_LENGTH]
     # Declared only by a caller that will actually answer the demand (ADR 0052).
     # The gate parks the command for COMMAND_PURPOSE_DEADLINE and nobody is
     # listening on a fire-and-forget submit, so declaring it there would buy a
@@ -477,7 +481,10 @@ async def _poll_command_result(
     token: str | None,
     server_id: str = '',
     command: str = '',
-    shell: str = 'system',
+    # Empty, not 'system': the default is what a caller who never chose a shell
+    # gets echoed back, and reporting a shell the command may not have run under
+    # is the misleading metadata this echo exists to avoid.
+    shell: str = '',
 ) -> dict[str, Any]:
     """Wait for a submitted command to reach a state worth reporting.
 
@@ -485,6 +492,20 @@ async def _poll_command_result(
     purpose demand puts the command back on exactly the path a never-parked one
     takes, so the wait after the answer has to be the same wait.
     """
+    # A caller that did not submit the command—state_command_purpose—knows
+    # neither the server nor the line. Echo only what is known: the polled row
+    # carries both anyway, and an empty string reads as a real value where an
+    # absent key reads as "not supplied".
+    echo = {
+        key: value
+        for key, value in (
+            ('server_id', server_id),
+            ('command', command),
+            ('shell', shell),
+        )
+        if value
+    }
+
     # Poll for command completion with progress-based timeout reset
     # Hard cap at 3x timeout to prevent indefinite waiting
     loop = asyncio.get_running_loop()
@@ -502,11 +523,10 @@ async def _poll_command_result(
             return error_response(
                 f'Failed to poll command result: {result.get("error")}',
                 command_id=command_id,
-                server_id=server_id,
-                command=command,
                 region=region,
                 workspace=workspace,
                 details=result,
+                **echo,
             )
 
         if isinstance(result, dict):
@@ -518,11 +538,9 @@ async def _poll_command_result(
                 response = success_response(
                     data=result,
                     command_id=command_id,
-                    server_id=server_id,
-                    command=command,
-                    shell=shell,
                     region=region,
                     workspace=workspace,
+                    **echo,
                 )
                 _attach_sudo_denial(response, result)
                 return response
@@ -535,10 +553,9 @@ async def _poll_command_result(
                 # one chance the command gets.
                 return _purpose_required_response(
                     command_id=command_id,
-                    server_id=server_id,
-                    command=command,
                     region=region,
                     workspace=workspace,
+                    **echo,
                 )
 
             if status == 'awaiting_approval':
@@ -552,10 +569,9 @@ async def _poll_command_result(
                     'approval and may double-execute the command.',
                     category='COMMAND_AWAITING_APPROVAL',
                     command_id=command_id,
-                    server_id=server_id,
-                    command=command,
                     region=region,
                     workspace=workspace,
+                    **echo,
                 )
 
             # Terminal non-approval statuses: the command will not produce a
@@ -567,11 +583,10 @@ async def _poll_command_result(
                 return error_response(
                     f'Command failed with status: {status}',
                     command_id=command_id,
-                    server_id=server_id,
-                    command=command,
                     region=region,
                     workspace=workspace,
                     details=result,
+                    **echo,
                 )
 
             # Command still in progress—reset deadline (within hard cap) so a
@@ -598,10 +613,9 @@ async def _poll_command_result(
         f'Command execution timed out after {timeout} seconds',
         error_type='timeout',
         command_id=command_id,
-        server_id=server_id,
-        command=command,
         region=region,
         workspace=workspace,
+        **echo,
     )
 
 
@@ -623,7 +637,7 @@ async def state_command_purpose(
 
     if not purpose.strip():
         return error_response(
-            'purpose cannot be empty: the server refuses a blank answer and the '
+            'A purpose is required: the server refuses a blank answer and the '
             'command only gets one demand.',
             command_id=command_id,
             region=region,

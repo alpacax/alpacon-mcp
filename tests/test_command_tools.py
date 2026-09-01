@@ -1207,6 +1207,83 @@ class TestPurposeDemand:
         assert len(sent['purpose']) == PURPOSE_MAX_LENGTH
 
     @pytest.mark.asyncio
+    async def test_submit_treats_a_blank_purpose_as_unstated(self, mock_http_client):
+        # Whitespace is truthy, so without a strip this reaches the server as a
+        # purpose, earns a 400, and the 400 spends the command's one demand. The
+        # arming check reads absence, so it has to be an absent field.
+        mock_http_client.post.return_value = {'id': 'cmd-509'}
+
+        await _submit_command(
+            server_id='550e8400-e29b-41d4-a716-446655440001',
+            command='true',
+            workspace='testworkspace',
+            purpose='   \n\t ',
+            purpose_demand_supported=True,
+            region='ap1',
+            token='test-token',
+        )
+
+        sent = mock_http_client.post.call_args.kwargs['data']
+        assert 'purpose' not in sent
+        assert sent['purpose_demand_supported'] is True
+
+    @pytest.mark.asyncio
+    async def test_state_purpose_omits_metadata_it_was_never_given(
+        self, mock_http_client, mock_token_manager
+    ):
+        # This caller knows neither the server nor the command line. An empty
+        # string reads as a real value, so the keys must be absent instead.
+        with (
+            patch('tools.command_tools._answer_purpose_demand') as mock_answer,
+            patch('tools.command_tools._get_command_result') as mock_poll,
+        ):
+            mock_answer.return_value = {'status': 'success', 'status_code': 202}
+            mock_poll.return_value = {
+                'id': 'cmd-510',
+                'status': 'success',
+                'handled_at': '2026-04-03T03:00:01Z',
+            }
+
+            result = await state_command_purpose(
+                command_id='cmd-510',
+                purpose='chronyd drifted 40s.',
+                workspace='testworkspace',
+                timeout=10,
+            )
+
+        assert 'server_id' not in result
+        assert 'command' not in result
+        assert 'shell' not in result
+        # The polled row carries both anyway, which is why dropping the echo
+        # loses the caller nothing.
+        assert result['data']['id'] == 'cmd-510'
+
+    @pytest.mark.asyncio
+    async def test_execute_command_still_echoes_what_it_knows(
+        self, mock_http_client, mock_token_manager
+    ):
+        with (
+            patch('tools.command_tools._submit_command') as mock_submit,
+            patch('tools.command_tools._get_command_result') as mock_poll,
+        ):
+            mock_submit.return_value = {'id': 'cmd-511'}
+            mock_poll.return_value = {
+                'id': 'cmd-511',
+                'handled_at': '2026-04-03T03:00:01Z',
+            }
+
+            result = await execute_command(
+                server_id='550e8400-e29b-41d4-a716-446655440001',
+                command='ls -la',
+                workspace='testworkspace',
+                timeout=10,
+            )
+
+        assert result['server_id'] == '550e8400-e29b-41d4-a716-446655440001'
+        assert result['command'] == 'ls -la'
+        assert result['shell'] == 'system'
+
+    @pytest.mark.asyncio
     async def test_awaiting_purpose_is_the_agents_move_not_a_humans(
         self, mock_http_client, mock_token_manager
     ):
