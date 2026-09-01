@@ -359,8 +359,8 @@ Execute a command on a server and wait for the result.
 
 **Held for its purpose:** when no `purpose` was stated and the gate holds the command, the response is
 `status: "purpose_required"` rather than a result. It carries `command_id`, `requires_human_approval: false`,
-`answerable_by_agent: true`, `purpose_guidance`, and—when the server reports when the demand opened—
-`deadline_seconds`. No approval request exists at that point, so a client must not treat it as a pending
+`answerable_by_agent: true`, `purpose_guidance`, and—when the server reports the demand's expiry—
+`deadline_seconds`, the number of seconds left. No approval request exists at that point, so a client must not treat it as a pending
 approval: answer it with `state_command_purpose`.
 
 ### `list_commands`

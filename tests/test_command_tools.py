@@ -10,7 +10,6 @@ import pytest
 from server import mcp
 from tools.command_tools import (
     _SUDO_DENIAL_HINTS,
-    PURPOSE_DEADLINE_SECONDS,
     PURPOSE_MAX_LENGTH,
     _answer_purpose_demand,
     _submit_command,
@@ -1434,14 +1433,14 @@ class TestPurposeDemandWindow:
     """What the response says about how long is left."""
 
     @staticmethod
-    def _parked(requested_at: str | None) -> dict[str, Any]:
+    def _parked(expires_at: str | None) -> dict[str, Any]:
         row: dict[str, Any] = {
             'id': 'cmd-600',
             'status': 'awaiting_purpose',
             'handled_at': None,
         }
-        if requested_at is not None:
-            row['purpose_requested_at'] = requested_at
+        if expires_at is not None:
+            row['purpose_expires_at'] = expires_at
         return row
 
     async def _demand(self, row: dict[str, Any]) -> dict[str, Any]:
@@ -1459,37 +1458,38 @@ class TestPurposeDemandWindow:
             )
 
     @pytest.mark.asyncio
-    async def test_the_window_counts_from_the_servers_timestamp(
+    async def test_the_window_measures_against_the_servers_expiry(
         self, mock_http_client, mock_token_manager
     ):
-        # Half the window already gone. Reporting a flat 60 is the error the
-        # timestamp exists to remove.
-        opened = datetime.now(UTC) - timedelta(seconds=PURPOSE_DEADLINE_SECONDS // 2)
-        result = await self._demand(self._parked(opened.isoformat()))
+        # The server derives the expiry because the window's length is a
+        # setting no endpoint publishes, so this client has no length to assume
+        # and cannot be wrong about one.
+        expiry = datetime.now(UTC) + timedelta(seconds=30)
+        result = await self._demand(self._parked(expiry.isoformat()))
 
-        assert abs(result['deadline_seconds'] - PURPOSE_DEADLINE_SECONDS // 2) <= 2
+        assert abs(result['deadline_seconds'] - 30) <= 2
 
     @pytest.mark.asyncio
     async def test_an_elapsed_window_reports_zero_not_a_negative(
         self, mock_http_client, mock_token_manager
     ):
-        opened = datetime.now(UTC) - timedelta(hours=1)
-        result = await self._demand(self._parked(opened.isoformat()))
+        expiry = datetime.now(UTC) - timedelta(hours=1)
+        result = await self._demand(self._parked(expiry.isoformat()))
 
         assert result['deadline_seconds'] == 0
 
     @pytest.mark.asyncio
-    async def test_no_timestamp_means_no_deadline_rather_than_a_guess(
+    async def test_no_expiry_means_no_deadline_rather_than_a_guess(
         self, mock_http_client, mock_token_manager
     ):
-        # COMMAND_PURPOSE_DEADLINE is env-overridable, so a hard-coded 60 would
-        # be a deadline that does not exist on a workspace which raised it.
+        # Inventing one would publish a deadline that does not exist on a
+        # workspace which raised COMMAND_PURPOSE_DEADLINE.
         result = await self._demand(self._parked(None))
 
         assert 'deadline_seconds' not in result
 
     @pytest.mark.asyncio
-    async def test_an_unparseable_timestamp_is_not_a_crash(
+    async def test_an_unparseable_expiry_is_not_a_crash(
         self, mock_http_client, mock_token_manager
     ):
         result = await self._demand(self._parked('not-a-timestamp'))

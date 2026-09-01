@@ -2,7 +2,7 @@
 
 import asyncio
 import re
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import Any, cast
 
 from utils.common import (
@@ -20,11 +20,6 @@ from utils.tool_annotations import ADDITIVE, READ_ONLY
 #: Truncating here rather than letting the server refuse keeps a long purpose
 #: from costing the command its one demand.
 PURPOSE_MAX_LENGTH = 2000
-
-#: The server's default COMMAND_PURPOSE_DEADLINE, used only when the row itself
-#: carries no ``purpose_requested_at`` to measure from. The setting is
-#: env-overridable, so this is a fallback and never a timer this client enforces.
-PURPOSE_DEADLINE_SECONDS = 60
 
 #: The one prohibition every held-command response repeats. Each site appends
 #: its own reason—double execution here, a second approval request there—but the
@@ -334,31 +329,29 @@ def _purpose_was_truncated(purpose: str | None) -> bool:
     return len((purpose or '').strip()) > PURPOSE_MAX_LENGTH
 
 
-def _remaining_purpose_window(requested_at: Any) -> int | None:
+def _remaining_purpose_window(expires_at: Any) -> int | None:
     """Seconds left before the demand expires, or None when unknowable.
 
-    Measured from the row's own ``purpose_requested_at`` rather than reported as
-    a flat constant: ``COMMAND_PURPOSE_DEADLINE`` is env-overridable, so a
-    hard-coded number is a deadline that does not exist on a workspace which
-    raised it. Elapsed time is the larger error either way—without it, a demand
-    seen four minutes later still reads as a full window.
+    Measured against the expiry the server derived. The window's length is
+    ``COMMAND_PURPOSE_DEADLINE`` and no endpoint publishes it, so a client given
+    only a start time would still be guessing the length—which is the
+    deadline-that-does-not-exist problem, one step removed. With the expiry
+    itself there is nothing here to be wrong about, and a workspace that raises
+    the setting needs no release of this client.
 
-    Returns None when the server sends no timestamp, so the response omits the
+    Returns None when the server sends no expiry, so the response omits the
     field instead of inventing one. A window already gone reports 0, never a
     negative, which would invite arithmetic on it.
     """
-    if not isinstance(requested_at, str):
+    if not isinstance(expires_at, str):
         return None
     try:
-        opened = datetime.fromisoformat(requested_at)
+        expiry = datetime.fromisoformat(expires_at)
     except ValueError:
         return None
-    if opened.tzinfo is None:
-        opened = opened.replace(tzinfo=UTC)
-    left = (
-        opened + timedelta(seconds=PURPOSE_DEADLINE_SECONDS) - datetime.now(UTC)
-    ).total_seconds()
-    return max(0, int(left))
+    if expiry.tzinfo is None:
+        expiry = expiry.replace(tzinfo=UTC)
+    return max(0, int((expiry - datetime.now(UTC)).total_seconds()))
 
 
 @mcp_tool_handler(
@@ -603,7 +596,7 @@ async def _poll_command_result(
                         region=region,
                         workspace=workspace,
                         deadline_seconds=_remaining_purpose_window(
-                            result.get('purpose_requested_at')
+                            result.get('purpose_expires_at')
                         ),
                         **echo,
                     )
