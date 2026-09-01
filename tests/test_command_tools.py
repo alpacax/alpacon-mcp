@@ -1679,3 +1679,64 @@ class TestPurposeDemandHonesty:
 
         assert result['status'] == 'pending_approval'
         assert result['requires_human_approval'] is True
+
+    @pytest.mark.asyncio
+    async def test_the_fleet_tool_reports_its_own_truncation(
+        self, mock_http_client, mock_token_manager
+    ):
+        # The flag is computed near the top and attached after the dispatch
+        # loop, which is the shape most likely to come apart in a later edit.
+        with patch('tools.command_tools._submit_command') as mock_submit:
+            mock_submit.return_value = {'id': 'cmd-608'}
+
+            result = await execute_command_multi_server(
+                server_ids=['550e8400-e29b-41d4-a716-446655440001'],
+                command='uptime',
+                workspace='testworkspace',
+                purpose='x' * (PURPOSE_MAX_LENGTH + 1),
+            )
+
+        assert result['purpose_truncated'] is True
+
+    @pytest.mark.asyncio
+    async def test_the_fleet_tool_does_not_flag_a_purpose_that_fits(
+        self, mock_http_client, mock_token_manager
+    ):
+        with patch('tools.command_tools._submit_command') as mock_submit:
+            mock_submit.return_value = {'id': 'cmd-609'}
+
+            result = await execute_command_multi_server(
+                server_ids=['550e8400-e29b-41d4-a716-446655440001'],
+                command='uptime',
+                workspace='testworkspace',
+                purpose='short',
+            )
+
+        assert 'purpose_truncated' not in result
+
+    @pytest.mark.asyncio
+    async def test_the_answer_path_reports_its_own_truncation(
+        self, mock_http_client, mock_token_manager
+    ):
+        # This is the command's one chance and the verdict returns in the same
+        # call, so a caller reading a denial has to know which sentence was
+        # judged: the one it wrote, or the one that survived the cut.
+        with (
+            patch('tools.command_tools._answer_purpose_demand') as mock_answer,
+            patch('tools.command_tools._get_command_result') as mock_poll,
+        ):
+            mock_answer.return_value = {'status': 'success', 'status_code': 202}
+            mock_poll.return_value = {
+                'id': 'cmd-610',
+                'status': 'success',
+                'handled_at': '2026-04-03T03:00:01Z',
+            }
+
+            result = await state_command_purpose(
+                command_id='cmd-610',
+                purpose='x' * (PURPOSE_MAX_LENGTH + 1),
+                workspace='testworkspace',
+                timeout=10,
+            )
+
+        assert result['purpose_truncated'] is True

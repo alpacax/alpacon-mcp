@@ -695,8 +695,8 @@ async def state_command_purpose(
         default_message=(
             'The purpose was not accepted. Either the demand already expired and '
             'the command moved on, it was already answered, or this credential '
-            'did not submit the command. Do not resubmit the command: check its '
-            'state with list_commands.'
+            f'did not submit the command. {DO_NOT_RESUBMIT}: check its state '
+            'with list_commands.'
         ),
         command_id=command_id,
         region=region,
@@ -707,13 +707,20 @@ async def state_command_purpose(
     # The polled row carries the server and the command line, so neither has to
     # be re-stated here—and `server_id` is a validated tool parameter, so
     # accepting one this call does not need would only invite a rejected UUID.
-    return await _poll_command_result(
+    response = await _poll_command_result(
         command_id=command_id,
         workspace=workspace,
         timeout=timeout,
         region=region,
         token=token,
     )
+    # The argument for the flag lands hardest here: this is the command's one
+    # chance, and the re-judgment comes back in this same call. A caller reading
+    # a denial otherwise cannot tell whether the assessor judged the sentence it
+    # wrote or the one that survived the cut.
+    if _purpose_was_truncated(purpose):
+        response['purpose_truncated'] = True
+    return response
 
 
 @mcp_tool_handler(

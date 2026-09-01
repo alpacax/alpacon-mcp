@@ -403,7 +403,7 @@ principal share one server error, so a refusal cannot say which happened: read t
 
 **Parameters:**
 - `command_id` (string): The held command, from the `purpose_required` response
-- `purpose` (string): What the command is for. Trimmed to 2000 characters rather than refused
+- `purpose` (string): What the command is for. Trimmed to 2000 characters rather than refused, and the response then carries `purpose_truncated: true`
 - `workspace` (string): Workspace name
 - `timeout` (integer, default: 300): Timeout in seconds for the wait after the answer
 - `region` (string, optional): Region name; resolved from the workspace when omitted

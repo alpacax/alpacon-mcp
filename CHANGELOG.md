@@ -13,7 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and asks what it is for (ADR 0052), `execute_command` now reports it as
   `status: "purpose_required"` instead of a result, and `state_command_purpose` answers it.
   A client parsing command responses has to handle that status: it is not a pending approval,
-  and no approver has been notified.
+  and no approver has been notified. Three response fields are new: `purpose_truncated` on a
+  success whose purpose was cut to the 2000-character ceiling, and `purpose_guidance` plus an
+  optional `deadline_seconds` on `purpose_required` — the last is absent when the server
+  reports no expiry, so a parser must tolerate it missing.
 - `acknowledge_alert`, `attach_alert_rule`, and `detach_alert_rule` tools.
 - `list_alerts` gained the `alert_type`, `severity`, and `server_name` filters that
   `AlertFilter` defines.
