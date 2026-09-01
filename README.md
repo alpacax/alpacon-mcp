@@ -411,6 +411,7 @@ Install the MCP extension and add to settings:
 - **execute_command**: Execute a command on a server and wait for the result
 - **list_commands**: List recent command history
 - **execute_command_multi_server**: Execute on multiple servers simultaneously
+- **state_command_purpose**: Answer the verification gate's purpose demand on a held command, then wait for the re-judgment
 
 #### WebFTP (file management)
 - **webftp_session_create**: Create file transfer session
