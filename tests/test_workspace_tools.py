@@ -230,6 +230,75 @@ class TestListWorkspaces:
 
 
 @pytest.fixture
+def jwt_mode():
+    """Drive the tool through the decorator's remote/JWT branch.
+
+    Both modules read is_auth_enabled at call time: the decorator to decide
+    whether to inject a JWT, the tool to decide which source to list from.
+    """
+    with (
+        patch('utils.decorators.is_auth_enabled', return_value=True),
+        patch('utils.decorators._get_jwt_token', return_value='jwt-token'),
+        patch('tools.workspace_tools.is_auth_enabled', return_value=True),
+    ):
+        yield
+
+
+class TestListWorkspacesJwtMode:
+    """Remote mode: the workspaces come out of the caller's own JWT."""
+
+    @pytest.mark.asyncio
+    async def test_lists_the_workspaces_the_jwt_carries(self, jwt_mode):
+        """The tool reads the JWT the decorator injected, not one of its own."""
+        with patch(
+            'tools.workspace_tools.get_token_workspaces',
+            return_value=[
+                {'schema_name': 'acme', 'region': 'ap1', 'auth0_id': 'org_1'},
+            ],
+        ) as mock_get_workspaces:
+            result = await list_workspaces()
+
+        mock_get_workspaces.assert_called_once_with('jwt-token')
+        assert result['status'] == 'success'
+        assert result['data']['source'] == 'jwt'
+        assert result['data']['workspaces'] == [
+            {
+                'workspace': 'acme',
+                'region': 'ap1',
+                'auth0_id': 'org_1',
+                'domain': 'acme.ap1.alpacon.io',
+            }
+        ]
+
+    @pytest.mark.asyncio
+    async def test_region_filters_the_jwt_workspaces(self, jwt_mode):
+        with patch(
+            'tools.workspace_tools.get_token_workspaces',
+            return_value=[
+                {'schema_name': 'acme', 'region': 'ap1', 'auth0_id': 'org_1'},
+                {'schema_name': 'globex', 'region': 'us1', 'auth0_id': 'org_2'},
+            ],
+        ):
+            result = await list_workspaces(region='us1')
+
+        assert [ws['workspace'] for ws in result['data']['workspaces']] == ['globex']
+        assert result['region'] == 'us1'
+
+    @pytest.mark.asyncio
+    async def test_missing_jwt_is_rejected_before_the_tool_runs(self):
+        with (
+            patch('utils.decorators.is_auth_enabled', return_value=True),
+            patch('utils.decorators._get_jwt_token', return_value=None),
+            patch('tools.workspace_tools.get_token_workspaces') as mock_get_workspaces,
+        ):
+            result = await list_workspaces()
+
+        assert result['status'] == 'error'
+        assert 'No JWT token found' in result['message']
+        mock_get_workspaces.assert_not_called()
+
+
+@pytest.fixture
 def mock_http_client():
     """Mock HTTP client for testing workspace settings tools."""
     with patch('tools.workspace_tools.http_client') as mock_client:

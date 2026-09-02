@@ -121,7 +121,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `list_workspaces` is now registered through `@mcp_tool_handler` like every other tool, so a
   failure comes back as the standard `error_response` envelope instead of an uncaught traceback
   (#201). A malformed `token.json` was the way to hit it. Two things change for a client: an
-  unserved `region` value is now rejected with a `validation` error naming the field, where it
+  unknown `region` value is now rejected with a `validation` error naming the field, where it
   previously returned an empty workspace list, and a failure carries `status: "error"` with a
   `Failed in list_workspaces:` message. `health_check` keeps its raw registration, because it
   has to answer before any workspace or JWT exists, but it now returns the same error envelope
@@ -130,7 +130,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   array or a bare string parsed cleanly and was handed to callers that walk it as a map of
   regions, so the first `.items()` raised an `AttributeError` far from the real problem. Such a
   file is now logged as an error and read as no tokens at all, the same as an unparseable one.
-
 - `unregister_server` now sends the `auto` and `purge_provisioned_accounts` query parameters the
   server's delete endpoint reads (#140). Both default to `false`, matching the server, so an
   existing caller sends the same effective request as before and a still-connected host is still
