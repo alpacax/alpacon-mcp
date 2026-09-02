@@ -262,7 +262,9 @@ def with_token_validation(func: Callable, requires_workspace: bool = True) -> Ca
     checks, the workspace-keyed region resolution, the JWT workspace
     authorization, the MFA pre-check, and the stdio token injection, and reads
     an empty ``region`` as "all regions" rather than one to resolve. A region
-    that is given is still validated.
+    that is given is still validated. The JWT workspace authorization and the
+    MFA gate are both among what it turns off, so a tool that reaches any
+    workspace-scoped resource must not set it, read-only or not.
 
     Identifiers are picked by the ``_id`` suffix of the name, not by where
     the value ends up, so the check also covers ones that only reach a query
@@ -567,9 +569,10 @@ def mcp_tool_handler(
         description: Tool description for MCP
         annotations: MCP ToolAnnotations (readOnlyHint, destructiveHint, etc.)
         meta: MCP meta dict (anthropic/alwaysLoad, anthropic/searchHint, etc.)
-        requires_workspace: Whether the tool takes a workspace. Set False for a
-            tool that answers before any workspace is known; see
-            ``with_token_validation`` for what that turns off.
+        requires_workspace: Whether the tool takes a workspace. Set False only
+            for a tool that answers before any workspace is known and reaches
+            no workspace-scoped resource; see ``with_token_validation`` for
+            what that turns off.
 
     Returns:
         Decorator function
