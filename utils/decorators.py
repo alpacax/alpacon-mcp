@@ -102,7 +102,7 @@ def _resolve_region_from_jwt(
             return matching[0]
         return None
 
-    regions = list({ws.get('region') for ws in workspaces if ws.get('region')})
+    regions = list({ws['region'] for ws in workspaces})
     if len(regions) == 1:
         return regions[0]
     return None
@@ -121,9 +121,7 @@ def _resolve_region_jwt(
         return region, None
 
     ws_list = get_token_workspaces(jwt_token)
-    available_regions = sorted(
-        {ws.get('region') or '?' for ws in ws_list if isinstance(ws, dict)}
-    )
+    available_regions = sorted({ws['region'] for ws in ws_list})
     if available_regions:
         return None, (
             f'Multiple regions available in token: {", ".join(available_regions)}. '
