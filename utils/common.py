@@ -193,6 +193,18 @@ def error_response(message: str, **kwargs) -> dict[str, Any]:
     return response
 
 
+def empty_value_error(field: str) -> dict[str, Any]:
+    """Reject an argument that was supplied but carries no value.
+
+    Args:
+        field: Argument name, as the caller spells it
+
+    Returns:
+        Standardized error response dict
+    """
+    return error_response(f'{field} must not be empty')
+
+
 def success_response(data: Any = None, **kwargs) -> dict[str, Any]:
     """Create standardized success response.
 

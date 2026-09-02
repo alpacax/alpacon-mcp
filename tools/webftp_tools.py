@@ -13,6 +13,7 @@ import httpx
 
 from utils.api_call import http_call_response
 from utils.common import (
+    empty_value_error,
     error_response,
     is_auth_enabled,
     resolve_work_session_id,
@@ -731,7 +732,7 @@ async def webftp_bulk_upload(
         return error_response(_REMOTE_MODE_ERROR, code='remote_mode_unsupported')
 
     if not local_file_paths:
-        return error_response('local_file_paths must not be empty')
+        return empty_value_error('local_file_paths')
 
     for path in local_file_paths:
         if not validate_file_path(path):
@@ -892,7 +893,7 @@ async def webftp_bulk_download(
         return error_response(_REMOTE_MODE_ERROR, code='remote_mode_unsupported')
 
     if not remote_paths:
-        return error_response('remote_paths must not be empty')
+        return empty_value_error('remote_paths')
 
     for path in remote_paths:
         if not validate_file_path(path):
