@@ -71,10 +71,17 @@ class TokenManager:
             try:
                 with open(self.token_file) as f:
                     tokens = json.load(f)
-                logger.info(
-                    f'Loaded tokens from {self.token_file}: {len(tokens)} regions'
+                # A JSON array or scalar parses without error but is not a
+                # region map; every caller walks the result as one.
+                if isinstance(tokens, dict):
+                    logger.info(
+                        f'Loaded tokens from {self.token_file}: {len(tokens)} regions'
+                    )
+                    return tokens
+                logger.error(
+                    f'{self.token_file} must hold a JSON object of regions, '
+                    f'found {type(tokens).__name__}'
                 )
-                return tokens
             except json.JSONDecodeError as e:
                 logger.error(f'JSON decode error in {self.token_file}: {e}')
             except OSError as e:

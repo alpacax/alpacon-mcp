@@ -47,10 +47,7 @@ def mock_token_manager():
     # derived {workspace}.{region}.alpacon.io host.
     mock_manager.get_base_url_override.return_value = None
 
-    with (
-        patch('tools.workspace_tools.get_token_manager', return_value=mock_manager),
-        patch('tools.workspace_tools._get_jwt_token', return_value=None),
-    ):
+    with patch('tools.workspace_tools.get_token_manager', return_value=mock_manager):
         yield mock_manager
 
 
@@ -108,17 +105,30 @@ class TestListWorkspaces:
 
     @pytest.mark.asyncio
     async def test_list_workspaces_empty_region(self, mock_token_manager):
-        """Test workspace listing for region with no workspaces."""
-        # Mock empty tokens for unknown region
+        """A served region with nothing configured lists no workspaces."""
         mock_token_manager.get_all_tokens.return_value = {
             'ap1': {'production': {'token': 'token1'}}
         }
 
-        result = await list_workspaces(region='nonexistent')
+        result = await list_workspaces(region='us1')
 
         assert result['status'] == 'success'
-        assert result['region'] == 'nonexistent'
+        assert result['region'] == 'us1'
         assert result['data']['workspaces'] == []
+
+    @pytest.mark.asyncio
+    async def test_list_workspaces_unknown_region_is_rejected(self, mock_token_manager):
+        """An unserved region is a validation error, not an empty list.
+
+        Routing through @mcp_tool_handler puts this tool behind the same
+        region gate as every other one, so a typo reads as a typo instead of
+        as "that region has no workspaces".
+        """
+        result = await list_workspaces(region='nonexistent')
+
+        assert result['status'] == 'error'
+        assert result['error_code'] == 'validation'
+        assert result['field'] == 'region'
 
     @pytest.mark.asyncio
     async def test_list_workspaces_workspace_without_token(self, mock_token_manager):
@@ -176,9 +186,8 @@ class TestListWorkspaces:
         )
         real_manager = TokenManager(config_file=str(config_path))
 
-        with (
-            patch('tools.workspace_tools.get_token_manager', return_value=real_manager),
-            patch('tools.workspace_tools._get_jwt_token', return_value=None),
+        with patch(
+            'tools.workspace_tools.get_token_manager', return_value=real_manager
         ):
             result = await list_workspaces(region='us1')
 
@@ -191,6 +200,27 @@ class TestListWorkspaces:
         assert acme_ws['has_token'] is True
         # Env-var override applies to display too, even for bare-string entries.
         assert plain_ws['domain'] == 'https://pinned-by-env.us1.alpacon.io'
+
+    @pytest.mark.asyncio
+    async def test_list_workspaces_malformed_token_file_returns_error_envelope(
+        self, mock_token_manager
+    ):
+        """A malformed token.json returns the standard error envelope.
+
+        A top-level JSON array loads without complaint, so the failure only
+        surfaces once the tool walks it. Every other tool routes that failure
+        through @mcp_tool_handler; this one must too, instead of letting the
+        exception reach the client as a traceback.
+        """
+        mock_token_manager.get_all_tokens.return_value = ['ap1', 'us1']
+
+        result = await list_workspaces()
+
+        assert result['status'] == 'error'
+        # The prefix is what with_error_handling writes, so this fails for a
+        # body-local try/except that only invents its own message.
+        assert result['message'].startswith('Failed in list_workspaces:')
+        assert "'list' object has no attribute 'items'" in result['message']
 
     @pytest.mark.asyncio
     async def test_list_workspaces_default_region(self, mock_token_manager):

@@ -3,22 +3,15 @@
 from http import HTTPStatus
 from typing import Any
 
-from mcp.types import ToolAnnotations
-
-from server import mcp
 from utils.api_call import http_call_response
+from utils.auth import get_token_workspaces
 from utils.common import (
     error_response,
     is_auth_enabled,
     success_response,
     unwrap_http_result,
 )
-from utils.decorators import (
-    _get_jwt_token,
-    _get_jwt_workspaces,
-    mcp_tool_handler,
-    require_jwt_auth,
-)
+from utils.decorators import mcp_tool_handler, require_jwt_auth
 from utils.http_client import http_client
 from utils.token_manager import TokenManager, get_token_manager
 from utils.tool_annotations import IDEMPOTENT_WRITE, READ_ONLY
@@ -104,16 +97,21 @@ def _saas_only_security_404(
     return None
 
 
-@mcp.tool(
+@mcp_tool_handler(
     description='List all available workspaces and their regions. Returns workspace names, region codes, and domain hostnames. In local mode reads from token.json; in server mode extracts from JWT claims. When to use: first tool to call to discover which workspaces are configured. Related: list_servers (find servers in a workspace). Note: Most other tools require a workspace parameter from this list.',
-    annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False),
+    annotations=READ_ONLY,
     meta={
         'anthropic/alwaysLoad': True,
         'anthropic/searchHint': 'workspace list regions configured available',
     },
+    requires_workspace=False,
 )
-async def list_workspaces(region: str = '') -> dict[str, Any]:
+async def list_workspaces(region: str = '', **kwargs) -> dict[str, Any]:
     """Get list of available workspaces.
+
+    This is the one tool that answers before a workspace is known, so it is
+    registered with requires_workspace=False and does its own token.json read
+    in local mode.
 
     In local (stdio/SSE) mode, reads from token.json. If region is not specified,
     lists workspaces across all configured regions.
@@ -129,13 +127,8 @@ async def list_workspaces(region: str = '') -> dict[str, Any]:
     """
     # Use explicit transport mode check, not JWT presence
     if is_auth_enabled():
-        jwt_token = _get_jwt_token()
-        if not jwt_token:
-            return error_response(
-                'Authentication required. No JWT token found in request context.'
-            )
-        # Server mode: extract workspaces from JWT claims
-        jwt_workspaces = _get_jwt_workspaces(jwt_token)
+        # The decorator has already rejected a request with no JWT.
+        jwt_workspaces = get_token_workspaces(kwargs.get('token'))
         workspaces = []
         for ws in jwt_workspaces:
             ws_name = ws.get('schema_name', '')

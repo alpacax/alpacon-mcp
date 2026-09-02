@@ -130,6 +130,41 @@ def decode_jwt(
     return None
 
 
+def decode_claims_unverified(jwt_token: str) -> dict[str, Any] | None:
+    """Read a JWT's claims without verifying it.
+
+    Only for tokens the auth middleware has already verified; it re-parses the
+    same string to read claims the AccessToken does not carry.
+    """
+    try:
+        return jwt.decode(
+            jwt_token,
+            options={
+                'verify_signature': False,
+                'verify_aud': False,
+                'verify_iss': False,
+                'verify_exp': False,
+            },
+        )
+    except Exception as e:
+        logger.error(f'JWT decode failed: {e}')
+        return None
+
+
+def get_token_workspaces(jwt_token: str) -> list[dict[str, str]]:
+    """List the workspaces a verified JWT grants access to.
+
+    Resolves the Auth0 namespace from AUTH0_NAMESPACE, so callers do not have
+    to know how the claim key is built.
+    """
+    claims = decode_claims_unverified(jwt_token)
+    if not claims:
+        return []
+
+    namespace = os.getenv('AUTH0_NAMESPACE', 'https://alpacon.io/').rstrip('/') + '/'
+    return extract_workspaces(claims, namespace)
+
+
 def extract_workspaces(claims: dict[str, Any], namespace: str) -> list[dict[str, str]]:
     """Extract workspaces from JWT claims.
 

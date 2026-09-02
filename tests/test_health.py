@@ -187,6 +187,24 @@ class TestHealthCheckTool:
         assert result['status'] == 'success'
 
 
+class TestHealthCheckErrorShape:
+    """A failure inside health_check returns the standard error envelope."""
+
+    @pytest.mark.asyncio
+    async def test_collection_failure_returns_error_envelope(self):
+        """health_check answers before auth, so it keeps the raw @mcp.tool
+        registration; the error contract still has to hold."""
+        with patch(
+            'tools.health_tools.get_health_info',
+            side_effect=AttributeError("'list' object has no attribute 'values'"),
+        ):
+            result = await health_check()
+
+        assert result['status'] == 'error'
+        assert result['message'].startswith('Failed in health_check:')
+        assert "'list' object has no attribute 'values'" in result['message']
+
+
 class TestHealthCheckRemoteMode:
     """Tests verifying health_check tool works in remote (streamable-http) mode."""
 

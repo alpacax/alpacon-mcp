@@ -777,7 +777,7 @@ Webhook tools need an admin account, and creating or updating a webhook needs a 
 Get list of available workspaces. Takes no `workspace`—it is how you find the name every other tool needs.
 
 **Parameters:**
-- `region` (string, optional): Restrict the listing to one region; omit to list every configured region
+- `region` (string, optional): Restrict the listing to one region; omit to list every configured region. A region outside the served set is rejected as a validation error, not answered with an empty list
 
 ### `get_current_user`
 Get the authenticated user: username, email, role, UID, shell, home directory.

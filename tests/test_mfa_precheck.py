@@ -168,7 +168,7 @@ class TestMfaPrecheck:
 
         with (
             patch(
-                'utils.decorators._decode_jwt_claims',
+                'utils.decorators.decode_claims_unverified',
                 return_value={
                     'sub': 'auth0|test',
                     'https://alpacon.io/completed_mfa_methods': {},
@@ -247,7 +247,7 @@ class TestMfaPrecheck:
 
         with (
             patch(
-                'utils.decorators._decode_jwt_claims',
+                'utils.decorators.decode_claims_unverified',
                 return_value={
                     'sub': 'auth0|test',
                     'https://alpacon.io/completed_mfa_methods': {'otp': recent},
