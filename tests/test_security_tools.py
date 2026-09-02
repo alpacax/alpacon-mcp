@@ -222,6 +222,36 @@ class TestCreateCommandAcl:
 
         assert result['status'] == 'error'
 
+    @pytest.mark.asyncio
+    async def test_create_empty_command_returns_error(
+        self, mock_http_client, mock_token_manager
+    ):
+        result = await create_command_acl(
+            workspace='testworkspace',
+            command='',
+            api_token_id='token-uuid',
+            region='ap1',
+        )
+
+        assert result['status'] == 'error'
+        assert 'command' in result['message']
+        mock_http_client.post.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_create_whitespace_command_returns_error(
+        self, mock_http_client, mock_token_manager
+    ):
+        result = await create_command_acl(
+            workspace='testworkspace',
+            command='   ',
+            api_token_id='token-uuid',
+            region='ap1',
+        )
+
+        assert result['status'] == 'error'
+        assert 'command' in result['message']
+        mock_http_client.post.assert_not_called()
+
 
 class TestUpdateCommandAcl:
     @pytest.mark.asyncio
@@ -279,6 +309,36 @@ class TestUpdateCommandAcl:
         )
 
         assert result['status'] == 'error'
+        mock_http_client.patch.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_update_empty_command_returns_error(
+        self, mock_http_client, mock_token_manager
+    ):
+        result = await update_command_acl(
+            acl_id='acl-1',
+            workspace='testworkspace',
+            command='',
+            region='ap1',
+        )
+
+        assert result['status'] == 'error'
+        assert 'command' in result['message']
+        mock_http_client.patch.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_update_whitespace_command_returns_error(
+        self, mock_http_client, mock_token_manager
+    ):
+        result = await update_command_acl(
+            acl_id='acl-1',
+            workspace='testworkspace',
+            command='   ',
+            region='ap1',
+        )
+
+        assert result['status'] == 'error'
+        assert 'command' in result['message']
         mock_http_client.patch.assert_not_called()
 
 
@@ -991,6 +1051,38 @@ class TestCreateFileAcl:
         mock_http_client.post.assert_not_called()
 
     @pytest.mark.asyncio
+    async def test_create_empty_path_returns_error(
+        self, mock_http_client, mock_token_manager
+    ):
+        result = await create_file_acl(
+            workspace='testworkspace',
+            path='',
+            action='upload',
+            api_token_id='token-uuid',
+            region='ap1',
+        )
+
+        assert result['status'] == 'error'
+        assert 'path' in result['message']
+        mock_http_client.post.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_create_whitespace_path_returns_error(
+        self, mock_http_client, mock_token_manager
+    ):
+        result = await create_file_acl(
+            workspace='testworkspace',
+            path='   ',
+            action='upload',
+            api_token_id='token-uuid',
+            region='ap1',
+        )
+
+        assert result['status'] == 'error'
+        assert 'path' in result['message']
+        mock_http_client.post.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_create_both_tokens_returns_error(
         self, mock_http_client, mock_token_manager
     ):
@@ -1064,6 +1156,36 @@ class TestUpdateFileAcl:
         )
 
         assert result['status'] == 'error'
+        mock_http_client.patch.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_update_empty_path_returns_error(
+        self, mock_http_client, mock_token_manager
+    ):
+        result = await update_file_acl(
+            acl_id='acl-1',
+            workspace='testworkspace',
+            path='',
+            region='ap1',
+        )
+
+        assert result['status'] == 'error'
+        assert 'path' in result['message']
+        mock_http_client.patch.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_update_whitespace_path_returns_error(
+        self, mock_http_client, mock_token_manager
+    ):
+        result = await update_file_acl(
+            acl_id='acl-1',
+            workspace='testworkspace',
+            path='   ',
+            region='ap1',
+        )
+
+        assert result['status'] == 'error'
+        assert 'path' in result['message']
         mock_http_client.patch.assert_not_called()
 
     @pytest.mark.asyncio
