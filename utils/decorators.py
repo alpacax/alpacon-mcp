@@ -254,8 +254,11 @@ def with_token_validation(func: Callable, requires_workspace: bool = True) -> Ca
     """Validate a tool's inputs, then resolve and inject its auth token.
 
     Despite the name, this is the single validation gate for MCP tools:
-    workspace, region, and every ``_id``-suffixed identifier are checked
-    here, before the token lookup runs.
+    workspace, region, and every ``_id``-suffixed identifier are checked here,
+    before the token lookup runs. The suffix is the only trigger, so a path
+    parameter named otherwise (``username``, say) and an ``_id`` nested inside
+    ``**kwargs`` both reach the URL unchecked. ``work_session_id`` is exempt:
+    ``resolve_work_session_id`` strips padding this gate would reject.
 
     ``requires_workspace=False`` is for a tool that answers before a workspace
     is known—``list_workspaces`` is the one today. It skips the workspace
@@ -265,27 +268,13 @@ def with_token_validation(func: Callable, requires_workspace: bool = True) -> Ca
     that is given is still validated. A tool that reaches any workspace-scoped
     resource must not set it, read-only or not.
 
-    Identifiers are picked by the ``_id`` suffix of the name, not by where
-    the value ends up, so the check also covers ones that only reach a query
-    parameter or a request body. That is deliberate—a ``#`` or an ``&`` in a
-    query value corrupts the request it rides on—but it does leave the rule
-    tighter than a filter strictly needs. The suffix covers every
-    path-interpolated identifier the tools have; a path parameter named
-    otherwise, ``username`` say, would reach the URL unchecked. Only declared
-    parameters are walked, so an ``_id`` nested inside the ``**kwargs`` dict is
-    not seen either; no tool schema exposes that route today.
-    ``work_session_id`` is exempt: it is sent in a request body after
-    ``resolve_work_session_id`` strips it, and the gate would break that
-    padding tolerance.
-
-    Transport mode is determined by ALPACON_MCP_AUTH_ENABLED env var:
-    - 'true' (streamable-http): Uses JWT from auth context only.
-      Never falls back to token.json.
-    - unset/other (stdio): Uses token.json only.
-      Never tries JWT auth context.
+    Transport mode comes from ALPACON_MCP_AUTH_ENABLED: 'true'
+    (streamable-http) takes the JWT from the auth context and never falls back
+    to token.json; anything else (stdio) reads token.json and never tries JWT.
 
     Args:
         func: The async function to decorate
+        requires_workspace: False for a tool that answers before a workspace is known
 
     Returns:
         Decorated async function with modified signature (removes _token parameter)
