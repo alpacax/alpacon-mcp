@@ -130,6 +130,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   array or a bare string parsed cleanly and was handed to callers that walk it as a map of
   regions, so the first `.items()` raised an `AttributeError` far from the real problem. Such a
   file is now logged as an error and read as no tokens at all, the same as an unparseable one.
+- A JWT `workspaces` claim entry that does not name both a workspace and a region as
+  non-blank strings is now dropped and logged instead of being passed on (#201).
+  `list_workspaces` used to report such an entry as a workspace with an empty name and the
+  domain `..alpacon.io`, and an entry that was not an object at all crashed the region
+  auto-detection with an `AttributeError` that no tool error handler covers, so it reached
+  the client as a traceback. A client in remote mode may now see fewer entries than the
+  claim carries.
 - `unregister_server` now sends the `auto` and `purge_provisioned_accounts` query parameters the
   server's delete endpoint reads (#140). Both default to `false`, matching the server, so an
   existing caller sends the same effective request as before and a still-connected host is still

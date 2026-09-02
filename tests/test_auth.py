@@ -187,6 +187,33 @@ class TestExtractWorkspaces:
         result = extract_workspaces({}, 'https://alpacon.io/')
         assert result == []
 
+    def test_drops_entries_that_are_not_workspace_objects(self):
+        """A junk element must not reach match_workspace, which walks it as a dict."""
+        claims = {
+            'https://alpacon.io/workspaces': [
+                'not-a-dict',
+                {'schema_name': 'ws1', 'region': 'ap1'},
+            ]
+        }
+        result = extract_workspaces(claims, 'https://alpacon.io/')
+        assert result == [{'schema_name': 'ws1', 'region': 'ap1'}]
+
+    def test_drops_entries_missing_a_name_or_a_region(self):
+        """Half an entry names no workspace, so it can only mislead a caller."""
+        claims = {
+            'https://alpacon.io/workspaces': [
+                {'auth0_id': 'org_1'},
+                {'schema_name': 'ws1'},
+                {'region': 'ap1'},
+                {'schema_name': '', 'region': 'ap1'},
+                {'schema_name': '  ', 'region': 'ap1'},
+                {'schema_name': ['ws3'], 'region': 'ap1'},
+                {'schema_name': 'ws2', 'region': 'us1'},
+            ]
+        }
+        result = extract_workspaces(claims, 'https://alpacon.io/')
+        assert result == [{'schema_name': 'ws2', 'region': 'us1'}]
+
 
 class TestMatchWorkspace:
     """Tests for match_workspace function."""

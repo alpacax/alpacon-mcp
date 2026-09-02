@@ -172,6 +172,12 @@ def extract_workspaces(claims: dict[str, Any], namespace: str) -> list[dict[str,
         claims: Decoded JWT claims
         namespace: Auth0 namespace prefix (e.g. 'https://alpacon.io/')
 
+    An entry is dropped unless it names both a workspace and a region as
+    non-blank strings. Every caller walks the list as workspace dicts, and an
+    entry missing either field can neither be matched nor resolved, so keeping
+    it only lets ``list_workspaces`` report a workspace with an empty name and
+    lets a non-dict entry crash whichever caller reads it first.
+
     Returns:
         List of workspace dicts with schema_name, auth0_id, region
     """
@@ -183,7 +189,17 @@ def extract_workspaces(claims: dict[str, Any], namespace: str) -> list[dict[str,
     if not isinstance(workspaces, list):
         logger.warning(f'Invalid workspaces claim type: {type(workspaces)}')
         return []
-    return workspaces
+
+    usable = []
+    for entry in workspaces:
+        if isinstance(entry, dict) and all(
+            isinstance(entry.get(field), str) and entry[field].strip()
+            for field in ('schema_name', 'region')
+        ):
+            usable.append(entry)
+        else:
+            logger.warning(f'Dropping malformed workspaces claim entry: {entry!r}')
+    return usable
 
 
 def match_workspace(
