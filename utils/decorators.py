@@ -257,13 +257,12 @@ def with_token_validation(func: Callable, requires_workspace: bool = True) -> Ca
     workspace, region, and every ``_id``-suffixed identifier are checked
     here, before the token lookup runs.
 
-    ``requires_workspace=False`` is for the few tools that answer before a
-    workspace is known—``list_workspaces`` is the one today. They skip the
-    workspace checks, the workspace-keyed region resolution, the JWT
-    workspace authorization and the MFA pre-check, and in stdio mode they get
-    no injected token because there is no workspace to look one up for. An
-    empty ``region`` then means "all regions" instead of "resolve one", but a
-    region that is given is still validated.
+    ``requires_workspace=False`` is for a tool that answers before a workspace
+    is known—``list_workspaces`` is the one today. It skips the workspace
+    checks, the workspace-keyed region resolution, the JWT workspace
+    authorization, the MFA pre-check, and the stdio token injection, and reads
+    an empty ``region`` as "all regions" rather than one to resolve. A region
+    that is given is still validated.
 
     Identifiers are picked by the ``_id`` suffix of the name, not by where
     the value ends up, so the check also covers ones that only reach a query
@@ -307,11 +306,9 @@ def with_token_validation(func: Callable, requires_workspace: bool = True) -> Ca
         workspace = arguments.get('workspace')
 
         if requires_workspace:
-            # Validate workspace is present
             if not workspace:
                 return error_response('workspace parameter is required')
 
-            # Validate workspace format
             if not validate_workspace_format(workspace):
                 return format_validation_error('workspace', workspace)
 
@@ -326,8 +323,7 @@ def with_token_validation(func: Callable, requires_workspace: bool = True) -> Ca
                     'Authentication required. No JWT token found in request context.'
                 )
 
-        # Auto-detect region if not provided. A workspace-less tool reads an
-        # empty region as "all regions", so there is nothing to resolve.
+        # A workspace-less tool reads an empty region as "all regions".
         if not region and requires_workspace:
             if auth_enabled:
                 resolved_region, err_msg = _resolve_region_jwt(jwt_token, workspace)

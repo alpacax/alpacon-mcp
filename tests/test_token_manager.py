@@ -29,11 +29,7 @@ class TestLoadTokens:
     """A config file that is not a JSON object must not reach the callers."""
 
     def test_non_object_json_loads_as_empty(self, tmp_path):
-        """A top-level JSON array parses cleanly, so only a type check stops it.
-
-        Callers walk the result as a dict of regions. Handing them a list turns
-        the next .items() or .values() into an AttributeError far from here.
-        """
+        """A top-level JSON array parses cleanly, so only a type check stops it."""
         path = tmp_path / 'token.json'
         path.write_text('["ap1", "us1"]')
 

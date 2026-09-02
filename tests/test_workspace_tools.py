@@ -205,13 +205,7 @@ class TestListWorkspaces:
     async def test_list_workspaces_malformed_token_file_returns_error_envelope(
         self, mock_token_manager
     ):
-        """A malformed token.json returns the standard error envelope.
-
-        A top-level JSON array loads without complaint, so the failure only
-        surfaces once the tool walks it. Every other tool routes that failure
-        through @mcp_tool_handler; this one must too, instead of letting the
-        exception reach the client as a traceback.
-        """
+        """A failure inside the tool returns the standard error envelope."""
         mock_token_manager.get_all_tokens.return_value = ['ap1', 'us1']
 
         result = await list_workspaces()

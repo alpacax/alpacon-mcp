@@ -109,10 +109,6 @@ def _saas_only_security_404(
 async def list_workspaces(region: str = '', **kwargs) -> dict[str, Any]:
     """Get list of available workspaces.
 
-    This is the one tool that answers before a workspace is known, so it is
-    registered with requires_workspace=False and does its own token.json read
-    in local mode.
-
     In local (stdio/SSE) mode, reads from token.json. If region is not specified,
     lists workspaces across all configured regions.
 

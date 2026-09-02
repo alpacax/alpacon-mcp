@@ -10,8 +10,7 @@ from utils.decorators import with_error_handling
 from utils.health import get_health_info
 
 
-# Registered raw, not through @mcp_tool_handler: this tool has to answer before
-# any workspace or JWT exists. Only the error contract is borrowed.
+# Raw registration: this tool has to answer before any workspace or JWT exists.
 @mcp.tool(
     description='Check MCP server health status. Returns server version, uptime, authentication mode, and connection pool info. When to use: verifying the MCP server is running and reachable before making other calls. Note: No parameters required.',
     annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False),

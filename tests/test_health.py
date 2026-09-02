@@ -192,8 +192,7 @@ class TestHealthCheckErrorShape:
 
     @pytest.mark.asyncio
     async def test_collection_failure_returns_error_envelope(self):
-        """health_check answers before auth, so it keeps the raw @mcp.tool
-        registration; the error contract still has to hold."""
+        """The raw @mcp.tool registration still owes the standard envelope."""
         with patch(
             'tools.health_tools.get_health_info',
             side_effect=AttributeError("'list' object has no attribute 'values'"),
