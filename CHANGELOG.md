@@ -120,10 +120,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - `list_workspaces` is now registered through `@mcp_tool_handler` like every other tool, so a
   failure comes back as the standard `error_response` envelope instead of an uncaught traceback
-  (#201). A malformed `token.json` was the way to hit it. Two things change for a client: an
+  (#201). A malformed `token.json` was the way to hit it. Three things change for a client: an
   unknown `region` value is now rejected with a `validation` error naming the field, where it
-  previously returned an empty workspace list, and a failure carries `status: "error"` with a
-  `Failed in list_workspaces:` message. `health_check` keeps its raw registration, because it
+  previously returned an empty workspace list; a failure carries `status: "error"` with a
+  `Failed in list_workspaces:` message; and the published input schema now lists `kwargs` as a
+  required string, so a client that sends no arguments has to send `kwargs: ""` until #211 drops
+  it from the 167 tools the decorator wraps. `health_check` keeps its raw registration, because it
   has to answer before any workspace or JWT exists, but it now returns the same error envelope
   on failure.
 - `TokenManager` now rejects a `token.json` whose top level is not a JSON object (#201). An
