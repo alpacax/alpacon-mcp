@@ -118,6 +118,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   correction is the first entry under Changed.
 
 ### Fixed
+- `list_workspaces` is now registered through `@mcp_tool_handler` like every other tool, so a
+  failure comes back as the standard `error_response` envelope instead of an uncaught traceback
+  (#201). A malformed `token.json` was the way to hit it. Three things change for a client: an
+  unknown `region` value is now rejected with a `validation` error naming the field, where it
+  previously returned an empty workspace list; a failure carries `status: "error"` with a
+  `Failed in list_workspaces:` message; and the published input schema now lists `kwargs` as a
+  required string, so a client that sends no arguments has to send `kwargs: ""` until #211 drops
+  it from the 167 tools the decorator wraps. `health_check` keeps its raw registration, because it
+  has to answer before any workspace or JWT exists, but it now returns the same error envelope
+  on failure.
+- `list_workspaces` now reports `data.unusable_entries`, the number of JWT workspace claim
+  entries dropped for naming no workspace or no region (#201). The Auth0 Action that mints the
+  claim writes `region: org.metadata?.region || null` when an organization has no region in its
+  metadata, and such an entry authorizes nothing, so it is left out of `data.workspaces`. Without
+  the count the workspace simply vanished from the tool whose job is enumeration. A client that
+  reads the count can tell a short list from a complete one; it is 0 in local mode and a `region`
+  filter does not narrow it.
+- `TokenManager` now rejects a `token.json` whose top level is not a JSON object (#201). An
+  array or a bare string parsed cleanly and was handed to callers that walk it as a map of
+  regions, so the first `.items()` raised an `AttributeError` far from the real problem. Such a
+  file is now logged as an error and read as no tokens at all, the same as an unparseable one.
+- A JWT `workspaces` claim entry that does not name both a workspace and a region as
+  non-blank strings is now dropped instead of being passed on, and the warning names the
+  offending fields rather than dumping the entry (#201).
+  `list_workspaces` used to report such an entry as a workspace with an empty name and the
+  domain `..alpacon.io`, and an entry that was not an object at all crashed the region
+  auto-detection with an `AttributeError` that no tool error handler covers, so it reached
+  the client as a traceback. A client in remote mode may now see fewer entries than the
+  claim carries.
 - `unregister_server` now sends the `auto` and `purge_provisioned_accounts` query parameters the
   server's delete endpoint reads (#140). Both default to `false`, matching the server, so an
   existing caller sends the same effective request as before and a still-connected host is still

@@ -130,8 +130,58 @@ def decode_jwt(
     return None
 
 
+def decode_claims_unverified(jwt_token: str) -> dict[str, Any] | None:
+    """Read a JWT's claims without verifying it.
+
+    Only for tokens the auth middleware has already verified; it re-parses the
+    same string to read claims the AccessToken does not carry.
+    """
+    try:
+        return jwt.decode(
+            jwt_token,
+            options={
+                'verify_signature': False,
+                'verify_aud': False,
+                'verify_iss': False,
+                'verify_exp': False,
+            },
+        )
+    except Exception as e:
+        logger.error(f'JWT decode failed: {e}')
+        return None
+
+
+def get_token_workspaces(jwt_token: str) -> list[dict[str, str]]:
+    """List the workspaces a verified JWT grants access to.
+
+    Resolves the Auth0 namespace from AUTH0_NAMESPACE, so callers do not have
+    to know how the claim key is built.
+    """
+    return get_token_workspaces_with_dropped(jwt_token)[0]
+
+
+def get_token_workspaces_with_dropped(
+    jwt_token: str,
+) -> tuple[list[dict[str, str]], int]:
+    """The same list, paired with how many claim entries were dropped as unusable.
+
+    Only `list_workspaces` needs the count: it enumerates workspaces for an
+    agent, which cannot otherwise tell a short list from a complete one.
+    """
+    claims = decode_claims_unverified(jwt_token)
+    if not claims:
+        return [], 0
+
+    namespace = os.getenv('AUTH0_NAMESPACE', 'https://alpacon.io/').rstrip('/') + '/'
+    return _partition_workspaces(claims, namespace)
+
+
 def extract_workspaces(claims: dict[str, Any], namespace: str) -> list[dict[str, str]]:
-    """Extract workspaces from JWT claims.
+    """Extract the usable workspaces from JWT claims.
+
+    An entry is dropped unless it names both a workspace and a region as
+    non-blank strings: every caller walks the list as workspace dicts, so half
+    an entry either crashes one or lists a workspace with an empty name.
 
     Args:
         claims: Decoded JWT claims
@@ -140,6 +190,16 @@ def extract_workspaces(claims: dict[str, Any], namespace: str) -> list[dict[str,
     Returns:
         List of workspace dicts with schema_name, auth0_id, region
     """
+    return _partition_workspaces(claims, namespace)[0]
+
+
+def _partition_workspaces(
+    claims: dict[str, Any], namespace: str
+) -> tuple[list[dict[str, str]], int]:
+    """Split the workspaces claim into the usable entries and a count of the rest.
+
+    A claim that is not a list at all holds no entries, so it drops nothing.
+    """
     # Ensure namespace ends with '/' to build correct claim key
     if namespace and not namespace.endswith('/'):
         namespace = namespace + '/'
@@ -147,8 +207,33 @@ def extract_workspaces(claims: dict[str, Any], namespace: str) -> list[dict[str,
     workspaces = claims.get(claim_key, [])
     if not isinstance(workspaces, list):
         logger.warning(f'Invalid workspaces claim type: {type(workspaces)}')
-        return []
-    return workspaces
+        return [], 0
+
+    usable = []
+    dropped = 0
+    for entry in workspaces:
+        if not isinstance(entry, dict):
+            logger.warning(
+                f'Dropping workspaces claim entry: expected an object, '
+                f'got {type(entry).__name__}'
+            )
+            dropped += 1
+            continue
+        # Only the field names reach the log: nothing here controls what else
+        # the Auth0 Action puts in an entry.
+        blank = [
+            field
+            for field in ('schema_name', 'region')
+            if not (isinstance(entry.get(field), str) and entry[field].strip())
+        ]
+        if blank:
+            logger.warning(
+                f'Dropping workspaces claim entry: {", ".join(blank)} missing or blank'
+            )
+            dropped += 1
+            continue
+        usable.append(entry)
+    return usable, dropped
 
 
 def match_workspace(

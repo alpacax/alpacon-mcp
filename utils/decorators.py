@@ -3,18 +3,20 @@
 from __future__ import annotations
 
 import inspect
-import os
 import re
 from collections.abc import Callable
 from functools import wraps
 from typing import Any
 
-import jwt as pyjwt
 from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.types import ToolAnnotations
 
 from utils import error_handler, token_manager
-from utils.auth import extract_workspaces, match_workspace
+from utils.auth import (
+    decode_claims_unverified,
+    get_token_workspaces,
+    match_workspace,
+)
 from utils.common import (
     error_response,
     is_auth_enabled,
@@ -71,37 +73,10 @@ def _get_jwt_token() -> str | None:
     return access_token.token if access_token is not None else None
 
 
-def _decode_jwt_claims(jwt_token: str) -> dict | None:
-    """Decode JWT claims without verification (already verified by middleware)."""
-    try:
-        return pyjwt.decode(
-            jwt_token,
-            options={
-                'verify_signature': False,
-                'verify_aud': False,
-                'verify_iss': False,
-                'verify_exp': False,
-            },
-        )
-    except Exception as e:
-        logger.error(f'JWT decode failed: {e}')
-        return None
-
-
-def _get_jwt_workspaces(jwt_token: str) -> list[dict[str, str]]:
-    """Extract workspace list from JWT claims."""
-    claims = _decode_jwt_claims(jwt_token)
-    if not claims:
-        return []
-
-    namespace = os.getenv('AUTH0_NAMESPACE', 'https://alpacon.io/').rstrip('/') + '/'
-    return extract_workspaces(claims, namespace)
-
-
 def _validate_jwt_workspace(jwt_token: str, region: str, workspace: str) -> bool:
     """Validate that the JWT authorizes access to the given workspace/region."""
     try:
-        workspaces = _get_jwt_workspaces(jwt_token)
+        workspaces = get_token_workspaces(jwt_token)
         return match_workspace(workspaces, region, workspace)
     except Exception as e:
         logger.error(f'JWT workspace validation failed: {e}')
@@ -115,7 +90,7 @@ def _resolve_region_from_jwt(
 
     If workspace is given, find its region. Otherwise, return region if only one exists.
     """
-    workspaces = _get_jwt_workspaces(jwt_token)
+    workspaces = get_token_workspaces(jwt_token)
     if not workspaces:
         return None
 
@@ -127,7 +102,7 @@ def _resolve_region_from_jwt(
             return matching[0]
         return None
 
-    regions = list({ws.get('region') for ws in workspaces if ws.get('region')})
+    regions = list({ws['region'] for ws in workspaces})
     if len(regions) == 1:
         return regions[0]
     return None
@@ -145,10 +120,8 @@ def _resolve_region_jwt(
     if region:
         return region, None
 
-    ws_list = _get_jwt_workspaces(jwt_token)
-    available_regions = sorted(
-        {ws.get('region') or '?' for ws in ws_list if isinstance(ws, dict)}
-    )
+    ws_list = get_token_workspaces(jwt_token)
+    available_regions = sorted({ws['region'] for ws in ws_list})
     if available_regions:
         return None, (
             f'Multiple regions available in token: {", ".join(available_regions)}. '
@@ -207,7 +180,7 @@ async def _check_mfa_requirement(
         if not settings or not settings.is_action_mfa_required(action):
             return
 
-        claims = _decode_jwt_claims(jwt_token)
+        claims = decode_claims_unverified(jwt_token)
         if not claims:
             return
 
@@ -275,34 +248,31 @@ def _validate_uuid_list(field: str, value: Any) -> dict[str, Any] | None:
     return None
 
 
-def with_token_validation(func: Callable) -> Callable:
+def with_token_validation(func: Callable, requires_workspace: bool = True) -> Callable:
     """Validate a tool's inputs, then resolve and inject its auth token.
 
     Despite the name, this is the single validation gate for MCP tools:
-    workspace, region, and every ``_id``-suffixed identifier are checked
-    here, before the token lookup runs.
+    workspace, region, and every ``_id``-suffixed identifier are checked here,
+    before the token lookup runs. The suffix is the only trigger, so a path
+    parameter named otherwise (``username``, say) and an ``_id`` nested inside
+    ``**kwargs`` both reach the URL unchecked. ``work_session_id`` is exempt:
+    ``resolve_work_session_id`` strips padding this gate would reject.
 
-    Identifiers are picked by the ``_id`` suffix of the name, not by where
-    the value ends up, so the check also covers ones that only reach a query
-    parameter or a request body. That is deliberate—a ``#`` or an ``&`` in a
-    query value corrupts the request it rides on—but it does leave the rule
-    tighter than a filter strictly needs. The suffix covers every
-    path-interpolated identifier the tools have; a path parameter named
-    otherwise, ``username`` say, would reach the URL unchecked. Only declared
-    parameters are walked, so an ``_id`` nested inside the ``**kwargs`` dict is
-    not seen either; no tool schema exposes that route today.
-    ``work_session_id`` is exempt: it is sent in a request body after
-    ``resolve_work_session_id`` strips it, and the gate would break that
-    padding tolerance.
+    ``requires_workspace=False`` is for a tool that answers before a workspace
+    is known—``list_workspaces`` is the one today. It skips the workspace
+    checks, the workspace-keyed region resolution, the JWT workspace
+    authorization, the MFA pre-check, and the stdio token injection, and reads
+    an empty ``region`` as "all regions" rather than one to resolve. A region
+    that is given is still validated. A tool that reaches any workspace-scoped
+    resource must not set it, read-only or not.
 
-    Transport mode is determined by ALPACON_MCP_AUTH_ENABLED env var:
-    - 'true' (streamable-http): Uses JWT from auth context only.
-      Never falls back to token.json.
-    - unset/other (stdio): Uses token.json only.
-      Never tries JWT auth context.
+    Transport mode comes from ALPACON_MCP_AUTH_ENABLED: 'true'
+    (streamable-http) takes the JWT from the auth context and never falls back
+    to token.json; anything else (stdio) reads token.json and never tries JWT.
 
     Args:
         func: The async function to decorate
+        requires_workspace: False for a tool that answers before a workspace is known
 
     Returns:
         Decorated async function with modified signature (removes _token parameter)
@@ -323,13 +293,12 @@ def with_token_validation(func: Callable) -> Callable:
         region = arguments.get('region', '')
         workspace = arguments.get('workspace')
 
-        # Validate workspace is present
-        if not workspace:
-            return error_response('workspace parameter is required')
+        if requires_workspace:
+            if not workspace:
+                return error_response('workspace parameter is required')
 
-        # Validate workspace format
-        if not validate_workspace_format(workspace):
-            return format_validation_error('workspace', workspace)
+            if not validate_workspace_format(workspace):
+                return format_validation_error('workspace', workspace)
 
         auth_enabled = is_auth_enabled()
 
@@ -342,8 +311,7 @@ def with_token_validation(func: Callable) -> Callable:
                     'Authentication required. No JWT token found in request context.'
                 )
 
-        # Auto-detect region if not provided
-        if not region:
+        if not region and requires_workspace:  # workspace-less: empty means all
             if auth_enabled:
                 resolved_region, err_msg = _resolve_region_jwt(jwt_token, workspace)
             else:
@@ -355,7 +323,7 @@ def with_token_validation(func: Callable) -> Callable:
             bound_args.arguments['region'] = region
 
         # Validate region format
-        if not validate_region_format(region):
+        if region and not validate_region_format(region):
             return format_validation_error('region', region)
 
         # Validate server_id format if present
@@ -399,19 +367,20 @@ def with_token_validation(func: Callable) -> Callable:
 
         if auth_enabled:
             # Streamable-HTTP mode — JWT auth only
-            if not _validate_jwt_workspace(jwt_token, region, workspace):
-                return error_response(
-                    f'Workspace {workspace}.{region} not authorized by JWT',
-                    region=region,
-                    workspace=workspace,
-                )
-            extra_kwargs['token'] = jwt_token
+            if requires_workspace:
+                if not _validate_jwt_workspace(jwt_token, region, workspace):
+                    return error_response(
+                        f'Workspace {workspace}.{region} not authorized by JWT',
+                        region=region,
+                        workspace=workspace,
+                    )
 
-            # MFA pre-check: verify MFA completion for actions that require it.
-            # Raises UpstreamAuthError if MFA is required but not satisfied.
-            # The ASGI middleware catches this and returns HTTP 401.
-            await _check_mfa_requirement(func.__name__, jwt_token, workspace)
-        else:
+                # Raises UpstreamAuthError when MFA is required but not done;
+                # the ASGI middleware turns that into HTTP 401.
+                await _check_mfa_requirement(func.__name__, jwt_token, workspace)
+
+            extra_kwargs['token'] = jwt_token
+        elif requires_workspace:
             # stdio mode — token.json only
             token = validate_token(region, workspace)
             if not token:
@@ -572,6 +541,7 @@ def mcp_tool_handler(
     description: str,
     annotations: ToolAnnotations | None = None,
     meta: dict[str, Any] | None = None,
+    requires_workspace: bool = True,
 ):
     """Combined decorator for MCP tools that adds all common functionality.
 
@@ -585,6 +555,10 @@ def mcp_tool_handler(
         description: Tool description for MCP
         annotations: MCP ToolAnnotations (readOnlyHint, destructiveHint, etc.)
         meta: MCP meta dict (anthropic/alwaysLoad, anthropic/searchHint, etc.)
+        requires_workspace: Whether the tool takes a workspace. Set False only
+            for a tool that answers before any workspace is known and reaches
+            no workspace-scoped resource; see ``with_token_validation`` for
+            what that turns off.
 
     Returns:
         Decorator function
@@ -593,7 +567,7 @@ def mcp_tool_handler(
     def decorator(func: Callable) -> Callable:
         # Apply decorators in order (innermost first)
         func = with_error_handling(func)
-        func = with_token_validation(func)
+        func = with_token_validation(func, requires_workspace=requires_workspace)
         func = with_logging(func)
 
         # Deliberately local: server.py builds the FastMCP instance at module

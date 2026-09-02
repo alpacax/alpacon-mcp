@@ -7,6 +7,7 @@ and base URL.
 """
 
 import json
+import logging
 
 import pytest
 
@@ -23,6 +24,48 @@ def token_file(tmp_path):
         return TokenManager(config_file=str(path))
 
     return _make
+
+
+class TestLoadTokens:
+    """A config file that is not a JSON object must not reach the callers."""
+
+    def test_non_object_json_loads_as_empty(self, tmp_path):
+        """A top-level JSON array parses cleanly, so only a type check stops it."""
+        path = tmp_path / 'token.json'
+        path.write_text('["ap1", "us1"]')
+
+        tm = TokenManager(config_file=str(path))
+
+        assert tm.get_all_tokens() == {}
+
+    def test_scalar_json_loads_as_empty(self, tmp_path):
+        """A bare JSON string is the same mistake with a different shape."""
+        path = tmp_path / 'token.json'
+        path.write_text('"not-a-config"')
+
+        tm = TokenManager(config_file=str(path))
+
+        assert tm.get_all_tokens() == {}
+
+    @pytest.mark.parametrize(
+        ('content', 'cause'),
+        [
+            ('["ap1", "us1"]', 'must hold a JSON object of regions'),
+            ('{oops', 'JSON decode error'),
+        ],
+    )
+    def test_an_unusable_file_is_reported_once_by_its_own_cause(
+        self, tmp_path, caplog, content, cause
+    ):
+        """A file that was found and read must not also be reported as missing."""
+        path = tmp_path / 'token.json'
+        path.write_text(content)
+
+        with caplog.at_level(logging.WARNING):
+            TokenManager(config_file=str(path))
+
+        assert cause in caplog.text
+        assert len(caplog.records) == 1
 
 
 class TestGetTokenForms:

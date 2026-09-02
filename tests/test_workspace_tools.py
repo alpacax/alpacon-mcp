@@ -47,10 +47,7 @@ def mock_token_manager():
     # derived {workspace}.{region}.alpacon.io host.
     mock_manager.get_base_url_override.return_value = None
 
-    with (
-        patch('tools.workspace_tools.get_token_manager', return_value=mock_manager),
-        patch('tools.workspace_tools._get_jwt_token', return_value=None),
-    ):
+    with patch('tools.workspace_tools.get_token_manager', return_value=mock_manager):
         yield mock_manager
 
 
@@ -67,6 +64,8 @@ class TestListWorkspaces:
         assert result['region'] == 'ap1'
         assert result['data']['source'] == 'token_file'
         assert 'workspaces' in result['data']
+        # Local mode reads token.json, which the JWT claim filter never touches.
+        assert result['data']['unusable_entries'] == 0
 
         # Verify workspace data
         workspaces = result['data']['workspaces']
@@ -108,17 +107,30 @@ class TestListWorkspaces:
 
     @pytest.mark.asyncio
     async def test_list_workspaces_empty_region(self, mock_token_manager):
-        """Test workspace listing for region with no workspaces."""
-        # Mock empty tokens for unknown region
+        """A served region with nothing configured lists no workspaces."""
         mock_token_manager.get_all_tokens.return_value = {
             'ap1': {'production': {'token': 'token1'}}
         }
 
-        result = await list_workspaces(region='nonexistent')
+        result = await list_workspaces(region='us1')
 
         assert result['status'] == 'success'
-        assert result['region'] == 'nonexistent'
+        assert result['region'] == 'us1'
         assert result['data']['workspaces'] == []
+
+    @pytest.mark.asyncio
+    async def test_list_workspaces_unknown_region_is_rejected(self, mock_token_manager):
+        """An unserved region is a validation error, not an empty list.
+
+        Routing through @mcp_tool_handler puts this tool behind the same
+        region gate as every other one, so a typo reads as a typo instead of
+        as "that region has no workspaces".
+        """
+        result = await list_workspaces(region='nonexistent')
+
+        assert result['status'] == 'error'
+        assert result['error_code'] == 'validation'
+        assert result['field'] == 'region'
 
     @pytest.mark.asyncio
     async def test_list_workspaces_workspace_without_token(self, mock_token_manager):
@@ -176,9 +188,8 @@ class TestListWorkspaces:
         )
         real_manager = TokenManager(config_file=str(config_path))
 
-        with (
-            patch('tools.workspace_tools.get_token_manager', return_value=real_manager),
-            patch('tools.workspace_tools._get_jwt_token', return_value=None),
+        with patch(
+            'tools.workspace_tools.get_token_manager', return_value=real_manager
         ):
             result = await list_workspaces(region='us1')
 
@@ -193,6 +204,20 @@ class TestListWorkspaces:
         assert plain_ws['domain'] == 'https://pinned-by-env.us1.alpacon.io'
 
     @pytest.mark.asyncio
+    async def test_list_workspaces_malformed_token_file_returns_error_envelope(
+        self, mock_token_manager
+    ):
+        """A failure inside the tool returns the standard error envelope."""
+        mock_token_manager.get_all_tokens.return_value = ['ap1', 'us1']
+
+        result = await list_workspaces()
+
+        assert result['status'] == 'error'
+        # The prefix is with_error_handling's, not a hand-written try/except.
+        assert result['message'].startswith('Failed in list_workspaces:')
+        assert "'list' object has no attribute 'items'" in result['message']
+
+    @pytest.mark.asyncio
     async def test_list_workspaces_default_region(self, mock_token_manager):
         """Test workspace listing without region returns all regions."""
         result = await list_workspaces()
@@ -204,6 +229,114 @@ class TestListWorkspaces:
         workspaces = result['data']['workspaces']
         # Should include all workspaces from all regions (3 + 2 = 5)
         assert len(workspaces) == 5
+
+
+@pytest.fixture
+def jwt_mode():
+    """Drive the tool through the decorator's remote/JWT branch.
+
+    Both modules read is_auth_enabled, so patching one leaves the other in
+    stdio mode.
+    """
+    with (
+        patch('utils.decorators.is_auth_enabled', return_value=True),
+        patch('utils.decorators._get_jwt_token', return_value='jwt-token'),
+        patch('tools.workspace_tools.is_auth_enabled', return_value=True),
+    ):
+        yield
+
+
+class TestListWorkspacesJwtMode:
+    """Remote mode: the workspaces come out of the caller's own JWT."""
+
+    @pytest.mark.asyncio
+    async def test_lists_the_workspaces_the_jwt_carries(self, jwt_mode):
+        """The tool reads the JWT the decorator injected, not one of its own."""
+        with patch(
+            'tools.workspace_tools.get_token_workspaces_with_dropped',
+            return_value=(
+                [{'schema_name': 'acme', 'region': 'ap1', 'auth0_id': 'org_1'}],
+                0,
+            ),
+        ) as mock_get_workspaces:
+            result = await list_workspaces()
+
+        mock_get_workspaces.assert_called_once_with('jwt-token')
+        assert result['status'] == 'success'
+        assert result['data']['source'] == 'jwt'
+        assert result['data']['workspaces'] == [
+            {
+                'workspace': 'acme',
+                'region': 'ap1',
+                'auth0_id': 'org_1',
+                'domain': 'acme.ap1.alpacon.io',
+            }
+        ]
+
+    @pytest.mark.asyncio
+    async def test_region_filters_the_jwt_workspaces(self, jwt_mode):
+        with patch(
+            'tools.workspace_tools.get_token_workspaces_with_dropped',
+            return_value=(
+                [
+                    {'schema_name': 'acme', 'region': 'ap1', 'auth0_id': 'org_1'},
+                    {'schema_name': 'globex', 'region': 'us1', 'auth0_id': 'org_2'},
+                ],
+                0,
+            ),
+        ):
+            result = await list_workspaces(region='us1')
+
+        assert [ws['workspace'] for ws in result['data']['workspaces']] == ['globex']
+        assert result['region'] == 'us1'
+
+    @pytest.mark.asyncio
+    async def test_reports_the_claim_entries_it_could_not_use(self, jwt_mode):
+        """A dropped entry is invisible otherwise: only the server log names it."""
+        with patch(
+            'tools.workspace_tools.get_token_workspaces_with_dropped',
+            return_value=(
+                [{'schema_name': 'acme', 'region': 'ap1', 'auth0_id': 'org_1'}],
+                2,
+            ),
+        ):
+            result = await list_workspaces()
+
+        assert result['data']['unusable_entries'] == 2
+        assert len(result['data']['workspaces']) == 1
+
+    @pytest.mark.asyncio
+    async def test_a_region_filter_does_not_narrow_the_unusable_count(self, jwt_mode):
+        """An entry dropped for naming no region cannot be attributed to one."""
+        with patch(
+            'tools.workspace_tools.get_token_workspaces_with_dropped',
+            return_value=(
+                [
+                    {'schema_name': 'acme', 'region': 'ap1', 'auth0_id': 'org_1'},
+                    {'schema_name': 'globex', 'region': 'us1', 'auth0_id': 'org_2'},
+                ],
+                1,
+            ),
+        ):
+            result = await list_workspaces(region='us1')
+
+        assert [ws['workspace'] for ws in result['data']['workspaces']] == ['globex']
+        assert result['data']['unusable_entries'] == 1
+
+    @pytest.mark.asyncio
+    async def test_missing_jwt_is_rejected_before_the_tool_runs(self):
+        with (
+            patch('utils.decorators.is_auth_enabled', return_value=True),
+            patch('utils.decorators._get_jwt_token', return_value=None),
+            patch(
+                'tools.workspace_tools.get_token_workspaces_with_dropped'
+            ) as mock_get_workspaces,
+        ):
+            result = await list_workspaces()
+
+        assert result['status'] == 'error'
+        assert 'No JWT token found' in result['message']
+        mock_get_workspaces.assert_not_called()
 
 
 @pytest.fixture

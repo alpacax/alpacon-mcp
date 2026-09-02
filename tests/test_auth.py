@@ -5,6 +5,7 @@ Tests Auth0TokenVerifier including JWKS fetching, signing key selection,
 and token verification (valid, expired, invalid kid, audience mismatch).
 """
 
+import logging
 import time
 from http import HTTPStatus
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -22,6 +23,7 @@ from utils.auth import (
     _get_signing_key,
     decode_jwt,
     extract_workspaces,
+    get_token_workspaces_with_dropped,
     match_workspace,
 )
 
@@ -186,6 +188,76 @@ class TestExtractWorkspaces:
     def test_returns_empty_for_missing_claim(self):
         result = extract_workspaces({}, 'https://alpacon.io/')
         assert result == []
+
+    def test_drops_entries_that_are_not_workspace_objects(self):
+        """A junk element must not reach match_workspace, which walks it as a dict."""
+        claims = {
+            'https://alpacon.io/workspaces': [
+                'not-a-dict',
+                {'schema_name': 'ws1', 'region': 'ap1'},
+            ]
+        }
+        result = extract_workspaces(claims, 'https://alpacon.io/')
+        assert result == [{'schema_name': 'ws1', 'region': 'ap1'}]
+
+    def test_drops_entries_missing_a_name_or_a_region(self):
+        """Half an entry names no workspace, so it can only mislead a caller."""
+        claims = {
+            'https://alpacon.io/workspaces': [
+                {'auth0_id': 'org_1'},
+                {'schema_name': 'ws1'},
+                {'region': 'ap1'},
+                {'schema_name': '', 'region': 'ap1'},
+                {'schema_name': '  ', 'region': 'ap1'},
+                {'schema_name': ['ws3'], 'region': 'ap1'},
+                {'schema_name': 'ws2', 'region': 'us1'},
+            ]
+        }
+        result = extract_workspaces(claims, 'https://alpacon.io/')
+        assert result == [{'schema_name': 'ws2', 'region': 'us1'}]
+
+    def test_pairs_the_usable_entries_with_a_count_of_the_dropped_ones(self):
+        """list_workspaces reports the count; nothing else can see the drop."""
+        claims = {
+            'https://alpacon.io/workspaces': [
+                {'schema_name': 'ws1', 'region': 'ap1'},
+                {'schema_name': 'ws2', 'region': None},
+                'not-a-dict',
+            ]
+        }
+        with patch('utils.auth.decode_claims_unverified', return_value=claims):
+            usable, dropped = get_token_workspaces_with_dropped('jwt-token')
+
+        assert usable == [{'schema_name': 'ws1', 'region': 'ap1'}]
+        assert dropped == 2
+
+    def test_a_claim_that_is_not_a_list_drops_no_entries(self):
+        """There are no entries to count when the claim is not a list at all."""
+        with patch(
+            'utils.auth.decode_claims_unverified',
+            return_value={'https://alpacon.io/workspaces': {'schema_name': 'ws1'}},
+        ):
+            assert get_token_workspaces_with_dropped('jwt-token') == ([], 0)
+
+    def test_an_undecodable_token_drops_no_entries(self):
+        with patch('utils.auth.decode_claims_unverified', return_value=None):
+            assert get_token_workspaces_with_dropped('jwt-token') == ([], 0)
+
+    def test_a_dropped_entry_is_logged_by_shape_not_by_content(self, caplog):
+        """An entry carries whatever the Auth0 Action put there, read or not."""
+        claims = {
+            'https://alpacon.io/workspaces': [
+                {'schema_name': '', 'region': 'ap1', 'email': 'user@example.com'},
+                ['ws1', 'ap1'],
+            ]
+        }
+        with caplog.at_level(logging.WARNING):
+            assert extract_workspaces(claims, 'https://alpacon.io/') == []
+
+        assert 'schema_name missing or blank' in caplog.text
+        assert 'expected an object, got list' in caplog.text
+        assert 'user@example.com' not in caplog.text
+        assert 'ws1' not in caplog.text
 
 
 class TestMatchWorkspace:

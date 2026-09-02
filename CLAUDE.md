@@ -56,6 +56,12 @@ Things the code will not tell you at a glance:
   `workspace`, `server_id`, `server_ids`, `servers`, and `session_id` are
   validated before the token lookup; file paths are not—call
   `validate_file_path()` inline in any tool taking a path.
+  `requires_workspace=False` is for a tool that answers before a workspace is
+  known: it drops the workspace checks, the workspace-keyed region resolution,
+  the JWT workspace authorization, the MFA pre-check, and the stdio token
+  injection. `list_workspaces` is the only tool using it. `health_check` sits
+  outside the decorator entirely because it must answer before any JWT exists,
+  and borrows `@with_error_handling` alone for the error shape.
 - **`AlpaconHTTPClient` never caches a response, deliberately.** Every read worth
   caching—the server list, process info, IAM users and groups—comes back filtered
   by the calling token's permissions, and nothing in this process sees a grant

@@ -6,9 +6,11 @@ from mcp.types import ToolAnnotations
 
 from server import mcp
 from utils.common import success_response
+from utils.decorators import with_error_handling
 from utils.health import get_health_info
 
 
+# Raw registration: this tool has to answer before any workspace or JWT exists.
 @mcp.tool(
     description='Check MCP server health status. Returns server version, uptime, authentication mode, and connection pool info. When to use: verifying the MCP server is running and reachable before making other calls. Note: No parameters required.',
     annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False),
@@ -17,6 +19,7 @@ from utils.health import get_health_info
         'anthropic/searchHint': 'health check status ping connectivity',
     },
 )
+@with_error_handling
 async def health_check() -> dict[str, Any]:
     """Check MCP server health and return status information.
 
