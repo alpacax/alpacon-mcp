@@ -131,7 +131,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   regions, so the first `.items()` raised an `AttributeError` far from the real problem. Such a
   file is now logged as an error and read as no tokens at all, the same as an unparseable one.
 - A JWT `workspaces` claim entry that does not name both a workspace and a region as
-  non-blank strings is now dropped and logged instead of being passed on (#201).
+  non-blank strings is now dropped instead of being passed on, and the warning names the
+  offending fields rather than dumping the entry (#201).
   `list_workspaces` used to report such an entry as a workspace with an empty name and the
   domain `..alpacon.io`, and an entry that was not an object at all crashed the region
   auto-detection with an `AttributeError` that no tool error handler covers, so it reached

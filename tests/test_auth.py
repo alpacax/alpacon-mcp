@@ -5,6 +5,7 @@ Tests Auth0TokenVerifier including JWKS fetching, signing key selection,
 and token verification (valid, expired, invalid kid, audience mismatch).
 """
 
+import logging
 import time
 from http import HTTPStatus
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -213,6 +214,22 @@ class TestExtractWorkspaces:
         }
         result = extract_workspaces(claims, 'https://alpacon.io/')
         assert result == [{'schema_name': 'ws2', 'region': 'us1'}]
+
+    def test_a_dropped_entry_is_logged_by_shape_not_by_content(self, caplog):
+        """An entry carries whatever the Auth0 Action put there, read or not."""
+        claims = {
+            'https://alpacon.io/workspaces': [
+                {'schema_name': '', 'region': 'ap1', 'email': 'user@example.com'},
+                ['ws1', 'ap1'],
+            ]
+        }
+        with caplog.at_level(logging.WARNING):
+            assert extract_workspaces(claims, 'https://alpacon.io/') == []
+
+        assert 'schema_name missing or blank' in caplog.text
+        assert 'expected an object, got list' in caplog.text
+        assert 'user@example.com' not in caplog.text
+        assert 'ws1' not in caplog.text
 
 
 class TestMatchWorkspace:

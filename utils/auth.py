@@ -190,13 +190,25 @@ def extract_workspaces(claims: dict[str, Any], namespace: str) -> list[dict[str,
 
     usable = []
     for entry in workspaces:
-        if isinstance(entry, dict) and all(
-            isinstance(entry.get(field), str) and entry[field].strip()
+        if not isinstance(entry, dict):
+            logger.warning(
+                f'Dropping workspaces claim entry: expected an object, '
+                f'got {type(entry).__name__}'
+            )
+            continue
+        # Only the field names reach the log: nothing here controls what else
+        # the Auth0 Action puts in an entry.
+        blank = [
+            field
             for field in ('schema_name', 'region')
-        ):
-            usable.append(entry)
-        else:
-            logger.warning(f'Dropping malformed workspaces claim entry: {entry!r}')
+            if not (isinstance(entry.get(field), str) and entry[field].strip())
+        ]
+        if blank:
+            logger.warning(
+                f'Dropping workspaces claim entry: {", ".join(blank)} missing or blank'
+            )
+            continue
+        usable.append(entry)
     return usable
 
 
