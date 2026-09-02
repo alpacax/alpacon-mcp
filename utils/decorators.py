@@ -238,7 +238,7 @@ def _validate_page_size(field: str, value: Any) -> dict[str, Any] | None:
         return format_validation_error(
             field,
             value,
-            'Must be a positive integer.',
+            'A positive integer.',
         )
     return None
 
