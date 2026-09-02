@@ -64,6 +64,8 @@ class TestListWorkspaces:
         assert result['region'] == 'ap1'
         assert result['data']['source'] == 'token_file'
         assert 'workspaces' in result['data']
+        # Local mode reads token.json, which the JWT claim filter never touches.
+        assert result['data']['unusable_entries'] == 0
 
         # Verify workspace data
         workspaces = result['data']['workspaces']
@@ -251,10 +253,11 @@ class TestListWorkspacesJwtMode:
     async def test_lists_the_workspaces_the_jwt_carries(self, jwt_mode):
         """The tool reads the JWT the decorator injected, not one of its own."""
         with patch(
-            'tools.workspace_tools.get_token_workspaces',
-            return_value=[
-                {'schema_name': 'acme', 'region': 'ap1', 'auth0_id': 'org_1'},
-            ],
+            'tools.workspace_tools.get_token_workspaces_with_dropped',
+            return_value=(
+                [{'schema_name': 'acme', 'region': 'ap1', 'auth0_id': 'org_1'}],
+                0,
+            ),
         ) as mock_get_workspaces:
             result = await list_workspaces()
 
@@ -273,11 +276,14 @@ class TestListWorkspacesJwtMode:
     @pytest.mark.asyncio
     async def test_region_filters_the_jwt_workspaces(self, jwt_mode):
         with patch(
-            'tools.workspace_tools.get_token_workspaces',
-            return_value=[
-                {'schema_name': 'acme', 'region': 'ap1', 'auth0_id': 'org_1'},
-                {'schema_name': 'globex', 'region': 'us1', 'auth0_id': 'org_2'},
-            ],
+            'tools.workspace_tools.get_token_workspaces_with_dropped',
+            return_value=(
+                [
+                    {'schema_name': 'acme', 'region': 'ap1', 'auth0_id': 'org_1'},
+                    {'schema_name': 'globex', 'region': 'us1', 'auth0_id': 'org_2'},
+                ],
+                0,
+            ),
         ):
             result = await list_workspaces(region='us1')
 
@@ -285,11 +291,46 @@ class TestListWorkspacesJwtMode:
         assert result['region'] == 'us1'
 
     @pytest.mark.asyncio
+    async def test_reports_the_claim_entries_it_could_not_use(self, jwt_mode):
+        """A dropped entry is invisible otherwise: only the server log names it."""
+        with patch(
+            'tools.workspace_tools.get_token_workspaces_with_dropped',
+            return_value=(
+                [{'schema_name': 'acme', 'region': 'ap1', 'auth0_id': 'org_1'}],
+                2,
+            ),
+        ):
+            result = await list_workspaces()
+
+        assert result['data']['unusable_entries'] == 2
+        assert len(result['data']['workspaces']) == 1
+
+    @pytest.mark.asyncio
+    async def test_a_region_filter_does_not_narrow_the_unusable_count(self, jwt_mode):
+        """An entry dropped for naming no region cannot be attributed to one."""
+        with patch(
+            'tools.workspace_tools.get_token_workspaces_with_dropped',
+            return_value=(
+                [
+                    {'schema_name': 'acme', 'region': 'ap1', 'auth0_id': 'org_1'},
+                    {'schema_name': 'globex', 'region': 'us1', 'auth0_id': 'org_2'},
+                ],
+                1,
+            ),
+        ):
+            result = await list_workspaces(region='us1')
+
+        assert [ws['workspace'] for ws in result['data']['workspaces']] == ['globex']
+        assert result['data']['unusable_entries'] == 1
+
+    @pytest.mark.asyncio
     async def test_missing_jwt_is_rejected_before_the_tool_runs(self):
         with (
             patch('utils.decorators.is_auth_enabled', return_value=True),
             patch('utils.decorators._get_jwt_token', return_value=None),
-            patch('tools.workspace_tools.get_token_workspaces') as mock_get_workspaces,
+            patch(
+                'tools.workspace_tools.get_token_workspaces_with_dropped'
+            ) as mock_get_workspaces,
         ):
             result = await list_workspaces()
 

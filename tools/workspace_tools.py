@@ -4,7 +4,7 @@ from http import HTTPStatus
 from typing import Any
 
 from utils.api_call import http_call_response
-from utils.auth import get_token_workspaces
+from utils.auth import get_token_workspaces_with_dropped
 from utils.common import (
     error_response,
     is_auth_enabled,
@@ -98,7 +98,7 @@ def _saas_only_security_404(
 
 
 @mcp_tool_handler(
-    description='List all available workspaces and their regions. Returns workspace names, region codes, and domain hostnames. In local mode reads from token.json; in server mode extracts from JWT claims. When to use: first tool to call to discover which workspaces are configured. Related: list_servers (find servers in a workspace). Note: Most other tools require a workspace parameter from this list.',
+    description='List all available workspaces and their regions. Returns workspace names, region codes, domain hostnames, and unusable_entries: the count of workspace claim entries left out because they name no workspace or region, which is non-zero when an Auth0 organization has no region in its metadata. In local mode reads from token.json; in server mode extracts from JWT claims. When to use: first tool to call to discover which workspaces are configured. Related: list_servers (find servers in a workspace). Note: Most other tools require a workspace parameter from this list.',
     annotations=READ_ONLY,
     meta={
         'anthropic/alwaysLoad': True,
@@ -119,12 +119,15 @@ async def list_workspaces(region: str = '', **kwargs) -> dict[str, Any]:
         region: Region filter (e.g., ap1, us1). Empty string means all regions.
 
     Returns:
-        Workspaces list response
+        Workspaces list response. `unusable_entries` counts the JWT workspace
+        claim entries that were dropped because they name no workspace or no
+        region; a region filter does not narrow it, since such an entry belongs
+        to no region. It is always 0 in local mode, which reads token.json.
     """
     # Use explicit transport mode check, not JWT presence
     if is_auth_enabled():
         token = kwargs.get('token')  # never None: the decorator rejected that
-        jwt_workspaces = get_token_workspaces(token)
+        jwt_workspaces, unusable_entries = get_token_workspaces_with_dropped(token)
         workspaces = []
         for ws in jwt_workspaces:
             ws_name = ws.get('schema_name', '')
@@ -143,6 +146,7 @@ async def list_workspaces(region: str = '', **kwargs) -> dict[str, Any]:
         return success_response(
             data={
                 'workspaces': workspaces,
+                'unusable_entries': unusable_entries,
                 'source': 'jwt',
                 'region': region or 'all',
             },
@@ -156,6 +160,7 @@ async def list_workspaces(region: str = '', **kwargs) -> dict[str, Any]:
     return success_response(
         data={
             'workspaces': workspaces,
+            'unusable_entries': 0,
             'source': 'token_file',
             'region': region or 'all',
         },

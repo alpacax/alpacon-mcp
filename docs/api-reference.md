@@ -779,6 +779,8 @@ Get list of available workspaces. Takes no `workspace`—it is how you find the 
 **Parameters:**
 - `region` (string, optional): Restrict the listing to one region; omit to list every configured region; an unknown region is rejected as a validation error, not answered with an empty list
 
+**Note:** `data.unusable_entries` counts the JWT workspace claim entries that named no workspace or no region and were therefore left out of `data.workspaces`. A non-zero count means the Auth0 organization metadata is missing a `region`, not that access was denied: such an entry authorizes nothing either way. A `region` filter does not narrow the count, since a dropped entry belongs to no region, and the count is always 0 in local mode, which reads `token.json` instead of a JWT.
+
 ### `get_current_user`
 Get the authenticated user: username, email, role, UID, shell, home directory.
 

@@ -128,6 +128,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   it from the 167 tools the decorator wraps. `health_check` keeps its raw registration, because it
   has to answer before any workspace or JWT exists, but it now returns the same error envelope
   on failure.
+- `list_workspaces` now reports `data.unusable_entries`, the number of JWT workspace claim
+  entries dropped for naming no workspace or no region (#201). The Auth0 Action that mints the
+  claim writes `region: org.metadata?.region || null` when an organization has no region in its
+  metadata, and such an entry authorizes nothing, so it is left out of `data.workspaces`. Without
+  the count the workspace simply vanished from the tool whose job is enumeration. A client that
+  reads the count can tell a short list from a complete one; it is 0 in local mode and a `region`
+  filter does not narrow it.
 - `TokenManager` now rejects a `token.json` whose top level is not a JSON object (#201). An
   array or a bare string parsed cleanly and was handed to callers that walk it as a map of
   regions, so the first `.items()` raised an `AttributeError` far from the real problem. Such a
