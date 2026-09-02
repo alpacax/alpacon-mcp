@@ -67,28 +67,31 @@ class TokenManager:
         Returns:
             Dictionary containing token data
         """
-        if self.token_file.exists():
-            try:
-                with open(self.token_file) as f:
-                    tokens = json.load(f)
-                if isinstance(tokens, dict):  # an array or scalar parses too
-                    logger.info(
-                        f'Loaded tokens from {self.token_file}: {len(tokens)} regions'
-                    )
-                    return tokens
-                logger.error(
-                    f'{self.token_file} must hold a JSON object of regions, '
-                    f'found {type(tokens).__name__}'
-                )
-            except json.JSONDecodeError as e:
-                logger.error(f'JSON decode error in {self.token_file}: {e}')
-            except OSError as e:
-                logger.error(f'IO error reading {self.token_file}: {e}')
+        if not self.token_file.exists():
+            logger.warning(
+                f'No token file at {self.token_file}, starting with empty tokens'
+            )
+            return {}
 
-        logger.warning(
-            f'No valid token file found at {self.token_file}, starting with empty tokens'
-        )
-        return {}
+        try:
+            with open(self.token_file) as f:
+                tokens = json.load(f)
+        except json.JSONDecodeError as e:
+            logger.error(f'JSON decode error in {self.token_file}: {e}')
+            return {}
+        except OSError as e:
+            logger.error(f'IO error reading {self.token_file}: {e}')
+            return {}
+
+        if not isinstance(tokens, dict):  # an array or scalar parses too
+            logger.error(
+                f'{self.token_file} must hold a JSON object of regions, '
+                f'found {type(tokens).__name__}'
+            )
+            return {}
+
+        logger.info(f'Loaded tokens from {self.token_file}: {len(tokens)} regions')
+        return tokens
 
     def _save_tokens_to_file(self, tokens: dict[str, Any], file_path: Path) -> None:
         """Save tokens to specific file.

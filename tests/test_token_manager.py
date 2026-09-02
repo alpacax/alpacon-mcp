@@ -7,6 +7,7 @@ and base URL.
 """
 
 import json
+import logging
 
 import pytest
 
@@ -45,6 +46,26 @@ class TestLoadTokens:
         tm = TokenManager(config_file=str(path))
 
         assert tm.get_all_tokens() == {}
+
+    @pytest.mark.parametrize(
+        ('content', 'cause'),
+        [
+            ('["ap1", "us1"]', 'must hold a JSON object of regions'),
+            ('{oops', 'JSON decode error'),
+        ],
+    )
+    def test_an_unusable_file_is_reported_once_by_its_own_cause(
+        self, tmp_path, caplog, content, cause
+    ):
+        """A file that was found and read must not also be reported as missing."""
+        path = tmp_path / 'token.json'
+        path.write_text(content)
+
+        with caplog.at_level(logging.WARNING):
+            TokenManager(config_file=str(path))
+
+        assert cause in caplog.text
+        assert len(caplog.records) == 1
 
 
 class TestGetTokenForms:
