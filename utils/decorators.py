@@ -323,8 +323,7 @@ def with_token_validation(func: Callable, requires_workspace: bool = True) -> Ca
                     'Authentication required. No JWT token found in request context.'
                 )
 
-        # A workspace-less tool reads an empty region as "all regions".
-        if not region and requires_workspace:
+        if not region and requires_workspace:  # workspace-less: empty means all
             if auth_enabled:
                 resolved_region, err_msg = _resolve_region_jwt(jwt_token, workspace)
             else:
@@ -388,9 +387,8 @@ def with_token_validation(func: Callable, requires_workspace: bool = True) -> Ca
                         workspace=workspace,
                     )
 
-                # MFA pre-check: verify MFA completion for actions that require it.
-                # Raises UpstreamAuthError if MFA is required but not satisfied.
-                # The ASGI middleware catches this and returns HTTP 401.
+                # Raises UpstreamAuthError when MFA is required but not done;
+                # the ASGI middleware turns that into HTTP 401.
                 await _check_mfa_requirement(func.__name__, jwt_token, workspace)
 
             extra_kwargs['token'] = jwt_token

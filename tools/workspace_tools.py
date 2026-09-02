@@ -123,8 +123,8 @@ async def list_workspaces(region: str = '', **kwargs) -> dict[str, Any]:
     """
     # Use explicit transport mode check, not JWT presence
     if is_auth_enabled():
-        # The decorator has already rejected a request with no JWT.
-        jwt_workspaces = get_token_workspaces(kwargs.get('token'))
+        token = kwargs.get('token')  # never None: the decorator rejected that
+        jwt_workspaces = get_token_workspaces(token)
         workspaces = []
         for ws in jwt_workspaces:
             ws_name = ws.get('schema_name', '')

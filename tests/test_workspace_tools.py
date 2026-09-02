@@ -211,8 +211,7 @@ class TestListWorkspaces:
         result = await list_workspaces()
 
         assert result['status'] == 'error'
-        # The prefix is what with_error_handling writes, so this fails for a
-        # body-local try/except that only invents its own message.
+        # The prefix is with_error_handling's, not a hand-written try/except.
         assert result['message'].startswith('Failed in list_workspaces:')
         assert "'list' object has no attribute 'items'" in result['message']
 

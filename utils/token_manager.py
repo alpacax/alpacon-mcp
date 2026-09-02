@@ -71,9 +71,7 @@ class TokenManager:
             try:
                 with open(self.token_file) as f:
                     tokens = json.load(f)
-                # A JSON array or scalar parses fine, and every caller then
-                # walks it as a map of regions.
-                if isinstance(tokens, dict):
+                if isinstance(tokens, dict):  # an array or scalar parses too
                     logger.info(
                         f'Loaded tokens from {self.token_file}: {len(tokens)} regions'
                     )
