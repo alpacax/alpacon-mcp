@@ -11,6 +11,7 @@ from tools.cert_tools import (
     delete_certificate_authority,
     get_certificate_authority,
 )
+from tools.server_tools import list_servers
 from tools.webftp_tools import webftp_download_file, webftp_upload_file
 from utils.decorators import _PAGINATION_FIELDS, with_token_validation
 
@@ -1071,3 +1072,15 @@ class TestPaginationValidation:
         func = _make_decorated_func(extra_params=['page_size'])
         result = await func(workspace='demo', region='ap1')
         assert result['status'] == 'success'
+
+    @pytest.mark.asyncio
+    @patch('utils.decorators.validate_token', return_value='fake-token')
+    @patch('tools.server_tools.http_client.get', new_callable=AsyncMock)
+    async def test_shipped_tool_reaches_the_gate(self, mock_get, mock_token):
+        # The tests above exercise the gate through a synthetic function. This one
+        # pins that a tool declaring a real page_size argument is routed through it.
+        mock_get.return_value = {'count': 0, 'results': []}
+        result = await list_servers(workspace='demo', region='ap1', page_size=0)
+        mock_get.assert_not_called()
+        assert result['status'] == 'error'
+        assert result['field'] == 'page_size'
