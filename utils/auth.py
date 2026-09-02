@@ -168,15 +168,13 @@ def get_token_workspaces(jwt_token: str) -> list[dict[str, str]]:
 def extract_workspaces(claims: dict[str, Any], namespace: str) -> list[dict[str, str]]:
     """Extract workspaces from JWT claims.
 
+    An entry is dropped unless it names both a workspace and a region as
+    non-blank strings: every caller walks the list as workspace dicts, so half
+    an entry either crashes one or lists a workspace with an empty name.
+
     Args:
         claims: Decoded JWT claims
         namespace: Auth0 namespace prefix (e.g. 'https://alpacon.io/')
-
-    An entry is dropped unless it names both a workspace and a region as
-    non-blank strings. Every caller walks the list as workspace dicts, and an
-    entry missing either field can neither be matched nor resolved, so keeping
-    it only lets ``list_workspaces`` report a workspace with an empty name and
-    lets a non-dict entry crash whichever caller reads it first.
 
     Returns:
         List of workspace dicts with schema_name, auth0_id, region

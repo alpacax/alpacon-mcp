@@ -233,8 +233,8 @@ class TestListWorkspaces:
 def jwt_mode():
     """Drive the tool through the decorator's remote/JWT branch.
 
-    Both modules read is_auth_enabled at call time: the decorator to decide
-    whether to inject a JWT, the tool to decide which source to list from.
+    Both modules read is_auth_enabled, so patching one leaves the other in
+    stdio mode.
     """
     with (
         patch('utils.decorators.is_auth_enabled', return_value=True),
