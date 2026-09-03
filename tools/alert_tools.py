@@ -3,6 +3,7 @@
 from typing import Any
 
 from utils.api_call import http_call_response
+from utils.common import build_list_params
 from utils.decorators import mcp_tool_handler
 from utils.error_handler import format_validation_error
 from utils.http_client import http_client
@@ -77,23 +78,16 @@ async def list_alerts(
     """
     token = kwargs.get('token')
 
-    params: dict[str, Any] = {}
-    if server_id is not None:
-        params['server'] = server_id
-    if alert_type is not None:
-        params['alert_type'] = alert_type
-    if severity is not None:
-        params['severity'] = severity
-    if server_name is not None:
-        params['server_name'] = server_name
-    if page is not None:
-        params['page'] = page
-    if page_size is not None:
-        params['page_size'] = page_size
-    if acknowledged is not None:
-        params['acknowledged'] = acknowledged
-    if dismissed is not None:
-        params['dismissed'] = dismissed
+    params = build_list_params(
+        page=page,
+        page_size=page_size,
+        server=server_id,
+        alert_type=alert_type,
+        severity=severity,
+        server_name=server_name,
+        acknowledged=acknowledged,
+        dismissed=dismissed,
+    )
 
     return await http_call_response(
         http_client.get,

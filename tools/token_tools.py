@@ -14,7 +14,7 @@ this restriction.
 from typing import Any
 
 from utils.api_call import http_call_response
-from utils.common import error_response
+from utils.common import build_list_params, error_response
 from utils.decorators import mcp_tool_handler, require_jwt_auth
 from utils.error_handler import format_validation_error, validate_server_id_format
 from utils.http_client import http_client
@@ -86,19 +86,14 @@ async def list_api_tokens(
     """
     token = kwargs.get('token')
 
-    params: dict[str, Any] = {}
-    if page is not None:
-        params['page'] = page
-    if page_size is not None:
-        params['page_size'] = page_size
-    if name is not None:
-        params['name'] = name
-    if enabled is not None:
-        params['enabled'] = enabled
-    if search is not None:
-        params['search'] = search
-    if ordering is not None:
-        params['ordering'] = ordering
+    params = build_list_params(
+        page=page,
+        page_size=page_size,
+        name=name,
+        enabled=enabled,
+        search=search,
+        ordering=ordering,
+    )
 
     return await http_call_response(
         http_client.get,

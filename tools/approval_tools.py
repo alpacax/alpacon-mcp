@@ -12,7 +12,7 @@ who approves out-of-band (Alpacon web console or Slack).
 from typing import Any
 
 from utils.api_call import http_call_response
-from utils.common import pending_approval_response
+from utils.common import build_list_params, pending_approval_response
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, READ_ONLY
@@ -49,13 +49,7 @@ async def list_approval_requests(
     """
     token = kwargs.get('token')
 
-    params: dict[str, Any] = {}
-    if status:
-        params['status'] = status
-    if page is not None:
-        params['page'] = page
-    if page_size is not None:
-        params['page_size'] = page_size
+    params = build_list_params(page=page, page_size=page_size, status=status)
 
     return await http_call_response(
         http_client.get,
@@ -186,15 +180,12 @@ async def list_sudo_policies(
     """
     token = kwargs.get('token')
 
-    params: dict[str, Any] = {}
-    if page is not None:
-        params['page'] = page
-    if page_size is not None:
-        params['page_size'] = page_size
-    if user is not None:
-        params['user'] = user
-    if server_id is not None:
-        params['server'] = server_id
+    params = build_list_params(
+        page=page,
+        page_size=page_size,
+        user=user,
+        server=server_id,
+    )
 
     return await http_call_response(
         http_client.get,
