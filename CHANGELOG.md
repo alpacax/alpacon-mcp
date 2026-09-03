@@ -124,7 +124,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   correction is the first entry under Changed.
 
 ### Fixed
-- The published input schema of the 167 tools behind `@mcp_tool_handler` no longer carries
+- The published input schema of every tool behind `@mcp_tool_handler` no longer carries
   `kwargs`, the catch-all the decorator injects the token through (#211). FastMCP did not read
   it as a catch-all and published it as a required string, so a client that sent only the
   documented arguments was rejected with a `Field required` validation error naming `kwargs`,
