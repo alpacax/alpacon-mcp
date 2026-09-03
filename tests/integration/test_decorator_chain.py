@@ -198,7 +198,10 @@ class TestPublishedSchema:
         functions = self._tool_functions()
         tools = await mcp.list_tools()
 
-        assert len(tools) > 100, f'registration looks broken: {len(tools)} tools'
+        assert len(tools) >= len(functions), (
+            f'registration looks broken: {len(tools)} tools for '
+            f'{len(functions)} decorated functions'
+        )
         unresolved = sorted(t.name for t in tools if t.name not in functions)
         assert not unresolved, f'no backing function found for: {unresolved}'
 
