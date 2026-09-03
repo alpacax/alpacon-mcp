@@ -170,6 +170,40 @@ _DEFAULT_REDIRECT_DOMAINS = tuple(
     )
 )
 
+_METADATA_PATH = '/.well-known/oauth-authorization-server'
+_AUTHORIZE_PATH = '/oauth/authorize'
+_TOKEN_PATH = '/oauth/token'
+_REGISTER_PATH = '/oauth/register'
+_CALLBACK_PATH = '/oauth/callback'
+
+_RESOURCE_URL_ENV = 'ALPACON_MCP_RESOURCE_URL'
+
+_GRANT_AUTHORIZATION_CODE = 'authorization_code'
+_GRANT_REFRESH_TOKEN = 'refresh_token'
+
+# Anything outside this list would make the endpoint a generic credential
+# exchange against the client_secret it injects.
+_ALLOWED_GRANT_TYPES = (_GRANT_AUTHORIZATION_CODE, _GRANT_REFRESH_TOKEN)
+
+_RESPONSE_TYPE_CODE = 'code'
+
+_ERROR_INVALID_REQUEST = 'invalid_request'
+_ERROR_INVALID_CLIENT = 'invalid_client'
+_ERROR_INVALID_GRANT = 'invalid_grant'
+_ERROR_UNSUPPORTED_GRANT_TYPE = 'unsupported_grant_type'
+_ERROR_SERVER_ERROR = 'server_error'
+_ERROR_INVALID_CLIENT_METADATA = 'invalid_client_metadata'
+_ERROR_INVALID_REDIRECT_URI = 'invalid_redirect_uri'
+
+_JSON_CONTENT_TYPE = 'application/json'
+_FORM_CONTENT_TYPE = 'application/x-www-form-urlencoded'
+
+_DEFAULT_AUDIENCE = 'https://alpacon.io/access/'
+_OFFLINE_ACCESS_SCOPE = 'offline_access'
+_DEFAULT_SCOPES = ('openid', 'profile', 'email', _OFFLINE_ACCESS_SCOPE)
+
+_METADATA_CACHE_SECONDS = 3600
+
 
 def _escape_for_log(value: str) -> str:
     """Escape control characters in a client-supplied value.
@@ -187,13 +221,26 @@ def _escape_for_log(value: str) -> str:
 def _get_server_url(request) -> str:
     """Build the MCP server's base URL from config or request.
 
-    Prefers ALPACON_MCP_RESOURCE_URL env var to avoid relying on
+    Prefers the ALPACON_MCP_RESOURCE_URL env var to avoid relying on
     potentially spoofable forwarding headers.
     """
-    configured_base_url = os.getenv('ALPACON_MCP_RESOURCE_URL')
+    configured_base_url = os.getenv(_RESOURCE_URL_ENV)
     if configured_base_url:
         return configured_base_url.rstrip('/')
     return f'{request.url.scheme}://{request.url.netloc}'
+
+
+def _callback_url(server_url: str) -> str:
+    """Build the callback this server hands Auth0 as redirect_uri."""
+    return f'{server_url}{_CALLBACK_PATH}'
+
+
+def _auth0_authorize_url(config: dict[str, str], params: dict) -> str:
+    return f'{config["auth0_base_url"]}/authorize?{urlencode(params)}'
+
+
+def _auth0_token_url(config: dict[str, str]) -> str:
+    return f'{config["auth0_base_url"]}/oauth/token'
 
 
 def _get_allowed_redirect_domains() -> tuple[str, ...]:
@@ -368,7 +415,7 @@ def _get_oauth_config() -> dict[str, str]:
     domain = os.getenv('AUTH0_DOMAIN', '')
     client_id = os.getenv('AUTH0_CLIENT_ID', '')
     client_secret = os.getenv('AUTH0_CLIENT_SECRET', '')
-    audience = os.getenv('AUTH0_AUDIENCE', 'https://alpacon.io/access/')
+    audience = os.getenv('AUTH0_AUDIENCE', _DEFAULT_AUDIENCE)
     mfa_audience = os.getenv('AUTH0_MFA_AUDIENCE', '')
 
     if not domain:
@@ -612,7 +659,7 @@ def _invalid_grant(what: str) -> JSONResponse:
     """The OAuth answer that makes a client start over with a fresh login."""
     return JSONResponse(
         {
-            'error': 'invalid_grant',
+            'error': _ERROR_INVALID_GRANT,
             'error_description': f'The {what} was not issued by this server',
         },
         status_code=HTTPStatus.BAD_REQUEST,
@@ -681,7 +728,7 @@ def register_oauth_routes(mcp_server):
 
     # RFC 8414 metadata is public and carries no credentials. Decorating covers
     # the 500 path too, so a misconfiguration is readable rather than a CORS error.
-    @mcp_server.custom_route('/.well-known/oauth-authorization-server', methods=['GET'])
+    @mcp_server.custom_route(_METADATA_PATH, methods=['GET'])
     @_allow_browser_clients
     async def oauth_metadata(request):
         """OAuth 2.0 Authorization Server Metadata (RFC 8414).
@@ -701,28 +748,25 @@ def register_oauth_routes(mcp_server):
 
         metadata = {
             'issuer': f'{server_url}/',
-            'authorization_endpoint': f'{server_url}/oauth/authorize',
-            'token_endpoint': f'{server_url}/oauth/token',
-            'registration_endpoint': f'{server_url}/oauth/register',
+            'authorization_endpoint': f'{server_url}{_AUTHORIZE_PATH}',
+            'token_endpoint': f'{server_url}{_TOKEN_PATH}',
+            'registration_endpoint': f'{server_url}{_REGISTER_PATH}',
             'jwks_uri': f'{config["auth0_base_url"]}/.well-known/jwks.json',
-            'response_types_supported': ['code'],
-            'grant_types_supported': [
-                'authorization_code',
-                'refresh_token',
-            ],
+            'response_types_supported': [_RESPONSE_TYPE_CODE],
+            'grant_types_supported': list(_ALLOWED_GRANT_TYPES),
             'token_endpoint_auth_methods_supported': [
                 'none',
             ],
-            'scopes_supported': ['openid', 'profile', 'email', 'offline_access'],
+            'scopes_supported': list(_DEFAULT_SCOPES),
             'code_challenge_methods_supported': [_PKCE_CHALLENGE_METHOD],
         }
 
         return JSONResponse(
             metadata,
-            headers={'Cache-Control': 'public, max-age=3600'},
+            headers={'Cache-Control': f'public, max-age={_METADATA_CACHE_SECONDS}'},
         )
 
-    @mcp_server.custom_route('/oauth/authorize', methods=['GET'])
+    @mcp_server.custom_route(_AUTHORIZE_PATH, methods=['GET'])
     async def oauth_authorize(request):
         """Redirect to Auth0's authorization endpoint.
 
@@ -748,13 +792,13 @@ def register_oauth_routes(mcp_server):
 
         # Ensure response_type is set
         if 'response_type' not in params:
-            params['response_type'] = 'code'
+            params['response_type'] = _RESPONSE_TYPE_CODE
 
         # Ensure offline_access scope is included so Auth0 issues a refresh token.
         # Without this, the MCP client cannot refresh expired access tokens.
         scope = params.get('scope', '')
-        if 'offline_access' not in scope:
-            scope = f'{scope} offline_access'.strip()
+        if _OFFLINE_ACCESS_SCOPE not in scope:
+            scope = f'{scope} {_OFFLINE_ACCESS_SCOPE}'.strip()
         # The Auth0 action keys MFA presence on the first `device:` token, so the
         # scope leaves with exactly one rather than resting on that ordering. The
         # id rides the state so the callback can seal the code under it.
@@ -786,7 +830,7 @@ def register_oauth_routes(mcp_server):
         )
         if client_redirect_uri and not _check_redirect_uri(client_redirect_uri):
             return _oauth_error(
-                'invalid_request',
+                _ERROR_INVALID_REQUEST,
                 'redirect_uri must be a loopback URL or an allowlisted '
                 'callback endpoint',
             )
@@ -795,18 +839,18 @@ def register_oauth_routes(mcp_server):
         code_challenge_method = params.get('code_challenge_method', '')
         if not code_challenge and not _is_pkce_exempt_redirect_uri(client_redirect_uri):
             return _oauth_error(
-                'invalid_request',
+                _ERROR_INVALID_REQUEST,
                 'code_challenge is required; this server accepts only '
                 f'{_PKCE_CHALLENGE_METHOD} PKCE',
             )
         if code_challenge and code_challenge_method != _PKCE_CHALLENGE_METHOD:
             return _oauth_error(
-                'invalid_request',
+                _ERROR_INVALID_REQUEST,
                 f'code_challenge_method must be {_PKCE_CHALLENGE_METHOD}',
             )
         if code_challenge and not _PKCE_CHALLENGE_PATTERN.match(code_challenge):
             return _oauth_error(
-                'invalid_request',
+                _ERROR_INVALID_REQUEST,
                 'code_challenge must be 43 to 128 characters from the '
                 'RFC 7636 unreserved set',
             )
@@ -829,10 +873,10 @@ def register_oauth_routes(mcp_server):
                 # to force MFA verification. After MFA completion, the callback
                 # handler will redirect again to the regular audience (Stage 2).
                 mfa_params = {
-                    'response_type': 'code',
+                    'response_type': _RESPONSE_TYPE_CODE,
                     'client_id': config['client_id'],
                     'audience': config['mfa_audience'],
-                    'redirect_uri': f'{server_url}/oauth/callback',
+                    'redirect_uri': _callback_url(server_url),
                     'scope': 'enroll read:authenticators',
                 }
 
@@ -860,15 +904,13 @@ def register_oauth_routes(mcp_server):
                     device_id=device_id,
                 )
 
-                auth0_url = (
-                    f'{config["auth0_base_url"]}/authorize?{urlencode(mfa_params)}'
-                )
+                auth0_url = _auth0_authorize_url(config, mfa_params)
                 logger.info(
                     'Stage 1: Redirecting to Auth0 MFA audience for MFA verification'
                 )
             else:
                 # Standard single-stage OAuth flow (no MFA required)
-                params['redirect_uri'] = f'{server_url}/oauth/callback'
+                params['redirect_uri'] = _callback_url(server_url)
                 params['state'] = _build_state(
                     client_redirect_uri,
                     original_state,
@@ -876,7 +918,7 @@ def register_oauth_routes(mcp_server):
                     device_id=device_id,
                 )
 
-                auth0_url = f'{config["auth0_base_url"]}/authorize?{urlencode(params)}'
+                auth0_url = _auth0_authorize_url(config, params)
                 logger.info('Redirecting to Auth0 authorize endpoint')
         except ValueError as e:
             return JSONResponse(
@@ -887,7 +929,7 @@ def register_oauth_routes(mcp_server):
         _set_nonce_cookie(response, nonce)
         return response
 
-    @mcp_server.custom_route('/oauth/token', methods=['POST', 'OPTIONS'])
+    @mcp_server.custom_route(_TOKEN_PATH, methods=['POST', 'OPTIONS'])
     @_allow_browser_clients
     async def oauth_token(request):
         """Proxy token exchange to Auth0.
@@ -907,21 +949,21 @@ def register_oauth_routes(mcp_server):
         body = await _read_bounded_body(request)
         if body is None:
             return _oauth_error(
-                'invalid_request',
+                _ERROR_INVALID_REQUEST,
                 'Request body is too large',
                 status=HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
             )
         content_type = request.headers.get('content-type', '')
 
-        if 'application/json' in content_type:
+        if _JSON_CONTENT_TYPE in content_type:
             try:
                 params = json.loads(body)
             except json.JSONDecodeError:
-                return _oauth_error('invalid_request', 'Invalid JSON')
+                return _oauth_error(_ERROR_INVALID_REQUEST, 'Invalid JSON')
 
             if not isinstance(params, dict):
                 return _oauth_error(
-                    'invalid_request', 'Request body must be a JSON object'
+                    _ERROR_INVALID_REQUEST, 'Request body must be a JSON object'
                 )
         else:
             # application/x-www-form-urlencoded (standard OAuth)
@@ -929,29 +971,27 @@ def register_oauth_routes(mcp_server):
                 decoded_body = body.decode('utf-8')
             except UnicodeDecodeError:
                 return _oauth_error(
-                    'invalid_request', 'Request body must be UTF-8 encoded'
+                    _ERROR_INVALID_REQUEST, 'Request body must be UTF-8 encoded'
                 )
 
             parsed = parse_qs(decoded_body)
             params = {k: v[0] for k, v in parsed.items()}
 
-        # Restrict allowed grant types to prevent credential abuse. Both unseal
-        # branches key off this value, so an absent one would skip the allow-list
-        # and the seal alike and reach Auth0 with the injected client_secret;
-        # requiring it keeps the guarantee here rather than in Auth0's parser.
-        allowed_grant_types = {'authorization_code', 'refresh_token'}
-        # A JSON body can put any type here, and an unhashable one would raise on
-        # the membership test below rather than answer 400.
+        # Both unseal branches key off grant_type, so an absent one would skip
+        # the allow-list and the seal alike and reach Auth0 with the injected
+        # client_secret; requiring it keeps the guarantee here rather than in
+        # Auth0's parser. A JSON body can put any type here, and an unhashable
+        # one would raise on the membership test below rather than answer 400.
         grant_type = params.get('grant_type', '')
         if not isinstance(grant_type, str) or not grant_type:
             return _oauth_error(
-                'invalid_request', 'grant_type must be a non-empty string'
+                _ERROR_INVALID_REQUEST, 'grant_type must be a non-empty string'
             )
-        if grant_type not in allowed_grant_types:
+        if grant_type not in _ALLOWED_GRANT_TYPES:
             return _oauth_error(
-                'unsupported_grant_type',
+                _ERROR_UNSUPPORTED_GRANT_TYPE,
                 f'Grant type "{grant_type}" is not supported. '
-                f'Allowed: {", ".join(sorted(allowed_grant_types))}',
+                f'Allowed: {", ".join(sorted(_ALLOWED_GRANT_TYPES))}',
             )
 
         # Enforce configured client_id to prevent this endpoint from
@@ -964,7 +1004,7 @@ def register_oauth_routes(mcp_server):
                 provided_client_id,
             )
             return _oauth_error(
-                'invalid_client', 'client_id is not allowed for this endpoint'
+                _ERROR_INVALID_CLIENT, 'client_id is not allowed for this endpoint'
             )
         params['client_id'] = configured_client_id
         params['client_secret'] = config['client_secret']
@@ -990,13 +1030,13 @@ def register_oauth_routes(mcp_server):
         # to /authorize, so there the field is dropped rather than set. Either
         # way a client-supplied device id never reaches Auth0, on either channel.
         sealed_device_id = ''
-        if grant_type == 'authorization_code':
+        if grant_type == _GRANT_AUTHORIZATION_CODE:
             unsealed = _unseal_code(params.get('code', ''))
             if unsealed is None:
                 return _reject_unsealed('authorization code', params.get('code'))
             params['code'], sealed_device_id = unsealed
             params.pop('device_id', None)
-        elif grant_type == 'refresh_token':
+        elif grant_type == _GRANT_REFRESH_TOKEN:
             unsealed = _unseal_refresh_token(params.get('refresh_token', ''))
             if unsealed is None:
                 return _reject_unsealed('refresh token', params.get('refresh_token'))
@@ -1007,12 +1047,12 @@ def register_oauth_routes(mcp_server):
         # Auth0 requires the redirect_uri in token exchange to match exactly.
         # Always set it for authorization_code grants since /authorize always
         # sends redirect_uri to Auth0.
-        if params.get('grant_type') == 'authorization_code':
+        if params.get('grant_type') == _GRANT_AUTHORIZATION_CODE:
             server_url = _get_server_url(request)
-            params['redirect_uri'] = f'{server_url}/oauth/callback'
+            params['redirect_uri'] = _callback_url(server_url)
 
         # Forward to Auth0
-        auth0_token_url = f'{config["auth0_base_url"]}/oauth/token'
+        auth0_token_url = _auth0_token_url(config)
         logger.info(
             'Proxying token request to Auth0 - grant_type: %s, has_refresh_token: %s',
             grant_type,
@@ -1024,7 +1064,7 @@ def register_oauth_routes(mcp_server):
                 response = await client.post(
                     auth0_token_url,
                     data=params,
-                    headers={'Content-Type': 'application/x-www-form-urlencoded'},
+                    headers={'Content-Type': _FORM_CONTENT_TYPE},
                 )
 
             try:
@@ -1034,7 +1074,7 @@ def register_oauth_routes(mcp_server):
                     f'Auth0 returned non-JSON response: {response.status_code}'
                 )
                 response_data = {
-                    'error': 'server_error',
+                    'error': _ERROR_SERVER_ERROR,
                     'error_description': 'Auth0 returned unexpected response format',
                 }
 
@@ -1093,12 +1133,12 @@ def register_oauth_routes(mcp_server):
         except httpx.HTTPError as e:
             logger.error(f'Auth0 token request failed: {e}')
             return _oauth_error(
-                'server_error',
+                _ERROR_SERVER_ERROR,
                 'Failed to communicate with Auth0',
                 status=HTTPStatus.BAD_GATEWAY,
             )
 
-    @mcp_server.custom_route('/oauth/register', methods=['POST', 'OPTIONS'])
+    @mcp_server.custom_route(_REGISTER_PATH, methods=['POST', 'OPTIONS'])
     @_allow_browser_clients
     async def oauth_register(request):
         """Dynamic Client Registration endpoint (RFC 7591).
@@ -1112,7 +1152,7 @@ def register_oauth_routes(mcp_server):
         except ValueError as e:
             logger.error(f'OAuth config error in /oauth/register: {e}')
             return _oauth_error(
-                'server_error',
+                _ERROR_SERVER_ERROR,
                 'OAuth configuration is incomplete',
                 status=HTTPStatus.INTERNAL_SERVER_ERROR,
             )
@@ -1121,20 +1161,20 @@ def register_oauth_routes(mcp_server):
         body = await _read_bounded_body(request)
         if body is None:
             return _oauth_error(
-                'invalid_client_metadata',
+                _ERROR_INVALID_CLIENT_METADATA,
                 'Request body is too large',
                 status=HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
             )
         content_type = request.headers.get('content-type', '')
 
-        if 'application/json' not in content_type:
+        if _JSON_CONTENT_TYPE not in content_type:
             return _oauth_error(
-                'invalid_request', 'Content-Type must be application/json'
+                _ERROR_INVALID_REQUEST, 'Content-Type must be application/json'
             )
 
         if not body:
             return _oauth_error(
-                'invalid_client_metadata',
+                _ERROR_INVALID_CLIENT_METADATA,
                 'Request body must be a JSON object with client metadata',
             )
 
@@ -1142,12 +1182,12 @@ def register_oauth_routes(mcp_server):
             client_metadata = json.loads(body)
         except (json.JSONDecodeError, UnicodeDecodeError):
             return _oauth_error(
-                'invalid_client_metadata', 'Request body must be valid JSON'
+                _ERROR_INVALID_CLIENT_METADATA, 'Request body must be valid JSON'
             )
 
         if not isinstance(client_metadata, dict):
             return _oauth_error(
-                'invalid_client_metadata', 'Client metadata must be a JSON object'
+                _ERROR_INVALID_CLIENT_METADATA, 'Client metadata must be a JSON object'
             )
 
         if 'redirect_uris' in client_metadata:
@@ -1155,13 +1195,13 @@ def register_oauth_routes(mcp_server):
             # The shape check comes first: _check_redirect_uri parses a str.
             if not _is_registrable_uri_list(redirect_uris):
                 return _oauth_error(
-                    'invalid_client_metadata',
+                    _ERROR_INVALID_CLIENT_METADATA,
                     'redirect_uris must be an array of 1 to '
                     f'{_MAX_REGISTERED_REDIRECT_URIS} strings',
                 )
             if not all(_check_redirect_uri(uri) for uri in redirect_uris):
                 return _oauth_error(
-                    'invalid_redirect_uri',
+                    _ERROR_INVALID_REDIRECT_URI,
                     'One or more redirect_uris are invalid or not allowed '
                     'by this server',
                 )
@@ -1190,7 +1230,7 @@ def register_oauth_routes(mcp_server):
             },
         )
 
-    @mcp_server.custom_route('/oauth/callback', methods=['GET'])
+    @mcp_server.custom_route(_CALLBACK_PATH, methods=['GET'])
     async def oauth_callback(request):
         """Handle Auth0 callback after authorization.
 
@@ -1228,14 +1268,14 @@ def register_oauth_routes(mcp_server):
             if state_data is None:
                 logger.warning('Callback rejected an invalid or expired state')
                 return _oauth_error(
-                    'invalid_request', 'Invalid or expired state parameter'
+                    _ERROR_INVALID_REQUEST, 'Invalid or expired state parameter'
                 )
             # Placed before the error branch so the gate lives in one spot; an
             # error callback carries no code, so nothing is lost by rejecting it.
             if not _nonce_cookie_matches(request, state_data):
                 logger.warning('Callback rejected a state not bound to this browser')
                 return _oauth_error(
-                    'invalid_request', 'Invalid or expired state parameter'
+                    _ERROR_INVALID_REQUEST, 'Invalid or expired state parameter'
                 )
             client_redirect_uri = state_data.get('redirect_uri', '')
             original_state = state_data.get('state', '')
@@ -1249,7 +1289,7 @@ def register_oauth_routes(mcp_server):
             if not isinstance(device_id, str) or not _is_device_id(device_id):
                 logger.warning('Callback rejected a state without a device id')
                 return _oauth_error(
-                    'invalid_request', 'Invalid or expired state parameter'
+                    _ERROR_INVALID_REQUEST, 'Invalid or expired state parameter'
                 )
 
         # Defense-in-depth: re-validate redirect_uri from state is allowed.
@@ -1275,7 +1315,7 @@ def register_oauth_routes(mcp_server):
             return _oauth_error(error, error_description)
 
         if not code:
-            return _oauth_error('invalid_request', 'Missing authorization code')
+            return _oauth_error(_ERROR_INVALID_REQUEST, 'Missing authorization code')
 
         # --- Two-stage MFA flow: Stage 1 callback ---
         if stage == _STAGE_MFA:
@@ -1299,16 +1339,16 @@ def register_oauth_routes(mcp_server):
             try:
                 async with httpx.AsyncClient(timeout=30.0) as client:
                     mfa_response = await client.post(
-                        f'{config["auth0_base_url"]}/oauth/token',
+                        _auth0_token_url(config),
                         data={
-                            'grant_type': 'authorization_code',
+                            'grant_type': _GRANT_AUTHORIZATION_CODE,
                             'code': code,
-                            'redirect_uri': f'{server_url}/oauth/callback',
+                            'redirect_uri': _callback_url(server_url),
                             'client_id': config['client_id'],
                             'client_secret': config['client_secret'],
                         },
                         headers={
-                            'Content-Type': 'application/x-www-form-urlencoded',
+                            'Content-Type': _FORM_CONTENT_TYPE,
                         },
                     )
                     # MFA token is discarded — we only need the side effect
@@ -1329,11 +1369,11 @@ def register_oauth_routes(mcp_server):
             # The Auth0 SSO session will skip the login prompt since
             # the user just authenticated (with MFA) moments ago.
             stage2_params = {
-                'response_type': 'code',
+                'response_type': _RESPONSE_TYPE_CODE,
                 'client_id': config['client_id'],
                 'audience': config['audience'],
-                'redirect_uri': f'{server_url}/oauth/callback',
-                'scope': original_scope or 'openid profile email offline_access',
+                'redirect_uri': _callback_url(server_url),
+                'scope': original_scope or ' '.join(_DEFAULT_SCOPES),
                 'state': _build_state(
                     client_redirect_uri,
                     original_state,
@@ -1357,9 +1397,7 @@ def register_oauth_routes(mcp_server):
                     if key in _ALLOWED_REPLAY_KEYS and isinstance(value, str):
                         stage2_params[key] = value
 
-            auth0_url = (
-                f'{config["auth0_base_url"]}/authorize?{urlencode(stage2_params)}'
-            )
+            auth0_url = _auth0_authorize_url(config, stage2_params)
             logger.info('Stage 2: Redirecting to Auth0 regular audience (SSO)')
             response = RedirectResponse(url=auth0_url, status_code=HTTPStatus.FOUND)
             # Stage 2 restarts the state expiry; re-set the cookie so the two
@@ -1375,7 +1413,7 @@ def register_oauth_routes(mcp_server):
         # none and would be dead on arrival at the exchange.
         if not _is_device_id(device_id):
             logger.warning('Callback rejected a code that arrived without a state')
-            return _oauth_error('invalid_request', 'Missing state parameter')
+            return _oauth_error(_ERROR_INVALID_REQUEST, 'Missing state parameter')
         try:
             code = _seal_code(code, device_id)
         except ValueError as e:
