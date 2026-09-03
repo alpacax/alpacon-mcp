@@ -84,6 +84,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and the `command`/`path` match patterns on the ACL tools must not be empty or
   whitespace-only. A client that sent any of these gets a `status: "error"` naming the field
   instead of an opaque 400 or an ACL rule built on a blank pattern.
+- `list_session_analyses`'s `status` and `risk_score`, and `list_approval_requests`'s
+  `status`, now forward an empty string to the API instead of silently dropping it (#200).
+  A client that passed `status=""` meaning "no filter" now gets whatever the server does
+  with a blank filter value, not the unfiltered list it got before.
 
 ### Removed
 - BREAKING: the invented `title` on `create_server_note` and `update_server_note`. The note
