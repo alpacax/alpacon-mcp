@@ -1,11 +1,8 @@
-"""OAuth 2.0 proxy endpoints for Auth0 integration.
+"""OAuth 2.0 proxy endpoints for Auth0.
 
-These endpoints allow MCP clients (e.g. claude.ai) to perform
-OAuth authorization code flow through this MCP server, which
-proxies requests to Auth0.
-
-All routes are registered via FastMCP's custom_route decorator,
-which bypasses MCP authentication — appropriate for OAuth flow endpoints.
+MCP clients such as claude.ai run the authorization code flow against this
+server, which proxies to Auth0. The routes go through FastMCP's custom_route,
+which bypasses MCP authentication, as OAuth endpoints must.
 """
 
 import base64
@@ -45,7 +42,7 @@ _RESPONSE_TYPE_CODE = 'code'
 _GRANT_AUTHORIZATION_CODE = 'authorization_code'
 _GRANT_REFRESH_TOKEN = 'refresh_token'
 
-# Anything outside this list would make the endpoint a generic credential
+# Anything else would turn the token endpoint into a generic credential
 # exchange against the client_secret it injects.
 _ALLOWED_GRANT_TYPES = (_GRANT_AUTHORIZATION_CODE, _GRANT_REFRESH_TOKEN)
 
@@ -66,9 +63,9 @@ _DEFAULT_SCOPES = ('openid', 'profile', 'email', _OFFLINE_ACCESS_SCOPE)
 
 _METADATA_CACHE_SECONDS = 3600
 
-# Sent on the preflight for the two endpoints a browser-based client posts to.
-# Allow-Credentials stays unset: with it, a wildcard origin would let any page
-# ride the user's ambient cookies, and neither endpoint reads a cookie anyway.
+# Preflight for the two endpoints a browser client posts to. No
+# Allow-Credentials: with a wildcard origin it would let any page ride the
+# user's cookies, and neither endpoint reads one.
 _CORS_PREFLIGHT_HEADERS = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
@@ -76,35 +73,33 @@ _CORS_PREFLIGHT_HEADERS = {
     'Access-Control-Max-Age': '3600',
 }
 
-# Both the authorize gate and the discovery document use this, so the enforced
-# and the advertised method cannot drift apart. plain is not accepted: its
-# challenge is the verifier itself, so whoever reads the authorization request
-# can replay it.
+# Shared by the authorize gate and the discovery document, so the enforced and
+# the advertised method cannot drift. plain is refused: its challenge is the
+# verifier, so anyone who reads the request can replay it.
 _PKCE_CHALLENGE_METHOD = 'S256'
 
-# RFC 7636 §4.1 fixes the shape: a base64url SHA-256 digest. Matched, never
-# normalized — the value checked here is the one forwarded upstream, and
-# trimming would break that.
+# RFC 7636 §4.1: a base64url SHA-256 digest. Matched, never normalized, since
+# the value checked here is the one forwarded upstream.
 _PKCE_CHALLENGE_PATTERN = re.compile(r'^[A-Za-z0-9\-._~]{43,128}\Z')
 
 
-# Explicit state signing key; when unset, the key is derived from the client secret.
+# Explicit state signing key; unset, it is derived from the client secret.
 _STATE_SECRET_ENV = 'ALPACON_MCP_STATE_SECRET'
 
 # Domain-separates the state key from other keys derived from the client secret.
 _STATE_SECRET_INFO = b'alpacon-mcp-oauth-state-v1'
 
-# Kept apart from the state key: a state lives ten minutes, a sealed refresh
-# token up to its Auth0 lifetime, so rotating one must not cost the other.
+# Separate from the state key: a state lives ten minutes, a sealed refresh token
+# as long as Auth0 allows, so rotating one must not cost the other.
 _GRANT_SECRET_ENV = 'ALPACON_MCP_GRANT_SECRET'
 _GRANT_SECRET_INFO = b'alpacon-mcp-oauth-grant-v1'
 
-# Matches the 32 bytes a derived key always has, so an explicit key cannot be
-# weaker than leaving the variable unset.
+# The 32 bytes a derived key always has, so an explicit key cannot be weaker
+# than none.
 _SECRET_MIN_BYTES = 32
 
-# Leads every value this server sealed, so a bare Auth0 token, which also
-# contains dots, is never mistaken for a tampered seal.
+# Marks every value this server sealed, so a bare Auth0 token, which also
+# contains dots, is never taken for a tampered seal.
 _SEALED_PREFIX = 'amcp1'
 _SEAL_KIND_CODE = 'code'
 _SEAL_KIND_REFRESH = 'refresh'
@@ -116,9 +111,8 @@ _STATE_TTL_SECONDS = 600
 _STAGE_MFA = 'mfa'
 _STAGE_REGULAR = 'regular'
 
-# Mirrors the validator in the Auth0 action's code.js. The check and its
-# consumer sit in different repos, so a value we accept but the action rejects
-# would silently fall back to the fingerprint keying this fix exists to avoid.
+# Mirrors the validator in the Auth0 action's code.js: a value accepted here but
+# rejected there would silently fall back to fingerprint keying.
 _DEVICE_ID_PATTERN = re.compile(r'^[A-Za-z0-9-]{8,64}$')
 
 
@@ -134,10 +128,10 @@ class _NonceCookieAttrs(TypedDict):
     samesite: Literal['lax', 'strict', 'none']
 
 
-# Shared by set and delete: the delete has to repeat Path, or it addresses a
-# different cookie, and Secure, or the browser rejects the whole Set-Cookie
-# under a __Host- name and the cookie survives. SameSite stays Lax because
-# Strict drops the cookie on the top-level return from Auth0.
+# Shared by set and delete: a delete without Path addresses a different cookie,
+# and one without Secure is rejected outright under a __Host- name, so the
+# cookie survives. Lax, not Strict: Strict drops the cookie on the top-level
+# return from Auth0.
 _NONCE_COOKIE_ATTRS: _NonceCookieAttrs = {
     'path': '/',
     'secure': True,
@@ -155,39 +149,38 @@ _ALLOWED_LOOPBACK_HOSTS = ('localhost', '127.0.0.1', '::1')
 # Trusting a whole domain lets an authorization code land on any path an
 # attacker can influence there, so each entry pins one callback endpoint.
 _DEFAULT_REDIRECT_URIS = (
-    # Anthropic — hosted surfaces (web, Desktop, mobile, Cowork)
+    # Anthropic: web, Desktop, mobile, Cowork
     'https://claude.ai/api/mcp/auth_callback',
     'https://claude.com/api/mcp/auth_callback',
-    # OpenAI — legacy connector callback, still served for published apps
+    # OpenAI: legacy connector callback, still served for published apps
     'https://chatgpt.com/connector_platform_oauth_redirect',
-    # Cursor — web and Cursor Agents
+    # Cursor: web and Cursor Agents
     'https://www.cursor.com/agents/mcp/oauth/callback',
-    # VS Code / GitHub Copilot — web
+    # VS Code and GitHub Copilot: web
     'https://vscode.dev/redirect/',
     'https://antigravity.google/oauth-callback',
-    # Microsoft Copilot Studio, via the Power Platform connector gateway
+    # Microsoft Copilot Studio: the Power Platform connector gateway
     'https://global.consent.azure-apim.net/redirect',
 )
 
-# OpenAI issues one opaque callback id per connector, so the last segment
-# cannot be pinned. The character class excludes "/" so no deeper path matches,
-# and \Z rather than $ so a trailing newline cannot ride along.
+# OpenAI issues one opaque callback id per connector, so the last segment cannot
+# be pinned. No "/" in the class, so no deeper path matches; \Z rather than $,
+# so a trailing newline cannot ride along.
 _DEFAULT_REDIRECT_URI_PATTERNS = (
     re.compile(r'^https://chatgpt\.com/connector/oauth/[A-Za-z0-9_-]{1,64}\Z'),
 )
 
-# The Power Platform connector Copilot Studio builds cannot send a challenge,
-# so its gateway callback may start a flow without one. Membership is redundant
-# with the allowlist today; it stays so that dropping the callback from the
-# allowlist cannot leave an exempt destination behind.
+# Copilot Studio's Power Platform connector cannot send a challenge, so its
+# gateway callback may start a flow without one. Redundant with the allowlist
+# today; kept so dropping the callback there cannot leave an exemption behind.
 _PKCE_EXEMPT_REDIRECT_URIS = frozenset(
     {'https://global.consent.azure-apim.net/redirect'}
 )
 
-# Hosts report-only mode may fall back to, derived from the endpoint list so a
-# client whose endpoint moves stays covered without a second edit.
-# chat.openai.com has no endpoint entry and stays as the legacy OpenAI host.
-# Override via ALLOWED_REDIRECT_DOMAINS (comma-separated).
+# Hosts report-only mode falls back to, derived from the endpoint list so a
+# moved endpoint stays covered without a second edit. chat.openai.com has no
+# endpoint entry and stays as the legacy OpenAI host. ALLOWED_REDIRECT_DOMAINS
+# (comma-separated) overrides the list.
 _DEFAULT_REDIRECT_DOMAINS = tuple(
     sorted(
         {host for uri in _DEFAULT_REDIRECT_URIS if (host := urlparse(uri).hostname)}
@@ -195,18 +188,17 @@ _DEFAULT_REDIRECT_DOMAINS = tuple(
     )
 )
 
-# A real client registers one or two callbacks. The cap keeps one unauthenticated
-# registration from driving a check — and in report-only mode a warning — per entry.
+# A real client registers one or two callbacks; the cap keeps one unauthenticated
+# registration from driving a check, and in report-only mode a warning, per entry.
 _MAX_REGISTERED_REDIRECT_URIS = 20
 
 
-# Both routes that read a body are unauthenticated, and a real token request or
-# client registration is well under a kilobyte. Without a cap, one request decides
-# how much the server allocates.
+# Both body-reading routes are unauthenticated and a real request is well under
+# a kilobyte; without a cap, one request decides how much the server allocates.
 _MAX_REQUEST_BODY_BYTES = 16 * 1024
 
-# Caps a client-supplied value in a log line. Escaping expands a byte up to
-# sixfold, so an unbounded value on an unauthenticated route inflates log volume.
+# Escaping expands a byte up to sixfold, so an unbounded client value on an
+# unauthenticated route inflates log volume.
 _LOG_VALUE_MAX_CHARS = 512
 
 
@@ -246,7 +238,6 @@ def _get_oauth_config() -> dict[str, str]:
     if not client_secret:
         raise ValueError('AUTH0_CLIENT_SECRET environment variable is required')
 
-    # Derive MFA audience from domain if not explicitly set
     if not mfa_audience:
         mfa_audience = f'https://{domain}/mfa/'
 
@@ -261,10 +252,9 @@ def _get_oauth_config() -> dict[str, str]:
 
 
 def _get_server_url(request) -> str:
-    """Build the MCP server's base URL from config or request.
+    """The server's base URL: ALPACON_MCP_RESOURCE_URL if set, else the request's.
 
-    Prefers the ALPACON_MCP_RESOURCE_URL env var to avoid relying on
-    potentially spoofable forwarding headers.
+    The env var takes precedence so spoofable forwarding headers are not trusted.
     """
     configured_base_url = os.getenv(_RESOURCE_URL_ENV)
     if configured_base_url:
@@ -512,10 +502,9 @@ def _clear_nonce_cookie(response: Response) -> None:
 
 
 def _get_allowed_redirect_domains() -> tuple[str, ...]:
-    """Return the set of allowed non-localhost redirect domains.
+    """Allowed non-loopback redirect hosts.
 
-    Reads from ALLOWED_REDIRECT_DOMAINS env var (comma-separated).
-    Falls back to _DEFAULT_REDIRECT_DOMAINS if not set.
+    ALLOWED_REDIRECT_DOMAINS (comma-separated) when set, else the built-in list.
     """
     env_domains = os.getenv(_ENV_ALLOWED_REDIRECT_DOMAINS, '').strip()
     if env_domains:
@@ -524,9 +513,10 @@ def _get_allowed_redirect_domains() -> tuple[str, ...]:
 
 
 def _get_allowed_redirect_uris() -> tuple[str, ...]:
-    """Return the allowed non-loopback callback endpoints.
+    """Allowed non-loopback callback endpoints.
 
-    Reads ALLOWED_REDIRECT_URIS (comma-separated full URIs) when set.
+    ALLOWED_REDIRECT_URIS (comma-separated full URIs) when set, else the built-in
+    list.
     """
     env_uris = os.getenv(_ENV_ALLOWED_REDIRECT_URIS, '').strip()
     if env_uris:
@@ -546,8 +536,8 @@ def _redirect_uri_report_only() -> bool:
 def _is_allowed_redirect_host(url: str) -> bool:
     """Whether the URL's host clears the legacy host allowlist.
 
-    https only, so an authorization code never travels over plaintext.
-    Clearing this check is not sufficient on its own — see _check_redirect_uri.
+    https only, so an authorization code never travels over plaintext. Not
+    sufficient on its own; see _check_redirect_uri.
     """
     parsed = urlparse(url)
     if parsed.scheme != 'https':
@@ -696,10 +686,10 @@ def _reject_response(exc: _OAuthRequestError) -> JSONResponse:
 def _allow_browser_clients(handler):
     """Answer the CORS preflight and mark the response readable cross-origin.
 
-    Only for endpoints a browser-based client reaches with fetch: /oauth/authorize
-    and /oauth/callback are top-level navigations, which CORS never governs.
-    Starlette ships CORSMiddleware, but custom_route takes no per-route middleware
-    and installing it app-wide would also open the MCP transport endpoint.
+    Only for endpoints a browser client reaches with fetch: /oauth/authorize and
+    /oauth/callback are top-level navigations, which CORS never governs. Starlette
+    ships CORSMiddleware, but custom_route takes no per-route middleware and
+    installing it app-wide would also open the MCP transport endpoint.
     """
 
     @wraps(handler)
@@ -716,15 +706,14 @@ def _allow_browser_clients(handler):
     return with_cors
 
 
-# RFC 8414 metadata is public and carries no credentials. Decorating covers
-# the 500 path too, so a misconfiguration is readable rather than a CORS error.
+# RFC 8414 metadata is public and carries no credentials. Decorating covers the
+# 500 path too, so a misconfiguration reads as an error, not a CORS failure.
 @_allow_browser_clients
 async def oauth_metadata(request):
-    """OAuth 2.0 Authorization Server Metadata (RFC 8414).
+    """RFC 8414 metadata naming this server as the authorization server.
 
-    Returns metadata advertising this MCP server as the OAuth
-    authorization server. The authorize, token, and register
-    endpoints proxy to Auth0; only jwks_uri points to Auth0 directly.
+    authorize, token and register proxy to Auth0; only jwks_uri points at Auth0
+    directly.
     """
     try:
         config = _get_oauth_config()
@@ -774,12 +763,11 @@ def _log_authorize_client_profile(
 def _normalize_authorize_params(request: Request, config: dict) -> tuple[dict, bool]:
     """Build the outbound Auth0 params and detect the MFA re-auth pseudo-scope.
 
-    client_id is forced so this endpoint cannot proxy an arbitrary Auth0
-    client. offline_access is added so Auth0 issues a refresh token. The
-    scope leaves with exactly one `device:` token — the Auth0 action keys
-    MFA presence on the first one — so the callback can later seal the code
-    under this grant's id. The 401 middleware asks for re-auth with an `mfa`
-    scope, which is detected here and stripped before forwarding.
+    client_id is forced so the endpoint cannot proxy an arbitrary Auth0 client, and
+    offline_access is added so Auth0 issues a refresh token. The scope leaves with
+    exactly one `device:` token, the first being what the Auth0 action reads, so the
+    callback can seal the code under this grant. The `mfa` pseudo-scope the 401
+    middleware asks for is detected and stripped.
     """
     params = dict(request.query_params)
     params['client_id'] = config['client_id']
@@ -807,11 +795,10 @@ def _normalize_authorize_params(request: Request, config: dict) -> tuple[dict, b
 def _validate_authorize_request(params: dict, client_redirect_uri: str) -> None:
     """Reject a redirect_uri or PKCE setup Auth0 must not receive.
 
-    A destination in `_PKCE_EXEMPT_REDIRECT_URIS` may start a flow with no
-    challenge, since Copilot Studio's gateway callback cannot send one; every
-    other client must present one that clears RFC 7636 and this server's
-    chosen method. An unset method is dropped rather than forwarded once no
-    code_challenge accompanies it, since nothing here inspected it.
+    Only a `_PKCE_EXEMPT_REDIRECT_URIS` destination may start a flow without a
+    challenge, since Copilot Studio's gateway cannot send one; every other client
+    needs one that clears RFC 7636 and this server's method. With no challenge the
+    method is dropped rather than forwarded uninspected.
     """
     if client_redirect_uri and not _check_redirect_uri(client_redirect_uri):
         raise _OAuthRequestError(
@@ -856,13 +843,11 @@ def _build_auth0_redirect(
 ) -> RedirectResponse:
     """Sign the state Auth0 will echo back and redirect to it.
 
-    Signing needs the OAuth config, so a malformed ALPACON_MCP_STATE_SECRET
-    raises here — on the endpoint an operator reaches before the callback —
-    rather than as a bare 500 later. An MFA-requested client goes to the MFA
-    audience first (Stage 1); the callback continues it to the regular
-    audience (Stage 2), replaying the PKCE and other authorize params carried
-    here in the state so the eventual code exchange succeeds with the
-    client's verifier.
+    A malformed ALPACON_MCP_STATE_SECRET raises here, on the endpoint an operator
+    reaches first, rather than as a bare 500 at the callback. An MFA-requested
+    client goes to the MFA audience first (stage 1); the callback continues to the
+    regular audience (stage 2), replaying the PKCE and other authorize params
+    carried in the state so the exchange succeeds with the client's verifier.
     """
     nonce = _new_nonce()
     nonce_hash = _hash_nonce(nonce)
@@ -909,11 +894,7 @@ def _build_auth0_redirect(
 
 
 async def oauth_authorize(request):
-    """Redirect to Auth0's authorization endpoint.
-
-    Proxies the OAuth authorize request to Auth0, adding the
-    configured client_id and audience.
-    """
+    """Redirect to Auth0's authorize endpoint with our client_id and audience."""
     try:
         config = _get_oauth_config()
     except ValueError as e:
@@ -951,10 +932,9 @@ async def oauth_authorize(request):
 async def _parse_token_request(request: Request) -> dict:
     """Read and decode the token request body, then validate grant_type.
 
-    grant_type gates the allow-list and the client_secret this endpoint
-    injects, so it must be present; checking it is a str first also keeps a
-    JSON body's non-string, unhashable value from raising on the allow-list
-    membership test rather than answering 400.
+    grant_type gates the allow-list and the injected client_secret, so it must be
+    present; checking it is a str first keeps a JSON body's unhashable value from
+    raising on the membership test instead of answering 400.
     """
     body = await _read_bounded_body(request)
     if body is None:
@@ -1008,14 +988,13 @@ async def _parse_token_request(request: Request) -> dict:
 
 
 def _inject_client_credentials(params: dict, config: dict) -> None:
-    """Force this endpoint's client_id/secret and drop any client device scope.
+    """Force this endpoint's client_id and secret and drop any client device scope.
 
-    A mismatched client_id would make this a generic credential exchange
-    against the injected secret, so it is rejected rather than overridden.
-    The `device:` scope is stripped so a client-supplied one cannot outrank
-    the sealed id injected after unsealing; a non-str scope from a JSON body
-    is dropped outright, and an empty result drops the key too, since
-    RFC 6749 reads an absent scope as the one the grant already carries.
+    A mismatched client_id would make this a generic credential exchange against the
+    injected secret, so it is rejected, not overridden. The `device:` scope is
+    stripped so a client-supplied one cannot outrank the sealed id injected after
+    unsealing; a non-str scope is dropped, and an empty result drops the key, since
+    RFC 6749 reads an absent scope as the grant's own.
     """
     configured_client_id = config['client_id']
     provided_client_id = params.get('client_id')
@@ -1042,12 +1021,11 @@ def _inject_client_credentials(params: dict, config: dict) -> None:
 def _unseal_grant(params: dict) -> str:
     """Unseal the code or refresh_token, binding the exchange to its grant.
 
-    An unsealed value — tampered, or issued before sealing — would let a
-    refresh happen under a key shared by every session of the user, so it
-    sends the client to a fresh login instead. A client-supplied device id
-    never reaches Auth0 on either channel: dropped here for the code grant,
-    since it already rode the scope sent to /authorize, and overwritten here
-    for the refresh grant, whose request may omit scope entirely.
+    An unsealed value, tampered or issued before sealing, would refresh under a key
+    shared by every session of the user, so the client is sent to a fresh login
+    instead. A client-supplied device id never reaches Auth0: dropped for the code
+    grant, which already sent it in the /authorize scope, and overwritten for the
+    refresh grant, which may omit scope.
     """
     grant_type = params['grant_type']
     if grant_type == _GRANT_AUTHORIZATION_CODE:
@@ -1166,12 +1144,7 @@ async def _exchange_with_auth0(
 
 @_allow_browser_clients
 async def oauth_token(request):
-    """Proxy token exchange to Auth0.
-
-    Forwards the token request to Auth0's /oauth/token endpoint.
-    Injects the configured client_id and client_secret for
-    Auth0 token exchange (confidential client / RWA).
-    """
+    """Proxy the token exchange to Auth0 with the configured client_id and secret."""
     try:
         config = _get_oauth_config()
     except ValueError as e:
@@ -1260,11 +1233,10 @@ def _validate_redirect_uris(metadata: dict) -> None:
 
 @_allow_browser_clients
 async def oauth_register(request):
-    """Dynamic Client Registration endpoint (RFC 7591).
+    """Dynamic client registration (RFC 7591).
 
-    Auth0 does not support Dynamic Client Registration on non-Enterprise
-    plans, so this endpoint returns the server's pre-configured client_id
-    to satisfy the MCP SDK's registration requirement.
+    Auth0 offers it only on Enterprise plans, so this answers with the pre-
+    configured client_id to satisfy the MCP SDK.
     """
     try:
         config = _get_oauth_config()
@@ -1319,14 +1291,12 @@ class _CallbackState:
 def _restore_callback_state(request: Request) -> _CallbackState:
     """Recover the authorize-time context from the signed state, or reject it.
 
-    An absent state is not rejected: an Auth0 error callback can arrive
-    without one, and it names no redirect target a forgery could steer.
-    Nonce-cookie binding is checked before the caller looks at `error` so the
-    gate lives in one place. A state missing its device id is rejected too,
-    since the eventual code could never be sealed without one. The
-    redirect_uri carried in the state is re-validated as defense in depth:
-    /oauth/authorize already checks it, but a forged state could name our
-    callback URL directly, bypassing that check.
+    An absent state is not rejected: an Auth0 error callback may arrive without one,
+    and it names no redirect target a forgery could steer. The nonce-cookie check
+    runs before the caller looks at `error` so the gate lives in one place. A state
+    without a device id is rejected, since the code could never be sealed. The
+    redirect_uri in the state is re-checked as defense in depth: a forged state
+    could name our callback directly.
     """
     composite_state = request.query_params.get('state')
     state = _CallbackState()
@@ -1396,13 +1366,11 @@ def _forward_auth0_error(
 async def _handle_mfa_stage1(request: Request, state: _CallbackState) -> Response:
     """Confirm MFA in the Auth0 session, then redirect to the regular audience.
 
-    The MFA code is exchanged only for its side effect on the Auth0 SSO
-    session; the token itself is discarded, so every failure here is logged
-    and ignored rather than surfaced to the client. PKCE and other Stage 1
-    client params are replayed into the Stage 2 request only from a
-    dict-shaped, allow-listed set, so a forged state cannot inject arbitrary
-    params. Stage 2 restarts the state's expiry, so the nonce cookie is
-    re-set to match.
+    The MFA code is exchanged only for its effect on the Auth0 SSO session; the
+    token is discarded, so every failure here is logged, not surfaced. Stage 1
+    client params are replayed into stage 2 only from a dict-shaped, allow-listed
+    set, so a forged state cannot inject params. Stage 2 restarts the state's
+    expiry, so the nonce cookie is re-set to match.
     """
     logger.info(
         'Stage 1 complete: MFA authorization code received, '
@@ -1478,9 +1446,8 @@ async def _handle_mfa_stage1(request: Request, state: _CallbackState) -> Respons
 def _deliver_code(code: str, state: _CallbackState) -> Response:
     """Seal the code to this grant's device id and hand it back to the client.
 
-    A code that arrived without a state has no device id to seal it under,
-    and would be dead on arrival at the token exchange, so it is rejected
-    here instead.
+    A code that arrived without a state has no device id to seal under and would die
+    at the token exchange, so it is rejected here.
     """
     if not _is_device_id(state.device_id):
         logger.warning('Callback rejected a code that arrived without a state')
@@ -1512,12 +1479,10 @@ def _deliver_code(code: str, state: _CallbackState) -> Response:
 
 
 async def oauth_callback(request):
-    """Handle Auth0 callback after authorization.
+    """Handle the Auth0 callback.
 
-    Supports two-stage MFA flow:
-    - Stage 'mfa': MFA completed, exchange code then redirect to
-      regular audience (Stage 2) using Auth0 SSO session.
-    - Stage 'regular' or absent: forward code to MCP client.
+    In the MFA stage, exchange the code and redirect to the regular audience;
+    otherwise forward the code to the MCP client.
     """
     code = request.query_params.get('code')
     error = request.query_params.get('error')
@@ -1552,10 +1517,8 @@ async def oauth_callback(request):
 async def oauth_token_fallback(request):
     """Fallback token endpoint at /token.
 
-    MCP SDK clients fall back to /token (instead of /oauth/token) when
-    oauth_metadata is not cached — e.g. after a client restart that
-    still has a stored refresh_token but lost the server metadata.
-    Delegating to the canonical handler avoids a silent 404.
+    MCP SDK clients fall back to /token when the metadata is not cached, e.g. after
+    a restart that kept a refresh_token; delegating avoids a silent 404.
     """
     if request.method != 'OPTIONS':
         logger.info('/token fallback hit — delegating to /oauth/token handler')
@@ -1563,40 +1526,28 @@ async def oauth_token_fallback(request):
 
 
 async def oauth_authorize_fallback(request):
-    """Fallback authorize endpoint at /authorize.
-
-    MCP SDK clients fall back to /authorize when oauth_metadata
-    is not cached.
-    """
+    """Fallback at /authorize for MCP SDK clients without cached metadata."""
     logger.info('/authorize fallback hit — delegating to /oauth/authorize handler')
     return await oauth_authorize(request)
 
 
 async def oauth_register_fallback(request):
-    """Fallback register endpoint at /register.
-
-    MCP SDK clients fall back to /register when oauth_metadata
-    is not cached.
-    """
+    """Fallback at /register for MCP SDK clients without cached metadata."""
     if request.method != 'OPTIONS':
         logger.info('/register fallback hit — delegating to /oauth/register handler')
     return await oauth_register(request)
 
 
 def register_oauth_routes(mcp_server):
-    """Register OAuth proxy routes on the FastMCP server.
+    """Register the OAuth proxy routes on the FastMCP server.
 
-    Args:
-        mcp_server: FastMCP server instance
-
-    Raises:
-        ValueError: ALPACON_MCP_STATE_SECRET or ALPACON_MCP_GRANT_SECRET is set
-            to a malformed value.
+    Raises ValueError when ALPACON_MCP_STATE_SECRET or ALPACON_MCP_GRANT_SECRET is
+    set to a malformed value.
     """
-    # A malformed key otherwise surfaces on the first user's OAuth request,
-    # long after the deployment reported success. Only the explicit keys are
-    # checked: the derived path needs OAuth config, and deployments that run
-    # without it have to keep starting.
+    # A malformed key would otherwise surface on the first user's OAuth request,
+    # long after the deployment reported success. Only explicit keys are checked:
+    # deriving one needs OAuth config, and deployments without it must keep
+    # starting.
     if os.getenv(_STATE_SECRET_ENV):
         _get_state_secret()
     if os.getenv(_GRANT_SECRET_ENV):
