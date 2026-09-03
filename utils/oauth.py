@@ -471,7 +471,7 @@ def _log_unsealed_rejection(what: str, value: object) -> None:
         logger.info('Rejected an unsealed %s', what)
 
 
-def _new_nonce() -> str:
+def _mint_nonce() -> str:
     """Mint the per-flow value that proves a callback reached the same browser."""
     return secrets.token_urlsafe(32)
 
@@ -524,11 +524,11 @@ def _get_allowed_redirect_uris() -> tuple[str, ...]:
     return _DEFAULT_REDIRECT_URIS
 
 
-def _redirect_uris_are_overridden() -> bool:
+def _has_redirect_uri_override() -> bool:
     return bool(os.getenv(_ENV_ALLOWED_REDIRECT_URIS, '').strip())
 
 
-def _redirect_uri_report_only() -> bool:
+def _is_redirect_uri_report_only() -> bool:
     """Escape hatch: recover from a missing allowlist entry without a code change."""
     return os.getenv(_ENV_REDIRECT_URI_REPORT_ONLY, '').lower() == 'true'
 
@@ -537,7 +537,7 @@ def _is_allowed_redirect_host(url: str) -> bool:
     """Whether the URL's host clears the legacy host allowlist.
 
     https only, so an authorization code never travels over plaintext. Not
-    sufficient on its own; see _check_redirect_uri.
+    sufficient on its own; see _is_allowed_redirect_uri.
     """
     parsed = urlparse(url)
     if parsed.scheme != 'https':
@@ -561,7 +561,7 @@ def _is_exact_allowed_redirect_uri(url: str) -> bool:
 
     # An override is the whole allowlist: the built-in patterns go out with the
     # built-in URIs, so narrowing the list cannot leave one behind.
-    if _redirect_uris_are_overridden():
+    if _has_redirect_uri_override():
         return False
 
     return any(pattern.match(url) for pattern in _DEFAULT_REDIRECT_URI_PATTERNS)
@@ -570,14 +570,14 @@ def _is_exact_allowed_redirect_uri(url: str) -> bool:
 def _is_pkce_exempt_redirect_uri(url: str) -> bool:
     """Whether a destination may start an authorization flow with no PKCE.
 
-    Goes through _is_exact_allowed_redirect_uri, not _check_redirect_uri: the
+    Goes through _is_exact_allowed_redirect_uri, not _is_allowed_redirect_uri: the
     latter accepts any path on an allowlisted host in report-only mode, which
     would let an unrelated environment variable widen the exemption.
     """
     return url in _PKCE_EXEMPT_REDIRECT_URIS and _is_exact_allowed_redirect_uri(url)
 
 
-def _check_redirect_uri(url: str) -> bool:
+def _is_allowed_redirect_uri(url: str) -> bool:
     """Decide whether a client redirect_uri may receive an authorization code.
 
     Loopback is exempt: callback paths differ per client (/callback,
@@ -596,7 +596,7 @@ def _check_redirect_uri(url: str) -> bool:
     if not _is_allowed_redirect_host(url):
         return False
 
-    if _redirect_uri_report_only():
+    if _is_redirect_uri_report_only():
         logger.warning(
             'redirect_uri is outside the endpoint allowlist and is allowed only '
             'because report-only mode is on: %s',
@@ -662,7 +662,7 @@ async def _read_bounded_body(request: Request) -> bytes | None:
     return b''.join(chunks)
 
 
-def _oauth_error(
+def _oauth_error_response(
     error: str,
     description: str,
     status: HTTPStatus = HTTPStatus.BAD_REQUEST,
@@ -677,7 +677,7 @@ def _reject_response(exc: _OAuthRequestError) -> JSONResponse:
     if exc.description is None:
         response = JSONResponse({'error': exc.error}, status_code=exc.status)
     else:
-        response = _oauth_error(exc.error, exc.description, status=exc.status)
+        response = _oauth_error_response(exc.error, exc.description, status=exc.status)
     if exc.headers:
         response.headers.update(exc.headers)
     return response
@@ -745,9 +745,7 @@ async def oauth_metadata(request):
     )
 
 
-def _log_authorize_client_profile(
-    redirect_uri: str, code_challenge_method: str
-) -> None:
+def _probe_pkce_exemption_usage(redirect_uri: str, code_challenge_method: str) -> None:
     """Record what each client sends, to settle who reaches the exempt callback.
 
     Remove once no client uses the PKCE-exempt redirect_uri and no deployment
@@ -800,7 +798,7 @@ def _validate_authorize_request(params: dict, client_redirect_uri: str) -> None:
     needs one that clears RFC 7636 and this server's method. With no challenge the
     method is dropped rather than forwarded uninspected.
     """
-    if client_redirect_uri and not _check_redirect_uri(client_redirect_uri):
+    if client_redirect_uri and not _is_allowed_redirect_uri(client_redirect_uri):
         raise _OAuthRequestError(
             HTTPStatus.BAD_REQUEST,
             _ERROR_INVALID_REQUEST,
@@ -849,7 +847,7 @@ def _build_auth0_redirect(
     regular audience (stage 2), replaying the PKCE and other authorize params
     carried in the state so the exchange succeeds with the client's verifier.
     """
-    nonce = _new_nonce()
+    nonce = _mint_nonce()
     nonce_hash = _hash_nonce(nonce)
     device_id = _client_device_id(params['scope'])
 
@@ -905,7 +903,7 @@ async def oauth_authorize(request):
     params, mfa_requested = _normalize_authorize_params(request, config)
     client_redirect_uri = params.get('redirect_uri', '')
     original_state = params.get('state', '')
-    _log_authorize_client_profile(
+    _probe_pkce_exemption_usage(
         client_redirect_uri, params.get('code_challenge_method', '')
     )
 
@@ -1018,7 +1016,7 @@ def _inject_client_credentials(params: dict, config: dict) -> None:
             params['scope'] = stripped
 
 
-def _unseal_grant(params: dict) -> str:
+def _replace_sealed_grant(params: dict) -> str:
     """Unseal the code or refresh_token, binding the exchange to its grant.
 
     An unsealed value, tampered or issued before sealing, would refresh under a key
@@ -1135,7 +1133,7 @@ async def _exchange_with_auth0(
         )
     except httpx.HTTPError as e:
         logger.error(f'Auth0 token request failed: {e}')
-        return _oauth_error(
+        return _oauth_error_response(
             _ERROR_SERVER_ERROR,
             'Failed to communicate with Auth0',
             status=HTTPStatus.BAD_GATEWAY,
@@ -1155,7 +1153,7 @@ async def oauth_token(request):
     try:
         params = await _parse_token_request(request)
         _inject_client_credentials(params, config)
-        sealed_device_id = _unseal_grant(params)
+        sealed_device_id = _replace_sealed_grant(params)
     except _OAuthRequestError as e:
         return _reject_response(e)
 
@@ -1210,7 +1208,7 @@ async def _parse_client_metadata(request: Request) -> dict:
 def _validate_redirect_uris(metadata: dict) -> None:
     """Reject redirect_uris that are malformed or outside the allowlist.
 
-    The shape check runs first: _check_redirect_uri parses each entry as a
+    The shape check runs first: _is_allowed_redirect_uri parses each entry as a
     URL string.
     """
     if 'redirect_uris' not in metadata:
@@ -1223,7 +1221,7 @@ def _validate_redirect_uris(metadata: dict) -> None:
             'redirect_uris must be an array of 1 to '
             f'{_MAX_REGISTERED_REDIRECT_URIS} strings',
         )
-    if not all(_check_redirect_uri(uri) for uri in redirect_uris):
+    if not all(_is_allowed_redirect_uri(uri) for uri in redirect_uris):
         raise _OAuthRequestError(
             HTTPStatus.BAD_REQUEST,
             _ERROR_INVALID_REDIRECT_URI,
@@ -1242,7 +1240,7 @@ async def oauth_register(request):
         config = _get_oauth_config()
     except ValueError as e:
         logger.error(f'OAuth config error in /oauth/register: {e}')
-        return _oauth_error(
+        return _oauth_error_response(
             _ERROR_SERVER_ERROR,
             'OAuth configuration is incomplete',
             status=HTTPStatus.INTERNAL_SERVER_ERROR,
@@ -1337,7 +1335,9 @@ def _restore_callback_state(request: Request) -> _CallbackState:
             'Invalid or expired state parameter',
         )
 
-    if state.client_redirect_uri and not _check_redirect_uri(state.client_redirect_uri):
+    if state.client_redirect_uri and not _is_allowed_redirect_uri(
+        state.client_redirect_uri
+    ):
         logger.warning(
             'Callback rejected untrusted redirect_uri from state: %s',
             _escape_for_log(state.client_redirect_uri),
@@ -1360,7 +1360,7 @@ def _forward_auth0_error(
             url=_build_redirect_url(client_redirect_uri, params),
             status_code=HTTPStatus.FOUND,
         )
-    return _oauth_error(error, error_description)
+    return _oauth_error_response(error, error_description)
 
 
 async def _handle_mfa_stage1(request: Request, state: _CallbackState) -> Response:
@@ -1569,8 +1569,8 @@ def register_oauth_routes(mcp_server):
     # a deployment running it is configured, not misconfigured.
     domains_only = (
         os.getenv(_ENV_ALLOWED_REDIRECT_DOMAINS, '').strip()
-        and not _redirect_uris_are_overridden()
-        and not _redirect_uri_report_only()
+        and not _has_redirect_uri_override()
+        and not _is_redirect_uri_report_only()
     )
     if domains_only:
         logger.warning(

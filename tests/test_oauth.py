@@ -51,16 +51,16 @@ from utils.oauth import (
     _STATE_TTL_SECONDS,
     _TOKEN_PATH,
     _build_state,
-    _check_redirect_uri,
     _escape_for_log,
     _get_allowed_redirect_uris,
     _get_grant_secret,
     _get_state_secret,
     _hash_nonce,
+    _is_allowed_redirect_uri,
     _is_exact_allowed_redirect_uri,
     _is_pkce_exempt_redirect_uri,
     _mint_device_id,
-    _new_nonce,
+    _mint_nonce,
     _seal_code,
     _seal_refresh_token,
     _sign_state,
@@ -369,27 +369,27 @@ class TestRedirectUriGate:
     """Tests for the redirect_uri endpoint gate."""
 
     def test_rejects_untracked_path_by_default(self):
-        assert not _check_redirect_uri(UNLISTED_PATH_URI)
+        assert not _is_allowed_redirect_uri(UNLISTED_PATH_URI)
 
     def test_allows_listed_endpoint(self):
-        assert _check_redirect_uri(LISTED_REDIRECT_URI)
+        assert _is_allowed_redirect_uri(LISTED_REDIRECT_URI)
 
     def test_every_default_endpoint_passes_the_gate(self):
         """A listed endpoint must not be blocked by the legacy host allowlist."""
 
         for uri in _get_allowed_redirect_uris():
-            assert _check_redirect_uri(uri), uri
-        assert _check_redirect_uri(CONNECTOR_REDIRECT_URI)
+            assert _is_allowed_redirect_uri(uri), uri
+        assert _is_allowed_redirect_uri(CONNECTOR_REDIRECT_URI)
 
     def test_keeps_every_loopback_path(self):
-        assert _check_redirect_uri('http://localhost:1234/callback')
-        assert _check_redirect_uri('http://localhost:1234/oauth/callback')
-        assert _check_redirect_uri('http://127.0.0.1:33418/')
+        assert _is_allowed_redirect_uri('http://localhost:1234/callback')
+        assert _is_allowed_redirect_uri('http://localhost:1234/oauth/callback')
+        assert _is_allowed_redirect_uri('http://127.0.0.1:33418/')
 
     def test_untrusted_domain_is_rejected_in_either_mode(self):
-        assert not _check_redirect_uri('https://evil.com/cb')
+        assert not _is_allowed_redirect_uri('https://evil.com/cb')
         with patch.dict('os.environ', REPORT_ONLY):
-            assert not _check_redirect_uri('https://evil.com/cb')
+            assert not _is_allowed_redirect_uri('https://evil.com/cb')
 
     def test_report_only_covers_every_built_in_client_host(self):
         """The escape hatch is useless on a host whose endpoint it cannot reach."""
@@ -397,12 +397,12 @@ class TestRedirectUriGate:
         with patch.dict('os.environ', REPORT_ONLY):
             for uri in _get_allowed_redirect_uris():
                 moved = uri.rstrip('/') + '/moved'
-                assert _check_redirect_uri(moved), moved
+                assert _is_allowed_redirect_uri(moved), moved
 
     def test_report_only_allows_untracked_path_with_a_warning(self, caplog):
         with patch.dict('os.environ', REPORT_ONLY):
             with caplog.at_level('WARNING'):
-                assert _check_redirect_uri(UNLISTED_PATH_URI)
+                assert _is_allowed_redirect_uri(UNLISTED_PATH_URI)
         assert 'report-only' in caplog.text
 
 
@@ -614,11 +614,11 @@ class TestSealedGrants:
 class TestNonceHelpers:
     """Tests for the per-flow nonce that binds a state to one browser."""
 
-    def test_new_nonce_differs_every_call(self):
-        assert _new_nonce() != _new_nonce()
+    def test_mint_nonce_differs_every_call(self):
+        assert _mint_nonce() != _mint_nonce()
 
-    def test_new_nonce_is_long_enough_to_resist_guessing(self):
-        assert len(_new_nonce()) >= 32
+    def test_mint_nonce_is_long_enough_to_resist_guessing(self):
+        assert len(_mint_nonce()) >= 32
 
     def test_hash_nonce_is_stable_for_the_same_input(self):
         assert _hash_nonce('abc') == _hash_nonce('abc')
