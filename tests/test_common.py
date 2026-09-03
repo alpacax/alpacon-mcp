@@ -9,6 +9,7 @@ from utils.common import (
     _NEXT_ACTION_BY_CATEGORY,
     _WORK_SESSION_GATE_CODES,
     _WORK_SESSION_GATE_NEXT_ACTION,
+    build_list_params,
     resolve_work_session_id,
     unwrap_http_result,
     work_session_gate_response,
@@ -210,3 +211,31 @@ class TestResolveWorkSessionId:
     def test_whitespace_only_explicit_falls_back_to_env(self, monkeypatch):
         monkeypatch.setenv('ALPACON_WORK_SESSION', 'from-env')
         assert resolve_work_session_id('   ') == 'from-env'
+
+
+class TestBuildListParams:
+    """One rule for an omitted value, so no list tool re-derives its own."""
+
+    def test_omitted_arguments_are_dropped(self):
+        assert build_list_params() == {}
+
+    def test_pagination_is_forwarded(self):
+        assert build_list_params(page=2, page_size=50) == {'page': 2, 'page_size': 50}
+
+    def test_filters_keep_the_api_field_name(self):
+        assert build_list_params(server='srv-1', status='pending') == {
+            'server': 'srv-1',
+            'status': 'pending',
+        }
+
+    def test_none_filter_is_dropped_while_its_siblings_stay(self):
+        assert build_list_params(page=1, server=None, status='failed') == {
+            'page': 1,
+            'status': 'failed',
+        }
+
+    @pytest.mark.parametrize('value', [False, 0, '', []])
+    def test_falsy_but_supplied_values_are_forwarded(self, value):
+        # A truthiness check would drop each of these, turning a filter the
+        # caller asked for into an unfiltered listing.
+        assert build_list_params(acknowledged=value) == {'acknowledged': value}

@@ -178,6 +178,30 @@ def resolve_work_session_id(explicit: str | None) -> str | None:
     )
 
 
+def build_list_params(
+    page: int | None = None,
+    page_size: int | None = None,
+    **filters: Any,
+) -> dict[str, Any]:
+    """Assemble the query params of a list endpoint from its optional arguments.
+
+    One rule decides every field: a value is omitted only when it is None. A
+    truthiness check would instead swallow a filter the caller meant, such as
+    ``acknowledged=False`` or a numeric ``0``.
+
+    Args:
+        page: Page number
+        page_size: Number of items per page
+        **filters: Filter values keyed by the name the API expects, which is
+            not always the tool argument's name (``server=server_id``)
+
+    Returns:
+        Query params carrying only the arguments that were supplied
+    """
+    supplied = {'page': page, 'page_size': page_size, **filters}
+    return {name: value for name, value in supplied.items() if value is not None}
+
+
 def error_response(message: str, **kwargs) -> dict[str, Any]:
     """Create standardized error response.
 

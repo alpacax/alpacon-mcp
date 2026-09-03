@@ -142,3 +142,26 @@ async def test_http_error_returns_error(
     result = await func(workspace='test-ws', region='ap1', **kwargs)
 
     assert result['status'] == 'error'
+
+
+class TestListSessionAnalysesFilterRule:
+    @pytest.mark.asyncio
+    async def test_supplied_but_falsy_filters_are_forwarded(
+        self, mock_http_client, mock_token_manager
+    ):
+        """A supplied filter reaches the server even when it is falsy.
+
+        Dropping it here would silently widen the listing to every session
+        instead of letting the server reject the value the caller passed.
+        """
+        mock_http_client.get.return_value = {'results': []}
+
+        result = await list_session_analyses(
+            workspace='test-ws', region='ap1', status='', risk_score=''
+        )
+
+        assert result['status'] == 'success'
+        assert mock_http_client.get.call_args.kwargs['params'] == {
+            'status': '',
+            'risk_score': '',
+        }
