@@ -59,7 +59,13 @@ Things the code will not tell you at a glance:
   `requires_workspace=False` is for a tool that answers before a workspace is
   known: it drops the workspace checks, the workspace-keyed region resolution,
   the JWT workspace authorization, the MFA pre-check, and the stdio token
-  injection. `list_workspaces` is the only tool using it. `health_check` sits
+  injection. `list_workspaces` is the only tool using it. The decorator also
+  rewrites the published signature, dropping the `**kwargs` it injects the token
+  into: FastMCP reads that catch-all as an ordinary required field and would
+  publish it to clients (#211). Two rules follow: a tool must declare `**kwargs`
+  or decoration raises, and no tool may forward its own `**kwargs` on to another
+  tool, because `with_logging` binds the published signature strictly and the
+  injected token is no longer a parameter it accepts. `health_check` sits
   outside the decorator entirely because it must answer before any JWT exists,
   and borrows `@with_error_handling` alone for the error shape.
 - **`AlpaconHTTPClient` never caches a response, deliberately.** Every read worth
