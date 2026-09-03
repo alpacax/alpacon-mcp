@@ -4,13 +4,17 @@ Tests the full decorator stack: with_logging -> with_token_validation -> with_er
 Uses MockTransport at the httpx transport layer so the real HTTP client code runs.
 """
 
+import importlib
+import inspect
 import logging
+from collections.abc import Callable
 from http import HTTPStatus
 from unittest.mock import patch
 
 import httpx
 import pytest
 
+from server import ALL_TOOL_MODULES, ALWAYS_ON_MODULES, TOOLS_PACKAGE, mcp
 from tools.server_tools import get_server, list_servers
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
@@ -168,3 +172,97 @@ class TestLoggingDecorator:
         assert entry_logged, (
             f'Expected entry log even for invalid input, got: {log_messages}'
         )
+
+
+class TestPublishedSchema:
+    """Every test above awaits the coroutine directly and never reaches the
+    pydantic validation FastMCP puts in front of it. These go through ``mcp``.
+    """
+
+    @staticmethod
+    def _tool_functions() -> dict[str, Callable]:
+        """Import every toolset and return the decorated tools by name.
+
+        Registration is an import-time side effect on the process-global ``mcp``,
+        so this widens ``list_tools()`` for whatever test runs next.
+        """
+        functions: dict[str, Callable] = {}
+        for module in sorted(ALL_TOOL_MODULES | ALWAYS_ON_MODULES):
+            imported = importlib.import_module(f'{TOOLS_PACKAGE}.{module}')
+            for name, attr in vars(imported).items():
+                if inspect.iscoroutinefunction(attr) and hasattr(attr, '__wrapped__'):
+                    functions[name] = attr
+        return functions
+
+    async def test_no_tool_publishes_a_catch_all_parameter(self):
+        functions = self._tool_functions()
+        tools = await mcp.list_tools()
+
+        assert len(tools) >= len(functions), (
+            f'registration looks broken: {len(tools)} tools for '
+            f'{len(functions)} decorated functions'
+        )
+        unresolved = sorted(t.name for t in tools if t.name not in functions)
+        assert not unresolved, f'no backing function found for: {unresolved}'
+
+        leaking = {}
+        for tool in tools:
+            signature = inspect.signature(inspect.unwrap(functions[tool.name]))
+            catch_alls = {
+                p.name
+                for p in signature.parameters.values()
+                if p.kind is inspect.Parameter.VAR_KEYWORD
+            }
+            published = catch_alls & set(tool.inputSchema.get('properties', {}))
+            if published:
+                leaking[tool.name] = sorted(published)
+
+        assert not leaking, (
+            f'These publish the token-injection catch-all as a client-facing '
+            f'field: {leaking}'
+        )
+
+    async def test_the_documented_arguments_survive_the_filter(self):
+        self._tool_functions()
+        schemas = {t.name: t.inputSchema for t in await mcp.list_tools()}
+
+        assert set(schemas['list_servers']['properties']) == {
+            'workspace',
+            'region',
+            'page',
+            'page_size',
+        }
+        assert schemas['list_servers']['required'] == ['workspace']
+        # kwargs was the only required field list_workspaces had, so the whole
+        # key is gone from its schema rather than just the one entry.
+        assert set(schemas['list_workspaces']['properties']) == {'region'}
+        assert 'required' not in schemas['list_workspaces']
+
+    async def test_call_tool_takes_the_documented_arguments_alone(
+        self, patched_http_client, mock_token_for_integration, sample_api_responses
+    ):
+        servers_payload = sample_api_responses()['servers_list']
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(HTTPStatus.OK, json=servers_payload)
+
+        patched_http_client.set_handler(handler)
+
+        _, structured = await mcp.call_tool(
+            'list_servers', {'workspace': 'testworkspace', 'region': 'ap1'}
+        )
+        assert structured['status'] == 'success'
+
+        # The workaround the broken schema forced on clients still goes through:
+        # FastMCP's argument model leaves pydantic's extra='ignore' in place.
+        _, with_workaround = await mcp.call_tool(
+            'list_servers',
+            {'workspace': 'testworkspace', 'region': 'ap1', 'kwargs': ''},
+        )
+        assert with_workaround['status'] == 'success'
+
+    async def test_call_tool_with_no_arguments(self):
+        """The shape #211 was reported as: list_workspaces has no required field."""
+        _, structured = await mcp.call_tool('list_workspaces', {})
+
+        assert structured['status'] == 'success'

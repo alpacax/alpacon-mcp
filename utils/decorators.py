@@ -43,7 +43,9 @@ logger = get_logger('decorators')
 
 _SPECIFY_REGION_HINT = 'Please specify a region parameter.'
 
-_SENSITIVE_LOG_KEYS = frozenset({'_token', 'password', 'secret', 'key'})
+# Forward cover: with_logging binds the published signature, so this only bites
+# once a tool documents one of these names as its own parameter.
+_SENSITIVE_LOG_KEYS = frozenset({'token', 'password', 'secret', 'key'})
 
 # RFC 3986 unreserved characters—nothing in this set can restructure a URL.
 # Wide enough in practice: every identifier upstream mints is a UUID or an
@@ -291,17 +293,27 @@ def with_token_validation(func: Callable, requires_workspace: bool = True) -> Ca
         requires_workspace: False for a tool that answers before a workspace is known
 
     Returns:
-        Decorated async function with modified signature (removes _token parameter)
+        Decorated async function whose published signature drops the **kwargs
+        catch-all, so it never reaches the schema FastMCP publishes
     """
+    original_sig = inspect.signature(func)
+    catch_all = next(
+        (
+            p.name
+            for p in original_sig.parameters.values()
+            if p.kind is inspect.Parameter.VAR_KEYWORD
+        ),
+        None,
+    )
+    if catch_all is None:
+        raise TypeError(
+            f'{func.__name__} declares no **kwargs, so there is nowhere to inject '
+            'the token'
+        )
 
     @wraps(func)
     async def wrapper(*args, **kwargs):
-        # Remove _token from kwargs if present (MCP doesn't allow _ prefix)
-        kwargs.pop('_token', None)
-
-        # Get function signature
-        sig = inspect.signature(func)
-        bound_args = sig.bind_partial(*args, **kwargs)
+        bound_args = original_sig.bind_partial(*args, **kwargs)
         bound_args.apply_defaults()
         arguments = bound_args.arguments
 
@@ -386,8 +398,7 @@ def with_token_validation(func: Callable, requires_workspace: bool = True) -> Ca
             if page_size_error:
                 return page_size_error
 
-        # Get the **kwargs dict from bound arguments to inject token
-        extra_kwargs = bound_args.arguments.get('kwargs', {})
+        extra_kwargs = bound_args.arguments.get(catch_all, {})
 
         if auth_enabled:
             # Streamable-HTTP mode — JWT auth only
@@ -411,15 +422,15 @@ def with_token_validation(func: Callable, requires_workspace: bool = True) -> Ca
                 return token_error_response(region, workspace)
             extra_kwargs['token'] = token
 
-        bound_args.arguments['kwargs'] = extra_kwargs
+        bound_args.arguments[catch_all] = extra_kwargs
 
         # Call the original function using bound_args to handle
         # both positional and keyword region correctly
         return await func(*bound_args.args, **bound_args.kwargs)
 
-    # Remove _token parameter from the wrapper signature
-    original_sig = inspect.signature(func)
-    new_params = [p for p in original_sig.parameters.values() if p.name != '_token']
+    # FastMCP publishes a VAR_KEYWORD as a required field, not a catch-all. This is
+    # also what with_logging binds strictly: no caller may forward the token onward.
+    new_params = [p for p in original_sig.parameters.values() if p.name != catch_all]
     wrapper.__signature__ = original_sig.replace(parameters=new_params)  # type: ignore[attr-defined]
 
     return wrapper

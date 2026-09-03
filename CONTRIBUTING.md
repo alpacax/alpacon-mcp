@@ -238,6 +238,8 @@ async def test_list_servers_success():
        )
    ```
 
+   **`**kwargs` is mandatory**: it is where the decorator injects the token, and a tool that omits it fails decoration with a `TypeError` at import time. It never reaches the published input schema—the decorator strips the catch-all from the signature FastMCP reads, because FastMCP would publish it as a required string field. For the same reason, never forward your own `**kwargs` on to another decorated tool: the published signature has no catch-all to bind them to, and the injected token is not a parameter that tool accepts.
+
    **Note**: Error handling is automatically managed by the `@mcp_tool_handler` decorator—no manual try-except blocks. `http_call_response` runs the request, converts an HTTP error envelope via `unwrap_http_result`, and wraps the payload with `success_response`; trailing kwargs (`parameter` above) are merged into both the error and the success response. Pass the bound `http_client` method from your module so tests can keep patching `tools.<module>.http_client`. Drop to the explicit `http_client` + `unwrap_http_result` + `success_response` sequence only when the result needs post-processing or the error and success responses carry different fields.
 
 2. **Register the Module**

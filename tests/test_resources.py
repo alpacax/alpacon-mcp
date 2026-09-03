@@ -128,12 +128,7 @@ class TestResourceRegistration:
             fn = res._resolve(ref)
             wanted = set(re.findall(r'\{(\w+)\}', uri)) | set(extra or {})
             sig = inspect.signature(fn).parameters
-            accepted = {
-                p
-                for p, v in sig.items()
-                if v.kind not in (v.VAR_KEYWORD, v.VAR_POSITIONAL)
-            }
-            missing = wanted - accepted
+            missing = wanted - set(sig)
             assert not missing, f'{name}: {missing} not accepted by {ref}'
 
             # Inverse: every required (no-default) param must be filled by the URI
@@ -141,10 +136,11 @@ class TestResourceRegistration:
             required = {
                 p
                 for p, v in sig.items()
-                if v.default is v.empty
-                and v.kind not in (v.VAR_KEYWORD, v.VAR_POSITIONAL)
+                if v.default is v.empty and v.kind is not v.VAR_POSITIONAL
             }
             unfilled = required - wanted
+            # A catch-all carries no default, so `kwargs` showing up here means the
+            # signature @mcp_tool_handler publishes regressed, not the URI table.
             assert not unfilled, f'{name}: {unfilled} required but not in URI/extra'
 
     @pytest.mark.asyncio

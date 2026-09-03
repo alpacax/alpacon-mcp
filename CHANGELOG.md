@@ -124,14 +124,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   correction is the first entry under Changed.
 
 ### Fixed
+- The published input schema of every tool behind `@mcp_tool_handler` no longer carries
+  `kwargs`, the catch-all the decorator injects the token through (#211). FastMCP did not read
+  it as a catch-all and published it as a required string, so a client that sent only the
+  documented arguments was rejected with a `Field required` validation error naming `kwargs`,
+  and reached the tool only by adding a meaningless `kwargs: ""`. A client that has been
+  sending that keeps working, since an unknown property is not rejected, but every client reads
+  a different schema now: `kwargs` is gone from `properties` and from `required`, and on
+  `list_workspaces`, whose only required field it was, the `required` key is gone entirely.
+- `get_server_overview` no longer writes the caller's credential into the log (#211). It used
+  to forward its own `**kwargs` into the five tools it fans out to, and by then that catch-all
+  held the resolved API token in stdio mode or the raw JWT in remote mode. Each sub-tool bound
+  it as `arguments['kwargs']`, a key `_SENSITIVE_LOG_KEYS` did not cover, so the entry log wrote
+  the credential in cleartext at INFO five times per call, and `utils/logger.py` applies no
+  redaction. Nothing changes for a client, but `logs/alpacon-mcp.log` from any earlier
+  `get_server_overview` call can hold a live token and should be treated accordingly.
 - `list_workspaces` is now registered through `@mcp_tool_handler` like every other tool, so a
   failure comes back as the standard `error_response` envelope instead of an uncaught traceback
-  (#201). A malformed `token.json` was the way to hit it. Three things change for a client: an
+  (#201). A malformed `token.json` was the way to hit it. Two things change for a client: an
   unknown `region` value is now rejected with a `validation` error naming the field, where it
-  previously returned an empty workspace list; a failure carries `status: "error"` with a
-  `Failed in list_workspaces:` message; and the published input schema now lists `kwargs` as a
-  required string, so a client that sends no arguments has to send `kwargs: ""` until #211 drops
-  it from the 167 tools the decorator wraps. `health_check` keeps its raw registration, because it
+  previously returned an empty workspace list; and a failure carries `status: "error"` with a
+  `Failed in list_workspaces:` message. `health_check` keeps its raw registration, because it
   has to answer before any workspace or JWT exists, but it now returns the same error envelope
   on failure.
 - `list_workspaces` now reports `data.unusable_entries`, the number of JWT workspace claim

@@ -310,7 +310,6 @@ class TestUpdateAlertRule:
             'threshold',
             'is_default',
             'region',
-            'kwargs',
         }
 
     @pytest.mark.asyncio

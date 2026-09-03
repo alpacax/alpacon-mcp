@@ -1084,3 +1084,21 @@ class TestPaginationValidation:
         mock_get.assert_not_called()
         assert result['status'] == 'error'
         assert result['field'] == 'page_size'
+
+
+# ---------------------------------------------------------------------------
+# Catch-all requirement
+# ---------------------------------------------------------------------------
+
+
+class TestCatchAllRequirement:
+    """The token has to land somewhere, and the catch-all is the only place."""
+
+    def test_a_tool_without_a_catch_all_fails_at_decoration(self):
+        """Loud at import beats a token silently dropped at call time."""
+
+        async def _inner(workspace: str, region: str = ''):
+            return {'status': 'success'}
+
+        with pytest.raises(TypeError, match=r'declares no \*\*kwargs'):
+            with_token_validation(_inner)
