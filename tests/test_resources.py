@@ -133,7 +133,11 @@ class TestResourceRegistration:
 
             # Inverse: every required (no-default) param must be filled by the URI
             # or an extra kwarg, else the read fails at runtime, not import.
-            required = {p for p, v in sig.items() if v.default is v.empty}
+            required = {
+                p
+                for p, v in sig.items()
+                if v.default is v.empty and v.kind is not v.VAR_POSITIONAL
+            }
             unfilled = required - wanted
             # A catch-all carries no default, so `kwargs` showing up here means the
             # signature @mcp_tool_handler publishes regressed, not the URI table.
