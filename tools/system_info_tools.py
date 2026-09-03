@@ -434,13 +434,14 @@ async def get_server_overview(
     Returns:
         Comprehensive server overview
     """
-    # Get all system information concurrently
+    # Never forward **kwargs here: these five are decorated tools whose published
+    # signature has no catch-all, and each injects its own token anyway.
     tasks = [
-        get_system_info(server_id, workspace, region, **kwargs),
-        get_os_version(server_id, workspace, region, **kwargs),
-        get_system_time(server_id, workspace, region, **kwargs),
-        get_network_interfaces(server_id, workspace, region, **kwargs),
-        get_disk_info(server_id, workspace, region, **kwargs),
+        get_system_info(server_id, workspace, region),
+        get_os_version(server_id, workspace, region),
+        get_system_time(server_id, workspace, region),
+        get_network_interfaces(server_id, workspace, region),
+        get_disk_info(server_id, workspace, region),
     ]
 
     # Wait for all requests

@@ -24,6 +24,7 @@ from tools.server_tools import (
     get_server,
     list_servers,
 )
+from tools.system_info_tools import get_server_overview
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
@@ -283,3 +284,41 @@ class TestMetricsEndToEnd:
         assert stats['raw_values']['min'] == 25.5
         assert stats['raw_values']['max'] == 45.8
         assert stats['status'] == 'low'  # 45.8 < 50 falls in 'low' range
+
+
+class TestSystemInfoEndToEnd:
+    """End-to-end tests for the system information tools."""
+
+    async def test_get_server_overview_fans_out_to_every_section(
+        self, patched_http_client, mock_token_for_integration
+    ):
+        """Every section is filled over HTTP, not from a swallowed exception.
+
+        The five calls this tool fans out to are decorated tools themselves, so
+        an argument their published signature rejects arrives here as a
+        per-section error string under an overall status of success. Mocking the
+        five out, as the unit tests do, hides exactly that.
+        """
+        requested = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            requested.append(request.url.path)
+            return httpx.Response(HTTPStatus.OK, json={'hostname': 'web-01'})
+
+        patched_http_client.set_handler(handler)
+
+        result = await get_server_overview(
+            server_id=SERVER_UUID, workspace='testworkspace', region='ap1'
+        )
+
+        assert result['status'] == 'success'
+        sections = result['data']
+        for key in (
+            'system_info',
+            'os_version',
+            'system_time',
+            'network_interfaces',
+            'disk_info',
+        ):
+            assert 'error' not in sections[key], f'{key}: {sections[key]}'
+        assert requested, 'no request reached the transport'
