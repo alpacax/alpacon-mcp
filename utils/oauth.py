@@ -17,6 +17,7 @@ import os
 import re
 import secrets
 import time
+from dataclasses import dataclass, field
 from functools import wraps
 from http import HTTPStatus
 from typing import Literal, TypedDict
@@ -641,8 +642,8 @@ def _unseal_refresh_token(sealed: object) -> tuple[str, str] | None:
     return _unseal(_SEAL_KIND_REFRESH, sealed)
 
 
-def _reject_unsealed(what: str, value: object) -> JSONResponse:
-    """Log and refuse a value this server did not seal.
+def _log_unsealed_rejection(what: str, value: object) -> None:
+    """Log a value this server did not seal, before it is rejected.
 
     One under our prefix that fails to verify is tampering or corruption and
     worth a warning; a bare one is a session from before sealing, which every
@@ -652,18 +653,6 @@ def _reject_unsealed(what: str, value: object) -> JSONResponse:
         logger.warning('Rejected a %s that failed seal verification', what)
     else:
         logger.info('Rejected an unsealed %s', what)
-    return _invalid_grant(what)
-
-
-def _invalid_grant(what: str) -> JSONResponse:
-    """The OAuth answer that makes a client start over with a fresh login."""
-    return JSONResponse(
-        {
-            'error': _ERROR_INVALID_GRANT,
-            'error_description': f'The {what} was not issued by this server',
-        },
-        status_code=HTTPStatus.BAD_REQUEST,
-    )
 
 
 def _oauth_error(
@@ -675,6 +664,37 @@ def _oauth_error(
     return JSONResponse(
         {'error': error, 'error_description': description}, status_code=status
     )
+
+
+class _OAuthRequestError(Exception):
+    """Raised by a stage to end the handler with one error response.
+
+    Without a description the body is the bare `{'error': ...}` the
+    configuration failures answer with, not the RFC 6749 shape.
+    """
+
+    def __init__(
+        self,
+        status: HTTPStatus,
+        error: str,
+        description: str | None = None,
+        headers: dict | None = None,
+    ) -> None:
+        super().__init__(description)
+        self.status = status
+        self.error = error
+        self.description = description
+        self.headers = headers
+
+
+def _reject_response(exc: _OAuthRequestError) -> JSONResponse:
+    if exc.description is None:
+        response = JSONResponse({'error': exc.error}, status_code=exc.status)
+    else:
+        response = _oauth_error(exc.error, exc.description, status=exc.status)
+    if exc.headers:
+        response.headers.update(exc.headers)
+    return response
 
 
 def _new_nonce() -> str:
@@ -707,6 +727,858 @@ def _clear_nonce_cookie(response: Response) -> None:
     response.delete_cookie(_NONCE_COOKIE_NAME, **_NONCE_COOKIE_ATTRS)
 
 
+# RFC 8414 metadata is public and carries no credentials. Decorating covers
+# the 500 path too, so a misconfiguration is readable rather than a CORS error.
+@_allow_browser_clients
+async def oauth_metadata(request):
+    """OAuth 2.0 Authorization Server Metadata (RFC 8414).
+
+    Returns metadata advertising this MCP server as the OAuth
+    authorization server. The authorize, token, and register
+    endpoints proxy to Auth0; only jwks_uri points to Auth0 directly.
+    """
+    try:
+        config = _get_oauth_config()
+    except ValueError as e:
+        return JSONResponse(
+            {'error': str(e)}, status_code=HTTPStatus.INTERNAL_SERVER_ERROR
+        )
+
+    server_url = _get_server_url(request)
+
+    metadata = {
+        'issuer': f'{server_url}/',
+        'authorization_endpoint': f'{server_url}{_AUTHORIZE_PATH}',
+        'token_endpoint': f'{server_url}{_TOKEN_PATH}',
+        'registration_endpoint': f'{server_url}{_REGISTER_PATH}',
+        'jwks_uri': f'{config["auth0_base_url"]}/.well-known/jwks.json',
+        'response_types_supported': [_RESPONSE_TYPE_CODE],
+        'grant_types_supported': list(_ALLOWED_GRANT_TYPES),
+        'token_endpoint_auth_methods_supported': [
+            'none',
+        ],
+        'scopes_supported': list(_DEFAULT_SCOPES),
+        'code_challenge_methods_supported': [_PKCE_CHALLENGE_METHOD],
+    }
+
+    return JSONResponse(
+        metadata,
+        headers={'Cache-Control': f'public, max-age={_METADATA_CACHE_SECONDS}'},
+    )
+
+
+def _normalize_authorize_params(request: Request, config: dict) -> tuple[dict, bool]:
+    """Build the outbound Auth0 params and detect the MFA re-auth pseudo-scope.
+
+    client_id is forced so this endpoint cannot proxy an arbitrary Auth0
+    client. offline_access is added so Auth0 issues a refresh token. The
+    scope leaves with exactly one `device:` token — the Auth0 action keys
+    MFA presence on the first one — so the callback can later seal the code
+    under this grant's id. The 401 middleware asks for re-auth with an `mfa`
+    scope, which is detected here and stripped before forwarding.
+    """
+    params = dict(request.query_params)
+    params['client_id'] = config['client_id']
+    if 'audience' not in params:
+        params['audience'] = config['audience']
+    if 'response_type' not in params:
+        params['response_type'] = _RESPONSE_TYPE_CODE
+
+    scope = params.get('scope', '')
+    if _OFFLINE_ACCESS_SCOPE not in scope:
+        scope = f'{scope} {_OFFLINE_ACCESS_SCOPE}'.strip()
+    device_id = _client_device_id(scope) or _mint_device_id()
+    scope = f'{_strip_device_scopes(scope)} device:{device_id}'.strip()
+
+    scope_parts = scope.split()
+    mfa_requested = 'mfa' in scope_parts
+    if mfa_requested:
+        scope = ' '.join(s for s in scope_parts if s != 'mfa')
+        logger.info('MFA scope detected, will use two-stage OAuth flow')
+    params['scope'] = scope
+
+    return params, mfa_requested
+
+
+def _validate_authorize_request(params: dict, client_redirect_uri: str) -> None:
+    """Reject a redirect_uri or PKCE setup Auth0 must not receive.
+
+    A destination in `_PKCE_EXEMPT_REDIRECT_URIS` may start a flow with no
+    challenge, since Copilot Studio's gateway callback cannot send one; every
+    other client must present one that clears RFC 7636 and this server's
+    chosen method. An unset method is dropped rather than forwarded once no
+    code_challenge accompanies it, since nothing here inspected it.
+    """
+    if client_redirect_uri and not _check_redirect_uri(client_redirect_uri):
+        raise _OAuthRequestError(
+            HTTPStatus.BAD_REQUEST,
+            _ERROR_INVALID_REQUEST,
+            'redirect_uri must be a loopback URL or an allowlisted callback endpoint',
+        )
+
+    code_challenge = params.get('code_challenge', '')
+    code_challenge_method = params.get('code_challenge_method', '')
+    if not code_challenge and not _is_pkce_exempt_redirect_uri(client_redirect_uri):
+        raise _OAuthRequestError(
+            HTTPStatus.BAD_REQUEST,
+            _ERROR_INVALID_REQUEST,
+            'code_challenge is required; this server accepts only '
+            f'{_PKCE_CHALLENGE_METHOD} PKCE',
+        )
+    if code_challenge and code_challenge_method != _PKCE_CHALLENGE_METHOD:
+        raise _OAuthRequestError(
+            HTTPStatus.BAD_REQUEST,
+            _ERROR_INVALID_REQUEST,
+            f'code_challenge_method must be {_PKCE_CHALLENGE_METHOD}',
+        )
+    if code_challenge and not _PKCE_CHALLENGE_PATTERN.match(code_challenge):
+        raise _OAuthRequestError(
+            HTTPStatus.BAD_REQUEST,
+            _ERROR_INVALID_REQUEST,
+            'code_challenge must be 43 to 128 characters from the '
+            'RFC 7636 unreserved set',
+        )
+    if not code_challenge:
+        params.pop('code_challenge_method', None)
+
+
+def _build_auth0_redirect(
+    config: dict,
+    server_url: str,
+    params: dict,
+    client_redirect_uri: str,
+    mfa_requested: bool,
+    original_state: str,
+) -> RedirectResponse:
+    """Sign the state Auth0 will echo back and redirect to it.
+
+    Signing needs the OAuth config, so a malformed ALPACON_MCP_STATE_SECRET
+    raises here — on the endpoint an operator reaches before the callback —
+    rather than as a bare 500 later. An MFA-requested client goes to the MFA
+    audience first (Stage 1); the callback continues it to the regular
+    audience (Stage 2), replaying the PKCE and other authorize params carried
+    here in the state so the eventual code exchange succeeds with the
+    client's verifier.
+    """
+    nonce = _new_nonce()
+    nonce_hash = _hash_nonce(nonce)
+    device_id = _client_device_id(params['scope'])
+
+    if mfa_requested:
+        mfa_params = {
+            'response_type': _RESPONSE_TYPE_CODE,
+            'client_id': config['client_id'],
+            'audience': config['mfa_audience'],
+            'redirect_uri': _callback_url(server_url),
+            'scope': 'enroll read:authenticators',
+        }
+        stage2_authorize_params = {
+            key: params[key]
+            for key in ('code_challenge', 'code_challenge_method', 'nonce', 'resource')
+            if key in params
+        }
+        mfa_params['state'] = _build_state(
+            client_redirect_uri,
+            original_state,
+            stage=_STAGE_MFA,
+            original_scope=params['scope'],
+            authorize_params=stage2_authorize_params,
+            nonce_hash=nonce_hash,
+            device_id=device_id,
+        )
+        auth0_url = _auth0_authorize_url(config, mfa_params)
+        logger.info('Stage 1: Redirecting to Auth0 MFA audience for MFA verification')
+    else:
+        params['redirect_uri'] = _callback_url(server_url)
+        params['state'] = _build_state(
+            client_redirect_uri,
+            original_state,
+            nonce_hash=nonce_hash,
+            device_id=device_id,
+        )
+        auth0_url = _auth0_authorize_url(config, params)
+        logger.info('Redirecting to Auth0 authorize endpoint')
+
+    response = RedirectResponse(url=auth0_url, status_code=HTTPStatus.FOUND)
+    _set_nonce_cookie(response, nonce)
+    return response
+
+
+async def oauth_authorize(request):
+    """Redirect to Auth0's authorization endpoint.
+
+    Proxies the OAuth authorize request to Auth0, adding the
+    configured client_id and audience.
+    """
+    try:
+        config = _get_oauth_config()
+    except ValueError as e:
+        return JSONResponse(
+            {'error': str(e)}, status_code=HTTPStatus.INTERNAL_SERVER_ERROR
+        )
+
+    params, mfa_requested = _normalize_authorize_params(request, config)
+    client_redirect_uri = params.get('redirect_uri', '')
+    original_state = params.get('state', '')
+    _log_authorize_client_profile(
+        client_redirect_uri, params.get('code_challenge_method', '')
+    )
+
+    try:
+        _validate_authorize_request(params, client_redirect_uri)
+    except _OAuthRequestError as e:
+        return _reject_response(e)
+
+    try:
+        return _build_auth0_redirect(
+            config,
+            _get_server_url(request),
+            params,
+            client_redirect_uri,
+            mfa_requested,
+            original_state,
+        )
+    except ValueError as e:
+        return JSONResponse(
+            {'error': str(e)}, status_code=HTTPStatus.INTERNAL_SERVER_ERROR
+        )
+
+
+async def _parse_token_request(request: Request) -> dict:
+    """Read and decode the token request body, then validate grant_type.
+
+    grant_type gates the allow-list and the client_secret this endpoint
+    injects, so it must be present; checking it is a str first also keeps a
+    JSON body's non-string, unhashable value from raising on the allow-list
+    membership test rather than answering 400.
+    """
+    body = await _read_bounded_body(request)
+    if body is None:
+        raise _OAuthRequestError(
+            HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
+            _ERROR_INVALID_REQUEST,
+            'Request body is too large',
+        )
+    content_type = request.headers.get('content-type', '')
+
+    if _JSON_CONTENT_TYPE in content_type:
+        try:
+            params = json.loads(body)
+        except json.JSONDecodeError:
+            raise _OAuthRequestError(
+                HTTPStatus.BAD_REQUEST, _ERROR_INVALID_REQUEST, 'Invalid JSON'
+            ) from None
+        if not isinstance(params, dict):
+            raise _OAuthRequestError(
+                HTTPStatus.BAD_REQUEST,
+                _ERROR_INVALID_REQUEST,
+                'Request body must be a JSON object',
+            )
+    else:
+        try:
+            decoded_body = body.decode('utf-8')
+        except UnicodeDecodeError:
+            raise _OAuthRequestError(
+                HTTPStatus.BAD_REQUEST,
+                _ERROR_INVALID_REQUEST,
+                'Request body must be UTF-8 encoded',
+            ) from None
+        parsed = parse_qs(decoded_body)
+        params = {k: v[0] for k, v in parsed.items()}
+
+    grant_type = params.get('grant_type', '')
+    if not isinstance(grant_type, str) or not grant_type:
+        raise _OAuthRequestError(
+            HTTPStatus.BAD_REQUEST,
+            _ERROR_INVALID_REQUEST,
+            'grant_type must be a non-empty string',
+        )
+    if grant_type not in _ALLOWED_GRANT_TYPES:
+        raise _OAuthRequestError(
+            HTTPStatus.BAD_REQUEST,
+            _ERROR_UNSUPPORTED_GRANT_TYPE,
+            f'Grant type "{grant_type}" is not supported. '
+            f'Allowed: {", ".join(sorted(_ALLOWED_GRANT_TYPES))}',
+        )
+    return params
+
+
+def _inject_client_credentials(params: dict, config: dict) -> None:
+    """Force this endpoint's client_id/secret and drop any client device scope.
+
+    A mismatched client_id would make this a generic credential exchange
+    against the injected secret, so it is rejected rather than overridden.
+    The `device:` scope is stripped so a client-supplied one cannot outrank
+    the sealed id injected after unsealing; a non-str scope from a JSON body
+    is dropped outright, and an empty result drops the key too, since
+    RFC 6749 reads an absent scope as the one the grant already carries.
+    """
+    configured_client_id = config['client_id']
+    provided_client_id = params.get('client_id')
+    if provided_client_id and provided_client_id != configured_client_id:
+        logger.warning(
+            'Rejected /oauth/token request with mismatched client_id: %s',
+            provided_client_id,
+        )
+        raise _OAuthRequestError(
+            HTTPStatus.BAD_REQUEST,
+            _ERROR_INVALID_CLIENT,
+            'client_id is not allowed for this endpoint',
+        )
+    params['client_id'] = configured_client_id
+    params['client_secret'] = config['client_secret']
+
+    scope = params.pop('scope', None)
+    if isinstance(scope, str):
+        stripped = _strip_device_scopes(scope)
+        if stripped:
+            params['scope'] = stripped
+
+
+def _unseal_grant(params: dict) -> str:
+    """Unseal the code or refresh_token, binding the exchange to its grant.
+
+    An unsealed value — tampered, or issued before sealing — would let a
+    refresh happen under a key shared by every session of the user, so it
+    sends the client to a fresh login instead. A client-supplied device id
+    never reaches Auth0 on either channel: dropped here for the code grant,
+    since it already rode the scope sent to /authorize, and overwritten here
+    for the refresh grant, whose request may omit scope entirely.
+    """
+    grant_type = params['grant_type']
+    if grant_type == _GRANT_AUTHORIZATION_CODE:
+        raw = params.get('code')
+        unsealed = _unseal_code(raw)
+        what = 'authorization code'
+    else:
+        raw = params.get('refresh_token')
+        unsealed = _unseal_refresh_token(raw)
+        what = 'refresh token'
+
+    if unsealed is None:
+        _log_unsealed_rejection(what, raw)
+        raise _OAuthRequestError(
+            HTTPStatus.BAD_REQUEST,
+            _ERROR_INVALID_GRANT,
+            f'The {what} was not issued by this server',
+        )
+
+    value, sealed_device_id = unsealed
+    if grant_type == _GRANT_AUTHORIZATION_CODE:
+        params['code'] = value
+        params.pop('device_id', None)
+    else:
+        params['refresh_token'] = value
+        params['device_id'] = sealed_device_id
+    return sealed_device_id
+
+
+async def _exchange_with_auth0(
+    config: dict, params: dict, sealed_device_id: str
+) -> JSONResponse:
+    """POST the token request to Auth0 and reseal any refresh token it returns.
+
+    Every refresh token that leaves here is sealed under the grant's device
+    id, or the next refresh loses that binding.
+    """
+    auth0_token_url = _auth0_token_url(config)
+    logger.info(
+        'Proxying token request to Auth0 - grant_type: %s, has_refresh_token: %s',
+        params.get('grant_type'),
+        'refresh_token' in params,
+    )
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                auth0_token_url,
+                data=params,
+                headers={'Content-Type': _FORM_CONTENT_TYPE},
+            )
+
+        try:
+            response_data = response.json()
+        except Exception:
+            logger.warning(f'Auth0 returned non-JSON response: {response.status_code}')
+            response_data = {
+                'error': _ERROR_SERVER_ERROR,
+                'error_description': 'Auth0 returned unexpected response format',
+            }
+
+        if (
+            sealed_device_id
+            and response.status_code == HTTPStatus.OK
+            and isinstance(response_data, dict)
+            and isinstance(response_data.get('refresh_token'), str)
+        ):
+            response_data['refresh_token'] = _seal_refresh_token(
+                response_data['refresh_token'], sealed_device_id
+            )
+
+        if isinstance(response_data, dict):
+            if response.status_code == HTTPStatus.OK:
+                logger.debug(
+                    'Auth0 token response - grant_type: %s, '
+                    'has_access_token: %s, has_refresh_token: %s, '
+                    'expires_in: %s',
+                    params.get('grant_type'),
+                    'access_token' in response_data,
+                    'refresh_token' in response_data,
+                    response_data.get('expires_in'),
+                )
+            else:
+                logger.warning(
+                    'Auth0 token request failed - grant_type: %s, '
+                    'status: %s, error: %s',
+                    params.get('grant_type'),
+                    response.status_code,
+                    response_data.get('error', 'unknown'),
+                )
+        else:
+            logger.warning(
+                'Auth0 token response is not a dict - grant_type: %s, '
+                'status: %s, type: %s',
+                params.get('grant_type'),
+                response.status_code,
+                type(response_data).__name__,
+            )
+
+        return JSONResponse(
+            response_data,
+            status_code=response.status_code,
+            headers={
+                'Cache-Control': 'no-store',
+                'Pragma': 'no-cache',
+            },
+        )
+    except httpx.HTTPError as e:
+        logger.error(f'Auth0 token request failed: {e}')
+        return _oauth_error(
+            _ERROR_SERVER_ERROR,
+            'Failed to communicate with Auth0',
+            status=HTTPStatus.BAD_GATEWAY,
+        )
+
+
+@_allow_browser_clients
+async def oauth_token(request):
+    """Proxy token exchange to Auth0.
+
+    Forwards the token request to Auth0's /oauth/token endpoint.
+    Injects the configured client_id and client_secret for
+    Auth0 token exchange (confidential client / RWA).
+    """
+    try:
+        config = _get_oauth_config()
+    except ValueError as e:
+        return JSONResponse(
+            {'error': str(e)}, status_code=HTTPStatus.INTERNAL_SERVER_ERROR
+        )
+
+    try:
+        params = await _parse_token_request(request)
+        _inject_client_credentials(params, config)
+        sealed_device_id = _unseal_grant(params)
+    except _OAuthRequestError as e:
+        return _reject_response(e)
+
+    # Auth0 requires this to match /authorize's exactly, which always sent one.
+    if params.get('grant_type') == _GRANT_AUTHORIZATION_CODE:
+        params['redirect_uri'] = _callback_url(_get_server_url(request))
+
+    return await _exchange_with_auth0(config, params, sealed_device_id)
+
+
+async def _parse_client_metadata(request: Request) -> dict:
+    """Read, decode, and shape-check the client metadata body (RFC 7591)."""
+    body = await _read_bounded_body(request)
+    if body is None:
+        raise _OAuthRequestError(
+            HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
+            _ERROR_INVALID_CLIENT_METADATA,
+            'Request body is too large',
+        )
+    content_type = request.headers.get('content-type', '')
+
+    if _JSON_CONTENT_TYPE not in content_type:
+        raise _OAuthRequestError(
+            HTTPStatus.BAD_REQUEST,
+            _ERROR_INVALID_REQUEST,
+            'Content-Type must be application/json',
+        )
+    if not body:
+        raise _OAuthRequestError(
+            HTTPStatus.BAD_REQUEST,
+            _ERROR_INVALID_CLIENT_METADATA,
+            'Request body must be a JSON object with client metadata',
+        )
+
+    try:
+        client_metadata = json.loads(body)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        raise _OAuthRequestError(
+            HTTPStatus.BAD_REQUEST,
+            _ERROR_INVALID_CLIENT_METADATA,
+            'Request body must be valid JSON',
+        ) from None
+    if not isinstance(client_metadata, dict):
+        raise _OAuthRequestError(
+            HTTPStatus.BAD_REQUEST,
+            _ERROR_INVALID_CLIENT_METADATA,
+            'Client metadata must be a JSON object',
+        )
+    return client_metadata
+
+
+def _validate_redirect_uris(metadata: dict) -> None:
+    """Reject redirect_uris that are malformed or outside the allowlist.
+
+    The shape check runs first: _check_redirect_uri parses each entry as a
+    URL string.
+    """
+    if 'redirect_uris' not in metadata:
+        return
+    redirect_uris = metadata['redirect_uris']
+    if not _is_registrable_uri_list(redirect_uris):
+        raise _OAuthRequestError(
+            HTTPStatus.BAD_REQUEST,
+            _ERROR_INVALID_CLIENT_METADATA,
+            'redirect_uris must be an array of 1 to '
+            f'{_MAX_REGISTERED_REDIRECT_URIS} strings',
+        )
+    if not all(_check_redirect_uri(uri) for uri in redirect_uris):
+        raise _OAuthRequestError(
+            HTTPStatus.BAD_REQUEST,
+            _ERROR_INVALID_REDIRECT_URI,
+            'One or more redirect_uris are invalid or not allowed by this server',
+        )
+
+
+@_allow_browser_clients
+async def oauth_register(request):
+    """Dynamic Client Registration endpoint (RFC 7591).
+
+    Auth0 does not support Dynamic Client Registration on non-Enterprise
+    plans, so this endpoint returns the server's pre-configured client_id
+    to satisfy the MCP SDK's registration requirement.
+    """
+    try:
+        config = _get_oauth_config()
+    except ValueError as e:
+        logger.error(f'OAuth config error in /oauth/register: {e}')
+        return _oauth_error(
+            _ERROR_SERVER_ERROR,
+            'OAuth configuration is incomplete',
+            status=HTTPStatus.INTERNAL_SERVER_ERROR,
+        )
+
+    try:
+        client_metadata = await _parse_client_metadata(request)
+        _validate_redirect_uris(client_metadata)
+    except _OAuthRequestError as e:
+        return _reject_response(e)
+
+    response_data = {
+        'client_id': config['client_id'],
+        'token_endpoint_auth_method': 'none',
+    }
+    # Truthful only because these URIs cleared the check /oauth/authorize applies.
+    if 'redirect_uris' in client_metadata:
+        response_data['redirect_uris'] = client_metadata['redirect_uris']
+    if 'client_name' in client_metadata:
+        response_data['client_name'] = client_metadata['client_name']
+
+    logger.info('Dynamic client registration: returning pre-configured client_id')
+
+    return JSONResponse(
+        response_data,
+        status_code=HTTPStatus.CREATED,
+        headers={
+            'Cache-Control': 'no-store',
+        },
+    )
+
+
+@dataclass
+class _CallbackState:
+    """The authorize-time context recovered from a callback's signed state."""
+
+    client_redirect_uri: str = ''
+    original_state: str = ''
+    stage: str = ''
+    original_scope: str = ''
+    nonce_hash: str = ''
+    device_id: str = ''
+    authorize_params: dict = field(default_factory=dict)
+
+
+def _restore_callback_state(request: Request) -> _CallbackState:
+    """Recover the authorize-time context from the signed state, or reject it.
+
+    An absent state is not rejected: an Auth0 error callback can arrive
+    without one, and it names no redirect target a forgery could steer.
+    Nonce-cookie binding is checked before the caller looks at `error` so the
+    gate lives in one place. A state missing its device id is rejected too,
+    since the eventual code could never be sealed without one. The
+    redirect_uri carried in the state is re-validated as defense in depth:
+    /oauth/authorize already checks it, but a forged state could name our
+    callback URL directly, bypassing that check.
+    """
+    composite_state = request.query_params.get('state')
+    state = _CallbackState()
+    if not composite_state:
+        return state
+
+    try:
+        state_data = _verify_state(composite_state)
+    except ValueError as e:
+        raise _OAuthRequestError(HTTPStatus.INTERNAL_SERVER_ERROR, str(e)) from e
+    if state_data is None:
+        logger.warning('Callback rejected an invalid or expired state')
+        raise _OAuthRequestError(
+            HTTPStatus.BAD_REQUEST,
+            _ERROR_INVALID_REQUEST,
+            'Invalid or expired state parameter',
+        )
+    if not _nonce_cookie_matches(request, state_data):
+        logger.warning('Callback rejected a state not bound to this browser')
+        raise _OAuthRequestError(
+            HTTPStatus.BAD_REQUEST,
+            _ERROR_INVALID_REQUEST,
+            'Invalid or expired state parameter',
+        )
+
+    state.client_redirect_uri = state_data.get('redirect_uri', '')
+    state.original_state = state_data.get('state', '')
+    state.stage = state_data.get('stage', '')
+    state.original_scope = state_data.get('original_scope', '')
+    state.nonce_hash = state_data.get('nonce_hash', '')
+    state.authorize_params = state_data.get('authorize_params', {})
+    state.device_id = state_data.get('device_id', '')
+    if not isinstance(state.device_id, str) or not _is_device_id(state.device_id):
+        logger.warning('Callback rejected a state without a device id')
+        raise _OAuthRequestError(
+            HTTPStatus.BAD_REQUEST,
+            _ERROR_INVALID_REQUEST,
+            'Invalid or expired state parameter',
+        )
+
+    if state.client_redirect_uri and not _check_redirect_uri(state.client_redirect_uri):
+        logger.warning(
+            'Callback rejected untrusted redirect_uri from state: %s',
+            _escape_for_log(state.client_redirect_uri),
+        )
+        state.client_redirect_uri = ''
+
+    return state
+
+
+def _forward_auth0_error(
+    client_redirect_uri: str, original_state: str, error: str, error_description: str
+) -> Response:
+    """Relay an Auth0-reported error to the client, or answer it directly."""
+    logger.warning(f'Auth0 callback error: {error} - {error_description}')
+    if client_redirect_uri:
+        params = {'error': error, 'error_description': error_description or ''}
+        if original_state:
+            params['state'] = original_state
+        return RedirectResponse(
+            url=_build_redirect_url(client_redirect_uri, params),
+            status_code=HTTPStatus.FOUND,
+        )
+    return _oauth_error(error, error_description)
+
+
+async def _handle_mfa_stage1(request: Request, state: _CallbackState) -> Response:
+    """Confirm MFA in the Auth0 session, then redirect to the regular audience.
+
+    The MFA code is exchanged only for its side effect on the Auth0 SSO
+    session; the token itself is discarded, so every failure here is logged
+    and ignored rather than surfaced to the client. PKCE and other Stage 1
+    client params are replayed into the Stage 2 request only from a
+    dict-shaped, allow-listed set, so a forged state cannot inject arbitrary
+    params. Stage 2 restarts the state's expiry, so the nonce cookie is
+    re-set to match.
+    """
+    logger.info(
+        'Stage 1 complete: MFA authorization code received, '
+        'exchanging and proceeding to Stage 2 (regular audience)'
+    )
+
+    try:
+        config = _get_oauth_config()
+    except ValueError as e:
+        return JSONResponse(
+            {'error': str(e)}, status_code=HTTPStatus.INTERNAL_SERVER_ERROR
+        )
+
+    server_url = _get_server_url(request)
+    code = request.query_params.get('code')
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            mfa_response = await client.post(
+                _auth0_token_url(config),
+                data={
+                    'grant_type': _GRANT_AUTHORIZATION_CODE,
+                    'code': code,
+                    'redirect_uri': _callback_url(server_url),
+                    'client_id': config['client_id'],
+                    'client_secret': config['client_secret'],
+                },
+                headers={'Content-Type': _FORM_CONTENT_TYPE},
+            )
+            if mfa_response.status_code >= HTTPStatus.BAD_REQUEST:
+                logger.warning(
+                    'MFA token exchange returned %s (non-fatal): %s',
+                    mfa_response.status_code,
+                    mfa_response.text[:200],
+                )
+            else:
+                logger.info('MFA token exchange succeeded (token discarded)')
+    except httpx.HTTPError as e:
+        logger.warning(f'MFA token exchange failed (non-fatal): {e}')
+
+    stage2_params = {
+        'response_type': _RESPONSE_TYPE_CODE,
+        'client_id': config['client_id'],
+        'audience': config['audience'],
+        'redirect_uri': _callback_url(server_url),
+        'scope': state.original_scope or ' '.join(_DEFAULT_SCOPES),
+        'state': _build_state(
+            state.client_redirect_uri,
+            state.original_state,
+            stage=_STAGE_REGULAR,
+            nonce_hash=state.nonce_hash,
+            device_id=state.device_id,
+        ),
+    }
+    _ALLOWED_REPLAY_KEYS = {
+        'code_challenge',
+        'code_challenge_method',
+        'nonce',
+        'resource',
+    }
+    if isinstance(state.authorize_params, dict):
+        for key, value in state.authorize_params.items():
+            if key in _ALLOWED_REPLAY_KEYS and isinstance(value, str):
+                stage2_params[key] = value
+
+    auth0_url = _auth0_authorize_url(config, stage2_params)
+    logger.info('Stage 2: Redirecting to Auth0 regular audience (SSO)')
+    response = RedirectResponse(url=auth0_url, status_code=HTTPStatus.FOUND)
+    _set_nonce_cookie(response, request.cookies[_NONCE_COOKIE_NAME])
+    return response
+
+
+def _deliver_code(code: str, state: _CallbackState) -> Response:
+    """Seal the code to this grant's device id and hand it back to the client.
+
+    A code that arrived without a state has no device id to seal it under,
+    and would be dead on arrival at the token exchange, so it is rejected
+    here instead.
+    """
+    if not _is_device_id(state.device_id):
+        logger.warning('Callback rejected a code that arrived without a state')
+        raise _OAuthRequestError(
+            HTTPStatus.BAD_REQUEST, _ERROR_INVALID_REQUEST, 'Missing state parameter'
+        )
+    try:
+        sealed_code = _seal_code(code, state.device_id)
+    except ValueError as e:
+        raise _OAuthRequestError(HTTPStatus.INTERNAL_SERVER_ERROR, str(e)) from e
+
+    if state.client_redirect_uri:
+        params = {'code': sealed_code}
+        if state.original_state:
+            params['state'] = state.original_state
+        response = RedirectResponse(
+            url=_build_redirect_url(state.client_redirect_uri, params),
+            status_code=HTTPStatus.FOUND,
+        )
+        _clear_nonce_cookie(response)
+        return response
+
+    result = {'code': sealed_code}
+    if state.original_state:
+        result['state'] = state.original_state
+    response = JSONResponse(result)
+    _clear_nonce_cookie(response)
+    return response
+
+
+async def oauth_callback(request):
+    """Handle Auth0 callback after authorization.
+
+    Supports two-stage MFA flow:
+    - Stage 'mfa': MFA completed, exchange code then redirect to
+      regular audience (Stage 2) using Auth0 SSO session.
+    - Stage 'regular' or absent: forward code to MCP client.
+    """
+    code = request.query_params.get('code')
+    error = request.query_params.get('error')
+    error_description = request.query_params.get('error_description')
+
+    try:
+        state = _restore_callback_state(request)
+
+        if error:
+            return _forward_auth0_error(
+                state.client_redirect_uri,
+                state.original_state,
+                error,
+                error_description,
+            )
+        if not code:
+            raise _OAuthRequestError(
+                HTTPStatus.BAD_REQUEST,
+                _ERROR_INVALID_REQUEST,
+                'Missing authorization code',
+            )
+
+        if state.stage == _STAGE_MFA:
+            return await _handle_mfa_stage1(request, state)
+
+        logger.info('Auth0 callback received authorization code')
+        return _deliver_code(code, state)
+    except _OAuthRequestError as e:
+        return _reject_response(e)
+
+
+async def oauth_token_fallback(request):
+    """Fallback token endpoint at /token.
+
+    MCP SDK clients fall back to /token (instead of /oauth/token) when
+    oauth_metadata is not cached — e.g. after a client restart that
+    still has a stored refresh_token but lost the server metadata.
+    Delegating to the canonical handler avoids a silent 404.
+    """
+    if request.method != 'OPTIONS':
+        logger.info('/token fallback hit — delegating to /oauth/token handler')
+    return await oauth_token(request)
+
+
+async def oauth_authorize_fallback(request):
+    """Fallback authorize endpoint at /authorize.
+
+    MCP SDK clients fall back to /authorize when oauth_metadata
+    is not cached.
+    """
+    logger.info('/authorize fallback hit — delegating to /oauth/authorize handler')
+    return await oauth_authorize(request)
+
+
+async def oauth_register_fallback(request):
+    """Fallback register endpoint at /register.
+
+    MCP SDK clients fall back to /register when oauth_metadata
+    is not cached.
+    """
+    if request.method != 'OPTIONS':
+        logger.info('/register fallback hit — delegating to /oauth/register handler')
+    return await oauth_register(request)
+
+
 def register_oauth_routes(mcp_server):
     """Register OAuth proxy routes on the FastMCP server.
 
@@ -726,756 +1598,17 @@ def register_oauth_routes(mcp_server):
     if os.getenv(_GRANT_SECRET_ENV):
         _get_grant_secret()
 
-    # RFC 8414 metadata is public and carries no credentials. Decorating covers
-    # the 500 path too, so a misconfiguration is readable rather than a CORS error.
-    @mcp_server.custom_route(_METADATA_PATH, methods=['GET'])
-    @_allow_browser_clients
-    async def oauth_metadata(request):
-        """OAuth 2.0 Authorization Server Metadata (RFC 8414).
-
-        Returns metadata advertising this MCP server as the OAuth
-        authorization server. The authorize, token, and register
-        endpoints proxy to Auth0; only jwks_uri points to Auth0 directly.
-        """
-        try:
-            config = _get_oauth_config()
-        except ValueError as e:
-            return JSONResponse(
-                {'error': str(e)}, status_code=HTTPStatus.INTERNAL_SERVER_ERROR
-            )
-
-        server_url = _get_server_url(request)
-
-        metadata = {
-            'issuer': f'{server_url}/',
-            'authorization_endpoint': f'{server_url}{_AUTHORIZE_PATH}',
-            'token_endpoint': f'{server_url}{_TOKEN_PATH}',
-            'registration_endpoint': f'{server_url}{_REGISTER_PATH}',
-            'jwks_uri': f'{config["auth0_base_url"]}/.well-known/jwks.json',
-            'response_types_supported': [_RESPONSE_TYPE_CODE],
-            'grant_types_supported': list(_ALLOWED_GRANT_TYPES),
-            'token_endpoint_auth_methods_supported': [
-                'none',
-            ],
-            'scopes_supported': list(_DEFAULT_SCOPES),
-            'code_challenge_methods_supported': [_PKCE_CHALLENGE_METHOD],
-        }
-
-        return JSONResponse(
-            metadata,
-            headers={'Cache-Control': f'public, max-age={_METADATA_CACHE_SECONDS}'},
-        )
-
-    @mcp_server.custom_route(_AUTHORIZE_PATH, methods=['GET'])
-    async def oauth_authorize(request):
-        """Redirect to Auth0's authorization endpoint.
-
-        Proxies the OAuth authorize request to Auth0, adding the
-        configured client_id and audience.
-        """
-        try:
-            config = _get_oauth_config()
-        except ValueError as e:
-            return JSONResponse(
-                {'error': str(e)}, status_code=HTTPStatus.INTERNAL_SERVER_ERROR
-            )
-
-        # Forward all query parameters to Auth0
-        params = dict(request.query_params)
-
-        # Enforce configured client_id — prevent open proxy for arbitrary clients
-        params['client_id'] = config['client_id']
-
-        # Set audience for Alpacon API access
-        if 'audience' not in params:
-            params['audience'] = config['audience']
-
-        # Ensure response_type is set
-        if 'response_type' not in params:
-            params['response_type'] = _RESPONSE_TYPE_CODE
-
-        # Ensure offline_access scope is included so Auth0 issues a refresh token.
-        # Without this, the MCP client cannot refresh expired access tokens.
-        scope = params.get('scope', '')
-        if _OFFLINE_ACCESS_SCOPE not in scope:
-            scope = f'{scope} {_OFFLINE_ACCESS_SCOPE}'.strip()
-        # The Auth0 action keys MFA presence on the first `device:` token, so the
-        # scope leaves with exactly one rather than resting on that ordering. The
-        # id rides the state so the callback can seal the code under it.
-        device_id = _client_device_id(scope)
-        if device_id is None:
-            device_id = _mint_device_id()
-        scope = f'{_strip_device_scopes(scope)} device:{device_id}'.strip()
-
-        # Detect MFA pseudo-scope from re-auth flow.
-        # When the ASGI middleware returns 401 with scope="... mfa",
-        # the MCP client includes 'mfa' in the authorize request scope.
-        scope_parts = scope.split()
-        mfa_requested = 'mfa' in scope_parts
-        if mfa_requested:
-            scope = ' '.join(s for s in scope_parts if s != 'mfa')
-            logger.info('MFA scope detected, will use two-stage OAuth flow')
-
-        params['scope'] = scope
-
-        # Build MCP server's own callback URL as redirect_uri for Auth0.
-        # Store the client's original redirect_uri in the state so we can
-        # forward the authorization code back to the client after Auth0 callback.
-        server_url = _get_server_url(request)
-
-        # Save client's original redirect_uri to relay the code later.
-        client_redirect_uri = params.get('redirect_uri', '')
-        _log_authorize_client_profile(
-            client_redirect_uri, params.get('code_challenge_method', '')
-        )
-        if client_redirect_uri and not _check_redirect_uri(client_redirect_uri):
-            return _oauth_error(
-                _ERROR_INVALID_REQUEST,
-                'redirect_uri must be a loopback URL or an allowlisted '
-                'callback endpoint',
-            )
-
-        code_challenge = params.get('code_challenge', '')
-        code_challenge_method = params.get('code_challenge_method', '')
-        if not code_challenge and not _is_pkce_exempt_redirect_uri(client_redirect_uri):
-            return _oauth_error(
-                _ERROR_INVALID_REQUEST,
-                'code_challenge is required; this server accepts only '
-                f'{_PKCE_CHALLENGE_METHOD} PKCE',
-            )
-        if code_challenge and code_challenge_method != _PKCE_CHALLENGE_METHOD:
-            return _oauth_error(
-                _ERROR_INVALID_REQUEST,
-                f'code_challenge_method must be {_PKCE_CHALLENGE_METHOD}',
-            )
-        if code_challenge and not _PKCE_CHALLENGE_PATTERN.match(code_challenge):
-            return _oauth_error(
-                _ERROR_INVALID_REQUEST,
-                'code_challenge must be 43 to 128 characters from the '
-                'RFC 7636 unreserved set',
-            )
-        if not code_challenge:
-            # Only an exempt destination gets here, and nothing inspected its
-            # method. Forwarding it hands Auth0 a value this server never stood
-            # behind.
-            params.pop('code_challenge_method', None)
-
-        original_state = params.get('state', '')
-        nonce = _new_nonce()
-        nonce_hash = _hash_nonce(nonce)
-
-        # _build_state signs with the configured key, so a malformed
-        # ALPACON_MCP_STATE_SECRET raises here — on the endpoint an operator
-        # reaches before the callback. Carry the message instead of a bare 500.
-        try:
-            if mfa_requested:
-                # Two-stage OAuth flow: Stage 1 — redirect to Auth0 MFA audience
-                # to force MFA verification. After MFA completion, the callback
-                # handler will redirect again to the regular audience (Stage 2).
-                mfa_params = {
-                    'response_type': _RESPONSE_TYPE_CODE,
-                    'client_id': config['client_id'],
-                    'audience': config['mfa_audience'],
-                    'redirect_uri': _callback_url(server_url),
-                    'scope': 'enroll read:authenticators',
-                }
-
-                # Preserve PKCE and other client authorize params for Stage 2.
-                # The MCP client's PKCE code_challenge must be replayed when
-                # redirecting to the regular audience so the final code exchange
-                # succeeds with the client's code_verifier.
-                stage2_authorize_params = {}
-                for key in (
-                    'code_challenge',
-                    'code_challenge_method',
-                    'nonce',
-                    'resource',
-                ):
-                    if key in params:
-                        stage2_authorize_params[key] = params[key]
-
-                mfa_params['state'] = _build_state(
-                    client_redirect_uri,
-                    original_state,
-                    stage=_STAGE_MFA,
-                    original_scope=scope,
-                    authorize_params=stage2_authorize_params,
-                    nonce_hash=nonce_hash,
-                    device_id=device_id,
-                )
-
-                auth0_url = _auth0_authorize_url(config, mfa_params)
-                logger.info(
-                    'Stage 1: Redirecting to Auth0 MFA audience for MFA verification'
-                )
-            else:
-                # Standard single-stage OAuth flow (no MFA required)
-                params['redirect_uri'] = _callback_url(server_url)
-                params['state'] = _build_state(
-                    client_redirect_uri,
-                    original_state,
-                    nonce_hash=nonce_hash,
-                    device_id=device_id,
-                )
-
-                auth0_url = _auth0_authorize_url(config, params)
-                logger.info('Redirecting to Auth0 authorize endpoint')
-        except ValueError as e:
-            return JSONResponse(
-                {'error': str(e)}, status_code=HTTPStatus.INTERNAL_SERVER_ERROR
-            )
-
-        response = RedirectResponse(url=auth0_url, status_code=HTTPStatus.FOUND)
-        _set_nonce_cookie(response, nonce)
-        return response
-
-    @mcp_server.custom_route(_TOKEN_PATH, methods=['POST', 'OPTIONS'])
-    @_allow_browser_clients
-    async def oauth_token(request):
-        """Proxy token exchange to Auth0.
-
-        Forwards the token request to Auth0's /oauth/token endpoint.
-        Injects the configured client_id and client_secret for
-        Auth0 token exchange (confidential client / RWA).
-        """
-        try:
-            config = _get_oauth_config()
-        except ValueError as e:
-            return JSONResponse(
-                {'error': str(e)}, status_code=HTTPStatus.INTERNAL_SERVER_ERROR
-            )
-
-        # Parse request body
-        body = await _read_bounded_body(request)
-        if body is None:
-            return _oauth_error(
-                _ERROR_INVALID_REQUEST,
-                'Request body is too large',
-                status=HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
-            )
-        content_type = request.headers.get('content-type', '')
-
-        if _JSON_CONTENT_TYPE in content_type:
-            try:
-                params = json.loads(body)
-            except json.JSONDecodeError:
-                return _oauth_error(_ERROR_INVALID_REQUEST, 'Invalid JSON')
-
-            if not isinstance(params, dict):
-                return _oauth_error(
-                    _ERROR_INVALID_REQUEST, 'Request body must be a JSON object'
-                )
-        else:
-            # application/x-www-form-urlencoded (standard OAuth)
-            try:
-                decoded_body = body.decode('utf-8')
-            except UnicodeDecodeError:
-                return _oauth_error(
-                    _ERROR_INVALID_REQUEST, 'Request body must be UTF-8 encoded'
-                )
-
-            parsed = parse_qs(decoded_body)
-            params = {k: v[0] for k, v in parsed.items()}
-
-        # Both unseal branches key off grant_type, so an absent one would skip
-        # the allow-list and the seal alike and reach Auth0 with the injected
-        # client_secret; requiring it keeps the guarantee here rather than in
-        # Auth0's parser. A JSON body can put any type here, and an unhashable
-        # one would raise on the membership test below rather than answer 400.
-        grant_type = params.get('grant_type', '')
-        if not isinstance(grant_type, str) or not grant_type:
-            return _oauth_error(
-                _ERROR_INVALID_REQUEST, 'grant_type must be a non-empty string'
-            )
-        if grant_type not in _ALLOWED_GRANT_TYPES:
-            return _oauth_error(
-                _ERROR_UNSUPPORTED_GRANT_TYPE,
-                f'Grant type "{grant_type}" is not supported. '
-                f'Allowed: {", ".join(sorted(_ALLOWED_GRANT_TYPES))}',
-            )
-
-        # Enforce configured client_id to prevent this endpoint from
-        # acting as a generic token proxy for arbitrary Auth0 clients.
-        configured_client_id = config['client_id']
-        provided_client_id = params.get('client_id')
-        if provided_client_id and provided_client_id != configured_client_id:
-            logger.warning(
-                'Rejected /oauth/token request with mismatched client_id: %s',
-                provided_client_id,
-            )
-            return _oauth_error(
-                _ERROR_INVALID_CLIENT, 'client_id is not allowed for this endpoint'
-            )
-        params['client_id'] = configured_client_id
-        params['client_secret'] = config['client_secret']
-
-        # The Auth0 action reads a `device:` scope ahead of the device_id field, so
-        # one left as the client sent it would outrank the sealed id below.
-        # /authorize normalizes its scope the same way. A JSON body can type this
-        # as a list, which httpx puts on the wire as a scope the action cannot tell
-        # from a string one, so anything but a str is dropped rather than filtered.
-        # An empty result drops the key too: RFC 6749 reads an omitted scope as the
-        # one the grant already carries and says nothing about an empty one.
-        scope = params.pop('scope', None)
-        if isinstance(scope, str):
-            stripped = _strip_device_scopes(scope)
-            if stripped:
-                params['scope'] = stripped
-
-        # An unsealed value, whether tampered or issued before sealing, would
-        # refresh under a key shared by every session of the user; invalid_grant
-        # sends the client to a fresh login, which mints it an id. Refresh
-        # requests may omit scope, so the id rides the body channel the Auth0
-        # action also reads; the code grant already carried it in the scope sent
-        # to /authorize, so there the field is dropped rather than set. Either
-        # way a client-supplied device id never reaches Auth0, on either channel.
-        sealed_device_id = ''
-        if grant_type == _GRANT_AUTHORIZATION_CODE:
-            unsealed = _unseal_code(params.get('code', ''))
-            if unsealed is None:
-                return _reject_unsealed('authorization code', params.get('code'))
-            params['code'], sealed_device_id = unsealed
-            params.pop('device_id', None)
-        elif grant_type == _GRANT_REFRESH_TOKEN:
-            unsealed = _unseal_refresh_token(params.get('refresh_token', ''))
-            if unsealed is None:
-                return _reject_unsealed('refresh token', params.get('refresh_token'))
-            params['refresh_token'], sealed_device_id = unsealed
-            params['device_id'] = sealed_device_id
-
-        # Override redirect_uri to match what was sent to Auth0 during /authorize.
-        # Auth0 requires the redirect_uri in token exchange to match exactly.
-        # Always set it for authorization_code grants since /authorize always
-        # sends redirect_uri to Auth0.
-        if params.get('grant_type') == _GRANT_AUTHORIZATION_CODE:
-            server_url = _get_server_url(request)
-            params['redirect_uri'] = _callback_url(server_url)
-
-        # Forward to Auth0
-        auth0_token_url = _auth0_token_url(config)
-        logger.info(
-            'Proxying token request to Auth0 - grant_type: %s, has_refresh_token: %s',
-            grant_type,
-            'refresh_token' in params,
-        )
-
-        try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.post(
-                    auth0_token_url,
-                    data=params,
-                    headers={'Content-Type': _FORM_CONTENT_TYPE},
-                )
-
-            try:
-                response_data = response.json()
-            except Exception:
-                logger.warning(
-                    f'Auth0 returned non-JSON response: {response.status_code}'
-                )
-                response_data = {
-                    'error': _ERROR_SERVER_ERROR,
-                    'error_description': 'Auth0 returned unexpected response format',
-                }
-
-            # Auth0 rotates refresh tokens, so every one that leaves here is
-            # sealed under the grant's id or the next refresh loses it.
-            if (
-                sealed_device_id
-                and response.status_code == HTTPStatus.OK
-                and isinstance(response_data, dict)
-                and isinstance(response_data.get('refresh_token'), str)
-            ):
-                response_data['refresh_token'] = _seal_refresh_token(
-                    response_data['refresh_token'], sealed_device_id
-                )
-
-            # Log token response details for debugging refresh issues
-            if isinstance(response_data, dict):
-                if response.status_code == HTTPStatus.OK:
-                    has_access = 'access_token' in response_data
-                    has_refresh = 'refresh_token' in response_data
-                    expires_in = response_data.get('expires_in')
-                    logger.debug(
-                        'Auth0 token response - grant_type: %s, '
-                        'has_access_token: %s, has_refresh_token: %s, '
-                        'expires_in: %s',
-                        grant_type,
-                        has_access,
-                        has_refresh,
-                        expires_in,
-                    )
-                else:
-                    logger.warning(
-                        'Auth0 token request failed - grant_type: %s, '
-                        'status: %s, error: %s',
-                        grant_type,
-                        response.status_code,
-                        response_data.get('error', 'unknown'),
-                    )
-            else:
-                logger.warning(
-                    'Auth0 token response is not a dict - grant_type: %s, '
-                    'status: %s, type: %s',
-                    grant_type,
-                    response.status_code,
-                    type(response_data).__name__,
-                )
-
-            return JSONResponse(
-                response_data,
-                status_code=response.status_code,
-                headers={
-                    'Cache-Control': 'no-store',
-                    'Pragma': 'no-cache',
-                },
-            )
-        except httpx.HTTPError as e:
-            logger.error(f'Auth0 token request failed: {e}')
-            return _oauth_error(
-                _ERROR_SERVER_ERROR,
-                'Failed to communicate with Auth0',
-                status=HTTPStatus.BAD_GATEWAY,
-            )
-
-    @mcp_server.custom_route(_REGISTER_PATH, methods=['POST', 'OPTIONS'])
-    @_allow_browser_clients
-    async def oauth_register(request):
-        """Dynamic Client Registration endpoint (RFC 7591).
-
-        Auth0 does not support Dynamic Client Registration on non-Enterprise
-        plans, so this endpoint returns the server's pre-configured client_id
-        to satisfy the MCP SDK's registration requirement.
-        """
-        try:
-            config = _get_oauth_config()
-        except ValueError as e:
-            logger.error(f'OAuth config error in /oauth/register: {e}')
-            return _oauth_error(
-                _ERROR_SERVER_ERROR,
-                'OAuth configuration is incomplete',
-                status=HTTPStatus.INTERNAL_SERVER_ERROR,
-            )
-
-        # Parse and validate client metadata from request body (RFC 7591)
-        body = await _read_bounded_body(request)
-        if body is None:
-            return _oauth_error(
-                _ERROR_INVALID_CLIENT_METADATA,
-                'Request body is too large',
-                status=HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
-            )
-        content_type = request.headers.get('content-type', '')
-
-        if _JSON_CONTENT_TYPE not in content_type:
-            return _oauth_error(
-                _ERROR_INVALID_REQUEST, 'Content-Type must be application/json'
-            )
-
-        if not body:
-            return _oauth_error(
-                _ERROR_INVALID_CLIENT_METADATA,
-                'Request body must be a JSON object with client metadata',
-            )
-
-        try:
-            client_metadata = json.loads(body)
-        except (json.JSONDecodeError, UnicodeDecodeError):
-            return _oauth_error(
-                _ERROR_INVALID_CLIENT_METADATA, 'Request body must be valid JSON'
-            )
-
-        if not isinstance(client_metadata, dict):
-            return _oauth_error(
-                _ERROR_INVALID_CLIENT_METADATA, 'Client metadata must be a JSON object'
-            )
-
-        if 'redirect_uris' in client_metadata:
-            redirect_uris = client_metadata['redirect_uris']
-            # The shape check comes first: _check_redirect_uri parses a str.
-            if not _is_registrable_uri_list(redirect_uris):
-                return _oauth_error(
-                    _ERROR_INVALID_CLIENT_METADATA,
-                    'redirect_uris must be an array of 1 to '
-                    f'{_MAX_REGISTERED_REDIRECT_URIS} strings',
-                )
-            if not all(_check_redirect_uri(uri) for uri in redirect_uris):
-                return _oauth_error(
-                    _ERROR_INVALID_REDIRECT_URI,
-                    'One or more redirect_uris are invalid or not allowed '
-                    'by this server',
-                )
-
-        # Return pre-configured client_id with metadata echoed back
-        response_data = {
-            'client_id': config['client_id'],
-            'token_endpoint_auth_method': 'none',
-        }
-
-        # Truthful only because these URIs cleared the check /oauth/authorize applies.
-        if 'redirect_uris' in client_metadata:
-            response_data['redirect_uris'] = client_metadata['redirect_uris']
-
-        # Echo back client_name if provided
-        if 'client_name' in client_metadata:
-            response_data['client_name'] = client_metadata['client_name']
-
-        logger.info('Dynamic client registration: returning pre-configured client_id')
-
-        return JSONResponse(
-            response_data,
-            status_code=HTTPStatus.CREATED,
-            headers={
-                'Cache-Control': 'no-store',
-            },
-        )
-
-    @mcp_server.custom_route(_CALLBACK_PATH, methods=['GET'])
-    async def oauth_callback(request):
-        """Handle Auth0 callback after authorization.
-
-        Supports two-stage MFA flow:
-        - Stage 'mfa': MFA completed, exchange code then redirect to
-          regular audience (Stage 2) using Auth0 SSO session.
-        - Stage 'regular' or absent: forward code to MCP client.
-        """
-        # Extract callback parameters
-        code = request.query_params.get('code')
-        composite_state = request.query_params.get('state')
-        error = request.query_params.get('error')
-        error_description = request.query_params.get('error_description')
-
-        # Decode the composite state to get client's redirect_uri and original state
-        client_redirect_uri = ''
-        original_state = ''
-        stage = ''
-        original_scope = ''
-        nonce_hash = ''
-        device_id = ''
-        authorize_params: dict = {}
-        # An absent state is not rejected: Auth0 error callbacks can arrive
-        # without one, and it names no redirect target a forgery could steer.
-        if composite_state:
-            try:
-                state_data = _verify_state(composite_state)
-            except ValueError as e:
-                # Without an explicit state secret, verification needs the OAuth
-                # config; surface misconfiguration as the other handlers do.
-                return JSONResponse(
-                    {'error': str(e)},
-                    status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
-                )
-            if state_data is None:
-                logger.warning('Callback rejected an invalid or expired state')
-                return _oauth_error(
-                    _ERROR_INVALID_REQUEST, 'Invalid or expired state parameter'
-                )
-            # Placed before the error branch so the gate lives in one spot; an
-            # error callback carries no code, so nothing is lost by rejecting it.
-            if not _nonce_cookie_matches(request, state_data):
-                logger.warning('Callback rejected a state not bound to this browser')
-                return _oauth_error(
-                    _ERROR_INVALID_REQUEST, 'Invalid or expired state parameter'
-                )
-            client_redirect_uri = state_data.get('redirect_uri', '')
-            original_state = state_data.get('state', '')
-            stage = state_data.get('stage', '')
-            original_scope = state_data.get('original_scope', '')
-            nonce_hash = state_data.get('nonce_hash', '')
-            authorize_params = state_data.get('authorize_params', {})
-            # Every state this server mints carries an id; without one the
-            # code could not be sealed and the exchange would refuse it anyway.
-            device_id = state_data.get('device_id', '')
-            if not isinstance(device_id, str) or not _is_device_id(device_id):
-                logger.warning('Callback rejected a state without a device id')
-                return _oauth_error(
-                    _ERROR_INVALID_REQUEST, 'Invalid or expired state parameter'
-                )
-
-        # Defense-in-depth: re-validate redirect_uri from state is allowed.
-        # The authorize endpoint already validates this, but an attacker could craft
-        # a composite state directly and hit Auth0 with our callback URL.
-        if client_redirect_uri and not _check_redirect_uri(client_redirect_uri):
-            logger.warning(
-                'Callback rejected untrusted redirect_uri from state: %s',
-                _escape_for_log(client_redirect_uri),
-            )
-            client_redirect_uri = ''
-
-        if error:
-            logger.warning(f'Auth0 callback error: {error} - {error_description}')
-            if client_redirect_uri:
-                params = {'error': error, 'error_description': error_description or ''}
-                if original_state:
-                    params['state'] = original_state
-                return RedirectResponse(
-                    url=_build_redirect_url(client_redirect_uri, params),
-                    status_code=HTTPStatus.FOUND,
-                )
-            return _oauth_error(error, error_description)
-
-        if not code:
-            return _oauth_error(_ERROR_INVALID_REQUEST, 'Missing authorization code')
-
-        # --- Two-stage MFA flow: Stage 1 callback ---
-        if stage == _STAGE_MFA:
-            logger.info(
-                'Stage 1 complete: MFA authorization code received, '
-                'exchanging and proceeding to Stage 2 (regular audience)'
-            )
-
-            try:
-                config = _get_oauth_config()
-            except ValueError as e:
-                return JSONResponse(
-                    {'error': str(e)}, status_code=HTTPStatus.INTERNAL_SERVER_ERROR
-                )
-
-            server_url = _get_server_url(request)
-
-            # Exchange the MFA code to confirm MFA was completed.
-            # The resulting MFA token is discarded — we only need
-            # the side effect of MFA completion in the Auth0 session.
-            try:
-                async with httpx.AsyncClient(timeout=30.0) as client:
-                    mfa_response = await client.post(
-                        _auth0_token_url(config),
-                        data={
-                            'grant_type': _GRANT_AUTHORIZATION_CODE,
-                            'code': code,
-                            'redirect_uri': _callback_url(server_url),
-                            'client_id': config['client_id'],
-                            'client_secret': config['client_secret'],
-                        },
-                        headers={
-                            'Content-Type': _FORM_CONTENT_TYPE,
-                        },
-                    )
-                    # MFA token is discarded — we only need the side effect
-                    # of MFA completion in the Auth0 session. Log error
-                    # responses for debugging misconfiguration.
-                    if mfa_response.status_code >= HTTPStatus.BAD_REQUEST:
-                        logger.warning(
-                            'MFA token exchange returned %s (non-fatal): %s',
-                            mfa_response.status_code,
-                            mfa_response.text[:200],
-                        )
-                    else:
-                        logger.info('MFA token exchange succeeded (token discarded)')
-            except httpx.HTTPError as e:
-                logger.warning(f'MFA token exchange failed (non-fatal): {e}')
-
-            # Stage 2: redirect to Auth0 with regular audience.
-            # The Auth0 SSO session will skip the login prompt since
-            # the user just authenticated (with MFA) moments ago.
-            stage2_params = {
-                'response_type': _RESPONSE_TYPE_CODE,
-                'client_id': config['client_id'],
-                'audience': config['audience'],
-                'redirect_uri': _callback_url(server_url),
-                'scope': original_scope or ' '.join(_DEFAULT_SCOPES),
-                'state': _build_state(
-                    client_redirect_uri,
-                    original_state,
-                    stage=_STAGE_REGULAR,
-                    nonce_hash=nonce_hash,
-                    device_id=device_id,
-                ),
-            }
-            # Replay PKCE and other client params preserved from Stage 1
-            # so the final code exchange succeeds with the client's verifier.
-            # Validate authorize_params is a dict with only expected keys
-            # to prevent forged state from injecting arbitrary params.
-            _ALLOWED_REPLAY_KEYS = {
-                'code_challenge',
-                'code_challenge_method',
-                'nonce',
-                'resource',
-            }
-            if isinstance(authorize_params, dict):
-                for key, value in authorize_params.items():
-                    if key in _ALLOWED_REPLAY_KEYS and isinstance(value, str):
-                        stage2_params[key] = value
-
-            auth0_url = _auth0_authorize_url(config, stage2_params)
-            logger.info('Stage 2: Redirecting to Auth0 regular audience (SSO)')
-            response = RedirectResponse(url=auth0_url, status_code=HTTPStatus.FOUND)
-            # Stage 2 restarts the state expiry; re-set the cookie so the two
-            # do not drift apart.
-            _set_nonce_cookie(response, request.cookies[_NONCE_COOKIE_NAME])
-            return response
-
-        # --- Standard callback (stage 'regular' or absent) ---
-        logger.info('Auth0 callback received authorization code')
-
-        # The token exchange sees no state, so the code carries the id the
-        # refresh token is sealed under; a code that arrived without a state has
-        # none and would be dead on arrival at the exchange.
-        if not _is_device_id(device_id):
-            logger.warning('Callback rejected a code that arrived without a state')
-            return _oauth_error(_ERROR_INVALID_REQUEST, 'Missing state parameter')
-        try:
-            code = _seal_code(code, device_id)
-        except ValueError as e:
-            return JSONResponse(
-                {'error': str(e)}, status_code=HTTPStatus.INTERNAL_SERVER_ERROR
-            )
-
-        # Redirect back to the MCP client's original redirect_uri with the code
-        if client_redirect_uri:
-            params = {'code': code}
-            if original_state:
-                params['state'] = original_state
-            response = RedirectResponse(
-                url=_build_redirect_url(client_redirect_uri, params),
-                status_code=HTTPStatus.FOUND,
-            )
-            _clear_nonce_cookie(response)
-            return response
-
-        # Fallback: return as JSON if no client redirect_uri was found
-        result = {'code': code}
-        if original_state:
-            result['state'] = original_state
-        response = JSONResponse(result)
-        _clear_nonce_cookie(response)
-        return response
-
-    @mcp_server.custom_route('/token', methods=['POST', 'OPTIONS'])
-    async def oauth_token_fallback(request):
-        """Fallback token endpoint at /token.
-
-        MCP SDK clients fall back to /token (instead of /oauth/token) when
-        oauth_metadata is not cached — e.g. after a client restart that
-        still has a stored refresh_token but lost the server metadata.
-        Delegating to the canonical handler avoids a silent 404.
-        """
-        if request.method != 'OPTIONS':
-            logger.info('/token fallback hit — delegating to /oauth/token handler')
-        return await oauth_token(request)
-
-    @mcp_server.custom_route('/authorize', methods=['GET'])
-    async def oauth_authorize_fallback(request):
-        """Fallback authorize endpoint at /authorize.
-
-        MCP SDK clients fall back to /authorize when oauth_metadata
-        is not cached.
-        """
-        logger.info('/authorize fallback hit — delegating to /oauth/authorize handler')
-        return await oauth_authorize(request)
-
-    @mcp_server.custom_route('/register', methods=['POST', 'OPTIONS'])
-    async def oauth_register_fallback(request):
-        """Fallback register endpoint at /register.
-
-        MCP SDK clients fall back to /register when oauth_metadata
-        is not cached.
-        """
-        if request.method != 'OPTIONS':
-            logger.info(
-                '/register fallback hit — delegating to /oauth/register handler'
-            )
-        return await oauth_register(request)
+    for path, methods, handler in (
+        (_METADATA_PATH, ['GET'], oauth_metadata),
+        (_AUTHORIZE_PATH, ['GET'], oauth_authorize),
+        (_TOKEN_PATH, ['POST', 'OPTIONS'], oauth_token),
+        (_REGISTER_PATH, ['POST', 'OPTIONS'], oauth_register),
+        (_CALLBACK_PATH, ['GET'], oauth_callback),
+        ('/token', ['POST', 'OPTIONS'], oauth_token_fallback),
+        ('/authorize', ['GET'], oauth_authorize_fallback),
+        ('/register', ['POST', 'OPTIONS'], oauth_register_fallback),
+    ):
+        mcp_server.custom_route(path, methods=methods)(handler)
 
     # Report-only mode is what makes the domain list meaningful on its own, so
     # a deployment running it is configured, not misconfigured.
