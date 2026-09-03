@@ -53,8 +53,8 @@ Things the code will not tell you at a glance:
   setting entirely.
 - **`@mcp_tool_handler` owns validation, token injection, error shape, and
   logging.** Never write a try/except around an HTTP call in a tool. `region`,
-  `workspace`, `server_id`, `server_ids`, `servers`, and `session_id` are
-  validated before the token lookup; file paths are not—call
+  `workspace`, `server_id`, `server_ids`, `servers`, `session_id`, `limit`, and
+  `page_size` are validated before the token lookup; file paths are not—call
   `validate_file_path()` inline in any tool taking a path.
   `requires_workspace=False` is for a tool that answers before a workspace is
   known: it drops the workspace checks, the workspace-keyed region resolution,
