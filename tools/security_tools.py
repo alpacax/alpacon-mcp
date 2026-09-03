@@ -3,7 +3,7 @@
 from typing import Any
 
 from utils.api_call import http_call_response
-from utils.common import error_response
+from utils.common import empty_value_error, error_response
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ_ONLY
@@ -100,7 +100,7 @@ async def create_command_acl(
 
     Args:
         workspace: Workspace name. Required parameter
-        command: Command pattern to allow (e.g., 'docker *', 'ls -la'). Wildcards (*) supported
+        command: Command pattern to allow (e.g., 'docker *', 'ls -la'). Wildcards (*) supported. Must not be empty
         api_token_id: API token ID this rule applies to (mutually exclusive with service_token_id)
         service_token_id: Service token ID this rule applies to (mutually exclusive with api_token_id)
         username: System username restriction. Empty = token owner only, '*' = any user (optional)
@@ -110,6 +110,8 @@ async def create_command_acl(
     Returns:
         Command ACL creation response
     """
+    if not command.strip():
+        return empty_value_error('command')
     if api_token_id is None and service_token_id is None:
         return error_response(_TOKEN_REQUIRED_ERROR)
     if api_token_id is not None and service_token_id is not None:
@@ -159,7 +161,7 @@ async def update_command_acl(
     Args:
         acl_id: Command ACL rule ID to update
         workspace: Workspace name. Required parameter
-        command: Command pattern to allow (optional)
+        command: Command pattern to allow. Must not be empty when given (optional)
         username: System username restriction. Pass '' explicitly to clear an existing restriction; omit to leave unchanged (optional)
         groupname: System groupname restriction. Pass '' explicitly to clear an existing restriction; omit to leave unchanged (optional)
         region: Region (ap1, us1). Auto-detected if not provided
@@ -167,6 +169,9 @@ async def update_command_acl(
     Returns:
         Command ACL update response
     """
+    if command is not None and not command.strip():
+        return empty_value_error('command')
+
     token = kwargs.get('token')
 
     update_data: dict[str, Any] = {}
@@ -455,7 +460,7 @@ async def bulk_server_acl(
             f"Invalid action '{action}'. Must be one of: {_BULK_ACTIONS_STR}."
         )
     if not server_ids:
-        return error_response('server_ids must not be empty')
+        return empty_value_error('server_ids')
     if len(server_ids) > _BULK_MAX_SERVERS:
         return error_response(
             f'server_ids must contain at most {_BULK_MAX_SERVERS} items'
@@ -564,7 +569,7 @@ async def create_file_acl(
 
     Args:
         workspace: Workspace name. Required parameter
-        path: File path pattern to match (e.g., '/etc/nginx/*', '/var/log/*.log'). Wildcards (*) supported
+        path: File path pattern to match (e.g., '/etc/nginx/*', '/var/log/*.log'). Wildcards (*) supported. Must not be empty
         action: Allowed action - 'upload', 'download', or '*' (both)
         api_token_id: API token ID this rule applies to (mutually exclusive with service_token_id)
         service_token_id: Service token ID this rule applies to (mutually exclusive with api_token_id)
@@ -575,6 +580,8 @@ async def create_file_acl(
     Returns:
         File ACL creation response
     """
+    if not path.strip():
+        return empty_value_error('path')
     if action not in VALID_FILE_ACL_ACTIONS:
         return error_response(
             f"Invalid action '{action}'. Must be one of: {_FILE_ACL_ACTIONS_STR}."
@@ -630,7 +637,7 @@ async def update_file_acl(
     Args:
         acl_id: File ACL rule ID to update
         workspace: Workspace name. Required parameter
-        path: New file path pattern (optional)
+        path: New file path pattern. Must not be empty when given (optional)
         action: New allowed action - 'upload', 'download', or '*' (optional)
         username: System username restriction. Pass '' explicitly to clear an existing restriction; omit to leave unchanged (optional)
         groupname: System groupname restriction. Pass '' explicitly to clear an existing restriction; omit to leave unchanged (optional)
@@ -639,6 +646,8 @@ async def update_file_acl(
     Returns:
         File ACL update response
     """
+    if path is not None and not path.strip():
+        return empty_value_error('path')
     if action is not None and action not in VALID_FILE_ACL_ACTIONS:
         return error_response(
             f"Invalid action '{action}'. Must be one of: {_FILE_ACL_ACTIONS_STR}."

@@ -218,7 +218,7 @@ async def list_system_packages(
         workspace: Workspace name. Required parameter
         package_name: Optional package name to search for
         architecture: Optional architecture filter (e.g., 'x86_64', 'aarch64')
-        limit: Maximum number of packages to return. Defaults to 100
+        limit: Maximum number of packages to return, a positive integer. Defaults to 100
         region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:

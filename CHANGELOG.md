@@ -78,6 +78,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `field: "payload"` and names the accepted fields in the `suggestion` sentence, rather than
   packing the whole list into `field`. Affects `update_alert_rule`, `update_server`,
   `update_server_note`, and `update_webhook`.
+- Arguments that are supplied but blank are now rejected in the tool instead of being
+  forwarded to the API (#199). `limit` and `page_size` must be positive integers on every
+  tool that takes one, and the `command` on `execute_command` and `execute_command_multi_server`
+  and the `command`/`path` match patterns on the ACL tools must not be empty or
+  whitespace-only. A client that sent any of these gets a `status: "error"` naming the field
+  instead of an opaque 400 or an ACL rule built on a blank pattern.
 
 ### Removed
 - BREAKING: the invented `title` on `create_server_note` and `update_server_note`. The note

@@ -11,8 +11,9 @@ from tools.cert_tools import (
     delete_certificate_authority,
     get_certificate_authority,
 )
+from tools.server_tools import list_servers
 from tools.webftp_tools import webftp_download_file, webftp_upload_file
-from utils.decorators import with_token_validation
+from utils.decorators import _PAGINATION_FIELDS, with_token_validation
 
 # --- Helper: create a dummy async function decorated with with_token_validation ---
 
@@ -31,6 +32,8 @@ def _make_decorated_func(extra_params=None):
     for p in extra_params:
         if p in ('server_ids', 'servers'):
             param_parts.append(f'{p}: list = None')
+        elif p in _PAGINATION_FIELDS:
+            param_parts.append(f'{p}: int | None = None')
         else:
             param_parts.append(f'{p}: str = None')
     param_parts.append('**kwargs')
@@ -996,3 +999,88 @@ class TestValidationOrder:
             server_id='not-a-uuid',
         )
         assert result['field'] == 'workspace'
+
+
+# ---------------------------------------------------------------------------
+# Pagination validation
+# ---------------------------------------------------------------------------
+
+
+class TestPaginationValidation:
+    """Page-size arguments are rejected unless they are positive integers."""
+
+    @pytest.mark.asyncio
+    @patch('utils.decorators.validate_token', return_value='fake-token')
+    async def test_zero_limit_rejected(self, mock_token):
+        func = _make_decorated_func(extra_params=['limit'])
+        result = await func(workspace='demo', region='ap1', limit=0)
+        assert result['status'] == 'error'
+        assert result['field'] == 'limit'
+
+    @pytest.mark.asyncio
+    @patch('utils.decorators.validate_token', return_value='fake-token')
+    async def test_negative_limit_rejected(self, mock_token):
+        func = _make_decorated_func(extra_params=['limit'])
+        result = await func(workspace='demo', region='ap1', limit=-1)
+        assert result['status'] == 'error'
+        assert result['field'] == 'limit'
+
+    @pytest.mark.asyncio
+    @patch('utils.decorators.validate_token', return_value='fake-token')
+    async def test_zero_page_size_rejected(self, mock_token):
+        func = _make_decorated_func(extra_params=['page_size'])
+        result = await func(workspace='demo', region='ap1', page_size=0)
+        assert result['status'] == 'error'
+        assert result['field'] == 'page_size'
+
+    @pytest.mark.asyncio
+    @patch('utils.decorators.validate_token', return_value='fake-token')
+    async def test_negative_page_size_rejected(self, mock_token):
+        func = _make_decorated_func(extra_params=['page_size'])
+        result = await func(workspace='demo', region='ap1', page_size=-10)
+        assert result['status'] == 'error'
+        assert result['field'] == 'page_size'
+
+    @pytest.mark.asyncio
+    @patch('utils.decorators.validate_token', return_value='fake-token')
+    async def test_non_integer_limit_rejected(self, mock_token):
+        func = _make_decorated_func(extra_params=['limit'])
+        result = await func(workspace='demo', region='ap1', limit='20')
+        assert result['status'] == 'error'
+        assert result['field'] == 'limit'
+
+    @pytest.mark.asyncio
+    @patch('utils.decorators.validate_token', return_value='fake-token')
+    async def test_boolean_limit_rejected(self, mock_token):
+        """bool is an int subclass, so True would otherwise pass as page_size=1."""
+        func = _make_decorated_func(extra_params=['limit'])
+        result = await func(workspace='demo', region='ap1', limit=True)
+        assert result['status'] == 'error'
+        assert result['field'] == 'limit'
+
+    @pytest.mark.asyncio
+    @patch('utils.decorators.validate_token', return_value='fake-token')
+    async def test_positive_limit_passes(self, mock_token):
+        func = _make_decorated_func(extra_params=['limit'])
+        result = await func(workspace='demo', region='ap1', limit=20)
+        assert result['status'] == 'success'
+
+    @pytest.mark.asyncio
+    @patch('utils.decorators.validate_token', return_value='fake-token')
+    async def test_omitted_page_size_passes(self, mock_token):
+        """None is an omitted optional argument, not a bad page size."""
+        func = _make_decorated_func(extra_params=['page_size'])
+        result = await func(workspace='demo', region='ap1')
+        assert result['status'] == 'success'
+
+    @pytest.mark.asyncio
+    @patch('utils.decorators.validate_token', return_value='fake-token')
+    @patch('tools.server_tools.http_client.get', new_callable=AsyncMock)
+    async def test_shipped_tool_reaches_the_gate(self, mock_get, mock_token):
+        # The tests above exercise the gate through a synthetic function. This one
+        # pins that a tool declaring a real page_size argument is routed through it.
+        mock_get.return_value = {'count': 0, 'results': []}
+        result = await list_servers(workspace='demo', region='ap1', page_size=0)
+        mock_get.assert_not_called()
+        assert result['status'] == 'error'
+        assert result['field'] == 'page_size'

@@ -62,6 +62,9 @@ _UUID_IDENTIFIERS = frozenset({'server_id', 'session_id'})
 # same value through ALPACON_WORK_SESSION passed.
 _EXEMPT_IDENTIFIERS = frozenset({'work_session_id'})
 
+# Both names mean a page size and reach the API as page_size; no tool has both.
+_PAGINATION_FIELDS = ('limit', 'page_size')
+
 
 def _get_jwt_token() -> str | None:
     """Get JWT token from FastMCP auth context if available.
@@ -228,6 +231,18 @@ def _validate_path_identifier(field: str, value: Any) -> dict[str, Any] | None:
     return None
 
 
+def _validate_page_size(field: str, value: Any) -> dict[str, Any] | None:
+    """Returns an error response, or None if valid."""
+    # bool is an int subclass, so True would otherwise pass as a page size of 1.
+    if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+        return format_validation_error(
+            field,
+            value,
+            'A positive integer.',
+        )
+    return None
+
+
 def _validate_uuid_list(field: str, value: Any) -> dict[str, Any] | None:
     """Returns an error response, or None if valid."""
     if not isinstance(value, list):
@@ -252,11 +267,12 @@ def with_token_validation(func: Callable, requires_workspace: bool = True) -> Ca
     """Validate a tool's inputs, then resolve and inject its auth token.
 
     Despite the name, this is the single validation gate for MCP tools:
-    workspace, region, and every ``_id``-suffixed identifier are checked here,
-    before the token lookup runs. The suffix is the only trigger, so a path
-    parameter named otherwise (``username``, say) and an ``_id`` nested inside
-    ``**kwargs`` both reach the URL unchecked. ``work_session_id`` is exempt:
-    ``resolve_work_session_id`` strips padding this gate would reject.
+    workspace, region, every ``_id``-suffixed identifier, and the page-size
+    arguments are checked here, before the token lookup runs. For identifiers
+    the ``_id`` suffix is the only trigger, so a path parameter named otherwise
+    (``username``, say) and an ``_id`` nested inside ``**kwargs`` both reach the
+    URL unchecked. ``work_session_id`` is exempt: ``resolve_work_session_id``
+    strips padding this gate would reject.
 
     ``requires_workspace=False`` is for a tool that answers before a workspace
     is known—``list_workspaces`` is the one today. It skips the workspace
@@ -361,6 +377,14 @@ def with_token_validation(func: Callable, requires_workspace: bool = True) -> Ca
             path_error = _validate_path_identifier(field, value)
             if path_error:
                 return path_error
+
+        for field in _PAGINATION_FIELDS:
+            value = arguments.get(field)
+            if value is None:
+                continue
+            page_size_error = _validate_page_size(field, value)
+            if page_size_error:
+                return page_size_error
 
         # Get the **kwargs dict from bound arguments to inject token
         extra_kwargs = bound_args.arguments.get('kwargs', {})

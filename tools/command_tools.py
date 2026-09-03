@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from typing import Any, cast
 
 from utils.common import (
+    empty_value_error,
     error_response,
     pending_approval_response,
     resolve_work_session_id,
@@ -432,6 +433,9 @@ async def execute_command(
     **kwargs,
 ) -> dict[str, Any]:
     """Execute a command on a server and wait for the result (requires ACL permission)."""
+    if not command.strip():
+        return empty_value_error('command')
+
     token = kwargs.get('token')
 
     exec_data = await _submit_command(
@@ -746,7 +750,9 @@ async def execute_command_multi_server(
     token = kwargs.get('token')
 
     if not server_ids:
-        return error_response('server_ids cannot be empty')
+        return empty_value_error('server_ids')
+    if not command.strip():
+        return empty_value_error('command')
 
     async def _submit_one(sid: str) -> dict[str, Any] | list[Any]:
         return await _submit_command(

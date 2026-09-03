@@ -8,6 +8,7 @@ Complete reference for all Alpacon MCP Server tools and capabilities.
 - **`region` is optional.** Leave it out and the server resolves it from the workspace—via `token.json` in local mode, via the JWT claims in hosted mode. Supply it (`ap1`, `us1`) when one token spans several regions. An unresolvable region comes back as a validation error, not a silent default.
 - **Server IDs are UUIDs**, never names. Get them from `list_servers`.
 - **Every other `*_id` is checked before the request is built.** A value must be a string of letters, digits, `.`, `_`, `~`, or `-`, and must not be `.` or `..`. Most of these identifiers are interpolated into the endpoint path, where a `/` or a `..` retargets the request; the ones that only reach a query parameter or a request body are held to the same rule, because the check goes by the argument name rather than by where the value ends up. Anything else—a `/`, a `?`, a `#`, a percent-encoded spelling of one, or a value that is not a string at all—comes back as a validation error naming the field, and no request is sent. `work_session_id` is the one exception: its surrounding whitespace is stripped on purpose, so the rule would reject values the `ALPACON_WORK_SESSION` route accepts.
+- **`limit` and `page_size` must be positive integers.** Both name a page size and reach the API as `page_size`, where a zero or a negative asks for a page that cannot exist. Either one comes back as a validation error naming the field, and no request is sent. Omitting the argument still gets the tool's own default.
 - **Work Session gate**: OAuth/browser callers must run command execution and file transfers inside an active Work Session; static API tokens bypass it. Blocked calls return `status="pending_approval"` or a `status="error"` with a `code` and `next_action`—see [Work session tools](#-work-session-tools).
 
 ## 📋 Response structure
@@ -343,7 +344,7 @@ Execute a command on a server and wait for the result.
 
 **Parameters:**
 - `server_id` (string): Server ID
-- `command` (string): Command to execute. Do not prefix it with `sudo` by default: unless a Work Session sudo policy already covers the command, a sudo invocation either routes to human approval and blocks until a human acts, or is denied outright with no request anyone can approve. Check `sudo_denial.category` before waiting—a `sudo_hint` with no `sudo_denial` is a hard denial that creates no request
+- `command` (string): Command to execute; must not be empty or whitespace-only. Do not prefix it with `sudo` by default: unless a Work Session sudo policy already covers the command, a sudo invocation either routes to human approval and blocks until a human acts, or is denied outright with no request anyone can approve. Check `sudo_denial.category` before waiting—a `sudo_hint` with no `sudo_denial` is a hard denial that creates no request
 - `workspace` (string): Workspace name
 - `shell` (string, default: "system"): Shell type
 - `username` (string, optional): Username for execution
@@ -377,7 +378,7 @@ Execute a command on multiple servers simultaneously.
 
 **Parameters:**
 - `server_ids` (array): List of server IDs
-- `command` (string): Command to execute. The same sudo rule as `execute_command` applies, per server: a needless `sudo` prefix stalls that server's command on a human approver, or is denied outright with no request anyone can approve
+- `command` (string): Command to execute; must not be empty or whitespace-only. The same sudo rule as `execute_command` applies, per server: a needless `sudo` prefix stalls that server's command on a human approver, or is denied outright with no request anyone can approve
 - `workspace` (string): Workspace name
 - `shell` (string, default: "system"): Shell type
 - `username` (string, optional): Username for execution
@@ -703,6 +704,8 @@ Creating and updating a rule need a paid plan; reading, attaching and detaching 
 ## 🛡️ Security ACL tools
 
 Command ACLs decide which commands a token may run, server ACLs which hosts it may reach, file ACLs which paths it may transfer.
+
+The `command` and `path` a rule matches on must not be empty or whitespace-only. Both are patterns the server matches against, so a blank one is a pattern of its own rather than a missing value, and `create_command_acl`, `update_command_acl`, `create_file_acl`, and `update_file_acl` reject it before the request is built. The catch-all is `*`.
 
 - `list_command_acls`: `workspace`, `api_token_id`/`service_token_id` filters, `region` (optional), `page`, `page_size`
 - `create_command_acl`: `workspace`, `command`, `api_token_id` or `service_token_id`, `username`, `groupname`, `region` (optional)

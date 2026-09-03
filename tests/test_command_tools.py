@@ -1740,3 +1740,69 @@ class TestPurposeDemandHonesty:
             )
 
         assert result['purpose_truncated'] is True
+
+
+class TestEmptyCommandRejected:
+    """A command that is empty or whitespace-only never reaches the API."""
+
+    @pytest.mark.asyncio
+    async def test_execute_command_empty_rejected(
+        self, mock_http_client, mock_token_manager
+    ):
+        with patch('tools.command_tools._submit_command') as mock_submit:
+            result = await execute_command(
+                server_id='550e8400-e29b-41d4-a716-446655440001',
+                command='',
+                workspace='testworkspace',
+                region='ap1',
+            )
+
+        assert result['status'] == 'error'
+        assert 'command' in result['message']
+        mock_submit.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_execute_command_whitespace_rejected(
+        self, mock_http_client, mock_token_manager
+    ):
+        with patch('tools.command_tools._submit_command') as mock_submit:
+            result = await execute_command(
+                server_id='550e8400-e29b-41d4-a716-446655440001',
+                command='  \n\t ',
+                workspace='testworkspace',
+                region='ap1',
+            )
+
+        assert result['status'] == 'error'
+        assert 'command' in result['message']
+        mock_submit.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_multi_server_empty_command_rejected(
+        self, mock_http_client, mock_token_manager
+    ):
+        result = await execute_command_multi_server(
+            server_ids=['550e8400-e29b-41d4-a716-446655440001'],
+            command='',
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert result['status'] == 'error'
+        assert 'command' in result['message']
+        mock_http_client.post.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_multi_server_whitespace_command_rejected(
+        self, mock_http_client, mock_token_manager
+    ):
+        result = await execute_command_multi_server(
+            server_ids=['550e8400-e29b-41d4-a716-446655440001'],
+            command='   ',
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert result['status'] == 'error'
+        assert 'command' in result['message']
+        mock_http_client.post.assert_not_called()
