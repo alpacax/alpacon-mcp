@@ -126,6 +126,26 @@ print('Token found:', bool(tm.get_token('ap1', 'your-workspace')))
 
 Print the workspace names and a boolean, never the token values—this output usually ends up pasted into an issue.
 
+### 2a. The log repeats `No matching key found for kid`
+
+Remote mode verifies a client JWT against Auth0's JWKS, and the fetched keys are cached in the process for one hour. When Auth0 rotates its signing key, every token issued afterwards carries a `kid` the cached keys do not have, and the server rejects it with 401.
+
+The server now handles this on its own: an unknown `kid` triggers one forced JWKS refetch, bounded by a 60-second cooldown so a flood of bad tokens cannot hammer Auth0. A single line of `No matching key found for kid` followed by successful verifications is that recovery working, and needs no action.
+
+The line repeating for the same `kid` means the refetch did not help. Confirm which case you are in:
+
+```bash
+# Read the JWKS the server sees and list the kids it offers
+curl -s "https://${AUTH0_DOMAIN}/.well-known/jwks.json" | python -c "import json,sys; print([k['kid'] for k in json.load(sys.stdin)['keys']])"
+
+# Read the kid the rejected token carries (header only, no verification)
+python -c "import jwt,sys; print(jwt.get_unverified_header(sys.argv[1]))" "<the-token>"
+```
+
+- The token's `kid` is absent from the live JWKS: the token was issued by a different tenant or a different Auth0 application. Check `AUTH0_DOMAIN` against the domain that issued the token
+- The `kid` is present in the live JWKS but the server keeps rejecting it: look for `Skipping forced JWKS fetch: cooldown still active` in the log. The refetch was suppressed, and the next attempt after the cooldown resolves it
+- The `kid` is missing from the token header entirely: the log says `JWT header missing kid` instead, and no refetch is attempted. That token is malformed and re-issuing it is the fix
+
 ---
 
 ### 3. MCP client connection issues

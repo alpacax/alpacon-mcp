@@ -20,6 +20,13 @@ _jwks_cache_expiry: float = 0
 _JWKS_CACHE_TTL = 3600  # 1 hour
 _jwks_lock: asyncio.Lock | None = None
 
+# Auth0 can rotate its signing key at any time, so a kid the cache does not know
+# is a reason to refetch before the TTL expires. The cooldown bounds how often an
+# unknown kid can reach Auth0, and matches the 60-second MFA re-auth cooldown in
+# auth_error_middleware.
+_JWKS_FORCED_FETCH_COOLDOWN = 60
+_jwks_last_forced_fetch: float = 0
+
 
 def _get_jwks_lock() -> asyncio.Lock:
     """Get or create the JWKS cache lock (lazy init for event loop safety)."""
@@ -47,23 +54,31 @@ def _get_auth0_config() -> dict[str, str]:
     }
 
 
-async def _fetch_jwks(jwks_url: str) -> dict[str, Any]:
+async def _fetch_jwks(jwks_url: str, *, force: bool = False) -> dict[str, Any]:
     """Fetch JWKS from Auth0 endpoint with caching.
 
     Uses an async lock to prevent concurrent fetches from racing
-    on the module-level cache.
+    on the module-level cache. With ``force``, the cached keys are read
+    again unless another forced fetch beat this one to it, in which case
+    the caller gets those fresh keys instead of a second round trip.
     """
-    global _jwks_cache, _jwks_cache_expiry
+    global _jwks_cache, _jwks_cache_expiry, _jwks_last_forced_fetch
 
     now = time.time()
-    if _jwks_cache and now < _jwks_cache_expiry:
+    if not force and _jwks_cache and now < _jwks_cache_expiry:
         return _jwks_cache
 
     async with _get_jwks_lock():
         # Double-check after acquiring lock (another coroutine may have refreshed)
         now = time.time()
-        if _jwks_cache and now < _jwks_cache_expiry:
+        if not force and _jwks_cache and now < _jwks_cache_expiry:
             return _jwks_cache
+
+        if force:
+            if now - _jwks_last_forced_fetch < _JWKS_FORCED_FETCH_COOLDOWN:
+                logger.warning('Skipping forced JWKS fetch: cooldown still active')
+                return _jwks_cache
+            _jwks_last_forced_fetch = now
 
         logger.info(f'Fetching JWKS from {jwks_url}')
         async with httpx.AsyncClient(timeout=10.0) as client:
@@ -74,6 +89,14 @@ async def _fetch_jwks(jwks_url: str) -> dict[str, Any]:
 
         logger.info(f'JWKS fetched: {len(_jwks_cache.get("keys", []))} keys')
         return _jwks_cache
+
+
+def _has_kid(token: str) -> bool:
+    """Check whether the token header carries a kid worth looking up again."""
+    try:
+        return bool(jwt.get_unverified_header(token).get('kid'))
+    except jwt.exceptions.DecodeError:
+        return False
 
 
 def _get_signing_key(jwks: dict[str, Any], token: str) -> Any | None:
@@ -286,6 +309,12 @@ class Auth0TokenVerifier:
             # Fetch JWKS and find signing key
             jwks = await _fetch_jwks(self._config['jwks_url'])
             public_key = _get_signing_key(jwks, token)
+            if public_key is None and _has_kid(token):
+                # The cached keys may predate an Auth0 key rotation: read them
+                # once more before rejecting a kid they do not know.
+                logger.info('Unknown kid in cached JWKS, forcing a refetch')
+                jwks = await _fetch_jwks(self._config['jwks_url'], force=True)
+                public_key = _get_signing_key(jwks, token)
             if not public_key:
                 return None
 
