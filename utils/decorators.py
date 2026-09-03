@@ -43,6 +43,8 @@ logger = get_logger('decorators')
 
 _SPECIFY_REGION_HINT = 'Please specify a region parameter.'
 
+# Forward cover: with_logging binds the published signature, so this only bites
+# once a tool documents one of these names as its own parameter.
 _SENSITIVE_LOG_KEYS = frozenset({'token', 'password', 'secret', 'key'})
 
 # RFC 3986 unreserved characters—nothing in this set can restructure a URL.
