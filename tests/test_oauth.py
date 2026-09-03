@@ -23,16 +23,33 @@ from starlette.routing import Route
 from starlette.testclient import TestClient
 
 from utils.oauth import (
+    _AUTHORIZE_PATH,
+    _CALLBACK_PATH,
     _CORS_PREFLIGHT_HEADERS,
+    _DEFAULT_AUDIENCE,
+    _DEFAULT_SCOPES,
+    _ERROR_INVALID_CLIENT_METADATA,
+    _ERROR_INVALID_GRANT,
+    _ERROR_INVALID_REDIRECT_URI,
+    _ERROR_INVALID_REQUEST,
+    _ERROR_UNSUPPORTED_GRANT_TYPE,
+    _FORM_CONTENT_TYPE,
+    _GRANT_AUTHORIZATION_CODE,
+    _GRANT_REFRESH_TOKEN,
     _GRANT_SECRET_ENV,
     _GRANT_SECRET_INFO,
+    _JSON_CONTENT_TYPE,
     _LOG_VALUE_MAX_CHARS,
     _MAX_REGISTERED_REDIRECT_URIS,
+    _METADATA_PATH,
     _NONCE_COOKIE_NAME,
+    _OFFLINE_ACCESS_SCOPE,
     _PKCE_CHALLENGE_METHOD,
+    _REGISTER_PATH,
     _STATE_SECRET_ENV,
     _STATE_SECRET_INFO,
     _STATE_TTL_SECONDS,
+    _TOKEN_PATH,
     _build_state,
     _check_redirect_uri,
     _escape_for_log,
@@ -52,6 +69,8 @@ from utils.oauth import (
     _verify_state,
     register_oauth_routes,
 )
+
+FULL_SCOPE = ' '.join(_DEFAULT_SCOPES)
 
 # Test configuration constants
 TEST_AUTH0_DOMAIN = 'test.us.auth0.com'
@@ -80,7 +99,7 @@ OAUTH_ENV = {
     'AUTH0_DOMAIN': TEST_AUTH0_DOMAIN,
     'AUTH0_CLIENT_ID': TEST_CLIENT_ID,
     'AUTH0_CLIENT_SECRET': TEST_CLIENT_SECRET,
-    'AUTH0_AUDIENCE': 'https://alpacon.io/access/',
+    'AUTH0_AUDIENCE': _DEFAULT_AUDIENCE,
     'ALPACON_MCP_AUTH_ENABLED': 'true',
     'ALPACON_MCP_RESOURCE_URL': TEST_RESOURCE_URL,
     # Pinned empty so a developer's exported redirect_uri settings cannot
@@ -200,7 +219,7 @@ def _authorize_device_id(response):
 
 def _authorize(oauth_app, scope='openid profile'):
     return oauth_app.get(
-        '/oauth/authorize',
+        _AUTHORIZE_PATH,
         params={
             'response_type': 'code',
             'redirect_uri': 'http://localhost:8080/callback',
@@ -393,7 +412,7 @@ class TestAuthorizeObservation:
     def test_logs_redirect_uri_and_pkce_method(self, oauth_app, caplog):
         with caplog.at_level('INFO'):
             oauth_app.get(
-                '/oauth/authorize',
+                _AUTHORIZE_PATH,
                 params={
                     'response_type': 'code',
                     'redirect_uri': LISTED_REDIRECT_URI,
@@ -409,7 +428,7 @@ class TestAuthorizeObservation:
     def test_records_absent_pkce(self, oauth_app, caplog):
         with caplog.at_level('INFO'):
             oauth_app.get(
-                '/oauth/authorize',
+                _AUTHORIZE_PATH,
                 params={
                     'response_type': 'code',
                     'redirect_uri': LISTED_REDIRECT_URI,
@@ -423,7 +442,7 @@ class TestAuthorizeObservation:
         """A raw newline would otherwise look like a second log line."""
         with caplog.at_level('INFO'):
             oauth_app.get(
-                '/oauth/authorize',
+                _AUTHORIZE_PATH,
                 params={
                     'response_type': 'code',
                     'redirect_uri': 'https://evil.example/cb\nforged line',
@@ -676,43 +695,43 @@ class TestOAuthMetadata:
     """Tests for /.well-known/oauth-authorization-server endpoint."""
 
     def test_metadata_returns_correct_endpoints(self, oauth_app):
-        response = oauth_app.get('/.well-known/oauth-authorization-server')
+        response = oauth_app.get(_METADATA_PATH)
         assert response.status_code == HTTPStatus.OK
         data = response.json()
 
         assert data['issuer'] == f'{TEST_RESOURCE_URL}/'
-        assert data['authorization_endpoint'] == f'{TEST_RESOURCE_URL}/oauth/authorize'
-        assert data['token_endpoint'] == f'{TEST_RESOURCE_URL}/oauth/token'
-        assert data['registration_endpoint'] == f'{TEST_RESOURCE_URL}/oauth/register'
+        assert data['authorization_endpoint'] == f'{TEST_RESOURCE_URL}{_AUTHORIZE_PATH}'
+        assert data['token_endpoint'] == f'{TEST_RESOURCE_URL}{_TOKEN_PATH}'
+        assert data['registration_endpoint'] == f'{TEST_RESOURCE_URL}{_REGISTER_PATH}'
         assert data['jwks_uri'] == f'https://{TEST_AUTH0_DOMAIN}/.well-known/jwks.json'
         assert 'code' in data['response_types_supported']
         assert 'S256' in data['code_challenge_methods_supported']
 
     def test_metadata_advertises_none_auth_method(self, oauth_app):
         """Metadata should advertise 'none' since clients don't send client_secret."""
-        response = oauth_app.get('/.well-known/oauth-authorization-server')
+        response = oauth_app.get(_METADATA_PATH)
         assert response.status_code == HTTPStatus.OK
         data = response.json()
         assert data['token_endpoint_auth_methods_supported'] == ['none']
 
     def test_metadata_uses_configured_resource_url(self, oauth_app):
-        response = oauth_app.get('/.well-known/oauth-authorization-server')
+        response = oauth_app.get(_METADATA_PATH)
         data = response.json()
         assert data['token_endpoint'].startswith(TEST_RESOURCE_URL)
 
     def test_metadata_cache_control(self, oauth_app):
-        response = oauth_app.get('/.well-known/oauth-authorization-server')
+        response = oauth_app.get(_METADATA_PATH)
         assert 'max-age=3600' in response.headers.get('cache-control', '')
 
     def test_metadata_allows_any_cors_origin(self, oauth_app):
         """Public per RFC 8414."""
-        response = oauth_app.get('/.well-known/oauth-authorization-server')
+        response = oauth_app.get(_METADATA_PATH)
         assert response.headers['access-control-allow-origin'] == '*'
 
     def test_metadata_error_is_readable_cross_origin(self, oauth_app):
         """Without the header a misconfigured deployment reads as a CORS failure."""
         with patch.dict('os.environ', {'AUTH0_DOMAIN': ''}):
-            response = oauth_app.get('/.well-known/oauth-authorization-server')
+            response = oauth_app.get(_METADATA_PATH)
         assert response.status_code == HTTPStatus.INTERNAL_SERVER_ERROR
         assert response.headers['access-control-allow-origin'] == '*'
 
@@ -722,7 +741,7 @@ class TestOAuthAuthorize:
 
     def test_authorize_redirects_to_auth0(self, oauth_app):
         response = oauth_app.get(
-            '/oauth/authorize',
+            _AUTHORIZE_PATH,
             params={
                 'response_type': 'code',
                 'redirect_uri': 'http://localhost:52048/callback',
@@ -737,7 +756,7 @@ class TestOAuthAuthorize:
     def test_authorize_overrides_redirect_uri_to_server_callback(self, oauth_app):
         """redirect_uri sent to Auth0 should be the MCP server's own callback."""
         response = oauth_app.get(
-            '/oauth/authorize',
+            _AUTHORIZE_PATH,
             params={
                 'response_type': 'code',
                 'redirect_uri': 'http://localhost:52048/callback',
@@ -748,13 +767,13 @@ class TestOAuthAuthorize:
         location = response.headers['location']
         parsed = urlparse(location)
         params = parse_qs(parsed.query)
-        assert params['redirect_uri'] == [f'{TEST_RESOURCE_URL}/oauth/callback']
+        assert params['redirect_uri'] == [f'{TEST_RESOURCE_URL}{_CALLBACK_PATH}']
 
     def test_authorize_stores_client_redirect_uri_in_state(self, oauth_app):
         """Client's original redirect_uri should be encoded in the state param."""
         client_uri = 'http://localhost:52048/callback'
         response = oauth_app.get(
-            '/oauth/authorize',
+            _AUTHORIZE_PATH,
             params={
                 'response_type': 'code',
                 'redirect_uri': client_uri,
@@ -774,7 +793,7 @@ class TestOAuthAuthorize:
     def test_authorize_enforces_configured_client_id(self, oauth_app):
         """Even if a different client_id is provided, configured one is used."""
         response = oauth_app.get(
-            '/oauth/authorize',
+            _AUTHORIZE_PATH,
             params={
                 'client_id': 'attacker-client-id',
                 'response_type': 'code',
@@ -788,7 +807,7 @@ class TestOAuthAuthorize:
 
     def test_authorize_sets_default_response_type(self, oauth_app):
         response = oauth_app.get(
-            '/oauth/authorize',
+            _AUTHORIZE_PATH,
             params={'redirect_uri': 'http://localhost:3000/callback', **PKCE_PARAMS},
             follow_redirects=False,
         )
@@ -798,7 +817,7 @@ class TestOAuthAuthorize:
     def test_authorize_rejects_untrusted_redirect_uri(self, oauth_app):
         """Untrusted redirect_uris should be rejected to prevent open redirect."""
         response = oauth_app.get(
-            '/oauth/authorize',
+            _AUTHORIZE_PATH,
             params={
                 'response_type': 'code',
                 'redirect_uri': 'https://evil.com/callback',
@@ -806,12 +825,12 @@ class TestOAuthAuthorize:
         )
         assert response.status_code == HTTPStatus.BAD_REQUEST
         data = response.json()
-        assert data['error'] == 'invalid_request'
+        assert data['error'] == _ERROR_INVALID_REQUEST
         assert 'allowlisted' in data['error_description']
 
     def test_authorize_rejects_untracked_path(self, oauth_app):
         response = oauth_app.get(
-            '/oauth/authorize',
+            _AUTHORIZE_PATH,
             params={
                 'response_type': 'code',
                 'redirect_uri': UNLISTED_PATH_URI,
@@ -824,7 +843,7 @@ class TestOAuthAuthorize:
         """Signing is the first place a bad key raises; the message must survive."""
         with patch.dict('os.environ', {_STATE_SECRET_ENV: 'correct-horse-battery'}):
             response = oauth_app.get(
-                '/oauth/authorize',
+                _AUTHORIZE_PATH,
                 params={
                     'response_type': 'code',
                     'redirect_uri': 'http://localhost:52048/callback',
@@ -838,7 +857,7 @@ class TestOAuthAuthorize:
     def test_authorize_allows_claude_ai_redirect_uri(self, oauth_app):
         """Claude web redirect_uri is one of the allowlisted callback endpoints."""
         response = oauth_app.get(
-            '/oauth/authorize',
+            _AUTHORIZE_PATH,
             params={
                 'response_type': 'code',
                 'redirect_uri': LISTED_REDIRECT_URI,
@@ -851,7 +870,7 @@ class TestOAuthAuthorize:
     def test_authorize_allows_chatgpt_redirect_uri(self, oauth_app):
         """ChatGPT redirect_uri is one of the allowlisted callback endpoints."""
         response = oauth_app.get(
-            '/oauth/authorize',
+            _AUTHORIZE_PATH,
             params={
                 'response_type': 'code',
                 'redirect_uri': 'https://chatgpt.com/connector_platform_oauth_redirect',
@@ -871,7 +890,7 @@ class TestOAuthAuthorize:
             },
         ):
             response = oauth_app.get(
-                '/oauth/authorize',
+                _AUTHORIZE_PATH,
                 params={
                     'response_type': 'code',
                     'redirect_uri': 'https://custom.example.com/callback',
@@ -882,7 +901,7 @@ class TestOAuthAuthorize:
             assert response.status_code == HTTPStatus.FOUND
 
             response = oauth_app.get(
-                '/oauth/authorize',
+                _AUTHORIZE_PATH,
                 params={
                     'response_type': 'code',
                     'redirect_uri': LISTED_REDIRECT_URI,
@@ -900,7 +919,7 @@ class TestOAuthAuthorize:
             'os.environ', {'ALLOWED_REDIRECT_DOMAINS': 'custom.example.com'}
         ):
             response = oauth_app.get(
-                '/oauth/authorize',
+                _AUTHORIZE_PATH,
                 params={
                     'response_type': 'code',
                     'redirect_uri': 'https://custom.example.com/callback',
@@ -912,7 +931,7 @@ class TestOAuthAuthorize:
     def test_authorize_rejects_http_trusted_domain(self, oauth_app):
         """Trusted domains must use https to prevent code leakage over plaintext."""
         response = oauth_app.get(
-            '/oauth/authorize',
+            _AUTHORIZE_PATH,
             params={
                 'response_type': 'code',
                 'redirect_uri': 'http://claude.ai/api/mcp/auth_callback',
@@ -922,7 +941,7 @@ class TestOAuthAuthorize:
 
     def test_authorize_allows_127_0_0_1_redirect_uri(self, oauth_app):
         response = oauth_app.get(
-            '/oauth/authorize',
+            _AUTHORIZE_PATH,
             params={
                 'response_type': 'code',
                 'redirect_uri': 'http://127.0.0.1:8080/callback',
@@ -935,7 +954,7 @@ class TestOAuthAuthorize:
     def test_authorize_adds_offline_access_when_missing(self, oauth_app):
         """offline_access scope is added automatically for refresh token support."""
         response = oauth_app.get(
-            '/oauth/authorize',
+            _AUTHORIZE_PATH,
             params={
                 'response_type': 'code',
                 'redirect_uri': 'http://localhost:8080/callback',
@@ -946,16 +965,16 @@ class TestOAuthAuthorize:
         )
         assert response.status_code == HTTPStatus.FOUND
         location = response.headers['location']
-        assert 'offline_access' in location
+        assert _OFFLINE_ACCESS_SCOPE in location
 
     def test_authorize_preserves_existing_offline_access(self, oauth_app):
         """offline_access scope is not duplicated when already present."""
         response = oauth_app.get(
-            '/oauth/authorize',
+            _AUTHORIZE_PATH,
             params={
                 'response_type': 'code',
                 'redirect_uri': 'http://localhost:8080/callback',
-                'scope': 'openid offline_access',
+                'scope': f'openid {_OFFLINE_ACCESS_SCOPE}',
                 **PKCE_PARAMS,
             },
             follow_redirects=False,
@@ -963,12 +982,12 @@ class TestOAuthAuthorize:
         assert response.status_code == HTTPStatus.FOUND
         location = response.headers['location']
         # Should appear exactly once
-        assert location.count('offline_access') == 1
+        assert location.count(_OFFLINE_ACCESS_SCOPE) == 1
 
     def test_authorize_adds_offline_access_when_no_scope(self, oauth_app):
         """offline_access scope is added even when no scope parameter is provided."""
         response = oauth_app.get(
-            '/oauth/authorize',
+            _AUTHORIZE_PATH,
             params={
                 'response_type': 'code',
                 'redirect_uri': 'http://localhost:8080/callback',
@@ -978,7 +997,7 @@ class TestOAuthAuthorize:
         )
         assert response.status_code == HTTPStatus.FOUND
         location = response.headers['location']
-        assert 'offline_access' in location
+        assert _OFFLINE_ACCESS_SCOPE in location
 
     def test_authorize_mints_a_device_id_per_grant(self, oauth_app):
         """Each grant gets its own id, so two clients never share an MFA record."""
@@ -1041,10 +1060,10 @@ class TestOAuthAuthorize:
     def test_authorize_mfa_scope_redirects_to_mfa_audience(self, oauth_app):
         """When 'mfa' pseudo-scope is present, redirects to Auth0 MFA audience."""
         response = oauth_app.get(
-            '/oauth/authorize',
+            _AUTHORIZE_PATH,
             params={
                 'response_type': 'code',
-                'scope': 'openid profile email offline_access mfa',
+                'scope': f'{FULL_SCOPE} mfa',
                 'redirect_uri': 'http://localhost:8080/callback',
                 **PKCE_PARAMS,
             },
@@ -1068,10 +1087,10 @@ class TestOAuthAuthorize:
     def test_authorize_without_mfa_scope_uses_regular_audience(self, oauth_app):
         """When 'mfa' is not in scope, redirects to regular audience."""
         response = oauth_app.get(
-            '/oauth/authorize',
+            _AUTHORIZE_PATH,
             params={
                 'response_type': 'code',
-                'scope': 'openid profile email offline_access',
+                'scope': FULL_SCOPE,
                 'redirect_uri': 'http://localhost:8080/callback',
                 **PKCE_PARAMS,
             },
@@ -1087,7 +1106,7 @@ class TestOAuthAuthorize:
     def test_authorize_sets_the_nonce_cookie(self, oauth_app):
         """The browser that starts the flow gets marked."""
         response = oauth_app.get(
-            '/oauth/authorize',
+            _AUTHORIZE_PATH,
             params={'redirect_uri': 'http://localhost:52048/callback', **PKCE_PARAMS},
             follow_redirects=False,
         )
@@ -1102,7 +1121,7 @@ class TestOAuthAuthorize:
     def test_authorize_state_carries_the_cookie_hash(self, oauth_app):
         """The state names the browser by hash, never by the raw nonce."""
         response = oauth_app.get(
-            '/oauth/authorize',
+            _AUTHORIZE_PATH,
             params={'redirect_uri': 'http://localhost:52048/callback', **PKCE_PARAMS},
             follow_redirects=False,
         )
@@ -1115,7 +1134,7 @@ class TestOAuthAuthorize:
     def test_mfa_authorize_state_carries_the_cookie_hash(self, oauth_app):
         """The MFA stage-1 state is bound to the browser too."""
         response = oauth_app.get(
-            '/oauth/authorize',
+            _AUTHORIZE_PATH,
             params={
                 'redirect_uri': 'http://localhost:52048/callback',
                 'scope': 'openid profile mfa',
@@ -1132,7 +1151,7 @@ class TestOAuthAuthorize:
     def test_authorize_replaces_a_stale_nonce_cookie(self, oauth_app):
         """A browser arriving with an old cookie is re-marked, not trusted as it is."""
         response = oauth_app.get(
-            '/oauth/authorize',
+            _AUTHORIZE_PATH,
             params={'redirect_uri': 'http://localhost:52048/callback', **PKCE_PARAMS},
             follow_redirects=False,
         )
@@ -1146,18 +1165,18 @@ class TestAuthorizePkce:
 
     def test_pkce_missing_challenge_is_rejected(self, oauth_app):
         response = oauth_app.get(
-            '/oauth/authorize',
+            _AUTHORIZE_PATH,
             params={'response_type': 'code', 'redirect_uri': LISTED_REDIRECT_URI},
             follow_redirects=False,
         )
         assert response.status_code == HTTPStatus.BAD_REQUEST
         data = response.json()
-        assert data['error'] == 'invalid_request'
+        assert data['error'] == _ERROR_INVALID_REQUEST
         assert 'code_challenge' in data['error_description']
 
     def test_pkce_empty_challenge_is_rejected(self, oauth_app):
         response = oauth_app.get(
-            '/oauth/authorize',
+            _AUTHORIZE_PATH,
             params={
                 'response_type': 'code',
                 'redirect_uri': LISTED_REDIRECT_URI,
@@ -1167,11 +1186,11 @@ class TestAuthorizePkce:
             follow_redirects=False,
         )
         assert response.status_code == HTTPStatus.BAD_REQUEST
-        assert response.json()['error'] == 'invalid_request'
+        assert response.json()['error'] == _ERROR_INVALID_REQUEST
 
     def test_pkce_missing_method_is_rejected(self, oauth_app):
         response = oauth_app.get(
-            '/oauth/authorize',
+            _AUTHORIZE_PATH,
             params={
                 'response_type': 'code',
                 'redirect_uri': LISTED_REDIRECT_URI,
@@ -1184,7 +1203,7 @@ class TestAuthorizePkce:
 
     def test_pkce_plain_method_is_rejected(self, oauth_app):
         response = oauth_app.get(
-            '/oauth/authorize',
+            _AUTHORIZE_PATH,
             params={
                 'response_type': 'code',
                 'redirect_uri': LISTED_REDIRECT_URI,
@@ -1198,7 +1217,7 @@ class TestAuthorizePkce:
 
     def test_pkce_s256_is_accepted(self, oauth_app):
         response = oauth_app.get(
-            '/oauth/authorize',
+            _AUTHORIZE_PATH,
             params={
                 'response_type': 'code',
                 'redirect_uri': LISTED_REDIRECT_URI,
@@ -1210,7 +1229,7 @@ class TestAuthorizePkce:
 
     def test_pkce_exempt_redirect_uri_may_omit_the_challenge(self, oauth_app):
         response = oauth_app.get(
-            '/oauth/authorize',
+            _AUTHORIZE_PATH,
             params={'response_type': 'code', 'redirect_uri': EXEMPT_REDIRECT_URI},
             follow_redirects=False,
         )
@@ -1220,7 +1239,7 @@ class TestAuthorizePkce:
 
     def test_pkce_exempt_redirect_uri_may_not_downgrade_to_plain(self, oauth_app):
         response = oauth_app.get(
-            '/oauth/authorize',
+            _AUTHORIZE_PATH,
             params={
                 'response_type': 'code',
                 'redirect_uri': EXEMPT_REDIRECT_URI,
@@ -1234,7 +1253,7 @@ class TestAuthorizePkce:
     def test_pkce_deeper_path_on_the_exempt_host_is_not_exempt(self, oauth_app):
         with patch.dict('os.environ', REPORT_ONLY):
             response = oauth_app.get(
-                '/oauth/authorize',
+                _AUTHORIZE_PATH,
                 params={
                     'response_type': 'code',
                     'redirect_uri': f'{EXEMPT_REDIRECT_URI}/deeper',
@@ -1246,7 +1265,7 @@ class TestAuthorizePkce:
 
     def test_pkce_is_required_without_a_redirect_uri(self, oauth_app):
         response = oauth_app.get(
-            '/oauth/authorize',
+            _AUTHORIZE_PATH,
             params={'response_type': 'code'},
             follow_redirects=False,
         )
@@ -1255,7 +1274,7 @@ class TestAuthorizePkce:
 
     def test_pkce_check_runs_after_the_redirect_uri_gate(self, oauth_app):
         response = oauth_app.get(
-            '/oauth/authorize',
+            _AUTHORIZE_PATH,
             params={'response_type': 'code', 'redirect_uri': EVIL_REDIRECT_URI},
             follow_redirects=False,
         )
@@ -1264,7 +1283,7 @@ class TestAuthorizePkce:
 
     def test_pkce_challenge_reaches_auth0_unchanged(self, oauth_app):
         response = oauth_app.get(
-            '/oauth/authorize',
+            _AUTHORIZE_PATH,
             params={
                 'response_type': 'code',
                 'redirect_uri': LISTED_REDIRECT_URI,
@@ -1284,16 +1303,16 @@ class TestAuthorizePkce:
             follow_redirects=False,
         )
         assert response.status_code == HTTPStatus.BAD_REQUEST
-        assert response.json()['error'] == 'invalid_request'
+        assert response.json()['error'] == _ERROR_INVALID_REQUEST
 
     def test_pkce_advertised_method_is_the_enforced_one(self, oauth_app):
-        advertised = oauth_app.get('/.well-known/oauth-authorization-server').json()[
+        advertised = oauth_app.get(_METADATA_PATH).json()[
             'code_challenge_methods_supported'
         ]
         assert advertised == [_PKCE_CHALLENGE_METHOD]
 
         response = oauth_app.get(
-            '/oauth/authorize',
+            _AUTHORIZE_PATH,
             params={
                 'response_type': 'code',
                 'redirect_uri': LISTED_REDIRECT_URI,
@@ -1321,7 +1340,7 @@ class TestAuthorizePkceChallengeFormat:
     )
     def test_pkce_malformed_challenge_is_rejected(self, oauth_app, challenge):
         response = oauth_app.get(
-            '/oauth/authorize',
+            _AUTHORIZE_PATH,
             params={
                 'response_type': 'code',
                 'redirect_uri': LISTED_REDIRECT_URI,
@@ -1331,12 +1350,12 @@ class TestAuthorizePkceChallengeFormat:
             follow_redirects=False,
         )
         assert response.status_code == HTTPStatus.BAD_REQUEST
-        assert response.json()['error'] == 'invalid_request'
+        assert response.json()['error'] == _ERROR_INVALID_REQUEST
 
     @pytest.mark.parametrize('length', [43, 128])
     def test_pkce_challenge_length_bounds_are_inclusive(self, oauth_app, length):
         response = oauth_app.get(
-            '/oauth/authorize',
+            _AUTHORIZE_PATH,
             params={
                 'response_type': 'code',
                 'redirect_uri': LISTED_REDIRECT_URI,
@@ -1349,7 +1368,7 @@ class TestAuthorizePkceChallengeFormat:
 
     def test_pkce_method_is_rejected_before_the_challenge_format(self, oauth_app):
         response = oauth_app.get(
-            '/oauth/authorize',
+            _AUTHORIZE_PATH,
             params={
                 'response_type': 'code',
                 'redirect_uri': LISTED_REDIRECT_URI,
@@ -1366,7 +1385,7 @@ class TestAuthorizePkceChallengeFormat:
     ):
         """With no challenge the method is never inspected."""
         response = oauth_app.get(
-            '/oauth/authorize',
+            _AUTHORIZE_PATH,
             params={
                 'response_type': 'code',
                 'redirect_uri': EXEMPT_REDIRECT_URI,
@@ -1386,7 +1405,7 @@ class TestAuthorizePkceChallengeFormat:
         .strip().upper() cleanup would start accepting all four.
         """
         response = oauth_app.get(
-            '/oauth/authorize',
+            _AUTHORIZE_PATH,
             params={
                 'response_type': 'code',
                 'redirect_uri': LISTED_REDIRECT_URI,
@@ -1409,7 +1428,7 @@ class TestAuthorizePkceDuplicateParams:
 
     def test_pkce_duplicate_challenge_checks_the_forwarded_value(self, oauth_app):
         response = oauth_app.get(
-            '/oauth/authorize',
+            _AUTHORIZE_PATH,
             params=[
                 ('response_type', 'code'),
                 ('redirect_uri', LISTED_REDIRECT_URI),
@@ -1425,7 +1444,7 @@ class TestAuthorizePkceDuplicateParams:
 
     def test_pkce_duplicate_challenge_rejects_on_the_last_value(self, oauth_app):
         response = oauth_app.get(
-            '/oauth/authorize',
+            _AUTHORIZE_PATH,
             params=[
                 ('response_type', 'code'),
                 ('redirect_uri', LISTED_REDIRECT_URI),
@@ -1439,7 +1458,7 @@ class TestAuthorizePkceDuplicateParams:
 
     def test_pkce_duplicate_method_checks_the_forwarded_value(self, oauth_app):
         response = oauth_app.get(
-            '/oauth/authorize',
+            _AUTHORIZE_PATH,
             params=[
                 ('response_type', 'code'),
                 ('redirect_uri', LISTED_REDIRECT_URI),
@@ -1455,7 +1474,7 @@ class TestAuthorizePkceDuplicateParams:
 
     def test_pkce_duplicate_method_rejects_on_the_last_value(self, oauth_app):
         response = oauth_app.get(
-            '/oauth/authorize',
+            _AUTHORIZE_PATH,
             params=[
                 ('response_type', 'code'),
                 ('redirect_uri', LISTED_REDIRECT_URI),
@@ -1476,9 +1495,9 @@ class TestOAuthToken:
         mock_client = _mock_auth0_response()
         with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
             response = oauth_app.post(
-                '/oauth/token',
+                _TOKEN_PATH,
                 data={
-                    'grant_type': 'authorization_code',
+                    'grant_type': _GRANT_AUTHORIZATION_CODE,
                     'code': _seal_code('test-code', DEVICE_ID),
                 },
             )
@@ -1488,9 +1507,9 @@ class TestOAuthToken:
         mock_client = _mock_auth0_response()
         with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
             response = oauth_app.post(
-                '/oauth/token',
+                _TOKEN_PATH,
                 data={
-                    'grant_type': 'refresh_token',
+                    'grant_type': _GRANT_REFRESH_TOKEN,
                     'refresh_token': _seal_refresh_token('test-refresh', DEVICE_ID),
                 },
             )
@@ -1501,11 +1520,11 @@ class TestOAuthToken:
         mock_client = _mock_auth0_response()
         with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
             response = oauth_app.post(
-                '/oauth/token',
+                _TOKEN_PATH,
                 data={'code': _seal_code('test-code', DEVICE_ID)},
             )
         assert response.status_code == HTTPStatus.BAD_REQUEST
-        assert response.json()['error'] == 'invalid_request'
+        assert response.json()['error'] == _ERROR_INVALID_REQUEST
         mock_client.post.assert_not_called()
 
     def test_token_rejects_a_non_string_grant_type(self, oauth_app):
@@ -1513,12 +1532,12 @@ class TestOAuthToken:
         mock_client = _mock_auth0_response()
         with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
             response = oauth_app.post(
-                '/oauth/token',
+                _TOKEN_PATH,
                 content=json.dumps({'grant_type': ['refresh_token']}).encode(),
-                headers={'content-type': 'application/json'},
+                headers={'content-type': _JSON_CONTENT_TYPE},
             )
         assert response.status_code == HTTPStatus.BAD_REQUEST
-        assert response.json()['error'] == 'invalid_request'
+        assert response.json()['error'] == _ERROR_INVALID_REQUEST
         mock_client.post.assert_not_called()
 
     def test_token_refuses_an_oversized_body(self, oauth_app):
@@ -1526,12 +1545,12 @@ class TestOAuthToken:
         mock_client = _mock_auth0_response()
         with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
             response = oauth_app.post(
-                '/oauth/token',
+                _TOKEN_PATH,
                 content=b'grant_type=refresh_token&refresh_token=' + b'a' * 20000,
-                headers={'content-type': 'application/x-www-form-urlencoded'},
+                headers={'content-type': _FORM_CONTENT_TYPE},
             )
         assert response.status_code == HTTPStatus.REQUEST_ENTITY_TOO_LARGE
-        assert response.json()['error'] == 'invalid_request'
+        assert response.json()['error'] == _ERROR_INVALID_REQUEST
         mock_client.post.assert_not_called()
 
     def test_token_refuses_an_oversized_chunked_body(self, oauth_app):
@@ -1544,9 +1563,9 @@ class TestOAuthToken:
         mock_client = _mock_auth0_response()
         with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
             response = oauth_app.post(
-                '/oauth/token',
+                _TOKEN_PATH,
                 content=chunks(),
-                headers={'content-type': 'application/x-www-form-urlencoded'},
+                headers={'content-type': _FORM_CONTENT_TYPE},
             )
         assert 'content-length' not in response.request.headers
         assert response.status_code == HTTPStatus.REQUEST_ENTITY_TOO_LARGE
@@ -1554,25 +1573,25 @@ class TestOAuthToken:
 
     def test_token_rejects_client_credentials_grant(self, oauth_app):
         response = oauth_app.post(
-            '/oauth/token',
+            _TOKEN_PATH,
             data={'grant_type': 'client_credentials'},
         )
         assert response.status_code == HTTPStatus.BAD_REQUEST
-        assert response.json()['error'] == 'unsupported_grant_type'
+        assert response.json()['error'] == _ERROR_UNSUPPORTED_GRANT_TYPE
 
     def test_token_rejects_password_grant(self, oauth_app):
         response = oauth_app.post(
-            '/oauth/token',
+            _TOKEN_PATH,
             data={'grant_type': 'password', 'username': 'user', 'password': 'pass'},
         )
         assert response.status_code == HTTPStatus.BAD_REQUEST
-        assert response.json()['error'] == 'unsupported_grant_type'
+        assert response.json()['error'] == _ERROR_UNSUPPORTED_GRANT_TYPE
 
     def test_token_rejects_mismatched_client_id(self, oauth_app):
         response = oauth_app.post(
-            '/oauth/token',
+            _TOKEN_PATH,
             data={
-                'grant_type': 'authorization_code',
+                'grant_type': _GRANT_AUTHORIZATION_CODE,
                 'code': _seal_code('test-code', DEVICE_ID),
                 'client_id': 'wrong-client-id',
             },
@@ -1584,9 +1603,9 @@ class TestOAuthToken:
         mock_client = _mock_auth0_response()
         with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
             response = oauth_app.post(
-                '/oauth/token',
+                _TOKEN_PATH,
                 data={
-                    'grant_type': 'authorization_code',
+                    'grant_type': _GRANT_AUTHORIZATION_CODE,
                     'code': _seal_code('test-code', DEVICE_ID),
                 },
             )
@@ -1599,9 +1618,9 @@ class TestOAuthToken:
         mock_client = _mock_auth0_response()
         with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
             response = oauth_app.post(
-                '/oauth/token',
+                _TOKEN_PATH,
                 data={
-                    'grant_type': 'authorization_code',
+                    'grant_type': _GRANT_AUTHORIZATION_CODE,
                     'code': _seal_code('test-code', DEVICE_ID),
                 },
             )
@@ -1616,9 +1635,9 @@ class TestOAuthToken:
         )
         with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
             response = oauth_app.post(
-                '/oauth/token',
+                _TOKEN_PATH,
                 data={
-                    'grant_type': 'refresh_token',
+                    'grant_type': _GRANT_REFRESH_TOKEN,
                     'refresh_token': _seal_refresh_token('v1.refresh', DEVICE_ID),
                 },
             )
@@ -1634,9 +1653,9 @@ class TestOAuthToken:
         )
         with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
             response = oauth_app.post(
-                '/oauth/token',
+                _TOKEN_PATH,
                 data={
-                    'grant_type': 'refresh_token',
+                    'grant_type': _GRANT_REFRESH_TOKEN,
                     'refresh_token': _seal_refresh_token('v1.refresh', DEVICE_ID),
                 },
             )
@@ -1649,9 +1668,9 @@ class TestOAuthToken:
         mock_client = _mock_auth0_response()
         with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
             oauth_app.post(
-                '/oauth/token',
+                _TOKEN_PATH,
                 data={
-                    'grant_type': 'refresh_token',
+                    'grant_type': _GRANT_REFRESH_TOKEN,
                     'refresh_token': _seal_refresh_token('v1.refresh', DEVICE_ID),
                     'device_id': OTHER_DEVICE_ID,
                 },
@@ -1663,15 +1682,15 @@ class TestOAuthToken:
         mock_client = _mock_auth0_response()
         with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
             oauth_app.post(
-                '/oauth/token',
+                _TOKEN_PATH,
                 data={
-                    'grant_type': 'refresh_token',
+                    'grant_type': _GRANT_REFRESH_TOKEN,
                     'refresh_token': _seal_refresh_token('v1.refresh', DEVICE_ID),
-                    'scope': f'openid offline_access device:{OTHER_DEVICE_ID}',
+                    'scope': f'openid {_OFFLINE_ACCESS_SCOPE} device:{OTHER_DEVICE_ID}',
                 },
             )
         sent = mock_client.post.call_args.kwargs['data']
-        assert sent['scope'] == 'openid offline_access'
+        assert sent['scope'] == f'openid {_OFFLINE_ACCESS_SCOPE}'
         assert sent['device_id'] == DEVICE_ID
 
     def test_token_refresh_drops_a_non_string_device_scope(self, oauth_app):
@@ -1679,15 +1698,15 @@ class TestOAuthToken:
         mock_client = _mock_auth0_response()
         with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
             oauth_app.post(
-                '/oauth/token',
+                _TOKEN_PATH,
                 content=json.dumps(
                     {
-                        'grant_type': 'refresh_token',
+                        'grant_type': _GRANT_REFRESH_TOKEN,
                         'refresh_token': _seal_refresh_token('v1.refresh', DEVICE_ID),
                         'scope': [f'device:{OTHER_DEVICE_ID}'],
                     }
                 ).encode(),
-                headers={'content-type': 'application/json'},
+                headers={'content-type': _JSON_CONTENT_TYPE},
             )
         sent = mock_client.post.call_args.kwargs['data']
         assert 'scope' not in sent
@@ -1698,9 +1717,9 @@ class TestOAuthToken:
         mock_client = _mock_auth0_response()
         with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
             oauth_app.post(
-                '/oauth/token',
+                _TOKEN_PATH,
                 data={
-                    'grant_type': 'refresh_token',
+                    'grant_type': _GRANT_REFRESH_TOKEN,
                     'refresh_token': _seal_refresh_token('v1.refresh', DEVICE_ID),
                     'scope': f'device:{OTHER_DEVICE_ID}',
                 },
@@ -1716,14 +1735,14 @@ class TestOAuthToken:
         mock_client = _mock_auth0_response()
         with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
             response = oauth_app.post(
-                '/oauth/token',
+                _TOKEN_PATH,
                 data={
-                    'grant_type': 'refresh_token',
+                    'grant_type': _GRANT_REFRESH_TOKEN,
                     'refresh_token': f'{prefix}.{encoded}.{signature[:-4]}AAAA',
                 },
             )
         assert response.status_code == HTTPStatus.BAD_REQUEST
-        assert response.json()['error'] == 'invalid_grant'
+        assert response.json()['error'] == _ERROR_INVALID_GRANT
         mock_client.post.assert_not_called()
 
     def test_token_refresh_rejects_a_sealed_code(self, oauth_app):
@@ -1731,14 +1750,14 @@ class TestOAuthToken:
         mock_client = _mock_auth0_response()
         with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
             response = oauth_app.post(
-                '/oauth/token',
+                _TOKEN_PATH,
                 data={
-                    'grant_type': 'refresh_token',
+                    'grant_type': _GRANT_REFRESH_TOKEN,
                     'refresh_token': _seal_code('auth-code', DEVICE_ID),
                 },
             )
         assert response.status_code == HTTPStatus.BAD_REQUEST
-        assert response.json()['error'] == 'invalid_grant'
+        assert response.json()['error'] == _ERROR_INVALID_GRANT
         mock_client.post.assert_not_called()
 
     def test_token_refresh_rejects_a_bare_refresh_token(self, oauth_app, caplog):
@@ -1749,11 +1768,14 @@ class TestOAuthToken:
         with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
             with caplog.at_level('INFO'):
                 response = oauth_app.post(
-                    '/oauth/token',
-                    data={'grant_type': 'refresh_token', 'refresh_token': 'v1.legacy'},
+                    _TOKEN_PATH,
+                    data={
+                        'grant_type': _GRANT_REFRESH_TOKEN,
+                        'refresh_token': 'v1.legacy',
+                    },
                 )
         assert response.status_code == HTTPStatus.BAD_REQUEST
-        assert response.json()['error'] == 'invalid_grant'
+        assert response.json()['error'] == _ERROR_INVALID_GRANT
         mock_client.post.assert_not_called()
         [record] = [r for r in caplog.records if 'unsealed refresh token' in r.message]
         assert record.levelname == 'INFO'
@@ -1766,9 +1788,9 @@ class TestOAuthToken:
         with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
             with caplog.at_level('INFO'):
                 response = oauth_app.post(
-                    '/oauth/token',
+                    _TOKEN_PATH,
                     data={
-                        'grant_type': 'refresh_token',
+                        'grant_type': _GRANT_REFRESH_TOKEN,
                         'refresh_token': f'{prefix}.{encoded}.{signature[:-4]}AAAA',
                     },
                 )
@@ -1782,24 +1804,24 @@ class TestOAuthToken:
         mock_client = _mock_auth0_response()
         with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
             response = oauth_app.post(
-                '/oauth/token',
+                _TOKEN_PATH,
                 content=json.dumps(
-                    {'grant_type': 'refresh_token', 'refresh_token': 123}
+                    {'grant_type': _GRANT_REFRESH_TOKEN, 'refresh_token': 123}
                 ).encode(),
-                headers={'content-type': 'application/json'},
+                headers={'content-type': _JSON_CONTENT_TYPE},
             )
         assert response.status_code == HTTPStatus.BAD_REQUEST
-        assert response.json()['error'] == 'invalid_grant'
+        assert response.json()['error'] == _ERROR_INVALID_GRANT
         mock_client.post.assert_not_called()
 
     def test_token_refresh_rejects_a_missing_refresh_token(self, oauth_app):
         mock_client = _mock_auth0_response()
         with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
             response = oauth_app.post(
-                '/oauth/token', data={'grant_type': 'refresh_token'}
+                _TOKEN_PATH, data={'grant_type': _GRANT_REFRESH_TOKEN}
             )
         assert response.status_code == HTTPStatus.BAD_REQUEST
-        assert response.json()['error'] == 'invalid_grant'
+        assert response.json()['error'] == _ERROR_INVALID_GRANT
         mock_client.post.assert_not_called()
 
     def test_token_auth_code_unseals_the_code(self, oauth_app):
@@ -1813,9 +1835,9 @@ class TestOAuthToken:
         )
         with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
             response = oauth_app.post(
-                '/oauth/token',
+                _TOKEN_PATH,
                 data={
-                    'grant_type': 'authorization_code',
+                    'grant_type': _GRANT_AUTHORIZATION_CODE,
                     'code': _seal_code('auth-code', DEVICE_ID),
                     'device_id': OTHER_DEVICE_ID,
                     'scope': f'openid device:{OTHER_DEVICE_ID}',
@@ -1834,9 +1856,9 @@ class TestOAuthToken:
         )
         with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
             response = oauth_app.post(
-                '/oauth/token',
+                _TOKEN_PATH,
                 data={
-                    'grant_type': 'authorization_code',
+                    'grant_type': _GRANT_AUTHORIZATION_CODE,
                     'code': _seal_code('auth-code', DEVICE_ID),
                 },
             )
@@ -1850,28 +1872,28 @@ class TestOAuthToken:
         mock_client = _mock_auth0_response()
         with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
             response = oauth_app.post(
-                '/oauth/token',
+                _TOKEN_PATH,
                 data={
-                    'grant_type': 'authorization_code',
+                    'grant_type': _GRANT_AUTHORIZATION_CODE,
                     'code': f'{prefix}.{encoded}.{signature[:-4]}AAAA',
                 },
             )
         assert response.status_code == HTTPStatus.BAD_REQUEST
-        assert response.json()['error'] == 'invalid_grant'
+        assert response.json()['error'] == _ERROR_INVALID_GRANT
         mock_client.post.assert_not_called()
 
     def test_token_auth_code_rejects_a_sealed_refresh_token(self, oauth_app):
         mock_client = _mock_auth0_response()
         with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
             response = oauth_app.post(
-                '/oauth/token',
+                _TOKEN_PATH,
                 data={
-                    'grant_type': 'authorization_code',
+                    'grant_type': _GRANT_AUTHORIZATION_CODE,
                     'code': _seal_refresh_token('v1.refresh', DEVICE_ID),
                 },
             )
         assert response.status_code == HTTPStatus.BAD_REQUEST
-        assert response.json()['error'] == 'invalid_grant'
+        assert response.json()['error'] == _ERROR_INVALID_GRANT
         mock_client.post.assert_not_called()
 
     def test_token_auth_code_rejects_a_bare_code(self, oauth_app):
@@ -1879,44 +1901,44 @@ class TestOAuthToken:
         mock_client = _mock_auth0_response()
         with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
             response = oauth_app.post(
-                '/oauth/token',
-                data={'grant_type': 'authorization_code', 'code': 'auth-code'},
+                _TOKEN_PATH,
+                data={'grant_type': _GRANT_AUTHORIZATION_CODE, 'code': 'auth-code'},
             )
         assert response.status_code == HTTPStatus.BAD_REQUEST
-        assert response.json()['error'] == 'invalid_grant'
+        assert response.json()['error'] == _ERROR_INVALID_GRANT
         mock_client.post.assert_not_called()
 
     def test_token_auth_code_rejects_a_non_string_code(self, oauth_app):
         mock_client = _mock_auth0_response()
         with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
             response = oauth_app.post(
-                '/oauth/token',
+                _TOKEN_PATH,
                 content=json.dumps(
-                    {'grant_type': 'authorization_code', 'code': ['auth-code']}
+                    {'grant_type': _GRANT_AUTHORIZATION_CODE, 'code': ['auth-code']}
                 ).encode(),
-                headers={'content-type': 'application/json'},
+                headers={'content-type': _JSON_CONTENT_TYPE},
             )
         assert response.status_code == HTTPStatus.BAD_REQUEST
-        assert response.json()['error'] == 'invalid_grant'
+        assert response.json()['error'] == _ERROR_INVALID_GRANT
         mock_client.post.assert_not_called()
 
     def test_token_error_response_is_forwarded_unsealed(self, oauth_app):
         """An Auth0 error body has no refresh token to seal and passes through."""
         mock_client = _mock_auth0_response(
             status_code=HTTPStatus.FORBIDDEN,
-            json_data={'error': 'invalid_grant', 'error_description': 'expired'},
+            json_data={'error': _ERROR_INVALID_GRANT, 'error_description': 'expired'},
         )
         with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
             response = oauth_app.post(
-                '/oauth/token',
+                _TOKEN_PATH,
                 data={
-                    'grant_type': 'refresh_token',
+                    'grant_type': _GRANT_REFRESH_TOKEN,
                     'refresh_token': _seal_refresh_token('v1.refresh', DEVICE_ID),
                 },
             )
         assert response.status_code == HTTPStatus.FORBIDDEN
         assert response.json() == {
-            'error': 'invalid_grant',
+            'error': _ERROR_INVALID_GRANT,
             'error_description': 'expired',
         }
 
@@ -1926,7 +1948,7 @@ class TestOAuthToken:
         env_without_secret = {
             'AUTH0_DOMAIN': TEST_AUTH0_DOMAIN,
             'AUTH0_CLIENT_ID': TEST_CLIENT_ID,
-            'AUTH0_AUDIENCE': 'https://alpacon.io/access/',
+            'AUTH0_AUDIENCE': _DEFAULT_AUDIENCE,
             'ALPACON_MCP_AUTH_ENABLED': 'true',
             'ALPACON_MCP_RESOURCE_URL': TEST_RESOURCE_URL,
         }
@@ -1939,9 +1961,9 @@ class TestOAuthToken:
                 app = Starlette(routes=mock_server.routes)
                 client = TestClient(app, raise_server_exceptions=False)
                 response = client.post(
-                    '/oauth/token',
+                    _TOKEN_PATH,
                     data={
-                        'grant_type': 'authorization_code',
+                        'grant_type': _GRANT_AUTHORIZATION_CODE,
                         'code': sealed_code,
                     },
                 )
@@ -1954,9 +1976,9 @@ class TestOAuthToken:
         mock_client = _mock_auth0_response()
         with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
             response = oauth_app.post(
-                '/oauth/token',
+                _TOKEN_PATH,
                 data={
-                    'grant_type': 'authorization_code',
+                    'grant_type': _GRANT_AUTHORIZATION_CODE,
                     'code': _seal_code('test-code', DEVICE_ID),
                     'redirect_uri': 'http://localhost:52048/callback',
                 },
@@ -1964,7 +1986,7 @@ class TestOAuthToken:
         assert response.status_code == HTTPStatus.OK
         call_kwargs = mock_client.post.call_args
         assert call_kwargs.kwargs['data']['redirect_uri'] == (
-            f'{TEST_RESOURCE_URL}/oauth/callback'
+            f'{TEST_RESOURCE_URL}{_CALLBACK_PATH}'
         )
 
     def test_token_sets_redirect_uri_even_if_client_omits_it(self, oauth_app):
@@ -1972,45 +1994,45 @@ class TestOAuthToken:
         mock_client = _mock_auth0_response()
         with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
             response = oauth_app.post(
-                '/oauth/token',
+                _TOKEN_PATH,
                 data={
-                    'grant_type': 'authorization_code',
+                    'grant_type': _GRANT_AUTHORIZATION_CODE,
                     'code': _seal_code('test-code', DEVICE_ID),
                 },
             )
         assert response.status_code == HTTPStatus.OK
         call_kwargs = mock_client.post.call_args
         assert call_kwargs.kwargs['data']['redirect_uri'] == (
-            f'{TEST_RESOURCE_URL}/oauth/callback'
+            f'{TEST_RESOURCE_URL}{_CALLBACK_PATH}'
         )
 
     def test_token_rejects_invalid_json(self, oauth_app):
         response = oauth_app.post(
-            '/oauth/token',
+            _TOKEN_PATH,
             content=b'not valid json',
-            headers={'content-type': 'application/json'},
+            headers={'content-type': _JSON_CONTENT_TYPE},
         )
         assert response.status_code == HTTPStatus.BAD_REQUEST
-        assert response.json()['error'] == 'invalid_request'
+        assert response.json()['error'] == _ERROR_INVALID_REQUEST
 
     def test_token_rejects_non_object_json(self, oauth_app):
         response = oauth_app.post(
-            '/oauth/token',
+            _TOKEN_PATH,
             content=json.dumps(['not', 'an', 'object']).encode(),
-            headers={'content-type': 'application/json'},
+            headers={'content-type': _JSON_CONTENT_TYPE},
         )
         assert response.status_code == HTTPStatus.BAD_REQUEST
-        assert response.json()['error'] == 'invalid_request'
+        assert response.json()['error'] == _ERROR_INVALID_REQUEST
 
     def test_token_rejects_non_utf8_body(self, oauth_app):
         response = oauth_app.post(
-            '/oauth/token',
+            _TOKEN_PATH,
             content=b'\xff\xfe',
-            headers={'content-type': 'application/x-www-form-urlencoded'},
+            headers={'content-type': _FORM_CONTENT_TYPE},
         )
         assert response.status_code == HTTPStatus.BAD_REQUEST
         data = response.json()
-        assert data['error'] == 'invalid_request'
+        assert data['error'] == _ERROR_INVALID_REQUEST
         assert 'UTF-8' in data['error_description']
 
 
@@ -2019,14 +2041,14 @@ class TestOAuthRegister:
 
     def test_register_returns_configured_client_id(self, oauth_app):
         response = oauth_app.post(
-            '/oauth/register',
+            _REGISTER_PATH,
             content=json.dumps(
                 {
                     'client_name': 'test-client',
                     'redirect_uris': ['http://localhost:3000/callback'],
                 }
             ).encode(),
-            headers={'content-type': 'application/json'},
+            headers={'content-type': _JSON_CONTENT_TYPE},
         )
         assert response.status_code == HTTPStatus.CREATED
         data = response.json()
@@ -2037,18 +2059,18 @@ class TestOAuthRegister:
     def test_register_echoes_redirect_uris(self, oauth_app):
         uris = ['http://localhost:3000/callback']
         response = oauth_app.post(
-            '/oauth/register',
+            _REGISTER_PATH,
             content=json.dumps({'redirect_uris': uris}).encode(),
-            headers={'content-type': 'application/json'},
+            headers={'content-type': _JSON_CONTENT_TYPE},
         )
         assert response.status_code == HTTPStatus.CREATED
         assert response.json()['redirect_uris'] == uris
 
     def test_register_echoes_client_name(self, oauth_app):
         response = oauth_app.post(
-            '/oauth/register',
+            _REGISTER_PATH,
             content=json.dumps({'client_name': 'my-app'}).encode(),
-            headers={'content-type': 'application/json'},
+            headers={'content-type': _JSON_CONTENT_TYPE},
         )
         assert response.status_code == HTTPStatus.CREATED
         assert response.json()['client_name'] == 'my-app'
@@ -2056,9 +2078,9 @@ class TestOAuthRegister:
 
     def test_register_no_store_cache_control(self, oauth_app):
         response = oauth_app.post(
-            '/oauth/register',
+            _REGISTER_PATH,
             content=json.dumps({}).encode(),
-            headers={'content-type': 'application/json'},
+            headers={'content-type': _JSON_CONTENT_TYPE},
         )
         assert response.status_code == HTTPStatus.CREATED
         assert 'no-store' in response.headers.get('cache-control', '')
@@ -2066,132 +2088,132 @@ class TestOAuthRegister:
     def test_register_refuses_an_oversized_body(self, oauth_app):
         """Registration takes no auth either, and the cap is shared with /token."""
         response = oauth_app.post(
-            '/oauth/register',
+            _REGISTER_PATH,
             content=json.dumps({'redirect_uris': ['https://claude.ai/' + 'a' * 20000]}),
-            headers={'content-type': 'application/json'},
+            headers={'content-type': _JSON_CONTENT_TYPE},
         )
         assert response.status_code == HTTPStatus.REQUEST_ENTITY_TOO_LARGE
-        assert response.json()['error'] == 'invalid_client_metadata'
+        assert response.json()['error'] == _ERROR_INVALID_CLIENT_METADATA
 
     def test_register_rejects_non_json_content_type(self, oauth_app):
         response = oauth_app.post(
-            '/oauth/register',
+            _REGISTER_PATH,
             data='client_name=test',
-            headers={'content-type': 'application/x-www-form-urlencoded'},
+            headers={'content-type': _FORM_CONTENT_TYPE},
         )
         assert response.status_code == HTTPStatus.BAD_REQUEST
-        assert response.json()['error'] == 'invalid_request'
+        assert response.json()['error'] == _ERROR_INVALID_REQUEST
 
     def test_register_rejects_empty_body(self, oauth_app):
         response = oauth_app.post(
-            '/oauth/register',
+            _REGISTER_PATH,
             content=b'',
-            headers={'content-type': 'application/json'},
+            headers={'content-type': _JSON_CONTENT_TYPE},
         )
         assert response.status_code == HTTPStatus.BAD_REQUEST
-        assert response.json()['error'] == 'invalid_client_metadata'
+        assert response.json()['error'] == _ERROR_INVALID_CLIENT_METADATA
 
     def test_register_rejects_invalid_json(self, oauth_app):
         response = oauth_app.post(
-            '/oauth/register',
+            _REGISTER_PATH,
             content=b'not valid json',
-            headers={'content-type': 'application/json'},
+            headers={'content-type': _JSON_CONTENT_TYPE},
         )
         assert response.status_code == HTTPStatus.BAD_REQUEST
-        assert response.json()['error'] == 'invalid_client_metadata'
+        assert response.json()['error'] == _ERROR_INVALID_CLIENT_METADATA
 
     def test_register_rejects_non_object_json(self, oauth_app):
         response = oauth_app.post(
-            '/oauth/register',
+            _REGISTER_PATH,
             content=json.dumps(['not', 'an', 'object']).encode(),
-            headers={'content-type': 'application/json'},
+            headers={'content-type': _JSON_CONTENT_TYPE},
         )
         assert response.status_code == HTTPStatus.BAD_REQUEST
-        assert response.json()['error'] == 'invalid_client_metadata'
+        assert response.json()['error'] == _ERROR_INVALID_CLIENT_METADATA
 
     def test_register_rejects_non_list_redirect_uris(self, oauth_app):
         response = oauth_app.post(
-            '/oauth/register',
+            _REGISTER_PATH,
             content=json.dumps({'redirect_uris': LISTED_REDIRECT_URI}).encode(),
-            headers={'content-type': 'application/json'},
+            headers={'content-type': _JSON_CONTENT_TYPE},
         )
         assert response.status_code == HTTPStatus.BAD_REQUEST
-        assert response.json()['error'] == 'invalid_client_metadata'
+        assert response.json()['error'] == _ERROR_INVALID_CLIENT_METADATA
 
     def test_register_rejects_empty_redirect_uris(self, oauth_app):
         response = oauth_app.post(
-            '/oauth/register',
+            _REGISTER_PATH,
             content=json.dumps({'redirect_uris': []}).encode(),
-            headers={'content-type': 'application/json'},
+            headers={'content-type': _JSON_CONTENT_TYPE},
         )
         assert response.status_code == HTTPStatus.BAD_REQUEST
-        assert response.json()['error'] == 'invalid_client_metadata'
+        assert response.json()['error'] == _ERROR_INVALID_CLIENT_METADATA
 
     def test_register_rejects_non_string_redirect_uri_entry(self, oauth_app):
         response = oauth_app.post(
-            '/oauth/register',
+            _REGISTER_PATH,
             content=json.dumps({'redirect_uris': [LISTED_REDIRECT_URI, 42]}).encode(),
-            headers={'content-type': 'application/json'},
+            headers={'content-type': _JSON_CONTENT_TYPE},
         )
         assert response.status_code == HTTPStatus.BAD_REQUEST
-        assert response.json()['error'] == 'invalid_client_metadata'
+        assert response.json()['error'] == _ERROR_INVALID_CLIENT_METADATA
 
     def test_register_rejects_too_many_redirect_uris(self, oauth_app):
         """One unauthenticated body must not buy a check, or a warning, per entry."""
         uris = [LISTED_REDIRECT_URI] * (_MAX_REGISTERED_REDIRECT_URIS + 1)
         response = oauth_app.post(
-            '/oauth/register',
+            _REGISTER_PATH,
             content=json.dumps({'redirect_uris': uris}).encode(),
-            headers={'content-type': 'application/json'},
+            headers={'content-type': _JSON_CONTENT_TYPE},
         )
         assert response.status_code == HTTPStatus.BAD_REQUEST
-        assert response.json()['error'] == 'invalid_client_metadata'
+        assert response.json()['error'] == _ERROR_INVALID_CLIENT_METADATA
 
     def test_register_accepts_redirect_uris_at_the_cap(self, oauth_app):
         uris = [LISTED_REDIRECT_URI] * _MAX_REGISTERED_REDIRECT_URIS
         response = oauth_app.post(
-            '/oauth/register',
+            _REGISTER_PATH,
             content=json.dumps({'redirect_uris': uris}).encode(),
-            headers={'content-type': 'application/json'},
+            headers={'content-type': _JSON_CONTENT_TYPE},
         )
         assert response.status_code == HTTPStatus.CREATED
 
     def test_register_rejects_null_redirect_uris(self, oauth_app):
         """A client that will use the code flow has to name where the code goes."""
         response = oauth_app.post(
-            '/oauth/register',
+            _REGISTER_PATH,
             content=json.dumps({'redirect_uris': None}).encode(),
-            headers={'content-type': 'application/json'},
+            headers={'content-type': _JSON_CONTENT_TYPE},
         )
         assert response.status_code == HTTPStatus.BAD_REQUEST
-        assert response.json()['error'] == 'invalid_client_metadata'
+        assert response.json()['error'] == _ERROR_INVALID_CLIENT_METADATA
 
     def test_register_rejects_unlisted_redirect_uri(self, oauth_app):
         response = oauth_app.post(
-            '/oauth/register',
+            _REGISTER_PATH,
             content=json.dumps({'redirect_uris': [EVIL_REDIRECT_URI]}).encode(),
-            headers={'content-type': 'application/json'},
+            headers={'content-type': _JSON_CONTENT_TYPE},
         )
         assert response.status_code == HTTPStatus.BAD_REQUEST
-        assert response.json()['error'] == 'invalid_redirect_uri'
+        assert response.json()['error'] == _ERROR_INVALID_REDIRECT_URI
 
     def test_register_rejects_a_list_with_one_unlisted_uri(self, oauth_app):
         response = oauth_app.post(
-            '/oauth/register',
+            _REGISTER_PATH,
             content=json.dumps(
                 {'redirect_uris': [LISTED_REDIRECT_URI, EVIL_REDIRECT_URI]}
             ).encode(),
-            headers={'content-type': 'application/json'},
+            headers={'content-type': _JSON_CONTENT_TYPE},
         )
         assert response.status_code == HTTPStatus.BAD_REQUEST
-        assert response.json()['error'] == 'invalid_redirect_uri'
+        assert response.json()['error'] == _ERROR_INVALID_REDIRECT_URI
 
     def test_register_accepts_a_listed_redirect_uri(self, oauth_app):
         uris = [LISTED_REDIRECT_URI]
         response = oauth_app.post(
-            '/oauth/register',
+            _REGISTER_PATH,
             content=json.dumps({'redirect_uris': uris}).encode(),
-            headers={'content-type': 'application/json'},
+            headers={'content-type': _JSON_CONTENT_TYPE},
         )
         assert response.status_code == HTTPStatus.CREATED
         assert response.json()['redirect_uris'] == uris
@@ -2199,9 +2221,9 @@ class TestOAuthRegister:
     def test_register_accepts_a_domain_match_in_report_only(self, oauth_app):
         with patch.dict('os.environ', REPORT_ONLY):
             response = oauth_app.post(
-                '/oauth/register',
+                _REGISTER_PATH,
                 content=json.dumps({'redirect_uris': [UNLISTED_PATH_URI]}).encode(),
-                headers={'content-type': 'application/json'},
+                headers={'content-type': _JSON_CONTENT_TYPE},
             )
         assert response.status_code == HTTPStatus.CREATED
 
@@ -2216,7 +2238,7 @@ class TestOAuthFallbackRoutes:
             response = oauth_app.post(
                 '/token',
                 data={
-                    'grant_type': 'authorization_code',
+                    'grant_type': _GRANT_AUTHORIZATION_CODE,
                     'code': _seal_code('test-code', DEVICE_ID),
                 },
             )
@@ -2231,7 +2253,7 @@ class TestOAuthFallbackRoutes:
             data={'grant_type': 'client_credentials'},
         )
         assert response.status_code == HTTPStatus.BAD_REQUEST
-        assert response.json()['error'] == 'unsupported_grant_type'
+        assert response.json()['error'] == _ERROR_UNSUPPORTED_GRANT_TYPE
 
     def test_authorize_fallback_redirects_to_auth0(self, oauth_app):
         """GET /authorize should redirect to Auth0 like /oauth/authorize."""
@@ -2253,7 +2275,7 @@ class TestOAuthFallbackRoutes:
         response = oauth_app.post(
             '/register',
             content=json.dumps({'client_name': 'test'}).encode(),
-            headers={'content-type': 'application/json'},
+            headers={'content-type': _JSON_CONTENT_TYPE},
         )
         assert response.status_code == HTTPStatus.CREATED
         assert response.json()['client_id'] == TEST_CLIENT_ID
@@ -2263,16 +2285,16 @@ class TestOAuthFallbackRoutes:
         response = oauth_app.post(
             '/register',
             content=json.dumps({'redirect_uris': [EVIL_REDIRECT_URI]}).encode(),
-            headers={'content-type': 'application/json'},
+            headers={'content-type': _JSON_CONTENT_TYPE},
         )
         assert response.status_code == HTTPStatus.BAD_REQUEST
-        assert response.json()['error'] == 'invalid_redirect_uri'
+        assert response.json()['error'] == _ERROR_INVALID_REDIRECT_URI
 
 
 class TestOAuthCors:
     """CORS on the endpoints a browser-based client posts to."""
 
-    @pytest.mark.parametrize('path', ['/oauth/register', '/oauth/token'])
+    @pytest.mark.parametrize('path', [_REGISTER_PATH, _TOKEN_PATH])
     def test_preflight_is_answered(self, oauth_app, path):
         response = oauth_app.options(path)
         assert response.status_code == HTTPStatus.NO_CONTENT
@@ -2299,9 +2321,9 @@ class TestOAuthCors:
 
     def test_register_response_is_readable_cross_origin(self, oauth_app):
         response = oauth_app.post(
-            '/oauth/register',
+            _REGISTER_PATH,
             content=json.dumps({'client_name': 'my-app'}).encode(),
-            headers={'content-type': 'application/json'},
+            headers={'content-type': _JSON_CONTENT_TYPE},
         )
         assert response.status_code == HTTPStatus.CREATED
         assert response.headers['access-control-allow-origin'] == '*'
@@ -2310,9 +2332,9 @@ class TestOAuthCors:
         mock_client = _mock_auth0_response()
         with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
             response = oauth_app.post(
-                '/oauth/token',
+                _TOKEN_PATH,
                 data={
-                    'grant_type': 'authorization_code',
+                    'grant_type': _GRANT_AUTHORIZATION_CODE,
                     'code': _seal_code('test-code', DEVICE_ID),
                 },
             )
@@ -2322,16 +2344,16 @@ class TestOAuthCors:
     def test_rejected_register_is_readable_cross_origin(self, oauth_app):
         """The client can only act on the error code if it can read the body."""
         response = oauth_app.post(
-            '/oauth/register',
+            _REGISTER_PATH,
             content=json.dumps({'redirect_uris': [EVIL_REDIRECT_URI]}).encode(),
-            headers={'content-type': 'application/json'},
+            headers={'content-type': _JSON_CONTENT_TYPE},
         )
         assert response.status_code == HTTPStatus.BAD_REQUEST
         assert response.headers['access-control-allow-origin'] == '*'
 
     def test_navigation_endpoints_stay_closed(self, oauth_app):
         """CORS never governs a top-level navigation, so authorize must not open."""
-        response = oauth_app.get('/oauth/authorize')
+        response = oauth_app.get(_AUTHORIZE_PATH)
         assert 'access-control-allow-origin' not in response.headers
 
 
@@ -2352,10 +2374,10 @@ class TestMfaPkceReplay:
 
     def test_stage1_stashes_the_challenge_in_the_state(self, oauth_app):
         response = oauth_app.get(
-            '/oauth/authorize',
+            _AUTHORIZE_PATH,
             params={
                 'response_type': 'code',
-                'scope': 'openid profile email offline_access mfa',
+                'scope': f'{FULL_SCOPE} mfa',
                 'redirect_uri': 'http://localhost:8080/callback',
                 **PKCE_PARAMS,
             },
@@ -2376,13 +2398,13 @@ class TestMfaPkceReplay:
             redirect_uri='http://localhost:8080/callback',
             state='orig-state',
             stage='mfa',
-            original_scope='openid profile email offline_access',
+            original_scope=FULL_SCOPE,
             authorize_params=dict(PKCE_PARAMS),
         )
 
         with patch('httpx.AsyncClient', return_value=_mock_auth0_response()):
             response = oauth_app.get(
-                '/oauth/callback',
+                _CALLBACK_PATH,
                 params={'code': 'mfa-auth-code', 'state': composite},
                 follow_redirects=False,
             )
@@ -2398,14 +2420,14 @@ class TestMfaPkceReplay:
             redirect_uri='http://localhost:8080/callback',
             state='orig-state',
             stage='mfa',
-            original_scope=f'openid offline_access device:{DEVICE_ID}',
+            original_scope=f'openid {_OFFLINE_ACCESS_SCOPE} device:{DEVICE_ID}',
             authorize_params=dict(PKCE_PARAMS),
             device_id=DEVICE_ID,
         )
 
         with patch('httpx.AsyncClient', return_value=_mock_auth0_response()):
             response = oauth_app.get(
-                '/oauth/callback',
+                _CALLBACK_PATH,
                 params={'code': 'mfa-auth-code', 'state': composite},
                 follow_redirects=False,
             )
@@ -2427,14 +2449,14 @@ class TestMfaPkceReplay:
 
         with patch('httpx.AsyncClient', return_value=_mock_auth0_response()):
             response = oauth_app.get(
-                '/oauth/callback',
+                _CALLBACK_PATH,
                 params={'code': 'mfa-auth-code', 'state': composite},
                 follow_redirects=False,
             )
 
         assert response.status_code == HTTPStatus.FOUND
         stage2 = parse_qs(urlparse(response.headers['location']).query)
-        assert stage2['audience'] == ['https://alpacon.io/access/']
+        assert stage2['audience'] == [_DEFAULT_AUDIENCE]
 
 
 class TestOAuthCallback:
@@ -2446,7 +2468,7 @@ class TestOAuthCallback:
             'http://localhost:52048/callback', 'xyz', device_id=DEVICE_ID
         )
         response = oauth_app.get(
-            '/oauth/callback',
+            _CALLBACK_PATH,
             params={'code': 'auth-code', 'state': composite},
             follow_redirects=False,
         )
@@ -2468,12 +2490,12 @@ class TestOAuthCallback:
             }
         )
         response = oauth_app.get(
-            '/oauth/callback',
+            _CALLBACK_PATH,
             params={'code': 'auth-code', 'state': composite},
             follow_redirects=False,
         )
         assert response.status_code == HTTPStatus.BAD_REQUEST
-        assert response.json()['error'] == 'invalid_request'
+        assert response.json()['error'] == _ERROR_INVALID_REQUEST
         assert 'location' not in response.headers
 
     def test_callback_rejects_unsigned_state(self, oauth_app):
@@ -2482,18 +2504,18 @@ class TestOAuthCallback:
             json.dumps({'redirect_uri': TRUSTED_REDIRECT_URI, 'state': 'x'}).encode()
         ).decode()
         response = oauth_app.get(
-            '/oauth/callback',
+            _CALLBACK_PATH,
             params={'code': 'auth-code', 'state': unsigned},
             follow_redirects=False,
         )
         assert response.status_code == HTTPStatus.BAD_REQUEST
-        assert response.json()['error'] == 'invalid_request'
+        assert response.json()['error'] == _ERROR_INVALID_REQUEST
         assert 'location' not in response.headers
 
     def test_callback_rejects_tampered_state(self, oauth_app):
         """Swapping the payload under a valid signature must be rejected."""
         response = oauth_app.get(
-            '/oauth/callback',
+            _CALLBACK_PATH,
             params={'code': 'auth-code', 'state': _forge_state_under_valid_signature()},
             follow_redirects=False,
         )
@@ -2505,7 +2527,7 @@ class TestOAuthCallback:
         with patch('utils.oauth.time.time', return_value=1000):
             expired = _make_composite_state('http://localhost:52048/callback', 'xyz')
         response = oauth_app.get(
-            '/oauth/callback',
+            _CALLBACK_PATH,
             params={'code': 'auth-code', 'state': expired},
             follow_redirects=False,
         )
@@ -2515,7 +2537,7 @@ class TestOAuthCallback:
         """Missing client secret: same JSON 500 as other handlers, not a stack trace."""
         with patch.dict('os.environ', {'AUTH0_CLIENT_SECRET': ''}):
             response = oauth_app.get(
-                '/oauth/callback',
+                _CALLBACK_PATH,
                 params={'code': 'auth-code', 'state': 'aGVsbG8.c2ln'},
             )
         assert response.status_code == HTTPStatus.INTERNAL_SERVER_ERROR
@@ -2525,7 +2547,7 @@ class TestOAuthCallback:
         """Without a client redirect_uri in state, return JSON as fallback."""
         composite = _make_composite_state('', 'xyz', device_id=DEVICE_ID)
         response = oauth_app.get(
-            '/oauth/callback',
+            _CALLBACK_PATH,
             params={'code': 'auth-code', 'state': composite},
         )
         assert response.status_code == HTTPStatus.OK
@@ -2534,21 +2556,21 @@ class TestOAuthCallback:
         assert data['state'] == 'xyz'
 
     def test_callback_missing_code(self, oauth_app):
-        response = oauth_app.get('/oauth/callback', params={'state': 'xyz'})
+        response = oauth_app.get(_CALLBACK_PATH, params={'state': 'xyz'})
         assert response.status_code == HTTPStatus.BAD_REQUEST
-        assert response.json()['error'] == 'invalid_request'
+        assert response.json()['error'] == _ERROR_INVALID_REQUEST
 
     def test_callback_rejects_a_code_without_a_state(self, oauth_app):
         """No state means no device id, so the code could never be exchanged."""
-        response = oauth_app.get('/oauth/callback', params={'code': 'auth-code'})
+        response = oauth_app.get(_CALLBACK_PATH, params={'code': 'auth-code'})
         assert response.status_code == HTTPStatus.BAD_REQUEST
-        assert response.json()['error'] == 'invalid_request'
+        assert response.json()['error'] == _ERROR_INVALID_REQUEST
 
     def test_callback_error_redirects_to_client(self, oauth_app):
         """Auth0 errors should be forwarded to the client's redirect_uri."""
         composite = _make_composite_state('http://localhost:52048/callback', 'xyz')
         response = oauth_app.get(
-            '/oauth/callback',
+            _CALLBACK_PATH,
             params={
                 'error': 'access_denied',
                 'error_description': 'User denied',
@@ -2564,7 +2586,7 @@ class TestOAuthCallback:
     def test_callback_error_returns_json_without_redirect_uri(self, oauth_app):
         """Auth0 errors without client redirect_uri fall back to JSON."""
         response = oauth_app.get(
-            '/oauth/callback',
+            _CALLBACK_PATH,
             params={'error': 'access_denied', 'error_description': 'User denied'},
         )
         assert response.status_code == HTTPStatus.BAD_REQUEST
@@ -2573,17 +2595,17 @@ class TestOAuthCallback:
     def test_callback_rejects_opaque_state(self, oauth_app):
         """A state that is not one of ours is rejected, not echoed back."""
         response = oauth_app.get(
-            '/oauth/callback',
+            _CALLBACK_PATH,
             params={'code': 'auth-code', 'state': 'opaque-state-value'},
         )
         assert response.status_code == HTTPStatus.BAD_REQUEST
-        assert response.json()['error'] == 'invalid_request'
+        assert response.json()['error'] == _ERROR_INVALID_REQUEST
 
     def test_callback_does_not_redirect_to_untrusted_uri(self, oauth_app):
         """Callback must not redirect to an untrusted redirect_uri from state."""
         composite = _make_composite_state(EVIL_REDIRECT_URI, 'xyz')
         response = oauth_app.get(
-            '/oauth/callback',
+            _CALLBACK_PATH,
             params={'code': 'auth-code', 'state': composite},
         )
         # Should fall back to JSON instead of redirecting to evil.com
@@ -2595,7 +2617,7 @@ class TestOAuthCallback:
     def test_callback_does_not_relay_to_untracked_path(self, oauth_app):
         composite = _make_composite_state(UNLISTED_PATH_URI, 'xyz')
         response = oauth_app.get(
-            '/oauth/callback',
+            _CALLBACK_PATH,
             params={'code': 'auth-code', 'state': composite},
             follow_redirects=False,
         )
@@ -2607,7 +2629,7 @@ class TestOAuthCallback:
         """Callback relays the code to an allowlisted endpoint like claude.ai."""
         composite = _make_composite_state(LISTED_REDIRECT_URI, 'xyz')
         response = oauth_app.get(
-            '/oauth/callback',
+            _CALLBACK_PATH,
             params={'code': 'auth-code', 'state': composite},
             follow_redirects=False,
         )
@@ -2623,14 +2645,14 @@ class TestOAuthCallback:
             redirect_uri='http://localhost:8080/callback',
             state='orig-state',
             stage='mfa',
-            original_scope='openid profile email offline_access',
+            original_scope=FULL_SCOPE,
         )
 
         mock_client = _mock_auth0_response(status_code=HTTPStatus.OK)
 
         with patch('httpx.AsyncClient', return_value=mock_client):
             response = oauth_app.get(
-                '/oauth/callback',
+                _CALLBACK_PATH,
                 params={'code': 'mfa-auth-code', 'state': composite},
                 follow_redirects=False,
             )
@@ -2642,7 +2664,7 @@ class TestOAuthCallback:
 
         # Should redirect to Auth0 with regular audience (not MFA)
         audience = params.get('audience', [''])[0]
-        assert audience == 'https://alpacon.io/access/'
+        assert audience == _DEFAULT_AUDIENCE
         assert '/mfa/' not in audience
 
         # Scope should be the original scope (not enroll)
@@ -2664,7 +2686,7 @@ class TestOAuthCallback:
         """The mark is spent once the code is relayed."""
         composite = _make_composite_state('http://localhost:52048/callback', 'xyz')
         response = oauth_app.get(
-            '/oauth/callback',
+            _CALLBACK_PATH,
             params={'code': 'auth-code', 'state': composite},
             follow_redirects=False,
         )
@@ -2677,7 +2699,7 @@ class TestOAuthCallback:
         """The fallback ends the flow too, so it clears the mark as well."""
         composite = _make_composite_state('', 'xyz')
         response = oauth_app.get(
-            '/oauth/callback', params={'code': 'auth-code', 'state': composite}
+            _CALLBACK_PATH, params={'code': 'auth-code', 'state': composite}
         )
         assert response.status_code == HTTPStatus.OK
         raw = response.headers['set-cookie'].lower()
@@ -2690,7 +2712,7 @@ class TestOAuthCallback:
             'http://localhost:52048/callback', 'xyz', nonce_hash=_hash_nonce('other')
         )
         response = oauth_app.get(
-            '/oauth/callback',
+            _CALLBACK_PATH,
             params={'code': 'auth-code', 'state': composite},
             follow_redirects=False,
         )
@@ -2703,11 +2725,11 @@ class TestOAuthCallback:
             redirect_uri='http://localhost:8080/callback',
             state='orig-state',
             stage='mfa',
-            original_scope='openid profile email offline_access',
+            original_scope=FULL_SCOPE,
         )
         with patch('httpx.AsyncClient', return_value=_mock_auth0_response()):
             response = oauth_app.get(
-                '/oauth/callback',
+                _CALLBACK_PATH,
                 params={'code': 'mfa-auth-code', 'state': composite},
                 follow_redirects=False,
             )
@@ -2720,11 +2742,11 @@ class TestOAuthCallback:
             redirect_uri='http://localhost:8080/callback',
             state='orig-state',
             stage='mfa',
-            original_scope='openid profile email offline_access',
+            original_scope=FULL_SCOPE,
         )
         with patch('httpx.AsyncClient', return_value=_mock_auth0_response()):
             response = oauth_app.get(
-                '/oauth/callback',
+                _CALLBACK_PATH,
                 params={'code': 'mfa-auth-code', 'state': composite},
                 follow_redirects=False,
             )
@@ -2736,12 +2758,12 @@ class TestOAuthCallback:
         """A code must not reach a browser that never started the flow."""
         composite = _make_composite_state('http://localhost:52048/callback', 'xyz')
         response = oauth_app_no_cookie.get(
-            '/oauth/callback',
+            _CALLBACK_PATH,
             params={'code': 'auth-code', 'state': composite},
             follow_redirects=False,
         )
         assert response.status_code == HTTPStatus.BAD_REQUEST
-        assert response.json()['error'] == 'invalid_request'
+        assert response.json()['error'] == _ERROR_INVALID_REQUEST
         assert 'location' not in response.headers
 
     def test_callback_rejects_a_mismatched_cookie(self, oauth_app):
@@ -2750,7 +2772,7 @@ class TestOAuthCallback:
             'http://localhost:52048/callback', 'xyz', nonce_hash=_hash_nonce('other')
         )
         response = oauth_app.get(
-            '/oauth/callback',
+            _CALLBACK_PATH,
             params={'code': 'auth-code', 'state': composite},
             follow_redirects=False,
         )
@@ -2763,7 +2785,7 @@ class TestOAuthCallback:
             {'redirect_uri': 'http://localhost:52048/callback', 'state': 'xyz'}
         )
         response = oauth_app.get(
-            '/oauth/callback',
+            _CALLBACK_PATH,
             params={'code': 'auth-code', 'state': composite},
             follow_redirects=False,
         )
@@ -2776,12 +2798,12 @@ class TestOAuthCallback:
             'http://localhost:52048/callback', 'xyz', nonce_hash='서명'
         )
         response = oauth_app.get(
-            '/oauth/callback',
+            _CALLBACK_PATH,
             params={'code': 'auth-code', 'state': composite},
             follow_redirects=False,
         )
         assert response.status_code == HTTPStatus.BAD_REQUEST
-        assert response.json()['error'] == 'invalid_request'
+        assert response.json()['error'] == _ERROR_INVALID_REQUEST
         assert 'location' not in response.headers
 
     @pytest.mark.parametrize('binding', ['', None, 0, True, ['hash'], {'v': 'hash'}])
@@ -2791,7 +2813,7 @@ class TestOAuthCallback:
             'http://localhost:52048/callback', 'xyz', nonce_hash=binding
         )
         response = oauth_app.get(
-            '/oauth/callback',
+            _CALLBACK_PATH,
             params={'code': 'auth-code', 'state': composite},
             follow_redirects=False,
         )
@@ -2804,14 +2826,14 @@ class TestOAuthCallback:
             'http://localhost:52048/callback', 'xyz', nonce_hash=_hash_nonce('other')
         )
         response = oauth_app.get(
-            '/oauth/callback',
+            _CALLBACK_PATH,
             params={'error': 'access_denied', 'state': composite},
             follow_redirects=False,
         )
         assert response.status_code == HTTPStatus.BAD_REQUEST
         # invalid_request, not access_denied: the gate rejected it before the
         # error was relayed anywhere.
-        assert response.json()['error'] == 'invalid_request'
+        assert response.json()['error'] == _ERROR_INVALID_REQUEST
         assert 'location' not in response.headers
 
     def test_callback_rejects_loopback_when_the_cookie_disagrees(self, oauth_app):
@@ -2820,7 +2842,7 @@ class TestOAuthCallback:
             'http://localhost:9999/steal', 'xyz', nonce_hash=_hash_nonce('attacker')
         )
         response = oauth_app.get(
-            '/oauth/callback',
+            _CALLBACK_PATH,
             params={'code': 'auth-code', 'state': composite},
             follow_redirects=False,
         )
