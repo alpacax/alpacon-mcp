@@ -32,24 +32,76 @@ from utils.logger import get_logger
 logger = get_logger('oauth')
 
 
+_RESOURCE_URL_ENV = 'ALPACON_MCP_RESOURCE_URL'
+
+_METADATA_PATH = '/.well-known/oauth-authorization-server'
+_AUTHORIZE_PATH = '/oauth/authorize'
+_TOKEN_PATH = '/oauth/token'
+_REGISTER_PATH = '/oauth/register'
+_CALLBACK_PATH = '/oauth/callback'
+
+_RESPONSE_TYPE_CODE = 'code'
+
+_GRANT_AUTHORIZATION_CODE = 'authorization_code'
+_GRANT_REFRESH_TOKEN = 'refresh_token'
+
+# Anything outside this list would make the endpoint a generic credential
+# exchange against the client_secret it injects.
+_ALLOWED_GRANT_TYPES = (_GRANT_AUTHORIZATION_CODE, _GRANT_REFRESH_TOKEN)
+
+_ERROR_INVALID_REQUEST = 'invalid_request'
+_ERROR_INVALID_CLIENT = 'invalid_client'
+_ERROR_INVALID_GRANT = 'invalid_grant'
+_ERROR_UNSUPPORTED_GRANT_TYPE = 'unsupported_grant_type'
+_ERROR_SERVER_ERROR = 'server_error'
+_ERROR_INVALID_CLIENT_METADATA = 'invalid_client_metadata'
+_ERROR_INVALID_REDIRECT_URI = 'invalid_redirect_uri'
+
+_JSON_CONTENT_TYPE = 'application/json'
+_FORM_CONTENT_TYPE = 'application/x-www-form-urlencoded'
+
+_DEFAULT_AUDIENCE = 'https://alpacon.io/access/'
+_OFFLINE_ACCESS_SCOPE = 'offline_access'
+_DEFAULT_SCOPES = ('openid', 'profile', 'email', _OFFLINE_ACCESS_SCOPE)
+
+_METADATA_CACHE_SECONDS = 3600
+
+# Sent on the preflight for the two endpoints a browser-based client posts to.
+# Allow-Credentials stays unset: with it, a wildcard origin would let any page
+# ride the user's ambient cookies, and neither endpoint reads a cookie anyway.
+_CORS_PREFLIGHT_HEADERS = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'authorization, content-type',
+    'Access-Control-Max-Age': '3600',
+}
+
+# Both the authorize gate and the discovery document use this, so the enforced
+# and the advertised method cannot drift apart. plain is not accepted: its
+# challenge is the verifier itself, so whoever reads the authorization request
+# can replay it.
+_PKCE_CHALLENGE_METHOD = 'S256'
+
+# RFC 7636 §4.1 fixes the shape: a base64url SHA-256 digest. Matched, never
+# normalized — the value checked here is the one forwarded upstream, and
+# trimming would break that.
+_PKCE_CHALLENGE_PATTERN = re.compile(r'^[A-Za-z0-9\-._~]{43,128}\Z')
+
+
 # Explicit state signing key; when unset, the key is derived from the client secret.
 _STATE_SECRET_ENV = 'ALPACON_MCP_STATE_SECRET'
 
-# Stage tags carried through the state in the two-stage MFA flow.
-_STAGE_MFA = 'mfa'
-_STAGE_REGULAR = 'regular'
-
 # Domain-separates the state key from other keys derived from the client secret.
 _STATE_SECRET_INFO = b'alpacon-mcp-oauth-state-v1'
-
-# Matches the 32 bytes a derived key always has, so an explicit key cannot be
-# weaker than leaving the variable unset.
-_SECRET_MIN_BYTES = 32
 
 # Kept apart from the state key: a state lives ten minutes, a sealed refresh
 # token up to its Auth0 lifetime, so rotating one must not cost the other.
 _GRANT_SECRET_ENV = 'ALPACON_MCP_GRANT_SECRET'
 _GRANT_SECRET_INFO = b'alpacon-mcp-oauth-grant-v1'
+
+# Matches the 32 bytes a derived key always has, so an explicit key cannot be
+# weaker than leaving the variable unset.
+_SECRET_MIN_BYTES = 32
 
 # Leads every value this server sealed, so a bare Auth0 token, which also
 # contains dots, is never mistaken for a tampered seal.
@@ -59,6 +111,16 @@ _SEAL_KIND_REFRESH = 'refresh'
 
 # Covers an Auth0 login plus MFA; keeps a leaked state only briefly usable.
 _STATE_TTL_SECONDS = 600
+
+# Stage tags carried through the state in the two-stage MFA flow.
+_STAGE_MFA = 'mfa'
+_STAGE_REGULAR = 'regular'
+
+# Mirrors the validator in the Auth0 action's code.js. The check and its
+# consumer sit in different repos, so a value we accept but the action rejects
+# would silently fall back to the fingerprint keying this fix exists to avoid.
+_DEVICE_ID_PATTERN = re.compile(r'^[A-Za-z0-9-]{8,64}$')
+
 
 # The __Host- prefix makes the browser itself require Secure, Path=/ and no
 # Domain, so the cookie cannot be planted by a sibling host.
@@ -83,50 +145,12 @@ _NONCE_COOKIE_ATTRS: _NonceCookieAttrs = {
     'samesite': 'lax',
 }
 
-_ALLOWED_LOOPBACK_HOSTS = ('localhost', '127.0.0.1', '::1')
-
-# Mirrors the validator in the Auth0 action's code.js. The check and its
-# consumer sit in different repos, so a value we accept but the action rejects
-# would silently fall back to the fingerprint keying this fix exists to avoid.
-_DEVICE_ID_PATTERN = re.compile(r'^[A-Za-z0-9-]{8,64}$')
-
-# Caps a client-supplied value in a log line. Escaping expands a byte up to
-# sixfold, so an unbounded value on an unauthenticated route inflates log volume.
-_LOG_VALUE_MAX_CHARS = 512
-
-# A real client registers one or two callbacks. The cap keeps one unauthenticated
-# registration from driving a check — and in report-only mode a warning — per entry.
-_MAX_REGISTERED_REDIRECT_URIS = 20
-
-# Both routes that read a body are unauthenticated, and a real token request or
-# client registration is well under a kilobyte. Without a cap, one request decides
-# how much the server allocates.
-_MAX_REQUEST_BODY_BYTES = 16 * 1024
-
-# Both the authorize gate and the discovery document use this, so the enforced
-# and the advertised method cannot drift apart. plain is not accepted: its
-# challenge is the verifier itself, so whoever reads the authorization request
-# can replay it.
-_PKCE_CHALLENGE_METHOD = 'S256'
-
-# RFC 7636 §4.1 fixes the shape: a base64url SHA-256 digest. Matched, never
-# normalized — the value checked here is the one forwarded upstream, and
-# trimming would break that.
-_PKCE_CHALLENGE_PATTERN = re.compile(r'^[A-Za-z0-9\-._~]{43,128}\Z')
-
-# Sent on the preflight for the two endpoints a browser-based client posts to.
-# Allow-Credentials stays unset: with it, a wildcard origin would let any page
-# ride the user's ambient cookies, and neither endpoint reads a cookie anyway.
-_CORS_PREFLIGHT_HEADERS = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'authorization, content-type',
-    'Access-Control-Max-Age': '3600',
-}
 
 _ENV_ALLOWED_REDIRECT_DOMAINS = 'ALLOWED_REDIRECT_DOMAINS'
 _ENV_ALLOWED_REDIRECT_URIS = 'ALLOWED_REDIRECT_URIS'
 _ENV_REDIRECT_URI_REPORT_ONLY = 'ALPACON_MCP_REDIRECT_URI_REPORT_ONLY'
+
+_ALLOWED_LOOPBACK_HOSTS = ('localhost', '127.0.0.1', '::1')
 
 # Trusting a whole domain lets an authorization code land on any path an
 # attacker can influence there, so each entry pins one callback endpoint.
@@ -171,244 +195,40 @@ _DEFAULT_REDIRECT_DOMAINS = tuple(
     )
 )
 
-_METADATA_PATH = '/.well-known/oauth-authorization-server'
-_AUTHORIZE_PATH = '/oauth/authorize'
-_TOKEN_PATH = '/oauth/token'
-_REGISTER_PATH = '/oauth/register'
-_CALLBACK_PATH = '/oauth/callback'
-
-_RESOURCE_URL_ENV = 'ALPACON_MCP_RESOURCE_URL'
-
-_GRANT_AUTHORIZATION_CODE = 'authorization_code'
-_GRANT_REFRESH_TOKEN = 'refresh_token'
-
-# Anything outside this list would make the endpoint a generic credential
-# exchange against the client_secret it injects.
-_ALLOWED_GRANT_TYPES = (_GRANT_AUTHORIZATION_CODE, _GRANT_REFRESH_TOKEN)
-
-_RESPONSE_TYPE_CODE = 'code'
-
-_ERROR_INVALID_REQUEST = 'invalid_request'
-_ERROR_INVALID_CLIENT = 'invalid_client'
-_ERROR_INVALID_GRANT = 'invalid_grant'
-_ERROR_UNSUPPORTED_GRANT_TYPE = 'unsupported_grant_type'
-_ERROR_SERVER_ERROR = 'server_error'
-_ERROR_INVALID_CLIENT_METADATA = 'invalid_client_metadata'
-_ERROR_INVALID_REDIRECT_URI = 'invalid_redirect_uri'
-
-_JSON_CONTENT_TYPE = 'application/json'
-_FORM_CONTENT_TYPE = 'application/x-www-form-urlencoded'
-
-_DEFAULT_AUDIENCE = 'https://alpacon.io/access/'
-_OFFLINE_ACCESS_SCOPE = 'offline_access'
-_DEFAULT_SCOPES = ('openid', 'profile', 'email', _OFFLINE_ACCESS_SCOPE)
-
-_METADATA_CACHE_SECONDS = 3600
+# A real client registers one or two callbacks. The cap keeps one unauthenticated
+# registration from driving a check — and in report-only mode a warning — per entry.
+_MAX_REGISTERED_REDIRECT_URIS = 20
 
 
-def _escape_for_log(value: str) -> str:
-    """Escape control characters in a client-supplied value.
+# Both routes that read a body are unauthenticated, and a real token request or
+# client registration is well under a kilobyte. Without a cap, one request decides
+# how much the server allocates.
+_MAX_REQUEST_BODY_BYTES = 16 * 1024
 
-    A raw newline would otherwise let a client forge a second log line.
-    """
-    escaped = ''.join(
-        c if c.isprintable() else repr(c)[1:-1] for c in value[:_LOG_VALUE_MAX_CHARS]
-    )
-    if len(value) > _LOG_VALUE_MAX_CHARS or len(escaped) > _LOG_VALUE_MAX_CHARS:
-        return escaped[:_LOG_VALUE_MAX_CHARS] + '...(truncated)'
-    return escaped
+# Caps a client-supplied value in a log line. Escaping expands a byte up to
+# sixfold, so an unbounded value on an unauthenticated route inflates log volume.
+_LOG_VALUE_MAX_CHARS = 512
 
 
-def _get_server_url(request) -> str:
-    """Build the MCP server's base URL from config or request.
+class _OAuthRequestError(Exception):
+    """Raised by a stage to end the handler with one error response.
 
-    Prefers the ALPACON_MCP_RESOURCE_URL env var to avoid relying on
-    potentially spoofable forwarding headers.
-    """
-    configured_base_url = os.getenv(_RESOURCE_URL_ENV)
-    if configured_base_url:
-        return configured_base_url.rstrip('/')
-    return f'{request.url.scheme}://{request.url.netloc}'
-
-
-def _callback_url(server_url: str) -> str:
-    """Build the callback this server hands Auth0 as redirect_uri."""
-    return f'{server_url}{_CALLBACK_PATH}'
-
-
-def _auth0_authorize_url(config: dict[str, str], params: dict) -> str:
-    return f'{config["auth0_base_url"]}/authorize?{urlencode(params)}'
-
-
-def _auth0_token_url(config: dict[str, str]) -> str:
-    return f'{config["auth0_base_url"]}/oauth/token'
-
-
-def _get_allowed_redirect_domains() -> tuple[str, ...]:
-    """Return the set of allowed non-localhost redirect domains.
-
-    Reads from ALLOWED_REDIRECT_DOMAINS env var (comma-separated).
-    Falls back to _DEFAULT_REDIRECT_DOMAINS if not set.
-    """
-    env_domains = os.getenv(_ENV_ALLOWED_REDIRECT_DOMAINS, '').strip()
-    if env_domains:
-        return tuple(d.strip().lower() for d in env_domains.split(',') if d.strip())
-    return _DEFAULT_REDIRECT_DOMAINS
-
-
-def _get_allowed_redirect_uris() -> tuple[str, ...]:
-    """Return the allowed non-loopback callback endpoints.
-
-    Reads ALLOWED_REDIRECT_URIS (comma-separated full URIs) when set.
-    """
-    env_uris = os.getenv(_ENV_ALLOWED_REDIRECT_URIS, '').strip()
-    if env_uris:
-        return tuple(u.strip() for u in env_uris.split(',') if u.strip())
-    return _DEFAULT_REDIRECT_URIS
-
-
-def _redirect_uris_are_overridden() -> bool:
-    return bool(os.getenv(_ENV_ALLOWED_REDIRECT_URIS, '').strip())
-
-
-def _is_allowed_redirect_host(url: str) -> bool:
-    """Whether the URL's host clears the legacy host allowlist.
-
-    https only, so an authorization code never travels over plaintext.
-    Clearing this check is not sufficient on its own — see _check_redirect_uri.
-    """
-    parsed = urlparse(url)
-    if parsed.scheme != 'https':
-        return False
-
-    return (parsed.hostname or '') in _get_allowed_redirect_domains()
-
-
-def _is_exact_allowed_redirect_uri(url: str) -> bool:
-    """Return True when the URL is one of the allowed callback endpoints.
-
-    https only: a pinned endpoint bypasses the host allowlist, so the scheme
-    check that keeps authorization codes off plaintext lives here too.
-    """
-    parsed = urlparse(url)
-    if parsed.scheme != 'https' or parsed.query or parsed.fragment:
-        return False
-
-    if url in _get_allowed_redirect_uris():
-        return True
-
-    # An override is the whole allowlist: the built-in patterns go out with the
-    # built-in URIs, so narrowing the list cannot leave one behind.
-    if _redirect_uris_are_overridden():
-        return False
-
-    return any(pattern.match(url) for pattern in _DEFAULT_REDIRECT_URI_PATTERNS)
-
-
-def _is_pkce_exempt_redirect_uri(url: str) -> bool:
-    """Whether a destination may start an authorization flow with no PKCE.
-
-    Goes through _is_exact_allowed_redirect_uri, not _check_redirect_uri: the
-    latter accepts any path on an allowlisted host in report-only mode, which
-    would let an unrelated environment variable widen the exemption.
-    """
-    return url in _PKCE_EXEMPT_REDIRECT_URIS and _is_exact_allowed_redirect_uri(url)
-
-
-def _redirect_uri_report_only() -> bool:
-    """Escape hatch: recover from a missing allowlist entry without a code change."""
-    return os.getenv(_ENV_REDIRECT_URI_REPORT_ONLY, '').lower() == 'true'
-
-
-def _check_redirect_uri(url: str) -> bool:
-    """Decide whether a client redirect_uri may receive an authorization code.
-
-    Loopback is exempt: callback paths differ per client (/callback,
-    /oauth/callback, /) and pinning them would break clients without closing
-    the local-listener risk, which browser-session binding handles instead.
-    """
-    # A pinned endpoint is stricter than a host match, so it stands on its own;
-    # otherwise every listed host would also have to be in the domain list.
-    if _is_exact_allowed_redirect_uri(url):
-        return True
-
-    parsed = urlparse(url)
-    if (parsed.hostname or '') in _ALLOWED_LOOPBACK_HOSTS:
-        return parsed.scheme in ('http', 'https')
-
-    if not _is_allowed_redirect_host(url):
-        return False
-
-    if _redirect_uri_report_only():
-        logger.warning(
-            'redirect_uri is outside the endpoint allowlist and is allowed only '
-            'because report-only mode is on: %s',
-            _escape_for_log(url),
-        )
-        return True
-
-    logger.warning(
-        'Rejected redirect_uri outside the endpoint allowlist: %s',
-        _escape_for_log(url),
-    )
-    return False
-
-
-def _is_registrable_uri_list(value: object) -> bool:
-    """Whether redirect_uris has the shape RFC 7591 asks for, at a length we accept."""
-    return (
-        isinstance(value, list)
-        and 1 <= len(value) <= _MAX_REGISTERED_REDIRECT_URIS
-        and all(isinstance(uri, str) and uri for uri in value)
-    )
-
-
-def _allow_browser_clients(handler):
-    """Answer the CORS preflight and mark the response readable cross-origin.
-
-    Only for endpoints a browser-based client reaches with fetch: /oauth/authorize
-    and /oauth/callback are top-level navigations, which CORS never governs.
-    Starlette ships CORSMiddleware, but custom_route takes no per-route middleware
-    and installing it app-wide would also open the MCP transport endpoint.
+    Without a description the body is the bare `{'error': ...}` the
+    configuration failures answer with, not the RFC 6749 shape.
     """
 
-    @wraps(handler)
-    async def with_cors(request: Request) -> Response:
-        if request.method == 'OPTIONS':
-            return Response(
-                status_code=HTTPStatus.NO_CONTENT, headers=_CORS_PREFLIGHT_HEADERS
-            )
-
-        response = await handler(request)
-        response.headers['Access-Control-Allow-Origin'] = '*'
-        return response
-
-    return with_cors
-
-
-def _log_authorize_client_profile(
-    redirect_uri: str, code_challenge_method: str
-) -> None:
-    """Record what each client sends, to settle who reaches the exempt callback.
-
-    Remove once no client uses the PKCE-exempt redirect_uri and no deployment
-    needs report-only mode to cover a missing allowlist entry.
-    """
-    logger.info(
-        'authorize observed - redirect_uri: %s, pkce: %s',
-        _escape_for_log(redirect_uri) or '(none)',
-        _escape_for_log(code_challenge_method) or 'none',
-    )
-
-
-def _build_redirect_url(base_url: str, extra_params: dict) -> str:
-    """Safely merge query params into a URL, preserving existing params."""
-    parsed = urlparse(base_url)
-    existing_params = parse_qs(parsed.query, keep_blank_values=True)
-    merged = {k: v[0] if len(v) == 1 else v for k, v in existing_params.items()}
-    merged.update(extra_params)
-    new_query = urlencode(merged, doseq=True)
-    return urlunparse(parsed._replace(query=new_query))
+    def __init__(
+        self,
+        status: HTTPStatus,
+        error: str,
+        description: str | None = None,
+        headers: dict | None = None,
+    ) -> None:
+        super().__init__(description)
+        self.status = status
+        self.error = error
+        self.description = description
+        self.headers = headers
 
 
 def _get_oauth_config() -> dict[str, str]:
@@ -438,6 +258,31 @@ def _get_oauth_config() -> dict[str, str]:
         'mfa_audience': mfa_audience,
         'auth0_base_url': f'https://{domain}',
     }
+
+
+def _get_server_url(request) -> str:
+    """Build the MCP server's base URL from config or request.
+
+    Prefers the ALPACON_MCP_RESOURCE_URL env var to avoid relying on
+    potentially spoofable forwarding headers.
+    """
+    configured_base_url = os.getenv(_RESOURCE_URL_ENV)
+    if configured_base_url:
+        return configured_base_url.rstrip('/')
+    return f'{request.url.scheme}://{request.url.netloc}'
+
+
+def _callback_url(server_url: str) -> str:
+    """Build the callback this server hands Auth0 as redirect_uri."""
+    return f'{server_url}{_CALLBACK_PATH}'
+
+
+def _auth0_authorize_url(config: dict[str, str], params: dict) -> str:
+    return f'{config["auth0_base_url"]}/authorize?{urlencode(params)}'
+
+
+def _auth0_token_url(config: dict[str, str]) -> str:
+    return f'{config["auth0_base_url"]}/oauth/token'
 
 
 def _explicit_hex_secret(env_name: str) -> bytes | None:
@@ -480,25 +325,6 @@ def _get_grant_secret() -> bytes:
     return _explicit_hex_secret(_GRANT_SECRET_ENV) or _derived_secret(
         _GRANT_SECRET_INFO
     )
-
-
-async def _read_bounded_body(request: Request) -> bytes | None:
-    """The body, or None once it passes `_MAX_REQUEST_BODY_BYTES`.
-
-    Streamed rather than read whole: a chunked request declares no length, so a
-    Content-Length check alone would still buffer everything before rejecting it.
-    """
-    declared = request.headers.get('content-length', '')
-    if declared.isdigit() and int(declared) > _MAX_REQUEST_BODY_BYTES:
-        return None
-    chunks: list[bytes] = []
-    size = 0
-    async for chunk in request.stream():
-        size += len(chunk)
-        if size > _MAX_REQUEST_BODY_BYTES:
-            return None
-        chunks.append(chunk)
-    return b''.join(chunks)
 
 
 def _sign_state(payload: dict) -> str:
@@ -655,48 +481,6 @@ def _log_unsealed_rejection(what: str, value: object) -> None:
         logger.info('Rejected an unsealed %s', what)
 
 
-def _oauth_error(
-    error: str,
-    description: str,
-    status: HTTPStatus = HTTPStatus.BAD_REQUEST,
-) -> JSONResponse:
-    """Build a standard OAuth error response (RFC 6749 section 5.2 shape)."""
-    return JSONResponse(
-        {'error': error, 'error_description': description}, status_code=status
-    )
-
-
-class _OAuthRequestError(Exception):
-    """Raised by a stage to end the handler with one error response.
-
-    Without a description the body is the bare `{'error': ...}` the
-    configuration failures answer with, not the RFC 6749 shape.
-    """
-
-    def __init__(
-        self,
-        status: HTTPStatus,
-        error: str,
-        description: str | None = None,
-        headers: dict | None = None,
-    ) -> None:
-        super().__init__(description)
-        self.status = status
-        self.error = error
-        self.description = description
-        self.headers = headers
-
-
-def _reject_response(exc: _OAuthRequestError) -> JSONResponse:
-    if exc.description is None:
-        response = JSONResponse({'error': exc.error}, status_code=exc.status)
-    else:
-        response = _oauth_error(exc.error, exc.description, status=exc.status)
-    if exc.headers:
-        response.headers.update(exc.headers)
-    return response
-
-
 def _new_nonce() -> str:
     """Mint the per-flow value that proves a callback reached the same browser."""
     return secrets.token_urlsafe(32)
@@ -725,6 +509,211 @@ def _nonce_cookie_matches(request: Request, state_data: dict) -> bool:
 
 def _clear_nonce_cookie(response: Response) -> None:
     response.delete_cookie(_NONCE_COOKIE_NAME, **_NONCE_COOKIE_ATTRS)
+
+
+def _get_allowed_redirect_domains() -> tuple[str, ...]:
+    """Return the set of allowed non-localhost redirect domains.
+
+    Reads from ALLOWED_REDIRECT_DOMAINS env var (comma-separated).
+    Falls back to _DEFAULT_REDIRECT_DOMAINS if not set.
+    """
+    env_domains = os.getenv(_ENV_ALLOWED_REDIRECT_DOMAINS, '').strip()
+    if env_domains:
+        return tuple(d.strip().lower() for d in env_domains.split(',') if d.strip())
+    return _DEFAULT_REDIRECT_DOMAINS
+
+
+def _get_allowed_redirect_uris() -> tuple[str, ...]:
+    """Return the allowed non-loopback callback endpoints.
+
+    Reads ALLOWED_REDIRECT_URIS (comma-separated full URIs) when set.
+    """
+    env_uris = os.getenv(_ENV_ALLOWED_REDIRECT_URIS, '').strip()
+    if env_uris:
+        return tuple(u.strip() for u in env_uris.split(',') if u.strip())
+    return _DEFAULT_REDIRECT_URIS
+
+
+def _redirect_uris_are_overridden() -> bool:
+    return bool(os.getenv(_ENV_ALLOWED_REDIRECT_URIS, '').strip())
+
+
+def _redirect_uri_report_only() -> bool:
+    """Escape hatch: recover from a missing allowlist entry without a code change."""
+    return os.getenv(_ENV_REDIRECT_URI_REPORT_ONLY, '').lower() == 'true'
+
+
+def _is_allowed_redirect_host(url: str) -> bool:
+    """Whether the URL's host clears the legacy host allowlist.
+
+    https only, so an authorization code never travels over plaintext.
+    Clearing this check is not sufficient on its own — see _check_redirect_uri.
+    """
+    parsed = urlparse(url)
+    if parsed.scheme != 'https':
+        return False
+
+    return (parsed.hostname or '') in _get_allowed_redirect_domains()
+
+
+def _is_exact_allowed_redirect_uri(url: str) -> bool:
+    """Return True when the URL is one of the allowed callback endpoints.
+
+    https only: a pinned endpoint bypasses the host allowlist, so the scheme
+    check that keeps authorization codes off plaintext lives here too.
+    """
+    parsed = urlparse(url)
+    if parsed.scheme != 'https' or parsed.query or parsed.fragment:
+        return False
+
+    if url in _get_allowed_redirect_uris():
+        return True
+
+    # An override is the whole allowlist: the built-in patterns go out with the
+    # built-in URIs, so narrowing the list cannot leave one behind.
+    if _redirect_uris_are_overridden():
+        return False
+
+    return any(pattern.match(url) for pattern in _DEFAULT_REDIRECT_URI_PATTERNS)
+
+
+def _is_pkce_exempt_redirect_uri(url: str) -> bool:
+    """Whether a destination may start an authorization flow with no PKCE.
+
+    Goes through _is_exact_allowed_redirect_uri, not _check_redirect_uri: the
+    latter accepts any path on an allowlisted host in report-only mode, which
+    would let an unrelated environment variable widen the exemption.
+    """
+    return url in _PKCE_EXEMPT_REDIRECT_URIS and _is_exact_allowed_redirect_uri(url)
+
+
+def _check_redirect_uri(url: str) -> bool:
+    """Decide whether a client redirect_uri may receive an authorization code.
+
+    Loopback is exempt: callback paths differ per client (/callback,
+    /oauth/callback, /) and pinning them would break clients without closing
+    the local-listener risk, which browser-session binding handles instead.
+    """
+    # A pinned endpoint is stricter than a host match, so it stands on its own;
+    # otherwise every listed host would also have to be in the domain list.
+    if _is_exact_allowed_redirect_uri(url):
+        return True
+
+    parsed = urlparse(url)
+    if (parsed.hostname or '') in _ALLOWED_LOOPBACK_HOSTS:
+        return parsed.scheme in ('http', 'https')
+
+    if not _is_allowed_redirect_host(url):
+        return False
+
+    if _redirect_uri_report_only():
+        logger.warning(
+            'redirect_uri is outside the endpoint allowlist and is allowed only '
+            'because report-only mode is on: %s',
+            _escape_for_log(url),
+        )
+        return True
+
+    logger.warning(
+        'Rejected redirect_uri outside the endpoint allowlist: %s',
+        _escape_for_log(url),
+    )
+    return False
+
+
+def _is_registrable_uri_list(value: object) -> bool:
+    """Whether redirect_uris has the shape RFC 7591 asks for, at a length we accept."""
+    return (
+        isinstance(value, list)
+        and 1 <= len(value) <= _MAX_REGISTERED_REDIRECT_URIS
+        and all(isinstance(uri, str) and uri for uri in value)
+    )
+
+
+def _build_redirect_url(base_url: str, extra_params: dict) -> str:
+    """Safely merge query params into a URL, preserving existing params."""
+    parsed = urlparse(base_url)
+    existing_params = parse_qs(parsed.query, keep_blank_values=True)
+    merged = {k: v[0] if len(v) == 1 else v for k, v in existing_params.items()}
+    merged.update(extra_params)
+    new_query = urlencode(merged, doseq=True)
+    return urlunparse(parsed._replace(query=new_query))
+
+
+def _escape_for_log(value: str) -> str:
+    """Escape control characters in a client-supplied value.
+
+    A raw newline would otherwise let a client forge a second log line.
+    """
+    escaped = ''.join(
+        c if c.isprintable() else repr(c)[1:-1] for c in value[:_LOG_VALUE_MAX_CHARS]
+    )
+    if len(value) > _LOG_VALUE_MAX_CHARS or len(escaped) > _LOG_VALUE_MAX_CHARS:
+        return escaped[:_LOG_VALUE_MAX_CHARS] + '...(truncated)'
+    return escaped
+
+
+async def _read_bounded_body(request: Request) -> bytes | None:
+    """The body, or None once it passes `_MAX_REQUEST_BODY_BYTES`.
+
+    Streamed rather than read whole: a chunked request declares no length, so a
+    Content-Length check alone would still buffer everything before rejecting it.
+    """
+    declared = request.headers.get('content-length', '')
+    if declared.isdigit() and int(declared) > _MAX_REQUEST_BODY_BYTES:
+        return None
+    chunks: list[bytes] = []
+    size = 0
+    async for chunk in request.stream():
+        size += len(chunk)
+        if size > _MAX_REQUEST_BODY_BYTES:
+            return None
+        chunks.append(chunk)
+    return b''.join(chunks)
+
+
+def _oauth_error(
+    error: str,
+    description: str,
+    status: HTTPStatus = HTTPStatus.BAD_REQUEST,
+) -> JSONResponse:
+    """Build a standard OAuth error response (RFC 6749 section 5.2 shape)."""
+    return JSONResponse(
+        {'error': error, 'error_description': description}, status_code=status
+    )
+
+
+def _reject_response(exc: _OAuthRequestError) -> JSONResponse:
+    if exc.description is None:
+        response = JSONResponse({'error': exc.error}, status_code=exc.status)
+    else:
+        response = _oauth_error(exc.error, exc.description, status=exc.status)
+    if exc.headers:
+        response.headers.update(exc.headers)
+    return response
+
+
+def _allow_browser_clients(handler):
+    """Answer the CORS preflight and mark the response readable cross-origin.
+
+    Only for endpoints a browser-based client reaches with fetch: /oauth/authorize
+    and /oauth/callback are top-level navigations, which CORS never governs.
+    Starlette ships CORSMiddleware, but custom_route takes no per-route middleware
+    and installing it app-wide would also open the MCP transport endpoint.
+    """
+
+    @wraps(handler)
+    async def with_cors(request: Request) -> Response:
+        if request.method == 'OPTIONS':
+            return Response(
+                status_code=HTTPStatus.NO_CONTENT, headers=_CORS_PREFLIGHT_HEADERS
+            )
+
+        response = await handler(request)
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        return response
+
+    return with_cors
 
 
 # RFC 8414 metadata is public and carries no credentials. Decorating covers
@@ -764,6 +753,21 @@ async def oauth_metadata(request):
     return JSONResponse(
         metadata,
         headers={'Cache-Control': f'public, max-age={_METADATA_CACHE_SECONDS}'},
+    )
+
+
+def _log_authorize_client_profile(
+    redirect_uri: str, code_challenge_method: str
+) -> None:
+    """Record what each client sends, to settle who reaches the exempt callback.
+
+    Remove once no client uses the PKCE-exempt redirect_uri and no deployment
+    needs report-only mode to cover a missing allowlist entry.
+    """
+    logger.info(
+        'authorize observed - redirect_uri: %s, pkce: %s',
+        _escape_for_log(redirect_uri) or '(none)',
+        _escape_for_log(code_challenge_method) or 'none',
     )
 
 
