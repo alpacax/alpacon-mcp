@@ -75,8 +75,12 @@ async def _fetch_jwks(jwks_url: str, *, force: bool = False) -> dict[str, Any]:
             return _jwks_cache
 
         if force:
-            if now - _jwks_last_forced_fetch < _JWKS_FORCED_FETCH_COOLDOWN:
-                logger.warning('Skipping forced JWKS fetch: cooldown still active')
+            elapsed = now - _jwks_last_forced_fetch
+            if elapsed < _JWKS_FORCED_FETCH_COOLDOWN:
+                remaining = _JWKS_FORCED_FETCH_COOLDOWN - elapsed
+                logger.info(
+                    f'Skipping forced JWKS fetch: cooldown active ({remaining:.0f}s remaining)'
+                )
                 return _jwks_cache
             _jwks_last_forced_fetch = now
 
@@ -99,8 +103,16 @@ def _has_kid(token: str) -> bool:
         return False
 
 
-def _get_signing_key(jwks: dict[str, Any], token: str) -> Any | None:
-    """Extract the signing key from JWKS matching the token's kid."""
+def _get_signing_key(
+    jwks: dict[str, Any], token: str, *, quiet_miss: bool = False
+) -> Any | None:
+    """Extract the signing key from JWKS matching the token's kid.
+
+    ``quiet_miss`` logs a kid miss at info instead of error: the caller passes
+    it when it is about to retry against a freshly forced JWKS fetch, so a key
+    rotation does not read as an application error before the retry has had a
+    chance to resolve it.
+    """
     try:
         unverified_header = jwt.get_unverified_header(token)
     except jwt.exceptions.DecodeError as e:
@@ -116,7 +128,10 @@ def _get_signing_key(jwks: dict[str, Any], token: str) -> Any | None:
         if key.get('kid') == kid:
             return jwt.algorithms.RSAAlgorithm.from_jwk(json.dumps(key))
 
-    logger.error(f'No matching key found for kid: {kid}')
+    if quiet_miss:
+        logger.info(f'No matching key for kid in cached JWKS: {kid}')
+    else:
+        logger.error(f'No matching key found for kid: {kid}')
     return None
 
 
@@ -308,8 +323,9 @@ class Auth0TokenVerifier:
         try:
             # Fetch JWKS and find signing key
             jwks = await _fetch_jwks(self._config['jwks_url'])
-            public_key = _get_signing_key(jwks, token)
-            if public_key is None and _has_kid(token):
+            has_kid = _has_kid(token)
+            public_key = _get_signing_key(jwks, token, quiet_miss=has_kid)
+            if public_key is None and has_kid:
                 # The cached keys may predate an Auth0 key rotation: read them
                 # once more before rejecting a kid they do not know.
                 logger.info('Unknown kid in cached JWKS, forcing a refetch')

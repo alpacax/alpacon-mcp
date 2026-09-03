@@ -138,8 +138,9 @@ The line repeating for the same `kid` means the refetch did not help. Confirm wh
 # Read the JWKS the server sees and list the kids it offers
 curl -s "https://${AUTH0_DOMAIN}/.well-known/jwks.json" | python -c "import json,sys; print([k['kid'] for k in json.load(sys.stdin)['keys']])"
 
-# Read the kid the rejected token carries (header only, no verification)
-python -c "import jwt,sys; print(jwt.get_unverified_header(sys.argv[1]))" "<the-token>"
+# Read the kid the rejected token carries (header only, no verification).
+# Piped through stdin, not argv—a token on the command line leaks into shell history and `ps`.
+python -c "import jwt,sys; print(jwt.get_unverified_header(sys.stdin.read().strip()))" <<< "<the-token>"
 ```
 
 - The token's `kid` is absent from the live JWKS: the token was issued by a different tenant or a different Auth0 application. Check `AUTH0_DOMAIN` against the domain that issued the token
