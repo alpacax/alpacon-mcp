@@ -139,8 +139,10 @@ The server now handles this on its own: an unknown `kid` triggers one forced JWK
 curl -s "https://${AUTH0_DOMAIN}/.well-known/jwks.json" | python -c "import json,sys; print([k['kid'] for k in json.load(sys.stdin)['keys']])"
 
 # Read the kid the rejected token carries (header only, no verification).
-# Piped through stdin, not argv—a token on the command line leaks into shell history and `ps`.
-python -c "import jwt,sys; print(jwt.get_unverified_header(sys.stdin.read().strip()))" <<< "<the-token>"
+# `read -rs` keeps the token out of both shell history and `ps`. A here-string
+# would only cover `ps`: the shell still records the command line verbatim.
+read -rs ALPACON_JWT
+printf '%s' "$ALPACON_JWT" | python -c "import jwt,sys; print(jwt.get_unverified_header(sys.stdin.read().strip()))"
 ```
 
 - The token's `kid` is absent from the live JWKS: the token was issued by a different tenant or a different Auth0 application. Check `AUTH0_DOMAIN` against the domain that issued the token
