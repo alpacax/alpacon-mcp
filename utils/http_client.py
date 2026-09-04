@@ -1,6 +1,7 @@
 """HTTP client for Alpacon API interactions."""
 
 import asyncio
+import logging
 from http import HTTPStatus
 from typing import Any
 from urllib.parse import urljoin
@@ -181,15 +182,17 @@ class AlpaconHTTPClient:
             )
             return True
 
-        # Log request details (without sensitive data)
         logger.info(f'HTTP {method} request to {url}')
-        logger.debug(
-            f'Request headers: {dict((k, v if k != "Authorization" else "[REDACTED]") for k, v in request_headers.items())}'
-        )
+        if logger.isEnabledFor(logging.DEBUG):
+            redacted_headers = {
+                k: (v if k != 'Authorization' else '[REDACTED]')
+                for k, v in request_headers.items()
+            }
+            logger.debug('Request headers: %s', redacted_headers)
         if params:
-            logger.debug(f'Request params: {params}')
+            logger.debug('Request params: %s', params)
         if json_data:
-            logger.debug(f'Request body: {json_data}')
+            logger.debug('Request body: %s', json_data)
 
         while retry_count < self.max_retries:
             try:
@@ -210,16 +213,17 @@ class AlpaconHTTPClient:
                 logger.info(
                     f'HTTP {method} success - Status: {response.status_code}, Content-Length: {len(response.content)}'
                 )
-                logger.debug(f'Response headers: {dict(response.headers)}')
+                if logger.isEnabledFor(logging.DEBUG):
+                    logger.debug('Response headers: %s', dict(response.headers))
 
                 # Return JSON response
                 if response.text:
                     result = response.json()
-                    logger.debug(f'Response body: {result}')
+                    logger.debug('Response body: %s', result)
                     return result
                 else:
                     result = {'status': 'success', 'status_code': response.status_code}
-                    logger.debug(f'Empty response, returning: {result}')
+                    logger.debug('Empty response, returning: %s', result)
                     return result
 
             except httpx.HTTPStatusError as e:
