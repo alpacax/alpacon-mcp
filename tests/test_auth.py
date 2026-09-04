@@ -5,6 +5,7 @@ Tests Auth0TokenVerifier including JWKS fetching, signing key selection,
 and token verification (valid, expired, invalid kid, audience mismatch).
 """
 
+import asyncio
 import logging
 import time
 from http import HTTPStatus
@@ -67,11 +68,13 @@ def _make_token(private_key, kid='test-kid-1', claims=None, expired=False):
     if claims:
         default_claims.update(claims)
 
+    headers = {'kid': kid} if kid is not None else None
+
     return pyjwt.encode(
         default_claims,
         private_key,
         algorithm='RS256',
-        headers={'kid': kid},
+        headers=headers,
     )
 
 
@@ -94,10 +97,12 @@ def _reset_jwks_cache():
     auth_mod._jwks_cache = {}
     auth_mod._jwks_cache_expiry = 0
     auth_mod._jwks_lock = None
+    auth_mod._jwks_last_forced_fetch = 0
     yield
     auth_mod._jwks_cache = {}
     auth_mod._jwks_cache_expiry = 0
     auth_mod._jwks_lock = None
+    auth_mod._jwks_last_forced_fetch = 0
 
 
 class TestGetSigningKey:
@@ -411,4 +416,137 @@ class TestJwksCaching:
 
         assert result1 == result2
         # Only one HTTP call should have been made
+        assert mock_client.get.call_count == 1
+
+
+def _make_jwks_client(*payloads):
+    """Mock httpx.AsyncClient serving each JWKS payload in turn, repeating the last."""
+    responses = []
+    for payload in payloads:
+        response = MagicMock()
+        response.status_code = HTTPStatus.OK
+        response.json.return_value = payload
+        response.raise_for_status = MagicMock()
+        responses.append(response)
+
+    calls = []
+
+    def _get(*args, **kwargs):
+        response = responses[min(len(calls), len(responses) - 1)]
+        calls.append(response)
+        return response
+
+    client = AsyncMock()
+    client.get.side_effect = _get
+    client.__aenter__ = AsyncMock(return_value=client)
+    client.__aexit__ = AsyncMock(return_value=None)
+    return client
+
+
+class TestJwksKidRefetch:
+    """Tests for the forced JWKS refetch on a kid miss (Auth0 key rotation)."""
+
+    @pytest.mark.asyncio
+    async def test_kid_miss_refetches_and_verifies_with_rotated_key(
+        self, jwks_response
+    ):
+        rotated_key = _generate_rsa_keypair()
+        rotated_jwks = {'keys': [_make_jwk(rotated_key, kid='rotated-kid')]}
+        token = _make_token(rotated_key, kid='rotated-kid')
+
+        mock_client = _make_jwks_client(jwks_response, rotated_jwks)
+
+        with patch.dict('os.environ', AUTH_ENV):
+            with patch('utils.auth.httpx.AsyncClient', return_value=mock_client):
+                verifier = Auth0TokenVerifier()
+                result = await verifier.verify_token(token)
+
+        assert result is not None
+        assert result.client_id == 'auth0|test-user'
+        assert mock_client.get.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_kid_still_missing_after_refetch_is_rejected(self, jwks_response):
+        token = _make_token(_generate_rsa_keypair(), kid='unknown-kid')
+
+        mock_client = _make_jwks_client(jwks_response, jwks_response)
+
+        with patch.dict('os.environ', AUTH_ENV):
+            with patch('utils.auth.httpx.AsyncClient', return_value=mock_client):
+                verifier = Auth0TokenVerifier()
+                result = await verifier.verify_token(token)
+
+        assert result is None
+        assert mock_client.get.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_second_kid_miss_within_cooldown_does_not_refetch(
+        self, jwks_response
+    ):
+        first_token = _make_token(_generate_rsa_keypair(), kid='unknown-kid-1')
+        second_token = _make_token(_generate_rsa_keypair(), kid='unknown-kid-2')
+
+        mock_client = _make_jwks_client(jwks_response)
+
+        with patch.dict('os.environ', AUTH_ENV):
+            with patch('utils.auth.httpx.AsyncClient', return_value=mock_client):
+                verifier = Auth0TokenVerifier()
+                assert await verifier.verify_token(first_token) is None
+                assert mock_client.get.call_count == 2
+
+                assert await verifier.verify_token(second_token) is None
+
+        assert mock_client.get.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_concurrent_kid_miss_waits_for_the_inflight_refetch(
+        self, jwks_response
+    ):
+        rotated_key = _generate_rsa_keypair()
+        rotated_jwks = {'keys': [_make_jwk(rotated_key, kid='rotated-kid')]}
+        token = _make_token(rotated_key, kid='rotated-kid')
+
+        mock_client = _make_jwks_client(jwks_response, rotated_jwks)
+        serve = mock_client.get.side_effect
+        forced_started = asyncio.Event()
+        gate = asyncio.Event()
+
+        async def _gated_serve(*args, **kwargs):
+            response = serve(*args, **kwargs)
+            if mock_client.get.call_count == 2:
+                forced_started.set()
+                await gate.wait()
+            return response
+
+        mock_client.get.side_effect = _gated_serve
+
+        with patch.dict('os.environ', AUTH_ENV):
+            with patch('utils.auth.httpx.AsyncClient', return_value=mock_client):
+                verifier = Auth0TokenVerifier()
+                first = asyncio.create_task(verifier.verify_token(token))
+                await forced_started.wait()
+                second = asyncio.create_task(verifier.verify_token(token))
+                # Let the second verification reach the point where it either
+                # waits for the refetch or gives up on the stale keys.
+                await asyncio.sleep(0)
+                gate.set()
+                results = await asyncio.gather(first, second)
+
+        assert [r is not None for r in results] == [True, True]
+        assert mock_client.get.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_token_without_kid_header_does_not_refetch(
+        self, rsa_keypair, jwks_response
+    ):
+        token = _make_token(rsa_keypair, kid=None)
+
+        mock_client = _make_jwks_client(jwks_response)
+
+        with patch.dict('os.environ', AUTH_ENV):
+            with patch('utils.auth.httpx.AsyncClient', return_value=mock_client):
+                verifier = Auth0TokenVerifier()
+                result = await verifier.verify_token(token)
+
+        assert result is None
         assert mock_client.get.call_count == 1
