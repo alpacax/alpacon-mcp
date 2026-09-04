@@ -587,6 +587,17 @@ class TestHandleUpstream401:
         error_info = consume_upstream_auth_error(token_key)
         assert error_info is None
 
+    def test_debug_instrumentation_logs_at_debug_level(self, caplog):
+        """[DEBUG-401] records are leftover instrumentation, so ALPACON_MCP_LOG_LEVEL must silence them."""
+        exc = self._make_401_exc({'detail': 'Unauthorized'})
+
+        with caplog.at_level(logging.DEBUG, logger='alpacon_mcp.http_client'):
+            AlpaconHTTPClient._handle_upstream_401(exc)
+
+        records = [r for r in caplog.records if '[DEBUG-401]' in r.getMessage()]
+        assert records
+        assert all(r.levelno == logging.DEBUG for r in records)
+
 
 class TestNoResponseCache:
     """The client must not answer a read from an earlier response.

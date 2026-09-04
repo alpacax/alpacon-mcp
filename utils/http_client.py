@@ -572,8 +572,7 @@ class AlpaconHTTPClient:
         auth_enabled = is_auth_enabled()
         is_jwt = bool(token and AlpaconHTTPClient._is_jwt(token))
 
-        # DEBUG: Log all decision factors for 401 handling
-        logger.warning(
+        logger.debug(
             '[DEBUG-401] auth_enabled=%s, token_present=%s, is_jwt=%s, '
             'mfa_required=%s, source=%s',
             auth_enabled,
@@ -587,7 +586,7 @@ class AlpaconHTTPClient:
         # JWT only — the middleware cannot derive a matching key from API tokens, so their entries would go unconsumed.
         if auth_enabled and token and is_jwt:
             token_key = make_auth_error_key(token)
-            logger.warning(
+            logger.debug(
                 '[DEBUG-401] Setting dict signal with token_key=%s',
                 token_key,
             )
@@ -598,14 +597,14 @@ class AlpaconHTTPClient:
                     'source': source,
                 },
             )
-            logger.warning(
+            logger.debug(
                 '[DEBUG-401] Raising UpstreamAuthError (mfa_required=%s, source=%s)',
                 mfa_required,
                 source,
             )
             raise UpstreamAuthError(mfa_required=mfa_required, source=source)
 
-        logger.warning(
+        logger.debug(
             '[DEBUG-401] NOT signaling/raising — falling through to error dict. '
             'auth_enabled=%s, is_jwt=%s',
             auth_enabled,

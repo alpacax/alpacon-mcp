@@ -108,9 +108,8 @@ class UpstreamAuthErrorMiddleware:
         # in the module-level dict, even if the app raises or is cancelled.
         token_key = self._extract_token_key(scope)
 
-        # DEBUG: Log middleware entry
         request_path = scope.get('path', '?')
-        logger.warning(
+        logger.debug(
             '[DEBUG-MW] Request %s — token_key=%s (None means no Bearer header)',
             request_path,
             token_key,
@@ -125,7 +124,7 @@ class UpstreamAuthErrorMiddleware:
         try:
             await self.app(scope, receive, buffer_send)
         except UpstreamAuthError as e:
-            logger.warning(
+            logger.debug(
                 '[DEBUG-MW] UpstreamAuthError CAUGHT by middleware! '
                 'mfa_required=%s, source=%s',
                 e.mfa_required,
@@ -189,7 +188,7 @@ class UpstreamAuthErrorMiddleware:
         # Fallback path: Consume the upstream auth signal from the dict.
         # This handles cases where the exception was caught by an intermediate
         # handler but the dict signal was still set.
-        logger.warning(
+        logger.debug(
             '[DEBUG-MW] App completed normally (no exception). '
             'Checking dict signal for token_key=%s',
             token_key,
@@ -197,7 +196,7 @@ class UpstreamAuthErrorMiddleware:
         error_info = None
         if token_key:
             error_info = consume_upstream_auth_error(token_key)
-            logger.warning(
+            logger.debug(
                 '[DEBUG-MW] Dict signal consumed: %s',
                 error_info,
             )
@@ -238,7 +237,7 @@ class UpstreamAuthErrorMiddleware:
             for msg in buffered:
                 if msg.get('type') == 'http.response.start':
                     status = msg.get('status')
-            logger.warning(
+            logger.debug(
                 '[DEBUG-MW] Passing through buffered response — HTTP status=%s, '
                 'error_info_found=%s',
                 status,
