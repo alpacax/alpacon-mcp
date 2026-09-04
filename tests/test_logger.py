@@ -76,7 +76,11 @@ class TestQueuedFileSink:
         instance.stop_listener()
 
         log_file = tmp_path / 'logs' / 'alpacon-mcp.log'
-        line = log_file.read_text().strip()
+        line = next(
+            entry
+            for entry in log_file.read_text().splitlines()
+            if 'listener carried this' in entry
+        )
         # Twice means the queue handler formatted the prefix the file handler adds.
         assert line.count('alpacon_mcp.test - INFO') == 1
         assert line.endswith('listener carried this')
