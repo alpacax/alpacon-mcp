@@ -13,7 +13,7 @@ from starlette.responses import JSONResponse
 from utils.common import is_auth_enabled
 from utils.health import get_health_info
 from utils.http_client import http_client
-from utils.logger import get_logger
+from utils.logger import get_logger, stop_log_listener
 
 logger = get_logger('server')
 
@@ -54,6 +54,12 @@ async def app_lifespan(app: FastMCP) -> AsyncIterator[None]:
                 logger.warning(f'Could not restore SIGTERM handler: {e}')
 
         logger.info('Graceful shutdown complete')
+
+        # Last: the listener owns the file sink, so earlier lines would be dropped.
+        try:
+            stop_log_listener()
+        except Exception as e:
+            logger.warning(f'Could not stop log listener: {e}')
 
 
 def _sigterm_handler(signum, frame):

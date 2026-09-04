@@ -82,6 +82,22 @@ class TestAppLifespan:
             mock_http.close.assert_awaited_once()
 
     @pytest.mark.asyncio
+    async def test_lifespan_teardown_stops_log_listener(self):
+        """Teardown must stop the listener thread so queued records still reach disk."""
+        mock_app = MagicMock()
+
+        with (
+            patch('server.http_client') as mock_http,
+            patch('server.stop_log_listener') as mock_stop,
+        ):
+            mock_http.close = AsyncMock()
+
+            async with app_lifespan(mock_app):
+                pass
+
+            mock_stop.assert_called_once()
+
+    @pytest.mark.asyncio
     async def test_lifespan_teardown_on_exception(self):
         """Test that lifespan teardown runs even after an exception."""
         mock_app = MagicMock()

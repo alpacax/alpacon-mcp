@@ -12,7 +12,7 @@ A comprehensive logging system has been added to the MCP server. Debugging and m
 
 ### Log output destinations
 - **stderr**: Real-time logs on the console. Never stdout—in stdio mode stdout carries the MCP protocol itself
-- **File**: All logs saved to `logs/alpacon-mcp.log`, relative to the working directory
+- **File**: All logs saved to `logs/alpacon-mcp.log`, relative to the working directory. The file sink runs on a `QueueListener` thread, so a log call never puts a disk write on the event loop the request path shares
 
 ## 🚀 Usage
 
@@ -59,8 +59,9 @@ python main.py
 
 ### 1. Centralized Logger (`utils/logger.py`)
 - Consistent logging format across all modules
-- Simultaneous output to file and console
+- Simultaneous output to file and console: stderr directly, the file through a `QueueHandler`
 - Log level control via environment variables
+- `stop_log_listener()` drains the queue on shutdown—`app_lifespan` calls it last, after every other cleanup has logged
 
 ### 2. Module-specific loggers
 - `main`: Server startup/shutdown
