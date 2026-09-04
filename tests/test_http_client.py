@@ -705,7 +705,8 @@ class TestDebugLogPayloadsAreLazy:
             if call.args and call.args[0].startswith('Response body')
         ]
         assert body_calls
-        assert body_calls[0].args == ('Response body: %s', payload)
+        assert '%s' in body_calls[0].args[0]
+        assert body_calls[0].args[1:] == (payload,)
 
     @pytest.mark.asyncio
     async def test_request_and_empty_response_payloads_are_lazy_arguments(
@@ -734,8 +735,14 @@ class TestDebugLogPayloadsAreLazy:
             for call in mock_logger.debug.call_args_list
             if call.args
         }
-        assert logged['Request params: %s'] == (params,)
-        assert logged['Request body: %s'] == (data,)
-        assert logged['Empty response, returning: %s'] == (
+
+        def payload_for(prefix):
+            fmt = next(m for m in logged if m.startswith(prefix))
+            assert '%s' in fmt
+            return logged[fmt]
+
+        assert payload_for('Request params') == (params,)
+        assert payload_for('Request body') == (data,)
+        assert payload_for('Empty response') == (
             {'status': 'success', 'status_code': HTTPStatus.OK},
         )
