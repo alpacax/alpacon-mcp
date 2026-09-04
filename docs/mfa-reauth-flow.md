@@ -105,8 +105,8 @@ One id per grant means one MFA record per MCP client installation: a step-up in 
 | Security settings cache | `utils/security_settings.py` | Caches workspace MFA settings from account service |
 | MFA pre-check | `utils/decorators.py` | Checks MFA before API call, signals 401 if needed |
 | Auth error middleware | `utils/auth_error_middleware.py` | Adds `mfa` scope to WWW-Authenticate on 401 |
-| OAuth proxy (authorize) | `utils/oauth.py` | Routes to MFA or regular audience based on scope |
-| OAuth proxy (callback) | `utils/oauth.py` | Handles two-stage callback (MFA → regular) |
+| OAuth proxy (authorize) | `utils/oauth/_authorize.py` | Routes to MFA or regular audience based on scope |
+| OAuth proxy (callback) | `utils/oauth/_callback.py` | Handles two-stage callback (MFA → regular) |
 
 ## Configuration
 
