@@ -182,7 +182,7 @@ class AlpaconHTTPClient:
             )
             return True
 
-        logger.info(f'HTTP {method} request to {url}')
+        logger.info('HTTP %s request to %s', method, url)
         if logger.isEnabledFor(logging.DEBUG):
             redacted_headers = {
                 k: (v if k != 'Authorization' else '[REDACTED]')
@@ -211,7 +211,10 @@ class AlpaconHTTPClient:
 
                 # Log successful response
                 logger.info(
-                    f'HTTP {method} success - Status: {response.status_code}, Content-Length: {len(response.content)}'
+                    'HTTP %s success - Status: %s, Content-Length: %s',
+                    method,
+                    response.status_code,
+                    len(response.content),
                 )
                 if logger.isEnabledFor(logging.DEBUG):
                     logger.debug('Response headers: %s', dict(response.headers))
