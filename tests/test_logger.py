@@ -7,7 +7,6 @@ call shares one event loop, and a FileHandler flushes to disk on every record.
 import logging
 import logging.handlers
 import sys
-from unittest.mock import patch
 
 import pytest
 
@@ -16,14 +15,20 @@ from utils.logger import AlpaconLogger
 
 @pytest.fixture
 def manager(tmp_path, monkeypatch):
-    """Build a logger manager in a scratch cwd, without touching the root logger."""
+    """Build a logger manager in a scratch cwd, restoring the root logger afterwards."""
     monkeypatch.chdir(tmp_path)
-    with patch('utils.logger.logging.basicConfig') as basic_config:
-        instance = AlpaconLogger()
+    root = logging.getLogger()
+    saved_handlers, saved_level = root.handlers[:], root.level
+    # basicConfig does nothing when the root logger already has handlers, and
+    # pytest installs its own.
+    root.handlers.clear()
+    instance = AlpaconLogger()
     try:
-        yield instance, basic_config.call_args.kwargs['handlers']
+        yield instance, root.handlers[:]
     finally:
         instance.stop_listener()
+        root.handlers[:] = saved_handlers
+        root.setLevel(saved_level)
 
 
 class TestQueuedFileSink:
@@ -68,7 +73,10 @@ class TestQueuedFileSink:
         instance.stop_listener()
 
         log_file = tmp_path / 'logs' / 'alpacon-mcp.log'
-        assert 'listener carried this' in log_file.read_text()
+        line = log_file.read_text().strip()
+        # Twice means the queue handler formatted the prefix the file handler adds.
+        assert line.count('alpacon_mcp.test - INFO') == 1
+        assert line.endswith('listener carried this')
 
     def test_stop_listener_is_idempotent(self, manager):
         """Shutdown may run twice; the second call must not raise."""
