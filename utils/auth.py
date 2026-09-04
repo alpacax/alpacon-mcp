@@ -323,9 +323,8 @@ class Auth0TokenVerifier:
         try:
             # Fetch JWKS and find signing key
             jwks = await _fetch_jwks(self._config['jwks_url'])
-            has_kid = _has_kid(token)
-            public_key = _get_signing_key(jwks, token, quiet_miss=has_kid)
-            if public_key is None and has_kid:
+            public_key = _get_signing_key(jwks, token, quiet_miss=True)
+            if public_key is None and _has_kid(token):
                 # The cached keys may predate an Auth0 key rotation: read them
                 # once more before rejecting a kid they do not know.
                 logger.info('Unknown kid in cached JWKS, forcing a refetch')
