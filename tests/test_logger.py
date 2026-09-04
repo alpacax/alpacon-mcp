@@ -27,7 +27,10 @@ def manager(tmp_path, monkeypatch):
         yield instance, root.handlers[:]
     finally:
         instance.stop_listener()
-        root.handlers[:] = saved_handlers
+        for handler in root.handlers[:]:
+            root.removeHandler(handler)
+        for handler in saved_handlers:
+            root.addHandler(handler)
         root.setLevel(saved_level)
 
 
