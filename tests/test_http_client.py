@@ -5,6 +5,7 @@ Tests the HTTP client functionality including GET, POST, PATCH, DELETE operation
 and error handling.
 """
 
+import logging
 from http import HTTPStatus
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -586,6 +587,17 @@ class TestHandleUpstream401:
         error_info = consume_upstream_auth_error(token_key)
         assert error_info is None
 
+    def test_debug_instrumentation_logs_at_debug_level(self, caplog):
+        """[DEBUG-401] records are leftover instrumentation, so ALPACON_MCP_LOG_LEVEL must silence them."""
+        exc = self._make_401_exc({'detail': 'Unauthorized'})
+
+        with caplog.at_level(logging.DEBUG, logger='alpacon_mcp.http_client'):
+            AlpaconHTTPClient._handle_upstream_401(exc)
+
+        records = [r for r in caplog.records if '[DEBUG-401]' in r.getMessage()]
+        assert records
+        assert all(r.levelno == logging.DEBUG for r in records)
+
 
 class TestNoResponseCache:
     """The client must not answer a read from an earlier response.
@@ -641,3 +653,96 @@ async def test_delete_forwards_query_parameters():
         )
 
     assert mock_request.call_args.kwargs['params'] == {'auto': 'true'}
+
+
+class TestDebugLogPayloadsAreLazy:
+    """Below DEBUG level the client must not render payloads it then throws away."""
+
+    @pytest.mark.asyncio
+    async def test_no_payload_is_built_when_debug_is_off(self, mock_httpx_client):
+        """A large response is repr'd on the event loop unless the calls are lazy."""
+        mock_httpx_client.request.return_value = create_mock_response(
+            status_code=HTTPStatus.OK,
+            json_data={'servers': ['a', 'b']},
+            headers={'content-type': 'application/json'},
+        )
+
+        with patch('utils.http_client.logger') as mock_logger:
+            mock_logger.isEnabledFor.return_value = False
+            await http_client.get(
+                region='ap1',
+                workspace='testworkspace',
+                endpoint='/api/test/',
+                token='test-token',
+            )
+
+        messages = [
+            call.args[0] for call in mock_logger.debug.call_args_list if call.args
+        ]
+        assert not [m for m in messages if m.startswith('Request headers')]
+        assert not [m for m in messages if m.startswith('Response headers')]
+
+    @pytest.mark.asyncio
+    async def test_response_body_is_passed_as_a_lazy_argument(self, mock_httpx_client):
+        """The body must reach the logger as an argument, not an already-formatted string."""
+        payload = {'servers': ['a', 'b']}
+        mock_httpx_client.request.return_value = create_mock_response(
+            status_code=HTTPStatus.OK, json_data=payload
+        )
+
+        with patch('utils.http_client.logger') as mock_logger:
+            mock_logger.isEnabledFor.return_value = True
+            await http_client.get(
+                region='ap1',
+                workspace='testworkspace',
+                endpoint='/api/test/',
+                token='test-token',
+            )
+
+        body_calls = [
+            call
+            for call in mock_logger.debug.call_args_list
+            if call.args and call.args[0].startswith('Response body')
+        ]
+        assert body_calls
+        assert '%s' in body_calls[0].args[0]
+        assert body_calls[0].args[1:] == (payload,)
+
+    @pytest.mark.asyncio
+    async def test_request_and_empty_response_payloads_are_lazy_arguments(
+        self, mock_httpx_client
+    ):
+        """Every payload the client logs must reach the logger unrendered."""
+        params = {'page': 1}
+        data = {'name': 'web-01'}
+        mock_httpx_client.request.return_value = create_mock_response(
+            status_code=HTTPStatus.OK
+        )
+
+        with patch('utils.http_client.logger') as mock_logger:
+            mock_logger.isEnabledFor.return_value = True
+            await http_client.post(
+                region='ap1',
+                workspace='testworkspace',
+                endpoint='/api/test/',
+                token='test-token',
+                data=data,
+                params=params,
+            )
+
+        logged = {
+            call.args[0]: call.args[1:]
+            for call in mock_logger.debug.call_args_list
+            if call.args
+        }
+
+        def payload_for(prefix):
+            fmt = next(m for m in logged if m.startswith(prefix))
+            assert '%s' in fmt
+            return logged[fmt]
+
+        assert payload_for('Request params') == (params,)
+        assert payload_for('Request body') == (data,)
+        assert payload_for('Empty response') == (
+            {'status': 'success', 'status_code': HTTPStatus.OK},
+        )

@@ -1,6 +1,7 @@
 """HTTP client for Alpacon API interactions."""
 
 import asyncio
+import logging
 from http import HTTPStatus
 from typing import Any
 from urllib.parse import urljoin
@@ -108,11 +109,11 @@ class AlpaconHTTPClient:
 
         override = get_token_manager().get_base_url_override(region, workspace)
         if isinstance(override, str) and override:
-            logger.debug(f'Using configured base URL override: {override}')
+            logger.debug('Using configured base URL override: %s', override)
             return override
 
         base_url = f'https://{workspace}.{region}.alpacon.io'
-        logger.debug(f'Generated base URL: {base_url}')
+        logger.debug('Generated base URL: %s', base_url)
         return base_url
 
     async def request(
@@ -181,15 +182,17 @@ class AlpaconHTTPClient:
             )
             return True
 
-        # Log request details (without sensitive data)
-        logger.info(f'HTTP {method} request to {url}')
-        logger.debug(
-            f'Request headers: {dict((k, v if k != "Authorization" else "[REDACTED]") for k, v in request_headers.items())}'
-        )
+        logger.info('HTTP %s request to %s', method, url)
+        if logger.isEnabledFor(logging.DEBUG):
+            redacted_headers = {
+                k: (v if k != 'Authorization' else '[REDACTED]')
+                for k, v in request_headers.items()
+            }
+            logger.debug('Request headers: %s', redacted_headers)
         if params:
-            logger.debug(f'Request params: {params}')
+            logger.debug('Request params: %s', params)
         if json_data:
-            logger.debug(f'Request body: {json_data}')
+            logger.debug('Request body: %s', json_data)
 
         while retry_count < self.max_retries:
             try:
@@ -208,18 +211,22 @@ class AlpaconHTTPClient:
 
                 # Log successful response
                 logger.info(
-                    f'HTTP {method} success - Status: {response.status_code}, Content-Length: {len(response.content)}'
+                    'HTTP %s success - Status: %s, Content-Length: %s',
+                    method,
+                    response.status_code,
+                    len(response.content),
                 )
-                logger.debug(f'Response headers: {dict(response.headers)}')
+                if logger.isEnabledFor(logging.DEBUG):
+                    logger.debug('Response headers: %s', dict(response.headers))
 
                 # Return JSON response
                 if response.text:
                     result = response.json()
-                    logger.debug(f'Response body: {result}')
+                    logger.debug('Response body: %s', result)
                     return result
                 else:
                     result = {'status': 'success', 'status_code': response.status_code}
-                    logger.debug(f'Empty response, returning: {result}')
+                    logger.debug('Empty response, returning: %s', result)
                     return result
 
             except httpx.HTTPStatusError as e:
@@ -568,8 +575,7 @@ class AlpaconHTTPClient:
         auth_enabled = is_auth_enabled()
         is_jwt = bool(token and AlpaconHTTPClient._is_jwt(token))
 
-        # DEBUG: Log all decision factors for 401 handling
-        logger.warning(
+        logger.debug(
             '[DEBUG-401] auth_enabled=%s, token_present=%s, is_jwt=%s, '
             'mfa_required=%s, source=%s',
             auth_enabled,
@@ -583,7 +589,7 @@ class AlpaconHTTPClient:
         # JWT only — the middleware cannot derive a matching key from API tokens, so their entries would go unconsumed.
         if auth_enabled and token and is_jwt:
             token_key = make_auth_error_key(token)
-            logger.warning(
+            logger.debug(
                 '[DEBUG-401] Setting dict signal with token_key=%s',
                 token_key,
             )
@@ -594,14 +600,14 @@ class AlpaconHTTPClient:
                     'source': source,
                 },
             )
-            logger.warning(
+            logger.debug(
                 '[DEBUG-401] Raising UpstreamAuthError (mfa_required=%s, source=%s)',
                 mfa_required,
                 source,
             )
             raise UpstreamAuthError(mfa_required=mfa_required, source=source)
 
-        logger.warning(
+        logger.debug(
             '[DEBUG-401] NOT signaling/raising — falling through to error dict. '
             'auth_enabled=%s, is_jwt=%s',
             auth_enabled,

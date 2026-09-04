@@ -1,9 +1,16 @@
 """Logging configuration for Alpacon MCP Server."""
 
 import logging
+import logging.handlers
 import os
+import queue
 import sys
 from pathlib import Path
+
+LOG_FORMAT = (
+    '%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s'
+)
+LOG_DATE_FORMAT = '%Y-%m-%d %H:%M:%S'
 
 
 class AlpaconLogger:
@@ -11,6 +18,7 @@ class AlpaconLogger:
 
     def __init__(self):
         self._loggers: dict[str, logging.LoggerAdapter] = {}
+        self.listener: logging.handlers.QueueListener | None = None
         self._setup_logging()
 
     def _setup_logging(self):
@@ -22,16 +30,33 @@ class AlpaconLogger:
         log_dir = Path('logs')
         log_dir.mkdir(exist_ok=True)
 
-        # Configure root logger
+        formatter = logging.Formatter(fmt=LOG_FORMAT, datefmt=LOG_DATE_FORMAT)
+
+        stream_handler = logging.StreamHandler(sys.stderr)
+        stream_handler.setFormatter(formatter)
+
+        file_handler = logging.FileHandler(log_dir / 'alpacon-mcp.log')
+        file_handler.setFormatter(formatter)
+
+        # The file sink flushes on every record, so a direct FileHandler would put
+        # that disk write on the event loop shared by every in-flight tool call.
+        log_queue: queue.SimpleQueue = queue.SimpleQueue()
+        queue_handler = logging.handlers.QueueHandler(log_queue)
+        # Prefix comes from the file handler; formatting here would repeat it.
+        queue_handler.setFormatter(logging.Formatter('%(message)s'))
+        self.listener = logging.handlers.QueueListener(log_queue, file_handler)
+        self.listener.start()
+
         logging.basicConfig(
             level=getattr(logging, log_level, logging.INFO),
-            format='%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S',
-            handlers=[
-                logging.StreamHandler(sys.stderr),  # Console output
-                logging.FileHandler(log_dir / 'alpacon-mcp.log'),  # File output
-            ],
+            handlers=[stream_handler, queue_handler],
         )
+
+    def stop_listener(self) -> None:
+        """Stop the queue listener, draining pending records to the log file."""
+        if self.listener is not None:
+            self.listener.stop()
+            self.listener = None
 
     def get_logger(self, name: str) -> logging.LoggerAdapter:
         """Get logger for specific module.
@@ -66,6 +91,11 @@ def get_logger(name: str) -> logging.LoggerAdapter:
         Configured logger adapter instance
     """
     return logger_manager.get_logger(name)
+
+
+def stop_log_listener() -> None:
+    """Stop the log queue listener on shutdown."""
+    logger_manager.stop_listener()
 
 
 # Pre-configured loggers for common modules

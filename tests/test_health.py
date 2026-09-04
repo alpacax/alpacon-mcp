@@ -95,6 +95,15 @@ class TestGetHealthInfoLocal:
         assert result['version'] == MCP_VERSION
 
     @pytest.mark.asyncio
+    async def test_version_is_not_looked_up_per_request(self, _patched_health_local):
+        """/health is the k8s probe target: it must not read .dist-info on every hit."""
+        with patch('importlib.metadata.version') as mock_version:
+            result = await get_health_info()
+
+        mock_version.assert_not_called()
+        assert result['version'] == MCP_VERSION
+
+    @pytest.mark.asyncio
     async def test_uptime_is_positive(self, _patched_health_local):
         """Uptime must be a positive number."""
 

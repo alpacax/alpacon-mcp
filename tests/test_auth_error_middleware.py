@@ -1,6 +1,7 @@
 """Tests for UpstreamAuthErrorMiddleware."""
 
 import json
+import logging
 from http import HTTPStatus
 
 import pytest
@@ -394,3 +395,16 @@ async def test_exception_respects_cooldown():
     sent2 = await _run(mw)
     status2, _, _ = await _collect_response(sent2)
     assert status2 == HTTPStatus.INTERNAL_SERVER_ERROR
+
+
+@pytest.mark.asyncio
+async def test_debug_instrumentation_logs_at_debug_level(caplog):
+    """[DEBUG-MW] records are leftover instrumentation, so ALPACON_MCP_LOG_LEVEL must silence them."""
+    mw = _make()
+
+    with caplog.at_level(logging.DEBUG, logger='alpacon_mcp.auth_error_middleware'):
+        await _run(mw)
+
+    records = [r for r in caplog.records if '[DEBUG-MW]' in r.getMessage()]
+    assert records
+    assert all(r.levelno == logging.DEBUG for r in records)
