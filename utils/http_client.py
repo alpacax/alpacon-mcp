@@ -109,11 +109,11 @@ class AlpaconHTTPClient:
 
         override = get_token_manager().get_base_url_override(region, workspace)
         if isinstance(override, str) and override:
-            logger.debug(f'Using configured base URL override: {override}')
+            logger.debug('Using configured base URL override: %s', override)
             return override
 
         base_url = f'https://{workspace}.{region}.alpacon.io'
-        logger.debug(f'Generated base URL: {base_url}')
+        logger.debug('Generated base URL: %s', base_url)
         return base_url
 
     async def request(
