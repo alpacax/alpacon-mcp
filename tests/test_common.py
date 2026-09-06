@@ -236,6 +236,4 @@ class TestBuildListParams:
 
     @pytest.mark.parametrize('value', [False, 0, '', []])
     def test_falsy_but_supplied_values_are_forwarded(self, value):
-        # A truthiness check would drop each of these, turning a filter the
-        # caller asked for into an unfiltered listing.
         assert build_list_params(acknowledged=value) == {'acknowledged': value}
