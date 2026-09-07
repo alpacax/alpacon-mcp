@@ -14,6 +14,8 @@ from tools.audit_tools import (
 
 mock_http_client = http_client_fixture('tools.audit_tools')
 
+SERVER_ID = '550e8400-e29b-41d4-a716-446655440123'
+
 
 class TestListActivityLogs:
     @pytest.mark.asyncio
@@ -70,6 +72,13 @@ class TestListWebftpLogs:
         result = await list_webftp_logs(workspace='test-ws', region='ap1')
 
         assert result['status'] == 'success'
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='test-ws',
+            endpoint='/api/history/webftp-logs/',
+            token='test-token',
+            params={},
+        )
 
 
 class TestListSessionAnalyses:
@@ -80,6 +89,13 @@ class TestListSessionAnalyses:
         result = await list_session_analyses(workspace='test-ws', region='ap1')
 
         assert result['status'] == 'success'
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='test-ws',
+            endpoint='/api/history/session-analyses/',
+            token='test-token',
+            params={},
+        )
 
 
 class TestGetSessionAnalysisDetail:
@@ -93,6 +109,33 @@ class TestGetSessionAnalysisDetail:
 
         assert result['status'] == 'success'
         assert result['analysis_id'] == 'analysis-1'
+
+
+@pytest.mark.parametrize(
+    'func, endpoint',
+    [
+        (list_server_logs, '/api/history/logs/'),
+        (list_webftp_logs, '/api/history/webftp-logs/'),
+        (list_session_analyses, '/api/history/session-analyses/'),
+    ],
+    ids=['list_server_logs', 'list_webftp_logs', 'list_session_analyses'],
+)
+@pytest.mark.asyncio
+async def test_server_id_is_sent_as_server(
+    func, endpoint, mock_http_client, mock_token_manager
+):
+    mock_http_client.get.return_value = {'results': []}
+
+    result = await func(workspace='test-ws', region='ap1', server_id=SERVER_ID)
+
+    assert result['status'] == 'success'
+    mock_http_client.get.assert_called_once_with(
+        region='ap1',
+        workspace='test-ws',
+        endpoint=endpoint,
+        token='test-token',
+        params={'server': SERVER_ID},
+    )
 
 
 # All audit endpoints are GET reads; one parametrized case covers every tool's

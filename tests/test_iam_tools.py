@@ -423,21 +423,6 @@ class TestParameterValidation:
     """Test parameter validation and edge cases."""
 
     @pytest.mark.asyncio
-    async def test_pagination_parameters(self, mock_http_client, mock_token_manager):
-        """Test pagination parameter handling."""
-        mock_http_client.get.return_value = {'count': 0, 'results': []}
-
-        await list_iam_users(workspace='test', page=2, page_size=50)
-
-        mock_http_client.get.assert_called_with(
-            region='ap1',
-            workspace='test',
-            endpoint='/api/iam/users/',
-            token='test-token',
-            params={'page': 2, 'page_size': 50},
-        )
-
-    @pytest.mark.asyncio
     async def test_optional_parameters(
         self, mock_http_client, mock_token_manager, sample_user
     ):

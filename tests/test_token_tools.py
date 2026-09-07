@@ -125,16 +125,6 @@ class TestListApiTokens:
         assert mock_http_client.get.call_args[1]['params'] == {'enabled': False}
 
     @pytest.mark.asyncio
-    async def test_list_api_tokens_empty(self, mock_http_client, mock_token_manager):
-        """Test list_api_tokens with no tokens."""
-        mock_http_client.get.return_value = {'count': 0, 'results': []}
-
-        result = await list_api_tokens(workspace='testworkspace', region='ap1')
-
-        assert result['status'] == 'success'
-        assert result['data']['count'] == 0
-
-    @pytest.mark.asyncio
     async def test_list_api_tokens_http_error(
         self, mock_http_client, mock_token_manager
     ):

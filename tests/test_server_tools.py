@@ -874,8 +874,13 @@ class TestListRegistrationTokens:
             workspace='testworkspace', region='ap1', page=2, page_size=5
         )
 
-        _, kwargs = mock_http_client.get.call_args
-        assert kwargs['params'] == {'page': 2, 'page_size': 5}
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/servers/registration-tokens/',
+            token='test-token',
+            params={'page': 2, 'page_size': 5},
+        )
 
     @pytest.mark.asyncio
     async def test_list_registration_tokens_no_token(
