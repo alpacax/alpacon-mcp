@@ -8,7 +8,7 @@ and error handling.
 import inspect
 import logging
 from http import HTTPStatus
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
@@ -653,7 +653,15 @@ async def test_delete_forwards_query_parameters():
             params={'auto': 'true'},
         )
 
-    assert mock_request.call_args.kwargs['params'] == {'auto': 'true'}
+    mock_request.assert_called_once_with(
+        method='DELETE',
+        url=ANY,
+        token='test-token',
+        params={'auto': 'true'},
+    )
+    assert mock_request.call_args.kwargs['url'].endswith(
+        '/api/servers/servers/550e8400-e29b-41d4-a716-446655440123/'
+    )
 
 
 class TestDebugLogPayloadsAreLazy:

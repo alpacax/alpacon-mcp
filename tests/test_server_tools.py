@@ -788,10 +788,13 @@ class TestUnregisterServer:
             purge_provisioned_accounts=True,
         )
 
-        assert mock_http_client.delete.call_args.kwargs['params'] == {
-            'auto': True,
-            'purge_provisioned_accounts': True,
-        }
+        mock_http_client.delete.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/servers/servers/550e8400-e29b-41d4-a716-446655440123/',
+            token='test-token',
+            params={'auto': True, 'purge_provisioned_accounts': True},
+        )
 
 
 class TestStarServer:

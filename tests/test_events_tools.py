@@ -98,10 +98,13 @@ class TestListEvents:
         assert result['reporter'] is None
         assert result['limit'] == 50  # Default value
 
-        # Verify only required parameters were included
-        call_args = mock_http_client.get.call_args
-        expected_params = {'page_size': 50, 'ordering': '-added_at'}
-        assert call_args[1]['params'] == expected_params
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/events/events/',
+            token='test-token',
+            params={'page_size': 50, 'ordering': '-added_at'},
+        )
 
     @pytest.mark.asyncio
     async def test_list_events_no_token(self, mock_http_client, mock_token_manager):
@@ -289,10 +292,13 @@ class TestSearchEvents:
         assert result['server_id'] is None
         assert result['limit'] == 20  # Default value
 
-        # Verify correct parameters were sent
-        call_args = mock_http_client.get.call_args
-        expected_params = {'search': 'error', 'page_size': 20, 'ordering': '-added_at'}
-        assert call_args[1]['params'] == expected_params
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/events/events/',
+            token='test-token',
+            params={'search': 'error', 'page_size': 20, 'ordering': '-added_at'},
+        )
 
     @pytest.mark.asyncio
     async def test_search_events_no_results(self, mock_http_client, mock_token_manager):

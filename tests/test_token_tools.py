@@ -122,7 +122,13 @@ class TestListApiTokens:
 
         await list_api_tokens(workspace='testworkspace', region='ap1', enabled=False)
 
-        assert mock_http_client.get.call_args[1]['params'] == {'enabled': False}
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/auth/tokens/',
+            token='header.payload.signature',
+            params={'enabled': False},
+        )
 
     @pytest.mark.asyncio
     async def test_list_api_tokens_http_error(

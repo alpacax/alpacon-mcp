@@ -6,6 +6,7 @@ network traffic monitoring and server performance analytics.
 """
 
 from http import HTTPStatus
+from unittest.mock import ANY
 
 import pytest
 
@@ -82,11 +83,14 @@ class TestGetCpuUsage:
 
         assert result['status'] == 'success'
 
-        # Verify start parameter was auto-generated (default 24h)
-        call_args = mock_http_client.get.call_args
-        params = call_args[1]['params']
-        assert params['server'] == '550e8400-e29b-41d4-a716-446655440001'
-        assert 'start' in params  # Default start date is auto-generated
+        # start comes from the clock, so only its presence can be pinned here.
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/metrics/realtime/cpu/',
+            token='test-token',
+            params={'server': '550e8400-e29b-41d4-a716-446655440001', 'start': ANY},
+        )
 
     @pytest.mark.asyncio
     async def test_cpu_usage_http_error_envelope(
@@ -374,12 +378,14 @@ class TestGetNetworkTraffic:
 
         assert result['status'] == 'success'
 
-        # Verify interface parameter was not included but start was auto-generated
-        call_args = mock_http_client.get.call_args
-        params = call_args[1]['params']
-        assert params['server'] == '550e8400-e29b-41d4-a716-446655440001'
-        assert 'interface' not in params
-        assert 'start' in params  # Default start date is auto-generated
+        # The exact params dict is what proves interface was left out.
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/metrics/realtime/traffic/',
+            token='test-token',
+            params={'server': '550e8400-e29b-41d4-a716-446655440001', 'start': ANY},
+        )
 
     @pytest.mark.asyncio
     async def test_network_traffic_no_token(self, mock_http_client, mock_token_manager):
@@ -593,9 +599,13 @@ class TestGetAlertRules:
         assert result['status'] == 'success'
         assert result['server_id'] is None
 
-        # Verify no server filter was applied
-        call_args = mock_http_client.get.call_args
-        assert call_args[1]['params'] == {}
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/metrics/alert-rules/',
+            token='test-token',
+            params={},
+        )
 
     @pytest.mark.asyncio
     async def test_alert_rules_http_error_envelope(

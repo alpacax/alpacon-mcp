@@ -138,7 +138,10 @@ class TestListSessionAnalysesFilterRule:
         )
 
         assert result['status'] == 'success'
-        assert mock_http_client.get.call_args.kwargs['params'] == {
-            'status': '',
-            'risk_score': '',
-        }
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='test-ws',
+            endpoint='/api/history/session-analyses/',
+            token='test-token',
+            params={'status': '', 'risk_score': ''},
+        )

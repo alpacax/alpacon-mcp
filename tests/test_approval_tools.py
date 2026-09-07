@@ -231,10 +231,16 @@ class TestSudoPolicies:
         )
 
         assert result['status'] == 'success'
-        assert mock_http_client.get.call_args.kwargs['params'] == {
-            'user': '550e8400-e29b-41d4-a716-446655440001',
-            'server': '550e8400-e29b-41d4-a716-446655440002',
-        }
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/sudo/policies/',
+            token='test-token',
+            params={
+                'user': '550e8400-e29b-41d4-a716-446655440001',
+                'server': '550e8400-e29b-41d4-a716-446655440002',
+            },
+        )
 
     @pytest.mark.asyncio
     async def test_list_sudo_policies_rejects_a_server_name(
@@ -354,4 +360,10 @@ class TestListApprovalRequestsFilterRule:
         )
 
         assert result['status'] == 'success'
-        assert mock_http_client.get.call_args.kwargs['params'] == {'status': ''}
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/approvals/approvals/',
+            token='test-token',
+            params={'status': ''},
+        )
