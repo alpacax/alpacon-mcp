@@ -7,11 +7,11 @@ Note: User settings and profile endpoints have been removed from the server.
 
 import json
 from http import HTTPStatus
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from tests.conftest import HTTP_ERROR_ENVELOPE
+from tests.conftest import HTTP_ERROR_ENVELOPE, http_client_fixture
 from tools.workspace_tools import (
     get_current_user,
     get_workspace_access_control,
@@ -22,6 +22,8 @@ from tools.workspace_tools import (
     update_workspace_preferences,
 )
 from utils.token_manager import TokenManager
+
+mock_http_client = http_client_fixture('tools.workspace_tools')
 
 
 @pytest.fixture
@@ -337,15 +339,6 @@ class TestListWorkspacesJwtMode:
         assert result['status'] == 'error'
         assert 'No JWT token found' in result['message']
         mock_get_workspaces.assert_not_called()
-
-
-@pytest.fixture
-def mock_http_client():
-    """Mock HTTP client for testing workspace settings tools."""
-    with patch('tools.workspace_tools.http_client') as mock_client:
-        mock_client.get = AsyncMock()
-        mock_client.patch = AsyncMock()
-        yield mock_client
 
 
 @pytest.fixture

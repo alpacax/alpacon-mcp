@@ -6,11 +6,10 @@ network traffic monitoring and server performance analytics.
 """
 
 from http import HTTPStatus
-from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from tests.conftest import HTTP_ERROR_ENVELOPE
+from tests.conftest import HTTP_ERROR_ENVELOPE, http_client_fixture
 from tools.metrics_tools import (
     get_alert_rules,
     get_cpu_usage,
@@ -24,22 +23,7 @@ from tools.metrics_tools import (
     parse_memory_metrics,
 )
 
-
-@pytest.fixture
-def mock_http_client():
-    """Mock HTTP client for testing."""
-    with patch('tools.metrics_tools.http_client') as mock_client:
-        # Mock the async methods properly
-        mock_client.get = AsyncMock()
-        yield mock_client
-
-
-@pytest.fixture
-def mock_token_manager():
-    """Mock token manager for testing."""
-    with patch('utils.common.token_manager') as mock_manager:
-        mock_manager.get_token.return_value = 'test-token'
-        yield mock_manager
+mock_http_client = http_client_fixture('tools.metrics_tools')
 
 
 class TestGetCpuUsage:

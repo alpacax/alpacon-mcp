@@ -5,6 +5,7 @@ Tests the HTTP client functionality including GET, POST, PATCH, DELETE operation
 and error handling.
 """
 
+import inspect
 import logging
 from http import HTTPStatus
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -17,7 +18,7 @@ from utils.error_handler import (
     consume_upstream_auth_error,
     make_auth_error_key,
 )
-from utils.http_client import AlpaconHTTPClient, http_client
+from utils.http_client import HTTP_VERBS, AlpaconHTTPClient, http_client
 from utils.recovery_hints import _detect_error_domain, enrich_error_response
 
 
@@ -746,3 +747,18 @@ class TestDebugLogPayloadsAreLazy:
         assert payload_for('Empty response') == (
             {'status': 'success', 'status_code': HTTPStatus.OK},
         )
+
+
+class TestHTTPVerbsConstant:
+    NON_VERB_ASYNC_METHODS = frozenset({'close', 'request', 'batch_request'})
+
+    def test_covers_every_public_async_client_method(self):
+        public_async = {
+            name
+            for name, _ in inspect.getmembers(
+                AlpaconHTTPClient, inspect.iscoroutinefunction
+            )
+            if not name.startswith('_')
+        }
+
+        assert set(HTTP_VERBS) == public_async - self.NON_VERB_ASYNC_METHODS

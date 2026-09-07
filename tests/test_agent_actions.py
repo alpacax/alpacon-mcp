@@ -1,12 +1,11 @@
 """Unit tests for agent action tools in server_tools module."""
 
 import inspect
-from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from server import mcp
-from tests.conftest import HTTP_ERROR_ENVELOPE
+from tests.conftest import HTTP_ERROR_ENVELOPE, http_client_fixture
 from tools.server_tools import (
     reboot_system,
     restart_agent,
@@ -17,13 +16,7 @@ from tools.server_tools import (
     upgrade_system,
 )
 
-
-@pytest.fixture
-def mock_http_client():
-    """Mock HTTP client for testing."""
-    with patch('tools.server_tools.http_client') as mock_client:
-        mock_client.post = AsyncMock()
-        yield mock_client
+mock_http_client = http_client_fixture('tools.server_tools')
 
 
 SERVER_ID = '550e8400-e29b-41d4-a716-446655440123'

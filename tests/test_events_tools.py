@@ -5,31 +5,12 @@ Tests event management functionality including event listing,
 event retrieval, and event search.
 """
 
-from unittest.mock import AsyncMock, patch
-
 import pytest
 
-from tests.conftest import HTTP_ERROR_ENVELOPE
+from tests.conftest import HTTP_ERROR_ENVELOPE, http_client_fixture
 from tools.events_tools import get_event, list_events, search_events
 
-
-@pytest.fixture
-def mock_http_client():
-    """Mock HTTP client for testing."""
-    with patch('tools.events_tools.http_client') as mock_client:
-        # Mock the async methods properly
-        mock_client.get = AsyncMock()
-        mock_client.post = AsyncMock()
-        mock_client.delete = AsyncMock()
-        yield mock_client
-
-
-@pytest.fixture
-def mock_token_manager():
-    """Mock token manager for testing."""
-    with patch('utils.common.token_manager') as mock_manager:
-        mock_manager.get_token.return_value = 'test-token'
-        yield mock_manager
+mock_http_client = http_client_fixture('tools.events_tools')
 
 
 class TestListEvents:

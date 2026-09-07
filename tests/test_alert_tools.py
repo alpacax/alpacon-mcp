@@ -3,11 +3,10 @@
 import inspect
 import sys
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from tests.conftest import HTTP_ERROR_ENVELOPE
+from tests.conftest import HTTP_ERROR_ENVELOPE, http_client_fixture
 from tools.alert_tools import (
     _TARGETS_SENTENCE,
     ALERT_RULE_TARGETS,
@@ -26,21 +25,7 @@ RULE_ID = 'rule-1'
 SERVER_ID = '550e8400-e29b-41d4-a716-446655440123'
 
 
-@pytest.fixture
-def mock_http_client():
-    with patch('tools.alert_tools.http_client') as mock_client:
-        mock_client.get = AsyncMock()
-        mock_client.post = AsyncMock()
-        mock_client.patch = AsyncMock()
-        mock_client.delete = AsyncMock()
-        yield mock_client
-
-
-@pytest.fixture
-def mock_token_manager():
-    with patch('utils.common.token_manager') as mock_manager:
-        mock_manager.get_token.return_value = 'test-token'
-        yield mock_manager
+mock_http_client = http_client_fixture('tools.alert_tools')
 
 
 class TestListAlerts:

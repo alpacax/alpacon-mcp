@@ -1,10 +1,8 @@
 """Unit tests for certificate and PKI management tools module."""
 
-from unittest.mock import AsyncMock, patch
-
 import pytest
 
-from tests.conftest import HTTP_ERROR_ENVELOPE
+from tests.conftest import HTTP_ERROR_ENVELOPE, http_client_fixture
 from tools.cert_tools import (
     approve_revoke_request,
     approve_sign_request,
@@ -29,24 +27,7 @@ from tools.cert_tools import (
     update_certificate_authority,
 )
 
-
-@pytest.fixture
-def mock_http_client():
-    """Mock HTTP client for testing."""
-    with patch('tools.cert_tools.http_client') as mock_client:
-        mock_client.get = AsyncMock()
-        mock_client.post = AsyncMock()
-        mock_client.patch = AsyncMock()
-        mock_client.delete = AsyncMock()
-        yield mock_client
-
-
-@pytest.fixture
-def mock_token_manager():
-    """Mock token manager for testing."""
-    with patch('utils.common.token_manager') as mock_manager:
-        mock_manager.get_token.return_value = 'test-token'
-        yield mock_manager
+mock_http_client = http_client_fixture('tools.cert_tools')
 
 
 class TestCertificateAuthorities:

@@ -4,11 +4,9 @@ Unit tests for IAM tools module.
 Tests all IAM management functions including user and group management.
 """
 
-from unittest.mock import AsyncMock, patch
-
 import pytest
 
-from tests.conftest import HTTP_ERROR_ENVELOPE
+from tests.conftest import HTTP_ERROR_ENVELOPE, http_client_fixture
 from tools.iam_tools import (
     add_iam_member,
     assign_application_system_users,
@@ -43,23 +41,7 @@ APP_ID = '55555555-5555-5555-5555-555555555555'
 SYSTEM_USER_ID = '66666666-6666-6666-6666-666666666666'
 
 
-@pytest.fixture
-def mock_http_client():
-    """Mock HTTP client for testing."""
-    with patch('tools.iam_tools.http_client') as mock_client:
-        mock_client.get = AsyncMock()
-        mock_client.post = AsyncMock()
-        mock_client.patch = AsyncMock()
-        mock_client.delete = AsyncMock()
-        yield mock_client
-
-
-@pytest.fixture
-def mock_token_manager():
-    """Mock token manager for testing."""
-    with patch('utils.common.token_manager') as mock_manager:
-        mock_manager.get_token.return_value = 'test-token'
-        yield mock_manager
+mock_http_client = http_client_fixture('tools.iam_tools')
 
 
 @pytest.fixture

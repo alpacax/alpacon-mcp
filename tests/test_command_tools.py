@@ -3,11 +3,12 @@
 from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
 from typing import Any
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import pytest
 
 from server import mcp
+from tests.conftest import http_client_fixture
 from tools.command_tools import (
     _SUDO_DENIAL_HINTS,
     PURPOSE_MAX_LENGTH,
@@ -32,6 +33,8 @@ _GATE_ENVELOPE_NOT_ACTIVE = {
     'status_code': HTTPStatus.BAD_REQUEST,
     'response': '{"code":"work_session_not_active"}',
 }
+
+mock_http_client = http_client_fixture('tools.command_tools')
 
 
 class TestSudoDenialHint:
@@ -171,23 +174,6 @@ class TestSudoDenialHint:
         # only the "command" wording lost that denial's hint entirely.
         out = {'result': f'Alpacon denied this sudo invocation ({code}).\n'}
         assert self._hint(out) is not None
-
-
-@pytest.fixture
-def mock_http_client():
-    """Mock HTTP client for testing."""
-    with patch('tools.command_tools.http_client') as mock_client:
-        mock_client.get = AsyncMock()
-        mock_client.post = AsyncMock()
-        yield mock_client
-
-
-@pytest.fixture
-def mock_token_manager():
-    """Mock token manager for testing."""
-    with patch('utils.common.token_manager') as mock_manager:
-        mock_manager.get_token.return_value = 'test-token'
-        yield mock_manager
 
 
 class TestSubmitCommand:
