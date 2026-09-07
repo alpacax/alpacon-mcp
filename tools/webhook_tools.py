@@ -3,6 +3,7 @@
 from typing import Any
 
 from utils.api_call import http_call_response
+from utils.common import build_list_params
 from utils.decorators import mcp_tool_handler
 from utils.error_handler import format_validation_error, validate_uuid_format
 from utils.http_client import http_client
@@ -49,11 +50,7 @@ async def list_event_subscriptions(
     """
     token = kwargs.get('token')
 
-    params: dict[str, Any] = {}
-    if page is not None:
-        params['page'] = page
-    if page_size is not None:
-        params['page_size'] = page_size
+    params = build_list_params(page=page, page_size=page_size)
 
     return await http_call_response(
         http_client.get,
@@ -190,15 +187,12 @@ async def list_webhooks(
 
     token = kwargs.get('token')
 
-    params: dict[str, Any] = {}
-    if owner is not None:
-        params['owner'] = owner
-    if provider is not None:
-        params['provider'] = provider
-    if page is not None:
-        params['page'] = page
-    if page_size is not None:
-        params['page_size'] = page_size
+    params = build_list_params(
+        page=page,
+        page_size=page_size,
+        owner=owner,
+        provider=provider,
+    )
 
     return await http_call_response(
         http_client.get,

@@ -354,3 +354,19 @@ class TestRequestSudoPolicy:
     def test_create_sudo_policy_is_gone(self):
         """The direct-write policy tool is no longer part of the tool surface."""
         assert not hasattr(_APPROVAL_TOOLS, 'create_sudo_policy')
+
+
+class TestListApprovalRequestsFilterRule:
+    @pytest.mark.asyncio
+    async def test_supplied_but_falsy_status_is_forwarded(
+        self, mock_http_client, mock_token_manager
+    ):
+        """An empty status is a value the caller passed, not an omitted filter."""
+        mock_http_client.get.return_value = {'results': []}
+
+        result = await list_approval_requests(
+            workspace='testworkspace', region='ap1', status=''
+        )
+
+        assert result['status'] == 'success'
+        assert mock_http_client.get.call_args.kwargs['params'] == {'status': ''}

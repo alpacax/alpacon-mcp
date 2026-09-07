@@ -4,7 +4,7 @@ import re
 from typing import Any
 
 from utils.api_call import http_call_response
-from utils.common import error_response
+from utils.common import build_list_params, error_response
 from utils.decorators import mcp_tool_handler
 from utils.error_handler import format_validation_error, validate_server_id_format
 from utils.http_client import http_client
@@ -55,11 +55,7 @@ async def list_iam_users(
     """
     token = kwargs.get('token')
 
-    params = {}
-    if page is not None:
-        params['page'] = page
-    if page_size is not None:
-        params['page_size'] = page_size
+    params = build_list_params(page=page, page_size=page_size)
 
     return await http_call_response(
         http_client.get,
@@ -292,11 +288,7 @@ async def list_iam_groups(
     """
     token = kwargs.get('token')
 
-    params = {}
-    if page is not None:
-        params['page'] = page
-    if page_size is not None:
-        params['page_size'] = page_size
+    params = build_list_params(page=page, page_size=page_size)
 
     return await http_call_response(
         http_client.get,
@@ -541,13 +533,7 @@ async def list_iam_memberships(
 
     token = kwargs.get('token')
 
-    params: dict[str, Any] = {}
-    if group_id is not None:
-        params['group'] = group_id
-    if page is not None:
-        params['page'] = page
-    if page_size is not None:
-        params['page_size'] = page_size
+    params = build_list_params(page=page, page_size=page_size, group=group_id)
 
     return await http_call_response(
         http_client.get,
@@ -716,11 +702,7 @@ async def list_iam_applications(
     """
     token = kwargs.get('token')
 
-    params: dict[str, Any] = {}
-    if page is not None:
-        params['page'] = page
-    if page_size is not None:
-        params['page_size'] = page_size
+    params = build_list_params(page=page, page_size=page_size)
 
     return await http_call_response(
         http_client.get,

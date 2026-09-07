@@ -3,7 +3,7 @@
 from typing import Any
 
 from utils.api_call import http_call_response
-from utils.common import empty_value_error, error_response
+from utils.common import build_list_params, empty_value_error, error_response
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ_ONLY
@@ -58,15 +58,12 @@ async def list_command_acls(
 
     token = kwargs.get('token')
 
-    params: dict[str, Any] = {}
-    if api_token_id is not None:
-        params['api_token'] = api_token_id
-    if service_token_id is not None:
-        params['service_token'] = service_token_id
-    if page is not None:
-        params['page'] = page
-    if page_size is not None:
-        params['page_size'] = page_size
+    params = build_list_params(
+        page=page,
+        page_size=page_size,
+        api_token=api_token_id,
+        service_token=service_token_id,
+    )
 
     return await http_call_response(
         http_client.get,
@@ -260,15 +257,12 @@ async def list_server_acls(
 
     token = kwargs.get('token')
 
-    params: dict[str, Any] = {}
-    if api_token_id is not None:
-        params['api_token'] = api_token_id
-    if service_token_id is not None:
-        params['service_token'] = service_token_id
-    if page is not None:
-        params['page'] = page
-    if page_size is not None:
-        params['page_size'] = page_size
+    params = build_list_params(
+        page=page,
+        page_size=page_size,
+        api_token=api_token_id,
+        service_token=service_token_id,
+    )
 
     return await http_call_response(
         http_client.get,
@@ -524,15 +518,12 @@ async def list_file_acls(
 
     token = kwargs.get('token')
 
-    params: dict[str, Any] = {}
-    if api_token_id is not None:
-        params['api_token'] = api_token_id
-    if service_token_id is not None:
-        params['service_token'] = service_token_id
-    if page is not None:
-        params['page'] = page
-    if page_size is not None:
-        params['page_size'] = page_size
+    params = build_list_params(
+        page=page,
+        page_size=page_size,
+        api_token=api_token_id,
+        service_token=service_token_id,
+    )
 
     return await http_call_response(
         http_client.get,
