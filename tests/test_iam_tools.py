@@ -420,8 +420,6 @@ class TestHTTPErrorEnvelope:
 
 
 class TestParameterValidation:
-    """Test parameter validation and edge cases."""
-
     @pytest.mark.asyncio
     async def test_optional_parameters(
         self, mock_http_client, mock_token_manager, sample_user

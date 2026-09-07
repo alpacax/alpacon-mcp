@@ -138,8 +138,7 @@ async def test_server_id_is_sent_as_server(
     )
 
 
-# All audit endpoints are GET reads; one parametrized case covers every tool's
-# error-envelope path instead of repeating an identical test per class.
+# All audit endpoints are GET reads, so one parametrized case covers them all.
 @pytest.mark.parametrize(
     'func, kwargs',
     [
