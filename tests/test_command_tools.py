@@ -321,9 +321,16 @@ class TestListCommands:
         )
 
         assert result['status'] == 'success'
-        call_args = mock_http_client.get.call_args
-        assert (
-            call_args[1]['params']['server'] == '550e8400-e29b-41d4-a716-446655440001'
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/events/commands/',
+            token='test-token',
+            params={
+                'page_size': 20,
+                'ordering': '-added_at',
+                'server': '550e8400-e29b-41d4-a716-446655440001',
+            },
         )
 
     @pytest.mark.asyncio

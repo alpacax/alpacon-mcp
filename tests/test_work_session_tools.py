@@ -253,8 +253,13 @@ class TestWorkSessionList:
             workspace='testworkspace', status='active', region='ap1'
         )
 
-        call_params = mock_http_client.get.call_args[1]['params']
-        assert call_params['status'] == 'active'
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/work-sessions/sessions/',
+            token='test-token',
+            params={'page_size': 20, 'status': 'active'},
+        )
 
     @pytest.mark.asyncio
     async def test_list_with_requester_type_filter(
@@ -267,9 +272,13 @@ class TestWorkSessionList:
             workspace='testworkspace', requester_type='agent', region='ap1'
         )
 
-        call_params = mock_http_client.get.call_args[1]['params']
-        assert call_params['requester_type'] == 'agent'
-        assert 'status' not in call_params
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/work-sessions/sessions/',
+            token='test-token',
+            params={'page_size': 20, 'requester_type': 'agent'},
+        )
 
     @pytest.mark.asyncio
     async def test_list_propagates_api_error(
@@ -528,8 +537,13 @@ class TestWorkSessionTimeline:
             region='ap1',
         )
 
-        call_params = mock_http_client.get.call_args[1]['params']
-        assert call_params == {'include_records': 'false'}
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/work-sessions/sessions/550e8400-e29b-41d4-a716-446655440020/timeline/',
+            token='test-token',
+            params={'include_records': 'false'},
+        )
 
     @pytest.mark.asyncio
     async def test_timeline_propagates_api_error(
@@ -591,8 +605,14 @@ class TestWorkSessionAnalyze:
             region='ap1',
         )
 
-        call_params = mock_http_client.post.call_args[1]['params']
-        assert call_params == {'force': 'true'}
+        mock_http_client.post.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/work-sessions/sessions/550e8400-e29b-41d4-a716-446655440020/analyze/',
+            token='test-token',
+            data={},
+            params={'force': 'true'},
+        )
 
     @pytest.mark.asyncio
     async def test_analyze_propagates_api_error(

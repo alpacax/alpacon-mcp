@@ -255,12 +255,13 @@ class TestListSystemUsers:
         assert result['status'] == 'success'
         assert result['username_filter'] is None
         assert result['login_enabled_only'] is False
-
-        # Verify only server parameter was included
-        call_args = mock_http_client.get.call_args
-        assert call_args[1]['params'] == {
-            'server': '550e8400-e29b-41d4-a716-446655440001'
-        }
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/proc/users/',
+            token='test-token',
+            params={'server': '550e8400-e29b-41d4-a716-446655440001'},
+        )
 
     @pytest.mark.asyncio
     async def test_list_users_no_token(self, mock_http_client, mock_token_manager):
@@ -352,12 +353,13 @@ class TestListSystemGroups:
 
         assert result['status'] == 'success'
         assert result['groupname_filter'] is None
-
-        # Verify only server parameter was included
-        call_args = mock_http_client.get.call_args
-        assert call_args[1]['params'] == {
-            'server': '550e8400-e29b-41d4-a716-446655440001'
-        }
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/proc/groups/',
+            token='test-token',
+            params={'server': '550e8400-e29b-41d4-a716-446655440001'},
+        )
 
     @pytest.mark.asyncio
     async def test_list_groups_no_token(self, mock_http_client, mock_token_manager):
@@ -450,13 +452,13 @@ class TestListSystemPackages:
         assert result['architecture'] is None
         assert result['limit'] == 100  # Default value
 
-        # Verify correct parameters were sent
-        call_args = mock_http_client.get.call_args
-        expected_params = {
-            'server': '550e8400-e29b-41d4-a716-446655440001',
-            'page_size': 100,
-        }
-        assert call_args[1]['params'] == expected_params
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/proc/packages/',
+            token='test-token',
+            params={'server': '550e8400-e29b-41d4-a716-446655440001', 'page_size': 100},
+        )
 
     @pytest.mark.asyncio
     async def test_list_packages_no_token(self, mock_http_client, mock_token_manager):

@@ -788,10 +788,13 @@ class TestUnregisterServer:
             purge_provisioned_accounts=True,
         )
 
-        assert mock_http_client.delete.call_args.kwargs['params'] == {
-            'auto': True,
-            'purge_provisioned_accounts': True,
-        }
+        mock_http_client.delete.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/servers/servers/550e8400-e29b-41d4-a716-446655440123/',
+            token='test-token',
+            params={'auto': True, 'purge_provisioned_accounts': True},
+        )
 
 
 class TestStarServer:
@@ -874,8 +877,13 @@ class TestListRegistrationTokens:
             workspace='testworkspace', region='ap1', page=2, page_size=5
         )
 
-        _, kwargs = mock_http_client.get.call_args
-        assert kwargs['params'] == {'page': 2, 'page_size': 5}
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/servers/registration-tokens/',
+            token='test-token',
+            params={'page': 2, 'page_size': 5},
+        )
 
     @pytest.mark.asyncio
     async def test_list_registration_tokens_no_token(

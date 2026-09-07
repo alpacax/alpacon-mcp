@@ -196,11 +196,12 @@ class TestWebFtpSessionsList:
 
         assert result['status'] == 'success'
         assert result['server_id'] == '550e8400-e29b-41d4-a716-446655440001'
-
-        # Verify server filter was applied
-        call_args = mock_http_client.get.call_args
-        assert (
-            call_args[1]['params']['server'] == '550e8400-e29b-41d4-a716-446655440001'
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/webftp/sessions/',
+            token='test-token',
+            params={'server': '550e8400-e29b-41d4-a716-446655440001'},
         )
 
     @pytest.mark.asyncio
@@ -598,11 +599,12 @@ class TestWebFtpUploadsList:
 
         assert result['status'] == 'success'
         assert result['server_id'] == '550e8400-e29b-41d4-a716-446655440001'
-
-        # Verify server filter was applied
-        call_args = mock_http_client.get.call_args
-        assert (
-            call_args[1]['params']['server'] == '550e8400-e29b-41d4-a716-446655440001'
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/webftp/uploads/',
+            token='test-token',
+            params={'server': '550e8400-e29b-41d4-a716-446655440001'},
         )
 
     @pytest.mark.asyncio
@@ -685,11 +687,12 @@ class TestWebFtpDownloadsList:
 
         assert result['status'] == 'success'
         assert result['server_id'] == '550e8400-e29b-41d4-a716-446655440001'
-
-        # Verify server filter was applied
-        call_args = mock_http_client.get.call_args
-        assert (
-            call_args[1]['params']['server'] == '550e8400-e29b-41d4-a716-446655440001'
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/webftp/downloads/',
+            token='test-token',
+            params={'server': '550e8400-e29b-41d4-a716-446655440001'},
         )
 
     @pytest.mark.asyncio
