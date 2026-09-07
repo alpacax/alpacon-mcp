@@ -62,6 +62,12 @@ class TestGetActivityLog:
 
         assert result['status'] == 'success'
         assert result['log_id'] == 'log-1'
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='test-ws',
+            endpoint='/api/audit/activity/log-1/',
+            token='test-token',
+        )
 
 
 class TestGetSessionAnalysisDetail:
@@ -75,6 +81,12 @@ class TestGetSessionAnalysisDetail:
 
         assert result['status'] == 'success'
         assert result['analysis_id'] == 'analysis-1'
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='test-ws',
+            endpoint='/api/history/session-analyses/analysis-1/',
+            token='test-token',
+        )
 
 
 @pytest.mark.parametrize(
