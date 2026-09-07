@@ -9,6 +9,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from utils.http_client import HTTP_VERBS
+
 # Canonical http_client error envelope (the shape utils/http_client returns on
 # 4xx/5xx). Shared across error-path tests so the envelope is defined once.
 HTTP_ERROR_ENVELOPE = {
@@ -18,16 +20,13 @@ HTTP_ERROR_ENVELOPE = {
 }
 
 
-_HTTP_VERBS = ('get', 'post', 'put', 'patch', 'delete')
-
-
 def http_client_fixture(module_name: str):
     """Build a `mock_http_client` fixture patching the tool module's `http_client`."""
 
     @pytest.fixture
     def _mock_http_client():
         with patch(f'{module_name}.http_client') as mock_client:
-            for verb in _HTTP_VERBS:  # patch() alone leaves these un-awaitable
+            for verb in HTTP_VERBS:  # patch() alone leaves these un-awaitable
                 setattr(mock_client, verb, AsyncMock())
             yield mock_client
 

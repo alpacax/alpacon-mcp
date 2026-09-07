@@ -27,6 +27,8 @@ _ERR_REQUEST_EXCEPTION = 'Request Exception'
 _ERR_TIMEOUT = 'Timeout'
 _ERR_UNEXPECTED = 'Unexpected Error'
 
+HTTP_VERBS = ('get', 'post', 'put', 'patch', 'delete')
+
 
 class AlpaconHTTPClient:
     """Async HTTP client for Alpacon API with connection pooling.
