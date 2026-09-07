@@ -854,7 +854,7 @@ Update workspace-wide preferences. Only the fields you provide are sent (partial
 
 Notifications and preferences have write tools; access control and security settings deliberately do not. On SaaS the server gates those governance-level writes behind a superuser session with fresh MFA, which a static API token cannot satisfy. On-premise the same writes need only an admin token with the `workspaces` scope, so a token could technically perform them—but keeping governance settings human-only, in the web console, is the safer default regardless of deployment. This is a deliberate omission, not a gap to fill.
 
-There are likewise no user-settings or user-profile tools: `/api/user/settings/` and `/api/user/profile/` do not exist on the Alpacon server. The endpoints that do exist for adjacent data are `/api/profiles/preferences/`, `/api/workspaces/preferences/` (exposed above), and `/api/auth0/users/`. Role and permission management endpoints do not exist either, which is why the IAM section has no role or permission tools.
+There are likewise no user-settings or user-profile tools: `/api/user/settings/` and `/api/user/profile/` do not exist on the Alpacon server. The endpoints that do exist for adjacent data are `/api/profiles/preferences/` and `/api/workspaces/preferences/` (exposed above). Role and permission management endpoints do not exist either, which is why the IAM section has no role or permission tools.
 
 ---
 
