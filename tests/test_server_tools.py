@@ -6,12 +6,11 @@ Tests all server management functions including server listing, details, and not
 
 import inspect
 from http import HTTPStatus
-from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from server import mcp
-from tests.conftest import HTTP_ERROR_ENVELOPE
+from tests.conftest import HTTP_ERROR_ENVELOPE, http_client_fixture
 from tools.server_tools import (
     create_registration_token,
     create_server_note,
@@ -29,16 +28,7 @@ from tools.server_tools import (
     update_server_note,
 )
 
-
-@pytest.fixture
-def mock_http_client():
-    """Mock HTTP client for testing."""
-    with patch('tools.server_tools.http_client') as mock_client:
-        mock_client.get = AsyncMock()
-        mock_client.post = AsyncMock()
-        mock_client.patch = AsyncMock()
-        mock_client.delete = AsyncMock()
-        yield mock_client
+mock_http_client = http_client_fixture('tools.server_tools')
 
 
 @pytest.fixture

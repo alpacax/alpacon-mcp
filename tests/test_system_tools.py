@@ -10,10 +10,9 @@ This file covers additional scenarios like region variations,
 error conditions, and parameter handling.
 """
 
-from unittest.mock import AsyncMock, patch
-
 import pytest
 
+from tests.conftest import http_client_fixture
 from tools.system_info_tools import (
     get_disk_info,
     get_system_info,
@@ -21,22 +20,7 @@ from tools.system_info_tools import (
     list_system_users,
 )
 
-
-@pytest.fixture
-def mock_http_client():
-    """Mock HTTP client for testing."""
-    with patch('tools.system_info_tools.http_client') as mock_client:
-        # Mock the async methods properly
-        mock_client.get = AsyncMock()
-        yield mock_client
-
-
-@pytest.fixture
-def mock_token_manager():
-    """Mock token manager for testing."""
-    with patch('utils.common.token_manager') as mock_manager:
-        mock_manager.get_token.return_value = 'test-token'
-        yield mock_manager
+mock_http_client = http_client_fixture('tools.system_info_tools')
 
 
 class TestSystemInfoEdgeCases:

@@ -1,11 +1,10 @@
 """Unit tests for package management tools module."""
 
 from http import HTTPStatus
-from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from tests.conftest import HTTP_ERROR_ENVELOPE
+from tests.conftest import HTTP_ERROR_ENVELOPE, http_client_fixture
 from tools.package_tools import (
     install_python_package,
     install_system_package,
@@ -15,23 +14,7 @@ from tools.package_tools import (
     remove_system_package,
 )
 
-
-@pytest.fixture
-def mock_http_client():
-    """Mock HTTP client for testing."""
-    with patch('tools.package_tools.http_client') as mock_client:
-        mock_client.get = AsyncMock()
-        mock_client.post = AsyncMock()
-        mock_client.delete = AsyncMock()
-        yield mock_client
-
-
-@pytest.fixture
-def mock_token_manager():
-    """Mock token manager for testing."""
-    with patch('utils.common.token_manager') as mock_manager:
-        mock_manager.get_token.return_value = 'test-token'
-        yield mock_manager
+mock_http_client = http_client_fixture('tools.package_tools')
 
 
 SERVER_ID = '550e8400-e29b-41d4-a716-446655440123'

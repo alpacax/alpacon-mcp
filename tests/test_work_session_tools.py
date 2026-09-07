@@ -1,11 +1,11 @@
 """Unit tests for work_session_tools module."""
 
 from http import HTTPStatus
-from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from server import mcp
+from tests.conftest import http_client_fixture
 from tools.work_session_tools import (
     work_session_analyze,
     work_session_close,
@@ -17,21 +17,7 @@ from tools.work_session_tools import (
     work_session_update,
 )
 
-
-@pytest.fixture
-def mock_http_client():
-    with patch('tools.work_session_tools.http_client') as mock_client:
-        mock_client.get = AsyncMock()
-        mock_client.post = AsyncMock()
-        mock_client.patch = AsyncMock()
-        yield mock_client
-
-
-@pytest.fixture
-def mock_token_manager():
-    with patch('utils.common.token_manager') as mock_manager:
-        mock_manager.get_token.return_value = 'test-token'
-        yield mock_manager
+mock_http_client = http_client_fixture('tools.work_session_tools')
 
 
 class TestWorkSessionCreate:

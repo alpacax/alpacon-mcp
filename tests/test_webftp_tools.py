@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from tests.conftest import http_client_fixture
 from tools.webftp_tools import (
     _STATUS_ERROR,
     _aiter_file,
@@ -31,23 +32,7 @@ from tools.webftp_tools import (
     webftp_uploads_list,
 )
 
-
-@pytest.fixture
-def mock_http_client():
-    """Mock HTTP client for testing."""
-    with patch('tools.webftp_tools.http_client') as mock_client:
-        # Mock the async methods properly
-        mock_client.get = AsyncMock()
-        mock_client.post = AsyncMock()
-        yield mock_client
-
-
-@pytest.fixture
-def mock_token_manager():
-    """Mock token manager for testing."""
-    with patch('utils.common.token_manager') as mock_manager:
-        mock_manager.get_token.return_value = 'test-token'
-        yield mock_manager
+mock_http_client = http_client_fixture('tools.webftp_tools')
 
 
 @pytest.fixture

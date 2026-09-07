@@ -5,7 +5,7 @@ TokenManager (which requires ~/.alpacon-mcp/token.json to exist).
 """
 
 from http import HTTPStatus
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -16,6 +16,22 @@ HTTP_ERROR_ENVELOPE = {
     'status_code': HTTPStatus.NOT_FOUND,
     'message': 'Not found',
 }
+
+
+_HTTP_VERBS = ('get', 'post', 'put', 'patch', 'delete')
+
+
+def http_client_fixture(module_name: str):
+    """Build a `mock_http_client` fixture patching the tool module's `http_client`."""
+
+    @pytest.fixture
+    def _mock_http_client():
+        with patch(f'{module_name}.http_client') as mock_client:
+            for verb in _HTTP_VERBS:  # patch() alone leaves these un-awaitable
+                setattr(mock_client, verb, AsyncMock())
+            yield mock_client
+
+    return _mock_http_client
 
 
 @pytest.fixture

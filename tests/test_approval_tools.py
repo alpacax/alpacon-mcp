@@ -3,11 +3,10 @@
 import inspect
 import sys
 from http import HTTPStatus
-from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from tests.conftest import HTTP_ERROR_ENVELOPE
+from tests.conftest import HTTP_ERROR_ENVELOPE, http_client_fixture
 from tools.approval_tools import (
     explain_approval_decision,
     get_approval_request,
@@ -21,21 +20,7 @@ from tools.approval_tools import (
 _APPROVAL_TOOLS = sys.modules[list_sudo_policies.__module__]
 
 
-@pytest.fixture
-def mock_http_client():
-    """Mock HTTP client for testing."""
-    with patch('tools.approval_tools.http_client') as mock_client:
-        mock_client.get = AsyncMock()
-        mock_client.post = AsyncMock()
-        yield mock_client
-
-
-@pytest.fixture
-def mock_token_manager():
-    """Mock token manager for testing."""
-    with patch('utils.common.token_manager') as mock_manager:
-        mock_manager.get_token.return_value = 'test-token'
-        yield mock_manager
+mock_http_client = http_client_fixture('tools.approval_tools')
 
 
 class TestListApprovalRequests:

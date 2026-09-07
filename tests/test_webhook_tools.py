@@ -1,10 +1,8 @@
 """Unit tests for webhook and event subscription tools module."""
 
-from unittest.mock import AsyncMock, patch
-
 import pytest
 
-from tests.conftest import HTTP_ERROR_ENVELOPE
+from tests.conftest import HTTP_ERROR_ENVELOPE, http_client_fixture
 from tools.webhook_tools import (
     create_event_subscription,
     create_webhook,
@@ -16,16 +14,7 @@ from tools.webhook_tools import (
     update_webhook,
 )
 
-
-@pytest.fixture
-def mock_http_client():
-    """Mock HTTP client for testing."""
-    with patch('tools.webhook_tools.http_client') as mock_client:
-        mock_client.get = AsyncMock()
-        mock_client.post = AsyncMock()
-        mock_client.patch = AsyncMock()
-        mock_client.delete = AsyncMock()
-        yield mock_client
+mock_http_client = http_client_fixture('tools.webhook_tools')
 
 
 @pytest.mark.asyncio
