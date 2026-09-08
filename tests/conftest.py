@@ -56,7 +56,7 @@ def mock_token_manager():
 
 @pytest.fixture(autouse=True)
 def mock_region_auto_detect():
-    """Prevent _resolve_region from accessing real token.json in all tests.
+    """Prevent _resolve_region_local from accessing real token.json in all tests.
 
     The with_token_validation decorator calls get_token_manager() when region
     is empty to auto-detect it. Without this fixture, tests that omit region
