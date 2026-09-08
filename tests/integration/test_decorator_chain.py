@@ -23,6 +23,27 @@ from tools.webftp_tools import webftp_upload_content
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
+_SERVER_ID = '11111111-1111-1111-1111-111111111111'
+
+# Larger than _MAX_LOGGED_VALUE_LEN by three orders of magnitude: the shape #233
+# was reported as, a 1 MB upload writing 1.4 MB of log.
+_OVERSIZED_PAYLOAD = base64.b64encode(b'\x00' * 65536).decode()
+
+
+def _entry_log(caplog, tool: str) -> str:
+    """The tool's one ``called with`` line. Raises if it was never emitted."""
+    return next(r.message for r in caplog.records if f'{tool} called with' in r.message)
+
+
+async def _upload_oversized_content() -> None:
+    await webftp_upload_content(
+        server_id=_SERVER_ID,
+        file_content=_OVERSIZED_PAYLOAD,
+        remote_file_path='/tmp/upload.bin',
+        workspace='testworkspace',
+        region='invalid',
+    )
+
 
 class TestDecoratorChainSuccess:
     """Test successful flow through the full decorator chain."""
@@ -136,7 +157,11 @@ class TestErrorHandlingDecorator:
 
 
 class TestLoggingDecorator:
-    """Test that with_logging decorator logs entry and exit."""
+    """Test that with_logging decorator logs entry and exit.
+
+    Every test below that passes ``region='invalid'`` does so to stop the call
+    right after the entry log, before any HTTP.
+    """
 
     async def test_logging_logs_entry_and_success(
         self, patched_http_client, mock_token_for_integration, caplog
@@ -153,9 +178,7 @@ class TestLoggingDecorator:
 
         assert result['status'] == 'success'
 
-        entry = next(
-            r.message for r in caplog.records if 'list_servers called with' in r.message
-        )
+        entry = _entry_log(caplog, 'list_servers')
         assert "'workspace': 'testworkspace'" in entry
         assert "'region': 'ap1'" in entry
         assert 'integration-test-token' not in entry
@@ -168,56 +191,31 @@ class TestLoggingDecorator:
         assert success_logged
 
     async def test_logging_before_validation(self, caplog):
-        """Logging runs before validation, so the rejected input is what gets logged.
-
-        The region is invalid so the call stops after the entry log, before any HTTP.
-        """
+        """Logging runs before validation, so the rejected input is what gets logged."""
         with caplog.at_level(logging.INFO):
             result = await list_servers(workspace='testworkspace', region='invalid')
 
         assert result['status'] == 'error'
 
-        entry = next(
-            r.message for r in caplog.records if 'list_servers called with' in r.message
-        )
+        entry = _entry_log(caplog, 'list_servers')
         assert "'region': 'invalid'" in entry
 
     async def test_logging_records_payload_size_not_payload(
         self, mock_token_for_integration, caplog
     ):
-        """The entry log carries the size of file_content, never its bytes (#233).
-
-        The region is invalid so the call stops after the entry log, before any HTTP.
-        """
-        payload = base64.b64encode(b'\x00' * 65536).decode()
-
+        """The entry log carries the size of file_content, never its bytes (#233)."""
         with caplog.at_level(logging.INFO):
-            await webftp_upload_content(
-                server_id='11111111-1111-1111-1111-111111111111',
-                file_content=payload,
-                remote_file_path='/tmp/upload.bin',
-                workspace='testworkspace',
-                region='invalid',
-            )
+            await _upload_oversized_content()
 
-        entry = next(
-            r.message
-            for r in caplog.records
-            if 'webftp_upload_content called with' in r.message
-        )
-        assert payload not in entry
-        assert str(len(payload)) in entry
+        entry = _entry_log(caplog, 'webftp_upload_content')
+        assert _OVERSIZED_PAYLOAD not in entry
+        assert str(len(_OVERSIZED_PAYLOAD)) in entry
         assert len(entry) < 1024
 
     async def test_logging_skips_argument_work_when_info_disabled(
         self, mock_token_for_integration, caplog
     ):
-        """Below INFO, with_logging binds and summarizes nothing at all (#233).
-
-        The region is invalid so the call stops after the entry log, before any HTTP.
-        """
-        payload = base64.b64encode(b'\x00' * 65536).decode()
-
+        """Below INFO, with_logging binds and summarizes nothing at all (#233)."""
         with (
             patch.object(
                 decorators,
@@ -229,13 +227,7 @@ class TestLoggingDecorator:
             ) as signature,
         ):
             with caplog.at_level(logging.WARNING, logger='alpacon_mcp.decorators'):
-                await webftp_upload_content(
-                    server_id='11111111-1111-1111-1111-111111111111',
-                    file_content=payload,
-                    remote_file_path='/tmp/upload.bin',
-                    workspace='testworkspace',
-                    region='invalid',
-                )
+                await _upload_oversized_content()
 
         assert summarize.call_count == 0
         assert signature.call_count == 0
@@ -248,13 +240,10 @@ class TestLoggingDecorator:
     async def test_logging_omits_free_text_env_and_personal_data(
         self, mock_token_for_integration, caplog
     ):
-        """Keys the log has no use for are dropped, not summarized (#233).
-
-        The region is invalid so the call stops after the entry log, before any HTTP.
-        """
+        """Keys the log has no use for are dropped, not summarized (#233)."""
         with caplog.at_level(logging.INFO):
             await execute_command(
-                server_id='11111111-1111-1111-1111-111111111111',
+                server_id=_SERVER_ID,
                 command='uptime',
                 workspace='testworkspace',
                 region='invalid',
@@ -263,11 +252,7 @@ class TestLoggingDecorator:
                 env={'DEPLOY_TOKEN': 'hunter2'},
             )
 
-        entry = next(
-            r.message
-            for r in caplog.records
-            if 'execute_command called with' in r.message
-        )
+        entry = _entry_log(caplog, 'execute_command')
 
         assert "'purpose'" not in entry
         assert "'data'" not in entry
@@ -276,7 +261,7 @@ class TestLoggingDecorator:
         assert 'Check load' not in entry
         assert 'stdin payload' not in entry
         assert "'command': 'uptime'" in entry
-        assert '11111111-1111-1111-1111-111111111111' in entry
+        assert _SERVER_ID in entry
 
 
 class TestPublishedSchema:
