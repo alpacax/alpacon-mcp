@@ -15,6 +15,7 @@ from unittest.mock import patch
 import httpx
 import pytest
 
+import utils.decorators as decorators
 from server import ALL_TOOL_MODULES, ALWAYS_ON_MODULES, TOOLS_PACKAGE, mcp
 from tools.command_tools import execute_command
 from tools.server_tools import get_server, list_servers
@@ -166,8 +167,11 @@ class TestLoggingDecorator:
         )
         assert success_logged
 
-    async def test_logging_before_validation(self, patched_http_client, caplog):
-        """Logging runs before validation, so the rejected input is what gets logged."""
+    async def test_logging_before_validation(self, caplog):
+        """Logging runs before validation, so the rejected input is what gets logged.
+
+        The region is invalid so the call stops after the entry log, before any HTTP.
+        """
         with caplog.at_level(logging.INFO):
             result = await list_servers(workspace='testworkspace', region='invalid')
 
@@ -179,9 +183,12 @@ class TestLoggingDecorator:
         assert "'region': 'invalid'" in entry
 
     async def test_logging_records_payload_size_not_payload(
-        self, patched_http_client, mock_token_for_integration, caplog
+        self, mock_token_for_integration, caplog
     ):
-        """The entry log carries the size of file_content, never its bytes (#233)."""
+        """The entry log carries the size of file_content, never its bytes (#233).
+
+        The region is invalid so the call stops after the entry log, before any HTTP.
+        """
         payload = base64.b64encode(b'\x00' * 65536).decode()
 
         with caplog.at_level(logging.INFO):
@@ -190,7 +197,7 @@ class TestLoggingDecorator:
                 file_content=payload,
                 remote_file_path='/tmp/upload.bin',
                 workspace='testworkspace',
-                region='ap1',
+                region='invalid',
             )
 
         entry = next(
@@ -202,41 +209,47 @@ class TestLoggingDecorator:
         assert str(len(payload)) in entry
         assert len(entry) < 1024
 
-    async def test_logging_skips_argument_summary_when_info_disabled(
-        self, patched_http_client, mock_token_for_integration, caplog
+    async def test_logging_skips_argument_work_when_info_disabled(
+        self, mock_token_for_integration, caplog
     ):
-        """Below INFO, the argument summary is never built: no repr() of the payload."""
+        """Below INFO, with_logging binds and summarizes nothing at all (#233).
 
-        class ReprSpy(str):
-            calls = 0
+        The region is invalid so the call stops after the entry log, before any HTTP.
+        """
+        payload = base64.b64encode(b'\x00' * 65536).decode()
 
-            def __repr__(self) -> str:
-                ReprSpy.calls += 1
-                return super().__repr__()
+        with patch.object(
+            decorators, '_summarize_log_value', wraps=decorators._summarize_log_value
+        ) as summarize:
+            with caplog.at_level(logging.WARNING, logger='alpacon_mcp.decorators'):
+                await webftp_upload_content(
+                    server_id='11111111-1111-1111-1111-111111111111',
+                    file_content=payload,
+                    remote_file_path='/tmp/upload.bin',
+                    workspace='testworkspace',
+                    region='invalid',
+                )
 
-        payload = ReprSpy(base64.b64encode(b'\x00' * 65536).decode())
-
-        with caplog.at_level(logging.WARNING, logger='alpacon_mcp.decorators'):
-            await webftp_upload_content(
-                server_id='11111111-1111-1111-1111-111111111111',
-                file_content=payload,
-                remote_file_path='/tmp/upload.bin',
-                workspace='testworkspace',
-                region='ap1',
-            )
-
-        assert ReprSpy.calls == 0
+        assert summarize.call_count == 0
+        assert not [
+            r
+            for r in caplog.records
+            if 'webftp_upload_content called with' in r.message
+        ]
 
     async def test_logging_omits_free_text_env_and_personal_data(
-        self, patched_http_client, mock_token_for_integration, caplog
+        self, mock_token_for_integration, caplog
     ):
-        """Keys the log has no use for are dropped, not summarized (#233)."""
+        """Keys the log has no use for are dropped, not summarized (#233).
+
+        The region is invalid so the call stops after the entry log, before any HTTP.
+        """
         with caplog.at_level(logging.INFO):
             await execute_command(
                 server_id='11111111-1111-1111-1111-111111111111',
                 command='uptime',
                 workspace='testworkspace',
-                region='ap1',
+                region='invalid',
                 purpose='Check load before the deploy',
                 data='stdin payload line',
                 env={'DEPLOY_TOKEN': 'hunter2'},
