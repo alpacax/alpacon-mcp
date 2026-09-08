@@ -856,7 +856,6 @@ class TestGetServerOverview:
             raise Exception('Async processing failed')
 
         with patch('asyncio.gather') as mock_gather:
-            # Mock asyncio.gather to raise an exception
             mock_gather.side_effect = _raise_and_close_coros
 
             result = await get_server_overview(
