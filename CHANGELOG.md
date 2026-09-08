@@ -128,6 +128,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   correction is the first entry under Changed.
 
 ### Fixed
+- `webftp_upload_content` no longer writes the uploaded file into the log (#233). `with_logging`
+  logged every argument value in full, and `file_content` carries the base64 payload, so an 8 MB
+  upload wrote an 11 MB INFO line holding the user's file; a 1 MB upload measured a 1,398,223-byte
+  line. The entry log now replaces any string argument longer than 256 characters with
+  `<str len=N>`, and it builds the argument summary only when INFO is enabled, which also keeps
+  the cost off the shared event loop. Nothing changes for a client, but an existing
+  `logs/alpacon-mcp.log` can hold uploaded file contents and should be treated accordingly.
 - The published input schema of every tool behind `@mcp_tool_handler` no longer carries
   `kwargs`, the catch-all the decorator injects the token through (#211). FastMCP did not read
   it as a catch-all and published it as a required string, so a client that sent only the

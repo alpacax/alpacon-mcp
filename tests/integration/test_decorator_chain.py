@@ -4,6 +4,7 @@ Tests the full decorator stack: with_logging -> with_token_validation -> with_er
 Uses MockTransport at the httpx transport layer so the real HTTP client code runs.
 """
 
+import base64
 import importlib
 import inspect
 import logging
@@ -16,6 +17,7 @@ import pytest
 
 from server import ALL_TOOL_MODULES, ALWAYS_ON_MODULES, TOOLS_PACKAGE, mcp
 from tools.server_tools import get_server, list_servers
+from tools.webftp_tools import webftp_upload_content
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
@@ -172,6 +174,55 @@ class TestLoggingDecorator:
         assert entry_logged, (
             f'Expected entry log even for invalid input, got: {log_messages}'
         )
+
+    async def test_logging_records_payload_size_not_payload(
+        self, patched_http_client, mock_token_for_integration, caplog
+    ):
+        """The entry log carries the size of file_content, never its bytes (#233)."""
+        payload = base64.b64encode(b'\x00' * 65536).decode()
+
+        with caplog.at_level(logging.INFO):
+            await webftp_upload_content(
+                server_id='11111111-1111-1111-1111-111111111111',
+                file_content=payload,
+                remote_file_path='/tmp/upload.bin',
+                workspace='testworkspace',
+                region='ap1',
+            )
+
+        entry = next(
+            r.message
+            for r in caplog.records
+            if 'webftp_upload_content called with' in r.message
+        )
+        assert payload not in entry
+        assert str(len(payload)) in entry
+        assert len(entry) < 1024
+
+    async def test_logging_skips_argument_summary_when_info_disabled(
+        self, patched_http_client, mock_token_for_integration, caplog
+    ):
+        """Below INFO, the argument summary is never built: no repr() of the payload."""
+
+        class ReprSpy(str):
+            calls = 0
+
+            def __repr__(self) -> str:
+                ReprSpy.calls += 1
+                return super().__repr__()
+
+        payload = ReprSpy(base64.b64encode(b'\x00' * 65536).decode())
+
+        with caplog.at_level(logging.WARNING, logger='alpacon_mcp.decorators'):
+            await webftp_upload_content(
+                server_id='11111111-1111-1111-1111-111111111111',
+                file_content=payload,
+                remote_file_path='/tmp/upload.bin',
+                workspace='testworkspace',
+                region='ap1',
+            )
+
+        assert ReprSpy.calls == 0
 
 
 class TestPublishedSchema:

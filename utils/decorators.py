@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import inspect
+import logging
 import re
 from collections.abc import Callable
 from functools import wraps
@@ -46,6 +47,10 @@ _SPECIFY_REGION_HINT = 'Please specify a region parameter.'
 # Forward cover: with_logging binds the published signature, so this only bites
 # once a tool documents one of these names as its own parameter.
 _SENSITIVE_LOG_KEYS = frozenset({'token', 'password', 'secret', 'key'})
+
+# A payload reaches a tool as an ordinary string, under whatever name that tool
+# gives it, so the guard is on the value's size and not on the key (#233).
+_MAX_LOGGED_VALUE_LEN = 256
 
 # RFC 3986 unreserved characters—nothing in this set can restructure a URL.
 # Wide enough in practice: every identifier upstream mints is a UUID or an
@@ -496,11 +501,25 @@ def with_error_handling(func: Callable) -> Callable:
     return wrapper
 
 
+def _summarize_log_value(value: Any) -> Any:
+    """Replace an oversized string value with a placeholder recording its length.
+
+    Every argument reaching an MCP tool comes from JSON, so this only ever
+    sees ``str``. ``str`` is spelled out in the placeholder anyway, so a
+    reader of the log can tell this was original text and not, say, a
+    literal integer argument named ``len``.
+    """
+    if isinstance(value, str) and len(value) > _MAX_LOGGED_VALUE_LEN:
+        return f'<str len={len(value)}>'
+    return value
+
+
 def with_logging(func: Callable) -> Callable:
     """Decorator to add automatic logging to MCP tools.
 
     This decorator:
-    1. Logs function entry with parameters
+    1. Logs function entry with parameters, dropping sensitive keys and
+       summarizing values too large to belong in a log line
     2. Logs successful completion
     3. Logs errors (works with with_error_handling)
 
@@ -515,17 +534,19 @@ def with_logging(func: Callable) -> Callable:
     async def wrapper(*args, **kwargs):
         func_name = func.__name__
 
-        # Get function arguments for logging
-        sig = inspect.signature(func)
-        bound_args = sig.bind(*args, **kwargs)
-        bound_args.apply_defaults()
-        arguments = bound_args.arguments
+        # Guarded, not merely lazy: binding the signature and summarizing the
+        # arguments both cost real time on the shared event loop.
+        if logger.isEnabledFor(logging.INFO):
+            sig = inspect.signature(func)
+            bound_args = sig.bind(*args, **kwargs)
+            bound_args.apply_defaults()
 
-        # Create log-safe arguments (exclude sensitive data)
-        log_args = {k: v for k, v in arguments.items() if k not in _SENSITIVE_LOG_KEYS}
-
-        # Log function entry
-        logger.info(f'{func_name} called with: {log_args}')
+            log_args = {
+                k: _summarize_log_value(v)
+                for k, v in bound_args.arguments.items()
+                if k not in _SENSITIVE_LOG_KEYS
+            }
+            logger.info('%s called with: %s', func_name, log_args)
 
         # Call the original function
         result = await func(*args, **kwargs)
