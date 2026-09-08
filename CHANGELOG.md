@@ -129,11 +129,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - `webftp_upload_content` no longer writes the uploaded file into the log (#233). `with_logging`
-  logged every argument value in full, and `file_content` carries the base64 payload, so an 8 MB
-  upload wrote an 11 MB INFO line holding the user's file; a 1 MB upload measured a 1,398,223-byte
-  line. The entry log now replaces any string argument longer than 256 characters with
-  `<str len=N>`, and it builds the argument summary only when INFO is enabled, which also keeps
-  the cost off the shared event loop. Nothing changes for a client, but an existing
+  logged every argument value in full, and `file_content` carries the base64 payload, so the whole
+  uploaded file landed in one INFO line, measured at 1.4 MB of log for a 1 MB upload. The entry
+  log now replaces any string argument longer than 256 characters with `<str len=N>`, and it
+  builds the argument summary only when INFO is enabled, which also keeps the cost off the
+  shared event loop. Nothing changes for a client, but an existing
   `logs/alpacon-mcp.log` can hold uploaded file contents and should be treated accordingly.
 - The entry log no longer records the free text, personal data, environment maps, and bulk
   lists a tool receives (#233). `content`, `data`, `description`, `title`, `reason`,

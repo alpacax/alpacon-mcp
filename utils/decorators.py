@@ -535,12 +535,10 @@ def with_error_handling(func: Callable) -> Callable:
 
 
 def _summarize_log_value(value: Any) -> Any:
-    """Replace an oversized string value with a placeholder recording its length.
+    """Replace an oversized string with a placeholder recording its length.
 
-    Every argument reaching an MCP tool comes from JSON, so this only ever
-    sees ``str``. ``str`` is spelled out in the placeholder anyway, so a
-    reader of the log can tell this was original text and not, say, a
-    literal integer argument named ``len``.
+    Called on every bound argument. Anything else passes through untouched,
+    whatever its size.
     """
     if isinstance(value, str) and len(value) > _MAX_LOGGED_VALUE_LEN:
         return f'<str len={len(value)}>'
