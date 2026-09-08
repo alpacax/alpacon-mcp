@@ -4,6 +4,7 @@ Tests the full decorator stack: with_logging -> with_token_validation -> with_er
 Uses MockTransport at the httpx transport layer so the real HTTP client code runs.
 """
 
+import ast
 import base64
 import importlib
 import inspect
@@ -592,4 +593,49 @@ class TestLoggedParameterSurface:
         assert not stale, (
             f'No tool declares these any more; drop them from '
             f'REVIEWED_LOGGED_KEYS: {sorted(stale)}'
+        )
+
+
+class TestCatchAllForwarding:
+    """``with_logging`` binds the published signature and so refuses a
+    forwarded catch-all, but only while INFO is enabled. The rule that no tool
+    forwards its own ``**kwargs`` into another tool—the catch-all holds the
+    resolved credential (#211)—is pinned here instead, independently of the
+    log level.
+    """
+
+    async def test_no_tool_forwards_its_catch_all_to_another_tool(self):
+        tool_names = set(_tool_functions())
+
+        offenders = set()
+        for module in sorted(ALL_TOOL_MODULES | ALWAYS_ON_MODULES):
+            imported = importlib.import_module(f'{TOOLS_PACKAGE}.{module}')
+            tree = ast.parse(inspect.getsource(imported))
+            for node in ast.walk(tree):
+                if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    continue
+                catch_all = node.args.kwarg
+                if catch_all is None:
+                    continue
+                for call in ast.walk(node):
+                    if not isinstance(call, ast.Call):
+                        continue
+                    callee = getattr(call.func, 'id', None) or getattr(
+                        call.func, 'attr', None
+                    )
+                    if callee not in tool_names:
+                        continue
+                    if any(
+                        keyword.arg is None
+                        and isinstance(keyword.value, ast.Name)
+                        and keyword.value.id == catch_all.arg
+                        for keyword in call.keywords
+                    ):
+                        offenders.add(
+                            f'{module}.{node.name} -> {callee} (line {call.lineno})'
+                        )
+
+        assert not offenders, (
+            f'These forward their own catch-all, which holds the resolved '
+            f'credential, into another tool: {sorted(offenders)}'
         )

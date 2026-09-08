@@ -64,10 +64,12 @@ Things the code will not tell you at a glance:
   into: FastMCP reads that catch-all as an ordinary required field and would
   publish it to clients (#211). Two rules follow: a tool must declare `**kwargs`
   or decoration raises, and no tool may forward its own `**kwargs` on to another
-  tool, because `with_logging` binds the published signature strictly and the
-  injected token is no longer a parameter it accepts. `health_check` sits
-  outside the decorator entirely because it must answer before any JWT exists,
-  and borrows `@with_error_handling` alone for the error shape.
+  tool, because by then it holds the resolved credential. `with_logging` binds
+  the published signature strictly, so a forwarded catch-all raises a
+  `TypeError`—but only while INFO is enabled, since the bind sits inside that
+  guard; `TestCatchAllForwarding` pins the rule at any log level. `health_check`
+  sits outside the decorator entirely because it must answer before any JWT
+  exists, and borrows `@with_error_handling` alone for the error shape.
 - **`AlpaconHTTPClient` never caches a response, deliberately.** Every read worth
   caching—the server list, process info, IAM users and groups—comes back filtered
   by the calling token's permissions, and nothing in this process sees a grant
