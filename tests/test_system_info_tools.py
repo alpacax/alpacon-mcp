@@ -5,6 +5,7 @@ Tests system information functionality including system details,
 OS version, users, groups, packages, network interfaces, and disk information.
 """
 
+import asyncio
 from http import HTTPStatus
 from unittest.mock import patch
 
@@ -847,9 +848,15 @@ class TestGetServerOverview:
     ):
         """Test server overview with general exception."""
 
+        def _raise_and_close_coros(*coros, **kwargs):
+            # Close the coros gather() never ran, or they leak as unawaited.
+            for coro in coros:
+                if asyncio.iscoroutine(coro):
+                    coro.close()
+            raise Exception('Async processing failed')
+
         with patch('asyncio.gather') as mock_gather:
-            # Mock asyncio.gather to raise an exception
-            mock_gather.side_effect = Exception('Async processing failed')
+            mock_gather.side_effect = _raise_and_close_coros
 
             result = await get_server_overview(
                 server_id='550e8400-e29b-41d4-a716-446655440001',
