@@ -143,3 +143,24 @@ class TestGetBaseURLOverride:
     def test_missing_workspace_has_no_override(self, token_file):
         tm = token_file({'ap1': {'production': {'token': 't', 'url': 'https://x'}}})
         assert tm.get_base_url_override('ap1', 'staging') is None
+
+
+class TestConfigDirCreation:
+    """__init__ used to mkdir the config directory, so a read-only caller left a
+    directory behind in the user's home.
+    """
+
+    def test_init_does_not_create_the_config_dir(self, tmp_path):
+        config_file = tmp_path / 'nested' / 'token.json'
+
+        TokenManager(config_file=str(config_file))
+
+        assert not config_file.parent.exists()
+
+    def test_saving_a_token_creates_the_whole_config_path(self, tmp_path):
+        config_file = tmp_path / 'outer' / 'inner' / 'token.json'
+        tm = TokenManager(config_file=str(config_file))
+
+        tm.set_token('ap1', 'workspace', 'token-value')
+
+        assert config_file.exists()

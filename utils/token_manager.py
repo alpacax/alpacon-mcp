@@ -55,10 +55,7 @@ class TokenManager:
 
         self.config_dir = self.token_file.parent
 
-        # Ensure config directory exists
-        self.config_dir.mkdir(parents=True, exist_ok=True)
-        logger.debug(f'Config directory created/verified: {self.config_dir}')
-
+        # No mkdir here: reading tokens must never write to the user's home.
         self.tokens = self._load_tokens()
 
     def _load_tokens(self) -> dict[str, Any]:
@@ -100,8 +97,7 @@ class TokenManager:
             tokens: Token data to save
             file_path: Path to save the tokens
         """
-        # Ensure directory exists
-        file_path.parent.mkdir(exist_ok=True)
+        file_path.parent.mkdir(parents=True, exist_ok=True)
         with open(file_path, 'w') as f:
             json.dump(tokens, f, indent=2)
 
