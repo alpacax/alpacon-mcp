@@ -304,28 +304,28 @@ class TestLoggingDecorator:
         assert 'svc49' not in entry
 
 
+def _tool_functions() -> dict[str, Callable]:
+    """Import every toolset and return the decorated tools by name.
+
+    Registration is an import-time side effect on the process-global ``mcp``,
+    so this widens ``list_tools()`` for whatever test runs next.
+    """
+    functions: dict[str, Callable] = {}
+    for module in sorted(ALL_TOOL_MODULES | ALWAYS_ON_MODULES):
+        imported = importlib.import_module(f'{TOOLS_PACKAGE}.{module}')
+        for name, attr in vars(imported).items():
+            if inspect.iscoroutinefunction(attr) and hasattr(attr, '__wrapped__'):
+                functions[name] = attr
+    return functions
+
+
 class TestPublishedSchema:
     """Every test above awaits the coroutine directly and never reaches the
     pydantic validation FastMCP puts in front of it. These go through ``mcp``.
     """
 
-    @staticmethod
-    def _tool_functions() -> dict[str, Callable]:
-        """Import every toolset and return the decorated tools by name.
-
-        Registration is an import-time side effect on the process-global ``mcp``,
-        so this widens ``list_tools()`` for whatever test runs next.
-        """
-        functions: dict[str, Callable] = {}
-        for module in sorted(ALL_TOOL_MODULES | ALWAYS_ON_MODULES):
-            imported = importlib.import_module(f'{TOOLS_PACKAGE}.{module}')
-            for name, attr in vars(imported).items():
-                if inspect.iscoroutinefunction(attr) and hasattr(attr, '__wrapped__'):
-                    functions[name] = attr
-        return functions
-
     async def test_no_tool_publishes_a_catch_all_parameter(self):
-        functions = self._tool_functions()
+        functions = _tool_functions()
         tools = await mcp.list_tools()
 
         assert len(tools) >= len(functions), (
@@ -353,7 +353,7 @@ class TestPublishedSchema:
         )
 
     async def test_the_documented_arguments_survive_the_filter(self):
-        self._tool_functions()
+        _tool_functions()
         schemas = {t.name: t.inputSchema for t in await mcp.list_tools()}
 
         assert set(schemas['list_servers']['properties']) == {
@@ -396,3 +396,200 @@ class TestPublishedSchema:
         _, structured = await mcp.call_tool('list_workspaces', {})
 
         assert structured['status'] == 'success'
+
+
+class TestLoggedParameterSurface:
+    """The key half of the entry-log filter is a deny-list, so a short new
+    parameter is logged in full unless someone remembers to list it. This pins
+    the whole surface: every parameter a tool declares is either dropped by
+    name in ``_UNLOGGED_KEYS`` or reviewed and kept here (#233). Adding a
+    field fails this test until the author decides which side it belongs on.
+    """
+
+    REVIEWED_LOGGED_KEYS = frozenset(
+        {
+            # identifiers minted upstream
+            'acl_id',
+            'alert_id',
+            'analysis_id',
+            'api_token_id',
+            'app_id',
+            'authority_id',
+            'ca_id',
+            'certificate_id',
+            'command_id',
+            'csr_id',
+            'entry_id',
+            'event_id',
+            'file_id',
+            'group_id',
+            'log_id',
+            'membership_id',
+            'note_id',
+            'request_id',
+            'revoke_id',
+            'rule_id',
+            'server_id',
+            'server_ids',
+            'service_token_id',
+            'session_id',
+            'subscription_id',
+            'system_user_ids',
+            'target_id',
+            'token_id',
+            'user_id',
+            'webhook_id',
+            'work_session_id',
+            # names and the permission context a call ran under
+            'channel',
+            'display_name',
+            'domain',
+            'groupname',
+            'name',
+            'organization',
+            'owner',
+            'package_name',
+            'reporter',
+            'role',
+            'server_name',
+            'servers',
+            'target',
+            'user',
+            'username',
+            'users',
+            # paths, files, and URLs
+            'file_name',
+            'front_url',
+            'local_file_path',
+            'local_file_paths',
+            'package_proxy',
+            'path',
+            'remote_directory',
+            'remote_file_path',
+            'remote_paths',
+            'url',
+            # the command a call ran
+            'command',
+            'commands',
+            'run_after',
+            'shell',
+            # flags
+            'acknowledged',
+            'allow_overwrite',
+            'auto',
+            'auto_agent_upgrade',
+            'clear_expires_at',
+            'dismissed',
+            'enabled',
+            'force',
+            'include_records',
+            'install',
+            'is_active',
+            'is_default',
+            'login_enabled_only',
+            'parallel',
+            'pinned',
+            'private',
+            'purge_provisioned_accounts',
+            'ssl_verify',
+            'status',
+            # filters and enums
+            'action',
+            'action_type',
+            'alert_type',
+            'architecture',
+            'country',
+            'device',
+            'event_type',
+            'groupname_filter',
+            'interface',
+            'key_algorithm',
+            'language',
+            'metric_types',
+            'ordering',
+            'partition',
+            'platform',
+            'provider',
+            'requester_type',
+            'resource_type',
+            'risk_score',
+            'service_type',
+            'severity',
+            'timezone',
+            'transfer_type',
+            'username_filter',
+            'version',
+            # free text, kept because the log is where a filter is read back
+            'search',
+            'search_query',
+            # sizes, counts, and windows
+            'default_valid_days',
+            'hours',
+            'invite_ttl',
+            'key_size',
+            'limit',
+            'max_valid_days',
+            'page',
+            'page_size',
+            'root_valid_days',
+            'threshold',
+            'timeout',
+            'valid_days',
+            'websh_session_timeout',
+            # timestamps
+            'end_date',
+            'expires_at',
+            'scheduled_at',
+            'start_date',
+            'valid_from',
+            'valid_until',
+            # the call target itself
+            'region',
+            'workspace',
+            # bounded by size rather than dropped by name
+            'file_content',
+        }
+    )
+
+    @staticmethod
+    def _declared_parameters() -> dict[str, set[str]]:
+        """Every parameter on the tool surface, mapped to the tools declaring it."""
+        declared: dict[str, set[str]] = {}
+        for name, func in _tool_functions().items():
+            for parameter in inspect.signature(
+                inspect.unwrap(func)
+            ).parameters.values():
+                if parameter.kind is inspect.Parameter.VAR_KEYWORD:
+                    continue
+                declared.setdefault(parameter.name, set()).add(name)
+        return declared
+
+    async def test_every_logged_parameter_has_been_reviewed(self):
+        declared = self._declared_parameters()
+
+        unreviewed = {
+            name: sorted(tools)
+            for name, tools in declared.items()
+            if name not in decorators._UNLOGGED_KEYS
+            and name not in self.REVIEWED_LOGGED_KEYS
+        }
+
+        assert not unreviewed, (
+            f'These parameters reach the entry log unreviewed. Add each to '
+            f'_UNLOGGED_KEYS in utils/decorators.py if the log has no use for '
+            f'it, or to REVIEWED_LOGGED_KEYS here if it belongs in the log: '
+            f'{unreviewed}'
+        )
+
+    async def test_the_two_lists_stay_disjoint_and_current(self):
+        overlap = decorators._UNLOGGED_KEYS & self.REVIEWED_LOGGED_KEYS
+        assert not overlap, (
+            f'These are both dropped and reviewed as kept, so the review says '
+            f'nothing: {sorted(overlap)}'
+        )
+
+        stale = self.REVIEWED_LOGGED_KEYS - set(self._declared_parameters())
+        assert not stale, (
+            f'No tool declares these any more; drop them from '
+            f'REVIEWED_LOGGED_KEYS: {sorted(stale)}'
+        )
