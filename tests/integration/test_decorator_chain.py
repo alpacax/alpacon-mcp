@@ -17,6 +17,7 @@ import pytest
 
 import utils.decorators as decorators
 from server import ALL_TOOL_MODULES, ALWAYS_ON_MODULES, TOOLS_PACKAGE, mcp
+from tools.approval_tools import request_sudo_policy
 from tools.command_tools import execute_command
 from tools.server_tools import get_server, list_servers
 from tools.webftp_tools import webftp_upload_content
@@ -41,6 +42,16 @@ async def _upload_oversized_content() -> None:
         file_content=_OVERSIZED_PAYLOAD,
         remote_file_path='/tmp/upload.bin',
         workspace='testworkspace',
+        region='invalid',
+    )
+
+
+async def _request_sudo_policy(commands: list[str]) -> None:
+    await request_sudo_policy(
+        workspace='testworkspace',
+        servers=[_SERVER_ID],
+        commands=commands,
+        reason='Before the deploy',
         region='invalid',
     )
 
@@ -262,6 +273,35 @@ class TestLoggingDecorator:
         assert 'stdin payload' not in entry
         assert "'command': 'uptime'" in entry
         assert _SERVER_ID in entry
+
+    async def test_logging_bounds_the_elements_of_a_container_argument(
+        self, mock_token_for_integration, caplog
+    ):
+        """A list argument is summarized element by element, not passed through (#233)."""
+        long_command = 'echo ' + 'a' * 300
+
+        with caplog.at_level(logging.INFO):
+            await _request_sudo_policy(['uptime', long_command])
+
+        entry = _entry_log(caplog, 'request_sudo_policy')
+
+        assert long_command not in entry
+        assert f'<len={len(long_command)}>' in entry
+        assert "'uptime'" in entry
+
+    async def test_logging_replaces_an_oversized_container_with_its_length(
+        self, mock_token_for_integration, caplog
+    ):
+        """Past the element bound the container itself becomes the placeholder (#233)."""
+        commands = [f'systemctl restart svc{n}' for n in range(50)]
+
+        with caplog.at_level(logging.INFO):
+            await _request_sudo_policy(commands)
+
+        entry = _entry_log(caplog, 'request_sudo_policy')
+
+        assert "'commands': '<len=50>'" in entry
+        assert 'svc49' not in entry
 
 
 class TestPublishedSchema:

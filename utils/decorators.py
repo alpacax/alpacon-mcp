@@ -85,6 +85,10 @@ _UNLOGGED_KEYS = frozenset(
 # gives it, so the guard is on the value's size and not on the key (#233).
 _MAX_LOGGED_VALUE_LEN = 256
 
+# Containers carry identifier and path lists today, which is what the log is
+# for, so a short one is summarized element by element rather than dropped.
+_MAX_LOGGED_ITEMS = 10
+
 # RFC 3986 unreserved characters—nothing in this set can restructure a URL.
 # Wide enough in practice: every identifier upstream mints is a UUID or an
 # opaque slug, and both sit well inside it.
@@ -534,14 +538,22 @@ def with_error_handling(func: Callable) -> Callable:
     return wrapper
 
 
-def _summarize_log_value(value: Any) -> Any:
-    """Replace an oversized string with a placeholder recording its length.
+def _summarize_log_value(value: Any, _nested: bool = False) -> Any:
+    """Replace an oversized string or container with a placeholder recording its length.
 
-    Called on every bound argument. Anything else passes through untouched,
-    whatever its size.
+    Called on every bound argument. A list, tuple, or dict is summarized one
+    level down: an entry that is itself a container becomes the placeholder,
+    so nothing arbitrarily deep reaches the log line. Anything else passes
+    through untouched, whatever its size.
     """
     if isinstance(value, str) and len(value) > _MAX_LOGGED_VALUE_LEN:
         return f'<len={len(value)}>'
+    if isinstance(value, (list, tuple, dict)):
+        if _nested or len(value) > _MAX_LOGGED_ITEMS:
+            return f'<len={len(value)}>'
+        if isinstance(value, dict):
+            return {k: _summarize_log_value(v, _nested=True) for k, v in value.items()}
+        return [_summarize_log_value(item, _nested=True) for item in value]
     return value
 
 

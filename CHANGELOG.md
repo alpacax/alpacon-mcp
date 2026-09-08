@@ -133,7 +133,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   uploaded file landed in one INFO line, measured at 1.4 MB of log for a 1 MB upload. The entry
   log now replaces any string argument longer than 256 characters with `<len=N>`, and it
   builds the argument summary only when INFO is enabled, which also keeps the cost off the
-  shared event loop. Nothing changes for a client, but an existing
+  shared event loop. A list or dict argument is bounded the same way: one longer than ten
+  entries becomes `<len=N>` whole, and a shorter one has each entry summarized. Nothing
+  changes for a client, but an existing
   `logs/alpacon-mcp.log` can hold uploaded file contents and should be treated accordingly.
 - The entry log no longer records the free text, personal data, environment maps, and bulk
   lists a tool receives (#233). `content`, `data`, `description`, `title`, `reason`,
