@@ -140,7 +140,7 @@ class TestLoggingDecorator:
     async def test_logging_logs_entry_and_success(
         self, patched_http_client, mock_token_for_integration, caplog
     ):
-        """Logging decorator logs function entry and successful completion."""
+        """Entry log carries the call's arguments, never the token; success is logged."""
 
         def handler(request: httpx.Request) -> httpx.Response:
             return httpx.Response(HTTPStatus.OK, json={'count': 0, 'results': []})
@@ -152,29 +152,31 @@ class TestLoggingDecorator:
 
         assert result['status'] == 'success'
 
-        # Check that logging decorator recorded entry
-        log_messages = [record.message for record in caplog.records]
-        entry_logged = any('list_servers called with' in msg for msg in log_messages)
-        success_logged = any(
-            'list_servers completed successfully' in msg for msg in log_messages
+        entry = next(
+            r.message for r in caplog.records if 'list_servers called with' in r.message
         )
+        assert "'workspace': 'testworkspace'" in entry
+        assert "'region': 'ap1'" in entry
+        assert 'integration-test-token' not in entry
+        assert 'kwargs' not in entry
 
-        assert entry_logged, f'Expected entry log, got: {log_messages}'
-        assert success_logged, f'Expected success log, got: {log_messages}'
+        success_logged = any(
+            'list_servers completed successfully' in record.message
+            for record in caplog.records
+        )
+        assert success_logged
 
     async def test_logging_before_validation(self, patched_http_client, caplog):
-        """Logging decorator runs before token validation (logs even for invalid inputs)."""
+        """Logging runs before validation, so the rejected input is what gets logged."""
         with caplog.at_level(logging.INFO):
             result = await list_servers(workspace='testworkspace', region='invalid')
 
         assert result['status'] == 'error'
 
-        # Logging should still record the function call even though validation fails
-        log_messages = [record.message for record in caplog.records]
-        entry_logged = any('list_servers called with' in msg for msg in log_messages)
-        assert entry_logged, (
-            f'Expected entry log even for invalid input, got: {log_messages}'
+        entry = next(
+            r.message for r in caplog.records if 'list_servers called with' in r.message
         )
+        assert "'region': 'invalid'" in entry
 
     async def test_logging_records_payload_size_not_payload(
         self, patched_http_client, mock_token_for_integration, caplog
