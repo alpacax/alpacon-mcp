@@ -2,12 +2,11 @@
 
 import inspect
 from http import HTTPStatus
-from unittest.mock import patch
 
 import pytest
 
 from server import mcp
-from tests.conftest import http_client_fixture
+from tests.conftest import http_client_fixture, patched_token_manager
 from tools.token_tools import (
     create_api_token,
     delete_api_token,
@@ -26,8 +25,7 @@ mock_http_client = http_client_fixture('tools.token_tools')
 @pytest.fixture
 def mock_token_manager():
     """Most token tools stack @require_jwt_auth, which conftest's 'test-token' fails."""
-    with patch('utils.common.token_manager') as mock_manager:
-        mock_manager.get_token.return_value = 'header.payload.signature'
+    with patched_token_manager('header.payload.signature') as mock_manager:
         yield mock_manager
 
 

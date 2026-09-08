@@ -1,6 +1,11 @@
 """Unit tests for utils.common WorkSession gate and denial-guidance helpers."""
 
+import os
+import subprocess
+import sys
+import textwrap
 from http import HTTPStatus
+from pathlib import Path
 
 import pytest
 
@@ -237,3 +242,52 @@ class TestBuildListParams:
     @pytest.mark.parametrize('value', [False, 0, '', []])
     def test_falsy_but_supplied_values_are_forwarded(self, value):
         assert build_list_params(acknowledged=value) == {'acknowledged': value}
+
+
+class TestImportSideEffects:
+    """utils.common once built a TokenManager at module scope, so importing it
+    read ~/.alpacon-mcp/token.json before any fixture could intervene.
+    """
+
+    _PROBE = textwrap.dedent("""
+        import pathlib
+        import sys
+
+        home_config = str(pathlib.Path.home() / '.alpacon-mcp')
+        hits = []
+
+        def audit(event, args):
+            if event in ('open', 'os.mkdir') and home_config in str(args[0]):
+                hits.append((event, str(args[0])))
+
+        sys.addaudithook(audit)
+
+        import utils.common  # noqa: F401
+
+        print('HITS', hits)
+    """)
+
+    def test_importing_utils_common_leaves_the_user_config_untouched(self, tmp_path):
+        fake_home = tmp_path / 'home'
+        config_dir = fake_home / '.alpacon-mcp'
+        config_dir.mkdir(parents=True)
+        (config_dir / 'token.json').write_text('{"ap1": {"workspace": "secret"}}')
+
+        repo_root = Path(__file__).resolve().parent.parent
+        env = {
+            **os.environ,
+            'HOME': str(fake_home),
+            'PYTHONPATH': str(repo_root),
+        }
+        env.pop('ALPACON_MCP_CONFIG_FILE', None)
+
+        result = subprocess.run(  # noqa: S603 - argv is this file's own probe
+            [sys.executable, '-c', self._PROBE],
+            capture_output=True,
+            text=True,
+            cwd=repo_root,
+            env=env,
+        )
+
+        assert result.returncode == 0, result.stderr
+        assert 'HITS []' in result.stdout, result.stdout

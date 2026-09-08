@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from tools.server_tools import list_servers
+from utils import token_manager as token_manager_module
 from utils.logger import get_logger
 from utils.token_manager import TokenManager, get_token_manager
 
@@ -60,8 +61,11 @@ class TestTokenManagement:
         token_nonexistent = tm.get_token('nonexistent', 'testworkspace')
         assert token_nonexistent is None
 
-    def test_token_manager_singleton(self):
+    def test_token_manager_singleton(self, temp_config_file, monkeypatch):
         """Test that token manager works as expected."""
+        # An earlier test may have built the singleton against the real config.
+        monkeypatch.setattr(token_manager_module, '_global_token_manager', None)
+
         tm1 = get_token_manager()
         tm2 = get_token_manager()
 
@@ -168,9 +172,9 @@ class TestUtilityFunctions:
         # Same names should return same logger
         assert logger1 is logger3
 
-    def test_token_manager_methods(self):
+    def test_token_manager_methods(self, tmp_path):
         """Test token manager has required methods."""
-        tm = TokenManager()
+        tm = TokenManager(config_file=str(tmp_path / 'token.json'))
 
         # Check required methods exist
         assert hasattr(tm, 'get_token')

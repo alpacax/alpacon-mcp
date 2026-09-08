@@ -9,12 +9,12 @@ import inspect
 import logging
 from collections.abc import Callable
 from http import HTTPStatus
-from unittest.mock import patch
 
 import httpx
 import pytest
 
 from server import ALL_TOOL_MODULES, ALWAYS_ON_MODULES, TOOLS_PACKAGE, mcp
+from tests.conftest import patched_token_manager
 from tools.server_tools import get_server, list_servers
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
@@ -102,9 +102,7 @@ class TestTokenValidation:
 
     async def test_missing_token_returns_token_error(self, patched_http_client):
         """Missing token (no token_manager configured) returns token error."""
-        with patch('utils.common.token_manager') as mock_tm:
-            mock_tm.get_token.return_value = None
-
+        with patched_token_manager(None):
             result = await list_servers(workspace='testworkspace', region='ap1')
 
         assert result['status'] == 'error'

@@ -9,8 +9,6 @@ from typing import Any
 from utils.logger import get_logger
 from utils.token_manager import get_token_manager
 
-# Initialize shared instances
-token_manager = get_token_manager()
 logger = get_logger('common')
 
 # Get version from package metadata (pyproject.toml)
@@ -304,7 +302,7 @@ def validate_token(region: str, workspace: str) -> str | None:
     Returns:
         Token string if found, None otherwise
     """
-    token = token_manager.get_token(region, workspace)
+    token = get_token_manager().get_token(region, workspace)
     if not token:
         logger.error(f'No token found for {workspace}.{region}')
     return token

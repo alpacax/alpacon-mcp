@@ -10,6 +10,7 @@ from unittest.mock import patch
 import httpx
 import pytest
 
+from tests.conftest import patched_token_manager
 from utils.http_client import http_client
 
 
@@ -74,17 +75,12 @@ def patched_http_client(make_mock_transport):
 
 @pytest.fixture
 def mock_token_for_integration():
-    """Patch utils.common.token_manager to return a test token.
-
-    All decorated tool functions use validate_token() from utils.common,
-    which delegates to token_manager.get_token(). This fixture makes
-    that call return 'integration-test-token'.
+    """Make validate_token() return 'integration-test-token'.
 
     Note: utils.token_manager.get_token_manager is already patched by the
     autouse fixture in tests/conftest.py for region auto-detection.
     """
-    with patch('utils.common.token_manager') as mock_tm:
-        mock_tm.get_token.return_value = 'integration-test-token'
+    with patched_token_manager('integration-test-token') as mock_tm:
         yield mock_tm
 
 

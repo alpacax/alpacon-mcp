@@ -5,11 +5,11 @@ malformed JSON, empty body, connection errors, and various HTTP status codes.
 """
 
 from http import HTTPStatus
-from unittest.mock import patch
 
 import httpx
 import pytest
 
+from tests.conftest import patched_token_manager
 from tools.server_tools import list_servers
 from utils.http_client import http_client
 
@@ -197,8 +197,7 @@ class TestHTTPStatusErrorHandling:
 
         patched_http_client.set_handler(handler)
 
-        with patch('utils.common.token_manager') as mock_tm:
-            mock_tm.get_token.return_value = 'test-token'
+        with patched_token_manager('test-token'):
             result = await list_servers(workspace='production', region='ap1')
 
         # http_client returns {'error': 'HTTP Error', ...}

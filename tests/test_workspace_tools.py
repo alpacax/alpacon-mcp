@@ -11,7 +11,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from tests.conftest import HTTP_ERROR_ENVELOPE, http_client_fixture
+from tests.conftest import (
+    HTTP_ERROR_ENVELOPE,
+    http_client_fixture,
+    patched_token_manager,
+)
 from tools.workspace_tools import (
     get_current_user,
     get_workspace_access_control,
@@ -344,8 +348,7 @@ class TestListWorkspacesJwtMode:
 @pytest.fixture
 def mock_token():
     """Mock token manager for testing workspace settings tools."""
-    with patch('utils.common.token_manager') as mock_manager:
-        mock_manager.get_token.return_value = 'test-token'
+    with patched_token_manager('test-token') as mock_manager:
         yield mock_manager
 
 
@@ -356,8 +359,7 @@ def mock_jwt_token():
     The security-settings tools stack @require_jwt_auth, which rejects any
     token that is not JWT-shaped (3 dotted non-empty parts).
     """
-    with patch('utils.common.token_manager') as mock_manager:
-        mock_manager.get_token.return_value = 'header.payload.signature'
+    with patched_token_manager('header.payload.signature') as mock_manager:
         yield mock_manager
 
 

@@ -1,9 +1,10 @@
-"""Shared fixtures for all tests.
+"""Shared fixtures and helpers for all tests.
 
-Provides autouse fixtures that prevent tests from hitting the real
-TokenManager (which requires ~/.alpacon-mcp/token.json to exist).
+Provides autouse fixtures that keep tests off the real TokenManager, so no test
+reads ~/.alpacon-mcp/token.json or depends on it existing.
 """
 
+from contextlib import contextmanager
 from http import HTTPStatus
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -33,12 +34,24 @@ def http_client_fixture(module_name: str):
     return _mock_http_client
 
 
+@contextmanager
+def patched_token_manager(token: str | None):
+    """Make validate_token() return `token`.
+
+    utils.common resolves its TokenManager per call, so the getter is the patch
+    target—there is no module-level instance to replace.
+    """
+    manager = MagicMock()
+    manager.get_token.return_value = token
+    with patch('utils.common.get_token_manager', return_value=manager):
+        yield manager
+
+
 @pytest.fixture
 def mock_token_manager():
     """Mock token manager so tests never read a real ~/.alpacon-mcp/token.json."""
-    with patch('utils.common.token_manager') as mock_manager:
-        mock_manager.get_token.return_value = 'test-token'
-        yield mock_manager
+    with patched_token_manager('test-token') as manager:
+        yield manager
 
 
 @pytest.fixture(autouse=True)

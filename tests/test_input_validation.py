@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from tests.conftest import patched_token_manager
 from tools.alert_tools import update_alert_rule
 from tools.cert_tools import (
     delete_certificate_authority,
@@ -64,7 +65,8 @@ class TestRegionValidation:
     async def test_empty_region_triggers_auto_detection(self):
         """Empty region triggers auto-detection from token.json or JWT instead of rejection."""
         func = _make_decorated_func()
-        result = await func(workspace='demo', region='')
+        with patched_token_manager(None):
+            result = await func(workspace='demo', region='')
         # Empty region no longer causes a validation error on the 'region' field.
         # Instead, it triggers auto-detection which either resolves a region
         # or returns an error about missing tokens/regions.
