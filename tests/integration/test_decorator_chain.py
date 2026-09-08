@@ -218,9 +218,16 @@ class TestLoggingDecorator:
         """
         payload = base64.b64encode(b'\x00' * 65536).decode()
 
-        with patch.object(
-            decorators, '_summarize_log_value', wraps=decorators._summarize_log_value
-        ) as summarize:
+        with (
+            patch.object(
+                decorators,
+                '_summarize_log_value',
+                wraps=decorators._summarize_log_value,
+            ) as summarize,
+            patch.object(
+                decorators.inspect, 'signature', wraps=decorators.inspect.signature
+            ) as signature,
+        ):
             with caplog.at_level(logging.WARNING, logger='alpacon_mcp.decorators'):
                 await webftp_upload_content(
                     server_id='11111111-1111-1111-1111-111111111111',
@@ -231,6 +238,7 @@ class TestLoggingDecorator:
                 )
 
         assert summarize.call_count == 0
+        assert signature.call_count == 0
         assert not [
             r
             for r in caplog.records
