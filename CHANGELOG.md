@@ -135,6 +135,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `<str len=N>`, and it builds the argument summary only when INFO is enabled, which also keeps
   the cost off the shared event loop. Nothing changes for a client, but an existing
   `logs/alpacon-mcp.log` can hold uploaded file contents and should be treated accordingly.
+- The entry log no longer records the free text, personal data, environment maps, and bulk
+  lists a tool receives (#233). `content`, `data`, `description`, `title`, `reason`,
+  `requested_reason`, `purpose`, `email`, `billing_email`, `first_name`, `last_name`, `env`,
+  `scopes`, `presets`, `enabled_extensions`, `allowed_domains`, `mentioned_users`,
+  `domain_list`, and `ip_list` are dropped from the `called with` line alongside the credential
+  names already dropped; `env` in particular could carry a secret under any key. The log keeps
+  the identifiers, paths, flags, filters, and the `command` a call ran. Nothing changes for a
+  client.
 - The published input schema of every tool behind `@mcp_tool_handler` no longer carries
   `kwargs`, the catch-all the decorator injects the token through (#211). FastMCP did not read
   it as a catch-all and published it as a required string, so a client that sent only the

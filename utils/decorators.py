@@ -44,9 +44,42 @@ logger = get_logger('decorators')
 
 _SPECIFY_REGION_HINT = 'Please specify a region parameter.'
 
-# Forward cover: with_logging binds the published signature, so this only bites
-# once a tool documents one of these names as its own parameter.
-_SENSITIVE_LOG_KEYS = frozenset({'token', 'password', 'secret', 'key'})
+# Never written to the entry log. The credential names are forward cover: no
+# tool documents one as its own parameter today, but with_logging would bind
+# it if one did. The rest the log has no use for—free text a person wrote,
+# personal data, env maps that can carry a secret under any key, and bulk
+# lists—and the server stores every one of them.
+_UNLOGGED_KEYS = frozenset(
+    {
+        # credentials
+        'token',
+        'password',
+        'secret',
+        'key',
+        # free text (data is the stdin payload of execute_command)
+        'content',
+        'data',
+        'description',
+        'title',
+        'reason',
+        'requested_reason',
+        'purpose',
+        # personal data
+        'email',
+        'billing_email',
+        'first_name',
+        'last_name',
+        # env maps and bulk lists
+        'env',
+        'scopes',
+        'presets',
+        'enabled_extensions',
+        'allowed_domains',
+        'mentioned_users',
+        'domain_list',
+        'ip_list',
+    }
+)
 
 # A payload reaches a tool as an ordinary string, under whatever name that tool
 # gives it, so the guard is on the value's size and not on the key (#233).
@@ -518,8 +551,8 @@ def with_logging(func: Callable) -> Callable:
     """Decorator to add automatic logging to MCP tools.
 
     This decorator:
-    1. Logs function entry with parameters, dropping sensitive keys and
-       summarizing values too large to belong in a log line
+    1. Logs function entry with parameters, dropping keys the log has no use
+       for and summarizing values too large to belong in a log line
     2. Logs successful completion
     3. Logs errors (works with with_error_handling)
 
@@ -544,7 +577,7 @@ def with_logging(func: Callable) -> Callable:
             log_args = {
                 k: _summarize_log_value(v)
                 for k, v in bound_args.arguments.items()
-                if k not in _SENSITIVE_LOG_KEYS
+                if k not in _UNLOGGED_KEYS
             }
             logger.info('%s called with: %s', func_name, log_args)
 

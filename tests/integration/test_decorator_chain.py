@@ -16,6 +16,7 @@ import httpx
 import pytest
 
 from server import ALL_TOOL_MODULES, ALWAYS_ON_MODULES, TOOLS_PACKAGE, mcp
+from tools.command_tools import execute_command
 from tools.server_tools import get_server, list_servers
 from tools.webftp_tools import webftp_upload_content
 
@@ -223,6 +224,36 @@ class TestLoggingDecorator:
             )
 
         assert ReprSpy.calls == 0
+
+    async def test_logging_omits_free_text_env_and_personal_data(
+        self, patched_http_client, mock_token_for_integration, caplog
+    ):
+        """Keys the log has no use for are dropped, not summarized (#233)."""
+        with caplog.at_level(logging.INFO):
+            await execute_command(
+                server_id='11111111-1111-1111-1111-111111111111',
+                command='uptime',
+                workspace='testworkspace',
+                region='ap1',
+                purpose='Check load before the deploy',
+                data='stdin payload line',
+                env={'DEPLOY_TOKEN': 'hunter2'},
+            )
+
+        entry = next(
+            r.message
+            for r in caplog.records
+            if 'execute_command called with' in r.message
+        )
+
+        assert "'purpose'" not in entry
+        assert "'data'" not in entry
+        assert "'env'" not in entry
+        assert 'hunter2' not in entry
+        assert 'Check load' not in entry
+        assert 'stdin payload' not in entry
+        assert "'command': 'uptime'" in entry
+        assert '11111111-1111-1111-1111-111111111111' in entry
 
 
 class TestPublishedSchema:
