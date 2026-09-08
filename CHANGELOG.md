@@ -143,8 +143,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `scopes`, `presets`, `enabled_extensions`, `allowed_domains`, `mentioned_users`,
   `domain_list`, and `ip_list` are dropped from the `called with` line alongside the credential
   names already dropped; `env` in particular could carry a secret under any key. The log keeps
-  the identifiers, paths, flags, filters, and the `command` a call ran. Nothing changes for a
-  client.
+  the identifiers, paths, flags, filters, and the `command` a call ran—each still under the
+  256-character bound above, so a long command line reads as `<len=N>` like anything else.
+  Nothing changes for a client.
 - The published input schema of every tool behind `@mcp_tool_handler` no longer carries
   `kwargs`, the catch-all the decorator injects the token through (#211). FastMCP did not read
   it as a catch-all and published it as a required string, so a client that sent only the
