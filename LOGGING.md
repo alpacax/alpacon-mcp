@@ -111,7 +111,7 @@ Currently, logs accumulate in a single file. Log rotation functionality can be a
 - DEBUG level records request/response bodies in logs, which may impact performance
 - INFO level is recommended for production environments
 - The entry log drops credential names (`token`, `password`, `secret`, `key`) and the arguments it has no use for: free text such as `content`, `description`, and `purpose`, personal data such as `email`, the `env` map, and bulk lists such as `scopes`. See `_UNLOGGED_KEYS` in `utils/decorators.py` for the full set.
-- Any remaining string argument longer than 256 characters is replaced by `<str len=N>`.
+- Any remaining string argument longer than 256 characters is replaced by `<len=N>`.
 
 ---
 

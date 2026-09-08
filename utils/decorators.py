@@ -541,7 +541,7 @@ def _summarize_log_value(value: Any) -> Any:
     whatever its size.
     """
     if isinstance(value, str) and len(value) > _MAX_LOGGED_VALUE_LEN:
-        return f'<str len={len(value)}>'
+        return f'<len={len(value)}>'
     return value
 
 
