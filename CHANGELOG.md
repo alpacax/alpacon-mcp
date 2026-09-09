@@ -131,8 +131,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `webftp_upload_content` no longer writes the uploaded file into the log (#233). `with_logging`
   logged every argument value in full, and `file_content` carries the base64 payload, so the whole
   uploaded file landed in one INFO line, measured at 1.4 MB of log for a 1 MB upload. The entry
-  log now drops the payload by name, bounds every value it keeps by size, and builds the summary
-  only when INFO is enabled—`LOGGING.md` states the rules. Nothing changes for a client, but an
+  log now drops the payload by name, replaces a kept string over 256 characters with `<len=N>` and
+  a list or dict over ten entries with `<items=N>`, and builds the summary only when INFO is
+  enabled. Nothing changes for a client, but an
   existing `logs/alpacon-mcp.log` can hold uploaded file contents and should be treated
   accordingly.
 - The entry log no longer records the free text, personal data, environment maps, and config lists
@@ -140,8 +141,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   free text a person wrote, the webhook and proxy URLs that are themselves a credential, personal
   data, the `env` map that could carry a secret under any key, and bulk config lists; the
   identifiers, paths, flags, filters, the `scopes` and `presets` a credential was granted, and the
-  `command` a call ran are kept. `_UNLOGGED_KEYS` in `utils/decorators.py` holds the full set.
-  Nothing changes for a client.
+  `command` a call ran are kept. The 21 names dropped at this release are `token`, `password`,
+  `secret`, `key`, `content`, `data`, `file_content`, `description`, `title`, `reason`,
+  `requested_reason`, `purpose`, `url`, `package_proxy`, `email`, `billing_email`, `first_name`,
+  `last_name`, `env`, `enabled_extensions`, and `allowed_domains`. Nothing changes for a client.
 - The published input schema of every tool behind `@mcp_tool_handler` no longer carries
   `kwargs`, the catch-all the decorator injects the token through (#211). FastMCP did not read
   it as a catch-all and published it as a required string, so a client that sent only the
