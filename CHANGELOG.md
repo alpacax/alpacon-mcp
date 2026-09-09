@@ -131,17 +131,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `webftp_upload_content` no longer writes the uploaded file into the log (#233). `with_logging`
   logged every argument value in full, and `file_content` carries the base64 payload, so the whole
   uploaded file landed in one INFO line, measured at 1.4 MB of log for a 1 MB upload. The entry
-  log now drops the payload by name, bounds every value it keeps by size, and builds the
-  summary only when INFO is enabled—`LOGGING.md` states the rules. Nothing changes for a client,
-  but an existing `logs/alpacon-mcp.log` can hold uploaded file contents and should be treated
+  log now drops the payload by name, bounds every value it keeps by size, and builds the summary
+  only when INFO is enabled—`LOGGING.md` states the rules. Nothing changes for a client, but an
+  existing `logs/alpacon-mcp.log` can hold uploaded file contents and should be treated
   accordingly.
-- The entry log no longer records the free text, personal data, environment maps, and config
-  lists a tool receives (#233). `_SENSITIVE_LOG_KEYS` is now `_UNLOGGED_KEYS` and drops the
-  payload and free text a person wrote, the webhook and proxy URLs that are themselves a
-  credential, personal data, the `env` map that could carry a secret under any key, and bulk
-  config lists; the identifiers, paths, flags, filters, the `scopes` and `presets` a credential
-  was granted, and the `command` a call ran are kept.
-  `_UNLOGGED_KEYS` in `utils/decorators.py` holds the full set. Nothing changes for a client.
+- The entry log no longer records the free text, personal data, environment maps, and config lists
+  a tool receives (#233). `_SENSITIVE_LOG_KEYS` is now `_UNLOGGED_KEYS` and drops the payload and
+  free text a person wrote, the webhook and proxy URLs that are themselves a credential, personal
+  data, the `env` map that could carry a secret under any key, and bulk config lists; the
+  identifiers, paths, flags, filters, the `scopes` and `presets` a credential was granted, and the
+  `command` a call ran are kept. `_UNLOGGED_KEYS` in `utils/decorators.py` holds the full set.
   Nothing changes for a client.
 - The published input schema of every tool behind `@mcp_tool_handler` no longer carries
   `kwargs`, the catch-all the decorator injects the token through (#211). FastMCP did not read
@@ -154,7 +153,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `get_server_overview` no longer writes the caller's credential into the log (#211). It used
   to forward its own `**kwargs` into the five tools it fans out to, and by then that catch-all
   held the resolved API token in stdio mode or the raw JWT in remote mode. Each sub-tool bound
-  it as `arguments['kwargs']`, a key `_SENSITIVE_LOG_KEYS` did not cover, so the entry log wrote
+  it as `arguments['kwargs']`, a key `_UNLOGGED_KEYS` did not cover, so the entry log wrote
   the credential in cleartext at INFO five times per call, and `utils/logger.py` applies no
   redaction. Nothing changes for a client, but `logs/alpacon-mcp.log` from any earlier
   `get_server_overview` call can hold a live token and should be treated accordingly.

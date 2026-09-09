@@ -63,7 +63,7 @@ _UNLOGGED_KEYS = frozenset(
         'file_content',
         'description',
         'title',
-        'reason',
+        'reason',  # free text on one tool, an RFC 5280 code on another
         'requested_reason',
         'purpose',
         # URLs that carry their own credential: a webhook URL is the secret
@@ -474,8 +474,7 @@ def with_token_validation(func: Callable, requires_workspace: bool = True) -> Ca
         # both positional and keyword region correctly
         return await func(*bound_args.args, **bound_args.kwargs)
 
-    # FastMCP publishes a VAR_KEYWORD as a required field, not a catch-all. This is
-    # also what with_logging binds strictly: no caller may forward the token onward.
+    # FastMCP publishes a VAR_KEYWORD as a required field, not a catch-all.
     new_params = [p for p in original_sig.parameters.values() if p.name != catch_all]
     wrapper.__signature__ = original_sig.replace(parameters=new_params)  # type: ignore[attr-defined]
 
@@ -566,8 +565,8 @@ def with_logging(func: Callable) -> Callable:
     """Decorator to add automatic logging to MCP tools.
 
     This decorator:
-    1. Logs function entry with parameters, dropping keys the log has no use
-       for and summarizing values too large to belong in a log line
+    1. Logs function entry: `_UNLOGGED_KEYS` drops arguments by name,
+       `_summarize_log_value` bounds the rest
     2. Logs successful completion
     3. Logs errors (works with with_error_handling)
 

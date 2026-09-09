@@ -106,13 +106,19 @@ WARNING - Network error: ..., retrying (1/3) in 1s
 ### Log rotation (future plan)
 Currently, logs accumulate in a single file. Log rotation functionality can be added if needed.
 
+## 🔒 What the entry log records
+
+Every tool call behind `@mcp_tool_handler` writes one `called with` line at INFO. Read this before deciding what your log file may hold.
+
+- Dropped by name: credential names (`token`, `password`, `secret`, `key`), the upload payload `file_content`, URLs that are themselves a credential (`url`, `package_proxy`), free text such as `content`, `description`, and `purpose`, personal data such as `email`, the `env` map, and config lists such as `allowed_domains`. See `_UNLOGGED_KEYS` in `utils/decorators.py` for the full set.
+- Bounded by size: a remaining string longer than 256 characters is replaced by `<len=N>`, a list or dict longer than ten entries by `<items=N>`. A shorter list or dict keeps its entries, each under the same 256-character bound.
+- Kept whole, up to 256 characters each: the commands a call ran (`command`, `commands`, `run_after`, `shell`) and the text a caller typed into a filter (`search`, `search_query`). A credential passed inline on a command line (`-p`, `--token`, an `Authorization` header on `curl`) is recorded, and no key filter can catch it—the secret sits inside a value the log exists to keep.
+- Outside the entry log: at DEBUG the HTTP client writes each request and response body whole (`Request body`, `Response body`), so the fields dropped above are recorded one layer down. Run at INFO wherever that matters. One exception survives the level: an upstream 4xx or 5xx writes the response body at ERROR, 401 alone excepted (`utils/http_client.py`). That is the response and not the request.
+
 ## 🎯 Performance considerations
 
 - DEBUG level records request/response bodies in logs, which may impact performance
 - INFO level is recommended for production environments
-- The entry log drops credential names (`token`, `password`, `secret`, `key`), the upload payload `file_content`, URLs that are themselves a credential (`url`, `package_proxy`), and the arguments it has no use for: free text such as `content`, `description`, and `purpose`, personal data such as `email`, the `env` map, and config lists such as `allowed_domains`. See `_UNLOGGED_KEYS` in `utils/decorators.py` for the full set.
-- Any remaining string argument longer than 256 characters is replaced by `<len=N>`, and a list or dict argument longer than ten entries by `<items=N>`. A shorter list or dict keeps its entries, each under the same 256-character bound.
-- Those two rules cover the entry log only. At DEBUG the HTTP client writes each request and response body whole (`Request body`, `Response body`), so the fields the entry log drops—`content` on a file write, the stdin `data` and the `purpose` of a command—are recorded one layer down. Run at INFO wherever that matters, with one exception: an upstream 4xx or 5xx writes the response body at ERROR regardless of level, 401 alone excepted (`utils/http_client.py`). That is the response and not the request, and a rejected write comes back as an error code rather than the value submitted.
 
 ---
 
