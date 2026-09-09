@@ -142,6 +142,49 @@ _WORK_SESSION_GATE_CODES: frozenset[str] = frozenset(_WORK_SESSION_GATE_NEXT_ACT
     _WORK_SESSION_PENDING_CODE
 }
 
+#: Refusals the file lane (ADR 0053) answers with on submit, each a 400 carrying
+#: the code. None of them has a human behind it—every one is something the
+#: caller fixes or gives up on, never something to wait out or retry as-is—so
+#: they take the generic hint path rather than a pending-approval shape. Public
+#: because execute_file renders the same text when it refuses locally, so a
+#: caller reads one wording whichever side caught it. Kept in sync with
+#: alpacon-server utils/error_codes.py.
+FILE_EXEC_REFUSAL_HINTS: dict[str, str] = {
+    'file_exec_unsupported_agent': (
+        'The agent on this server cannot verify a file digest; alpamon 2.6.0 or '
+        'newer is required. Upgrade the agent (upgrade_agent) or run the work '
+        'through execute_command instead. Retrying as-is fails the same way.'
+    ),
+    'file_exec_assessor_disabled': (
+        'This deployment has the command assessor disabled, so verified file '
+        'execution is unavailable here. Use execute_command instead; retrying '
+        'changes nothing.'
+    ),
+    'file_exec_invalid_path': (
+        'path and interpreter must both be absolute paths on the target host '
+        '(start with /). A bare interpreter name such as bash is refused because '
+        "the host's PATH would then decide what actually runs."
+    ),
+    'file_exec_content_too_large': (
+        'content is over the 64 KB (65536-byte) ceiling. Split the script, or '
+        'move bulk data out of the entrypoint into a file it reads.'
+    ),
+    'file_exec_empty_content': (
+        'content is empty. Submit the exact bytes of the file as it exists on '
+        'the target host; an empty entrypoint has nothing to verify.'
+    ),
+    'file_exec_line_too_long': (
+        'The rendered "interpreter path args" line exceeds the command line '
+        'ceiling. Shorten or drop args; move them into the script if it needs '
+        'them.'
+    ),
+    'file_exec_env_not_allowed': (
+        'env is not allowed on the file lane: an environment set outside the '
+        'script is not part of what the reviewer approved. Set variables inside '
+        'the script, where they are reviewed with it.'
+    ),
+}
+
 # Actionable hints for server error `code` values that are not WorkSession
 # gate codes (see _extract_error_code). Keyed by code so new hints can be
 # added without touching unwrap_http_result. Appended to the error message
@@ -154,6 +197,7 @@ _ERROR_CODE_HINT: dict[str, str] = {
         'stored in plaintext in the audit log. Move the secret into the '
         '`env` parameter of execute_command and retry.'
     ),
+    **FILE_EXEC_REFUSAL_HINTS,
 }
 
 

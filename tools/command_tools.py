@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from typing import Any, cast
 
 from utils.common import (
+    FILE_EXEC_REFUSAL_HINTS,
     empty_value_error,
     error_response,
     pending_approval_response,
@@ -14,6 +15,7 @@ from utils.common import (
     unwrap_http_result,
 )
 from utils.decorators import mcp_tool_handler
+from utils.error_handler import validate_file_path
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, READ_ONLY
 
@@ -21,6 +23,15 @@ from utils.tool_annotations import ADDITIVE, READ_ONLY
 #: Truncating here rather than letting the server refuse keeps a long purpose
 #: from costing the command its one demand.
 PURPOSE_MAX_LENGTH = 2000
+
+#: Ceiling the server puts on a verified file's content, in UTF-8 bytes (ADR
+#: 0053). Checked here too so an oversized script is refused before it travels.
+FILE_CONTENT_MAX_BYTES = 65536
+
+#: What runs the file when the caller names no interpreter. Absolute on purpose:
+#: the server refuses a bare name, because the host's PATH would then decide
+#: what actually executes.
+DEFAULT_INTERPRETER = '/bin/bash'
 
 #: The one prohibition every held-command response repeats. Each site appends
 #: its own reason—double execution here, a second approval request there—but the
@@ -179,6 +190,46 @@ def _attach_sudo_denial(
         target['sudo_denial'] = pending_approval_response(hint, category=code)
 
 
+def _requester_fields(
+    *,
+    username: str | None,
+    run_after: list[str] | None,
+    scheduled_at: str | None,
+    work_session_id: str | None,
+    purpose: str | None,
+    purpose_demand_supported: bool,
+) -> dict[str, Any]:
+    """The submit-body fields that describe the requester, not what runs.
+
+    Shared by the shell lane and the file lane (ADR 0053): the server reads
+    these identically whichever lane the body selects, so one builder keeps a
+    rule such as the blank-purpose one from being applied on one lane and
+    forgotten on the other.
+    """
+    fields: dict[str, Any] = {}
+    if username:
+        fields['username'] = username
+    if run_after:
+        fields['run_after'] = run_after
+    if scheduled_at:
+        fields['scheduled_at'] = scheduled_at
+    if ws_id := resolve_work_session_id(work_session_id):
+        fields['work_session'] = ws_id
+    # Strip first: a whitespace-only purpose is truthy, so without this it is
+    # sent, refused with a 400, and the 400 costs the command its one demand.
+    # Blank means unstated, and unstated has to arrive as an absent field—the
+    # arming check reads absence, not emptiness.
+    if stated := (purpose or '').strip():
+        fields['purpose'] = stated[:PURPOSE_MAX_LENGTH]
+    # Declared only by a caller that will actually answer the demand (ADR 0052).
+    # The gate parks the command for COMMAND_PURPOSE_DEADLINE and nobody is
+    # listening on a fire-and-forget submit, so declaring it there would buy a
+    # silent delay of that length per command and nothing else.
+    if purpose_demand_supported:
+        fields['purpose_demand_supported'] = True
+    return fields
+
+
 async def _submit_command(
     server_id: str,
     command: str,
@@ -204,30 +255,78 @@ async def _submit_command(
         'groupname': groupname,
     }
 
-    if username:
-        command_data['username'] = username
     if env:
         command_data['env'] = env
-    if run_after:
-        command_data['run_after'] = run_after
-    if scheduled_at:
-        command_data['scheduled_at'] = scheduled_at
     if data:
         command_data['data'] = data
-    if ws_id := resolve_work_session_id(work_session_id):
-        command_data['work_session'] = ws_id
-    # Strip first: a whitespace-only purpose is truthy, so without this it is
-    # sent, refused with a 400, and the 400 costs the command its one demand.
-    # Blank means unstated, and unstated has to arrive as an absent field—the
-    # arming check reads absence, not emptiness.
-    if stated := (purpose or '').strip():
-        command_data['purpose'] = stated[:PURPOSE_MAX_LENGTH]
-    # Declared only by a caller that will actually answer the demand (ADR 0052).
-    # The gate parks the command for COMMAND_PURPOSE_DEADLINE and nobody is
-    # listening on a fire-and-forget submit, so declaring it there would buy a
-    # silent delay of that length per command and nothing else.
-    if purpose_demand_supported:
-        command_data['purpose_demand_supported'] = True
+    command_data.update(
+        _requester_fields(
+            username=username,
+            run_after=run_after,
+            scheduled_at=scheduled_at,
+            work_session_id=work_session_id,
+            purpose=purpose,
+            purpose_demand_supported=purpose_demand_supported,
+        )
+    )
+
+    return await http_client.post(
+        region=region,
+        workspace=workspace,
+        endpoint='/api/events/commands/',
+        token=token,
+        data=command_data,
+    )
+
+
+async def _submit_file_execution(
+    server_id: str,
+    path: str,
+    content: str,
+    workspace: str,
+    interpreter: str = DEFAULT_INTERPRETER,
+    args: list[str] | None = None,
+    username: str | None = None,
+    groupname: str = 'alpacon',
+    run_after: list[str] | None = None,
+    scheduled_at: str | None = None,
+    work_session_id: str | None = None,
+    purpose: str | None = None,
+    purpose_demand_supported: bool = False,
+    region: str = '',
+    *,
+    token: str | None = None,
+) -> dict[str, Any] | list[Any]:
+    """Submit a verified file execution (ADR 0053).
+
+    Same endpoint as ``_submit_command``; the ``file`` object is what selects
+    the lane. The body carries no ``shell``, ``line``, ``data``, or ``env`` key
+    at all: the server derives the first two and refuses a request naming any
+    of them, on key presence, so an empty string would be refused too.
+    ``content`` goes out byte-for-byte—the agent hashes the file on the host's
+    disk with no normalization, so a stripped trailing newline here would fail
+    every execution closed.
+    """
+    command_data: dict[str, Any] = {
+        'server': server_id,
+        'groupname': groupname,
+        'file': {
+            'path': path,
+            'interpreter': interpreter,
+            'args': list(args or []),
+            'content': content,
+        },
+    }
+    command_data.update(
+        _requester_fields(
+            username=username,
+            run_after=run_after,
+            scheduled_at=scheduled_at,
+            work_session_id=work_session_id,
+            purpose=purpose,
+            purpose_demand_supported=purpose_demand_supported,
+        )
+    )
 
     return await http_client.post(
         region=region,
@@ -408,7 +507,7 @@ async def list_commands(
 
 
 @mcp_tool_handler(
-    description='Run a shell command on a server and wait for the result (up to 5 minutes by default). Returns stdout, stderr, and exit code in a single call. Requires ACL permission. Do not prefix the command with sudo by default: unless a Work Session sudo policy already covers the command, a sudo invocation either routes to human-in-the-loop approval and blocks until a human acts, or is denied outright with no request anyone can approve. Check sudo_denial.category before waiting; a sudo_hint with no sudo_denial is a hard denial that creates no request, so do not wait on it. Use sudo only when the command genuinely requires root and the Work Session carries the "sudo" scope. The timeout resets when the command is actively running. Supports dependency chains (run_after), scheduled execution (scheduled_at), and stdin data. Pass work_session_id to link this command to a Work Session for audit—the server enforces this for MCP OAuth and browser-based auth. Pass purpose to say what this particular command is for, in one or two sentences, whenever the command is not trivially routine: the assessor judges it with the purpose in hand, and a command that would otherwise queue for a human may clear on its own. State a fact local to this host that the Work Session description does not already imply; general knowledge adds nothing the assessor does not have, and a purpose cannot lower a command\'s intrinsic risk. If you omit it the gate may hold the command and ask—a status of purpose_required, which you answer with state_command_purpose within about a minute. A purpose over 2000 characters is trimmed to fit rather than refused, and the response then carries purpose_truncated: true—the assessor judges what was sent, so keep it short enough to survive whole. When to use: the recommended way to run a command on a server. Related: execute_command_multi_server (run on multiple servers), state_command_purpose (answer a held command\'s purpose demand), list_commands (browse history), work_session_create (create a Work Session). Note: Default timeout is 300 seconds (5 minutes).',
+    description='Run a shell command on a server and wait for the result (up to 5 minutes by default). Returns stdout, stderr, and exit code in a single call. Requires ACL permission. Do not prefix the command with sudo by default: unless a Work Session sudo policy already covers the command, a sudo invocation either routes to human-in-the-loop approval and blocks until a human acts, or is denied outright with no request anyone can approve. Check sudo_denial.category before waiting; a sudo_hint with no sudo_denial is a hard denial that creates no request, so do not wait on it. Use sudo only when the command genuinely requires root and the Work Session carries the "sudo" scope. The timeout resets when the command is actively running. Supports dependency chains (run_after), scheduled execution (scheduled_at), and stdin data. Pass work_session_id to link this command to a Work Session for audit—the server enforces this for MCP OAuth and browser-based auth. Pass purpose to say what this particular command is for, in one or two sentences, whenever the command is not trivially routine: the assessor judges it with the purpose in hand, and a command that would otherwise queue for a human may clear on its own. State a fact local to this host that the Work Session description does not already imply; general knowledge adds nothing the assessor does not have, and a purpose cannot lower a command\'s intrinsic risk. If you omit it the gate may hold the command and ask—a status of purpose_required, which you answer with state_command_purpose within about a minute. A purpose over 2000 characters is trimmed to fit rather than refused, and the response then carries purpose_truncated: true—the assessor judges what was sent, so keep it short enough to survive whole. For a script, a heredoc, or any "bash /path/to/file" line, use execute_file instead: a verified file an approver has marked standing is re-run unchanged without paging a human, which a shell line never is. When to use: the recommended way to run a one-off command on a server. Related: execute_file (run a script whose bytes are reviewed and hashed), execute_command_multi_server (run on multiple servers), state_command_purpose (answer a held command\'s purpose demand), list_commands (browse history), work_session_create (create a Work Session). Note: Default timeout is 300 seconds (5 minutes).',
     annotations=ADDITIVE,
     meta={
         'anthropic/alwaysLoad': True,
@@ -464,6 +563,39 @@ async def execute_command(
         token=token,
     )
 
+    return await _settle_submission(
+        exec_data,
+        server_id=server_id,
+        command=command,
+        shell=shell,
+        workspace=workspace,
+        timeout=timeout,
+        purpose=purpose,
+        region=region,
+        token=token,
+    )
+
+
+async def _settle_submission(
+    exec_data: dict[str, Any] | list[Any],
+    *,
+    server_id: str,
+    workspace: str,
+    timeout: int,
+    purpose: str | None,
+    region: str,
+    token: str | None,
+    command: str = '',
+    shell: str = '',
+) -> dict[str, Any]:
+    """Turn a submit response into the tool's answer: refusal, id, then the wait.
+
+    Shared by ``execute_command`` and ``execute_file``. The server answers both
+    lanes with the same command object and the same follow flow (ADR 0053), so
+    everything after the POST is one path; only the body that went out differs.
+    ``command`` and ``shell`` are echoed only when the caller has them—the file
+    lane has neither, and ``_poll_command_result`` omits an empty echo.
+    """
     if isinstance(exec_data, dict) and 'error' in exec_data:
         # unwrap_http_result returns non-None whenever 'error' is in the dict
         return cast(
@@ -513,6 +645,99 @@ async def execute_command(
     )
     if _purpose_was_truncated(purpose):
         response['purpose_truncated'] = True
+    return response
+
+
+def _file_exec_refusal(code: str, **kwargs: Any) -> dict[str, Any]:
+    """Refuse a file execution locally with the wording the server's 400 gets.
+
+    Same ``error_code`` and the same hint text as ``unwrap_http_result`` renders
+    for the server-side refusal, so a caller switching on the code, or a human
+    reading the message, sees one contract whichever side caught it.
+    """
+    return error_response(FILE_EXEC_REFUSAL_HINTS[code], error_code=code, **kwargs)
+
+
+@mcp_tool_handler(
+    description='Run a script that already exists on a server, as a verified file: the reviewer and the assessor judge the exact bytes you submit, and the agent executes the file only if the bytes on the host\'s disk hash to the same digest. Prefer this over execute_command for anything longer than a one-off line—a script, a heredoc, a "bash /tmp/deploy.sh" line. Why: once an approver marks a verified file standing, an unchanged re-run of it (same bytes, same server, same account, same args) is admitted without paging a human; a "bash /path" shell line never can be, because nothing about the path proves what runs. What approving means: it authorizes exactly these bytes, on this server, as this account, with these arguments—not "this file is safe". One changed byte re-queues human review. The environment, libraries, interpreter version, and anything the script fetches or executes at runtime are not verified and stay the executor\'s responsibility; only this first entrypoint is. How to use: the file must already exist at path on the target host (write it first, e.g. with webftp_upload_content); pass its full contents as content, byte-for-byte as they are on disk—do not strip a trailing newline or normalize line endings, because the agent hashes the on-disk file with no normalization and a mismatch fails closed. content is what the reviewer judges; it is never shipped to the host. path and interpreter must be absolute (/opt/deploy.sh, /bin/bash; a bare "bash" is refused). Put composition inside the script: pipes, redirection, &&, and environment variables are reviewed there. Free-text composition around a verified file (a pipe into it, an env prefix, extra shell) is not possible on this lane, by design—a one-off composition belongs on execute_command. content is capped at 64 KB and must be non-empty. Refusals to act on rather than retry, each returned as error_code: file_exec_unsupported_agent (the agent on that server cannot verify a digest; alpamon 2.6.0 or newer is required—upgrade it or use execute_command), file_exec_assessor_disabled (this deployment has the command assessor off, so the lane is unavailable—use execute_command), file_exec_invalid_path (path or interpreter is not absolute), file_exec_content_too_large, file_exec_empty_content, file_exec_line_too_long (interpreter + path + args exceed the command line ceiling—shorten args), file_exec_env_not_allowed (env is not accepted here; set variables inside the script). None of these has a request waiting behind it, so do not wait on them. Otherwise the run follows the same rules as execute_command: sudo inside the script routes to human approval or is denied outright, a status of awaiting_approval means a human decides out-of-band, purpose_required is answered with state_command_purpose, and the result carries stdout, stderr, and exit code. Pass work_session_id to link the run to a Work Session, and purpose to say what this run is for. When to use: deploy or maintenance scripts, anything you would otherwise run as "bash file" or feed through a heredoc, and any script you expect to run again unchanged. Related: execute_command (one-off shell line), webftp_upload_content (put the file on the host first), state_command_purpose, list_commands. Note: Default timeout is 300 seconds (5 minutes).',
+    annotations=ADDITIVE,
+    meta={
+        'anthropic/alwaysLoad': True,
+        'anthropic/searchHint': 'script file run verified hash deploy heredoc bash execute',
+    },
+)
+async def execute_file(
+    server_id: str,
+    path: str,
+    content: str,
+    workspace: str,
+    interpreter: str = DEFAULT_INTERPRETER,
+    args: list[str] | None = None,
+    username: str | None = None,
+    groupname: str = 'alpacon',
+    run_after: list[str] | None = None,
+    scheduled_at: str | None = None,
+    timeout: int = 300,
+    work_session_id: str | None = None,
+    purpose: str | None = None,
+    region: str = '',
+    **kwargs,
+) -> dict[str, Any]:
+    """Run a file on the host as a verified execution and wait for the result (ADR 0053)."""
+    token = kwargs.get('token')
+    context = {'server_id': server_id, 'region': region, 'workspace': workspace}
+
+    # The server enforces every one of these too; catching them here spares a
+    # round trip and, for the two size rules, spares shipping 64 KB to be told
+    # no. The wording is the server's, so a caller reads one message either way.
+    for field, value in (('path', path), ('interpreter', interpreter)):
+        if not validate_file_path(value):
+            return _file_exec_refusal('file_exec_invalid_path', field=field, **context)
+    # Emptiness, not blankness: whitespace is bytes the host file may well
+    # carry, and this lane never strips anything.
+    if not content:
+        return _file_exec_refusal('file_exec_empty_content', **context)
+    if len(content.encode('utf-8')) > FILE_CONTENT_MAX_BYTES:
+        return _file_exec_refusal('file_exec_content_too_large', **context)
+
+    exec_data = await _submit_file_execution(
+        server_id=server_id,
+        path=path,
+        content=content,
+        workspace=workspace,
+        interpreter=interpreter,
+        args=args,
+        username=username,
+        groupname=groupname,
+        run_after=run_after,
+        scheduled_at=scheduled_at,
+        work_session_id=work_session_id,
+        purpose=purpose,
+        # Same rule as execute_command, for the same reason: a deferred run is
+        # judged after this call has gone, and a demand then has no one to
+        # answer it.
+        purpose_demand_supported=not scheduled_at and not run_after,
+        region=region,
+        token=token,
+    )
+
+    response = await _settle_submission(
+        exec_data,
+        server_id=server_id,
+        workspace=workspace,
+        timeout=timeout,
+        purpose=purpose,
+        region=region,
+        token=token,
+    )
+    # Echo what was asked for, minus the content: the polled row already
+    # carries the server-rendered line, and 64 KB of script belongs in the
+    # request, not in every answer about it.
+    response['file'] = {
+        'path': path,
+        'interpreter': interpreter,
+        'args': list(args or []),
+    }
     return response
 
 
