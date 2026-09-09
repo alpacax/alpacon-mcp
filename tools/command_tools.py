@@ -685,14 +685,41 @@ async def execute_file(
 ) -> dict[str, Any]:
     """Run a file on the host as a verified execution and wait for the result (ADR 0053)."""
     token = kwargs.get('token')
-    context = {'server_id': server_id, 'region': region, 'workspace': workspace}
+    # Echo what was asked for, minus the content: the polled row already
+    # carries the server-rendered line, and 64 KB of script belongs in the
+    # request, not in every answer about it. Built first so a local refusal
+    # carries the same echo a server-side one does.
+    file_echo = {
+        'path': path,
+        'interpreter': interpreter,
+        'args': list(args or []),
+    }
+    context = {
+        'server_id': server_id,
+        'region': region,
+        'workspace': workspace,
+        'file': file_echo,
+    }
 
     # The server enforces every one of these too; catching them here spares a
     # round trip and, for the two size rules, spares shipping 64 KB to be told
     # no. The wording is the server's, so a caller reads one message either way.
     for field, value in (('path', path), ('interpreter', interpreter)):
-        if not validate_file_path(value):
-            return _file_exec_refusal('file_exec_invalid_path', field=field, **context)
+        if validate_file_path(value):
+            continue
+        if value.startswith('/'):
+            # Absolute, so the server would take it; what refuses it is this
+            # repo's own path rule (no traversal, no shell-special characters),
+            # and the message has to say so rather than claim it is relative.
+            return error_response(
+                f'{field} is absolute but contains ".." or one of < > | * ?, '
+                'which this tool refuses; rename the file on the host or run it '
+                'through execute_command.',
+                error_code='file_exec_invalid_path',
+                field=field,
+                **context,
+            )
+        return _file_exec_refusal('file_exec_invalid_path', field=field, **context)
     # Emptiness, not blankness: whitespace is bytes the host file may well
     # carry, and this lane never strips anything.
     if not content:
@@ -730,14 +757,7 @@ async def execute_file(
         region=region,
         token=token,
     )
-    # Echo what was asked for, minus the content: the polled row already
-    # carries the server-rendered line, and 64 KB of script belongs in the
-    # request, not in every answer about it.
-    response['file'] = {
-        'path': path,
-        'interpreter': interpreter,
-        'args': list(args or []),
-    }
+    response['file'] = file_echo
     return response
 
 

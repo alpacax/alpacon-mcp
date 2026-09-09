@@ -2091,6 +2091,29 @@ class TestExecuteFileLocalValidation:
 
         assert result['message'] == FILE_EXEC_REFUSAL_HINTS['file_exec_invalid_path']
         assert result['server_id'] == _FILE_SERVER
+        # The same echo a server-side refusal carries, so the error shape does
+        # not depend on which side caught the problem.
+        assert result['file'] == {
+            'path': 'deploy.sh',
+            'interpreter': '/bin/bash',
+            'args': [],
+        }
+
+    @pytest.mark.asyncio
+    async def test_absolute_but_traversing_path_names_the_real_reason(
+        self, mock_http_client, mock_token_manager
+    ):
+        result = await execute_file(
+            server_id=_FILE_SERVER,
+            path='/opt/../etc/deploy.sh',
+            content=_FILE_SCRIPT,
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert result['error_code'] == 'file_exec_invalid_path'
+        assert 'absolute but contains' in result['message']
+        mock_http_client.post.assert_not_called()
 
 
 class TestExecuteFileRefusalRendering:

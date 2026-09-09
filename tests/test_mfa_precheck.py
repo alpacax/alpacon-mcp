@@ -36,6 +36,7 @@ class TestGetActionForTool:
 
     def test_command_tools(self):
         assert get_action_for_tool('execute_command') == 'command'
+        assert get_action_for_tool('execute_file') == 'command'
         assert get_action_for_tool('execute_command_multi_server') == 'command'
         assert get_action_for_tool('list_commands') == 'command'
 

@@ -147,8 +147,10 @@ _WORK_SESSION_GATE_CODES: frozenset[str] = frozenset(_WORK_SESSION_GATE_NEXT_ACT
 #: caller fixes or gives up on, never something to wait out or retry as-is—so
 #: they take the generic hint path rather than a pending-approval shape. Public
 #: because execute_file renders the same text when it refuses locally, so a
-#: caller reads one wording whichever side caught it. Kept in sync with
-#: alpacon-server utils/error_codes.py.
+#: caller reads one wording whichever side caught it. Covers the codes this
+#: client can receive: the server also has file_exec_line_not_allowed and
+#: file_exec_data_not_allowed, which a body that never carries line or data
+#: cannot draw.
 FILE_EXEC_REFUSAL_HINTS: dict[str, str] = {
     'file_exec_unsupported_agent': (
         'The agent on this server cannot verify a file digest; alpamon 2.6.0 or '
