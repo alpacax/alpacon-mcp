@@ -6,7 +6,9 @@ from datetime import UTC, datetime
 from typing import Any, cast
 
 from utils.common import (
+    FILE_EXEC_INLINE_CREDENTIAL_HINT,
     FILE_EXEC_REFUSAL_HINTS,
+    INLINE_CREDENTIAL_HINT,
     empty_value_error,
     error_response,
     pending_approval_response,
@@ -301,8 +303,9 @@ async def _submit_file_execution(
 
     Same endpoint as ``_submit_command``; the ``file`` object is what selects
     the lane. The body carries no ``shell``, ``line``, ``data``, or ``env`` key
-    at all: the server derives the first two and refuses a request naming any
-    of them, on key presence, so an empty string would be refused too.
+    at all: the server refuses ``line`` and ``data`` on key presence (an empty
+    string included), refuses a non-empty ``env``, and overwrites ``shell``
+    itself, so none of them has anything to say here.
     ``content`` goes out byte-for-byte—the agent hashes the file on the host's
     disk with no normalization, so a stripped trailing newline here would fail
     every execution closed.
@@ -712,9 +715,9 @@ async def execute_file(
             # repo's own path rule (no traversal, no shell-special characters),
             # and the message has to say so rather than claim it is relative.
             return error_response(
-                f'{field} is absolute but contains ".." or one of < > | * ?, '
-                'which this tool refuses; rename the file on the host or run it '
-                'through execute_command.',
+                f'{field} is absolute but contains a segment this tool refuses '
+                '(".." or ".", a NUL, or one of < > | * ?); rename the file on '
+                'the host or run it through execute_command.',
                 error_code='file_exec_invalid_path',
                 field=field,
                 **context,
@@ -757,6 +760,13 @@ async def execute_file(
         region=region,
         token=token,
     )
+    # The shared renderer appends the shell lane's hint for this code, which
+    # points at execute_command's env; on this lane the secret is inside the
+    # script and env is refused, so the hint has to say where it goes instead.
+    if response.get('error_code') == 'command_inline_credential':
+        response['message'] = response['message'].replace(
+            INLINE_CREDENTIAL_HINT, FILE_EXEC_INLINE_CREDENTIAL_HINT
+        )
     response['file'] = file_echo
     return response
 

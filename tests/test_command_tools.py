@@ -1862,8 +1862,9 @@ class TestSubmitFileExecution:
             'args': ['--fast', ''],
             'content': _FILE_SCRIPT,
         }
-        # The server refuses on key presence, an empty string included, so the
-        # keys the other lane needs must be absent here rather than blank.
+        # The server refuses line and data on key presence (an empty string
+        # included) and a non-empty env, so the keys the other lane needs must
+        # be absent here rather than blank; shell is the server's to set.
         for forbidden in ('line', 'data', 'env', 'shell'):
             assert forbidden not in sent
 
@@ -1965,7 +1966,6 @@ class TestExecuteFileLocalValidation:
         'field, override',
         [
             ('path', {'path': 'opt/deploy.sh'}),
-            ('path', {'path': '/opt/../etc/deploy.sh'}),
             ('interpreter', {'interpreter': 'bash'}),
             ('interpreter', {'interpreter': 'usr/bin/python3'}),
         ],
@@ -2113,6 +2113,7 @@ class TestExecuteFileLocalValidation:
 
         assert result['error_code'] == 'file_exec_invalid_path'
         assert 'absolute but contains' in result['message']
+        assert result['field'] == 'path'
         mock_http_client.post.assert_not_called()
 
 
@@ -2156,6 +2157,31 @@ class TestExecuteFileRefusalRendering:
 
     def test_every_refusal_code_has_a_hint(self):
         assert set(FILE_EXEC_REFUSAL_HINTS) == _FILE_EXEC_CODES
+
+    @pytest.mark.asyncio
+    async def test_inline_credential_hint_keeps_the_caller_on_the_file_lane(
+        self, mock_http_client, mock_token_manager
+    ):
+        # The shell lane's hint says "move it into env"; env is refused here,
+        # and the script is what the reviewer reads, so the hint must not
+        # steer the caller onto the unreviewed lane.
+        with patch('tools.command_tools._submit_file_execution') as mock_submit:
+            mock_submit.return_value = _file_exec_envelope('command_inline_credential')
+
+            result = await execute_file(
+                server_id=_FILE_SERVER,
+                path='/opt/deploy.sh',
+                content=_FILE_SCRIPT,
+                workspace='testworkspace',
+                region='ap1',
+            )
+
+        assert result['error_code'] == 'command_inline_credential'
+        assert (
+            'execute_command'
+            not in result['message'].split('unreviewed')[0].split('moving')[0]
+        )
+        assert 'read from a file or the environment on the host' in result['message']
 
     @pytest.mark.asyncio
     async def test_work_session_gate_is_translated_on_the_file_lane(
@@ -2242,6 +2268,16 @@ class TestExecuteFileRun:
                 content=_FILE_SCRIPT,
                 workspace='testworkspace',
                 scheduled_at='2026-09-10T03:00:00Z',
+                region='ap1',
+            )
+            assert mock_submit.call_args.kwargs['purpose_demand_supported'] is False
+
+            await execute_file(
+                server_id=_FILE_SERVER,
+                path='/opt/deploy.sh',
+                content=_FILE_SCRIPT,
+                workspace='testworkspace',
+                run_after=['cmd-700'],
                 region='ap1',
             )
             assert mock_submit.call_args.kwargs['purpose_demand_supported'] is False

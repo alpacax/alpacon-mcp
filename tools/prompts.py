@@ -69,7 +69,8 @@ here is judged in real time and recorded. Follow this discipline.
 2. Run actions through the session. Pass `work_session_id` on every call (it falls back to
    the `ALPACON_WORK_SESSION` env var if omitted; without either the server rejects the
    scoped action):
-   - Commands: `execute_command` (single host) or `execute_command_multi_server` (fleet).
+   - Commands: `execute_command` (single host), `execute_file` (a script on the host,
+     verified by digest), or `execute_command_multi_server` (fleet).
    - File transfers: `webftp_download_file`. `webftp_upload_file` is local-mode only—in
      remote/OAuth mode it returns `remote_mode_unsupported`.
 

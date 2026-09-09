@@ -44,8 +44,10 @@ logger = get_logger('decorators')
 _SPECIFY_REGION_HINT = 'Please specify a region parameter.'
 
 # Forward cover: with_logging binds the published signature, so this only bites
-# once a tool documents one of these names as its own parameter.
-_SENSITIVE_LOG_KEYS = frozenset({'token', 'password', 'secret', 'key'})
+# once a tool documents one of these names as its own parameter. `content` is
+# execute_file's script body: the file lane tells callers to keep variables
+# inside the script, and 64 KB of it per call belongs in no log.
+_SENSITIVE_LOG_KEYS = frozenset({'token', 'password', 'secret', 'key', 'content'})
 
 # RFC 3986 unreserved characters—nothing in this set can restructure a URL.
 # Wide enough in practice: every identifier upstream mints is a UUID or an

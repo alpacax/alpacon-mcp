@@ -191,14 +191,28 @@ FILE_EXEC_REFUSAL_HINTS: dict[str, str] = {
 # gate codes (see _extract_error_code). Keyed by code so new hints can be
 # added without touching unwrap_http_result. Appended to the error message
 # so an AI agent reading the response text alone knows how to retry.
+INLINE_CREDENTIAL_HINT = (
+    'The server rejected this command because it carries an inline '
+    'credential on the command line (e.g. `mysql -pSecret`, '
+    '`PGPASSWORD=...`, or a `user:pw@host` URL), which would otherwise be '
+    'stored in plaintext in the audit log. Move the secret into the '
+    '`env` parameter of execute_command and retry.'
+)
+
+#: The same refusal on the file lane, where the secret sits inside the script
+#: and `env` is not accepted. The generic hint would send the caller to the
+#: shell lane, away from the review this lane exists for.
+FILE_EXEC_INLINE_CREDENTIAL_HINT = (
+    'The server rejected this script because it carries an inline credential, '
+    'which would otherwise be stored in plaintext with the approval record. '
+    'Take the secret out of the script and have it read from a file or the '
+    'environment on the host at run time, then resubmit; the file lane does not '
+    'accept env, and moving the run to execute_command would leave the script '
+    'unreviewed.'
+)
+
 _ERROR_CODE_HINT: dict[str, str] = {
-    'command_inline_credential': (
-        'The server rejected this command because it carries an inline '
-        'credential on the command line (e.g. `mysql -pSecret`, '
-        '`PGPASSWORD=...`, or a `user:pw@host` URL), which would otherwise be '
-        'stored in plaintext in the audit log. Move the secret into the '
-        '`env` parameter of execute_command and retry.'
-    ),
+    'command_inline_credential': INLINE_CREDENTIAL_HINT,
     **FILE_EXEC_REFUSAL_HINTS,
 }
 
