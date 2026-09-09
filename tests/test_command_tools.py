@@ -11,16 +11,19 @@ from server import mcp
 from tests.conftest import http_client_fixture
 from tools.command_tools import (
     _SUDO_DENIAL_HINTS,
+    FILE_CONTENT_MAX_BYTES,
     PURPOSE_MAX_LENGTH,
     _answer_purpose_demand,
     _submit_command,
+    _submit_file_execution,
     _sudo_denial,
     execute_command,
     execute_command_multi_server,
+    execute_file,
     list_commands,
     state_command_purpose,
 )
-from utils.common import _NEXT_ACTION_BY_CATEGORY
+from utils.common import _NEXT_ACTION_BY_CATEGORY, FILE_EXEC_REFUSAL_HINTS
 
 _GATE_ENVELOPE_REQUIRED = {
     'error': 'HTTP Error',
@@ -1799,3 +1802,502 @@ class TestEmptyCommandRejected:
         assert result['status'] == 'error'
         assert 'command' in result['message']
         mock_http_client.post.assert_not_called()
+
+
+_FILE_SERVER = '550e8400-e29b-41d4-a716-446655440001'
+_FILE_SCRIPT = '#!/bin/bash\nset -euo pipefail\necho deploy\n'
+
+_FILE_EXEC_CODES = frozenset(
+    {
+        'file_exec_unsupported_agent',
+        'file_exec_assessor_disabled',
+        'file_exec_invalid_path',
+        'file_exec_content_too_large',
+        'file_exec_empty_content',
+        'file_exec_line_too_long',
+        'file_exec_env_not_allowed',
+    }
+)
+
+
+def _file_exec_envelope(code: str) -> dict[str, Any]:
+    return {
+        'error': 'HTTP Error',
+        'status_code': HTTPStatus.BAD_REQUEST,
+        'response': f'{{"code":"{code}"}}',
+    }
+
+
+class TestSubmitFileExecution:
+    """The body the file lane (ADR 0053) puts on the wire."""
+
+    @pytest.mark.asyncio
+    async def test_body_selects_the_file_lane_and_names_nothing_else(
+        self, mock_http_client
+    ):
+        mock_http_client.post.return_value = {'id': 'cmd-700'}
+
+        await _submit_file_execution(
+            server_id=_FILE_SERVER,
+            path='/opt/deploy.sh',
+            content=_FILE_SCRIPT,
+            workspace='testworkspace',
+            interpreter='/bin/bash',
+            args=['--fast', ''],
+            username='root',
+            groupname='root',
+            region='ap1',
+            token='test-token',
+        )
+
+        call = mock_http_client.post.call_args.kwargs
+        assert call['endpoint'] == '/api/events/commands/'
+        sent = call['data']
+        assert sent['server'] == _FILE_SERVER
+        assert sent['username'] == 'root'
+        assert sent['groupname'] == 'root'
+        assert sent['file'] == {
+            'path': '/opt/deploy.sh',
+            'interpreter': '/bin/bash',
+            'args': ['--fast', ''],
+            'content': _FILE_SCRIPT,
+        }
+        # The server refuses on key presence, an empty string included, so the
+        # keys the other lane needs must be absent here rather than blank.
+        for forbidden in ('line', 'data', 'env', 'shell'):
+            assert forbidden not in sent
+
+    @pytest.mark.asyncio
+    async def test_content_travels_byte_for_byte(self, mock_http_client):
+        # Trailing newline, CRLF, tabs, trailing spaces, non-ASCII: every one
+        # of these is bytes the on-disk file carries and the agent hashes.
+        content = '#!/bin/sh\r\n\techo "héllo"   \r\n\n\n'
+        mock_http_client.post.return_value = {'id': 'cmd-701'}
+
+        await _submit_file_execution(
+            server_id=_FILE_SERVER,
+            path='/opt/deploy.sh',
+            content=content,
+            workspace='testworkspace',
+            region='ap1',
+            token='test-token',
+        )
+
+        sent = mock_http_client.post.call_args.kwargs['data']
+        assert sent['file']['content'] == content
+
+    @pytest.mark.asyncio
+    async def test_args_default_to_an_empty_list_and_interpreter_to_bash(
+        self, mock_http_client
+    ):
+        mock_http_client.post.return_value = {'id': 'cmd-702'}
+
+        await _submit_file_execution(
+            server_id=_FILE_SERVER,
+            path='/opt/deploy.sh',
+            content=_FILE_SCRIPT,
+            workspace='testworkspace',
+            region='ap1',
+            token='test-token',
+        )
+
+        sent = mock_http_client.post.call_args.kwargs['data']
+        assert sent['file']['args'] == []
+        assert sent['file']['interpreter'] == '/bin/bash'
+        assert 'username' not in sent
+        assert sent['groupname'] == 'alpacon'
+
+    @pytest.mark.asyncio
+    async def test_requester_fields_ride_the_file_lane_unchanged(
+        self, mock_http_client
+    ):
+        mock_http_client.post.return_value = {'id': 'cmd-703'}
+
+        await _submit_file_execution(
+            server_id=_FILE_SERVER,
+            path='/opt/deploy.sh',
+            content=_FILE_SCRIPT,
+            workspace='testworkspace',
+            run_after=['cmd-100'],
+            scheduled_at='2026-09-10T03:00:00Z',
+            work_session_id='ws-1',
+            purpose='  The release tag moved; redeploy picks it up.  ',
+            purpose_demand_supported=True,
+            region='ap1',
+            token='test-token',
+        )
+
+        sent = mock_http_client.post.call_args.kwargs['data']
+        assert sent['run_after'] == ['cmd-100']
+        assert sent['scheduled_at'] == '2026-09-10T03:00:00Z'
+        assert sent['work_session'] == 'ws-1'
+        # The same rules as the shell lane: a purpose is stripped and capped,
+        # and the capability flag is sent only when asked for.
+        assert sent['purpose'] == 'The release tag moved; redeploy picks it up.'
+        assert sent['purpose_demand_supported'] is True
+
+    @pytest.mark.asyncio
+    async def test_blank_purpose_is_unstated_on_the_file_lane_too(
+        self, mock_http_client
+    ):
+        mock_http_client.post.return_value = {'id': 'cmd-704'}
+
+        await _submit_file_execution(
+            server_id=_FILE_SERVER,
+            path='/opt/deploy.sh',
+            content=_FILE_SCRIPT,
+            workspace='testworkspace',
+            purpose='   ',
+            region='ap1',
+            token='test-token',
+        )
+
+        sent = mock_http_client.post.call_args.kwargs['data']
+        assert 'purpose' not in sent
+        assert 'purpose_demand_supported' not in sent
+
+
+class TestExecuteFileLocalValidation:
+    """What execute_file refuses before spending a round trip."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        'field, override',
+        [
+            ('path', {'path': 'opt/deploy.sh'}),
+            ('path', {'path': '/opt/../etc/deploy.sh'}),
+            ('interpreter', {'interpreter': 'bash'}),
+            ('interpreter', {'interpreter': 'usr/bin/python3'}),
+        ],
+    )
+    async def test_relative_path_or_interpreter_is_refused_locally(
+        self, mock_http_client, mock_token_manager, field, override
+    ):
+        kwargs: dict[str, Any] = {
+            'path': '/opt/deploy.sh',
+            'interpreter': '/bin/bash',
+            **override,
+        }
+
+        result = await execute_file(
+            server_id=_FILE_SERVER,
+            content=_FILE_SCRIPT,
+            workspace='testworkspace',
+            region='ap1',
+            **kwargs,
+        )
+
+        assert result['status'] == 'error'
+        assert result['error_code'] == 'file_exec_invalid_path'
+        assert result['field'] == field
+        mock_http_client.post.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_empty_content_is_refused_locally(
+        self, mock_http_client, mock_token_manager
+    ):
+        result = await execute_file(
+            server_id=_FILE_SERVER,
+            path='/opt/deploy.sh',
+            content='',
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert result['status'] == 'error'
+        assert result['error_code'] == 'file_exec_empty_content'
+        mock_http_client.post.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_whitespace_only_content_is_bytes_not_blank(
+        self, mock_http_client, mock_token_manager
+    ):
+        # The shell lane treats a whitespace command as empty; this lane never
+        # strips, so a newline is content the host file may well carry.
+        with patch('tools.command_tools._submit_file_execution') as mock_submit:
+            mock_submit.return_value = _file_exec_envelope('file_exec_empty_content')
+
+            await execute_file(
+                server_id=_FILE_SERVER,
+                path='/opt/deploy.sh',
+                content='\n',
+                workspace='testworkspace',
+                region='ap1',
+            )
+
+        assert mock_submit.call_args.kwargs['content'] == '\n'
+
+    @pytest.mark.asyncio
+    async def test_content_over_the_ceiling_is_refused_locally(
+        self, mock_http_client, mock_token_manager
+    ):
+        result = await execute_file(
+            server_id=_FILE_SERVER,
+            path='/opt/deploy.sh',
+            content='a' * (FILE_CONTENT_MAX_BYTES + 1),
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert result['status'] == 'error'
+        assert result['error_code'] == 'file_exec_content_too_large'
+        mock_http_client.post.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_ceiling_is_measured_in_utf8_bytes_not_characters(
+        self, mock_http_client, mock_token_manager
+    ):
+        # 21846 three-byte characters are 65538 bytes: under the cap by
+        # character count, over it by the measure the server uses.
+        result = await execute_file(
+            server_id=_FILE_SERVER,
+            path='/opt/deploy.sh',
+            content='가' * 21846,
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert result['error_code'] == 'file_exec_content_too_large'
+        mock_http_client.post.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_content_exactly_at_the_ceiling_goes_out(
+        self, mock_http_client, mock_token_manager
+    ):
+        with patch('tools.command_tools._submit_file_execution') as mock_submit:
+            mock_submit.return_value = _file_exec_envelope('file_exec_line_too_long')
+
+            await execute_file(
+                server_id=_FILE_SERVER,
+                path='/opt/deploy.sh',
+                content='a' * FILE_CONTENT_MAX_BYTES,
+                workspace='testworkspace',
+                region='ap1',
+            )
+
+        mock_submit.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_local_refusal_reads_like_the_servers(
+        self, mock_http_client, mock_token_manager
+    ):
+        result = await execute_file(
+            server_id=_FILE_SERVER,
+            path='deploy.sh',
+            content=_FILE_SCRIPT,
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert result['message'] == FILE_EXEC_REFUSAL_HINTS['file_exec_invalid_path']
+        assert result['server_id'] == _FILE_SERVER
+
+
+class TestExecuteFileRefusalRendering:
+    """A file-lane 400 comes back as something to act on, never to wait on."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        'code, keyword',
+        [
+            ('file_exec_unsupported_agent', '2.6.0'),
+            ('file_exec_assessor_disabled', 'assessor'),
+            ('file_exec_invalid_path', 'absolute'),
+            ('file_exec_content_too_large', '64 KB'),
+            ('file_exec_empty_content', 'empty'),
+            ('file_exec_line_too_long', 'args'),
+            ('file_exec_env_not_allowed', 'inside the script'),
+        ],
+    )
+    async def test_server_refusal_carries_its_code_and_hint(
+        self, mock_http_client, mock_token_manager, code, keyword
+    ):
+        with patch('tools.command_tools._submit_file_execution') as mock_submit:
+            mock_submit.return_value = _file_exec_envelope(code)
+
+            result = await execute_file(
+                server_id=_FILE_SERVER,
+                path='/opt/deploy.sh',
+                content=_FILE_SCRIPT,
+                workspace='testworkspace',
+                region='ap1',
+            )
+
+        assert result['status'] == 'error'
+        assert result['error_code'] == code
+        assert keyword in result['message']
+        # No request exists behind any of these; a pending shape would tell the
+        # agent to wait for a human who was never asked.
+        assert 'requires_human_approval' not in result
+        assert result['file']['path'] == '/opt/deploy.sh'
+
+    def test_every_refusal_code_has_a_hint(self):
+        assert set(FILE_EXEC_REFUSAL_HINTS) == _FILE_EXEC_CODES
+
+    @pytest.mark.asyncio
+    async def test_work_session_gate_is_translated_on_the_file_lane(
+        self, mock_http_client, mock_token_manager
+    ):
+        # The lanes share what happens after the POST, gate translation included.
+        with patch('tools.command_tools._submit_file_execution') as mock_submit:
+            mock_submit.return_value = _GATE_ENVELOPE_NOT_ACTIVE
+
+            result = await execute_file(
+                server_id=_FILE_SERVER,
+                path='/opt/deploy.sh',
+                content=_FILE_SCRIPT,
+                workspace='testworkspace',
+                region='ap1',
+            )
+
+        assert result['status'] == 'pending_approval'
+
+
+class TestExecuteFileRun:
+    """The wait and the answer, on the same path the shell lane takes."""
+
+    @pytest.mark.asyncio
+    async def test_success_echoes_the_file_but_not_its_content(
+        self, mock_http_client, mock_token_manager
+    ):
+        with (
+            patch('tools.command_tools._submit_file_execution') as mock_submit,
+            patch('tools.command_tools._get_command_result') as mock_poll,
+        ):
+            mock_submit.return_value = {'id': 'cmd-710'}
+            mock_poll.return_value = {
+                'id': 'cmd-710',
+                'status': 'success',
+                'shell': 'file',
+                'line': '/bin/bash /opt/deploy.sh --fast',
+                'exit_code': 0,
+                'handled_at': '2026-09-09T00:00:01Z',
+            }
+
+            result = await execute_file(
+                server_id=_FILE_SERVER,
+                path='/opt/deploy.sh',
+                content=_FILE_SCRIPT,
+                args=['--fast'],
+                workspace='testworkspace',
+                region='ap1',
+                timeout=10,
+            )
+
+        assert result['status'] == 'success'
+        assert result['command_id'] == 'cmd-710'
+        assert result['server_id'] == _FILE_SERVER
+        assert result['file'] == {
+            'path': '/opt/deploy.sh',
+            'interpreter': '/bin/bash',
+            'args': ['--fast'],
+        }
+        # The polled row carries the server-rendered line; echoing a command
+        # or shell this lane never chose would be misleading metadata.
+        assert 'command' not in result
+        assert 'shell' not in result
+
+    @pytest.mark.asyncio
+    async def test_declares_demand_support_only_when_it_will_wait(
+        self, mock_http_client, mock_token_manager
+    ):
+        with patch('tools.command_tools._submit_file_execution') as mock_submit:
+            mock_submit.return_value = _file_exec_envelope('file_exec_empty_content')
+
+            await execute_file(
+                server_id=_FILE_SERVER,
+                path='/opt/deploy.sh',
+                content=_FILE_SCRIPT,
+                workspace='testworkspace',
+                region='ap1',
+            )
+            assert mock_submit.call_args.kwargs['purpose_demand_supported'] is True
+
+            await execute_file(
+                server_id=_FILE_SERVER,
+                path='/opt/deploy.sh',
+                content=_FILE_SCRIPT,
+                workspace='testworkspace',
+                scheduled_at='2026-09-10T03:00:00Z',
+                region='ap1',
+            )
+            assert mock_submit.call_args.kwargs['purpose_demand_supported'] is False
+
+    @pytest.mark.asyncio
+    async def test_truncated_purpose_is_reported(
+        self, mock_http_client, mock_token_manager
+    ):
+        with (
+            patch('tools.command_tools._submit_file_execution') as mock_submit,
+            patch('tools.command_tools._get_command_result') as mock_poll,
+        ):
+            mock_submit.return_value = {'id': 'cmd-711'}
+            mock_poll.return_value = {
+                'id': 'cmd-711',
+                'status': 'success',
+                'handled_at': '2026-09-09T00:00:01Z',
+            }
+
+            result = await execute_file(
+                server_id=_FILE_SERVER,
+                path='/opt/deploy.sh',
+                content=_FILE_SCRIPT,
+                workspace='testworkspace',
+                purpose='x' * (PURPOSE_MAX_LENGTH + 1),
+                region='ap1',
+                timeout=10,
+            )
+
+        assert result['purpose_truncated'] is True
+
+
+class TestExecuteFileRegistration:
+    """The published tool is what teaches a model to take this lane."""
+
+    @pytest.mark.asyncio
+    async def test_schema_has_no_shell_lane_fields(self):
+        tools = {t.name: t for t in await mcp.list_tools()}
+        schema = tools['execute_file'].inputSchema
+
+        properties = schema['properties']
+        for forbidden in ('line', 'command', 'data', 'env', 'shell', 'kwargs'):
+            assert forbidden not in properties
+        assert set(schema['required']) == {'server_id', 'path', 'content', 'workspace'}
+        assert properties['interpreter']['default'] == '/bin/bash'
+        for shared in ('username', 'groupname', 'run_after', 'scheduled_at'):
+            assert shared in properties
+        for shared in ('timeout', 'work_session_id', 'purpose', 'region'):
+            assert shared in properties
+
+    @pytest.mark.asyncio
+    async def test_description_states_the_lane_semantics(self):
+        descriptions = {t.name: t.description for t in await mcp.list_tools()}
+        text = descriptions['execute_file']
+
+        # What approving means, and what it does not.
+        assert 'exactly these bytes' in text
+        assert 'One changed byte' in text
+        assert 'first entrypoint' in text
+        # Why to prefer it over a shell line.
+        assert 'without paging a human' in text
+        assert 'never can' in text
+        # The on-disk contract.
+        assert 'must already exist' in text
+        assert 'byte-for-byte' in text
+        assert 'never shipped to the host' in text
+        # Composition lives inside the script.
+        assert 'inside the script' in text
+        assert 'execute_command' in text
+        # Refusals are acted on, not waited on.
+        for code in _FILE_EXEC_CODES:
+            assert code in text
+        assert '2.6.0' in text
+        assert 'do not wait' in text
+
+    @pytest.mark.asyncio
+    async def test_execute_command_points_scripts_at_execute_file(self):
+        descriptions = {t.name: t.description for t in await mcp.list_tools()}
+        text = descriptions['execute_command']
+
+        assert 'execute_file' in text
+        assert 'heredoc' in text
