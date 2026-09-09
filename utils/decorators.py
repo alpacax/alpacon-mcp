@@ -539,18 +539,19 @@ def with_error_handling(func: Callable) -> Callable:
 
 
 def _summarize_log_value(value: Any, _nested: bool = False) -> Any:
-    """Replace an oversized string or container with a placeholder recording its length.
+    """Replace an oversized string or container with a placeholder.
 
-    Called on every bound argument. A list, tuple, or dict is summarized one
-    level down: an entry that is itself a container becomes the placeholder,
-    so nothing arbitrarily deep reaches the log line. Anything else passes
-    through untouched, whatever its size.
+    A string past the bound becomes ``<len=N>`` and a container ``<items=N>``,
+    named apart because one line can carry both. A list, tuple, or dict is
+    summarized one level down: an entry that is itself a container becomes the
+    placeholder, so nothing arbitrarily deep reaches the log line. Anything
+    else passes through untouched, whatever its size.
     """
     if isinstance(value, str) and len(value) > _MAX_LOGGED_VALUE_LEN:
         return f'<len={len(value)}>'
     if isinstance(value, (list, tuple, dict)):
         if _nested or len(value) > _MAX_LOGGED_ITEMS:
-            return f'<len={len(value)}>'
+            return f'<items={len(value)}>'
         if isinstance(value, dict):
             return {k: _summarize_log_value(v, _nested=True) for k, v in value.items()}
         return [_summarize_log_value(item, _nested=True) for item in value]

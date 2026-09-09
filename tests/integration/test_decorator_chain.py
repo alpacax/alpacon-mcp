@@ -290,7 +290,7 @@ class TestLoggingDecorator:
         assert f'<len={len(long_command)}>' in entry
         assert "'uptime'" in entry
 
-    async def test_logging_replaces_an_oversized_container_with_its_length(
+    async def test_logging_replaces_an_oversized_container_with_its_item_count(
         self, mock_token_for_integration, caplog
     ):
         """Past the element bound the container itself becomes the placeholder (#233)."""
@@ -301,7 +301,7 @@ class TestLoggingDecorator:
 
         entry = _entry_log(caplog, 'request_sudo_policy')
 
-        assert "'commands': '<len=50>'" in entry
+        assert "'commands': '<items=50>'" in entry
         assert 'svc49' not in entry
 
 
