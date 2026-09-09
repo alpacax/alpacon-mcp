@@ -11,6 +11,7 @@ import inspect
 import logging
 from collections.abc import Callable
 from http import HTTPStatus
+from types import ModuleType
 from unittest.mock import patch
 
 import httpx
@@ -27,9 +28,10 @@ pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
 _SERVER_ID = '11111111-1111-1111-1111-111111111111'
 
-# Larger than _MAX_LOGGED_VALUE_LEN by three orders of magnitude: the shape #233
-# was reported as, a 1 MB upload writing 1.4 MB of log.
+# Base64 far past _MAX_LOGGED_VALUE_LEN: the shape #233 was reported as.
 _OVERSIZED_PAYLOAD = base64.b64encode(b'\x00' * 65536).decode()
+
+_LONG_COMMAND = 'echo ' + 'a' * 300
 
 
 def _entry_log(caplog, tool: str) -> str:
@@ -212,9 +214,7 @@ class TestLoggingDecorator:
         entry = _entry_log(caplog, 'list_servers')
         assert "'region': 'invalid'" in entry
 
-    async def test_logging_drops_the_uploaded_payload(
-        self, mock_token_for_integration, caplog
-    ):
+    async def test_logging_drops_the_uploaded_payload(self, caplog):
         """The entry log never carries file_content: it is dropped by name (#233)."""
         with caplog.at_level(logging.INFO):
             await _upload_oversized_content()
@@ -224,27 +224,21 @@ class TestLoggingDecorator:
         assert "'file_content'" not in entry
         assert len(entry) < 1024
 
-    async def test_logging_bounds_a_long_string_argument(
-        self, mock_token_for_integration, caplog
-    ):
+    async def test_logging_bounds_a_long_string_argument(self, caplog):
         """A value the log keeps records its length past the bound (#233)."""
-        long_command = 'echo ' + 'a' * 300
-
         with caplog.at_level(logging.INFO):
             await execute_command(
                 server_id=_SERVER_ID,
-                command=long_command,
+                command=_LONG_COMMAND,
                 workspace='testworkspace',
                 region='invalid',
             )
 
         entry = _entry_log(caplog, 'execute_command')
-        assert long_command not in entry
-        assert f'<len={len(long_command)}>' in entry
+        assert _LONG_COMMAND not in entry
+        assert f'<len={len(_LONG_COMMAND)}>' in entry
 
-    async def test_logging_skips_argument_work_when_info_disabled(
-        self, mock_token_for_integration, caplog
-    ):
+    async def test_logging_skips_argument_work_when_info_disabled(self, caplog):
         """Below INFO, with_logging summarizes nothing and writes no entry (#233)."""
         with patch.object(
             decorators,
@@ -261,9 +255,7 @@ class TestLoggingDecorator:
             if 'webftp_upload_content called with' in r.message
         ]
 
-    async def test_logging_omits_free_text_env_and_personal_data(
-        self, mock_token_for_integration, caplog
-    ):
+    async def test_logging_omits_free_text_env_and_personal_data(self, caplog):
         """Keys the log has no use for are dropped, not summarized (#233)."""
         with caplog.at_level(logging.INFO):
             await execute_command(
@@ -287,23 +279,19 @@ class TestLoggingDecorator:
         assert "'command': 'uptime'" in entry
         assert _SERVER_ID in entry
 
-    async def test_logging_bounds_the_elements_of_a_container_argument(
-        self, mock_token_for_integration, caplog
-    ):
+    async def test_logging_bounds_the_elements_of_a_container_argument(self, caplog):
         """A list argument is summarized element by element, not passed through (#233)."""
-        long_command = 'echo ' + 'a' * 300
-
         with caplog.at_level(logging.INFO):
-            await _request_sudo_policy(['uptime', long_command])
+            await _request_sudo_policy(['uptime', _LONG_COMMAND])
 
         entry = _entry_log(caplog, 'request_sudo_policy')
 
-        assert long_command not in entry
-        assert f'<len={len(long_command)}>' in entry
+        assert _LONG_COMMAND not in entry
+        assert f'<len={len(_LONG_COMMAND)}>' in entry
         assert "'uptime'" in entry
 
     async def test_logging_replaces_an_oversized_container_with_its_item_count(
-        self, mock_token_for_integration, caplog
+        self, caplog
     ):
         """Past the element bound the container itself becomes the placeholder (#233)."""
         commands = [f'systemctl restart svc{n}' for n in range(50)]
@@ -317,15 +305,22 @@ class TestLoggingDecorator:
         assert 'svc49' not in entry
 
 
-def _tool_functions() -> dict[str, Callable]:
-    """Import every toolset and return the decorated tools by name.
+def _tool_modules() -> list[ModuleType]:
+    """Every toolset module, imported.
 
     Registration is an import-time side effect on the process-global ``mcp``,
     so this widens ``list_tools()`` for whatever test runs next.
     """
+    return [
+        importlib.import_module(f'{TOOLS_PACKAGE}.{module}')
+        for module in sorted(ALL_TOOL_MODULES | ALWAYS_ON_MODULES)
+    ]
+
+
+def _tool_functions() -> dict[str, Callable]:
+    """Every decorated tool on the surface, by name."""
     functions: dict[str, Callable] = {}
-    for module in sorted(ALL_TOOL_MODULES | ALWAYS_ON_MODULES):
-        imported = importlib.import_module(f'{TOOLS_PACKAGE}.{module}')
+    for imported in _tool_modules():
         for name, attr in vars(imported).items():
             if inspect.iscoroutinefunction(attr) and hasattr(attr, '__wrapped__'):
                 functions[name] = attr
@@ -622,8 +617,7 @@ class TestCatchAllForwarding:
         tool_names = set(_tool_functions())
 
         offenders = set()
-        for module in sorted(ALL_TOOL_MODULES | ALWAYS_ON_MODULES):
-            imported = importlib.import_module(f'{TOOLS_PACKAGE}.{module}')
+        for imported in _tool_modules():
             tree = ast.parse(inspect.getsource(imported))
             for node in ast.walk(tree):
                 if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -646,7 +640,8 @@ class TestCatchAllForwarding:
                         for keyword in call.keywords
                     ):
                         offenders.add(
-                            f'{module}.{node.name} -> {callee} (line {call.lineno})'
+                            f'{imported.__name__}.{node.name} -> {callee} '
+                            f'(line {call.lineno})'
                         )
 
         assert not offenders, (
