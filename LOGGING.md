@@ -112,7 +112,7 @@ Currently, logs accumulate in a single file. Log rotation functionality can be a
 - INFO level is recommended for production environments
 - The entry log drops credential names (`token`, `password`, `secret`, `key`) and the arguments it has no use for: free text such as `content`, `description`, and `purpose`, personal data such as `email`, the `env` map, and bulk lists such as `scopes`. See `_UNLOGGED_KEYS` in `utils/decorators.py` for the full set.
 - Any remaining string argument longer than 256 characters is replaced by `<len=N>`, and a list or dict argument longer than ten entries is replaced the same way. A shorter list or dict keeps its entries, each under the same 256-character bound.
-- Those two rules cover the entry log only. At DEBUG the HTTP client writes each request and response body whole (`Request body`, `Response body`), so the fields the entry log drops—`content` on a file write, the stdin `data` and the `purpose` of a command—are recorded one layer down. Run at INFO wherever that matters.
+- Those two rules cover the entry log only. At DEBUG the HTTP client writes each request and response body whole (`Request body`, `Response body`), so the fields the entry log drops—`content` on a file write, the stdin `data` and the `purpose` of a command—are recorded one layer down. Run at INFO wherever that matters, with one exception: an upstream 4xx or 5xx writes the response body at ERROR regardless of level, 401 alone excepted (`utils/http_client.py`). That is the response and not the request, and a rejected write comes back as an error code rather than the value submitted.
 
 ---
 
