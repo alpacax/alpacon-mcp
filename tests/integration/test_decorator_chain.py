@@ -227,22 +227,16 @@ class TestLoggingDecorator:
     async def test_logging_skips_argument_work_when_info_disabled(
         self, mock_token_for_integration, caplog
     ):
-        """Below INFO, with_logging binds and summarizes nothing at all (#233)."""
-        with (
-            patch.object(
-                decorators,
-                '_summarize_log_value',
-                wraps=decorators._summarize_log_value,
-            ) as summarize,
-            patch.object(
-                decorators.inspect, 'signature', wraps=decorators.inspect.signature
-            ) as signature,
-        ):
+        """Below INFO, with_logging summarizes nothing and writes no entry (#233)."""
+        with patch.object(
+            decorators,
+            '_summarize_log_value',
+            wraps=decorators._summarize_log_value,
+        ) as summarize:
             with caplog.at_level(logging.WARNING, logger='alpacon_mcp.decorators'):
                 await _upload_oversized_content()
 
         assert summarize.call_count == 0
-        assert signature.call_count == 0
         assert not [
             r
             for r in caplog.records

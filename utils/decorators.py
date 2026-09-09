@@ -573,15 +573,18 @@ def with_logging(func: Callable) -> Callable:
     Returns:
         Decorated async function
     """
+    # with_token_validation has already published the catch-all-free signature
+    # this binds against, and nothing assigns __signature__ afterwards, so the
+    # object is fixed for the life of the process.
+    sig = inspect.signature(func)
 
     @wraps(func)
     async def wrapper(*args, **kwargs):
         func_name = func.__name__
 
-        # Guarded, not merely lazy: binding the signature and summarizing the
-        # arguments both cost real time on the shared event loop.
+        # Guarded, not merely lazy: %s defers the formatting but not the bind
+        # and the summary, which run before the record exists.
         if logger.isEnabledFor(logging.INFO):
-            sig = inspect.signature(func)
             bound_args = sig.bind(*args, **kwargs)
             bound_args.apply_defaults()
 
