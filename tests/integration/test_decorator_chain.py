@@ -433,6 +433,7 @@ class TestLoggedParameterSurface:
             'group_id',
             'log_id',
             'membership_id',
+            'mentioned_users',
             'note_id',
             'request_id',
             'revoke_id',
@@ -443,7 +444,6 @@ class TestLoggedParameterSurface:
             'service_token_id',
             'session_id',
             'subscription_id',
-            'mentioned_users',
             'system_user_ids',
             'target_id',
             'token_id',
@@ -454,7 +454,6 @@ class TestLoggedParameterSurface:
             'channel',
             'display_name',
             'domain',
-            'domain_list',
             'groupname',
             'name',
             'organization',
@@ -480,6 +479,10 @@ class TestLoggedParameterSurface:
             # the authority a credential was granted
             'presets',
             'scopes',
+            # the subject alternative names a CSR asks for, published in
+            # the certificate itself
+            'domain_list',
+            'ip_list',
             # the command a call ran
             'command',
             'commands',
@@ -512,7 +515,6 @@ class TestLoggedParameterSurface:
             'event_type',
             'groupname_filter',
             'interface',
-            'ip_list',
             'key_algorithm',
             'language',
             'metric_types',
