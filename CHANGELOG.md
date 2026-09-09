@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `execute_file`: run a script that already exists on a server as a verified file (#207, the
+  client half of ADR 0053). It submits `POST /api/events/commands/` with a `file` object—`path`,
+  `interpreter`, `args`, and the script's `content` byte-for-byte—instead of `line`, so the
+  reviewer judges the exact bytes and the agent executes only an on-disk file that hashes to them;
+  an approver can then make an unchanged re-run standing, which a `bash /path` line never is. The
+  response is the `execute_command` shape plus a `file` object echoing `path`, `interpreter`, and
+  `args`, and no `command` or `shell` echo. A client parsing errors sees seven new `error_code`
+  values (`file_exec_unsupported_agent`, `file_exec_assessor_disabled`, `file_exec_invalid_path`,
+  `file_exec_content_too_large`, `file_exec_empty_content`, `file_exec_line_too_long`,
+  `file_exec_env_not_allowed`), each a plain `status: "error"` to act on, never a pending approval.
+  `execute_command`'s description now points scripts and heredocs at the new tool.
 - `state_command_purpose`, and a `purpose` argument on `execute_command` and
   `execute_command_multi_server` (#186). When the verification gate holds an agent's command
   and asks what it is for (ADR 0052), `execute_command` now reports it as

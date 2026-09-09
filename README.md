@@ -409,6 +409,7 @@ Install the MCP extension and add to settings:
 
 #### Command API (requires ACL permission)
 - **execute_command**: Execute a command on a server and wait for the result
+- **execute_file**: Run a script that already exists on a server as a verified file (ADR 0053); the reviewer judges the submitted bytes, the agent executes only a file on disk that hashes to them, and an approver can make an unchanged re-run standing
 - **list_commands**: List recent command history
 - **execute_command_multi_server**: Execute on multiple servers simultaneously
 - **state_command_purpose**: Answer the verification gate's purpose demand on a held command, then wait for the re-judgment

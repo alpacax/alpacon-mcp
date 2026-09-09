@@ -364,6 +364,49 @@ Execute a command on a server and wait for the result.
 `deadline_seconds`, the number of seconds left. No approval request exists at that point, so a client must not treat it as a pending
 approval: answer it with `state_command_purpose`.
 
+### `execute_file`
+Run a script that already exists on a server as a verified file (ADR 0053), and wait for the result.
+
+The reviewer and the assessor judge the exact bytes submitted as `content`; the agent hashes the file at
+`path` on the target host's disk and executes it only if those bytes match. Approving it authorizes
+exactly these bytes, on this server, as this account, with these arguments—not "this file is safe".
+One changed byte re-queues review. Environment, libraries, interpreter version, and anything the
+script fetches at runtime stay the executor's responsibility; only this first entrypoint is verified.
+Once an approver marks a verified file standing, an unchanged re-run is admitted without paging a
+human, which a `bash /path` line on `execute_command` never is.
+
+**Parameters:**
+- `server_id` (string): Server ID
+- `path` (string): Absolute path of the file on the target host. It must already exist there; the agent reads it from disk, and `content` is never shipped to the host
+- `content` (string): The file's contents, byte-for-byte as they are on disk. Never stripped, trimmed, or normalized—the agent hashes the on-disk file with no normalization, so a dropped trailing newline fails closed. Non-empty, at most 64 KB (65536 UTF-8 bytes)
+- `workspace` (string): Workspace name
+- `interpreter` (string, default: "/bin/bash"): Absolute path of the interpreter; a bare `bash` is refused
+- `args` (array, optional): Arguments appended after the path, default `[]`; may contain empty strings
+- `username` (string, optional): Username for execution
+- `groupname` (string, default: "alpacon"): Group name
+- `run_after` (array, optional): Command IDs to wait for before executing
+- `scheduled_at` (string, optional): ISO 8601 datetime for scheduled execution
+- `timeout` (integer, default: 300): Timeout in seconds
+- `work_session_id` (string, optional): Work Session to run under; falls back to `ALPACON_WORK_SESSION`
+- `purpose` (string, optional): Same semantics as on `execute_command`
+- `region` (string, optional): Region name; resolved from the workspace when omitted
+
+There is no `env`, `data`, or `shell`: composition (pipes, redirection, `&&`, variables) goes inside the
+script, where it is reviewed with it. A one-off composition around a file belongs on `execute_command`.
+
+**Response:** the same shape as `execute_command`—`awaiting_approval`, `purpose_required`, sudo
+denials, and the result all follow the same rules—plus a `file` object echoing `path`, `interpreter`,
+and `args` (never `content`). `command` and `shell` are not echoed; the polled command row carries the
+server-rendered line.
+
+**Refusals** come back as `status: "error"` with `error_code` set, and a message stating the fix. None
+has a request waiting behind it, so a client acts on them rather than waiting or retrying as-is:
+`file_exec_unsupported_agent` (the agent on that server cannot verify a digest; alpamon 2.6.0 or newer
+is required), `file_exec_assessor_disabled` (the deployment has the command assessor off),
+`file_exec_invalid_path`, `file_exec_content_too_large`, `file_exec_empty_content`,
+`file_exec_line_too_long`, and `file_exec_env_not_allowed`. The path and size rules are also checked
+locally before any request is made, with the same `error_code` and wording.
+
 ### `list_commands`
 List recent command history.
 
