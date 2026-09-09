@@ -48,7 +48,7 @@ _SPECIFY_REGION_HINT = 'Please specify a region parameter.'
 # tool documents one as its own parameter today, but with_logging would bind
 # it if one did. The rest the log has no use for—payloads, free text a person
 # wrote, URLs that are themselves a credential, personal data, env maps that can
-# carry a secret under any key, and bulk lists—and the server stores every one
+# carry a secret under any key, and config lists—and the server stores every one
 # of them.
 _UNLOGGED_KEYS = frozenset(
     {
@@ -75,15 +75,12 @@ _UNLOGGED_KEYS = frozenset(
         'billing_email',
         'first_name',
         'last_name',
-        # env maps and bulk lists
+        # env maps, and the workspace config lists nothing reads back from a
+        # log. Not a size decision—the container bound covers that—so a list
+        # naming what one call granted or asked for is kept instead.
         'env',
-        'scopes',
-        'presets',
         'enabled_extensions',
         'allowed_domains',
-        'mentioned_users',
-        'domain_list',
-        'ip_list',
     }
 )
 
@@ -91,8 +88,9 @@ _UNLOGGED_KEYS = frozenset(
 # gives it, so the guard is on the value's size and not on the key (#233).
 _MAX_LOGGED_VALUE_LEN = 256
 
-# Containers carry identifier and path lists today, which is what the log is
-# for, so a short one is summarized element by element rather than dropped.
+# Containers carry identifier, path, and enum lists today, which is what the
+# log is for, so a short one is summarized element by element rather than
+# dropped.
 _MAX_LOGGED_ITEMS = 10
 
 # RFC 3986 unreserved characters—nothing in this set can restructure a URL.

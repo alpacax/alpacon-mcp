@@ -135,11 +135,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   summary only when INFO is enabled—`LOGGING.md` states the rules. Nothing changes for a client,
   but an existing `logs/alpacon-mcp.log` can hold uploaded file contents and should be treated
   accordingly.
-- The entry log no longer records the free text, personal data, environment maps, and bulk
+- The entry log no longer records the free text, personal data, environment maps, and config
   lists a tool receives (#233). `_SENSITIVE_LOG_KEYS` is now `_UNLOGGED_KEYS` and drops the
   payload and free text a person wrote, the webhook and proxy URLs that are themselves a
   credential, personal data, the `env` map that could carry a secret under any key, and bulk
-  lists; the identifiers, paths, flags, filters, and the `command` a call ran are kept.
+  config lists; the identifiers, paths, flags, filters, the `scopes` and `presets` a credential
+  was granted, and the `command` a call ran are kept.
   `_UNLOGGED_KEYS` in `utils/decorators.py` holds the full set. Nothing changes for a client.
   Nothing changes for a client.
 - The published input schema of every tool behind `@mcp_tool_handler` no longer carries
