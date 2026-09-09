@@ -437,6 +437,7 @@ class TestLoggedParameterSurface:
             'request_id',
             'revoke_id',
             'rule_id',
+            'run_after',
             'server_id',
             'server_ids',
             'service_token_id',
@@ -482,8 +483,6 @@ class TestLoggedParameterSurface:
             # the command a call ran
             'command',
             'commands',
-            'run_after',
-            'shell',
             # flags
             'acknowledged',
             'allow_overwrite',
@@ -526,6 +525,7 @@ class TestLoggedParameterSurface:
             'risk_score',
             'service_type',
             'severity',
+            'shell',
             'status',
             'timezone',
             'transfer_type',
