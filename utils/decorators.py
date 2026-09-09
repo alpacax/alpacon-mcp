@@ -46,9 +46,10 @@ _SPECIFY_REGION_HINT = 'Please specify a region parameter.'
 
 # Never written to the entry log. The credential names are forward cover: no
 # tool documents one as its own parameter today, but with_logging would bind
-# it if one did. The rest the log has no use for—free text a person wrote,
-# personal data, env maps that can carry a secret under any key, and bulk
-# lists—and the server stores every one of them.
+# it if one did. The rest the log has no use for—payloads, free text a person
+# wrote, URLs that are themselves a credential, personal data, env maps that can
+# carry a secret under any key, and bulk lists—and the server stores every one
+# of them.
 _UNLOGGED_KEYS = frozenset(
     {
         # credentials
@@ -56,14 +57,19 @@ _UNLOGGED_KEYS = frozenset(
         'password',
         'secret',
         'key',
-        # free text (data is the stdin payload of execute_command)
+        # payloads and free text (data is the stdin payload of execute_command)
         'content',
         'data',
+        'file_content',
         'description',
         'title',
         'reason',
         'requested_reason',
         'purpose',
+        # URLs that carry their own credential: a webhook URL is the secret
+        # for Slack, Discord and Telegram, and a proxy URL takes user:pass
+        'url',
+        'package_proxy',
         # personal data
         'email',
         'billing_email',

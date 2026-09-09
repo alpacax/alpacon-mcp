@@ -212,17 +212,35 @@ class TestLoggingDecorator:
         entry = _entry_log(caplog, 'list_servers')
         assert "'region': 'invalid'" in entry
 
-    async def test_logging_records_payload_size_not_payload(
+    async def test_logging_drops_the_uploaded_payload(
         self, mock_token_for_integration, caplog
     ):
-        """The entry log carries the size of file_content, never its bytes (#233)."""
+        """The entry log never carries file_content: it is dropped by name (#233)."""
         with caplog.at_level(logging.INFO):
             await _upload_oversized_content()
 
         entry = _entry_log(caplog, 'webftp_upload_content')
         assert _OVERSIZED_PAYLOAD not in entry
-        assert str(len(_OVERSIZED_PAYLOAD)) in entry
+        assert "'file_content'" not in entry
         assert len(entry) < 1024
+
+    async def test_logging_bounds_a_long_string_argument(
+        self, mock_token_for_integration, caplog
+    ):
+        """A value the log keeps records its length past the bound (#233)."""
+        long_command = 'echo ' + 'a' * 300
+
+        with caplog.at_level(logging.INFO):
+            await execute_command(
+                server_id=_SERVER_ID,
+                command=long_command,
+                workspace='testworkspace',
+                region='invalid',
+            )
+
+        entry = _entry_log(caplog, 'execute_command')
+        assert long_command not in entry
+        assert f'<len={len(long_command)}>' in entry
 
     async def test_logging_skips_argument_work_when_info_disabled(
         self, mock_token_for_integration, caplog
@@ -457,12 +475,10 @@ class TestLoggedParameterSurface:
             'front_url',
             'local_file_path',
             'local_file_paths',
-            'package_proxy',
             'path',
             'remote_directory',
             'remote_file_path',
             'remote_paths',
-            'url',
             # the command a call ran
             'command',
             'commands',
@@ -541,8 +557,6 @@ class TestLoggedParameterSurface:
             # the call target itself
             'region',
             'workspace',
-            # bounded by size rather than dropped by name
-            'file_content',
         }
     )
 
