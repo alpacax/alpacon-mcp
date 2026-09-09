@@ -127,7 +127,8 @@ def _detect_error_domain(
     tool_lower = (tool_name or '').lower()
     ep_lower = (endpoint or '').lower()
 
-    # execute_file posts to the command endpoint; its name says so in no word.
+    # execute_file posts to the command endpoint, but its name does not
+    # contain the word 'command', so it is matched explicitly.
     if (
         'command' in msg_lower
         or 'command' in tool_lower

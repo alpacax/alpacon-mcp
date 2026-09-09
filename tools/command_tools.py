@@ -716,8 +716,8 @@ async def execute_file(
             # and the message has to say so rather than claim it is relative.
             return error_response(
                 f'{field} is absolute but contains a segment this tool refuses '
-                '(".." or ".", a NUL, or one of < > | * ?); rename the file on '
-                'the host or run it through execute_command.',
+                '(".." or ".", a NUL, or one of < > | * ?); give the plain '
+                'absolute path instead, or run it through execute_command.',
                 error_code='file_exec_invalid_path',
                 field=field,
                 **context,
