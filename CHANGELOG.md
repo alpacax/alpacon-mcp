@@ -152,10 +152,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   free text a person wrote, the webhook and proxy URLs that are themselves a credential, personal
   data, the `env` map that could carry a secret under any key, and bulk config lists; the
   identifiers, paths, flags, filters, the `scopes` and `presets` a credential was granted, and the
-  `command` a call ran are kept. The 21 names dropped at this release are `token`, `password`,
+  `command` a call ran are kept. The 22 names dropped at this release are `token`, `password`,
   `secret`, `key`, `content`, `data`, `file_content`, `description`, `title`, `reason`,
   `requested_reason`, `purpose`, `url`, `package_proxy`, `email`, `billing_email`, `first_name`,
-  `last_name`, `env`, `enabled_extensions`, and `allowed_domains`. Nothing changes for a client.
+  `last_name`, `env`, `args`, `enabled_extensions`, and `allowed_domains`. Nothing changes for a
+  client.
 - The published input schema of every tool behind `@mcp_tool_handler` no longer carries
   `kwargs`, the catch-all the decorator injects the token through (#211). FastMCP did not read
   it as a catch-all and published it as a required string, so a client that sent only the
