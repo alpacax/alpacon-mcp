@@ -4,20 +4,59 @@ Tests the full decorator stack: with_logging -> with_token_validation -> with_er
 Uses MockTransport at the httpx transport layer so the real HTTP client code runs.
 """
 
+import ast
+import base64
 import importlib
 import inspect
 import logging
 from collections.abc import Callable
 from http import HTTPStatus
+from types import ModuleType
 from unittest.mock import patch
 
 import httpx
 import pytest
 
+import utils.decorators as decorators
 from server import ALL_TOOL_MODULES, ALWAYS_ON_MODULES, TOOLS_PACKAGE, mcp
+from tools.approval_tools import request_sudo_policy
+from tools.command_tools import execute_command
 from tools.server_tools import get_server, list_servers
+from tools.webftp_tools import webftp_upload_content
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
+
+_SERVER_ID = '11111111-1111-1111-1111-111111111111'
+
+# Base64 far past _MAX_LOGGED_VALUE_LEN: the shape #233 was reported as.
+_OVERSIZED_PAYLOAD = base64.b64encode(b'\x00' * 65536).decode()
+
+_LONG_COMMAND = 'echo ' + 'a' * 300
+
+
+def _entry_log(caplog, tool: str) -> str:
+    """The tool's one ``called with`` line. Raises if it was never emitted."""
+    return next(r.message for r in caplog.records if f'{tool} called with' in r.message)
+
+
+async def _upload_oversized_content() -> None:
+    await webftp_upload_content(
+        server_id=_SERVER_ID,
+        file_content=_OVERSIZED_PAYLOAD,
+        remote_file_path='/tmp/upload.bin',
+        workspace='testworkspace',
+        region='invalid',
+    )
+
+
+async def _request_sudo_policy(commands: list[str]) -> None:
+    await request_sudo_policy(
+        workspace='testworkspace',
+        servers=[_SERVER_ID],
+        commands=commands,
+        reason='Before the deploy',
+        region='invalid',
+    )
 
 
 class TestDecoratorChainSuccess:
@@ -132,12 +171,16 @@ class TestErrorHandlingDecorator:
 
 
 class TestLoggingDecorator:
-    """Test that with_logging decorator logs entry and exit."""
+    """Test that with_logging decorator logs entry and exit.
+
+    Every test below that passes ``region='invalid'`` does so to stop the call
+    right after the entry log, before any HTTP.
+    """
 
     async def test_logging_logs_entry_and_success(
         self, patched_http_client, mock_token_for_integration, caplog
     ):
-        """Logging decorator logs function entry and successful completion."""
+        """Entry log carries the call's arguments, never the token; success is logged."""
 
         def handler(request: httpx.Request) -> httpx.Response:
             return httpx.Response(HTTPStatus.OK, json={'count': 0, 'results': []})
@@ -149,29 +192,139 @@ class TestLoggingDecorator:
 
         assert result['status'] == 'success'
 
-        # Check that logging decorator recorded entry
-        log_messages = [record.message for record in caplog.records]
-        entry_logged = any('list_servers called with' in msg for msg in log_messages)
+        entry = _entry_log(caplog, 'list_servers')
+        assert "'workspace': 'testworkspace'" in entry
+        assert "'region': 'ap1'" in entry
+        assert 'integration-test-token' not in entry
+        assert 'kwargs' not in entry
+
         success_logged = any(
-            'list_servers completed successfully' in msg for msg in log_messages
+            'list_servers completed successfully' in record.message
+            for record in caplog.records
         )
+        assert success_logged
 
-        assert entry_logged, f'Expected entry log, got: {log_messages}'
-        assert success_logged, f'Expected success log, got: {log_messages}'
-
-    async def test_logging_before_validation(self, patched_http_client, caplog):
-        """Logging decorator runs before token validation (logs even for invalid inputs)."""
+    async def test_logging_before_validation(self, caplog):
+        """Logging runs before validation, so the rejected input is what gets logged."""
         with caplog.at_level(logging.INFO):
             result = await list_servers(workspace='testworkspace', region='invalid')
 
         assert result['status'] == 'error'
 
-        # Logging should still record the function call even though validation fails
-        log_messages = [record.message for record in caplog.records]
-        entry_logged = any('list_servers called with' in msg for msg in log_messages)
-        assert entry_logged, (
-            f'Expected entry log even for invalid input, got: {log_messages}'
-        )
+        entry = _entry_log(caplog, 'list_servers')
+        assert "'region': 'invalid'" in entry
+
+    async def test_logging_drops_the_uploaded_payload(self, caplog):
+        """The entry log never carries file_content: it is dropped by name (#233)."""
+        with caplog.at_level(logging.INFO):
+            await _upload_oversized_content()
+
+        entry = _entry_log(caplog, 'webftp_upload_content')
+        assert _OVERSIZED_PAYLOAD not in entry
+        assert "'file_content'" not in entry
+        assert len(entry) < 1024
+
+    async def test_logging_bounds_a_long_string_argument(self, caplog):
+        """A value the log keeps records its length past the bound (#233)."""
+        with caplog.at_level(logging.INFO):
+            await execute_command(
+                server_id=_SERVER_ID,
+                command=_LONG_COMMAND,
+                workspace='testworkspace',
+                region='invalid',
+            )
+
+        entry = _entry_log(caplog, 'execute_command')
+        assert _LONG_COMMAND not in entry
+        assert f'<len={len(_LONG_COMMAND)}>' in entry
+
+    async def test_logging_skips_argument_work_when_info_disabled(self, caplog):
+        """Below INFO, with_logging summarizes nothing and writes no entry (#233)."""
+        with patch.object(
+            decorators,
+            '_summarize_log_value',
+            wraps=decorators._summarize_log_value,
+        ) as summarize:
+            with caplog.at_level(logging.WARNING, logger='alpacon_mcp.decorators'):
+                await _upload_oversized_content()
+
+        assert summarize.call_count == 0
+        assert not [
+            r
+            for r in caplog.records
+            if 'webftp_upload_content called with' in r.message
+        ]
+
+    async def test_logging_omits_free_text_env_and_personal_data(self, caplog):
+        """Keys the log has no use for are dropped, not summarized (#233)."""
+        with caplog.at_level(logging.INFO):
+            await execute_command(
+                server_id=_SERVER_ID,
+                command='uptime',
+                workspace='testworkspace',
+                region='invalid',
+                purpose='Check load before the deploy',
+                data='stdin payload line',
+                env={'DEPLOY_TOKEN': 'hunter2'},
+            )
+
+        entry = _entry_log(caplog, 'execute_command')
+
+        assert "'purpose'" not in entry
+        assert "'data'" not in entry
+        assert "'env'" not in entry
+        assert 'hunter2' not in entry
+        assert 'Check load' not in entry
+        assert 'stdin payload' not in entry
+        assert "'command': 'uptime'" in entry
+        assert _SERVER_ID in entry
+
+    async def test_logging_bounds_the_elements_of_a_container_argument(self, caplog):
+        """A list argument is summarized element by element, not passed through (#233)."""
+        with caplog.at_level(logging.INFO):
+            await _request_sudo_policy(['uptime', _LONG_COMMAND])
+
+        entry = _entry_log(caplog, 'request_sudo_policy')
+
+        assert _LONG_COMMAND not in entry
+        assert f'<len={len(_LONG_COMMAND)}>' in entry
+        assert "'uptime'" in entry
+
+    async def test_logging_replaces_an_oversized_container_with_its_item_count(
+        self, caplog
+    ):
+        """Past the element bound the container itself becomes the placeholder (#233)."""
+        commands = [f'systemctl restart svc{n}' for n in range(50)]
+
+        with caplog.at_level(logging.INFO):
+            await _request_sudo_policy(commands)
+
+        entry = _entry_log(caplog, 'request_sudo_policy')
+
+        assert "'commands': '<items=50>'" in entry
+        assert 'svc49' not in entry
+
+
+def _tool_modules() -> list[ModuleType]:
+    """Every toolset module, imported.
+
+    Registration is an import-time side effect on the process-global ``mcp``,
+    so this widens ``list_tools()`` for whatever test runs next.
+    """
+    return [
+        importlib.import_module(f'{TOOLS_PACKAGE}.{module}')
+        for module in sorted(ALL_TOOL_MODULES | ALWAYS_ON_MODULES)
+    ]
+
+
+def _tool_functions() -> dict[str, Callable]:
+    """Every decorated tool on the surface, by name."""
+    functions: dict[str, Callable] = {}
+    for imported in _tool_modules():
+        for name, attr in vars(imported).items():
+            if inspect.iscoroutinefunction(attr) and hasattr(attr, '__wrapped__'):
+                functions[name] = attr
+    return functions
 
 
 class TestPublishedSchema:
@@ -179,23 +332,8 @@ class TestPublishedSchema:
     pydantic validation FastMCP puts in front of it. These go through ``mcp``.
     """
 
-    @staticmethod
-    def _tool_functions() -> dict[str, Callable]:
-        """Import every toolset and return the decorated tools by name.
-
-        Registration is an import-time side effect on the process-global ``mcp``,
-        so this widens ``list_tools()`` for whatever test runs next.
-        """
-        functions: dict[str, Callable] = {}
-        for module in sorted(ALL_TOOL_MODULES | ALWAYS_ON_MODULES):
-            imported = importlib.import_module(f'{TOOLS_PACKAGE}.{module}')
-            for name, attr in vars(imported).items():
-                if inspect.iscoroutinefunction(attr) and hasattr(attr, '__wrapped__'):
-                    functions[name] = attr
-        return functions
-
     async def test_no_tool_publishes_a_catch_all_parameter(self):
-        functions = self._tool_functions()
+        functions = _tool_functions()
         tools = await mcp.list_tools()
 
         assert len(tools) >= len(functions), (
@@ -223,7 +361,7 @@ class TestPublishedSchema:
         )
 
     async def test_the_documented_arguments_survive_the_filter(self):
-        self._tool_functions()
+        _tool_functions()
         schemas = {t.name: t.inputSchema for t in await mcp.list_tools()}
 
         assert set(schemas['list_servers']['properties']) == {
@@ -266,3 +404,249 @@ class TestPublishedSchema:
         _, structured = await mcp.call_tool('list_workspaces', {})
 
         assert structured['status'] == 'success'
+
+
+class TestLoggedParameterSurface:
+    """The key half of the entry-log filter is a deny-list, so a short new
+    parameter is logged in full unless someone remembers to list it. This pins
+    the whole surface: every parameter a tool declares is either dropped by
+    name in ``_UNLOGGED_KEYS`` or reviewed and kept here (#233). Adding a
+    field fails this test until the author decides which side it belongs on.
+    """
+
+    REVIEWED_LOGGED_KEYS = frozenset(
+        {
+            # identifiers minted upstream
+            'acl_id',
+            'alert_id',
+            'analysis_id',
+            'api_token_id',
+            'app_id',
+            'authority_id',
+            'ca_id',
+            'certificate_id',
+            'command_id',
+            'csr_id',
+            'entry_id',
+            'event_id',
+            'file_id',
+            'group_id',
+            'log_id',
+            'membership_id',
+            'mentioned_users',
+            'note_id',
+            'request_id',
+            'revoke_id',
+            'rule_id',
+            'run_after',
+            'server_id',
+            'server_ids',
+            'service_token_id',
+            'session_id',
+            'subscription_id',
+            'system_user_ids',
+            'target_id',
+            'token_id',
+            'user_id',
+            'webhook_id',
+            'work_session_id',
+            # names and the permission context a call ran under
+            'channel',
+            'display_name',
+            'domain',
+            'groupname',
+            'name',
+            'organization',
+            'owner',
+            'package_name',
+            'reporter',
+            'role',
+            'server_name',
+            'servers',
+            'target',
+            'user',
+            'username',
+            'users',
+            # paths, files, and URLs
+            'file_name',
+            'front_url',
+            'local_file_path',
+            'local_file_paths',
+            'path',
+            'remote_directory',
+            'remote_file_path',
+            'remote_paths',
+            # the authority a credential was granted
+            'presets',
+            'scopes',
+            # the subject alternative names a CSR asks for, published in
+            # the certificate itself
+            'domain_list',
+            'ip_list',
+            # the command a call ran
+            'command',
+            'commands',
+            # flags
+            'acknowledged',
+            'allow_overwrite',
+            'auto',
+            'auto_agent_upgrade',
+            'clear_expires_at',
+            'dismissed',
+            'enabled',
+            'force',
+            'include_records',
+            'install',
+            'is_active',
+            'is_default',
+            'login_enabled_only',
+            'parallel',
+            'pinned',
+            'private',
+            'purge_provisioned_accounts',
+            'ssl_verify',
+            # filters and enums
+            'action',
+            'action_type',
+            'alert_type',
+            'architecture',
+            'country',
+            'device',
+            'event_type',
+            'groupname_filter',
+            'interface',
+            'key_algorithm',
+            'language',
+            'metric_types',
+            'ordering',
+            'partition',
+            'platform',
+            'provider',
+            'requester_type',
+            'resource_type',
+            'risk_score',
+            'service_type',
+            'severity',
+            'shell',
+            'status',
+            'timezone',
+            'transfer_type',
+            'username_filter',
+            'version',
+            # free text, kept because the log is where a filter is read back
+            'search',
+            'search_query',
+            # sizes, counts, and windows
+            'default_valid_days',
+            'hours',
+            'invite_ttl',
+            'key_size',
+            'limit',
+            'max_valid_days',
+            'page',
+            'page_size',
+            'root_valid_days',
+            'threshold',
+            'timeout',
+            'valid_days',
+            'websh_session_timeout',
+            # timestamps
+            'end_date',
+            'expires_at',
+            'scheduled_at',
+            'start_date',
+            'valid_from',
+            'valid_until',
+            # the call target itself
+            'region',
+            'workspace',
+        }
+    )
+
+    @staticmethod
+    def _declared_parameters() -> dict[str, set[str]]:
+        """Every parameter on the tool surface, mapped to the tools declaring it."""
+        declared: dict[str, set[str]] = {}
+        for name, func in _tool_functions().items():
+            for parameter in inspect.signature(
+                inspect.unwrap(func)
+            ).parameters.values():
+                if parameter.kind is inspect.Parameter.VAR_KEYWORD:
+                    continue
+                declared.setdefault(parameter.name, set()).add(name)
+        return declared
+
+    async def test_every_logged_parameter_has_been_reviewed(self):
+        declared = self._declared_parameters()
+
+        unreviewed = {
+            name: sorted(tools)
+            for name, tools in declared.items()
+            if name not in decorators._UNLOGGED_KEYS
+            and name not in self.REVIEWED_LOGGED_KEYS
+        }
+
+        assert not unreviewed, (
+            f'These parameters reach the entry log unreviewed. Add each to '
+            f'_UNLOGGED_KEYS in utils/decorators.py if the log has no use for '
+            f'it, or to REVIEWED_LOGGED_KEYS here if it belongs in the log: '
+            f'{unreviewed}'
+        )
+
+    async def test_the_two_lists_stay_disjoint_and_current(self):
+        overlap = decorators._UNLOGGED_KEYS & self.REVIEWED_LOGGED_KEYS
+        assert not overlap, (
+            f'These are both dropped and reviewed as kept, so the review says '
+            f'nothing: {sorted(overlap)}'
+        )
+
+        stale = self.REVIEWED_LOGGED_KEYS - set(self._declared_parameters())
+        assert not stale, (
+            f'No tool declares these any more; drop them from '
+            f'REVIEWED_LOGGED_KEYS: {sorted(stale)}'
+        )
+
+
+class TestCatchAllForwarding:
+    """``with_logging`` binds the published signature and so refuses a
+    forwarded catch-all, but only while INFO is enabled. The rule that no tool
+    forwards its own ``**kwargs`` into another tool—the catch-all holds the
+    resolved credential (#211)—is pinned here instead, independently of the
+    log level.
+    """
+
+    async def test_no_tool_forwards_its_catch_all_to_another_tool(self):
+        tool_names = set(_tool_functions())
+
+        offenders = set()
+        for imported in _tool_modules():
+            tree = ast.parse(inspect.getsource(imported))
+            for node in ast.walk(tree):
+                if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    continue
+                catch_all = node.args.kwarg
+                if catch_all is None:
+                    continue
+                for call in ast.walk(node):
+                    if not isinstance(call, ast.Call):
+                        continue
+                    callee = getattr(call.func, 'id', None) or getattr(
+                        call.func, 'attr', None
+                    )
+                    if callee not in tool_names:
+                        continue
+                    if any(
+                        keyword.arg is None
+                        and isinstance(keyword.value, ast.Name)
+                        and keyword.value.id == catch_all.arg
+                        for keyword in call.keywords
+                    ):
+                        offenders.add(
+                            f'{imported.__name__}.{node.name} -> {callee} '
+                            f'(line {call.lineno})'
+                        )
+
+        assert not offenders, (
+            f'These forward their own catch-all, which holds the resolved '
+            f'credential, into another tool: {sorted(offenders)}'
+        )

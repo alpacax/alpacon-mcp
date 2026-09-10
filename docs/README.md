@@ -11,7 +11,7 @@ Welcome to the Alpacon MCP Server documentation. Alpacon provides browser-based,
 - **[Examples](examples.md)**: Common usage patterns
 - **[MFA Re-authentication Flow](mfa-reauth-flow.md)**: How the hosted server re-verifies MFA
 - **[Troubleshooting](troubleshooting.md)**: Common issues and solutions
-- **[Logging](../LOGGING.md)**: Log levels, log file location, and what gets redacted
+- **[Logging](../LOGGING.md)**: Log levels, log file location, and what the entry log records
 - **[Contributing](../CONTRIBUTING.md)**: How to contribute to the project
 
 ## 🚀 Quick start
