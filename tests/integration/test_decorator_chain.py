@@ -470,6 +470,7 @@ class TestLoggedParameterSurface:
             # paths, files, and URLs
             'file_name',
             'front_url',
+            'interpreter',
             'local_file_path',
             'local_file_paths',
             'path',

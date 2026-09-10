@@ -127,7 +127,13 @@ def _detect_error_domain(
     tool_lower = (tool_name or '').lower()
     ep_lower = (endpoint or '').lower()
 
-    if 'command' in msg_lower or 'command' in tool_lower:
+    # execute_file posts to the command endpoint, but its name does not
+    # contain the word 'command', so it is matched explicitly.
+    if (
+        'command' in msg_lower
+        or 'command' in tool_lower
+        or tool_lower == 'execute_file'
+    ):
         return 'command'
     # Before the server and user checks: a webhook message may name either.
     if 'webhook' in msg_lower or 'webhook' in tool_lower:

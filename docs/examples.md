@@ -130,6 +130,31 @@ execute_command(
 
 The call waits for the result—up to `timeout` seconds (default 300). `list_commands(workspace, server_id=...)` shows recent history with status and output.
 
+### A script, verified by digest
+
+Anything longer than a one-off line goes as a file (ADR 0053). Put it on the host first, then submit the same bytes; the agent runs the on-disk file only if it hashes to what the reviewer saw.
+
+```
+script = "#!/bin/bash\nset -euo pipefail\nsystemctl restart app\n"
+
+webftp_upload_content(
+    server_id="7e3984de-49ab-4cc6-bcdf-21fbd35858b8",
+    remote_file_path="/opt/deploy.sh",
+    file_content=script,
+    workspace="production",
+)
+
+execute_file(
+    server_id="7e3984de-49ab-4cc6-bcdf-21fbd35858b8",
+    path="/opt/deploy.sh",
+    content=script,
+    args=["--fast"],
+    workspace="production",
+)
+```
+
+An approver can mark the run standing; an unchanged re-run then needs no human. One changed byte re-queues review. Pipes, redirection and variables go inside the script, where they are reviewed with it.
+
 ### Many servers
 
 ```

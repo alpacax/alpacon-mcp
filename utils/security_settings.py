@@ -263,6 +263,7 @@ def get_action_for_tool(tool_name: str) -> str | None:
         return 'webftp'
     if tool_name in (
         'execute_command',
+        'execute_file',
         'execute_command_multi_server',
         'list_commands',
     ):

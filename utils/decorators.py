@@ -79,6 +79,7 @@ _UNLOGGED_KEYS = frozenset(
         # log. Not a size decision—the container bound covers that—so a list
         # naming what one call granted or asked for is kept instead.
         'env',
+        'args',  # execute_file's argv: any position can carry a secret
         'enabled_extensions',
         'allowed_domains',
     }

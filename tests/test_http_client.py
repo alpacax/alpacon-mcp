@@ -168,6 +168,7 @@ class TestHTTPClientGet:
         [
             ('get_server', 'server'),
             ('execute_command', 'command'),
+            ('execute_file', 'command'),
             ('webftp_upload_file', 'file'),
         ],
     )

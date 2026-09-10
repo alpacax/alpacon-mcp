@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `execute_file`: run a script that already exists on a server as a verified file (#207, the
+  client half of ADR 0053). It submits `POST /api/events/commands/` with a `file` object—`path`,
+  `interpreter`, `args`, and the script's `content` byte-for-byte—instead of `line`, so the
+  reviewer judges the exact bytes and the agent executes only an on-disk file that hashes to them;
+  an approver can then make an unchanged re-run standing, which a `bash /path` line never is. The
+  response is the `execute_command` shape plus a `file` object echoing `path`, `interpreter`, and
+  `args`, and no `command` or `shell` echo. A client parsing errors sees six new `error_code`
+  values (`file_exec_unsupported_agent`, `file_exec_assessor_disabled`, `file_exec_invalid_path`,
+  `file_exec_content_too_large`, `file_exec_empty_content`, `file_exec_line_too_long`), each a
+  plain `status: "error"` to act on, never a pending approval.
+  `execute_command`'s description now points scripts and heredocs at the new tool.
 - `state_command_purpose`, and a `purpose` argument on `execute_command` and
   `execute_command_multi_server` (#186). When the verification gate holds an agent's command
   and asks what it is for (ADR 0052), `execute_command` now reports it as
@@ -141,10 +152,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   free text a person wrote, the webhook and proxy URLs that are themselves a credential, personal
   data, the `env` map that could carry a secret under any key, and bulk config lists; the
   identifiers, paths, flags, filters, the `scopes` and `presets` a credential was granted, and the
-  `command` a call ran are kept. The 21 names dropped at this release are `token`, `password`,
+  `command` a call ran are kept. The 22 names dropped at this release are `token`, `password`,
   `secret`, `key`, `content`, `data`, `file_content`, `description`, `title`, `reason`,
   `requested_reason`, `purpose`, `url`, `package_proxy`, `email`, `billing_email`, `first_name`,
-  `last_name`, `env`, `enabled_extensions`, and `allowed_domains`. Nothing changes for a client.
+  `last_name`, `env`, `args`, `enabled_extensions`, and `allowed_domains`. Nothing changes for a
+  client.
 - The published input schema of every tool behind `@mcp_tool_handler` no longer carries
   `kwargs`, the catch-all the decorator injects the token through (#211). FastMCP did not read
   it as a catch-all and published it as a required string, so a client that sent only the
