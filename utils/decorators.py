@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import inspect
+import logging
 import re
 from collections.abc import Callable
 from functools import wraps
@@ -43,11 +44,55 @@ logger = get_logger('decorators')
 
 _SPECIFY_REGION_HINT = 'Please specify a region parameter.'
 
-# Forward cover: with_logging binds the published signature, so this only bites
-# once a tool documents one of these names as its own parameter. `content` is
-# execute_file's script body: the file lane tells callers to keep variables
-# inside the script, and 64 KB of it per call belongs in no log.
-_SENSITIVE_LOG_KEYS = frozenset({'token', 'password', 'secret', 'key', 'content'})
+# Never written to the entry log. The credential names are forward cover: no
+# tool documents one as its own parameter today, but with_logging would bind
+# it if one did. The rest the log has no use for—payloads, free text a person
+# wrote, URLs that are themselves a credential, personal data, env maps that can
+# carry a secret under any key, and config lists—and the server stores every one
+# of them.
+_UNLOGGED_KEYS = frozenset(
+    {
+        # credentials
+        'token',
+        'password',
+        'secret',
+        'key',
+        # payloads and free text (data is the stdin payload of execute_command)
+        'content',
+        'data',
+        'file_content',
+        'description',
+        'title',
+        'reason',  # free text on one tool, an RFC 5280 code on another
+        'requested_reason',
+        'purpose',
+        # URLs that carry their own credential: a webhook URL is the secret
+        # for Slack, Discord and Telegram, and a proxy URL takes user:pass
+        'url',
+        'package_proxy',
+        # personal data
+        'email',
+        'billing_email',
+        'first_name',
+        'last_name',
+        # env maps, and the workspace config lists nothing reads back from a
+        # log. Not a size decision—the container bound covers that—so a list
+        # naming what one call granted or asked for is kept instead.
+        'env',
+        'args',  # execute_file's argv: any position can carry a secret
+        'enabled_extensions',
+        'allowed_domains',
+    }
+)
+
+# A payload reaches a tool as an ordinary string, under whatever name that tool
+# gives it, so the guard is on the value's size and not on the key (#233).
+_MAX_LOGGED_VALUE_LEN = 256
+
+# Containers carry identifier, path, and enum lists today, which is what the
+# log is for, so a short one is summarized element by element rather than
+# dropped.
+_MAX_LOGGED_ITEMS = 10
 
 # RFC 3986 unreserved characters—nothing in this set can restructure a URL.
 # Wide enough in practice: every identifier upstream mints is a UUID or an
@@ -430,8 +475,7 @@ def with_token_validation(func: Callable, requires_workspace: bool = True) -> Ca
         # both positional and keyword region correctly
         return await func(*bound_args.args, **bound_args.kwargs)
 
-    # FastMCP publishes a VAR_KEYWORD as a required field, not a catch-all. This is
-    # also what with_logging binds strictly: no caller may forward the token onward.
+    # FastMCP publishes a VAR_KEYWORD as a required field, not a catch-all.
     new_params = [p for p in original_sig.parameters.values() if p.name != catch_all]
     wrapper.__signature__ = original_sig.replace(parameters=new_params)  # type: ignore[attr-defined]
 
@@ -498,11 +542,32 @@ def with_error_handling(func: Callable) -> Callable:
     return wrapper
 
 
+def _summarize_log_value(value: Any, _nested: bool = False) -> Any:
+    """Replace an oversized string or container with a placeholder.
+
+    A string past the bound becomes ``<len=N>`` and a container ``<items=N>``,
+    named apart because one line can carry both. A list, tuple, or dict is
+    summarized one level down: an entry that is itself a container becomes the
+    placeholder, so nothing arbitrarily deep reaches the log line. Anything
+    else passes through untouched, whatever its size.
+    """
+    if isinstance(value, str) and len(value) > _MAX_LOGGED_VALUE_LEN:
+        return f'<len={len(value)}>'
+    if isinstance(value, (list, tuple, dict)):
+        if _nested or len(value) > _MAX_LOGGED_ITEMS:
+            return f'<items={len(value)}>'
+        if isinstance(value, dict):
+            return {k: _summarize_log_value(v, _nested=True) for k, v in value.items()}
+        return [_summarize_log_value(item, _nested=True) for item in value]
+    return value
+
+
 def with_logging(func: Callable) -> Callable:
     """Decorator to add automatic logging to MCP tools.
 
     This decorator:
-    1. Logs function entry with parameters
+    1. Logs function entry: `_UNLOGGED_KEYS` drops arguments by name,
+       `_summarize_log_value` bounds the rest
     2. Logs successful completion
     3. Logs errors (works with with_error_handling)
 
@@ -512,22 +577,27 @@ def with_logging(func: Callable) -> Callable:
     Returns:
         Decorated async function
     """
+    # with_token_validation has already published the catch-all-free signature
+    # this binds against, and nothing assigns __signature__ afterwards, so the
+    # object is fixed for the life of the process.
+    sig = inspect.signature(func)
 
     @wraps(func)
     async def wrapper(*args, **kwargs):
         func_name = func.__name__
 
-        # Get function arguments for logging
-        sig = inspect.signature(func)
-        bound_args = sig.bind(*args, **kwargs)
-        bound_args.apply_defaults()
-        arguments = bound_args.arguments
+        # Guarded, not merely lazy: %s defers the formatting but not the bind
+        # and the summary, which run before the record exists.
+        if logger.isEnabledFor(logging.INFO):
+            bound_args = sig.bind(*args, **kwargs)
+            bound_args.apply_defaults()
 
-        # Create log-safe arguments (exclude sensitive data)
-        log_args = {k: v for k, v in arguments.items() if k not in _SENSITIVE_LOG_KEYS}
-
-        # Log function entry
-        logger.info(f'{func_name} called with: {log_args}')
+            log_args = {
+                k: _summarize_log_value(v)
+                for k, v in bound_args.arguments.items()
+                if k not in _UNLOGGED_KEYS
+            }
+            logger.info('%s called with: %s', func_name, log_args)
 
         # Call the original function
         result = await func(*args, **kwargs)
