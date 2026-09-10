@@ -148,9 +148,9 @@ _WORK_SESSION_GATE_CODES: frozenset[str] = frozenset(_WORK_SESSION_GATE_NEXT_ACT
 #: they take the generic hint path rather than a pending-approval shape. Public
 #: because execute_file renders the same text when it refuses locally, so a
 #: caller reads one wording whichever side caught it. Covers the codes this
-#: client can receive: the server also has file_exec_line_not_allowed and
-#: file_exec_data_not_allowed, which a body that never carries line or data
-#: cannot draw.
+#: client can receive: the server also has file_exec_line_not_allowed,
+#: file_exec_data_not_allowed and file_exec_env_not_allowed, which a body that
+#: never carries line, data or env cannot draw.
 FILE_EXEC_REFUSAL_HINTS: dict[str, str] = {
     'file_exec_unsupported_agent': (
         'The agent on this server cannot verify a file digest; alpamon 2.6.0 or '
@@ -179,11 +179,6 @@ FILE_EXEC_REFUSAL_HINTS: dict[str, str] = {
         'The rendered "interpreter path args" line exceeds the command line '
         'ceiling. Shorten or drop args; move them into the script if it needs '
         'them.'
-    ),
-    'file_exec_env_not_allowed': (
-        'env is not allowed on the file lane: an environment set outside the '
-        'script is not part of what the reviewer approved. Set variables inside '
-        'the script, where they are reviewed with it.'
     ),
 }
 

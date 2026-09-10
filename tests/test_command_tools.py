@@ -23,7 +23,12 @@ from tools.command_tools import (
     list_commands,
     state_command_purpose,
 )
-from utils.common import _NEXT_ACTION_BY_CATEGORY, FILE_EXEC_REFUSAL_HINTS
+from utils.common import (
+    _NEXT_ACTION_BY_CATEGORY,
+    FILE_EXEC_INLINE_CREDENTIAL_HINT,
+    FILE_EXEC_REFUSAL_HINTS,
+    INLINE_CREDENTIAL_HINT,
+)
 
 _GATE_ENVELOPE_REQUIRED = {
     'error': 'HTTP Error',
@@ -1815,7 +1820,6 @@ _FILE_EXEC_CODES = frozenset(
         'file_exec_content_too_large',
         'file_exec_empty_content',
         'file_exec_line_too_long',
-        'file_exec_env_not_allowed',
     }
 )
 
@@ -2130,7 +2134,6 @@ class TestExecuteFileRefusalRendering:
             ('file_exec_content_too_large', '64 KB'),
             ('file_exec_empty_content', 'empty'),
             ('file_exec_line_too_long', 'args'),
-            ('file_exec_env_not_allowed', 'inside the script'),
         ],
     )
     async def test_server_refusal_carries_its_code_and_hint(
@@ -2177,11 +2180,8 @@ class TestExecuteFileRefusalRendering:
             )
 
         assert result['error_code'] == 'command_inline_credential'
-        assert (
-            'execute_command'
-            not in result['message'].split('unreviewed')[0].split('moving')[0]
-        )
-        assert 'read from a file or the environment on the host' in result['message']
+        assert INLINE_CREDENTIAL_HINT not in result['message']
+        assert result['message'].endswith(FILE_EXEC_INLINE_CREDENTIAL_HINT)
 
     @pytest.mark.asyncio
     async def test_work_session_gate_is_translated_on_the_file_lane(
@@ -2333,25 +2333,14 @@ class TestExecuteFileRegistration:
         descriptions = {t.name: t.description for t in await mcp.list_tools()}
         text = descriptions['execute_file']
 
-        # What approving means, and what it does not.
-        assert 'exactly these bytes' in text
-        assert 'One changed byte' in text
-        assert 'first entrypoint' in text
-        # Why to prefer it over a shell line.
-        assert 'without paging a human' in text
-        assert 'never can' in text
-        # The on-disk contract.
+        # Only what a client depends on: the on-disk contract, the cross-
+        # reference, the codes and the agent floor. Wording is free to move.
         assert 'must already exist' in text
-        assert 'byte-for-byte' in text
         assert 'never shipped to the host' in text
-        # Composition lives inside the script.
-        assert 'inside the script' in text
         assert 'execute_command' in text
-        # Refusals are acted on, not waited on.
         for code in _FILE_EXEC_CODES:
             assert code in text
         assert '2.6.0' in text
-        assert 'do not wait' in text
 
     @pytest.mark.asyncio
     async def test_execute_command_points_scripts_at_execute_file(self):

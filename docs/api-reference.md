@@ -403,8 +403,8 @@ server-rendered line.
 has a request waiting behind it, so a client acts on them rather than waiting or retrying as-is:
 `file_exec_unsupported_agent` (the agent on that server cannot verify a digest; alpamon 2.6.0 or newer
 is required), `file_exec_assessor_disabled` (the deployment has the command assessor off),
-`file_exec_invalid_path`, `file_exec_content_too_large`, `file_exec_empty_content`,
-`file_exec_line_too_long`, and `file_exec_env_not_allowed`. The path and size rules are also checked
+`file_exec_invalid_path`, `file_exec_content_too_large`, `file_exec_empty_content`, and
+`file_exec_line_too_long`. The path and size rules are also checked
 locally before any request is made, with the same `error_code` and wording.
 
 ### `list_commands`
