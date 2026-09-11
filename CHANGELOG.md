@@ -92,7 +92,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   requires it. A call without it is a TypeError, and a username in its place is rejected
   before the request goes out.
 - Values a closed server-side set defines are now checked in the tool rather than at the
-  API: `target`, `action_type`, `provider`, the webhook `owner` UUID, and the 512-character
+  API: `action_type`, `provider`, the webhook `owner` UUID, and the 512-character
   cap on note `content`. Each returns a validation error naming the accepted values, in
   place of an opaque 400.
 - The validation error an update tool returns when it receives no writable field now reports
