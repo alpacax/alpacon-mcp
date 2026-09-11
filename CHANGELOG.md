@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Actionable hints for two error codes the metrics extension gate returns:
+  `workspace_extension_plan_required` (402, the workspace's plan excludes the metrics
+  extension) and `workspace_extension_not_enabled` (403, the plan allows it but a workspace
+  admin has not enabled it yet). A client already reading `error_code` from an error response
+  needs no new handling; the hint text is appended to `message`.
 - `execute_file`: run a script that already exists on a server as a verified file (#207, the
   client half of ADR 0053). It submits `POST /api/events/commands/` with a `file` object—`path`,
   `interpreter`, `args`, and the script's `content` byte-for-byte—instead of `line`, so the
@@ -74,6 +79,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `install_commands` list every other platform uses.
 
 ### Changed
+- `create_alert_rule` and `update_alert_rule` no longer validate `target` against a
+  client-side copy of the server's metric list before sending the request; an unrecognized
+  `target` now reaches the server and comes back as its own `400` with an `error_code`
+  instead of a local validation error. The client-side list drifted from the server's, so a
+  metric the server had added was rejected locally until the tool caught up.
 - BREAKING: `create_alert_rule` and `update_alert_rule` now take a `target` metric (one of
   a fixed set mirroring the server's `AlertRule.TARGET_METRICS`) and a `threshold`, instead
   of the invented `metric_type` and `condition`, which the serializer never read. A call

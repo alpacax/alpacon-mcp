@@ -13,25 +13,15 @@ from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ
 ALERT_ACTION_TYPES = frozenset({'checked', 'dismissed'})
 _ACTION_TYPES_SENTENCE = f'One of {", ".join(sorted(ALERT_ACTION_TYPES))}.'
 
-# Mirrors AlertRule.TARGET_METRICS; a value outside this list is a guaranteed 400.
-ALERT_RULE_TARGETS = (
-    'cpu-usage',
-    'memory-usage',
-    'disk-usage',
-    'peak-read-bps',
-    'peak-write-bps',
-    'avg-read-bps',
-    'avg-write-bps',
-    'peak-input-pps',
-    'peak-input-bps',
-    'peak-output-pps',
-    'peak-output-bps',
-    'avg-input-pps',
-    'avg-input-bps',
-    'avg-output-pps',
-    'avg-output-bps',
+# Common target metrics, e.g. cpu-usage, memory-usage, disk-usage,
+# peak/avg-{read,write}-bps, peak/avg-{input,output}-{pps,bps}. The server's
+# AlertRule.TARGET_METRICS is the authoritative list; an unrecognized target
+# is rejected there with a 400, not pre-validated here.
+_TARGETS_SENTENCE = (
+    'target must be a metric the workspace exposes, e.g. cpu-usage, '
+    'memory-usage, disk-usage, or one of the peak/avg bps or pps network and '
+    'disk rates; the server rejects an unrecognized one with a 400.'
 )
-_TARGETS_SENTENCE = f'target must be one of: {", ".join(ALERT_RULE_TARGETS)}.'
 
 # ===============================
 # ALERT TOOLS
@@ -213,7 +203,9 @@ async def create_alert_rule(
     Args:
         workspace: Workspace name. Required parameter
         name: Rule name, unique within the workspace
-        target: Target metric; one of ALERT_RULE_TARGETS
+        target: Target metric, e.g. cpu-usage, memory-usage, disk-usage, or
+            one of the peak/avg bps or pps network and disk rates. The server
+            holds the authoritative list and rejects an unrecognized one.
         threshold: Value the metric must cross to fire
         is_default: Make this the default rule for the target
         region: Region (ap1, us1). Auto-detected if not provided
@@ -221,9 +213,6 @@ async def create_alert_rule(
     Returns:
         Created alert rule
     """
-    if target not in ALERT_RULE_TARGETS:
-        return format_validation_error('target', target, _TARGETS_SENTENCE)
-
     token = kwargs.get('token')
 
     rule_data: dict[str, Any] = {
@@ -270,7 +259,10 @@ async def update_alert_rule(
         rule_id: Alert rule ID to update
         workspace: Workspace name. Required parameter
         name: New rule name (optional)
-        target: New target metric; one of ALERT_RULE_TARGETS (optional)
+        target: New target metric, e.g. cpu-usage, memory-usage, disk-usage,
+            or one of the peak/avg bps or pps network and disk rates. The
+            server holds the authoritative list and rejects an unrecognized
+            one. (optional)
         threshold: New threshold (optional)
         is_default: Make this the default rule for the target (optional)
         region: Region (ap1, us1). Auto-detected if not provided
@@ -278,9 +270,6 @@ async def update_alert_rule(
     Returns:
         Updated alert rule
     """
-    if target is not None and target not in ALERT_RULE_TARGETS:
-        return format_validation_error('target', target, _TARGETS_SENTENCE)
-
     token = kwargs.get('token')
 
     update_data: dict[str, Any] = {}
