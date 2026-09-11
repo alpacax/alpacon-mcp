@@ -172,6 +172,26 @@ class TestUnwrapHttpResultGate:
         # No entry in _ERROR_CODE_HINT for this code: message is untouched.
         assert out['message'] == 'HTTP 400'
 
+    def test_workspace_extension_plan_required_gets_actionable_hint(self):
+        out = unwrap_http_result(
+            self._envelope('workspace_extension_plan_required'),
+            default_message='failed',
+        )
+        assert out['status'] == 'error'
+        assert out['error_code'] == 'workspace_extension_plan_required'
+        assert 'plan' in out['message']
+        assert 'upgrading' in out['message']
+
+    def test_workspace_extension_not_enabled_gets_actionable_hint(self):
+        out = unwrap_http_result(
+            self._envelope('workspace_extension_not_enabled'),
+            default_message='failed',
+        )
+        assert out['status'] == 'error'
+        assert out['error_code'] == 'workspace_extension_not_enabled'
+        assert 'workspace admin' in out['message']
+        assert 'workspace settings' in out['message']
+
 
 class TestErrorCodeHint:
     def test_command_inline_credential_names_env_and_reason(self):
@@ -180,6 +200,16 @@ class TestErrorCodeHint:
         assert 'audit log' in hint
         # No new opt-in param: this hint must not tell the agent to pass one.
         assert 'credential_exposure_acknowledged' not in hint
+
+    def test_workspace_extension_plan_required_names_the_upgrade_path(self):
+        hint = _ERROR_CODE_HINT['workspace_extension_plan_required']
+        assert 'plan' in hint
+        assert 'metrics' in hint
+
+    def test_workspace_extension_not_enabled_names_the_admin_path(self):
+        hint = _ERROR_CODE_HINT['workspace_extension_not_enabled']
+        assert 'workspace admin' in hint
+        assert 'workspace settings' in hint
 
     def test_gate_codes_have_no_hint_entries(self):
         # Gate codes are handled entirely by work_session_gate_response;

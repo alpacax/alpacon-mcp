@@ -206,9 +206,24 @@ FILE_EXEC_INLINE_CREDENTIAL_HINT = (
     'unreviewed.'
 )
 
+#: The metrics workspace extension gate: metrics and alert-rule endpoints
+#: return one of these two codes when the caller's workspace cannot use them.
+#: 402 means the plan itself excludes the extension; 403 means the plan
+#: allows it but a workspace admin has not turned it on yet.
+WORKSPACE_EXTENSION_PLAN_REQUIRED_HINT = (
+    "This workspace's plan does not include the metrics extension; upgrading "
+    'the plan is required before metrics and alert rules are available.'
+)
+WORKSPACE_EXTENSION_NOT_ENABLED_HINT = (
+    'The metrics extension is not enabled on this workspace; a workspace '
+    'admin can enable it in workspace settings.'
+)
+
 _ERROR_CODE_HINT: dict[str, str] = {
     'command_inline_credential': INLINE_CREDENTIAL_HINT,
     **FILE_EXEC_REFUSAL_HINTS,
+    'workspace_extension_plan_required': WORKSPACE_EXTENSION_PLAN_REQUIRED_HINT,
+    'workspace_extension_not_enabled': WORKSPACE_EXTENSION_NOT_ENABLED_HINT,
 }
 
 

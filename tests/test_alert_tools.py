@@ -9,7 +9,6 @@ import pytest
 from tests.conftest import HTTP_ERROR_ENVELOPE, http_client_fixture
 from tools.alert_tools import (
     _TARGETS_SENTENCE,
-    ALERT_RULE_TARGETS,
     acknowledge_alert,
     attach_alert_rule,
     create_alert_rule,
@@ -218,9 +217,14 @@ class TestCreateAlertRule:
             assert dead not in params, dead
 
     @pytest.mark.asyncio
-    async def test_create_rejects_an_unknown_target_before_calling(
+    async def test_create_forwards_an_unrecognized_target_to_the_server(
         self, mock_http_client, mock_token_manager
     ):
+        # The server holds the authoritative target list (AlertRule.TARGET_METRICS)
+        # and returns a 400 for one it does not recognize; this tool no longer
+        # pre-validates, so an unfamiliar target still reaches http_client.
+        mock_http_client.post.return_value = {'id': RULE_ID, 'target': 'disk'}
+
         result = await create_alert_rule(
             workspace='testworkspace',
             name='disk above 85',
@@ -229,18 +233,25 @@ class TestCreateAlertRule:
             region='ap1',
         )
 
-        assert result['status'] == 'error'
-        assert result['error_code'] == 'validation'
-        assert result['field'] == 'target'
-        mock_http_client.post.assert_not_called()
+        assert result['status'] == 'success'
+        mock_http_client.post.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/metrics/alert-rules/',
+            token='test-token',
+            data={
+                'name': 'disk above 85',
+                'target': 'disk',
+                'threshold': 85.0,
+                'is_default': False,
+            },
+        )
 
-    def test_every_target_metric_reaches_both_descriptions(self):
+    def test_targets_sentence_reaches_both_descriptions(self):
         # mcp.tool() hands back the bare function, so the description is not
         # reachable from the tool object; assert on the sentence both
         # descriptions interpolate, and that they both still interpolate it.
-        assert len(ALERT_RULE_TARGETS) == 15
-        for target in ALERT_RULE_TARGETS:
-            assert target in _TARGETS_SENTENCE, target
+        assert 'cpu-usage' in _TARGETS_SENTENCE
 
         source = Path('tools/alert_tools.py').read_text()
         assert source.count('{_TARGETS_SENTENCE}') == 2
@@ -270,9 +281,12 @@ class TestUpdateAlertRule:
         )
 
     @pytest.mark.asyncio
-    async def test_update_rejects_an_unknown_target_before_calling(
+    async def test_update_forwards_an_unrecognized_target_to_the_server(
         self, mock_http_client, mock_token_manager
     ):
+        # Same rationale as create: the server validates, this tool does not.
+        mock_http_client.patch.return_value = {'id': RULE_ID, 'target': 'disk'}
+
         result = await update_alert_rule(
             rule_id=RULE_ID,
             workspace='testworkspace',
@@ -280,10 +294,14 @@ class TestUpdateAlertRule:
             region='ap1',
         )
 
-        assert result['status'] == 'error'
-        assert result['error_code'] == 'validation'
-        assert result['field'] == 'target'
-        mock_http_client.patch.assert_not_called()
+        assert result['status'] == 'success'
+        mock_http_client.patch.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint=f'/api/metrics/alert-rules/{RULE_ID}/',
+            token='test-token',
+            data={'target': 'disk'},
+        )
 
     def test_update_no_longer_accepts_the_invented_fields(self):
         params = inspect.signature(update_alert_rule).parameters
