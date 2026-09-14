@@ -2,6 +2,10 @@
 
 Tests the full decorator stack: with_logging -> with_token_validation -> with_error_handling.
 Uses MockTransport at the httpx transport layer so the real HTTP client code runs.
+
+The decorators' own contracts—the error shape, the exceptions that propagate,
+the marker every registered tool carries—are unit-tested in
+``tests/test_decorators.py``.
 """
 
 import ast
