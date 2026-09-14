@@ -78,20 +78,6 @@ class TestSystemInfoEdgeCases:
         mock_http_client.get.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_system_info_http_error(self, mock_http_client, mock_token_manager):
-        """Test system info with HTTP error."""
-
-        mock_http_client.get.side_effect = Exception('HTTP 500 Internal Server Error')
-
-        result = await get_system_info(
-            server_id='550e8400-e29b-41d4-a716-446655440001', workspace='testworkspace'
-        )
-
-        assert result['status'] == 'error'
-        assert 'Failed in get_system_info' in result['message']
-        assert 'HTTP 500' in result['message']
-
-    @pytest.mark.asyncio
     async def test_system_info_different_region(
         self, mock_http_client, mock_token_manager
     ):
@@ -108,9 +94,13 @@ class TestSystemInfoEdgeCases:
         assert result['status'] == 'success'
         assert result['region'] == 'us1'
 
-        # Verify correct region was used
-        call_args = mock_http_client.get.call_args
-        assert call_args[1]['region'] == 'us1'
+        mock_http_client.get.assert_called_once_with(
+            region='us1',
+            workspace='testworkspace',
+            endpoint='/api/proc/info/',
+            token='test-token',
+            params={'server': '550e8400-e29b-41d4-a716-446655440001'},
+        )
 
 
 class TestListSystemUsersEdgeCases:
@@ -188,24 +178,8 @@ class TestListSystemUsersEdgeCases:
         assert 'No token found' in result['message']
         mock_http_client.get.assert_not_called()
 
-    @pytest.mark.asyncio
-    async def test_users_list_http_error(self, mock_http_client, mock_token_manager):
-        """Test users list with HTTP error."""
-
-        mock_http_client.get.side_effect = Exception('HTTP 503 Service Unavailable')
-
-        result = await list_system_users(
-            server_id='550e8400-e29b-41d4-a716-446655440001', workspace='testworkspace'
-        )
-
-        assert result['status'] == 'error'
-        assert 'Failed in list_system_users' in result['message']
-        assert '503' in result['message']
-
 
 class TestListSystemPackagesEdgeCases:
-    """Test list_system_packages edge cases."""
-
     @pytest.mark.asyncio
     async def test_packages_list_success(self, mock_http_client, mock_token_manager):
         """Test successful packages list retrieval."""
@@ -270,24 +244,8 @@ class TestListSystemPackagesEdgeCases:
         assert 'No token found' in result['message']
         mock_http_client.get.assert_not_called()
 
-    @pytest.mark.asyncio
-    async def test_packages_list_http_error(self, mock_http_client, mock_token_manager):
-        """Test packages list with HTTP error."""
-
-        mock_http_client.get.side_effect = Exception('Connection timeout')
-
-        result = await list_system_packages(
-            server_id='550e8400-e29b-41d4-a716-446655440001', workspace='testworkspace'
-        )
-
-        assert result['status'] == 'error'
-        assert 'Failed in list_system_packages' in result['message']
-        assert 'Connection timeout' in result['message']
-
 
 class TestGetDiskInfoEdgeCases:
-    """Test get_disk_info edge cases."""
-
     @pytest.mark.asyncio
     async def test_disk_info_success(self, mock_http_client, mock_token_manager):
         """Test successful disk info retrieval."""
@@ -394,20 +352,6 @@ class TestCrossFunctionScenarios:
             assert result['server_id'] == '660e8400-e29b-41d4-a716-446655440001'
             assert result['workspace'] == 'us-workspace'
             assert result['region'] == 'us1'
-
-    @pytest.mark.asyncio
-    async def test_server_not_found_errors(self, mock_http_client, mock_token_manager):
-        """Test functions with server not found errors."""
-
-        mock_http_client.get.side_effect = Exception('HTTP 404 Server Not Found')
-
-        result = await list_system_users(
-            server_id='99999999-9999-9999-9999-999999999999', workspace='testworkspace'
-        )
-
-        assert result['status'] == 'error'
-        assert 'Failed in list_system_users' in result['message']
-        assert '404' in result['message']
 
 
 if __name__ == '__main__':

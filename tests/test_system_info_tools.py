@@ -84,19 +84,6 @@ class TestGetSystemInfo:
         mock_http_client.get.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_system_info_http_error(self, mock_http_client, mock_token_manager):
-        """Test system info with HTTP error."""
-
-        mock_http_client.get.side_effect = Exception('HTTP 500 Internal Server Error')
-
-        result = await get_system_info(
-            server_id='550e8400-e29b-41d4-a716-446655440001', workspace='testworkspace'
-        )
-
-        assert result['status'] == 'error'
-        assert 'Failed in get_system_info' in result['message']
-
-    @pytest.mark.asyncio
     async def test_system_info_error_envelope(
         self, mock_http_client, mock_token_manager
     ):

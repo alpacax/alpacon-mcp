@@ -120,22 +120,8 @@ class TestGetCpuUsage:
         assert 'No token found' in result['message']
         mock_http_client.get.assert_not_called()
 
-    @pytest.mark.asyncio
-    async def test_cpu_usage_http_error(self, mock_http_client, mock_token_manager):
-        """Test CPU usage with HTTP error."""
-        mock_http_client.get.side_effect = Exception('HTTP 500 Internal Server Error')
-
-        result = await get_cpu_usage(
-            server_id='550e8400-e29b-41d4-a716-446655440001', workspace='testworkspace'
-        )
-
-        assert result['status'] == 'error'
-        assert 'Failed in get_cpu_usage' in result['message']
-
 
 class TestGetMemoryUsage:
-    """Test get_memory_usage function."""
-
     @pytest.mark.asyncio
     async def test_memory_usage_success(self, mock_http_client, mock_token_manager):
         """Test successful memory usage retrieval."""
@@ -187,22 +173,8 @@ class TestGetMemoryUsage:
         assert result['status'] == 'error'
         assert 'No token found' in result['message']
 
-    @pytest.mark.asyncio
-    async def test_memory_usage_http_error(self, mock_http_client, mock_token_manager):
-        """Test memory usage with HTTP error."""
-        mock_http_client.get.side_effect = Exception('Connection timeout')
-
-        result = await get_memory_usage(
-            server_id='550e8400-e29b-41d4-a716-446655440001', workspace='testworkspace'
-        )
-
-        assert result['status'] == 'error'
-        assert 'Failed in get_memory_usage' in result['message']
-
 
 class TestGetDiskUsage:
-    """Test get_disk_usage function."""
-
     @pytest.mark.asyncio
     async def test_disk_usage_success(self, mock_http_client, mock_token_manager):
         """Test successful disk usage retrieval with device and partition."""

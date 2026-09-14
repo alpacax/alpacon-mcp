@@ -848,6 +848,17 @@ class TestListFileAcls:
         result = await list_file_acls(workspace='testworkspace', region='ap1')
 
         assert result['status'] == 'error'
+        assert result['message'] == HTTP_ERROR_ENVELOPE['message']
+        assert result['status_code'] == HTTP_ERROR_ENVELOPE['status_code']
+        assert result['workspace'] == 'testworkspace'
+        assert result['region'] == 'ap1'
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/security/file-acl/',
+            token='test-token',
+            params={},
+        )
 
     @pytest.mark.asyncio
     async def test_list_filter_by_api_token(self, mock_http_client, mock_token_manager):

@@ -220,9 +220,13 @@ class TestCreateApiToken:
         )
 
         assert result['status'] == 'success'
-        call_data = mock_http_client.post.call_args[1]['data']
-        assert call_data['scopes'] == ['servers:read']
-        assert 'expires_at' not in call_data
+        mock_http_client.post.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/auth/tokens/',
+            token='header.payload.signature',
+            data={'name': 'Scoped Token', 'scopes': ['servers:read']},
+        )
 
     @pytest.mark.asyncio
     async def test_create_api_token_with_enabled_false(
@@ -243,8 +247,13 @@ class TestCreateApiToken:
         )
 
         assert result['status'] == 'success'
-        call_data = mock_http_client.post.call_args[1]['data']
-        assert call_data['enabled'] is False
+        mock_http_client.post.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/auth/tokens/',
+            token='header.payload.signature',
+            data={'name': 'Disabled Token', 'enabled': False},
+        )
 
     @pytest.mark.asyncio
     async def test_create_api_token_with_enabled_true(
@@ -264,8 +273,13 @@ class TestCreateApiToken:
             enabled=True,
         )
 
-        call_data = mock_http_client.post.call_args[1]['data']
-        assert call_data['enabled'] is True
+        mock_http_client.post.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/auth/tokens/',
+            token='header.payload.signature',
+            data={'name': 'Enabled Token', 'enabled': True},
+        )
 
     @pytest.mark.asyncio
     async def test_create_api_token_with_presets_only(
@@ -285,9 +299,13 @@ class TestCreateApiToken:
         )
 
         assert result['status'] == 'success'
-        call_data = mock_http_client.post.call_args[1]['data']
-        assert call_data['presets'] == ['file_upload']
-        assert 'scopes' not in call_data
+        mock_http_client.post.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/auth/tokens/',
+            token='header.payload.signature',
+            data={'name': 'Preset Token', 'presets': ['file_upload']},
+        )
 
     @pytest.mark.asyncio
     async def test_create_api_token_empty_name_returns_server_error(
@@ -373,21 +391,6 @@ class TestDeleteApiToken:
 
         assert result['status'] == 'error'
         mock_http_client.delete.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_delete_api_token_http_exception(
-        self, mock_http_client, mock_token_manager
-    ):
-        """Test that delete_api_token returns error when http_client raises an exception."""
-        mock_http_client.delete.side_effect = Exception('Network failure')
-
-        result = await delete_api_token(
-            token_id='550e8400-e29b-41d4-a716-446655440000',
-            workspace='testworkspace',
-            region='ap1',
-        )
-
-        assert result['status'] == 'error'
 
     @pytest.mark.asyncio
     async def test_delete_api_token_not_found(
@@ -483,8 +486,13 @@ class TestDuplicateApiToken:
             name='',
         )
 
-        call_data = mock_http_client.post.call_args[1]['data']
-        assert call_data == {'name': ''}
+        mock_http_client.post.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/auth/tokens/550e8400-e29b-41d4-a716-446655440005/duplicate/',
+            token='header.payload.signature',
+            data={'name': ''},
+        )
 
     @pytest.mark.asyncio
     async def test_duplicate_api_token_includes_token_id_in_response(
@@ -513,21 +521,6 @@ class TestDuplicateApiToken:
 
         assert result['status'] == 'error'
         mock_http_client.post.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_duplicate_api_token_http_exception(
-        self, mock_http_client, mock_token_manager
-    ):
-        """Test that duplicate_api_token returns error when http_client raises an exception."""
-        mock_http_client.post.side_effect = Exception('Network failure')
-
-        result = await duplicate_api_token(
-            token_id='550e8400-e29b-41d4-a716-446655440000',
-            workspace='testworkspace',
-            region='ap1',
-        )
-
-        assert result['status'] == 'error'
 
     @pytest.mark.asyncio
     async def test_duplicate_api_token_not_found(
@@ -754,8 +747,13 @@ class TestUpdateApiToken:
         )
 
         assert result['status'] == 'success'
-        call_data = mock_http_client.patch.call_args[1]['data']
-        assert call_data == {'expires_at': None}
+        mock_http_client.patch.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/auth/tokens/550e8400-e29b-41d4-a716-446655440024/',
+            token='header.payload.signature',
+            data={'expires_at': None},
+        )
 
     @pytest.mark.asyncio
     async def test_update_api_token_clear_expires_at_with_other_fields(
@@ -776,8 +774,13 @@ class TestUpdateApiToken:
             clear_expires_at=True,
         )
 
-        call_data = mock_http_client.patch.call_args[1]['data']
-        assert call_data == {'name': 'Renamed', 'expires_at': None}
+        mock_http_client.patch.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/auth/tokens/550e8400-e29b-41d4-a716-446655440027/',
+            token='header.payload.signature',
+            data={'name': 'Renamed', 'expires_at': None},
+        )
 
     @pytest.mark.asyncio
     async def test_update_api_token_clear_and_set_expires_at_conflicts(
@@ -812,8 +815,13 @@ class TestUpdateApiToken:
             enabled=False,
         )
 
-        call_data = mock_http_client.patch.call_args[1]['data']
-        assert 'expires_at' not in call_data
+        mock_http_client.patch.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/auth/tokens/550e8400-e29b-41d4-a716-446655440026/',
+            token='header.payload.signature',
+            data={'enabled': False},
+        )
 
     @pytest.mark.asyncio
     async def test_update_api_token_no_fields_returns_error(

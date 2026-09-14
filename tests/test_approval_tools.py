@@ -310,14 +310,20 @@ class TestRequestSudoPolicy:
             region='ap1',
         )
 
-        assert mock_http_client.post.call_args.kwargs['data'] == {
-            'servers': ['550e8400-e29b-41d4-a716-446655440002'],
-            'commands': ['/usr/bin/systemctl restart nginx'],
-            'reason': 'Deploy window for the nginx config rollout',
-            'users': ['550e8400-e29b-41d4-a716-446655440001'],
-            'valid_from': '2026-08-26T09:00:00Z',
-            'valid_until': '2026-08-26T18:00:00Z',
-        }
+        mock_http_client.post.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/sudo/policy-requests/',
+            token='test-token',
+            data={
+                'servers': ['550e8400-e29b-41d4-a716-446655440002'],
+                'commands': ['/usr/bin/systemctl restart nginx'],
+                'reason': 'Deploy window for the nginx config rollout',
+                'users': ['550e8400-e29b-41d4-a716-446655440001'],
+                'valid_from': '2026-08-26T09:00:00Z',
+                'valid_until': '2026-08-26T18:00:00Z',
+            },
+        )
 
     @pytest.mark.asyncio
     async def test_request_sudo_policy_http_error_stays_an_error(

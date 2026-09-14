@@ -119,17 +119,6 @@ class TestListEvents:
         mock_http_client.get.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_list_events_http_error(self, mock_http_client, mock_token_manager):
-        """Test events listing with HTTP error."""
-
-        mock_http_client.get.side_effect = Exception('HTTP 500 Internal Server Error')
-
-        result = await list_events(workspace='testworkspace')
-
-        assert result['status'] == 'error'
-        assert 'HTTP 500' in result['message']
-
-    @pytest.mark.asyncio
     async def test_list_events_error_envelope(
         self, mock_http_client, mock_token_manager
     ):
@@ -192,17 +181,6 @@ class TestGetEvent:
         assert result['status'] == 'error'
         assert 'No token found' in result['message']
         mock_http_client.get.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_get_event_not_found(self, mock_http_client, mock_token_manager):
-        """Test event retrieval when event doesn't exist."""
-
-        mock_http_client.get.side_effect = Exception('HTTP 404 Not Found')
-
-        result = await get_event(event_id='nonexistent', workspace='testworkspace')
-
-        assert result['status'] == 'error'
-        assert '404' in result['message']
 
     @pytest.mark.asyncio
     async def test_get_event_error_envelope(self, mock_http_client, mock_token_manager):
@@ -324,17 +302,6 @@ class TestSearchEvents:
 
         assert result['status'] == 'error'
         assert 'No token found' in result['message']
-
-    @pytest.mark.asyncio
-    async def test_search_events_http_error(self, mock_http_client, mock_token_manager):
-        """Test event search with HTTP error."""
-
-        mock_http_client.get.side_effect = Exception('Search service unavailable')
-
-        result = await search_events(search_query='test', workspace='testworkspace')
-
-        assert result['status'] == 'error'
-        assert 'Search service unavailable' in result['message']
 
     @pytest.mark.asyncio
     async def test_search_events_error_envelope(

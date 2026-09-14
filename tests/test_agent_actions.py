@@ -79,22 +79,8 @@ class TestRestartAgent:
             data={'action': 'restart_agent', 'force': False},
         )
 
-    @pytest.mark.asyncio
-    async def test_restart_agent_http_error(self, mock_http_client, mock_token_manager):
-        """Test agent restart with HTTP error."""
-        mock_http_client.post.side_effect = Exception('HTTP 503: Service Unavailable')
-
-        result = await restart_agent(
-            server_id=SERVER_ID, workspace='testworkspace', region='ap1'
-        )
-
-        assert result['status'] == 'error'
-        assert 'HTTP 503' in result['message']
-
 
 class TestShutdownAgent:
-    """Test agent shutdown functionality."""
-
     @pytest.mark.asyncio
     async def test_shutdown_agent_success(self, mock_http_client, mock_token_manager):
         """Test successful agent shutdown."""
@@ -270,10 +256,16 @@ class TestDisruptiveActionForce:
         )
 
         assert result['status'] == 'success'
-        assert mock_http_client.post.call_args.kwargs['data'] == {
-            'action': action,
-            'force': False,
-        }
+        mock_http_client.post.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint=f'/api/servers/servers/{SERVER_ID}/actions/',
+            token='test-token',
+            data={
+                'action': action,
+                'force': False,
+            },
+        )
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(('tool', 'action'), DISRUPTIVE)
@@ -290,10 +282,16 @@ class TestDisruptiveActionForce:
             force=True,
         )
 
-        assert mock_http_client.post.call_args.kwargs['data'] == {
-            'action': action,
-            'force': True,
-        }
+        mock_http_client.post.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint=f'/api/servers/servers/{SERVER_ID}/actions/',
+            token='test-token',
+            data={
+                'action': action,
+                'force': True,
+            },
+        )
 
     def test_update_information_has_no_force(self):
         """update_information is not disruptive server-side, so it offers no force."""

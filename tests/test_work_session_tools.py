@@ -127,10 +127,20 @@ class TestWorkSessionCreate:
             region='ap1',
         )
 
-        call_data = mock_http_client.post.call_args[1]['data']
-        assert call_data['title'] == 'Deploy session'
-        assert call_data['description'] == 'Deploying config files'
-        assert call_data['requester_type'] == 'agent'
+        mock_http_client.post.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/work-sessions/sessions/',
+            token='test-token',
+            data={
+                'requester_type': 'agent',
+                'scopes': ['command', 'webftp'],
+                'servers': ['550e8400-e29b-41d4-a716-446655440001'],
+                'expires_at': '2026-05-19T13:00:00+00:00',
+                'description': 'Deploying config files',
+                'title': 'Deploy session',
+            },
+        )
 
     @pytest.mark.asyncio
     async def test_create_omits_empty_title(self, mock_http_client, mock_token_manager):
@@ -146,9 +156,19 @@ class TestWorkSessionCreate:
             region='ap1',
         )
 
-        call_data = mock_http_client.post.call_args[1]['data']
-        assert 'title' not in call_data
-        assert call_data['description'] == 'Routine maintenance'
+        mock_http_client.post.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/work-sessions/sessions/',
+            token='test-token',
+            data={
+                'requester_type': 'agent',
+                'scopes': ['command'],
+                'servers': ['550e8400-e29b-41d4-a716-446655440001'],
+                'expires_at': '2026-05-19T13:00:00+00:00',
+                'description': 'Routine maintenance',
+            },
+        )
 
 
 class TestWorkSessionClose:
@@ -351,8 +371,13 @@ class TestWorkSessionUpdate:
             region='ap1',
         )
 
-        call_data = mock_http_client.patch.call_args[1]['data']
-        assert call_data == {'description': 'Only description changed'}
+        mock_http_client.patch.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/work-sessions/sessions/550e8400-e29b-41d4-a716-446655440020/',
+            token='test-token',
+            data={'description': 'Only description changed'},
+        )
 
     @pytest.mark.asyncio
     async def test_update_rejects_empty_update(
@@ -387,8 +412,13 @@ class TestWorkSessionUpdate:
             region='ap1',
         )
 
-        call_data = mock_http_client.patch.call_args[1]['data']
-        assert call_data == {'title': ''}
+        mock_http_client.patch.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/work-sessions/sessions/550e8400-e29b-41d4-a716-446655440020/',
+            token='test-token',
+            data={'title': ''},
+        )
 
     @pytest.mark.asyncio
     async def test_update_queued_modification_surfaces_approval_signal(

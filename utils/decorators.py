@@ -44,6 +44,10 @@ logger = get_logger('decorators')
 
 _SPECIFY_REGION_HINT = 'Please specify a region parameter.'
 
+# Marker left on every function with_error_handling wraps. functools.wraps copies
+# __dict__ outward, so a registered tool can still be swept for it.
+ERROR_HANDLING_MARKER = '_error_handled'
+
 # Never written to the entry log. The credential names are forward cover: no
 # tool documents one as its own parameter today, but with_logging would bind
 # it if one did. The rest the log has no use for—payloads, free text a person
@@ -539,6 +543,7 @@ def with_error_handling(func: Callable) -> Callable:
             )
             return enrich_error_response(resp, tool_name=func_name)
 
+    setattr(wrapper, ERROR_HANDLING_MARKER, True)
     return wrapper
 
 
