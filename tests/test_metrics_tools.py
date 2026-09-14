@@ -122,8 +122,6 @@ class TestGetCpuUsage:
 
 
 class TestGetMemoryUsage:
-    """Test get_memory_usage function."""
-
     @pytest.mark.asyncio
     async def test_memory_usage_success(self, mock_http_client, mock_token_manager):
         """Test successful memory usage retrieval."""
@@ -177,8 +175,6 @@ class TestGetMemoryUsage:
 
 
 class TestGetDiskUsage:
-    """Test get_disk_usage function."""
-
     @pytest.mark.asyncio
     async def test_disk_usage_success(self, mock_http_client, mock_token_manager):
         """Test successful disk usage retrieval with device and partition."""

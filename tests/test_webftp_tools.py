@@ -127,8 +127,6 @@ class TestWebFtpSessionCreate:
 
 
 class TestWebFtpSessionsList:
-    """Test webftp_sessions_list function."""
-
     @pytest.mark.asyncio
     async def test_sessions_list_success(self, mock_http_client, mock_token_manager):
         """Test successful WebFTP sessions listing."""
@@ -618,8 +616,6 @@ class TestWebFtpUploadsList:
 
 
 class TestWebFtpDownloadsList:
-    """Test webftp_downloads_list function."""
-
     @pytest.mark.asyncio
     async def test_downloads_list_success(self, mock_http_client, mock_token_manager):
         """Test successful downloads list retrieval."""

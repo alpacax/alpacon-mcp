@@ -175,8 +175,6 @@ class TestListServers:
 
 
 class TestGetServer:
-    """Test server details functionality."""
-
     @pytest.mark.asyncio
     async def test_get_server_success(
         self, mock_http_client, mock_token_manager, sample_server
@@ -255,8 +253,6 @@ class TestGetServer:
 
 
 class TestServerNotes:
-    """Test server notes functionality."""
-
     @pytest.mark.asyncio
     async def test_list_server_notes_success(
         self, mock_http_client, mock_token_manager, sample_server_notes
@@ -404,8 +400,6 @@ class TestServerNotes:
 
 
 class TestParameterValidation:
-    """Test parameter validation and edge cases."""
-
     @pytest.mark.asyncio
     async def test_special_characters_in_workspace(
         self, mock_http_client, mock_token_manager, sample_servers_list

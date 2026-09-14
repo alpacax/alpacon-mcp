@@ -356,11 +356,8 @@ class TestIAMGroupsManagement:
 
 
 class TestErrorHandling:
-    """Test error handling across IAM functions."""
-
     @pytest.mark.asyncio
     async def test_missing_token_error(self, mock_http_client, mock_token_manager):
-        """Test missing token error handling."""
         mock_token_manager.get_token.return_value = None
 
         result = await create_iam_user(

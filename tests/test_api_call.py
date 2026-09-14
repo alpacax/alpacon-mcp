@@ -1,4 +1,4 @@
-"""Error-envelope conversion at the shared HTTP call boundary."""
+"""Contract of the shared HTTP call boundary: error envelopes and forwarded params."""
 
 from http import HTTPStatus
 from unittest.mock import AsyncMock

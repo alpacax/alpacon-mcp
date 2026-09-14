@@ -81,8 +81,6 @@ class TestRestartAgent:
 
 
 class TestShutdownAgent:
-    """Test agent shutdown functionality."""
-
     @pytest.mark.asyncio
     async def test_shutdown_agent_success(self, mock_http_client, mock_token_manager):
         """Test successful agent shutdown."""

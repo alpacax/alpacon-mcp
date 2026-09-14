@@ -105,7 +105,7 @@ def _registered_tools():
 
 
 def test_every_registered_tool_carries_error_handling():
-    """One sweep, in place of the per-tool copies of the error-path test (#225)."""
+    """One sweep, in place of the per-tool copies of the error-path test."""
     tools = _registered_tools()
 
     assert {'health_check', 'list_servers'} <= {tool.name for tool in tools}

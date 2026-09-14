@@ -180,8 +180,6 @@ class TestListSystemUsersEdgeCases:
 
 
 class TestListSystemPackagesEdgeCases:
-    """Test list_system_packages edge cases."""
-
     @pytest.mark.asyncio
     async def test_packages_list_success(self, mock_http_client, mock_token_manager):
         """Test successful packages list retrieval."""
@@ -248,8 +246,6 @@ class TestListSystemPackagesEdgeCases:
 
 
 class TestGetDiskInfoEdgeCases:
-    """Test get_disk_info edge cases."""
-
     @pytest.mark.asyncio
     async def test_disk_info_success(self, mock_http_client, mock_token_manager):
         """Test successful disk info retrieval."""
