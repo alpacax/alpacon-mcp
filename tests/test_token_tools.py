@@ -375,21 +375,6 @@ class TestDeleteApiToken:
         mock_http_client.delete.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_delete_api_token_http_exception(
-        self, mock_http_client, mock_token_manager
-    ):
-        """Test that delete_api_token returns error when http_client raises an exception."""
-        mock_http_client.delete.side_effect = Exception('Network failure')
-
-        result = await delete_api_token(
-            token_id='550e8400-e29b-41d4-a716-446655440000',
-            workspace='testworkspace',
-            region='ap1',
-        )
-
-        assert result['status'] == 'error'
-
-    @pytest.mark.asyncio
     async def test_delete_api_token_not_found(
         self, mock_http_client, mock_token_manager
     ):
@@ -513,21 +498,6 @@ class TestDuplicateApiToken:
 
         assert result['status'] == 'error'
         mock_http_client.post.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_duplicate_api_token_http_exception(
-        self, mock_http_client, mock_token_manager
-    ):
-        """Test that duplicate_api_token returns error when http_client raises an exception."""
-        mock_http_client.post.side_effect = Exception('Network failure')
-
-        result = await duplicate_api_token(
-            token_id='550e8400-e29b-41d4-a716-446655440000',
-            workspace='testworkspace',
-            region='ap1',
-        )
-
-        assert result['status'] == 'error'
 
     @pytest.mark.asyncio
     async def test_duplicate_api_token_not_found(

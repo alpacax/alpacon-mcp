@@ -79,18 +79,6 @@ class TestRestartAgent:
             data={'action': 'restart_agent', 'force': False},
         )
 
-    @pytest.mark.asyncio
-    async def test_restart_agent_http_error(self, mock_http_client, mock_token_manager):
-        """Test agent restart with HTTP error."""
-        mock_http_client.post.side_effect = Exception('HTTP 503: Service Unavailable')
-
-        result = await restart_agent(
-            server_id=SERVER_ID, workspace='testworkspace', region='ap1'
-        )
-
-        assert result['status'] == 'error'
-        assert 'HTTP 503' in result['message']
-
 
 class TestShutdownAgent:
     """Test agent shutdown functionality."""

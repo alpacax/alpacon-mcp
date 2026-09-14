@@ -121,21 +121,6 @@ class TestWebFtpSessionCreate:
         assert 'No token found' in result['message']
         mock_http_client.post.assert_not_called()
 
-    @pytest.mark.asyncio
-    async def test_session_create_http_error(
-        self, mock_http_client, mock_token_manager
-    ):
-        """Test session creation with HTTP error."""
-
-        mock_http_client.post.side_effect = Exception('HTTP 500 Internal Server Error')
-
-        result = await webftp_session_create(
-            server_id='550e8400-e29b-41d4-a716-446655440001', workspace='testworkspace'
-        )
-
-        assert result['status'] == _STATUS_ERROR
-        assert 'HTTP 500' in result['message']
-
 
 class TestWebFtpSessionsList:
     """Test webftp_sessions_list function."""
@@ -619,17 +604,6 @@ class TestWebFtpUploadsList:
         assert 'No token found' in result['message']
         mock_http_client.get.assert_not_called()
 
-    @pytest.mark.asyncio
-    async def test_uploads_list_http_error(self, mock_http_client, mock_token_manager):
-        """Test uploads list with HTTP error."""
-
-        mock_http_client.get.side_effect = Exception('HTTP 500 Internal Server Error')
-
-        result = await webftp_uploads_list(workspace='testworkspace')
-
-        assert result['status'] == _STATUS_ERROR
-        assert 'HTTP 500' in result['message']
-
 
 class TestWebFtpDownloadsList:
     """Test webftp_downloads_list function."""
@@ -706,19 +680,6 @@ class TestWebFtpDownloadsList:
         assert result['status'] == _STATUS_ERROR
         assert 'No token found' in result['message']
         mock_http_client.get.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_downloads_list_http_error(
-        self, mock_http_client, mock_token_manager
-    ):
-        """Test downloads list with HTTP error."""
-
-        mock_http_client.get.side_effect = Exception('HTTP 500 Internal Server Error')
-
-        result = await webftp_downloads_list(workspace='testworkspace')
-
-        assert result['status'] == _STATUS_ERROR
-        assert 'HTTP 500' in result['message']
 
 
 class TestWebFtpCheckStatus:

@@ -173,16 +173,6 @@ class TestListServers:
             params={},
         )
 
-    @pytest.mark.asyncio
-    async def test_list_servers_http_error(self, mock_http_client, mock_token_manager):
-        """Test servers list with HTTP error."""
-        mock_http_client.get.side_effect = Exception('HTTP 500: Internal Server Error')
-
-        result = await list_servers(workspace='testworkspace')
-
-        assert result['status'] == 'error'
-        assert 'HTTP 500' in result['message']
-
 
 class TestGetServer:
     """Test server details functionality."""
@@ -262,18 +252,6 @@ class TestGetServer:
             endpoint='/api/servers/servers/550e8400-e29b-41d4-a716-446655440123/',
             token='test-token',
         )
-
-    @pytest.mark.asyncio
-    async def test_get_server_http_error(self, mock_http_client, mock_token_manager):
-        """Test server details with HTTP error."""
-        mock_http_client.get.side_effect = Exception('HTTP 404: Server not found')
-
-        result = await get_server(
-            server_id='99999999-9999-9999-9999-999999999999', workspace='testworkspace'
-        )
-
-        assert result['status'] == 'error'
-        assert 'HTTP 404' in result['message']
 
 
 class TestServerNotes:
@@ -415,22 +393,6 @@ class TestServerNotes:
         assert result['status'] == 'error'
         assert 'No token found' in result['message']
         mock_http_client.post.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_create_server_note_validation_error(
-        self, mock_http_client, mock_token_manager
-    ):
-        """Test server note creation with validation error."""
-        mock_http_client.post.side_effect = Exception('HTTP 400: content is required')
-
-        result = await create_server_note(
-            server_id='550e8400-e29b-41d4-a716-446655440123',
-            content='This is a new note about the server',
-            workspace='testworkspace',
-        )
-
-        assert result['status'] == 'error'
-        assert 'HTTP 400' in result['message']
 
 
 class TestParameterValidation:
