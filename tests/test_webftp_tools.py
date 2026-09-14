@@ -103,9 +103,13 @@ class TestWebFtpSessionCreate:
         assert result['status'] == 'success'
         assert result['username'] is None
 
-        # Verify username was not included in data
-        call_args = mock_http_client.post.call_args
-        assert 'username' not in call_args[1]['data']
+        mock_http_client.post.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/webftp/sessions/',
+            token='test-token',
+            data={'server': '550e8400-e29b-41d4-a716-446655440001'},
+        )
 
     @pytest.mark.asyncio
     async def test_session_create_no_token(self, mock_http_client, mock_token_manager):
@@ -440,10 +444,18 @@ class TestWebFtpDownloadFile:
             assert result['status'] == 'success'
             assert result['resource_type'] == 'folder'
 
-            # Verify correct data was sent to API
-            call_args = mock_http_client.post.call_args
-            assert call_args[1]['data']['resource_type'] == 'folder'
-            assert call_args[1]['data']['name'] == 'folder.zip'
+            mock_http_client.post.assert_called_once_with(
+                region='ap1',
+                workspace='testworkspace',
+                endpoint='/api/webftp/downloads/',
+                token='test-token',
+                data={
+                    'server': '550e8400-e29b-41d4-a716-446655440001',
+                    'path': '/remote/folder',
+                    'name': 'folder.zip',
+                    'resource_type': 'folder',
+                },
+            )
 
     @pytest.mark.asyncio
     async def test_download_file_direct_mode(
@@ -1425,8 +1437,16 @@ class TestWebFtpSessionCreateWithSession:
             region='ap1',
         )
 
-        call_data = mock_http_client.post.call_args[1]['data']
-        assert call_data['work_session'] == 'ws-uuid-abcd'
+        mock_http_client.post.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/webftp/sessions/',
+            token='test-token',
+            data={
+                'server': '550e8400-e29b-41d4-a716-446655440001',
+                'work_session': 'ws-uuid-abcd',
+            },
+        )
 
     @pytest.mark.asyncio
     async def test_session_create_omits_work_session_when_none(
@@ -1441,8 +1461,13 @@ class TestWebFtpSessionCreateWithSession:
             region='ap1',
         )
 
-        call_data = mock_http_client.post.call_args[1]['data']
-        assert 'work_session' not in call_data
+        mock_http_client.post.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/webftp/sessions/',
+            token='test-token',
+            data={'server': '550e8400-e29b-41d4-a716-446655440001'},
+        )
 
 
 class TestWebFtpUploadContentWithSession:
@@ -1467,8 +1492,19 @@ class TestWebFtpUploadContentWithSession:
             region='ap1',
         )
 
-        call_data = mock_http_client.post.call_args[1]['data']
-        assert call_data['work_session'] == 'ws-uuid-abcd'
+        mock_http_client.post.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/webftp/uploads/',
+            token='test-token',
+            data={
+                'server': '550e8400-e29b-41d4-a716-446655440001',
+                'name': 'hello.txt',
+                'path': '/home/user/hello.txt',
+                'allow_overwrite': True,
+                'work_session': 'ws-uuid-abcd',
+            },
+        )
 
     @pytest.mark.asyncio
     async def test_upload_content_omits_work_session_when_none(
@@ -1487,8 +1523,18 @@ class TestWebFtpUploadContentWithSession:
             region='ap1',
         )
 
-        call_data = mock_http_client.post.call_args[1]['data']
-        assert 'work_session' not in call_data
+        mock_http_client.post.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/webftp/uploads/',
+            token='test-token',
+            data={
+                'server': '550e8400-e29b-41d4-a716-446655440001',
+                'name': 'hello.txt',
+                'path': '/home/user/hello.txt',
+                'allow_overwrite': True,
+            },
+        )
 
 
 class TestWebFtpSessionCreateGateTranslation:

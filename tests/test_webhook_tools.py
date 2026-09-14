@@ -305,7 +305,20 @@ class TestWebhooks:
             provider='custom',
         )
 
-        assert mock_http_client.post.call_args.kwargs['data']['provider'] == 'custom'
+        mock_http_client.post.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/notifications/webhooks/',
+            token='test-token',
+            data={
+                'name': 'n',
+                'url': 'https://example.test/hook',
+                'owner': self.OWNER_ID,
+                'ssl_verify': True,
+                'enabled': True,
+                'provider': 'custom',
+            },
+        )
 
     @pytest.mark.asyncio
     async def test_create_without_owner_is_a_type_error(self):

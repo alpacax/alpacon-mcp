@@ -351,11 +351,19 @@ class TestServerNotes:
             mentioned_users=['550e8400-e29b-41d4-a716-446655440999'],
         )
 
-        sent = mock_http_client.post.call_args.kwargs['data']
-        assert sent['private'] is True
-        assert sent['pinned'] is True
-        assert sent['mentioned_users'] == ['550e8400-e29b-41d4-a716-446655440999']
-        assert 'title' not in sent
+        mock_http_client.post.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/servers/notes/',
+            token='test-token',
+            data={
+                'server': '550e8400-e29b-41d4-a716-446655440123',
+                'content': 'pinned note',
+                'private': True,
+                'pinned': True,
+                'mentioned_users': ['550e8400-e29b-41d4-a716-446655440999'],
+            },
+        )
 
     @pytest.mark.asyncio
     async def test_create_server_note_http_error_envelope(
@@ -437,7 +445,16 @@ class TestParameterValidation:
         )
 
         assert result['status'] == 'success'
-        assert mock_http_client.post.call_args.kwargs['data']['content'] == long_content
+        mock_http_client.post.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/servers/notes/',
+            token='test-token',
+            data={
+                'server': '550e8400-e29b-41d4-a716-446655440123',
+                'content': long_content,
+            },
+        )
 
     @pytest.mark.asyncio
     async def test_note_content_over_the_limit_is_rejected_before_calling(
@@ -664,9 +681,13 @@ class TestUpdateServer:
             region='ap1',
         )
 
-        _, kwargs = mock_http_client.patch.call_args
-        assert kwargs['data'] == {'description': 'Updated description'}
-        assert 'name' not in kwargs['data']
+        mock_http_client.patch.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/servers/servers/550e8400-e29b-41d4-a716-446655440123/',
+            token='test-token',
+            data={'description': 'Updated description'},
+        )
 
     @pytest.mark.asyncio
     async def test_update_server_both_fields(
@@ -687,11 +708,16 @@ class TestUpdateServer:
             region='ap1',
         )
 
-        _, kwargs = mock_http_client.patch.call_args
-        assert kwargs['data'] == {
-            'name': 'renamed-server',
-            'description': 'Updated description',
-        }
+        mock_http_client.patch.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/servers/servers/550e8400-e29b-41d4-a716-446655440123/',
+            token='test-token',
+            data={
+                'name': 'renamed-server',
+                'description': 'Updated description',
+            },
+        )
 
 
 class TestUnregisterServer:
@@ -905,8 +931,16 @@ class TestCreateRegistrationToken:
         )
 
         assert result['status'] == 'success'
-        _, kwargs = mock_http_client.post.call_args
-        assert kwargs['data']['description'] == 'For production servers'
+        mock_http_client.post.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/servers/registration-tokens/',
+            token='test-token',
+            data={
+                'name': 'my-token',
+                'description': 'For production servers',
+            },
+        )
 
     @pytest.mark.asyncio
     async def test_create_registration_token_no_token(
@@ -1030,8 +1064,18 @@ class TestGetRegistrationGuide:
             region='ap1',
         )
 
-        _, kwargs = mock_http_client.post.call_args
-        assert kwargs['data']['server_name'] == 'my-new-server'
+        mock_http_client.post.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/servers/registration-methods/token-install/guide/',
+            token='test-token',
+            data={
+                'platform': 'rhel',
+                'token': 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+                'server_name': 'my-new-server',
+            },
+            params={'response_type': 'json'},
+        )
 
     @pytest.mark.asyncio
     async def test_get_registration_guide_no_token(
@@ -1082,12 +1126,17 @@ class TestGetRegistrationGuide:
         )
 
         assert result['status'] == 'success'
-        _, kwargs = mock_http_client.post.call_args
-        assert kwargs['data']['platform'] == 'suse'
         # The server offers suse on token-install only, not on ansible.
-        assert (
-            kwargs['endpoint']
-            == '/api/servers/registration-methods/token-install/guide/'
+        mock_http_client.post.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/servers/registration-methods/token-install/guide/',
+            token='test-token',
+            data={
+                'platform': 'suse',
+                'token': 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+            },
+            params={'response_type': 'json'},
         )
 
     @pytest.mark.asyncio

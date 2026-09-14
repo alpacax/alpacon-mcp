@@ -94,9 +94,13 @@ class TestSystemInfoEdgeCases:
         assert result['status'] == 'success'
         assert result['region'] == 'us1'
 
-        # Verify correct region was used
-        call_args = mock_http_client.get.call_args
-        assert call_args[1]['region'] == 'us1'
+        mock_http_client.get.assert_called_once_with(
+            region='us1',
+            workspace='testworkspace',
+            endpoint='/api/proc/info/',
+            token='test-token',
+            params={'server': '550e8400-e29b-41d4-a716-446655440001'},
+        )
 
 
 class TestListSystemUsersEdgeCases:

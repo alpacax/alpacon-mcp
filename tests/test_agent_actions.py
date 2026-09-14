@@ -258,10 +258,16 @@ class TestDisruptiveActionForce:
         )
 
         assert result['status'] == 'success'
-        assert mock_http_client.post.call_args.kwargs['data'] == {
-            'action': action,
-            'force': False,
-        }
+        mock_http_client.post.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint=f'/api/servers/servers/{SERVER_ID}/actions/',
+            token='test-token',
+            data={
+                'action': action,
+                'force': False,
+            },
+        )
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(('tool', 'action'), DISRUPTIVE)
@@ -278,10 +284,16 @@ class TestDisruptiveActionForce:
             force=True,
         )
 
-        assert mock_http_client.post.call_args.kwargs['data'] == {
-            'action': action,
-            'force': True,
-        }
+        mock_http_client.post.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint=f'/api/servers/servers/{SERVER_ID}/actions/',
+            token='test-token',
+            data={
+                'action': action,
+                'force': True,
+            },
+        )
 
     def test_update_information_has_no_force(self):
         """update_information is not disruptive server-side, so it offers no force."""

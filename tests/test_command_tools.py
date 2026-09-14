@@ -230,12 +230,23 @@ class TestSubmitCommand:
             token='test-token',
         )
 
-        call_data = mock_http_client.post.call_args[1]['data']
-        assert call_data['username'] == 'testuser'
-        assert call_data['env'] == {'PATH': '/usr/bin'}
-        assert call_data['run_after'] == ['cmd-100']
-        assert call_data['scheduled_at'] == '2026-04-03T03:00:00Z'
-        assert call_data['data'] == 'stdin input'
+        mock_http_client.post.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/events/commands/',
+            token='test-token',
+            data={
+                'server': '550e8400-e29b-41d4-a716-446655440001',
+                'shell': 'system',
+                'line': 'echo done',
+                'groupname': 'alpacon',
+                'env': {'PATH': '/usr/bin'},
+                'data': 'stdin input',
+                'username': 'testuser',
+                'run_after': ['cmd-100'],
+                'scheduled_at': '2026-04-03T03:00:00Z',
+            },
+        )
 
     @pytest.mark.asyncio
     async def test_submit_omits_none_params(self, mock_http_client):
@@ -248,11 +259,18 @@ class TestSubmitCommand:
             token='test-token',
         )
 
-        call_data = mock_http_client.post.call_args[1]['data']
-        assert 'username' not in call_data
-        assert 'run_after' not in call_data
-        assert 'scheduled_at' not in call_data
-        assert 'data' not in call_data
+        mock_http_client.post.assert_called_once_with(
+            region='',
+            workspace='testworkspace',
+            endpoint='/api/events/commands/',
+            token='test-token',
+            data={
+                'server': '550e8400-e29b-41d4-a716-446655440001',
+                'shell': 'system',
+                'line': 'ls',
+                'groupname': 'alpacon',
+            },
+        )
 
     @pytest.mark.asyncio
     async def test_submit_uses_env_work_session_when_unset(
@@ -269,8 +287,19 @@ class TestSubmitCommand:
             token='test-token',
         )
 
-        call_data = mock_http_client.post.call_args[1]['data']
-        assert call_data['work_session'] == 'ws-from-env'
+        mock_http_client.post.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/events/commands/',
+            token='test-token',
+            data={
+                'server': '550e8400-e29b-41d4-a716-446655440001',
+                'shell': 'system',
+                'line': 'ls',
+                'groupname': 'alpacon',
+                'work_session': 'ws-from-env',
+            },
+        )
 
     @pytest.mark.asyncio
     async def test_submit_explicit_work_session_wins_over_env(
@@ -288,8 +317,19 @@ class TestSubmitCommand:
             token='test-token',
         )
 
-        call_data = mock_http_client.post.call_args[1]['data']
-        assert call_data['work_session'] == 'explicit-ws'
+        mock_http_client.post.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/events/commands/',
+            token='test-token',
+            data={
+                'server': '550e8400-e29b-41d4-a716-446655440001',
+                'shell': 'system',
+                'line': 'ls',
+                'groupname': 'alpacon',
+                'work_session': 'explicit-ws',
+            },
+        )
 
 
 class TestListCommands:
@@ -944,8 +984,19 @@ class TestSubmitCommandWithSession:
             token='test-token',
         )
 
-        call_data = mock_http_client.post.call_args[1]['data']
-        assert call_data['work_session'] == 'ws-uuid-abcd'
+        mock_http_client.post.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/events/commands/',
+            token='test-token',
+            data={
+                'server': '550e8400-e29b-41d4-a716-446655440001',
+                'shell': 'system',
+                'line': 'ls',
+                'groupname': 'alpacon',
+                'work_session': 'ws-uuid-abcd',
+            },
+        )
 
     @pytest.mark.asyncio
     async def test_submit_omits_work_session_when_none(self, mock_http_client):
@@ -959,8 +1010,18 @@ class TestSubmitCommandWithSession:
             token='test-token',
         )
 
-        call_data = mock_http_client.post.call_args[1]['data']
-        assert 'work_session' not in call_data
+        mock_http_client.post.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/events/commands/',
+            token='test-token',
+            data={
+                'server': '550e8400-e29b-41d4-a716-446655440001',
+                'shell': 'system',
+                'line': 'ls',
+                'groupname': 'alpacon',
+            },
+        )
 
 
 class TestExecuteCommandWithSession:
@@ -983,8 +1044,20 @@ class TestExecuteCommandWithSession:
             region='ap1',
         )
 
-        call_data = mock_http_client.post.call_args[1]['data']
-        assert call_data['work_session'] == 'ws-uuid-abcd'
+        mock_http_client.post.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/events/commands/',
+            token='test-token',
+            data={
+                'server': '550e8400-e29b-41d4-a716-446655440001',
+                'shell': 'system',
+                'line': 'ls',
+                'groupname': 'alpacon',
+                'work_session': 'ws-uuid-abcd',
+                'purpose_demand_supported': True,
+            },
+        )
 
 
 class TestExecuteCommandMultiServerWithSession:
@@ -1002,8 +1075,19 @@ class TestExecuteCommandMultiServerWithSession:
             region='ap1',
         )
 
-        call_data = mock_http_client.post.call_args[1]['data']
-        assert call_data['work_session'] == 'ws-uuid-abcd'
+        mock_http_client.post.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/events/commands/',
+            token='test-token',
+            data={
+                'server': '550e8400-e29b-41d4-a716-446655440001',
+                'shell': 'system',
+                'line': 'ls',
+                'groupname': 'alpacon',
+                'work_session': 'ws-uuid-abcd',
+            },
+        )
 
 
 class TestExecuteCommandGateTranslation:
@@ -1183,11 +1267,22 @@ class TestPurposeDemand:
             token='test-token',
         )
 
-        sent = mock_http_client.post.call_args.kwargs['data']
-        assert sent['purpose'] == (
-            'The host clock is 40s ahead, so the cert reads as not-yet-valid.'
+        mock_http_client.post.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/events/commands/',
+            token='test-token',
+            data={
+                'server': '550e8400-e29b-41d4-a716-446655440001',
+                'shell': 'system',
+                'line': 'systemctl restart chronyd',
+                'groupname': 'alpacon',
+                'purpose': (
+                    'The host clock is 40s ahead, so the cert reads as not-yet-valid.'
+                ),
+                'purpose_demand_supported': True,
+            },
         )
-        assert sent['purpose_demand_supported'] is True
 
     @pytest.mark.asyncio
     async def test_submit_truncates_purpose_to_the_server_ceiling(
@@ -1206,8 +1301,19 @@ class TestPurposeDemand:
             token='test-token',
         )
 
-        sent = mock_http_client.post.call_args.kwargs['data']
-        assert len(sent['purpose']) == PURPOSE_MAX_LENGTH
+        mock_http_client.post.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/events/commands/',
+            token='test-token',
+            data={
+                'server': '550e8400-e29b-41d4-a716-446655440001',
+                'shell': 'system',
+                'line': 'true',
+                'groupname': 'alpacon',
+                'purpose': 'x' * PURPOSE_MAX_LENGTH,
+            },
+        )
 
     @pytest.mark.asyncio
     async def test_submit_treats_a_blank_purpose_as_unstated(self, mock_http_client):
@@ -1226,9 +1332,19 @@ class TestPurposeDemand:
             token='test-token',
         )
 
-        sent = mock_http_client.post.call_args.kwargs['data']
-        assert 'purpose' not in sent
-        assert sent['purpose_demand_supported'] is True
+        mock_http_client.post.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/events/commands/',
+            token='test-token',
+            data={
+                'server': '550e8400-e29b-41d4-a716-446655440001',
+                'shell': 'system',
+                'line': 'true',
+                'groupname': 'alpacon',
+                'purpose_demand_supported': True,
+            },
+        )
 
     @pytest.mark.asyncio
     async def test_state_purpose_omits_metadata_it_was_never_given(
@@ -1650,9 +1766,13 @@ class TestPurposeDemandHonesty:
             token='test-token',
         )
 
-        sent = mock_http_client.post.call_args.kwargs['data']['purpose']
-        assert len(sent) == PURPOSE_MAX_LENGTH
-        assert not sent.startswith(' ')
+        mock_http_client.post.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/events/commands/cmd-606/purpose/',
+            token='test-token',
+            data={'purpose': 'x' * PURPOSE_MAX_LENGTH},
+        )
 
     @pytest.mark.asyncio
     async def test_a_rejudgment_that_still_needs_a_human_says_so(
@@ -1854,23 +1974,26 @@ class TestSubmitFileExecution:
             token='test-token',
         )
 
-        call = mock_http_client.post.call_args.kwargs
-        assert call['endpoint'] == '/api/events/commands/'
-        sent = call['data']
-        assert sent['server'] == _FILE_SERVER
-        assert sent['username'] == 'root'
-        assert sent['groupname'] == 'root'
-        assert sent['file'] == {
-            'path': '/opt/deploy.sh',
-            'interpreter': '/bin/bash',
-            'args': ['--fast', ''],
-            'content': _FILE_SCRIPT,
-        }
         # The server refuses line and data on key presence (an empty string
         # included) and a non-empty env, so the keys the other lane needs must
         # be absent here rather than blank; shell is the server's to set.
-        for forbidden in ('line', 'data', 'env', 'shell'):
-            assert forbidden not in sent
+        mock_http_client.post.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/events/commands/',
+            token='test-token',
+            data={
+                'server': _FILE_SERVER,
+                'groupname': 'root',
+                'file': {
+                    'path': '/opt/deploy.sh',
+                    'interpreter': '/bin/bash',
+                    'args': ['--fast', ''],
+                    'content': _FILE_SCRIPT,
+                },
+                'username': 'root',
+            },
+        )
 
     @pytest.mark.asyncio
     async def test_content_travels_byte_for_byte(self, mock_http_client):
@@ -1888,8 +2011,22 @@ class TestSubmitFileExecution:
             token='test-token',
         )
 
-        sent = mock_http_client.post.call_args.kwargs['data']
-        assert sent['file']['content'] == content
+        mock_http_client.post.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/events/commands/',
+            token='test-token',
+            data={
+                'server': _FILE_SERVER,
+                'groupname': 'alpacon',
+                'file': {
+                    'path': '/opt/deploy.sh',
+                    'interpreter': '/bin/bash',
+                    'args': [],
+                    'content': content,
+                },
+            },
+        )
 
     @pytest.mark.asyncio
     async def test_args_default_to_an_empty_list_and_interpreter_to_bash(
@@ -1906,11 +2043,22 @@ class TestSubmitFileExecution:
             token='test-token',
         )
 
-        sent = mock_http_client.post.call_args.kwargs['data']
-        assert sent['file']['args'] == []
-        assert sent['file']['interpreter'] == '/bin/bash'
-        assert 'username' not in sent
-        assert sent['groupname'] == 'alpacon'
+        mock_http_client.post.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/events/commands/',
+            token='test-token',
+            data={
+                'server': _FILE_SERVER,
+                'groupname': 'alpacon',
+                'file': {
+                    'path': '/opt/deploy.sh',
+                    'interpreter': '/bin/bash',
+                    'args': [],
+                    'content': _FILE_SCRIPT,
+                },
+            },
+        )
 
     @pytest.mark.asyncio
     async def test_requester_fields_ride_the_file_lane_unchanged(
@@ -1932,14 +2080,29 @@ class TestSubmitFileExecution:
             token='test-token',
         )
 
-        sent = mock_http_client.post.call_args.kwargs['data']
-        assert sent['run_after'] == ['cmd-100']
-        assert sent['scheduled_at'] == '2026-09-10T03:00:00Z'
-        assert sent['work_session'] == 'ws-1'
         # The same rules as the shell lane: a purpose is stripped and capped,
         # and the capability flag is sent only when asked for.
-        assert sent['purpose'] == 'The release tag moved; redeploy picks it up.'
-        assert sent['purpose_demand_supported'] is True
+        mock_http_client.post.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/events/commands/',
+            token='test-token',
+            data={
+                'server': _FILE_SERVER,
+                'groupname': 'alpacon',
+                'file': {
+                    'path': '/opt/deploy.sh',
+                    'interpreter': '/bin/bash',
+                    'args': [],
+                    'content': _FILE_SCRIPT,
+                },
+                'run_after': ['cmd-100'],
+                'scheduled_at': '2026-09-10T03:00:00Z',
+                'work_session': 'ws-1',
+                'purpose': 'The release tag moved; redeploy picks it up.',
+                'purpose_demand_supported': True,
+            },
+        )
 
     @pytest.mark.asyncio
     async def test_blank_purpose_is_unstated_on_the_file_lane_too(
@@ -1957,9 +2120,22 @@ class TestSubmitFileExecution:
             token='test-token',
         )
 
-        sent = mock_http_client.post.call_args.kwargs['data']
-        assert 'purpose' not in sent
-        assert 'purpose_demand_supported' not in sent
+        mock_http_client.post.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/events/commands/',
+            token='test-token',
+            data={
+                'server': _FILE_SERVER,
+                'groupname': 'alpacon',
+                'file': {
+                    'path': '/opt/deploy.sh',
+                    'interpreter': '/bin/bash',
+                    'args': [],
+                    'content': _FILE_SCRIPT,
+                },
+            },
+        )
 
 
 class TestExecuteFileLocalValidation:
