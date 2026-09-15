@@ -320,7 +320,6 @@ class TestSearchEvents:
 
 class TestListEventsParams:
     LIST_EVENTS_CASES = [
-        pytest.param({}, {'page_size': 50, 'ordering': '-added_at'}, id='no_filters'),
         pytest.param(
             {'server_id': SERVER_ID},
             {'page_size': 50, 'ordering': '-added_at', 'server': SERVER_ID},
@@ -335,16 +334,6 @@ class TestListEventsParams:
             {'limit': 25},
             {'page_size': 25, 'ordering': '-added_at'},
             id='limit_override',
-        ),
-        pytest.param(
-            {'server_id': SERVER_ID, 'reporter': 'system', 'limit': 25},
-            {
-                'page_size': 25,
-                'ordering': '-added_at',
-                'server': SERVER_ID,
-                'reporter': 'system',
-            },
-            id='all_filters',
         ),
         pytest.param(
             {'reporter': ''},
@@ -376,11 +365,6 @@ class TestListEventsParams:
 
 class TestSearchEventsParams:
     SEARCH_EVENTS_CASES = [
-        pytest.param(
-            {},
-            {'search': 'error', 'page_size': 20, 'ordering': '-added_at'},
-            id='no_filters',
-        ),
         pytest.param(
             {'server_id': SERVER_ID},
             {

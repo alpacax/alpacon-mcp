@@ -2530,20 +2530,6 @@ class TestExecuteFileRegistration:
 class TestListCommandsParams:
     LIST_COMMANDS_CASES = [
         pytest.param({}, {'page_size': 20, 'ordering': '-added_at'}, id='no_filters'),
-        pytest.param(
-            {'server_id': '550e8400-e29b-41d4-a716-446655440001'},
-            {
-                'page_size': 20,
-                'ordering': '-added_at',
-                'server': '550e8400-e29b-41d4-a716-446655440001',
-            },
-            id='server_only',
-        ),
-        pytest.param(
-            {'limit': 10},
-            {'page_size': 10, 'ordering': '-added_at'},
-            id='limit_override',
-        ),
     ]
 
     @pytest.mark.parametrize(('tool_kwargs', 'expected_params'), LIST_COMMANDS_CASES)

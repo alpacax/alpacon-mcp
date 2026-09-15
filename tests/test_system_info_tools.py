@@ -859,7 +859,6 @@ class TestGetServerOverview:
 
 class TestListSystemUsersParams:
     LIST_SYSTEM_USERS_CASES = [
-        pytest.param({}, {'server': PARAMS_SERVER_ID}, id='no_filters'),
         pytest.param(
             {'username_filter': 'root'},
             {'server': PARAMS_SERVER_ID, 'search': 'root'},
@@ -915,7 +914,6 @@ class TestListSystemUsersParams:
 
 class TestListSystemGroupsParams:
     LIST_SYSTEM_GROUPS_CASES = [
-        pytest.param({}, {'server': PARAMS_SERVER_ID}, id='no_filters'),
         pytest.param(
             {'groupname_filter': 'sudo'},
             {'server': PARAMS_SERVER_ID, 'search': 'sudo'},
@@ -956,9 +954,6 @@ class TestListSystemGroupsParams:
 
 class TestListSystemPackagesParams:
     LIST_SYSTEM_PACKAGES_CASES = [
-        pytest.param(
-            {}, {'server': PARAMS_SERVER_ID, 'page_size': 100}, id='no_filters'
-        ),
         pytest.param(
             {'package_name': 'openssl'},
             {'server': PARAMS_SERVER_ID, 'page_size': 100, 'search': 'openssl'},

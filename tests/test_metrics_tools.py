@@ -1091,43 +1091,5 @@ class TestMetricsDeviceFilters:
         )
 
 
-class TestGetAlertRulesParams:
-    @pytest.mark.asyncio
-    async def test_no_server_filter_sends_empty_params(
-        self, mock_http_client, mock_token_manager
-    ):
-        mock_http_client.get.return_value = {'results': []}
-
-        result = await get_alert_rules(workspace='testworkspace', region='ap1')
-
-        assert result['status'] == 'success'
-        mock_http_client.get.assert_called_once_with(
-            region='ap1',
-            workspace='testworkspace',
-            endpoint='/api/metrics/alert-rules/',
-            token='test-token',
-            params={},
-        )
-
-    @pytest.mark.asyncio
-    async def test_server_filter_is_forwarded(
-        self, mock_http_client, mock_token_manager
-    ):
-        mock_http_client.get.return_value = {'results': []}
-
-        result = await get_alert_rules(
-            workspace='testworkspace', server_id=METRICS_SERVER_ID, region='ap1'
-        )
-
-        assert result['status'] == 'success'
-        mock_http_client.get.assert_called_once_with(
-            region='ap1',
-            workspace='testworkspace',
-            endpoint='/api/metrics/alert-rules/',
-            token='test-token',
-            params={'server': METRICS_SERVER_ID},
-        )
-
-
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])

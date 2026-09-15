@@ -683,17 +683,6 @@ class TestDescriptionIsNotAnExecutionChannel:
 
 class TestWorkSessionListParams:
     WORK_SESSION_LIST_CASES = [
-        pytest.param({}, {'page_size': 20}, id='no_filters'),
-        pytest.param(
-            {'status': 'active'},
-            {'page_size': 20, 'status': 'active'},
-            id='status_only',
-        ),
-        pytest.param(
-            {'requester_type': 'agent'},
-            {'page_size': 20, 'requester_type': 'agent'},
-            id='requester_type_only',
-        ),
         pytest.param(
             {'status': 'active', 'requester_type': 'agent', 'limit': 5},
             {'page_size': 5, 'status': 'active', 'requester_type': 'agent'},

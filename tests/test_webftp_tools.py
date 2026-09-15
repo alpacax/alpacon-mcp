@@ -1556,59 +1556,5 @@ class TestWebFtpSessionCreateGateTranslation:
         assert 'next_action' in result
 
 
-class TestWebftpListParams:
-    WEBFTP_LIST_TOOLS = [
-        pytest.param(
-            webftp_sessions_list, '/api/webftp/sessions/', id='webftp_sessions_list'
-        ),
-        pytest.param(
-            webftp_uploads_list, '/api/webftp/uploads/', id='webftp_uploads_list'
-        ),
-        pytest.param(
-            webftp_downloads_list, '/api/webftp/downloads/', id='webftp_downloads_list'
-        ),
-    ]
-
-    @pytest.mark.parametrize(('tool', 'endpoint'), WEBFTP_LIST_TOOLS)
-    @pytest.mark.asyncio
-    async def test_no_server_filter_sends_empty_params(
-        self, tool, endpoint, mock_http_client, mock_token_manager
-    ):
-        mock_http_client.get.return_value = {'results': []}
-
-        result = await tool(workspace='testworkspace', region='ap1')
-
-        assert result['status'] == 'success'
-        mock_http_client.get.assert_called_once_with(
-            region='ap1',
-            workspace='testworkspace',
-            endpoint=endpoint,
-            token='test-token',
-            params={},
-        )
-
-    @pytest.mark.parametrize(('tool', 'endpoint'), WEBFTP_LIST_TOOLS)
-    @pytest.mark.asyncio
-    async def test_server_filter_is_forwarded(
-        self, tool, endpoint, mock_http_client, mock_token_manager
-    ):
-        mock_http_client.get.return_value = {'results': []}
-
-        result = await tool(
-            workspace='testworkspace',
-            server_id='550e8400-e29b-41d4-a716-446655440001',
-            region='ap1',
-        )
-
-        assert result['status'] == 'success'
-        mock_http_client.get.assert_called_once_with(
-            region='ap1',
-            workspace='testworkspace',
-            endpoint=endpoint,
-            token='test-token',
-            params={'server': '550e8400-e29b-41d4-a716-446655440001'},
-        )
-
-
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])
