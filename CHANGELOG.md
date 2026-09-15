@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `create_alert_rule` and `update_alert_rule` gained `operator`, `duration_s`, `recovery_threshold`,
+  `no_data_after_s`, `device`, and `severity`, matching the alpacon-server metrics-extension rule
+  shape (#243). All six are optional and sent only when given, so an existing caller's request is
+  unchanged; `device` is accepted only for device-scoped targets (disk usage, disk I/O, network),
+  and `duration_s=0` (the server default) still fires on a single breaching sample.
+- `list_alerts` gained a `resolved` filter (#243): omitted, it returns open alerts only as before;
+  `true` returns the resolved history. `list_alerts` and `get_alert` responses can now also carry
+  `resolved_at`, `device`, and `severity` from the rule that raised the alert — no new handling
+  required for a client that already reads fields it recognizes by name.
+- `list_event_subscriptions` and `create_event_subscription` now document two more event types,
+  `metric_threshold_crossed` and `metric_threshold_resolved` (#243), which the server already
+  accepted once a workspace's metrics extension was enabled. Both carry an `alert_id` pairing the
+  crossing to its resolution; subscribing to every server (an omitted `target_id`) needs an admin
+  account.
 - Actionable hints for two error codes the metrics extension gate returns:
   `workspace_extension_plan_required` (402, the workspace's plan excludes the metrics
   extension) and `workspace_extension_not_enabled` (403, the plan allows it but a workspace

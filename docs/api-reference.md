@@ -732,15 +732,17 @@ There is intentionally no `approve_request`/`reject_request` tool: the Alpacon s
 
 ## 🔔 Alert tools
 
-- `list_alerts`: `workspace`, `server_id`, `alert_type`, `severity` (`critical`, `warning`, `info`), `server_name`, `acknowledged`, `dismissed`, `region` (optional), `page`, `page_size`
+- `list_alerts`: `workspace`, `server_id`, `alert_type`, `severity` (`critical`, `warning`, `info`), `server_name`, `acknowledged`, `dismissed`, `resolved`, `region` (optional), `page`, `page_size`. `resolved` omitted returns open alerts only; `true` returns the resolved history instead
 - `get_alert`: `alert_id`, `workspace`, `region` (optional)
 - `acknowledge_alert`: `alert_id`, `workspace`, `action_type` (`checked` or `dismissed`), `region` (optional). One acknowledgement per user per alert, and it cannot be changed afterwards
-- `create_alert_rule`: `workspace`, `name`, `target`, `threshold`, `is_default`, `region` (optional). `target` is a metric the workspace exposes, e.g. `cpu-usage`, `memory-usage`, `disk-usage`, or one of the peak/avg bps or pps network and disk rates; the server holds the authoritative list and rejects an unrecognized value with `400`
-- `update_alert_rule`: `rule_id`, `workspace`, and any of `name`, `target`, `threshold`, `is_default`. `target`, when given, is subject to the same rule as `create_alert_rule`: the server holds the authoritative list and rejects an unrecognized value with `400`
+- `create_alert_rule`: `workspace`, `name`, `target`, `threshold`, `is_default`, `operator` (`gte` or `lte`, default `gte`), `duration_s` (seconds the condition must hold; `0`, the default, fires on a single sample), `recovery_threshold`, `no_data_after_s` (floored at the target's collection interval), `device` (disk/interface name; device-scoped targets only), `severity` (`critical`, `warning`, `info`; default `warning`), `region` (optional). `target` is a metric the workspace exposes, e.g. `cpu-usage`, `memory-usage`, `disk-usage`, or one of the peak/avg bps or pps network and disk rates; the server holds the authoritative list and rejects an unrecognized value with `400`. `device` is accepted only for a device-scoped target — `cpu-usage` and `memory-usage` are host-wide
+- `update_alert_rule`: `rule_id`, `workspace`, and any of `name`, `target`, `threshold`, `is_default`, `operator`, `duration_s`, `recovery_threshold`, `no_data_after_s`, `device`, `severity` — sent only for the fields given. `target`, when given, is subject to the same rule as `create_alert_rule`: the server holds the authoritative list and rejects an unrecognized value with `400`
 - `delete_alert_rule`: by `rule_id`. A rule with `is_default=true` cannot be deleted
 - `attach_alert_rule` / `detach_alert_rule`: `server_id`, `rule_id`, `workspace`, `region` (optional). Each is idempotent in the state it aims at: attaching a rule the server already has changes nothing, and so does detaching a rule the server does not have
 
-Creating and updating a rule need a paid plan; reading, attaching and detaching work on any plan.
+Creating and updating a rule need a paid plan; reading, attaching and detaching work on any plan. A
+listed or fetched alert can carry `device` and `severity` from the rule that raised it, and
+`resolved_at` once the condition clears.
 
 ---
 
@@ -797,7 +799,7 @@ The `command` and `path` a rule matches on must not be empty or whitespace-only.
 - `get_webhook` / `delete_webhook`: by `webhook_id`
 - `create_webhook`: `workspace`, `name`, `url`, `owner` (user UUID, required), `provider` (optional), `ssl_verify`, `enabled`, `region` (optional). `provider` is one of `slack`, `discord`, `teams`, `telegram`, `custom`, and is detected from the URL when omitted
 - `update_webhook`: `webhook_id`, `workspace`, and any of `name`, `url`, `ssl_verify`, `enabled`
-- `list_event_subscriptions` / `create_event_subscription` (`channel`, `event_type`, `target_id`) / `delete_event_subscription`
+- `list_event_subscriptions` / `create_event_subscription` (`channel`, `event_type`, `target_id`) / `delete_event_subscription`. `event_type` includes `command_fin`, `servers_commit`, `sudo`, and (with the workspace's metrics extension enabled) `metric_threshold_crossed` / `metric_threshold_resolved`, which pair through the `alert_id` they carry; subscribing to every server (an omitted `target_id`) needs an admin account
 
 Webhook tools need an admin account, and creating or updating a webhook needs a paid plan.
 

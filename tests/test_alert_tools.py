@@ -23,6 +23,17 @@ ALERT_ID = 'alert-1'
 RULE_ID = 'rule-1'
 SERVER_ID = '550e8400-e29b-41d4-a716-446655440123'
 
+# The six fields the metrics-extension rework added to AlertRule (#243): each
+# is sent only when the caller gives it.
+NEW_RULE_FIELDS = [
+    ('operator', 'lte'),
+    ('duration_s', 60),
+    ('recovery_threshold', 70.0),
+    ('no_data_after_s', 300),
+    ('device', 'sda1'),
+    ('severity', 'critical'),
+]
+
 
 mock_http_client = http_client_fixture('tools.alert_tools')
 
@@ -90,6 +101,7 @@ class TestListAlerts:
             alert_type='metric_threshold',
             severity='critical',
             server_name='web-01',
+            resolved=True,
         )
 
         mock_http_client.get.assert_called_once_with(
@@ -101,7 +113,28 @@ class TestListAlerts:
                 'alert_type': 'metric_threshold',
                 'severity': 'critical',
                 'server_name': 'web-01',
+                'resolved': True,
             },
+        )
+
+    @pytest.mark.asyncio
+    async def test_list_resolved_false_filter(
+        self, mock_http_client, mock_token_manager
+    ):
+        """resolved=False must forward as a param, not be dropped by a truthy check."""
+        mock_http_client.get.return_value = {'results': [], 'count': 0}
+
+        result = await list_alerts(
+            workspace='testworkspace', region='ap1', resolved=False
+        )
+
+        assert result['status'] == 'success'
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/alerts/',
+            token='test-token',
+            params={'resolved': False},
         )
 
     def test_list_no_longer_accepts_status(self):
@@ -256,6 +289,46 @@ class TestCreateAlertRule:
         source = Path('tools/alert_tools.py').read_text()
         assert source.count('{_TARGETS_SENTENCE}') == 2
 
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('field, value', NEW_RULE_FIELDS)
+    async def test_create_sends_new_fields_only_when_given(
+        self, field, value, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = {'id': RULE_ID}
+
+        await create_alert_rule(
+            workspace='testworkspace',
+            name='disk above 85',
+            target='disk-usage',
+            threshold=85.0,
+            region='ap1',
+            **{field: value},
+        )
+
+        sent_data = mock_http_client.post.call_args.kwargs['data']
+        assert sent_data[field] == value
+        for other_field, _other_value in NEW_RULE_FIELDS:
+            if other_field != field:
+                assert other_field not in sent_data
+
+    @pytest.mark.asyncio
+    async def test_create_omits_all_six_new_fields_when_none_given(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = {'id': RULE_ID}
+
+        await create_alert_rule(
+            workspace='testworkspace',
+            name='disk above 85',
+            target='disk-usage',
+            threshold=85.0,
+            region='ap1',
+        )
+
+        sent_data = mock_http_client.post.call_args.kwargs['data']
+        for field, _value in NEW_RULE_FIELDS:
+            assert field not in sent_data
+
 
 class TestUpdateAlertRule:
     @pytest.mark.asyncio
@@ -312,8 +385,36 @@ class TestUpdateAlertRule:
             'target',
             'threshold',
             'is_default',
+            'operator',
+            'duration_s',
+            'recovery_threshold',
+            'no_data_after_s',
+            'device',
+            'severity',
             'region',
         }
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('field, value', NEW_RULE_FIELDS)
+    async def test_update_sends_new_fields_only_when_given(
+        self, field, value, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.patch.return_value = {'id': RULE_ID}
+
+        await update_alert_rule(
+            rule_id=RULE_ID,
+            workspace='testworkspace',
+            region='ap1',
+            **{field: value},
+        )
+
+        mock_http_client.patch.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint=f'/api/metrics/alert-rules/{RULE_ID}/',
+            token='test-token',
+            data={field: value},
+        )
 
     @pytest.mark.asyncio
     async def test_update_with_no_fields_is_a_validation_error(
@@ -327,8 +428,9 @@ class TestUpdateAlertRule:
         assert result['error_code'] == 'validation'
         assert result['field'] == 'payload'
         assert (
-            'At least one of name, target, threshold or is_default must be provided.'
-            in result['suggestion']
+            'At least one of name, target, threshold, is_default, operator, '
+            'duration_s, recovery_threshold, no_data_after_s, device or '
+            'severity must be provided.' in result['suggestion']
         )
         mock_http_client.patch.assert_not_called()
 

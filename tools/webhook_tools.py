@@ -26,7 +26,7 @@ _OWNER_SENTENCE = "owner must be a user's UUID; a username is rejected."
 
 
 @mcp_tool_handler(
-    description='List event subscriptions in a workspace. Returns subscription ID, channel, event type, and target ID. Subscriptions define which events (command_fin, servers_commit, sudo) trigger notifications to a channel. Related: create_event_subscription, list_webhooks (webhook endpoints).',
+    description='List event subscriptions in a workspace. Returns subscription ID, channel, event type, and target ID. Subscriptions define which events (command_fin, servers_commit, sudo, metric_threshold_crossed, metric_threshold_resolved) trigger notifications to a channel. Related: create_event_subscription, list_webhooks (webhook endpoints).',
     annotations=READ_ONLY,
     meta={'anthropic/searchHint': 'event subscription notification channel'},
 )
@@ -64,7 +64,7 @@ async def list_event_subscriptions(
 
 
 @mcp_tool_handler(
-    description='Create an event subscription to receive notifications when specific events occur. Requires a notification channel ID and event type (command_fin, servers_commit, sudo). Optionally filter by target resource ID. Users can only manage their own subscriptions. Related: list_webhooks (find channel IDs), delete_event_subscription.',
+    description='Create an event subscription to receive notifications when specific events occur. Requires a notification channel ID and event type (command_fin, servers_commit, sudo, metric_threshold_crossed, metric_threshold_resolved). Optionally filter by target resource ID. Users can only manage their own subscriptions. Related: list_webhooks (find channel IDs), delete_event_subscription.',
     annotations=ADDITIVE,
     meta={'anthropic/searchHint': 'event subscription create notification'},
 )
@@ -81,8 +81,16 @@ async def create_event_subscription(
     Args:
         workspace: Workspace name. Required parameter
         channel: Notification channel ID to deliver events to
-        event_type: Type of event to subscribe to (command_fin, servers_commit, sudo)
-        target_id: Target resource ID to filter events for (optional)
+        event_type: Type of event to subscribe to, e.g. command_fin,
+            servers_commit, sudo, metric_threshold_crossed (a rule's
+            threshold or no-data condition was met), or
+            metric_threshold_resolved (the condition cleared). The two
+            metric events both carry an alert_id pairing the crossing to its
+            resolution, need the workspace's metrics extension enabled, and
+            an omitted target_id (every server, rather than one) needs an
+            admin account
+        target_id: Target resource ID to filter events for; for the two
+            metric events this is a server ID (optional)
         region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
