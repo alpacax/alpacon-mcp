@@ -205,13 +205,13 @@ async def create_alert_rule(
     target: str,
     threshold: float,
     is_default: bool = False,
+    region: str = '',
     operator: str | None = None,
     duration_s: int | None = None,
     recovery_threshold: float | None = None,
     no_data_after_s: int | None = None,
     device: str | None = None,
     severity: str | None = None,
-    region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
     """Create an alert rule.
@@ -224,6 +224,7 @@ async def create_alert_rule(
             holds the authoritative list and rejects an unrecognized one.
         threshold: Value the metric must cross to fire
         is_default: Make this the default rule for the target
+        region: Region (ap1, us1). Auto-detected if not provided
         operator: Which side of the threshold breaches: gte (default) fires
             at or above it, lte fires at or below it (optional)
         duration_s: How long the condition must hold before firing, in
@@ -240,7 +241,6 @@ async def create_alert_rule(
             (optional)
         severity: Severity the raised alert carries: critical, warning
             (default), or info (optional)
-        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Created alert rule
@@ -294,13 +294,13 @@ async def update_alert_rule(
     target: str | None = None,
     threshold: float | None = None,
     is_default: bool | None = None,
+    region: str = '',
     operator: str | None = None,
     duration_s: int | None = None,
     recovery_threshold: float | None = None,
     no_data_after_s: int | None = None,
     device: str | None = None,
     severity: str | None = None,
-    region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
     """Update an alert rule.
@@ -315,6 +315,7 @@ async def update_alert_rule(
             one. (optional)
         threshold: New threshold (optional)
         is_default: Make this the default rule for the target (optional)
+        region: Region (ap1, us1). Auto-detected if not provided
         operator: Which side of the threshold breaches: gte fires at or
             above it, lte fires at or below it (optional)
         duration_s: How long the condition must hold before firing, in
@@ -330,7 +331,6 @@ async def update_alert_rule(
             (optional)
         severity: Severity the raised alert carries: critical, warning, or
             info (optional)
-        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Updated alert rule
