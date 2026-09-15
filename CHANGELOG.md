@@ -109,6 +109,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `status`, now forward an empty string to the API instead of silently dropping it (#200).
   A client that passed `status=""` meaning "no filter" now gets whatever the server does
   with a blank filter value, not the unfiltered list it got before.
+- List filters that are supplied but blank are now forwarded to the API instead of being
+  silently dropped (#226), matching the rule #200 established. Affects `reporter` on
+  `list_events`; `status` and `requester_type` on `work_session_list`; `username_filter`
+  on `list_system_users`; `groupname_filter` on `list_system_groups`; `package_name` and
+  `architecture` on `list_system_packages`; and `partition`, `interface`, and `end_date`
+  on the metrics window tools, plus `device` on `get_disk_usage` when a `partition` is
+  also given, and unconditionally on `get_disk_io`. A client that passed one of these as
+  `""` meaning "no filter" now gets whatever the server does with a blank filter value.
+  `server_id`, `limit`, and `page_size` are unaffected: a blank one was already rejected
+  before the request was built.
 
 ### Removed
 - BREAKING: the invented `title` on `create_server_note` and `update_server_note`. The note

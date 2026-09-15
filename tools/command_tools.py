@@ -9,6 +9,7 @@ from utils.common import (
     FILE_EXEC_INLINE_CREDENTIAL_HINT,
     FILE_EXEC_REFUSAL_HINTS,
     INLINE_CREDENTIAL_HINT,
+    build_list_params,
     empty_value_error,
     error_response,
     pending_approval_response,
@@ -472,10 +473,7 @@ async def list_commands(
     """List recent commands executed on servers."""
     token = kwargs.get('token')
 
-    params = {'page_size': limit, 'ordering': '-added_at'}
-
-    if server_id:
-        params['server'] = server_id
+    params = build_list_params(page_size=limit, ordering='-added_at', server=server_id)
 
     result = await http_client.get(
         region=region,

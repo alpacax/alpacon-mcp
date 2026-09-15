@@ -4,6 +4,7 @@ import importlib.metadata
 import json
 import os
 import platform
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from utils.logger import get_logger
@@ -270,6 +271,15 @@ def build_list_params(
     """
     supplied = {'page': page, 'page_size': page_size, **filters}
     return {name: value for name, value in supplied.items() if value is not None}
+
+
+def resolve_time_window(
+    start_date: str | None, end_date: str | None
+) -> tuple[str, str | None]:
+    """Default a missing or blank start while preserving the supplied end."""
+    # A blank start is not a bound the API can read, so it takes the default too.
+    start = start_date or (datetime.now(UTC) - timedelta(hours=24)).isoformat()
+    return start, end_date
 
 
 def error_response(message: str, **kwargs) -> dict[str, Any]:

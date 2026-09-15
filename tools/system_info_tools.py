@@ -4,7 +4,12 @@ import asyncio
 from typing import Any
 
 from utils.api_call import http_call_response
-from utils.common import error_response, success_response, unwrap_http_result
+from utils.common import (
+    build_list_params,
+    error_response,
+    success_response,
+    unwrap_http_result,
+)
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import READ_ONLY
@@ -103,10 +108,9 @@ async def list_system_users(
     """
     token = kwargs.get('token')
 
-    # Prepare query parameters
-    params = {'server': server_id}
-    if username_filter:
-        params['search'] = username_filter
+    params = build_list_params(server=server_id, search=username_filter)
+    # False means "do not filter" here, not "filter on false", and the API wants
+    # the string, so this one stays a truthiness check.
     if login_enabled_only:
         params['login_enabled'] = 'true'
 
@@ -164,10 +168,7 @@ async def list_system_groups(
     """
     token = kwargs.get('token')
 
-    # Prepare query parameters
-    params = {'server': server_id}
-    if groupname_filter:
-        params['search'] = groupname_filter
+    params = build_list_params(server=server_id, search=groupname_filter)
 
     # Make async call to get system groups
     result = await http_client.get(
@@ -226,12 +227,12 @@ async def list_system_packages(
     """
     token = kwargs.get('token')
 
-    # Prepare query parameters
-    params = {'server': server_id, 'page_size': limit}
-    if package_name:
-        params['search'] = package_name
-    if architecture:
-        params['arch'] = architecture
+    params = build_list_params(
+        page_size=limit,
+        server=server_id,
+        search=package_name,
+        arch=architecture,
+    )
 
     # Make async call to get system packages
     result = await http_client.get(

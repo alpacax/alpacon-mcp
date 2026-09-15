@@ -42,6 +42,21 @@ _GATE_ENVELOPE_NOT_ACTIVE = {
     'response': '{"code":"work_session_not_active"}',
 }
 
+
+_FILE_SERVER = '550e8400-e29b-41d4-a716-446655440001'
+_FILE_SCRIPT = '#!/bin/bash\nset -euo pipefail\necho deploy\n'
+
+_FILE_EXEC_CODES = frozenset(
+    {
+        'file_exec_unsupported_agent',
+        'file_exec_assessor_disabled',
+        'file_exec_invalid_path',
+        'file_exec_content_too_large',
+        'file_exec_empty_content',
+        'file_exec_line_too_long',
+    }
+)
+
 mock_http_client = http_client_fixture('tools.command_tools')
 
 
@@ -1929,21 +1944,6 @@ class TestEmptyCommandRejected:
         mock_http_client.post.assert_not_called()
 
 
-_FILE_SERVER = '550e8400-e29b-41d4-a716-446655440001'
-_FILE_SCRIPT = '#!/bin/bash\nset -euo pipefail\necho deploy\n'
-
-_FILE_EXEC_CODES = frozenset(
-    {
-        'file_exec_unsupported_agent',
-        'file_exec_assessor_disabled',
-        'file_exec_invalid_path',
-        'file_exec_content_too_large',
-        'file_exec_empty_content',
-        'file_exec_line_too_long',
-    }
-)
-
-
 def _file_exec_envelope(code: str) -> dict[str, Any]:
     return {
         'error': 'HTTP Error',
@@ -2525,3 +2525,29 @@ class TestExecuteFileRegistration:
 
         assert 'execute_file' in text
         assert 'heredoc' in text
+
+
+class TestListCommandsParams:
+    LIST_COMMANDS_CASES = [
+        pytest.param({}, {'page_size': 20, 'ordering': '-added_at'}, id='no_filters'),
+    ]
+
+    @pytest.mark.parametrize(('tool_kwargs', 'expected_params'), LIST_COMMANDS_CASES)
+    @pytest.mark.asyncio
+    async def test_params(
+        self, tool_kwargs, expected_params, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.get.return_value = {'results': []}
+
+        result = await list_commands(
+            workspace='testworkspace', region='ap1', **tool_kwargs
+        )
+
+        assert result['status'] == 'success'
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/events/commands/',
+            token='test-token',
+            params=expected_params,
+        )

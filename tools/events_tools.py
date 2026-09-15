@@ -3,6 +3,7 @@
 from typing import Any
 
 from utils.api_call import http_call_response
+from utils.common import build_list_params
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import READ_ONLY
@@ -24,12 +25,12 @@ async def list_events(
     """List events from servers."""
     token = kwargs.get('token')
 
-    params = {'page_size': limit, 'ordering': '-added_at'}
-
-    if server_id:
-        params['server'] = server_id
-    if reporter:
-        params['reporter'] = reporter
+    params = build_list_params(
+        page_size=limit,
+        ordering='-added_at',
+        server=server_id,
+        reporter=reporter,
+    )
 
     return await http_call_response(
         http_client.get,
@@ -83,10 +84,12 @@ async def search_events(
     """Search events by server name, reporter, record, or description."""
     token = kwargs.get('token')
 
-    params = {'search': search_query, 'page_size': limit, 'ordering': '-added_at'}
-
-    if server_id:
-        params['server'] = server_id
+    params = build_list_params(
+        page_size=limit,
+        search=search_query,
+        ordering='-added_at',
+        server=server_id,
+    )
 
     return await http_call_response(
         http_client.get,

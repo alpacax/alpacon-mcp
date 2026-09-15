@@ -13,6 +13,7 @@ import httpx
 
 from utils.api_call import http_call_response
 from utils.common import (
+    build_list_params,
     empty_value_error,
     error_response,
     is_auth_enabled,
@@ -299,9 +300,7 @@ async def webftp_sessions_list(
     """Get list of WebFTP sessions."""
     token = kwargs.get('token')
 
-    params = {}
-    if server_id:
-        params['server'] = server_id
+    params = build_list_params(server=server_id)
 
     return await http_call_response(
         http_client.get,
@@ -666,9 +665,7 @@ async def webftp_uploads_list(
     """List uploaded files (upload history)."""
     token = kwargs.get('token')
 
-    params = {}
-    if server_id:
-        params['server'] = server_id
+    params = build_list_params(server=server_id)
 
     return await http_call_response(
         http_client.get,
@@ -693,9 +690,7 @@ async def webftp_downloads_list(
     """List download requests (download history)."""
     token = kwargs.get('token')
 
-    params = {}
-    if server_id:
-        params['server'] = server_id
+    params = build_list_params(server=server_id)
 
     return await http_call_response(
         http_client.get,
