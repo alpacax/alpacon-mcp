@@ -42,6 +42,21 @@ _GATE_ENVELOPE_NOT_ACTIVE = {
     'response': '{"code":"work_session_not_active"}',
 }
 
+
+_FILE_SERVER = '550e8400-e29b-41d4-a716-446655440001'
+_FILE_SCRIPT = '#!/bin/bash\nset -euo pipefail\necho deploy\n'
+
+_FILE_EXEC_CODES = frozenset(
+    {
+        'file_exec_unsupported_agent',
+        'file_exec_assessor_disabled',
+        'file_exec_invalid_path',
+        'file_exec_content_too_large',
+        'file_exec_empty_content',
+        'file_exec_line_too_long',
+    }
+)
+
 mock_http_client = http_client_fixture('tools.command_tools')
 
 
@@ -1927,21 +1942,6 @@ class TestEmptyCommandRejected:
         assert result['status'] == 'error'
         assert 'command' in result['message']
         mock_http_client.post.assert_not_called()
-
-
-_FILE_SERVER = '550e8400-e29b-41d4-a716-446655440001'
-_FILE_SCRIPT = '#!/bin/bash\nset -euo pipefail\necho deploy\n'
-
-_FILE_EXEC_CODES = frozenset(
-    {
-        'file_exec_unsupported_agent',
-        'file_exec_assessor_disabled',
-        'file_exec_invalid_path',
-        'file_exec_content_too_large',
-        'file_exec_empty_content',
-        'file_exec_line_too_long',
-    }
-)
 
 
 def _file_exec_envelope(code: str) -> dict[str, Any]:

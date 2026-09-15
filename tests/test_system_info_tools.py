@@ -26,6 +26,8 @@ from tools.system_info_tools import (
 
 mock_http_client = http_client_fixture('tools.system_info_tools')
 
+PARAMS_SERVER_ID = '550e8400-e29b-41d4-a716-446655440001'
+
 
 class TestGetSystemInfo:
     """Test get_system_info function."""
@@ -853,9 +855,6 @@ class TestGetServerOverview:
             assert result['status'] == 'error'
             assert 'Failed in get_server_overview' in result['message']
             assert 'Async processing failed' in result['message']
-
-
-PARAMS_SERVER_ID = '550e8400-e29b-41d4-a716-446655440001'
 
 
 class TestListSystemUsersParams:

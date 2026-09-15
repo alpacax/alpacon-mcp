@@ -27,6 +27,10 @@ from tools.metrics_tools import (
 
 mock_http_client = http_client_fixture('tools.metrics_tools')
 
+METRICS_SERVER_ID = '550e8400-e29b-41d4-a716-446655440001'
+START = '2024-01-01T00:00:00Z'
+END = '2024-01-01T01:00:00Z'
+
 
 class TestGetCpuUsage:
     """Test get_cpu_usage function."""
@@ -772,14 +776,6 @@ class TestParseMemoryMetrics:
         assert parsed['available'] is False
 
 
-METRICS_SERVER_ID = '550e8400-e29b-41d4-a716-446655440001'
-START = '2024-01-01T00:00:00Z'
-END = '2024-01-01T01:00:00Z'
-
-# get_disk_usage auto-discovers a device unless device or partition is given, so its
-# row pins device explicitly.
-
-
 class TestMetricsWindowParams:
     """Every window tool builds start and end the same way."""
 
@@ -794,6 +790,7 @@ class TestMetricsWindowParams:
             {},
             id='get_memory_usage',
         ),
+        # A blank device and partition would start auto-discovery instead.
         pytest.param(
             get_disk_usage,
             '/api/metrics/realtime/disk-usage/',

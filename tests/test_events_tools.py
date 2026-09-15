@@ -12,6 +12,8 @@ from tools.events_tools import get_event, list_events, search_events
 
 mock_http_client = http_client_fixture('tools.events_tools')
 
+SERVER_ID = '550e8400-e29b-41d4-a716-446655440001'
+
 
 class TestListEvents:
     """Test list_events function."""
@@ -314,9 +316,6 @@ class TestSearchEvents:
         result = await search_events(search_query='test', workspace='testworkspace')
 
         assert result['status'] == 'error'
-
-
-SERVER_ID = '550e8400-e29b-41d4-a716-446655440001'
 
 
 class TestListEventsParams:
