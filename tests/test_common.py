@@ -1,6 +1,8 @@
 """Unit tests for utils.common WorkSession gate and denial-guidance helpers."""
 
+from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
+from unittest.mock import patch
 
 import pytest
 
@@ -10,6 +12,7 @@ from utils.common import (
     _WORK_SESSION_GATE_CODES,
     _WORK_SESSION_GATE_NEXT_ACTION,
     build_list_params,
+    resolve_time_window,
     resolve_work_session_id,
     unwrap_http_result,
     work_session_gate_response,
@@ -267,3 +270,33 @@ class TestBuildListParams:
     @pytest.mark.parametrize('value', [False, 0, '', []])
     def test_falsy_but_supplied_values_are_forwarded(self, value):
         assert build_list_params(acknowledged=value) == {'acknowledged': value}
+
+
+class TestResolveTimeWindow:
+    """A metrics window always has a start; only the start gets a default."""
+
+    def test_both_dates_are_returned_unchanged(self):
+        assert resolve_time_window('2024-01-01T00:00:00Z', '2024-01-02T00:00:00Z') == (
+            '2024-01-01T00:00:00Z',
+            '2024-01-02T00:00:00Z',
+        )
+
+    def test_missing_end_stays_missing(self):
+        start, end = resolve_time_window('2024-01-01T00:00:00Z', None)
+        assert start == '2024-01-01T00:00:00Z'
+        assert end is None
+
+    def test_blank_end_is_returned_as_is(self):
+        # The caller supplied it; build_list_params decides whether to send it.
+        assert resolve_time_window('2024-01-01T00:00:00Z', '')[1] == ''
+
+    @pytest.mark.parametrize('blank', [None, ''])
+    def test_missing_start_defaults_to_24_hours_ago(self, blank):
+        frozen = datetime(2024, 6, 1, 12, 0, tzinfo=UTC)
+        with patch('utils.common.datetime') as mock_datetime:
+            mock_datetime.now.return_value = frozen
+
+            start, _ = resolve_time_window(blank, None)
+
+        assert start == (frozen - timedelta(hours=24)).isoformat()
+        assert start == '2024-05-31T12:00:00+00:00'

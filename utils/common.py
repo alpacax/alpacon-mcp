@@ -4,6 +4,7 @@ import importlib.metadata
 import json
 import os
 import platform
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from utils.logger import get_logger
@@ -270,6 +271,24 @@ def build_list_params(
     """
     supplied = {'page': page, 'page_size': page_size, **filters}
     return {name: value for name, value in supplied.items() if value is not None}
+
+
+def resolve_time_window(
+    start_date: str | None, end_date: str | None
+) -> tuple[str, str | None]:
+    """
+    Resolve a metrics query window, defaulting the start to 24 hours ago.
+
+    Args:
+        start_date: Start of the window in ISO format
+        end_date: End of the window in ISO format
+
+    Returns:
+        The start, always set, and the end exactly as it was supplied
+    """
+    # A blank start is not a bound the API can read, so it takes the default too.
+    start = start_date or (datetime.now(UTC) - timedelta(hours=24)).isoformat()
+    return start, end_date
 
 
 def error_response(message: str, **kwargs) -> dict[str, Any]:
