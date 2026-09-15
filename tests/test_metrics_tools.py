@@ -5,8 +5,9 @@ Tests metrics and monitoring functionality including CPU, memory, disk,
 network traffic monitoring and server performance analytics.
 """
 
+from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
-from unittest.mock import ANY
+from unittest.mock import patch
 
 import pytest
 
@@ -76,20 +77,28 @@ class TestGetCpuUsage:
     async def test_cpu_usage_without_dates(self, mock_http_client, mock_token_manager):
         """Test CPU usage retrieval without date parameters (defaults to 24h)."""
         mock_http_client.get.return_value = {'results': []}
+        frozen = datetime(2024, 6, 1, 12, 0, tzinfo=UTC)
 
-        result = await get_cpu_usage(
-            server_id='550e8400-e29b-41d4-a716-446655440001', workspace='testworkspace'
-        )
+        with patch('utils.common.datetime') as mock_datetime:
+            mock_datetime.now.return_value = frozen
+            result = await get_cpu_usage(
+                server_id='550e8400-e29b-41d4-a716-446655440001',
+                workspace='testworkspace',
+            )
 
         assert result['status'] == 'success'
 
-        # start comes from the clock, so only its presence can be pinned here.
+        expected_start = (frozen - timedelta(hours=24)).isoformat()
+        assert expected_start == '2024-05-31T12:00:00+00:00'
         mock_http_client.get.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
             endpoint='/api/metrics/realtime/cpu/',
             token='test-token',
-            params={'server': '550e8400-e29b-41d4-a716-446655440001', 'start': ANY},
+            params={
+                'server': '550e8400-e29b-41d4-a716-446655440001',
+                'start': expected_start,
+            },
         )
 
     @pytest.mark.asyncio
@@ -343,20 +352,29 @@ class TestGetNetworkTraffic:
     ):
         """Test network traffic without interface parameter."""
         mock_http_client.get.return_value = {'results': []}
+        frozen = datetime(2024, 6, 1, 12, 0, tzinfo=UTC)
 
-        result = await get_network_traffic(
-            server_id='550e8400-e29b-41d4-a716-446655440001', workspace='testworkspace'
-        )
+        with patch('utils.common.datetime') as mock_datetime:
+            mock_datetime.now.return_value = frozen
+            result = await get_network_traffic(
+                server_id='550e8400-e29b-41d4-a716-446655440001',
+                workspace='testworkspace',
+            )
 
         assert result['status'] == 'success'
 
+        expected_start = (frozen - timedelta(hours=24)).isoformat()
+        assert expected_start == '2024-05-31T12:00:00+00:00'
         # The exact params dict is what proves interface was left out.
         mock_http_client.get.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
             endpoint='/api/metrics/realtime/traffic/',
             token='test-token',
-            params={'server': '550e8400-e29b-41d4-a716-446655440001', 'start': ANY},
+            params={
+                'server': '550e8400-e29b-41d4-a716-446655440001',
+                'start': expected_start,
+            },
         )
 
     @pytest.mark.asyncio
@@ -752,6 +770,366 @@ class TestParseMemoryMetrics:
         parsed = parse_memory_metrics([])
 
         assert parsed['available'] is False
+
+
+METRICS_SERVER_ID = '550e8400-e29b-41d4-a716-446655440001'
+START = '2024-01-01T00:00:00Z'
+END = '2024-01-01T01:00:00Z'
+
+# get_disk_usage auto-discovers a device unless device or partition is given, so its
+# row pins device explicitly.
+
+
+class TestMetricsWindowParams:
+    """Every window tool builds start and end the same way."""
+
+    WINDOW_TOOLS = [
+        pytest.param(
+            get_cpu_usage, '/api/metrics/realtime/cpu/', {}, {}, id='get_cpu_usage'
+        ),
+        pytest.param(
+            get_memory_usage,
+            '/api/metrics/realtime/memory/',
+            {},
+            {},
+            id='get_memory_usage',
+        ),
+        pytest.param(
+            get_disk_usage,
+            '/api/metrics/realtime/disk-usage/',
+            {'device': '/dev/sda1'},
+            {'device': '/dev/sda1'},
+            id='get_disk_usage',
+        ),
+        pytest.param(
+            get_disk_io, '/api/metrics/realtime/disk-io/', {}, {}, id='get_disk_io'
+        ),
+        pytest.param(
+            get_network_traffic,
+            '/api/metrics/realtime/traffic/',
+            {},
+            {},
+            id='get_network_traffic',
+        ),
+    ]
+
+    @pytest.mark.parametrize(
+        ('tool', 'endpoint', 'call_kwargs', 'extra_params'), WINDOW_TOOLS
+    )
+    @pytest.mark.asyncio
+    async def test_no_dates_defaults_start_and_omits_end(
+        self,
+        tool,
+        endpoint,
+        call_kwargs,
+        extra_params,
+        mock_http_client,
+        mock_token_manager,
+    ):
+        mock_http_client.get.return_value = {'results': []}
+        frozen = datetime(2024, 6, 1, 12, 0, tzinfo=UTC)
+
+        with patch('utils.common.datetime') as mock_datetime:
+            mock_datetime.now.return_value = frozen
+            result = await tool(
+                server_id=METRICS_SERVER_ID,
+                workspace='testworkspace',
+                region='ap1',
+                **call_kwargs,
+            )
+
+        assert result['status'] == 'success'
+        expected_start = (frozen - timedelta(hours=24)).isoformat()
+        assert expected_start == '2024-05-31T12:00:00+00:00'
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint=endpoint,
+            token='test-token',
+            params={
+                'server': METRICS_SERVER_ID,
+                'start': expected_start,
+                **extra_params,
+            },
+        )
+
+    @pytest.mark.parametrize(
+        ('tool', 'endpoint', 'call_kwargs', 'extra_params'), WINDOW_TOOLS
+    )
+    @pytest.mark.asyncio
+    async def test_explicit_dates_are_forwarded(
+        self,
+        tool,
+        endpoint,
+        call_kwargs,
+        extra_params,
+        mock_http_client,
+        mock_token_manager,
+    ):
+        mock_http_client.get.return_value = {'results': []}
+
+        result = await tool(
+            server_id=METRICS_SERVER_ID,
+            workspace='testworkspace',
+            start_date=START,
+            end_date=END,
+            region='ap1',
+            **call_kwargs,
+        )
+
+        assert result['status'] == 'success'
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint=endpoint,
+            token='test-token',
+            params={
+                'server': METRICS_SERVER_ID,
+                'start': START,
+                'end': END,
+                **extra_params,
+            },
+        )
+
+    @pytest.mark.parametrize(
+        ('tool', 'endpoint', 'call_kwargs', 'extra_params'), WINDOW_TOOLS
+    )
+    @pytest.mark.asyncio
+    async def test_blank_start_falls_back_to_the_default(
+        self,
+        tool,
+        endpoint,
+        call_kwargs,
+        extra_params,
+        mock_http_client,
+        mock_token_manager,
+    ):
+        mock_http_client.get.return_value = {'results': []}
+        frozen = datetime(2024, 6, 1, 12, 0, tzinfo=UTC)
+
+        with patch('utils.common.datetime') as mock_datetime:
+            mock_datetime.now.return_value = frozen
+            result = await tool(
+                server_id=METRICS_SERVER_ID,
+                workspace='testworkspace',
+                start_date='',
+                region='ap1',
+                **call_kwargs,
+            )
+
+        assert result['status'] == 'success'
+        expected_start = (frozen - timedelta(hours=24)).isoformat()
+        assert expected_start == '2024-05-31T12:00:00+00:00'
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint=endpoint,
+            token='test-token',
+            params={
+                'server': METRICS_SERVER_ID,
+                'start': expected_start,
+                **extra_params,
+            },
+        )
+
+    @pytest.mark.parametrize(
+        ('tool', 'endpoint', 'call_kwargs', 'extra_params'), WINDOW_TOOLS
+    )
+    @pytest.mark.asyncio
+    async def test_blank_end_is_forwarded(
+        self,
+        tool,
+        endpoint,
+        call_kwargs,
+        extra_params,
+        mock_http_client,
+        mock_token_manager,
+    ):
+        mock_http_client.get.return_value = {'results': []}
+
+        result = await tool(
+            server_id=METRICS_SERVER_ID,
+            workspace='testworkspace',
+            start_date=START,
+            end_date='',
+            region='ap1',
+            **call_kwargs,
+        )
+
+        assert result['status'] == 'success'
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint=endpoint,
+            token='test-token',
+            params={
+                'server': METRICS_SERVER_ID,
+                'start': START,
+                'end': '',
+                **extra_params,
+            },
+        )
+
+
+class TestMetricsDeviceFilters:
+    """The device, partition, and interface filters, on top of an explicit window."""
+
+    DEVICE_FILTER_CASES = [
+        pytest.param(
+            get_disk_usage,
+            '/api/metrics/realtime/disk-usage/',
+            {'device': 'sda', 'partition': 'sda1'},
+            {'device': 'sda', 'partition': 'sda1'},
+            id='get_disk_usage_device_and_partition',
+        ),
+        pytest.param(
+            get_disk_usage,
+            '/api/metrics/realtime/disk-usage/',
+            {'device': '', 'partition': 'sda1'},
+            {'device': '', 'partition': 'sda1'},
+            id='get_disk_usage_blank_device_with_partition_forwarded',
+        ),
+        pytest.param(
+            get_disk_io,
+            '/api/metrics/realtime/disk-io/',
+            {'device': 'sda'},
+            {'device': 'sda'},
+            id='get_disk_io_device',
+        ),
+        pytest.param(
+            get_disk_io,
+            '/api/metrics/realtime/disk-io/',
+            {'device': ''},
+            {'device': ''},
+            id='get_disk_io_blank_device_forwarded',
+        ),
+        pytest.param(
+            get_network_traffic,
+            '/api/metrics/realtime/traffic/',
+            {'interface': 'eth0'},
+            {'interface': 'eth0'},
+            id='get_network_traffic_interface',
+        ),
+        pytest.param(
+            get_network_traffic,
+            '/api/metrics/realtime/traffic/',
+            {'interface': ''},
+            {'interface': ''},
+            id='get_network_traffic_blank_interface_forwarded',
+        ),
+    ]
+
+    @pytest.mark.parametrize(
+        ('tool', 'endpoint', 'tool_kwargs', 'extra_params'), DEVICE_FILTER_CASES
+    )
+    @pytest.mark.asyncio
+    async def test_params(
+        self,
+        tool,
+        endpoint,
+        tool_kwargs,
+        extra_params,
+        mock_http_client,
+        mock_token_manager,
+    ):
+        mock_http_client.get.return_value = {'results': []}
+
+        result = await tool(
+            server_id=METRICS_SERVER_ID,
+            workspace='testworkspace',
+            start_date=START,
+            end_date=END,
+            region='ap1',
+            **tool_kwargs,
+        )
+
+        assert result['status'] == 'success'
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint=endpoint,
+            token='test-token',
+            params={
+                'server': METRICS_SERVER_ID,
+                'start': START,
+                'end': END,
+                **extra_params,
+            },
+        )
+
+    @pytest.mark.asyncio
+    async def test_disk_usage_blank_device_and_partition_auto_discovers(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Blank device/partition leave both falsy, so the tool discovers one."""
+        mock_http_client.get.side_effect = [
+            {'devices': ['/dev/sda1']},
+            {'results': []},
+        ]
+
+        result = await get_disk_usage(
+            server_id=METRICS_SERVER_ID,
+            workspace='testworkspace',
+            device='',
+            partition='',
+            start_date=START,
+            end_date=END,
+            region='ap1',
+        )
+
+        assert result['status'] == 'success'
+        assert mock_http_client.get.call_count == 2
+        mock_http_client.get.assert_called_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/metrics/realtime/disk-usage/',
+            token='test-token',
+            params={
+                'server': METRICS_SERVER_ID,
+                'start': START,
+                'end': END,
+                'device': '/dev/sda1',
+                'partition': '',
+            },
+        )
+
+
+class TestGetAlertRulesParams:
+    @pytest.mark.asyncio
+    async def test_no_server_filter_sends_empty_params(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.get.return_value = {'results': []}
+
+        result = await get_alert_rules(workspace='testworkspace', region='ap1')
+
+        assert result['status'] == 'success'
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/metrics/alert-rules/',
+            token='test-token',
+            params={},
+        )
+
+    @pytest.mark.asyncio
+    async def test_server_filter_is_forwarded(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.get.return_value = {'results': []}
+
+        result = await get_alert_rules(
+            workspace='testworkspace', server_id=METRICS_SERVER_ID, region='ap1'
+        )
+
+        assert result['status'] == 'success'
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/metrics/alert-rules/',
+            token='test-token',
+            params={'server': METRICS_SERVER_ID},
+        )
 
 
 if __name__ == '__main__':

@@ -5,7 +5,13 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from utils.api_call import http_call_response
-from utils.common import error_response, success_response, unwrap_http_result
+from utils.common import (
+    build_list_params,
+    error_response,
+    resolve_time_window,
+    success_response,
+    unwrap_http_result,
+)
 from utils.decorators import mcp_tool_handler
 from utils.error_handler import UpstreamAuthError
 from utils.http_client import http_client
@@ -100,15 +106,8 @@ async def get_cpu_usage(
     """
     token = kwargs.get('token')
 
-    # Prepare query parameters with required start date
-    params = {'server': server_id}
-    if start_date:
-        params['start'] = start_date
-    else:
-        # Default to last 24 hours if not specified
-        params['start'] = (datetime.now(UTC) - timedelta(hours=24)).isoformat()
-    if end_date:
-        params['end'] = end_date
+    start, end = resolve_time_window(start_date, end_date)
+    params = build_list_params(server=server_id, start=start, end=end)
 
     # Make async call to get CPU metrics
     result = await http_client.get(
@@ -230,15 +229,8 @@ async def get_memory_usage(
     """
     token = kwargs.get('token')
 
-    # Prepare query parameters with required start date
-    params = {'server': server_id}
-    if start_date:
-        params['start'] = start_date
-    else:
-        # Default to last 24 hours if not specified
-        params['start'] = (datetime.now(UTC) - timedelta(hours=24)).isoformat()
-    if end_date:
-        params['end'] = end_date
+    start, end = resolve_time_window(start_date, end_date)
+    params = build_list_params(server=server_id, start=start, end=end)
 
     # Make async call to get memory metrics
     result = await http_client.get(
@@ -408,19 +400,14 @@ async def get_disk_usage(
                 workspace=workspace,
             )
 
-    # Prepare query parameters with required start date
-    params = {'server': server_id}
-    if device:
-        params['device'] = device
-    if partition:
-        params['partition'] = partition
-    if start_date:
-        params['start'] = start_date
-    else:
-        # Default to last 24 hours if not specified
-        params['start'] = (datetime.now(UTC) - timedelta(hours=24)).isoformat()
-    if end_date:
-        params['end'] = end_date
+    start, end = resolve_time_window(start_date, end_date)
+    params = build_list_params(
+        server=server_id,
+        device=device,
+        partition=partition,
+        start=start,
+        end=end,
+    )
 
     # Make async call to get disk metrics
     result = await http_client.get(
@@ -578,17 +565,13 @@ async def get_disk_io(
     """
     token = kwargs.get('token')
 
-    # Prepare query parameters with required start date
-    params = {'server': server_id}
-    if device:
-        params['device'] = device
-    if start_date:
-        params['start'] = start_date
-    else:
-        # Default to last 24 hours if not specified
-        params['start'] = (datetime.now(UTC) - timedelta(hours=24)).isoformat()
-    if end_date:
-        params['end'] = end_date
+    start, end = resolve_time_window(start_date, end_date)
+    params = build_list_params(
+        server=server_id,
+        device=device,
+        start=start,
+        end=end,
+    )
 
     # Make async call to get disk I/O metrics
     result = await http_client.get(
@@ -649,17 +632,13 @@ async def get_network_traffic(
     """
     token = kwargs.get('token')
 
-    # Prepare query parameters with required start date
-    params = {'server': server_id}
-    if interface:
-        params['interface'] = interface
-    if start_date:
-        params['start'] = start_date
-    else:
-        # Default to last 24 hours if not specified
-        params['start'] = (datetime.now(UTC) - timedelta(hours=24)).isoformat()
-    if end_date:
-        params['end'] = end_date
+    start, end = resolve_time_window(start_date, end_date)
+    params = build_list_params(
+        server=server_id,
+        interface=interface,
+        start=start,
+        end=end,
+    )
 
     # Make async call to get traffic metrics
     result = await http_client.get(
@@ -833,10 +812,7 @@ async def get_alert_rules(
     """
     token = kwargs.get('token')
 
-    # Prepare query parameters
-    params = {}
-    if server_id:
-        params['server'] = server_id
+    params = build_list_params(server=server_id)
 
     # Make async call to get alert rules
     return await http_call_response(
