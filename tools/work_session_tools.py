@@ -4,6 +4,7 @@ from typing import Any
 
 from utils.api_call import http_call_response
 from utils.common import (
+    build_list_params,
     error_response,
     pending_approval_response,
     success_response,
@@ -179,11 +180,9 @@ async def work_session_list(
     """List Work Sessions with optional status and requester_type filtering."""
     token = kwargs.get('token')
 
-    params: dict[str, str | int] = {'page_size': limit}
-    if status:
-        params['status'] = status
-    if requester_type:
-        params['requester_type'] = requester_type
+    params = build_list_params(
+        page_size=limit, status=status, requester_type=requester_type
+    )
 
     return await http_call_response(
         http_client.get,

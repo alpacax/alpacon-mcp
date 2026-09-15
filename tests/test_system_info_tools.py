@@ -855,5 +855,173 @@ class TestGetServerOverview:
             assert 'Async processing failed' in result['message']
 
 
+PARAMS_SERVER_ID = '550e8400-e29b-41d4-a716-446655440001'
+
+
+class TestListSystemUsersParams:
+    LIST_SYSTEM_USERS_CASES = [
+        pytest.param({}, {'server': PARAMS_SERVER_ID}, id='no_filters'),
+        pytest.param(
+            {'username_filter': 'root'},
+            {'server': PARAMS_SERVER_ID, 'search': 'root'},
+            id='username_filter_only',
+        ),
+        pytest.param(
+            {'login_enabled_only': True},
+            {'server': PARAMS_SERVER_ID, 'login_enabled': 'true'},
+            id='login_enabled_only_true',
+        ),
+        pytest.param(
+            {'login_enabled_only': False},
+            {'server': PARAMS_SERVER_ID},
+            id='login_enabled_only_false_omits_the_key',
+        ),
+        pytest.param(
+            {'username_filter': 'root', 'login_enabled_only': True},
+            {'server': PARAMS_SERVER_ID, 'search': 'root', 'login_enabled': 'true'},
+            id='all_filters',
+        ),
+        pytest.param(
+            {'username_filter': ''},
+            {'server': PARAMS_SERVER_ID, 'search': ''},
+            id='blank_username_filter_forwarded',
+        ),
+    ]
+
+    @pytest.mark.parametrize(
+        ('tool_kwargs', 'expected_params'), LIST_SYSTEM_USERS_CASES
+    )
+    @pytest.mark.asyncio
+    async def test_params(
+        self, tool_kwargs, expected_params, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.get.return_value = {'results': []}
+
+        result = await list_system_users(
+            server_id=PARAMS_SERVER_ID,
+            workspace='testworkspace',
+            region='ap1',
+            **tool_kwargs,
+        )
+
+        assert result['status'] == 'success'
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/proc/users/',
+            token='test-token',
+            params=expected_params,
+        )
+
+
+class TestListSystemGroupsParams:
+    LIST_SYSTEM_GROUPS_CASES = [
+        pytest.param({}, {'server': PARAMS_SERVER_ID}, id='no_filters'),
+        pytest.param(
+            {'groupname_filter': 'sudo'},
+            {'server': PARAMS_SERVER_ID, 'search': 'sudo'},
+            id='groupname_filter_only',
+        ),
+        pytest.param(
+            {'groupname_filter': ''},
+            {'server': PARAMS_SERVER_ID, 'search': ''},
+            id='blank_groupname_filter_forwarded',
+        ),
+    ]
+
+    @pytest.mark.parametrize(
+        ('tool_kwargs', 'expected_params'), LIST_SYSTEM_GROUPS_CASES
+    )
+    @pytest.mark.asyncio
+    async def test_params(
+        self, tool_kwargs, expected_params, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.get.return_value = {'results': []}
+
+        result = await list_system_groups(
+            server_id=PARAMS_SERVER_ID,
+            workspace='testworkspace',
+            region='ap1',
+            **tool_kwargs,
+        )
+
+        assert result['status'] == 'success'
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/proc/groups/',
+            token='test-token',
+            params=expected_params,
+        )
+
+
+class TestListSystemPackagesParams:
+    LIST_SYSTEM_PACKAGES_CASES = [
+        pytest.param(
+            {}, {'server': PARAMS_SERVER_ID, 'page_size': 100}, id='no_filters'
+        ),
+        pytest.param(
+            {'package_name': 'openssl'},
+            {'server': PARAMS_SERVER_ID, 'page_size': 100, 'search': 'openssl'},
+            id='package_name_only',
+        ),
+        pytest.param(
+            {'architecture': 'x86_64'},
+            {'server': PARAMS_SERVER_ID, 'page_size': 100, 'arch': 'x86_64'},
+            id='architecture_only',
+        ),
+        pytest.param(
+            {'limit': 10},
+            {'server': PARAMS_SERVER_ID, 'page_size': 10},
+            id='limit_override',
+        ),
+        pytest.param(
+            {'package_name': 'openssl', 'architecture': 'x86_64', 'limit': 10},
+            {
+                'server': PARAMS_SERVER_ID,
+                'page_size': 10,
+                'search': 'openssl',
+                'arch': 'x86_64',
+            },
+            id='all_filters',
+        ),
+        pytest.param(
+            {'package_name': ''},
+            {'server': PARAMS_SERVER_ID, 'page_size': 100, 'search': ''},
+            id='blank_package_name_forwarded',
+        ),
+        pytest.param(
+            {'architecture': ''},
+            {'server': PARAMS_SERVER_ID, 'page_size': 100, 'arch': ''},
+            id='blank_architecture_forwarded',
+        ),
+    ]
+
+    @pytest.mark.parametrize(
+        ('tool_kwargs', 'expected_params'), LIST_SYSTEM_PACKAGES_CASES
+    )
+    @pytest.mark.asyncio
+    async def test_params(
+        self, tool_kwargs, expected_params, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.get.return_value = {'results': []}
+
+        result = await list_system_packages(
+            server_id=PARAMS_SERVER_ID,
+            workspace='testworkspace',
+            region='ap1',
+            **tool_kwargs,
+        )
+
+        assert result['status'] == 'success'
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/proc/packages/',
+            token='test-token',
+            params=expected_params,
+        )
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])

@@ -316,5 +316,112 @@ class TestSearchEvents:
         assert result['status'] == 'error'
 
 
+SERVER_ID = '550e8400-e29b-41d4-a716-446655440001'
+
+
+class TestListEventsParams:
+    LIST_EVENTS_CASES = [
+        pytest.param({}, {'page_size': 50, 'ordering': '-added_at'}, id='no_filters'),
+        pytest.param(
+            {'server_id': SERVER_ID},
+            {'page_size': 50, 'ordering': '-added_at', 'server': SERVER_ID},
+            id='server_only',
+        ),
+        pytest.param(
+            {'reporter': 'system'},
+            {'page_size': 50, 'ordering': '-added_at', 'reporter': 'system'},
+            id='reporter_only',
+        ),
+        pytest.param(
+            {'limit': 25},
+            {'page_size': 25, 'ordering': '-added_at'},
+            id='limit_override',
+        ),
+        pytest.param(
+            {'server_id': SERVER_ID, 'reporter': 'system', 'limit': 25},
+            {
+                'page_size': 25,
+                'ordering': '-added_at',
+                'server': SERVER_ID,
+                'reporter': 'system',
+            },
+            id='all_filters',
+        ),
+        pytest.param(
+            {'reporter': ''},
+            {'page_size': 50, 'ordering': '-added_at', 'reporter': ''},
+            id='blank_reporter_forwarded',
+        ),
+    ]
+
+    @pytest.mark.parametrize(('tool_kwargs', 'expected_params'), LIST_EVENTS_CASES)
+    @pytest.mark.asyncio
+    async def test_params(
+        self, tool_kwargs, expected_params, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.get.return_value = {'results': []}
+
+        result = await list_events(
+            workspace='testworkspace', region='ap1', **tool_kwargs
+        )
+
+        assert result['status'] == 'success'
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/events/events/',
+            token='test-token',
+            params=expected_params,
+        )
+
+
+class TestSearchEventsParams:
+    SEARCH_EVENTS_CASES = [
+        pytest.param(
+            {},
+            {'search': 'error', 'page_size': 20, 'ordering': '-added_at'},
+            id='no_filters',
+        ),
+        pytest.param(
+            {'server_id': SERVER_ID},
+            {
+                'search': 'error',
+                'page_size': 20,
+                'ordering': '-added_at',
+                'server': SERVER_ID,
+            },
+            id='server_only',
+        ),
+        pytest.param(
+            {'limit': 5},
+            {'search': 'error', 'page_size': 5, 'ordering': '-added_at'},
+            id='limit_override',
+        ),
+    ]
+
+    @pytest.mark.parametrize(('tool_kwargs', 'expected_params'), SEARCH_EVENTS_CASES)
+    @pytest.mark.asyncio
+    async def test_params(
+        self, tool_kwargs, expected_params, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.get.return_value = {'results': []}
+
+        result = await search_events(
+            search_query='error',
+            workspace='testworkspace',
+            region='ap1',
+            **tool_kwargs,
+        )
+
+        assert result['status'] == 'success'
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/events/events/',
+            token='test-token',
+            params=expected_params,
+        )
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])

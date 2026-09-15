@@ -2525,3 +2525,43 @@ class TestExecuteFileRegistration:
 
         assert 'execute_file' in text
         assert 'heredoc' in text
+
+
+class TestListCommandsParams:
+    LIST_COMMANDS_CASES = [
+        pytest.param({}, {'page_size': 20, 'ordering': '-added_at'}, id='no_filters'),
+        pytest.param(
+            {'server_id': '550e8400-e29b-41d4-a716-446655440001'},
+            {
+                'page_size': 20,
+                'ordering': '-added_at',
+                'server': '550e8400-e29b-41d4-a716-446655440001',
+            },
+            id='server_only',
+        ),
+        pytest.param(
+            {'limit': 10},
+            {'page_size': 10, 'ordering': '-added_at'},
+            id='limit_override',
+        ),
+    ]
+
+    @pytest.mark.parametrize(('tool_kwargs', 'expected_params'), LIST_COMMANDS_CASES)
+    @pytest.mark.asyncio
+    async def test_params(
+        self, tool_kwargs, expected_params, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.get.return_value = {'results': []}
+
+        result = await list_commands(
+            workspace='testworkspace', region='ap1', **tool_kwargs
+        )
+
+        assert result['status'] == 'success'
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/events/commands/',
+            token='test-token',
+            params=expected_params,
+        )

@@ -679,3 +679,54 @@ class TestDescriptionIsNotAnExecutionChannel:
         text = descriptions[tool_name]
         assert 'NOT a command list' in text
         assert 'nothing in it is executed' in text
+
+
+class TestWorkSessionListParams:
+    WORK_SESSION_LIST_CASES = [
+        pytest.param({}, {'page_size': 20}, id='no_filters'),
+        pytest.param(
+            {'status': 'active'},
+            {'page_size': 20, 'status': 'active'},
+            id='status_only',
+        ),
+        pytest.param(
+            {'requester_type': 'agent'},
+            {'page_size': 20, 'requester_type': 'agent'},
+            id='requester_type_only',
+        ),
+        pytest.param(
+            {'status': 'active', 'requester_type': 'agent', 'limit': 5},
+            {'page_size': 5, 'status': 'active', 'requester_type': 'agent'},
+            id='all_filters',
+        ),
+        pytest.param(
+            {'status': ''}, {'page_size': 20, 'status': ''}, id='blank_status_forwarded'
+        ),
+        pytest.param(
+            {'requester_type': ''},
+            {'page_size': 20, 'requester_type': ''},
+            id='blank_requester_type_forwarded',
+        ),
+    ]
+
+    @pytest.mark.parametrize(
+        ('tool_kwargs', 'expected_params'), WORK_SESSION_LIST_CASES
+    )
+    @pytest.mark.asyncio
+    async def test_params(
+        self, tool_kwargs, expected_params, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.get.return_value = {'results': []}
+
+        result = await work_session_list(
+            workspace='testworkspace', region='ap1', **tool_kwargs
+        )
+
+        assert result['status'] == 'success'
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/work-sessions/sessions/',
+            token='test-token',
+            params=expected_params,
+        )
