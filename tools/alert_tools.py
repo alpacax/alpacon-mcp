@@ -20,7 +20,10 @@ _ACTION_TYPES_SENTENCE = f'One of {", ".join(sorted(ALERT_ACTION_TYPES))}.'
 _TARGETS_SENTENCE = (
     'target must be a metric the workspace exposes, e.g. cpu-usage, '
     'memory-usage, disk-usage, or one of the peak/avg bps or pps network and '
-    'disk rates; the server rejects an unrecognized one with a 400.'
+    'disk rates; the server rejects an unrecognized one with a 400. Every '
+    'target but cpu-usage and memory-usage is device-scoped and accepts a '
+    'device narrowing the rule to one disk or interface; the two host-wide '
+    'targets do not.'
 )
 
 # ===============================
@@ -29,7 +32,7 @@ _TARGETS_SENTENCE = (
 
 
 @mcp_tool_handler(
-    description='List alerts with optional filtering by server, alert type, severity, or server name. When to use: checking active alerts or reviewing alert history. Related: get_alert (full details), get_alert_rules (threshold configuration), acknowledge_alert (mark one as seen).',
+    description='List alerts with optional filtering by server, alert type, severity, resolution state, or server name. When to use: checking active alerts or reviewing alert history. Related: get_alert (full details), get_alert_rules (threshold configuration), acknowledge_alert (mark one as seen).',
     annotations=READ_ONLY,
     meta={
         'anthropic/alwaysLoad': True,
@@ -47,6 +50,7 @@ async def list_alerts(
     page_size: int | None = None,
     acknowledged: bool | None = None,
     dismissed: bool | None = None,
+    resolved: bool | None = None,
     **kwargs,
 ) -> dict[str, Any]:
     """List alerts.
@@ -62,9 +66,13 @@ async def list_alerts(
         page_size: Number of items per page (optional)
         acknowledged: Filter by acknowledgement state (False = active/unacknowledged)
         dismissed: Filter by dismissed state
+        resolved: Filter by resolution state. Omitted returns open alerts
+            only; true returns the resolved history instead; false is the
+            explicit spelling of the default (optional)
 
     Returns:
-        Alerts list response
+        Alerts list response. Each alert can carry device and severity from
+        the rule that raised it, and resolved_at once the condition clears.
     """
     token = kwargs.get('token')
 
@@ -77,6 +85,7 @@ async def list_alerts(
         server_name=server_name,
         acknowledged=acknowledged,
         dismissed=dismissed,
+        resolved=resolved,
     )
 
     return await http_call_response(
@@ -107,7 +116,8 @@ async def get_alert(
         region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
-        Alert details response
+        Alert details response. Can carry device and severity from the rule
+        that raised it, and resolved_at once the condition clears.
     """
     token = kwargs.get('token')
 
@@ -196,6 +206,12 @@ async def create_alert_rule(
     threshold: float,
     is_default: bool = False,
     region: str = '',
+    operator: str | None = None,
+    duration_s: int | None = None,
+    recovery_threshold: float | None = None,
+    no_data_after_s: int | None = None,
+    device: str | None = None,
+    severity: str | None = None,
     **kwargs,
 ) -> dict[str, Any]:
     """Create an alert rule.
@@ -209,6 +225,22 @@ async def create_alert_rule(
         threshold: Value the metric must cross to fire
         is_default: Make this the default rule for the target
         region: Region (ap1, us1). Auto-detected if not provided
+        operator: Which side of the threshold breaches: gte (default) fires
+            at or above it, lte fires at or below it (optional)
+        duration_s: How long the condition must hold before firing, in
+            seconds; 0 (the default) fires on a single breaching sample
+            (optional)
+        recovery_threshold: Value the metric must return to before the alert
+            resolves; omitted, the threshold itself resolves it (optional)
+        no_data_after_s: Raise an alert when no sample arrives for this many
+            seconds; the server floors it at the target's own collection
+            interval (optional)
+        device: Narrow the rule to one disk, partition, or network interface.
+            Only accepted for a device-scoped target (disk-usage, disk I/O,
+            network); cpu-usage and memory-usage are host-wide and reject it
+            (optional)
+        severity: Severity the raised alert carries: critical, warning
+            (default), or info (optional)
 
     Returns:
         Created alert rule
@@ -221,6 +253,18 @@ async def create_alert_rule(
         'threshold': threshold,
         'is_default': is_default,
     }
+    if operator is not None:
+        rule_data['operator'] = operator
+    if duration_s is not None:
+        rule_data['duration_s'] = duration_s
+    if recovery_threshold is not None:
+        rule_data['recovery_threshold'] = recovery_threshold
+    if no_data_after_s is not None:
+        rule_data['no_data_after_s'] = no_data_after_s
+    if device is not None:
+        rule_data['device'] = device
+    if severity is not None:
+        rule_data['severity'] = severity
 
     return await http_call_response(
         http_client.post,
@@ -251,6 +295,12 @@ async def update_alert_rule(
     threshold: float | None = None,
     is_default: bool | None = None,
     region: str = '',
+    operator: str | None = None,
+    duration_s: int | None = None,
+    recovery_threshold: float | None = None,
+    no_data_after_s: int | None = None,
+    device: str | None = None,
+    severity: str | None = None,
     **kwargs,
 ) -> dict[str, Any]:
     """Update an alert rule.
@@ -266,6 +316,21 @@ async def update_alert_rule(
         threshold: New threshold (optional)
         is_default: Make this the default rule for the target (optional)
         region: Region (ap1, us1). Auto-detected if not provided
+        operator: Which side of the threshold breaches: gte fires at or
+            above it, lte fires at or below it (optional)
+        duration_s: How long the condition must hold before firing, in
+            seconds; 0 fires on a single breaching sample (optional)
+        recovery_threshold: Value the metric must return to before the alert
+            resolves; omitted, the threshold itself resolves it (optional)
+        no_data_after_s: Raise an alert when no sample arrives for this many
+            seconds; the server floors it at the target's own collection
+            interval (optional)
+        device: Narrow the rule to one disk, partition, or network interface.
+            Only accepted for a device-scoped target (disk-usage, disk I/O,
+            network); cpu-usage and memory-usage are host-wide and reject it
+            (optional)
+        severity: Severity the raised alert carries: critical, warning, or
+            info (optional)
 
     Returns:
         Updated alert rule
@@ -281,12 +346,26 @@ async def update_alert_rule(
         update_data['threshold'] = threshold
     if is_default is not None:
         update_data['is_default'] = is_default
+    if operator is not None:
+        update_data['operator'] = operator
+    if duration_s is not None:
+        update_data['duration_s'] = duration_s
+    if recovery_threshold is not None:
+        update_data['recovery_threshold'] = recovery_threshold
+    if no_data_after_s is not None:
+        update_data['no_data_after_s'] = no_data_after_s
+    if device is not None:
+        update_data['device'] = device
+    if severity is not None:
+        update_data['severity'] = severity
 
     if not update_data:
         return format_validation_error(
             'payload',
             None,
-            'At least one of name, target, threshold or is_default must be provided.',
+            'At least one of name, target, threshold, is_default, operator, '
+            'duration_s, recovery_threshold, no_data_after_s, device or '
+            'severity must be provided.',
         )
 
     return await http_call_response(

@@ -1,5 +1,7 @@
 """Unit tests for webhook and event subscription tools module."""
 
+from pathlib import Path
+
 import pytest
 
 from tests.conftest import HTTP_ERROR_ENVELOPE, http_client_fixture
@@ -199,6 +201,47 @@ class TestEventSubscriptions:
             token='test-token',
             data={'channel': 'ch-2', 'event_type': 'sudo'},
         )
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        'event_type', ['metric_threshold_crossed', 'metric_threshold_resolved']
+    )
+    async def test_create_event_subscription_forwards_metric_threshold_types(
+        self, event_type, mock_http_client, mock_token_manager
+    ):
+        """#243: the two metrics-extension event types are not pre-validated
+        here — the server gates them on the workspace's plan and, for a
+        wildcard subscription, on the caller being an admin.
+        """
+        mock_http_client.post.return_value = {'id': 'sub-3', 'event_type': event_type}
+
+        result = await create_event_subscription(
+            workspace='testworkspace',
+            channel='ch-1',
+            event_type=event_type,
+            target_id='server-1',
+            region='ap1',
+        )
+
+        assert result['status'] == 'success'
+        mock_http_client.post.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/events/subscriptions/',
+            token='test-token',
+            data={
+                'channel': 'ch-1',
+                'event_type': event_type,
+                'target_id': 'server-1',
+            },
+        )
+
+    def test_metric_threshold_event_types_are_documented(self):
+        # #243: both event types must reach the two tool descriptions and the
+        # create_event_subscription docstring, not just one of them.
+        source = Path('tools/webhook_tools.py').read_text()
+        for event_type in ('metric_threshold_crossed', 'metric_threshold_resolved'):
+            assert source.count(event_type) >= 3, event_type
 
     @pytest.mark.asyncio
     async def test_delete_event_subscription_success(
