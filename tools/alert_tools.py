@@ -489,3 +489,289 @@ async def delete_alert_rule(
         default_message='Failed to delete alert rule',
         rule_id=rule_id,
     )
+
+
+# ===============================
+# RULE OVERRIDE TOOLS
+# ===============================
+
+
+@mcp_tool_handler(
+    description=(
+        'List per-server departures from workspace alert rules. When to use: '
+        'auditing which servers exempt themselves from a rule or run a '
+        'different threshold than the fleet. Filter by server, rule, or '
+        'enabled state. Related: get_rule_override (full details), '
+        'create_rule_override, get_alert_rules (the workspace-wide rules '
+        'these depart from).'
+    ),
+    annotations=READ_ONLY,
+    meta={
+        'anthropic/searchHint': 'rule override list server exempt threshold per-server'
+    },
+)
+async def list_rule_overrides(
+    workspace: str,
+    server_id: str | None = None,
+    rule_id: str | None = None,
+    enabled: bool | None = None,
+    region: str = '',
+    page: int | None = None,
+    page_size: int | None = None,
+    **kwargs,
+) -> dict[str, Any]:
+    """List rule overrides.
+
+    Args:
+        workspace: Workspace name. Required parameter
+        server_id: Filter by the server the override applies to (optional)
+        rule_id: Filter by the alert rule being overridden (optional)
+        enabled: Filter by the override's enabled state; false is a whole-rule
+            exemption (optional)
+        region: Region (ap1, us1). Auto-detected if not provided
+        page: Page number for pagination (optional)
+        page_size: Number of items per page (optional)
+
+    Returns:
+        Rule overrides list response
+    """
+    token = kwargs.get('token')
+
+    params = build_list_params(
+        page=page,
+        page_size=page_size,
+        server=server_id,
+        rule=rule_id,
+        enabled=enabled,
+    )
+
+    return await http_call_response(
+        http_client.get,
+        region=region,
+        workspace=workspace,
+        endpoint='/api/metrics/rule-overrides/',
+        token=token,
+        default_message='Failed to list rule overrides',
+        params=params,
+    )
+
+
+@mcp_tool_handler(
+    description=(
+        'Get a single rule override by ID. When to use: need full context '
+        'about one server-rule departure. Related: list_rule_overrides '
+        '(browse overrides), update_rule_override, delete_rule_override.'
+    ),
+    annotations=READ_ONLY,
+    meta={'anthropic/searchHint': 'rule override detail info specific'},
+)
+async def get_rule_override(
+    override_id: str, workspace: str, region: str = '', **kwargs
+) -> dict[str, Any]:
+    """Get a rule override by ID.
+
+    Args:
+        override_id: Rule override ID to retrieve
+        workspace: Workspace name. Required parameter
+        region: Region (ap1, us1). Auto-detected if not provided
+
+    Returns:
+        Rule override details response
+    """
+    token = kwargs.get('token')
+
+    return await http_call_response(
+        http_client.get,
+        region=region,
+        workspace=workspace,
+        endpoint=f'/api/metrics/rule-overrides/{override_id}/',
+        token=token,
+        default_message='Failed to get rule override',
+        override_id=override_id,
+    )
+
+
+@mcp_tool_handler(
+    description=(
+        'Create a per-server departure from a workspace alert rule: replace '
+        'the threshold, recovery_threshold, or duration_s for one server, or '
+        'set enabled=False to exempt the server from the rule entirely. When '
+        'to use: a rule fits the fleet but one host needs a different number '
+        "or should not fire at all. A field left unset keeps the rule's own "
+        'value for that server—an override only overrides what it is given. '
+        'At most one override per (server, rule) pair; a second '
+        'create for the same pair is refused. Related: list_rule_overrides, '
+        'update_rule_override, delete_rule_override, create_alert_rule.'
+    ),
+    annotations=ADDITIVE,
+    meta={
+        'anthropic/searchHint': 'rule override create exempt threshold per-server alert'
+    },
+)
+async def create_rule_override(
+    server_id: str,
+    rule_id: str,
+    workspace: str,
+    threshold: float | None = None,
+    recovery_threshold: float | None = None,
+    duration_s: int | None = None,
+    enabled: bool | None = None,
+    region: str = '',
+    **kwargs,
+) -> dict[str, Any]:
+    """Create a rule override.
+
+    Args:
+        server_id: Server UUID the override applies to
+        rule_id: Alert rule UUID being overridden
+        workspace: Workspace name. Required parameter
+        threshold: Replace the rule's threshold for this server; unset keeps
+            the rule's value (optional)
+        recovery_threshold: Replace the rule's recovery threshold for this
+            server; unset keeps the rule's value (optional)
+        duration_s: Replace the rule's duration for this server, in seconds;
+            unset keeps the rule's value, 0 fires on a single breaching
+            sample (optional)
+        enabled: False exempts this server from the rule entirely, whatever
+            the other fields hold (default: true, matching the server)
+        region: Region (ap1, us1). Auto-detected if not provided
+
+    Returns:
+        Created rule override
+    """
+    token = kwargs.get('token')
+
+    override_data: dict[str, Any] = {'server': server_id, 'rule': rule_id}
+    if threshold is not None:
+        override_data['threshold'] = threshold
+    if recovery_threshold is not None:
+        override_data['recovery_threshold'] = recovery_threshold
+    if duration_s is not None:
+        override_data['duration_s'] = duration_s
+    if enabled is not None:
+        override_data['enabled'] = enabled
+
+    return await http_call_response(
+        http_client.post,
+        region=region,
+        workspace=workspace,
+        endpoint='/api/metrics/rule-overrides/',
+        token=token,
+        default_message='Failed to create rule override',
+        data=override_data,
+        server_id=server_id,
+        rule_id=rule_id,
+    )
+
+
+@mcp_tool_handler(
+    description=(
+        'Update an existing rule override. When to use: retuning an '
+        'overridden threshold or flipping enabled to exempt or re-include a '
+        'server. Only the fields given are sent; an omitted field keeps its '
+        "current value on the override—it does not clear back to the rule's "
+        'own value. Related: get_rule_override, list_rule_overrides, '
+        'delete_rule_override.'
+    ),
+    annotations=IDEMPOTENT_WRITE,
+    meta={'anthropic/searchHint': 'rule override update modify threshold enabled'},
+)
+async def update_rule_override(
+    override_id: str,
+    workspace: str,
+    server_id: str | None = None,
+    rule_id: str | None = None,
+    threshold: float | None = None,
+    recovery_threshold: float | None = None,
+    duration_s: int | None = None,
+    enabled: bool | None = None,
+    region: str = '',
+    **kwargs,
+) -> dict[str, Any]:
+    """Update a rule override.
+
+    Args:
+        override_id: Rule override ID to update
+        workspace: Workspace name. Required parameter
+        server_id: Move the override to a different server (optional)
+        rule_id: Move the override to a different alert rule (optional)
+        threshold: New threshold override (optional)
+        recovery_threshold: New recovery threshold override (optional)
+        duration_s: New duration override, in seconds (optional)
+        enabled: False exempts this server from the rule entirely (optional)
+        region: Region (ap1, us1). Auto-detected if not provided
+
+    Returns:
+        Updated rule override
+    """
+    token = kwargs.get('token')
+
+    update_data: dict[str, Any] = {}
+    if server_id is not None:
+        update_data['server'] = server_id
+    if rule_id is not None:
+        update_data['rule'] = rule_id
+    if threshold is not None:
+        update_data['threshold'] = threshold
+    if recovery_threshold is not None:
+        update_data['recovery_threshold'] = recovery_threshold
+    if duration_s is not None:
+        update_data['duration_s'] = duration_s
+    if enabled is not None:
+        update_data['enabled'] = enabled
+
+    if not update_data:
+        return format_validation_error(
+            'payload',
+            None,
+            'At least one of server_id, rule_id, threshold, recovery_threshold, '
+            'duration_s or enabled must be provided.',
+        )
+
+    return await http_call_response(
+        http_client.patch,
+        region=region,
+        workspace=workspace,
+        endpoint=f'/api/metrics/rule-overrides/{override_id}/',
+        token=token,
+        default_message='Failed to update rule override',
+        data=update_data,
+        override_id=override_id,
+    )
+
+
+@mcp_tool_handler(
+    description=(
+        'Delete a rule override permanently, returning that server to the '
+        "workspace rule's own values. When to use: the per-server departure "
+        'is no longer needed. Related: get_rule_override (find override ID), '
+        'update_rule_override (modify instead of deleting). Note: This '
+        'cannot be undone.'
+    ),
+    annotations=DESTRUCTIVE,
+    meta={'anthropic/searchHint': 'rule override delete remove'},
+)
+async def delete_rule_override(
+    override_id: str, workspace: str, region: str = '', **kwargs
+) -> dict[str, Any]:
+    """Delete a rule override.
+
+    Args:
+        override_id: Rule override ID to delete
+        workspace: Workspace name. Required parameter
+        region: Region (ap1, us1). Auto-detected if not provided
+
+    Returns:
+        Rule override deletion response
+    """
+    token = kwargs.get('token')
+
+    return await http_call_response(
+        http_client.delete,
+        region=region,
+        workspace=workspace,
+        endpoint=f'/api/metrics/rule-overrides/{override_id}/',
+        token=token,
+        default_message='Failed to delete rule override',
+        override_id=override_id,
+    )

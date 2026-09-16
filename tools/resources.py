@@ -70,6 +70,11 @@ RESOURCES: list[tuple[str, str, str]] = [
         'alpacon://servers/{region}/{workspace}/{server_id}/overview',
     ),
     (
+        'server_collection_profile',
+        'server_tools.get_collection_profile',
+        'alpacon://servers/{region}/{workspace}/{server_id}/collection-profile',
+    ),
+    (
         'server_note_detail',
         'server_tools.get_server_note',
         'alpacon://server-notes/{region}/{workspace}/{note_id}',
@@ -158,6 +163,16 @@ RESOURCES: list[tuple[str, str, str]] = [
         'alert_rules',
         'metrics_tools.get_alert_rules',
         'alpacon://alert-rules/{region}/{workspace}',
+    ),
+    (
+        'rule_overrides_list',
+        'alert_tools.list_rule_overrides',
+        'alpacon://rule-overrides/{region}/{workspace}',
+    ),
+    (
+        'rule_override_detail',
+        'alert_tools.get_rule_override',
+        'alpacon://rule-overrides/{region}/{workspace}/{override_id}',
     ),
     ('alerts_list', 'alert_tools.list_alerts', 'alpacon://alerts/{region}/{workspace}'),
     (
