@@ -165,6 +165,11 @@ RESOURCES: list[tuple[str, str, str]] = [
         'alpacon://alert-rules/{region}/{workspace}',
     ),
     (
+        'alert_rule_recipients',
+        'alert_tools.get_alert_rule_recipients',
+        'alpacon://alert-rules/{region}/{workspace}/{rule_id}/recipients',
+    ),
+    (
         'rule_overrides_list',
         'alert_tools.list_rule_overrides',
         'alpacon://rule-overrides/{region}/{workspace}',

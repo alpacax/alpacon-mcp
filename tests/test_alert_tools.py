@@ -17,6 +17,7 @@ from tools.alert_tools import (
     delete_rule_override,
     detach_alert_rule,
     get_alert,
+    get_alert_rule_recipients,
     get_rule_override,
     list_alerts,
     list_rule_overrides,
@@ -38,6 +39,13 @@ NEW_RULE_FIELDS = [
     ('no_data_after_s', 300),
     ('device', 'sda1'),
     ('severity', 'critical'),
+]
+
+# The two notification-destination fields the alert-rule-destinations feature
+# added to AlertRule (alpacon-server #3594): each is sent only when given.
+NEW_DESTINATION_FIELDS = [
+    ('notify_email', 'admins'),
+    ('notify_slack_channel', False),
 ]
 
 
@@ -335,6 +343,64 @@ class TestCreateAlertRule:
         for field, _value in NEW_RULE_FIELDS:
             assert field not in sent_data
 
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('field, value', NEW_DESTINATION_FIELDS)
+    async def test_create_sends_destination_fields_only_when_given(
+        self, field, value, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = {'id': RULE_ID}
+
+        await create_alert_rule(
+            workspace='testworkspace',
+            name='disk above 85',
+            target='disk-usage',
+            threshold=85.0,
+            region='ap1',
+            **{field: value},
+        )
+
+        sent_data = mock_http_client.post.call_args.kwargs['data']
+        assert sent_data[field] == value
+        for other_field, _other_value in NEW_DESTINATION_FIELDS:
+            if other_field != field:
+                assert other_field not in sent_data
+
+    @pytest.mark.asyncio
+    async def test_create_omits_destination_fields_when_none_given(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = {'id': RULE_ID}
+
+        await create_alert_rule(
+            workspace='testworkspace',
+            name='disk above 85',
+            target='disk-usage',
+            threshold=85.0,
+            region='ap1',
+        )
+
+        sent_data = mock_http_client.post.call_args.kwargs['data']
+        for field, _value in NEW_DESTINATION_FIELDS:
+            assert field not in sent_data
+
+    @pytest.mark.asyncio
+    async def test_create_rejects_an_unrecognized_notify_email_before_calling(
+        self, mock_http_client, mock_token_manager
+    ):
+        result = await create_alert_rule(
+            workspace='testworkspace',
+            name='disk above 85',
+            target='disk-usage',
+            threshold=85.0,
+            region='ap1',
+            notify_email='everyone',
+        )
+
+        assert result['status'] == 'error'
+        assert result['error_code'] == 'validation'
+        assert result['field'] == 'notify_email'
+        mock_http_client.post.assert_not_called()
+
 
 class TestUpdateAlertRule:
     @pytest.mark.asyncio
@@ -397,6 +463,8 @@ class TestUpdateAlertRule:
             'no_data_after_s',
             'device',
             'severity',
+            'notify_email',
+            'notify_slack_channel',
             'region',
         }
 
@@ -423,6 +491,44 @@ class TestUpdateAlertRule:
         )
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize('field, value', NEW_DESTINATION_FIELDS)
+    async def test_update_sends_destination_fields_only_when_given(
+        self, field, value, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.patch.return_value = {'id': RULE_ID}
+
+        await update_alert_rule(
+            rule_id=RULE_ID,
+            workspace='testworkspace',
+            region='ap1',
+            **{field: value},
+        )
+
+        mock_http_client.patch.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint=f'/api/metrics/alert-rules/{RULE_ID}/',
+            token='test-token',
+            data={field: value},
+        )
+
+    @pytest.mark.asyncio
+    async def test_update_rejects_an_unrecognized_notify_email_before_calling(
+        self, mock_http_client, mock_token_manager
+    ):
+        result = await update_alert_rule(
+            rule_id=RULE_ID,
+            workspace='testworkspace',
+            region='ap1',
+            notify_email='everyone',
+        )
+
+        assert result['status'] == 'error'
+        assert result['error_code'] == 'validation'
+        assert result['field'] == 'notify_email'
+        mock_http_client.patch.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_update_with_no_fields_is_a_validation_error(
         self, mock_http_client, mock_token_manager
     ):
@@ -435,8 +541,9 @@ class TestUpdateAlertRule:
         assert result['field'] == 'payload'
         assert (
             'At least one of name, target, threshold, is_default, operator, '
-            'duration_s, recovery_threshold, no_data_after_s, device or '
-            'severity must be provided.' in result['suggestion']
+            'duration_s, recovery_threshold, no_data_after_s, device, '
+            'severity, notify_email or notify_slack_channel must be '
+            'provided.' in result['suggestion']
         )
         mock_http_client.patch.assert_not_called()
 
@@ -458,6 +565,75 @@ class TestDeleteAlertRule:
             endpoint=f'/api/metrics/alert-rules/{RULE_ID}/',
             token='test-token',
         )
+
+
+class TestGetAlertRuleRecipients:
+    @pytest.mark.asyncio
+    async def test_get_success(self, mock_http_client, mock_token_manager):
+        mock_http_client.get.return_value = {
+            'email': {
+                'mode': 'group_members',
+                'count': 7,
+                'reasons': {'admins': 0, 'group_members': 6, 'owner': 1},
+            },
+            'slack_channel': {'enabled': True, 'connected': True},
+            'event_subscriptions': 2,
+        }
+
+        result = await get_alert_rule_recipients(
+            rule_id=RULE_ID, workspace='testworkspace', region='ap1'
+        )
+
+        assert result['status'] == 'success'
+        assert result['rule_id'] == RULE_ID
+        assert result['data']['email'] == {
+            'mode': 'group_members',
+            'count': 7,
+            'reasons': {'admins': 0, 'group_members': 6, 'owner': 1},
+        }
+        assert result['data']['slack_channel'] == {'enabled': True, 'connected': True}
+        assert result['data']['event_subscriptions'] == 2
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint=f'/api/metrics/alert-rules/{RULE_ID}/recipients/',
+            token='test-token',
+        )
+
+    @pytest.mark.asyncio
+    async def test_reasons_can_exceed_count(self, mock_http_client, mock_token_manager):
+        """The three reasons overlap, so their sum can exceed email.count —
+        the tool must pass the payload through untouched, not reconcile it."""
+        mock_http_client.get.return_value = {
+            'email': {
+                'mode': 'all',
+                'count': 5,
+                'reasons': {'admins': 3, 'group_members': 4, 'owner': 1},
+            },
+            'slack_channel': {'enabled': True, 'connected': False},
+            'event_subscriptions': 0,
+        }
+
+        result = await get_alert_rule_recipients(
+            rule_id=RULE_ID, workspace='testworkspace', region='ap1'
+        )
+
+        reasons = result['data']['email']['reasons']
+        assert sum(reasons.values()) > result['data']['email']['count']
+
+    @pytest.mark.asyncio
+    async def test_not_found_when_servers_are_out_of_reach(
+        self, mock_http_client, mock_token_manager
+    ):
+        """A rule attached only to servers outside the caller's reach 404s,
+        the same shape as any other error envelope this tool passes through."""
+        mock_http_client.get.return_value = HTTP_ERROR_ENVELOPE
+
+        result = await get_alert_rule_recipients(
+            rule_id=RULE_ID, workspace='testworkspace', region='ap1'
+        )
+
+        assert result['status'] == 'error'
 
 
 class TestAttachDetachAlertRule:
@@ -783,6 +959,7 @@ class TestDeleteRuleOverride:
         ),
         ('patch', update_alert_rule, {'rule_id': RULE_ID, 'threshold': 80.0}),
         ('delete', delete_alert_rule, {'rule_id': RULE_ID}),
+        ('get', get_alert_rule_recipients, {'rule_id': RULE_ID}),
         ('post', attach_alert_rule, {'server_id': SERVER_ID, 'rule_id': RULE_ID}),
         ('post', detach_alert_rule, {'server_id': SERVER_ID, 'rule_id': RULE_ID}),
         ('get', list_rule_overrides, {}),
@@ -806,6 +983,7 @@ class TestDeleteRuleOverride:
         'create_alert_rule',
         'update_alert_rule',
         'delete_alert_rule',
+        'get_alert_rule_recipients',
         'attach_alert_rule',
         'detach_alert_rule',
         'list_rule_overrides',

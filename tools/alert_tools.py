@@ -13,6 +13,10 @@ from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ
 ALERT_ACTION_TYPES = frozenset({'checked', 'dismissed'})
 _ACTION_TYPES_SENTENCE = f'One of {", ".join(sorted(ALERT_ACTION_TYPES))}.'
 
+# Mirrors AlertRule.EmailDestination; the server takes nothing else.
+ALERT_EMAIL_DESTINATIONS = frozenset({'all', 'admins', 'group_members', 'none'})
+_EMAIL_DESTINATIONS_SENTENCE = f'One of {", ".join(sorted(ALERT_EMAIL_DESTINATIONS))}.'
+
 # Common target metrics, e.g. cpu-usage, memory-usage, disk-usage,
 # peak/avg-{read,write}-bps, peak/avg-{input,output}-{pps,bps}. The server's
 # AlertRule.TARGET_METRICS is the authoritative list; an unrecognized target
@@ -193,8 +197,12 @@ async def acknowledge_alert(
         'When to use: defining a new threshold before attaching it to servers '
         f'with attach_alert_rule. {_TARGETS_SENTENCE} Authoring a rule needs a '
         'paid plan, while attaching one works on any plan. Only one rule per '
-        'target may carry is_default=true. Related: get_alert_rules, '
-        'attach_alert_rule, update_alert_rule.'
+        'target may carry is_default=true. notify_email and '
+        'notify_slack_channel decide who hears about alerts this rule '
+        'raises; only a human caller may name them—a service-token or agent '
+        'write naming either is refused with a 400. Related: get_alert_rules, '
+        'attach_alert_rule, update_alert_rule, get_alert_rule_recipients '
+        '(preview who a rule reaches).'
     ),
     annotations=ADDITIVE,
     meta={'anthropic/searchHint': 'alert rule create threshold target monitoring'},
@@ -212,6 +220,8 @@ async def create_alert_rule(
     no_data_after_s: int | None = None,
     device: str | None = None,
     severity: str | None = None,
+    notify_email: str | None = None,
+    notify_slack_channel: bool | None = None,
     **kwargs,
 ) -> dict[str, Any]:
     """Create an alert rule.
@@ -241,10 +251,28 @@ async def create_alert_rule(
             (optional)
         severity: Severity the raised alert carries: critical, warning
             (default), or info (optional)
+        notify_email: Who the alert mail is addressed to, within the people
+            who already can see the server: all (server default), admins,
+            group_members (the same fan-out minus admins), or none. No
+            setting here sends mail for an info-severity rule. Omitted keeps
+            the server default of all. Refused with a 400 from a
+            service-token or agent caller (optional)
+        notify_slack_channel: Whether a raise and its resolution post to the
+            workspace alert channel. Independent of notify_email—either
+            can be turned off without touching the other. Omitted keeps the
+            server default of true. Refused with a 400 from a service-token
+            or agent caller (optional)
 
     Returns:
         Created alert rule
     """
+    if notify_email is not None and notify_email not in ALERT_EMAIL_DESTINATIONS:
+        return format_validation_error(
+            'notify_email',
+            notify_email,
+            _EMAIL_DESTINATIONS_SENTENCE,
+        )
+
     token = kwargs.get('token')
 
     rule_data: dict[str, Any] = {
@@ -265,6 +293,10 @@ async def create_alert_rule(
         rule_data['device'] = device
     if severity is not None:
         rule_data['severity'] = severity
+    if notify_email is not None:
+        rule_data['notify_email'] = notify_email
+    if notify_slack_channel is not None:
+        rule_data['notify_slack_channel'] = notify_slack_channel
 
     return await http_call_response(
         http_client.post,
@@ -282,7 +314,11 @@ async def create_alert_rule(
         'Update an existing alert rule. When to use: retuning a threshold or '
         f'renaming a rule. {_TARGETS_SENTENCE} Updating a rule needs a paid '
         'plan, and only one rule per target may carry is_default=true. '
-        'Related: get_alert_rules, create_alert_rule, delete_alert_rule.'
+        'notify_email and notify_slack_channel decide who hears about alerts '
+        'this rule raises; only a human caller may name them—a '
+        'service-token or agent write naming either is refused with a 400. '
+        'Related: get_alert_rules, create_alert_rule, delete_alert_rule, '
+        'get_alert_rule_recipients (preview who a rule reaches).'
     ),
     annotations=IDEMPOTENT_WRITE,
     meta={'anthropic/searchHint': 'alert rule update modify threshold target'},
@@ -301,6 +337,8 @@ async def update_alert_rule(
     no_data_after_s: int | None = None,
     device: str | None = None,
     severity: str | None = None,
+    notify_email: str | None = None,
+    notify_slack_channel: bool | None = None,
     **kwargs,
 ) -> dict[str, Any]:
     """Update an alert rule.
@@ -331,10 +369,28 @@ async def update_alert_rule(
             (optional)
         severity: Severity the raised alert carries: critical, warning, or
             info (optional)
+        notify_email: Who the alert mail is addressed to, within the people
+            who already can see the server: all, admins, group_members (the
+            same fan-out minus admins), or none. No setting here sends mail
+            for an info-severity rule. Omitted leaves the rule's current
+            value unchanged. Refused with a 400 from a service-token or
+            agent caller (optional)
+        notify_slack_channel: Whether a raise and its resolution post to the
+            workspace alert channel. Independent of notify_email—either
+            can be turned off without touching the other. Omitted leaves the
+            rule's current value unchanged. Refused with a 400 from a
+            service-token or agent caller (optional)
 
     Returns:
         Updated alert rule
     """
+    if notify_email is not None and notify_email not in ALERT_EMAIL_DESTINATIONS:
+        return format_validation_error(
+            'notify_email',
+            notify_email,
+            _EMAIL_DESTINATIONS_SENTENCE,
+        )
+
     token = kwargs.get('token')
 
     update_data: dict[str, Any] = {}
@@ -358,14 +414,19 @@ async def update_alert_rule(
         update_data['device'] = device
     if severity is not None:
         update_data['severity'] = severity
+    if notify_email is not None:
+        update_data['notify_email'] = notify_email
+    if notify_slack_channel is not None:
+        update_data['notify_slack_channel'] = notify_slack_channel
 
     if not update_data:
         return format_validation_error(
             'payload',
             None,
             'At least one of name, target, threshold, is_default, operator, '
-            'duration_s, recovery_threshold, no_data_after_s, device or '
-            'severity must be provided.',
+            'duration_s, recovery_threshold, no_data_after_s, device, '
+            'severity, notify_email or notify_slack_channel must be '
+            'provided.',
         )
 
     return await http_call_response(
@@ -487,6 +548,73 @@ async def delete_alert_rule(
         endpoint=f'/api/metrics/alert-rules/{rule_id}/',
         token=token,
         default_message='Failed to delete alert rule',
+        rule_id=rule_id,
+    )
+
+
+@mcp_tool_handler(
+    description=(
+        'Preview who an alert rule would notify—counts only, never names. '
+        'When to use: checking the effect of notify_email/notify_slack_channel '
+        "before or after changing them, without exposing anyone's identity. "
+        'Requires alpacon-server 2.36.0 or later. Counted over the servers '
+        'the rule is attached to that you can see and that the rule can '
+        'actually fire on; the reasons in email.reasons overlap each other, '
+        'so they do not have to sum to email.count. slack_channel.enabled '
+        'and .connected reflect configuration as-is even for an '
+        'info-severity rule, which posts to neither channel regardless. A '
+        '404 here while the rule itself reads fine through get_alert_rules '
+        'means every server the rule is attached to is outside what you can '
+        'see—not that the rule is gone. Related: get_alert_rules, '
+        'create_alert_rule, update_alert_rule (set the destinations).'
+    ),
+    annotations=READ_ONLY,
+    meta={
+        'anthropic/searchHint': 'alert rule recipients preview notify who email slack'
+    },
+)
+async def get_alert_rule_recipients(
+    rule_id: str, workspace: str, region: str = '', **kwargs
+) -> dict[str, Any]:
+    """Preview who an alert rule would notify, as counts only.
+
+    Requires alpacon-server 2.36.0 or later—an older server has no
+    recipients action on this rule and answers 404.
+
+    Three traps in reading the response. First, the reasons in
+    email.reasons overlap: someone who is both a workspace admin and a
+    member of the server's group is counted under both admins and
+    group_members, and once in email.count, so admins + group_members +
+    owner can exceed count—never sum them to reconstruct it. Second,
+    slack_channel.enabled and .connected stay as configured even for an
+    info-severity rule: info raises the bell alone and posts to neither
+    the mail nor the channel, whatever these two booleans say—they echo
+    the rule's and the workspace's settings, not what actually goes out.
+    Third, a 404 here does not mean the rule is gone: it means every
+    server the rule is attached to is outside what the caller can see. A
+    rule that reads fine through get_alert_rules can still 404 here; a
+    rule attached to no server at all answers zeros instead, not a 404.
+
+    Args:
+        rule_id: Alert rule ID to preview
+        workspace: Workspace name. Required parameter
+        region: Region (ap1, us1). Auto-detected if not provided
+
+    Returns:
+        email (mode, count, reasons with admins/group_members/owner),
+        slack_channel (enabled, connected), and event_subscriptions (a
+        count of machine listeners, unaffected by either destination). No
+        user id, name, or address appears anywhere in it.
+    """
+    token = kwargs.get('token')
+
+    return await http_call_response(
+        http_client.get,
+        region=region,
+        workspace=workspace,
+        endpoint=f'/api/metrics/alert-rules/{rule_id}/recipients/',
+        token=token,
+        default_message='Failed to get alert rule recipients',
         rule_id=rule_id,
     )
 
