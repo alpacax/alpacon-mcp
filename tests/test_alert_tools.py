@@ -42,11 +42,16 @@ NEW_RULE_FIELDS = [
 ]
 
 # The two notification-destination fields the alert-rule-destinations feature
-# added to AlertRule (alpacon-server #3594): each is sent only when given.
+# added to AlertRule (alpacax/alpacon-server#3594): each is sent only when given.
 NEW_DESTINATION_FIELDS = [
     ('notify_email', 'admins'),
     ('notify_slack_channel', False),
 ]
+
+# All four notify_email choices AlertRule.EmailDestination accepts
+# (alpacax/alpacon-server#3594), for forwarding coverage broader than the one
+# value NEW_DESTINATION_FIELDS exercises.
+ALL_NOTIFY_EMAIL_VALUES = ['all', 'admins', 'group_members', 'none']
 
 
 mock_http_client = http_client_fixture('tools.alert_tools')
@@ -366,6 +371,26 @@ class TestCreateAlertRule:
                 assert other_field not in sent_data
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize('notify_email', ALL_NOTIFY_EMAIL_VALUES)
+    async def test_create_forwards_every_valid_notify_email_choice(
+        self, notify_email, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = {'id': RULE_ID}
+
+        result = await create_alert_rule(
+            workspace='testworkspace',
+            name='disk above 85',
+            target='disk-usage',
+            threshold=85.0,
+            region='ap1',
+            notify_email=notify_email,
+        )
+
+        assert result['status'] == 'success'
+        sent_data = mock_http_client.post.call_args.kwargs['data']
+        assert sent_data['notify_email'] == notify_email
+
+    @pytest.mark.asyncio
     async def test_create_omits_destination_fields_when_none_given(
         self, mock_http_client, mock_token_manager
     ):
@@ -513,6 +538,29 @@ class TestUpdateAlertRule:
         )
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize('notify_email', ALL_NOTIFY_EMAIL_VALUES)
+    async def test_update_forwards_every_valid_notify_email_choice(
+        self, notify_email, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.patch.return_value = {'id': RULE_ID}
+
+        result = await update_alert_rule(
+            rule_id=RULE_ID,
+            workspace='testworkspace',
+            region='ap1',
+            notify_email=notify_email,
+        )
+
+        assert result['status'] == 'success'
+        mock_http_client.patch.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint=f'/api/metrics/alert-rules/{RULE_ID}/',
+            token='test-token',
+            data={'notify_email': notify_email},
+        )
+
+    @pytest.mark.asyncio
     async def test_update_rejects_an_unrecognized_notify_email_before_calling(
         self, mock_http_client, mock_token_manager
     ):
@@ -602,7 +650,7 @@ class TestGetAlertRuleRecipients:
 
     @pytest.mark.asyncio
     async def test_reasons_can_exceed_count(self, mock_http_client, mock_token_manager):
-        """The three reasons overlap, so their sum can exceed email.count —
+        """The three reasons overlap, so their sum can exceed email.count—
         the tool must pass the payload through untouched, not reconcile it."""
         mock_http_client.get.return_value = {
             'email': {
