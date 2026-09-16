@@ -261,6 +261,8 @@ attach_alert_rule(
 
 `get_alert_rules(workspace)` lists what exists; `update_alert_rule` and `delete_alert_rule` change it, and a rule with `is_default=true` cannot be deleted. Authoring a rule needs a paid plan, while attaching one works on any plan. On the firing side: `list_alerts` (filter by `alert_type`, `severity`, `server_name`, `acknowledged`, `dismissed`), `get_alert` for one, and `acknowledge_alert(alert_id, workspace, action_type="checked")` to mark it seen. An acknowledgement is one per user per alert and cannot be changed afterwards.
 
+Restrict who hears about it: `update_alert_rule(rule_id="<uuid>", workspace="production", notify_email="admins", notify_slack_channel=False)` routes the mail to workspace admins alone and drops the channel post—only a human caller may set either field. Before or after tuning them, `get_alert_rule_recipients(rule_id="<uuid>", workspace="production")` (needs alpacon-server 2.36.0+) previews the effect as counts only, never names—useful for confirming a rule reaches the right group before it ever fires.
+
 One host runs hotter than the fleet: `create_rule_override(server_id="<uuid>", rule_id="<uuid>", workspace="production", threshold=95)` replaces the threshold for that server alone, leaving `recovery_threshold` and `duration_s` at the rule's own value; `create_rule_override(..., enabled=False)` exempts the server from the rule entirely. `list_rule_overrides(workspace, server_id="<uuid>")` shows what a host currently departs from.
 
 ---

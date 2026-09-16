@@ -8,6 +8,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `create_alert_rule` and `update_alert_rule` gained `notify_email` (`all`, `admins`,
+  `group_members`, or `none`; validated against those four choices before the request is built)
+  and `notify_slack_channel` (boolean), matching the alert-rule notification-destinations feature
+  in alpacon-server (alpacax/alpacon-server#3594, deployed in server 2.35.3). Both are optional and
+  sent only when given, so an existing caller's request is unchanged; omitted on create, the server
+  default (`all`, `notify_slack_channel: true`) applies, and omitted on update the rule's current
+  value is left alone. Only a human caller may set either field—the server refuses a service-token
+  or agent write naming one with a 400 (`metrics_alert_rule_destination_not_allowed`), and
+  `severity: "info"` suppresses the mail and the channel post regardless of what these two say.
+- `get_alert_rule_recipients` (`rule_id`, `workspace`, `region`): preview who an alert rule would
+  notify, as counts only—never names. Wraps `GET /api/metrics/alert-rules/{id}/recipients/`, added
+  in alpacon-server (alpacax/alpacon-server#3618) and **requires alpacon-server 2.36.0 or later**.
+  Returns `email` (`mode`, `count`, `reasons` with `admins`/`group_members`/`owner`—these overlap,
+  so they need not sum to `count`), `slack_channel` (`enabled`, `connected`—both stay as configured
+  for an info-severity rule even though info posts nothing), and `event_subscriptions`. A 404 while
+  the rule itself reads fine through `get_alert_rules` means every server the rule is attached to
+  is outside what the caller can see, not that the rule is gone; a rule attached to no server
+  answers zeros instead.
+  A new `alpacon://alert-rules/{region}/{workspace}/{rule_id}/recipients` resource proxies it.
 - `list_rule_overrides`, `get_rule_override`, `create_rule_override`, `update_rule_override`, and
   `delete_rule_override` tools against `/api/metrics/rule-overrides/` (#244): a per-server departure
   from a workspace alert rule, keyed on `server` and `rule`, with `threshold`, `recovery_threshold`,
