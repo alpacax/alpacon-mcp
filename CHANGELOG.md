@@ -23,7 +23,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   offline-alert toggle independent of any workspace rule; the server refuses it from the host's own
   agent credential. `get_server` and `list_servers` responses can now also carry
   `offline_alert_enabled`—no new handling required for a client that already reads fields it
-  recognizes by name.
+  recognizes by name. Three new `alpacon://` resources proxy the read-only tools above:
+  `alpacon://rule-overrides/{region}/{workspace}`, `alpacon://rule-overrides/{region}/{workspace}/{override_id}`,
+  and `alpacon://servers/{region}/{workspace}/{server_id}/collection-profile`.
 - `create_alert_rule` and `update_alert_rule` gained `operator`, `duration_s`, `recovery_threshold`,
   `no_data_after_s`, `device`, and `severity`, matching the alpacon-server metrics-extension rule
   shape (#243). All six are optional and sent only when given, so an existing caller's request is

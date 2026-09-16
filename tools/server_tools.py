@@ -721,8 +721,8 @@ async def update_server(
     workspace: str,
     name: str | None = None,
     description: str | None = None,
-    offline_alert_enabled: bool | None = None,
     region: str = '',
+    offline_alert_enabled: bool | None = None,
     **kwargs,
 ) -> dict[str, Any]:
     """Update an existing server record.
@@ -732,11 +732,11 @@ async def update_server(
         workspace: Workspace name. Required parameter
         name: New server name (optional)
         description: New server description (optional)
+        region: Region (ap1, us1). Auto-detected if not provided
         offline_alert_enabled: Toggle this server's own offline-alert
             delivery, independent of any workspace rule; defaults to true on
             the server. Refused when the caller is the server's own agent
             credential (optional)
-        region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
         Updated server data
