@@ -173,6 +173,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   correction is the first entry under Changed.
 
 ### Fixed
+- The OAuth callback's Stage 1 MFA token exchange now fails closed instead of logging a warning
+  and continuing to Stage 2 (#250). Anything other than a 2xx response from the `/oauth/token`
+  exchange—3xx included, not just 4xx and above—and any exception raised during it now count as
+  a failure, and Stage 2 never starts on one. On failure the server redirects the client to its
+  `redirect_uri` with `error=access_denied`, `error_description`, and the original `state`, the
+  same shape as an upstream Auth0 error, or answers with a JSON OAuth error when the
+  `redirect_uri` is missing or untrusted; a client only ever saw a Stage 2 redirect before and now
+  needs to handle this new `access_denied` outcome.
 - `webftp_upload_content` no longer writes the uploaded file into the log (#233). `with_logging`
   logged every argument value in full, and `file_content` carries the base64 payload, so the whole
   uploaded file landed in one INFO line, measured at 1.4 MB of log for a 1 MB upload. The entry
