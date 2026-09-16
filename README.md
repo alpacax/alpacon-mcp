@@ -377,7 +377,8 @@ Install the MCP extension and add to settings:
 - **list_servers**: List all servers in workspace
 - **get_server**: Get detailed server information
 - **get_server_overview**: Comprehensive server overview (hardware, OS, network, disks)
-- **update_server**: Rename or relabel a server entry
+- **update_server**: Rename or relabel a server entry, or toggle its own offline-alert delivery
+- **get_collection_profile**: What a server collects and at what cadence, and what it does not collect
 - **unregister_server**: Unregister a host from the workspace
 - **star_server**: Pin or unpin a server for yourself
 - **list_server_notes** / **get_server_note** / **create_server_note** / **update_server_note** / **delete_server_note**: Server documentation notes
@@ -442,6 +443,8 @@ OAuth/browser callers must scope command execution and file transfers under an a
 - **create_alert_rule**: Create monitoring thresholds
 - **update_alert_rule**: Update alert rule configuration
 - **delete_alert_rule**: Delete an alert rule
+- **list_rule_overrides** / **get_rule_override**: Per-server departures from a workspace alert rule
+- **create_rule_override** / **update_rule_override** / **delete_rule_override**: Manage a per-server override
 
 ### 🛡️ Security ACLs
 - **list_command_acls** / **create_command_acl** / **update_command_acl** / **delete_command_acl**: Which commands a token may run

@@ -106,7 +106,8 @@ async def get_server(
         region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
-        Server details response
+        Server details response. Carries `offline_alert_enabled`, the
+        server's own offline-alert toggle (see update_server).
     """
     # Get token (injected by decorator)
     token = kwargs.get('token')
@@ -120,6 +121,56 @@ async def get_server(
         endpoint=f'/api/servers/servers/{server_id}/',
         token=token,
         default_message='Failed to get server details',
+        server_id=server_id,
+    )
+
+
+@mcp_tool_handler(
+    description=(
+        'Get what a server collects and at what cadence: `core[]` (always-on '
+        'families, e.g. the core disk-usage alert, whose entries carry a '
+        '`latest[]` reading per volume), `metrics[]` (the workspace metrics-'
+        'extension families, each with `retention_days`), and `not_collected[]` '
+        '(families this workspace does not collect, with `reason` and the '
+        '`unlocked_by` extension). Not gated behind the metrics extension '
+        'itself, unlike the metric-data tools, so it answers on every plan. '
+        'When to use: explaining an empty chart, or checking whether a family '
+        'is collected before asking for its data. '
+        'Related: get_server_metrics_summary (the numbers), get_alert_rules.'
+    ),
+    annotations=READ_ONLY,
+    meta={
+        'anthropic/searchHint': 'collection profile metrics cadence retention not collected'
+    },
+)
+async def get_collection_profile(
+    server_id: str, workspace: str, region: str = '', **kwargs
+) -> dict[str, Any]:
+    """Get a server's collection profile.
+
+    Args:
+        server_id: Server ID
+        workspace: Workspace name. Required parameter
+        region: Region (ap1, us1). Auto-detected if not provided
+
+    Returns:
+        Collection profile response: `enabled` (whether the metrics extension
+        is on for this workspace), `core[]` and `metrics[]`—each entry
+        carrying `name`, `interval_s`, `last_sample_at`, `collected`, `scope`,
+        and `reason` when not collected; `metrics[]` entries also carry
+        `retention_days`, and the core disk-usage entry alone carries
+        `latest[]` (per-volume readings)—and `not_collected[]`, each entry
+        carrying `name`, `reason`, and `unlocked_by`.
+    """
+    token = kwargs.get('token')
+
+    return await http_call_response(
+        http_client.get,
+        region=region,
+        workspace=workspace,
+        endpoint=f'/api/servers/servers/{server_id}/collection-profile/',
+        token=token,
+        default_message='Failed to get server collection profile',
         server_id=server_id,
     )
 
@@ -651,13 +702,19 @@ async def shutdown_system(
 
 @mcp_tool_handler(
     description=(
-        "Rename or relabel a host's Alpacon entry (`name`, `description`) by UUID. "
-        'Use when a server is re-purposed or moved between teams—this updates the '
-        'fleet-inventory metadata only. '
+        "Rename or relabel a host's Alpacon entry (`name`, `description`) by UUID, "
+        'or toggle its own offline-alert delivery (`offline_alert_enabled`). '
+        'Use `name`/`description` when a server is re-purposed or moved between '
+        'teams—those update the fleet-inventory metadata only. '
+        '`offline_alert_enabled` defaults to true on the server and is independent '
+        "of any workspace alert rule; the server refuses the field from the host's "
+        'own agent credential, so only a human or service caller may set it. '
         'Related: get_server (view current state), unregister_server.'
     ),
     annotations=IDEMPOTENT_WRITE,
-    meta={'anthropic/searchHint': 'server update edit modify rename relabel'},
+    meta={
+        'anthropic/searchHint': 'server update edit modify rename relabel offline alert'
+    },
 )
 async def update_server(
     server_id: str,
@@ -665,6 +722,7 @@ async def update_server(
     name: str | None = None,
     description: str | None = None,
     region: str = '',
+    offline_alert_enabled: bool | None = None,
     **kwargs,
 ) -> dict[str, Any]:
     """Update an existing server record.
@@ -675,6 +733,10 @@ async def update_server(
         name: New server name (optional)
         description: New server description (optional)
         region: Region (ap1, us1). Auto-detected if not provided
+        offline_alert_enabled: Toggle this server's own offline-alert
+            delivery, independent of any workspace rule; defaults to true on
+            the server. Refused when the caller is the server's own agent
+            credential (optional)
 
     Returns:
         Updated server data
@@ -686,12 +748,15 @@ async def update_server(
         update_data['name'] = name
     if description is not None:
         update_data['description'] = description
+    if offline_alert_enabled is not None:
+        update_data['offline_alert_enabled'] = offline_alert_enabled
 
     if not update_data:
         return format_validation_error(
             'payload',
             None,
-            'At least one of name or description must be provided.',
+            'At least one of name, description or offline_alert_enabled must be '
+            'provided.',
         )
 
     return await http_call_response(

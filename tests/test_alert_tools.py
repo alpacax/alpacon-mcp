@@ -12,16 +12,22 @@ from tools.alert_tools import (
     acknowledge_alert,
     attach_alert_rule,
     create_alert_rule,
+    create_rule_override,
     delete_alert_rule,
+    delete_rule_override,
     detach_alert_rule,
     get_alert,
+    get_rule_override,
     list_alerts,
+    list_rule_overrides,
     update_alert_rule,
+    update_rule_override,
 )
 
 ALERT_ID = 'alert-1'
 RULE_ID = 'rule-1'
 SERVER_ID = '550e8400-e29b-41d4-a716-446655440123'
+OVERRIDE_ID = 'override-1'
 
 # The six fields the metrics-extension rework added to AlertRule (#243): each
 # is sent only when the caller gives it.
@@ -527,6 +533,237 @@ class TestAttachDetachAlertRule:
         assert mock_http_client.post.call_count == 2
 
 
+class TestListRuleOverrides:
+    @pytest.mark.asyncio
+    async def test_list_success(self, mock_http_client, mock_token_manager):
+        mock_http_client.get.return_value = {'results': [], 'count': 0}
+
+        result = await list_rule_overrides(workspace='testworkspace', region='ap1')
+
+        assert result['status'] == 'success'
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/metrics/rule-overrides/',
+            token='test-token',
+            params={},
+        )
+
+    @pytest.mark.asyncio
+    async def test_list_forwards_server_and_rule_filters(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.get.return_value = {'results': [], 'count': 0}
+
+        await list_rule_overrides(
+            workspace='testworkspace',
+            region='ap1',
+            server_id=SERVER_ID,
+            rule_id=RULE_ID,
+        )
+
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/metrics/rule-overrides/',
+            token='test-token',
+            params={'server': SERVER_ID, 'rule': RULE_ID},
+        )
+
+    @pytest.mark.asyncio
+    async def test_list_enabled_false_filter_is_not_dropped(
+        self, mock_http_client, mock_token_manager
+    ):
+        """enabled=False must forward as a param, not be dropped by a truthy check."""
+        mock_http_client.get.return_value = {'results': [], 'count': 0}
+
+        await list_rule_overrides(
+            workspace='testworkspace', region='ap1', enabled=False
+        )
+
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/metrics/rule-overrides/',
+            token='test-token',
+            params={'enabled': False},
+        )
+
+
+class TestGetRuleOverride:
+    @pytest.mark.asyncio
+    async def test_get_success(self, mock_http_client, mock_token_manager):
+        mock_http_client.get.return_value = {'id': OVERRIDE_ID, 'server': SERVER_ID}
+
+        result = await get_rule_override(
+            override_id=OVERRIDE_ID, workspace='testworkspace', region='ap1'
+        )
+
+        assert result['status'] == 'success'
+        assert result['override_id'] == OVERRIDE_ID
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint=f'/api/metrics/rule-overrides/{OVERRIDE_ID}/',
+            token='test-token',
+        )
+
+
+class TestCreateRuleOverride:
+    @pytest.mark.asyncio
+    async def test_create_sends_only_server_and_rule_by_default(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = {'id': OVERRIDE_ID}
+
+        result = await create_rule_override(
+            server_id=SERVER_ID,
+            rule_id=RULE_ID,
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert result['status'] == 'success'
+        mock_http_client.post.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/metrics/rule-overrides/',
+            token='test-token',
+            data={'server': SERVER_ID, 'rule': RULE_ID},
+        )
+
+    @pytest.mark.asyncio
+    async def test_create_sends_the_optional_fields_when_given(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = {'id': OVERRIDE_ID}
+
+        await create_rule_override(
+            server_id=SERVER_ID,
+            rule_id=RULE_ID,
+            workspace='testworkspace',
+            threshold=90.0,
+            recovery_threshold=70.0,
+            duration_s=60,
+            enabled=False,
+            region='ap1',
+        )
+
+        mock_http_client.post.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/metrics/rule-overrides/',
+            token='test-token',
+            data={
+                'server': SERVER_ID,
+                'rule': RULE_ID,
+                'threshold': 90.0,
+                'recovery_threshold': 70.0,
+                'duration_s': 60,
+                'enabled': False,
+            },
+        )
+
+    @pytest.mark.asyncio
+    async def test_create_enabled_false_is_not_dropped(
+        self, mock_http_client, mock_token_manager
+    ):
+        """enabled=False must forward, not be dropped by a truthy check."""
+        mock_http_client.post.return_value = {'id': OVERRIDE_ID}
+
+        await create_rule_override(
+            server_id=SERVER_ID,
+            rule_id=RULE_ID,
+            workspace='testworkspace',
+            enabled=False,
+            region='ap1',
+        )
+
+        sent_data = mock_http_client.post.call_args.kwargs['data']
+        assert sent_data['enabled'] is False
+
+
+class TestUpdateRuleOverride:
+    @pytest.mark.asyncio
+    async def test_update_sends_only_what_it_was_given(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.patch.return_value = {'id': OVERRIDE_ID}
+
+        result = await update_rule_override(
+            override_id=OVERRIDE_ID,
+            workspace='testworkspace',
+            threshold=95.0,
+            region='ap1',
+        )
+
+        assert result['status'] == 'success'
+        mock_http_client.patch.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint=f'/api/metrics/rule-overrides/{OVERRIDE_ID}/',
+            token='test-token',
+            data={'threshold': 95.0},
+        )
+
+    @pytest.mark.asyncio
+    async def test_update_enabled_false_is_not_dropped(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.patch.return_value = {'id': OVERRIDE_ID}
+
+        await update_rule_override(
+            override_id=OVERRIDE_ID,
+            workspace='testworkspace',
+            enabled=False,
+            region='ap1',
+        )
+
+        mock_http_client.patch.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint=f'/api/metrics/rule-overrides/{OVERRIDE_ID}/',
+            token='test-token',
+            data={'enabled': False},
+        )
+
+    @pytest.mark.asyncio
+    async def test_update_with_no_fields_is_a_validation_error(
+        self, mock_http_client, mock_token_manager
+    ):
+        result = await update_rule_override(
+            override_id=OVERRIDE_ID, workspace='testworkspace', region='ap1'
+        )
+
+        assert result['status'] == 'error'
+        assert result['error_code'] == 'validation'
+        assert result['field'] == 'payload'
+        assert (
+            'At least one of server_id, rule_id, threshold, recovery_threshold, '
+            'duration_s or enabled must be provided.' in result['suggestion']
+        )
+        mock_http_client.patch.assert_not_called()
+
+
+class TestDeleteRuleOverride:
+    @pytest.mark.asyncio
+    async def test_delete_success(self, mock_http_client, mock_token_manager):
+        mock_http_client.delete.return_value = {}
+
+        result = await delete_rule_override(
+            override_id=OVERRIDE_ID, workspace='testworkspace', region='ap1'
+        )
+
+        assert result['status'] == 'success'
+        assert result['override_id'] == OVERRIDE_ID
+        mock_http_client.delete.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint=f'/api/metrics/rule-overrides/{OVERRIDE_ID}/',
+            token='test-token',
+        )
+
+
 # Each endpoint's error-envelope path is identical; one parametrized case per
 # tool (with its HTTP verb) replaces six near-duplicate per-class tests.
 @pytest.mark.parametrize(
@@ -548,6 +785,19 @@ class TestAttachDetachAlertRule:
         ('delete', delete_alert_rule, {'rule_id': RULE_ID}),
         ('post', attach_alert_rule, {'server_id': SERVER_ID, 'rule_id': RULE_ID}),
         ('post', detach_alert_rule, {'server_id': SERVER_ID, 'rule_id': RULE_ID}),
+        ('get', list_rule_overrides, {}),
+        ('get', get_rule_override, {'override_id': OVERRIDE_ID}),
+        (
+            'post',
+            create_rule_override,
+            {'server_id': SERVER_ID, 'rule_id': RULE_ID},
+        ),
+        (
+            'patch',
+            update_rule_override,
+            {'override_id': OVERRIDE_ID, 'threshold': 80.0},
+        ),
+        ('delete', delete_rule_override, {'override_id': OVERRIDE_ID}),
     ],
     ids=[
         'list_alerts',
@@ -558,6 +808,11 @@ class TestAttachDetachAlertRule:
         'delete_alert_rule',
         'attach_alert_rule',
         'detach_alert_rule',
+        'list_rule_overrides',
+        'get_rule_override',
+        'create_rule_override',
+        'update_rule_override',
+        'delete_rule_override',
     ],
 )
 @pytest.mark.asyncio

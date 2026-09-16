@@ -16,6 +16,7 @@ from tools.server_tools import (
     create_server_note,
     delete_registration_token,
     delete_server_note,
+    get_collection_profile,
     get_registration_guide,
     get_server,
     get_server_note,
@@ -250,6 +251,102 @@ class TestGetServer:
             endpoint='/api/servers/servers/550e8400-e29b-41d4-a716-446655440123/',
             token='test-token',
         )
+
+
+class TestGetCollectionProfile:
+    @pytest.mark.asyncio
+    async def test_get_collection_profile_success(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Test successful collection profile retrieval."""
+        profile = {
+            'enabled': True,
+            'core': [
+                {
+                    'name': 'disk-usage',
+                    'interval_s': 300,
+                    'last_sample_at': '2026-09-16T00:00:00Z',
+                    'collected': True,
+                    'scope': None,
+                    'reason': None,
+                    'latest': [
+                        {
+                            'device': 'sda1',
+                            'mount_point': '/',
+                            'used_percent': 42.0,
+                            'used': 1000,
+                            'total': 2000,
+                            'sampled_at': '2026-09-16T00:00:00Z',
+                            'agent_volume': True,
+                        }
+                    ],
+                }
+            ],
+            'metrics': [
+                {
+                    'name': 'cpu-usage',
+                    'interval_s': 60,
+                    'last_sample_at': '2026-09-16T00:00:00Z',
+                    'collected': True,
+                    'scope': None,
+                    'reason': None,
+                    'retention_days': 30,
+                }
+            ],
+            'not_collected': [
+                {
+                    'name': 'network-traffic',
+                    'reason': 'extension_not_enabled',
+                    'unlocked_by': 'metrics',
+                }
+            ],
+        }
+        mock_http_client.get.return_value = profile
+
+        result = await get_collection_profile(
+            server_id='550e8400-e29b-41d4-a716-446655440123',
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert result['status'] == 'success'
+        assert result['data'] == profile
+        assert result['server_id'] == '550e8400-e29b-41d4-a716-446655440123'
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/servers/servers/550e8400-e29b-41d4-a716-446655440123/collection-profile/',
+            token='test-token',
+        )
+
+    @pytest.mark.asyncio
+    async def test_get_collection_profile_no_token(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_token_manager.get_token.return_value = None
+
+        result = await get_collection_profile(
+            server_id='550e8400-e29b-41d4-a716-446655440123', workspace='testworkspace'
+        )
+
+        assert result['status'] == 'error'
+        assert 'No token found' in result['message']
+        mock_http_client.get.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_get_collection_profile_http_error(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.get.return_value = HTTP_ERROR_ENVELOPE
+
+        result = await get_collection_profile(
+            server_id='550e8400-e29b-41d4-a716-446655440123',
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert result['status'] == 'error'
+        assert result['server_id'] == '550e8400-e29b-41d4-a716-446655440123'
 
 
 class TestServerNotes:
@@ -653,8 +750,8 @@ class TestUpdateServer:
         assert result['error_code'] == 'validation'
         assert result['field'] == 'payload'
         assert (
-            'At least one of name or description must be provided.'
-            in result['suggestion']
+            'At least one of name, description or offline_alert_enabled must be '
+            'provided.' in result['suggestion']
         )
         mock_http_client.patch.assert_not_called()
 
@@ -712,6 +809,55 @@ class TestUpdateServer:
                 'description': 'Updated description',
             },
         )
+
+    @pytest.mark.asyncio
+    async def test_update_server_sends_offline_alert_enabled(
+        self, mock_http_client, mock_token_manager
+    ):
+        """offline_alert_enabled is sent alone, alongside name/description if given."""
+        mock_http_client.patch.return_value = {
+            'id': '550e8400-e29b-41d4-a716-446655440123',
+            'offline_alert_enabled': False,
+        }
+
+        await update_server(
+            server_id='550e8400-e29b-41d4-a716-446655440123',
+            workspace='testworkspace',
+            offline_alert_enabled=False,
+            region='ap1',
+        )
+
+        mock_http_client.patch.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/servers/servers/550e8400-e29b-41d4-a716-446655440123/',
+            token='test-token',
+            data={'offline_alert_enabled': False},
+        )
+
+    @pytest.mark.asyncio
+    async def test_update_server_offline_alert_enabled_false_is_not_dropped(
+        self, mock_http_client, mock_token_manager
+    ):
+        """False must forward as a field, not be dropped by a truthy check."""
+        mock_http_client.patch.return_value = {
+            'id': 'x',
+            'offline_alert_enabled': False,
+        }
+
+        await update_server(
+            server_id='550e8400-e29b-41d4-a716-446655440123',
+            workspace='testworkspace',
+            name='renamed-server',
+            offline_alert_enabled=False,
+            region='ap1',
+        )
+
+        sent_data = mock_http_client.patch.call_args.kwargs['data']
+        assert sent_data == {
+            'name': 'renamed-server',
+            'offline_alert_enabled': False,
+        }
 
 
 class TestUnregisterServer:

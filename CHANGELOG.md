@@ -8,6 +8,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `list_rule_overrides`, `get_rule_override`, `create_rule_override`, `update_rule_override`, and
+  `delete_rule_override` tools against `/api/metrics/rule-overrides/` (#244): a per-server departure
+  from a workspace alert rule, keyed on `server` and `rule`, with `threshold`, `recovery_threshold`,
+  `duration_s`, and `enabled` as nullable per-field overrides—a field left unset keeps the rule's
+  own value, and `enabled=false` exempts the server from the rule entirely. At most one override per
+  `(server, rule)` pair; the server refuses a second. `get_collection_profile`: what a server
+  collects and at what cadence, wrapping `GET /api/servers/servers/{id}/collection-profile/`.
+  Read-only and not gated behind the metrics extension, so it answers on every plan; `core[]` and
+  `metrics[]` entries carry `interval_s`, `last_sample_at`, `collected`, `scope`, and `reason` when
+  not collected, `metrics[]` entries also carry `retention_days`, the core disk-usage entry alone
+  carries `latest[]` per-volume readings, and `not_collected[]` entries carry `reason` and
+  `unlocked_by`. `update_server` gained `offline_alert_enabled` (boolean), a server's own
+  offline-alert toggle independent of any workspace rule; the server refuses it from the host's own
+  agent credential. `get_server` and `list_servers` responses can now also carry
+  `offline_alert_enabled`—no new handling required for a client that already reads fields it
+  recognizes by name. Three new `alpacon://` resources proxy the read-only tools above:
+  `alpacon://rule-overrides/{region}/{workspace}`, `alpacon://rule-overrides/{region}/{workspace}/{override_id}`,
+  and `alpacon://servers/{region}/{workspace}/{server_id}/collection-profile`.
 - `create_alert_rule` and `update_alert_rule` gained `operator`, `duration_s`, `recovery_threshold`,
   `no_data_after_s`, `device`, and `severity`, matching the alpacon-server metrics-extension rule
   shape (#243). All six are optional and sent only when given, so an existing caller's request is

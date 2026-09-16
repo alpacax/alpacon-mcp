@@ -89,14 +89,25 @@ Create a new note for a server.
 Read, partially update (`content`, `private`, `pinned`), or permanently delete a note by `note_id`.
 
 ### `update_server`
-Rename or relabel a server's Alpacon entry. Does not touch the host itself.
+Rename or relabel a server's Alpacon entry, or toggle its own offline-alert delivery. Does not touch the host itself.
 
 **Parameters:**
 - `server_id` (string): Server UUID
 - `workspace` (string): Workspace name
 - `name` (string, optional): New display name
 - `description` (string, optional): New description
+- `offline_alert_enabled` (boolean, optional): This server's own offline-alert toggle, independent of any workspace rule; defaults to `true` on the server. Refused when the caller is the server's own agent credential
 - `region` (string, optional): Region name
+
+### `get_collection_profile`
+What a server collects and at what cadence, and what it does not collect. Not gated behind the metrics extension, so it answers on every plan.
+
+**Parameters:**
+- `server_id` (string): Server ID
+- `region` (string, optional): Region name; resolved from the workspace when omitted
+- `workspace` (string): Workspace name
+
+**Returns:** `enabled` (whether the metrics extension is on for this workspace), `core[]` and `metrics[]`—each entry carrying `name`, `interval_s`, `last_sample_at`, `collected`, `scope`, and `reason` when not collected; `metrics[]` entries also carry `retention_days`, and the core disk-usage entry alone carries `latest[]` (per-volume readings)—and `not_collected[]`, each entry carrying `name`, `reason`, and `unlocked_by`.
 
 ### `unregister_server`
 Unregister a host from the workspace. The agent stays installed; bringing the host back needs a registration token.
@@ -743,6 +754,16 @@ There is intentionally no `approve_request`/`reject_request` tool: the Alpacon s
 Creating and updating a rule need a paid plan; reading, attaching and detaching work on any plan. A
 listed or fetched alert can carry `device` and `severity` from the rule that raised it, and
 `resolved_at` once the condition clears.
+
+#### Rule overrides
+
+A per-server departure from a workspace alert rule, against `/api/metrics/rule-overrides/`. `server` and `rule` identify the override; `threshold`, `recovery_threshold`, `duration_s`, and `enabled` are nullable per-field overrides—a field left unset keeps the rule's own value for that server, and `enabled=false` exempts the server from the rule entirely regardless of the other fields. At most one override per `(server, rule)` pair; a second create for the same pair is refused.
+
+- `list_rule_overrides`: `workspace`, `server_id` (optional), `rule_id` (optional), `enabled` (optional), `region` (optional), `page`, `page_size`
+- `get_rule_override`: `override_id`, `workspace`, `region` (optional)
+- `create_rule_override`: `server_id`, `rule_id`, `workspace`, `threshold`, `recovery_threshold`, `duration_s`, `enabled` (all four optional), `region` (optional)
+- `update_rule_override`: `override_id`, `workspace`, and any of `server_id`, `rule_id`, `threshold`, `recovery_threshold`, `duration_s`, `enabled`—sent only for the fields given
+- `delete_rule_override`: by `override_id`
 
 ---
 

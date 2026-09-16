@@ -481,6 +481,7 @@ class TestPathIdentifierValidation:
         'log_id',
         'membership_id',
         'note_id',
+        'override_id',
         'request_id',
         'revoke_id',
         'rule_id',

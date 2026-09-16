@@ -230,7 +230,7 @@ History lives in `webftp_uploads_list` and `webftp_downloads_list`; the audit vi
 
 A workable order—read first, act second:
 
-1. `get_server_metrics_summary(server_id, workspace, hours=6)`: is this CPU, memory, disk, or network?
+1. `get_server_metrics_summary(server_id, workspace, hours=6)`: is this CPU, memory, disk, or network? An empty family there is worth checking against `get_collection_profile(server_id, workspace)` before reading it as "nothing's wrong"—it may just not be collected on this plan.
 2. `get_disk_io` / `get_network_traffic` on the suspect dimension for the exact window
 3. `list_events(workspace, server_id=...)` and `search_events(search_query="oom", workspace=...)`: did the platform already record something?
 4. `list_alerts(workspace, server_id=..., acknowledged=False)`: what is already firing
@@ -260,6 +260,8 @@ attach_alert_rule(
 ```
 
 `get_alert_rules(workspace)` lists what exists; `update_alert_rule` and `delete_alert_rule` change it, and a rule with `is_default=true` cannot be deleted. Authoring a rule needs a paid plan, while attaching one works on any plan. On the firing side: `list_alerts` (filter by `alert_type`, `severity`, `server_name`, `acknowledged`, `dismissed`), `get_alert` for one, and `acknowledge_alert(alert_id, workspace, action_type="checked")` to mark it seen. An acknowledgement is one per user per alert and cannot be changed afterwards.
+
+One host runs hotter than the fleet: `create_rule_override(server_id="<uuid>", rule_id="<uuid>", workspace="production", threshold=95)` replaces the threshold for that server alone, leaving `recovery_threshold` and `duration_s` at the rule's own value; `create_rule_override(..., enabled=False)` exempts the server from the rule entirely. `list_rule_overrides(workspace, server_id="<uuid>")` shows what a host currently departs from.
 
 ---
 
