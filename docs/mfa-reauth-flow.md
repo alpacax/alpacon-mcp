@@ -53,6 +53,8 @@ sequenceDiagram
         S->>A0: Exchange MFA code (discard token)
     end
 
+    Note over S: A failed exchange—any non-2xx status or any error raised—ends the<br/>flow here: the server redirects the client with error=access_denied<br/>instead of proceeding to Stage 2.
+
     rect rgb(230, 245, 255)
         Note over S,B: Stage 2 — regular token (silent)
         S->>A0: 302 Redirect<br/>audience=alpacon.io/access/<br/>scope=openid profile email offline_access device:{id}
