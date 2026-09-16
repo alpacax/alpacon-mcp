@@ -122,6 +122,24 @@ get no entry.
 Keep `permissions: contents: read` at the workflow level; add extra scopes on
 the job that needs them, never at the workflow level.
 
+## Agent skills
+
+### Issue tracker
+
+Issues and specs are tracked in GitHub Issues for `alpacax/alpacon-mcp`. See
+`docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Triage uses the five canonical mattpocock/skills label roles. See
+`docs/agents/triage-labels.md`.
+
+### Domain docs
+
+This repository uses a single-context glossary in `CONTEXT.md`. Architecture
+decisions are stored in the `alpacon-handbook` repository. See
+`docs/agents/domain.md`.
+
 ## Where the detail lives
 
 - `docs/api-reference.md`: every tool, its parameters, and its response shape.
