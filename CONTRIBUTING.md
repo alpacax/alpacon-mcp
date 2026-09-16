@@ -491,29 +491,27 @@ Brief description of changes.
 
 ## 🏷️ Release process
 
-1. **Version Bumping**
+The version comes from the git tag via `hatch-vcs`—there is no version string to edit. Follow semantic versioning (MAJOR.MINOR.PATCH).
+
+1. **Prepare CHANGELOG**
+   Keep the `[Unreleased]` heading in place. Draft release notes from the unreleased changes, ready to add to the GitHub Release.
+
+2. **Create and Push Tag**
    ```bash
-   # The version comes from the git tag (hatch-vcs); there is no version
-   # string to edit. Follow semantic versioning (MAJOR.MINOR.PATCH).
-   ```
-
-2. **Update CHANGELOG.md**
-   ```markdown
-   ## [1.1.0] - 2026-01-15
-   ### Added
-   - Bulk WebFTP transfers
-   - Enhanced error handling
-
-   ### Fixed
-   - Token refresh issues
-   - Memory leaks in long sessions
-   ```
-
-3. **Create Release Tag**
-   ```bash
+   # Create an annotated tag on main (replace 1.1.0 with your version)
    git tag -a v1.1.0 -m "Release version 1.1.0"
    git push origin v1.1.0
    ```
+
+   The tag push triggers the `docker` workflow: it builds the Docker image, tags it with the version and `latest`, and deploys to production.
+
+3. **Publish the Release**
+   ```bash
+   # Create a GitHub Release from your release notes
+   gh release create v1.1.0 --notes-file RELEASE_NOTES.md
+   ```
+
+   Publishing the release triggers the `publish` workflow, which builds the Python package and publishes it to PyPI.
 
 ## 🤝 Community
 
