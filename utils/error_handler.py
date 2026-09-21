@@ -1,61 +1,8 @@
 """Enhanced error handling utilities for Alpacon MCP server."""
 
-import hashlib
 import re
-import threading
 import uuid
 from typing import Any
-
-# Module-level thread-safe dict for signaling upstream auth errors between
-# the ASGI middleware and MCP tool handlers. Uses a module-level dict
-# instead of contextvars because MCP streamable-http transport runs tool
-# handlers in a separate anyio task context where ContextVar mutations
-# are invisible to the middleware's parent context.
-_upstream_auth_errors: dict[str, dict] = {}
-_upstream_auth_lock = threading.Lock()
-
-
-def make_auth_error_key(token: str) -> str:
-    """Derive a short hash key from an auth token for error signaling.
-
-    NOTE: Uses SHA-256 for fast, collision-resistant key derivation only
-    (not for password hashing). The input is a JWT token, not a password.
-    """
-    return hashlib.sha256(token.encode()).hexdigest()[:16]
-
-
-def signal_upstream_auth_error(token_key: str, error_info: dict) -> None:
-    """Signal that an upstream 401 was received for the given token.
-
-    Called by http_client when the Alpacon API returns 401 in remote mode.
-    The ASGI middleware reads this via consume_upstream_auth_error().
-
-    If a signal already exists for this token_key (e.g., multiple API
-    calls in one tool run), merges with the existing entry, preserving
-    mfa_required=True once set so a later non-MFA 401 cannot downgrade it.
-    """
-    with _upstream_auth_lock:
-        existing = _upstream_auth_errors.get(token_key)
-        if existing is None:
-            _upstream_auth_errors[token_key] = error_info
-            return
-
-        merged = existing.copy()
-        merged.update(error_info)
-        if existing.get('mfa_required') or error_info.get('mfa_required'):
-            merged['mfa_required'] = True
-        _upstream_auth_errors[token_key] = merged
-
-
-def consume_upstream_auth_error(token_key: str) -> dict | None:
-    """Check and consume an upstream auth error for the given token.
-
-    Called by the ASGI middleware after the request completes.
-    Returns the error info dict if present, None otherwise.
-    Atomically removes the entry to prevent double-consumption.
-    """
-    with _upstream_auth_lock:
-        return _upstream_auth_errors.pop(token_key, None)
 
 
 class UpstreamAuthError(Exception):
@@ -71,9 +18,9 @@ class UpstreamAuthError(Exception):
     session requires re-authentication. The ``mfa_required`` flag
     indicates whether multi-factor verification is specifically needed.
 
-    This exception-based path complements the dict-based signaling
-    mechanism (signal_upstream_auth_error) for more reliable
-    cross-task propagation.
+    Raising this only cuts the current call short; the signal the
+    middleware reads is recorded separately via
+    ``utils.request_signal.signal_upstream_auth_error``.
     """
 
     def __init__(self, mfa_required: bool = False, source: str = ''):

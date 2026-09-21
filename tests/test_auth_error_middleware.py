@@ -1,18 +1,15 @@
 """Tests for UpstreamAuthErrorMiddleware."""
 
+import asyncio
 import json
 import logging
 from http import HTTPStatus
 
 import pytest
 
+from utils import request_signal
 from utils.auth_error_middleware import UpstreamAuthErrorMiddleware
-from utils.error_handler import (
-    UpstreamAuthError,
-    consume_upstream_auth_error,
-    make_auth_error_key,
-    signal_upstream_auth_error,
-)
+from utils.error_handler import UpstreamAuthError
 
 # Default body that mimics http_client's 401 error response dict.
 _DEFAULT_401_BODY = {
@@ -26,7 +23,7 @@ _DEFAULT_401_BODY = {
 class _MockApp:
     """Minimal ASGI app that returns a 200 JSON response.
 
-    Optionally signals an upstream auth error via the module-level dict,
+    Optionally signals an upstream auth error via the request signal,
     simulating what http_client does when it receives a 401.
     """
 
@@ -48,8 +45,7 @@ class _MockApp:
     async def __call__(self, scope, receive, send):
         # Simulate http_client signaling upstream 401
         if self._signal_error is not None:
-            token_key = make_auth_error_key(self._token)
-            signal_upstream_auth_error(token_key, self._signal_error)
+            request_signal.signal_upstream_auth_error(self._signal_error)
 
         await send(
             {
@@ -242,29 +238,27 @@ async def test_non_http_scope_passes_through():
 
 
 @pytest.mark.asyncio
-async def test_stale_signal_triggers_401_on_next_request():
-    """A stale signal from a previous request triggers 401 on the next request.
+async def test_a_signal_left_before_the_request_does_not_leak_in():
+    """Given a signal written before the middleware begins a request, When that
+    request runs with a clean app, Then it is not treated as this request's signal.
 
-    This is correct behavior: if the upstream returned 401 for this token,
-    all requests with that token need re-auth regardless of body content.
-    The signal is per-client (token hash), not per-request.
+    A per-request ContextVar object replaces the old module-level dict, so a
+    signal recorded outside begin_request() cannot bleed into the next call.
     """
     token = 'shared-token'
-    token_key = make_auth_error_key(token)
 
-    # Simulate a stale signal left by a previous/concurrent request
-    signal_upstream_auth_error(token_key, {'mfa_required': False, 'source': ''})
+    # Simulate a signal recorded outside any request (no begin_request() yet).
+    request_signal.signal_upstream_auth_error({'mfa_required': False, 'source': ''})
 
     # This app succeeds (no signal, body has no 401)
     app = _MockApp(body={'ok': True})
     mw = UpstreamAuthErrorMiddleware(app)
 
     sent = await _run(mw, scope=_http_scope(f'Bearer {token}'))
-    status, headers, _ = await _collect_response(sent)
+    status, _, body = await _collect_response(sent)
 
-    # Signal is consumed → 401 returned to trigger re-auth
-    assert status == HTTPStatus.UNAUTHORIZED
-    assert 'www-authenticate' in headers
+    assert status == HTTPStatus.OK
+    assert 'ok' in body
 
 
 @pytest.mark.asyncio
@@ -328,10 +322,8 @@ class _RaisingApp:
         self._token = auth_value
 
     async def __call__(self, scope, receive, send):
-        # Also set dict signal (like real http_client does before raising)
-        token_key = make_auth_error_key(self._token)
-        signal_upstream_auth_error(
-            token_key,
+        # Also record the request signal (like real http_client does before raising)
+        request_signal.signal_upstream_auth_error(
             {'mfa_required': self.mfa_required, 'source': self.source},
         )
         raise UpstreamAuthError(mfa_required=self.mfa_required, source=self.source)
@@ -366,17 +358,22 @@ async def test_exception_non_mfa_triggers_401_without_mfa_scope():
 
 
 @pytest.mark.asyncio
-async def test_exception_consumes_dict_signal():
-    """Exception path should consume the dict signal to prevent stale entries."""
+async def test_exception_path_signal_does_not_leak_into_the_next_request():
+    """Given a request whose app raises UpstreamAuthError, When a later request with
+    the same token runs against a clean app, Then it sees no leftover signal."""
     token = 'test-jwt'
-    app = _RaisingApp(auth_value=token)
-    mw = UpstreamAuthErrorMiddleware(app)
+    raising_app = _RaisingApp(auth_value=token)
+    mw = UpstreamAuthErrorMiddleware(raising_app)
+    scope = _http_scope(f'Bearer {token}')
 
-    await _run(mw)
+    await _run(mw, scope=scope)
 
-    # Dict signal should be consumed
-    token_key = make_auth_error_key(token)
-    assert consume_upstream_auth_error(token_key) is None
+    mw.app = _MockApp(body={'ok': True})
+    sent = await _run(mw, scope=scope)
+    status, _, body = await _collect_response(sent)
+
+    assert status == HTTPStatus.OK
+    assert 'ok' in body
 
 
 @pytest.mark.asyncio
@@ -395,6 +392,21 @@ async def test_exception_respects_cooldown():
     sent2 = await _run(mw)
     status2, _, _ = await _collect_response(sent2)
     assert status2 == HTTPStatus.INTERNAL_SERVER_ERROR
+
+
+@pytest.mark.asyncio
+async def test_same_token_concurrent_requests_do_not_steal_each_others_signal():
+    """Given two requests with one token, one failing and one fine, When they run
+    together, Then only the failing one is answered with 401."""
+    failing = _make(error_value={'mfa_required': True, 'source': 'exec'})
+    passing = _make(error_value=None)
+
+    results = await asyncio.gather(_run(failing), _run(passing))
+    failing_status, _, _ = await _collect_response(results[0])
+    passing_status, _, _ = await _collect_response(results[1])
+
+    assert failing_status == HTTPStatus.UNAUTHORIZED
+    assert passing_status == HTTPStatus.OK
 
 
 @pytest.mark.asyncio

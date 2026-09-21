@@ -12,7 +12,7 @@ from typing import Any
 from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.types import ToolAnnotations
 
-from utils import error_handler, token_manager
+from utils import request_signal, token_manager
 from utils.auth import (
     decode_claims_unverified,
     get_token_workspaces,
@@ -243,10 +243,8 @@ async def _check_mfa_requirement(
         if check_mfa_completed(claims, settings):
             return
 
-        # MFA required but not completed — also set dict signal as fallback
-        token_key = error_handler.make_auth_error_key(jwt_token)
-        error_handler.signal_upstream_auth_error(
-            token_key,
+        # MFA required but not completed
+        request_signal.signal_upstream_auth_error(
             {'mfa_required': True, 'source': action},
         )
         logger.info(

@@ -4,38 +4,27 @@ When the Alpacon API returns 401 (e.g., MFA timeout), this middleware
 intercepts the error and returns HTTP 401 + WWW-Authenticate header,
 triggering the MCP client's automatic OAuth re-authentication flow.
 
-Two complementary propagation mechanisms are supported:
-
-1. **Exception path (primary)**: ``http_client`` raises
-   ``UpstreamAuthError`` which propagates through the call stack.
-   The middleware catches it in the ``try/except`` around
-   ``self.app()``.
-
-2. **Dict-signal path (fallback)**: ``http_client`` sets a
-   module-level thread-safe dict entry (keyed by token hash) before
-   raising.  If an intermediate handler catches the exception, the
-   middleware still finds the signal after the request completes.
-   Uses a module-level dict instead of contextvars because MCP
-   streamable-http runs tool handlers in a separate anyio task
-   context where ContextVar mutations are invisible.
+The middleware plants an empty signal dict in a ContextVar at the start of
+each request; ``http_client`` and the MFA pre-check mutate that same object
+from the tool handler's task. SDK 2.x never lets a handler exception reach
+this middleware, so the signal is read after ``self.app()`` returns.
 
 Only active in remote (streamable-http) mode where OAuth is enabled.
 """
 
+import hashlib
 import json
 import time
 from collections.abc import MutableMapping
 from http import HTTPStatus
-from typing import Any
 
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from utils.error_handler import (
-    UpstreamAuthError,
-    consume_upstream_auth_error,
-    make_auth_error_key,
-)
+from utils import request_signal
+from utils.error_handler import UpstreamAuthError
 from utils.logger import get_logger
+
+AsgiMessage = MutableMapping[str, object]
 
 logger = get_logger('auth_error_middleware')
 
@@ -75,14 +64,11 @@ class UpstreamAuthErrorMiddleware:
 
     @staticmethod
     def _extract_token_key(scope: Scope) -> str | None:
-        """Extract JWT token from Authorization header and derive a hash key.
+        """Extract JWT token from Authorization header and derive a cooldown key.
 
-        Returns a short hash key that matches make_auth_error_key() output
-        from the http_client, enabling cross-context error signaling.
-        Returns None if no Bearer token is present.
-
-        Handles the Bearer scheme case-insensitively per RFC 6750 and
-        decodes defensively to avoid UnicodeDecodeError on malformed headers.
+        Returns None if no Bearer token is present. Handles the Bearer scheme
+        case-insensitively per RFC 6750 and decodes defensively to avoid
+        UnicodeDecodeError on malformed headers.
         """
         headers = dict(scope.get('headers', []))
         auth_raw = headers.get(b'authorization', b'')
@@ -96,7 +82,7 @@ class UpstreamAuthErrorMiddleware:
         if auth_header.lower().startswith('bearer '):
             token = auth_header[len('Bearer ') :].strip()
             if token:
-                return make_auth_error_key(token)
+                return hashlib.sha256(token.encode()).hexdigest()[:16]
         return None
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
@@ -104,9 +90,8 @@ class UpstreamAuthErrorMiddleware:
             await self.app(scope, receive, send)
             return
 
-        # Extract token key upfront so we can always clean up stale entries
-        # in the module-level dict, even if the app raises or is cancelled.
         token_key = self._extract_token_key(scope)
+        signal = request_signal.begin_request()
 
         request_path = scope.get('path', '?')
         logger.debug(
@@ -116,9 +101,9 @@ class UpstreamAuthErrorMiddleware:
         )
 
         # Buffer the response so we can replace it if needed
-        buffered: list[MutableMapping[str, Any]] = []
+        buffered: list[AsgiMessage] = []
 
-        async def buffer_send(message: MutableMapping[str, Any]) -> None:
+        async def buffer_send(message: AsgiMessage) -> None:
             buffered.append(message)
 
         try:
@@ -130,13 +115,6 @@ class UpstreamAuthErrorMiddleware:
                 e.mfa_required,
                 e.source,
             )
-            # Primary path: http_client raised UpstreamAuthError on upstream 401.
-            # This propagates reliably across anyio task boundaries.
-            # Consume any dict signal too (set before the raise) to prevent
-            # stale entries.
-            if token_key:
-                consume_upstream_auth_error(token_key)
-
             now = time.monotonic()
             self._prune_expired_cooldowns(now)
             client_key = token_key or '_anonymous'
@@ -179,25 +157,17 @@ class UpstreamAuthErrorMiddleware:
                 )
             return
         except BaseException:
-            # App raised or request was cancelled. Consume any pending
-            # signal to prevent stale entries and unbounded dict growth.
-            if token_key:
-                consume_upstream_auth_error(token_key)
             raise
 
-        # Fallback path: Consume the upstream auth signal from the dict.
-        # This handles cases where the exception was caught by an intermediate
-        # handler but the dict signal was still set.
         logger.debug(
             '[DEBUG-MW] App completed normally (no exception). '
-            'Checking dict signal for token_key=%s',
+            'Checking request signal for token_key=%s',
             token_key,
         )
-        error_info = None
-        if token_key:
-            error_info = consume_upstream_auth_error(token_key)
+        error_info = signal or None
+        if error_info:
             logger.debug(
-                '[DEBUG-MW] Dict signal consumed: %s',
+                '[DEBUG-MW] Request signal found: %s',
                 error_info,
             )
         now = time.monotonic()
@@ -213,8 +183,8 @@ class UpstreamAuthErrorMiddleware:
 
             if not cooldown_active:
                 self._client_cooldowns[client_key] = now
-                mfa_required = error_info.get('mfa_required', False)
-                source = error_info.get('source', '')
+                mfa_required = bool(error_info.get('mfa_required', False))
+                source = str(error_info.get('source', ''))
                 logger.info(
                     'Upstream 401 detected (mfa_required=%s, source=%s), '
                     'returning HTTP 401 to trigger re-auth',

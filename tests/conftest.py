@@ -9,7 +9,18 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from utils import request_signal
 from utils.http_client import HTTP_VERBS
+
+
+@pytest.fixture(autouse=True)
+def _reset_request_signal():
+    """A sync test's begin_request() call sets the ContextVar in the main
+    thread, which then leaks into the next test unless reverted here."""
+    token = request_signal._signal.set(None)
+    yield
+    request_signal._signal.reset(token)
+
 
 # Canonical http_client error envelope (the shape utils/http_client returns on
 # 4xx/5xx). Shared across error-path tests so the envelope is defined once.

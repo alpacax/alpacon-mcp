@@ -180,17 +180,14 @@ class TestMfaPrecheck:
                 new_callable=AsyncMock,
                 return_value=settings,
             ),
-            patch('utils.error_handler.signal_upstream_auth_error') as mock_signal,
-            patch('utils.error_handler.make_auth_error_key', return_value='test-key'),
+            patch('utils.request_signal.signal_upstream_auth_error') as mock_signal,
         ):
             with pytest.raises(UpstreamAuthError) as exc_info:
                 await _check_mfa_requirement('execute_command', 'fake-jwt', 'test-ws')
 
         assert exc_info.value.mfa_required is True
         assert exc_info.value.source == 'command'
-        mock_signal.assert_called_once_with(
-            'test-key', {'mfa_required': True, 'source': 'command'}
-        )
+        mock_signal.assert_called_once_with({'mfa_required': True, 'source': 'command'})
 
     @pytest.mark.asyncio
     async def test_mfa_not_required_no_raise(self):
@@ -210,7 +207,7 @@ class TestMfaPrecheck:
                 new_callable=AsyncMock,
                 return_value=settings,
             ),
-            patch('utils.error_handler.signal_upstream_auth_error') as mock_signal,
+            patch('utils.request_signal.signal_upstream_auth_error') as mock_signal,
         ):
             # Should not raise
             await _check_mfa_requirement('execute_command', 'fake-jwt', 'test-ws')
@@ -259,7 +256,7 @@ class TestMfaPrecheck:
                 new_callable=AsyncMock,
                 return_value=settings,
             ),
-            patch('utils.error_handler.signal_upstream_auth_error') as mock_signal,
+            patch('utils.request_signal.signal_upstream_auth_error') as mock_signal,
         ):
             # Should not raise
             await _check_mfa_requirement('execute_command', 'fake-jwt', 'test-ws')
