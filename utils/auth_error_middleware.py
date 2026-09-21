@@ -6,8 +6,11 @@ triggering the MCP client's automatic OAuth re-authentication flow.
 
 The middleware plants an empty signal dict in a ContextVar at the start of
 each request; ``http_client`` and the MFA pre-check mutate that same object
-from the tool handler's task. SDK 2.x never lets a handler exception reach
-this middleware, so the signal is read after ``self.app()`` returns.
+from the tool handler's task. The signal is read when the first body chunk
+arrives, while the start message is still held; a response with no body
+falls back to a check after ``self.app()`` returns. SDK 2.x turns a handler
+exception into a wire response, so ``UpstreamAuthError`` only reaches the
+``except`` branch from a caller that invokes this app directly.
 
 Only active in remote (streamable-http) mode where OAuth is enabled.
 """
@@ -34,9 +37,9 @@ class UpstreamAuthErrorMiddleware:
 
     Uses a per-client cooldown timer to prevent infinite re-auth loops:
     after emitting a 401 for a given client, subsequent upstream auth errors
-    from that client within the cooldown period are passed through as normal
-    tool error responses. Cooldown is tracked per client (by JWT token hash)
-    so one client's re-auth does not suppress another's.
+    from that client within the cooldown period get a generic 500 instead of
+    a second 401. Cooldown is tracked per client (by JWT token hash) so one
+    client's re-auth does not suppress another's.
     """
 
     def __init__(
@@ -136,10 +139,9 @@ class UpstreamAuthErrorMiddleware:
                     replaced = True
                     await self._replace_with_401(send, signal, token_key)
                     return
-                if pending_start is not None:
-                    await send(pending_start)
-                    pending_start = None
-                forwarding = True
+                start, pending_start, forwarding = pending_start, None, True
+                if start is not None:
+                    await send(start)
 
             await send(message)
 
@@ -148,20 +150,30 @@ class UpstreamAuthErrorMiddleware:
         except UpstreamAuthError as e:
             # Unreachable through the SDK, which turns handler exceptions into
             # a wire response. Kept for a caller that invokes this app directly.
-            if not replaced:
+            if not replaced and not forwarding:
                 await self._replace_with_401(
                     send,
                     {'mfa_required': e.mfa_required, 'source': e.source},
                     token_key,
+                )
+            elif signal:
+                logger.warning(
+                    'Upstream 401 signalled after the response started; '
+                    'cannot replace it'
                 )
             return
 
         if replaced:
             return
 
-        if signal:
+        if signal and not forwarding:
             await self._replace_with_401(send, signal, token_key)
             return
+
+        if signal:
+            logger.warning(
+                'Upstream 401 signalled after the response started; cannot replace it'
+            )
 
         if pending_start is not None:
             await send(pending_start)

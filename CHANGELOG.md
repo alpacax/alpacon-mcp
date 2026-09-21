@@ -146,6 +146,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - `work_session_timeline` now defaults `include_records` to false, so websh terminal records are omitted unless requested (#286). A client that relied on the previous default must now pass `include_records=True` to keep seeing those records.
+- The auth error middleware now streams the response instead of buffering it in
+  full, so a long-lived tool call is no longer held back from the client until it
+  finishes (#144). One side effect: when a second upstream 401 arrives from the
+  same client within the cooldown window, the client now gets a generic HTTP 500
+  instead of the app's original 200 tool-error response, because the streamed
+  chunks that response would have needed are already gone by the time the
+  cooldown is checked.
 - `create_alert_rule` and `update_alert_rule` no longer validate `target` against a
   client-side copy of the server's metric list before sending the request; an unrecognized
   `target` now reaches the server and comes back as its own `400` with an `error_code`

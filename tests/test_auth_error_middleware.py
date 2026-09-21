@@ -199,14 +199,14 @@ async def test_non_mfa_flag_excludes_mfa_scope():
 
 
 @pytest.mark.asyncio
-async def test_cooldown_passes_through_on_second_401():
+async def test_cooldown_answers_with_a_generic_error_on_second_401():
     """Given a client within cooldown, When a second signal fires, Then it gets a
     generic 500, not the app's original response.
 
     Streaming (this task) holds only the `http.response.start` message before the
     signal is known; the body chunks the app sends after it are forwarded live and
     cannot be recalled once the signal check decides to replace them. So on
-    cooldown there is no buffered original response left to pass through — the
+    cooldown there is no buffered original response left to pass through, the
     previous behavior of forwarding it as a tool error is no longer possible, and
     the existing 500 fallback (used when nothing was buffered) covers this case too.
     """
@@ -509,9 +509,7 @@ class _HandshakeApp:
                 'headers': [(b'content-type', b'text/event-stream')],
             }
         )
-        await send(
-            {'type': 'http.response.body', 'body': b'chunk0', 'more_body': True}
-        )
+        await send({'type': 'http.response.body', 'body': b'chunk0', 'more_body': True})
 
         await asyncio.wait_for(self.delivered.wait(), timeout=2)
 
@@ -524,26 +522,76 @@ class _HandshakeApp:
 @pytest.mark.asyncio
 async def test_a_chunk_reaches_the_client_while_the_app_is_still_running():
     """Given a long-lived response, When the app emits its first chunk, Then the
-    client has it before the app produces the next one."""
+    client has it before the app produces the next one, and the wire sees exactly
+    one `http.response.start`."""
     delivered = asyncio.Event()
     app = _HandshakeApp(delivered)
     mw = UpstreamAuthErrorMiddleware(app)
 
-    received: list[bytes] = []
+    sent: list[dict] = []
 
     async def recording_send(message):
-        if message['type'] == 'http.response.body':
-            received.append(message['body'])
-            if message['body'] == b'chunk0':
-                assert not app.finished, 'the app had already finished'
-                delivered.set()
+        sent.append(message)
+        if message['type'] == 'http.response.body' and message['body'] == b'chunk0':
+            assert not app.finished, 'the app had already finished'
+            delivered.set()
 
     async def mock_receive():
         return {'type': 'http.request', 'body': b''}
 
     await mw(_http_scope(), mock_receive, recording_send)
 
-    assert received == [b'chunk0', b'chunk1']
+    types = [msg['type'] for msg in sent]
+    assert types == [
+        'http.response.start',
+        'http.response.body',
+        'http.response.body',
+    ]
+    bodies = [msg['body'] for msg in sent if msg['type'] == 'http.response.body']
+    assert bodies == [b'chunk0', b'chunk1']
+
+
+class _LateSignalApp:
+    """Sends a start and one chunk, then signals an upstream 401 mid-stream, then
+    sends a final chunk. Mirrors an SSE tool call whose upstream token expires
+    after the response has already begun."""
+
+    async def __call__(self, scope, receive, send):
+        await send(
+            {
+                'type': 'http.response.start',
+                'status': HTTPStatus.OK,
+                'headers': [(b'content-type', b'text/event-stream')],
+            }
+        )
+        await send({'type': 'http.response.body', 'body': b'chunk0', 'more_body': True})
+        request_signal.signal_upstream_auth_error(
+            {'mfa_required': True, 'source': 'exec'}
+        )
+        await send(
+            {'type': 'http.response.body', 'body': b'chunk1', 'more_body': False}
+        )
+
+
+@pytest.mark.asyncio
+async def test_a_late_signal_does_not_send_a_second_response_start(caplog):
+    """Given a response that already started, When the signal fires mid-stream,
+    Then the wire still sees exactly one `http.response.start` and the original
+    chunks, not a 401 — the client already got a 200 it cannot take back."""
+    app = _LateSignalApp()
+    mw = UpstreamAuthErrorMiddleware(app)
+
+    with caplog.at_level(logging.WARNING, logger='alpacon_mcp.auth_error_middleware'):
+        sent = await _run(mw)
+
+    starts = [msg for msg in sent if msg['type'] == 'http.response.start']
+    assert len(starts) == 1
+    assert starts[0]['status'] == HTTPStatus.OK
+
+    bodies = [msg['body'] for msg in sent if msg['type'] == 'http.response.body']
+    assert bodies == [b'chunk0', b'chunk1']
+
+    assert any('cannot replace it' in r.getMessage() for r in caplog.records)
 
 
 @pytest.mark.asyncio
