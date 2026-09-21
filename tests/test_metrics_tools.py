@@ -21,6 +21,7 @@ from tools.metrics_tools import (
     get_network_traffic,
     get_server_metrics_summary,
     get_top_servers,
+    list_latest_metrics,
     parse_cpu_metrics,
     parse_memory_metrics,
 )
@@ -1089,6 +1090,253 @@ class TestMetricsDeviceFilters:
                 'partition': '',
             },
         )
+
+
+class TestListLatestMetrics:
+    """Test list_latest_metrics function."""
+
+    @pytest.mark.asyncio
+    async def test_list_latest_metrics_no_filters(
+        self, mock_http_client, mock_token_manager
+    ):
+        """A bare call forwards an empty params dict."""
+        mock_http_client.get.return_value = {
+            'count': 1,
+            'current': 1,
+            'next': None,
+            'previous': None,
+            'last': 1,
+            'results': [
+                {
+                    'id': METRICS_SERVER_ID,
+                    'name': 'web-01',
+                    'is_connected': True,
+                    'cpu': {
+                        'value': 12.3,
+                        'unit': 'percent',
+                        'sampled_at': START,
+                        'device': None,
+                        'collected': True,
+                        'reason': None,
+                        'interval_s': 60,
+                    },
+                }
+            ],
+        }
+
+        result = await list_latest_metrics(workspace='testworkspace', region='ap1')
+
+        assert result['status'] == 'success'
+        assert result['region'] == 'ap1'
+        assert result['workspace'] == 'testworkspace'
+        assert result['data']['count'] == 1
+
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/metrics/latest/',
+            token='test-token',
+            params={},
+        )
+
+    @pytest.mark.asyncio
+    async def test_list_latest_metrics_forwards_all_filters(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Every filter, search, and pagination argument reaches the query
+        params under the name the server expects."""
+        mock_http_client.get.return_value = {'count': 0, 'results': []}
+
+        result = await list_latest_metrics(
+            workspace='testworkspace',
+            region='ap1',
+            search='web',
+            groups='550e8400-e29b-41d4-a716-446655440099',
+            tag='env:prod',
+            is_connected=True,
+            state='stale',
+            ordering='-cpu',
+            page=2,
+            page_size=50,
+        )
+
+        assert result['status'] == 'success'
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/metrics/latest/',
+            token='test-token',
+            params={
+                'page': 2,
+                'page_size': 50,
+                'search': 'web',
+                'groups': '550e8400-e29b-41d4-a716-446655440099',
+                'tag': 'env:prod',
+                'is_connected': True,
+                'state': 'stale',
+                'ordering': '-cpu',
+            },
+        )
+
+    @pytest.mark.asyncio
+    async def test_list_latest_metrics_is_connected_false_is_not_dropped(
+        self, mock_http_client, mock_token_manager
+    ):
+        """A falsy filter value must survive build_list_params' None-only check."""
+        mock_http_client.get.return_value = {'count': 0, 'results': []}
+
+        result = await list_latest_metrics(
+            workspace='testworkspace', region='ap1', is_connected=False
+        )
+
+        assert result['status'] == 'success'
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/metrics/latest/',
+            token='test-token',
+            params={'is_connected': False},
+        )
+
+    @pytest.mark.asyncio
+    async def test_list_latest_metrics_ordering_accepts_hyphenated_family_name(
+        self, mock_http_client, mock_token_manager
+    ):
+        """The server aliases a family's hyphenated wire name (disk-usage) to
+        its underscore ordering_fields spelling (disk_usage); both must pass
+        client-side validation and reach the request unchanged."""
+        mock_http_client.get.return_value = {'count': 0, 'results': []}
+
+        result = await list_latest_metrics(
+            workspace='testworkspace', region='ap1', ordering='disk-usage'
+        )
+
+        assert result['status'] == 'success'
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/metrics/latest/',
+            token='test-token',
+            params={'ordering': 'disk-usage'},
+        )
+
+    @pytest.mark.asyncio
+    async def test_list_latest_metrics_ordering_accepts_underscore_family_name(
+        self, mock_http_client, mock_token_manager
+    ):
+        """The underscore spelling works too, with the descending prefix."""
+        mock_http_client.get.return_value = {'count': 0, 'results': []}
+
+        result = await list_latest_metrics(
+            workspace='testworkspace', region='ap1', ordering='-disk_io'
+        )
+
+        assert result['status'] == 'success'
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/metrics/latest/',
+            token='test-token',
+            params={'ordering': '-disk_io'},
+        )
+
+    @pytest.mark.asyncio
+    async def test_list_latest_metrics_invalid_state_rejected(
+        self, mock_http_client, mock_token_manager
+    ):
+        """An unknown state is rejected client-side, before any HTTP call."""
+        result = await list_latest_metrics(
+            workspace='testworkspace', region='ap1', state='bogus'
+        )
+
+        assert result['status'] == 'error'
+        assert result['error_code'] == 'validation'
+        assert result['field'] == 'state'
+        mock_http_client.get.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_list_latest_metrics_invalid_ordering_rejected(
+        self, mock_http_client, mock_token_manager
+    ):
+        """An unknown ordering field is rejected client-side even with the
+        descending prefix stripped first."""
+        result = await list_latest_metrics(
+            workspace='testworkspace', region='ap1', ordering='-bogus'
+        )
+
+        assert result['status'] == 'error'
+        assert result['error_code'] == 'validation'
+        assert result['field'] == 'ordering'
+        mock_http_client.get.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_list_latest_metrics_page_size_over_100_is_forwarded(
+        self, mock_http_client, mock_token_manager
+    ):
+        """No client-side ceiling: page_size is forwarded as-is and the server
+        enforces its own cap, matching list_servers (tools/server_tools.py),
+        which also documents a max of 100 without rejecting a larger value
+        locally."""
+        mock_http_client.get.return_value = {'count': 0, 'results': []}
+
+        result = await list_latest_metrics(
+            workspace='testworkspace', region='ap1', page_size=250
+        )
+
+        assert result['status'] == 'success'
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/metrics/latest/',
+            token='test-token',
+            params={'page_size': 250},
+        )
+
+    @pytest.mark.asyncio
+    async def test_list_latest_metrics_plan_floor_402_passthrough(
+        self, mock_http_client, mock_token_manager
+    ):
+        """A 402 plan-floor error envelope passes through unchanged."""
+        mock_http_client.get.return_value = {
+            'error': 'HTTP Error',
+            'status_code': HTTPStatus.PAYMENT_REQUIRED,
+            'message': 'Payment required',
+        }
+
+        result = await list_latest_metrics(workspace='testworkspace', region='ap1')
+
+        assert result['status'] == 'error'
+        assert result['status_code'] == HTTPStatus.PAYMENT_REQUIRED
+        assert result['message'] == 'Payment required'
+
+    @pytest.mark.asyncio
+    async def test_list_latest_metrics_extension_off_403_passthrough(
+        self, mock_http_client, mock_token_manager
+    ):
+        """A 403 extension-disabled error envelope passes through unchanged."""
+        mock_http_client.get.return_value = {
+            'error': 'HTTP Error',
+            'status_code': HTTPStatus.FORBIDDEN,
+            'message': 'Forbidden',
+        }
+
+        result = await list_latest_metrics(workspace='testworkspace', region='ap1')
+
+        assert result['status'] == 'error'
+        assert result['status_code'] == HTTPStatus.FORBIDDEN
+        assert result['message'] == 'Forbidden'
+
+    @pytest.mark.asyncio
+    async def test_list_latest_metrics_no_token(
+        self, mock_http_client, mock_token_manager
+    ):
+        """No token available surfaces the standard token error."""
+        mock_token_manager.get_token.return_value = None
+
+        result = await list_latest_metrics(workspace='testworkspace')
+
+        assert result['status'] == 'error'
+        assert 'No token found' in result['message']
 
 
 if __name__ == '__main__':

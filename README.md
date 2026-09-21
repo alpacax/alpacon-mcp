@@ -393,8 +393,9 @@ Install the MCP extension and add to settings:
 - **get_disk_io**: Disk I/O performance metrics
 - **get_network_traffic**: Network bandwidth usage
 - **get_top_servers**: Top servers by metric type(s)
+- **list_latest_metrics**: Latest CPU, memory, disk usage, disk I/O and network reading for many servers at once (requires alpacon-server 2.37.0+)
 - **get_alert_rules**: Alert rules configuration
-- **get_server_metrics_summary**: Comprehensive health overview
+- **get_server_metrics_summary**: Comprehensive health overview for one server
 
 ### 💻 System information
 - **get_system_info**: Hardware specifications and details

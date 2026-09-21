@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `list_latest_metrics` (`workspace`, `region`, `search`, `groups`, `tag`, `is_connected`, `state`,
+  `ordering`, `page`, `page_size`): the latest CPU, memory, disk usage, disk I/O and network reading
+  for many servers in one request, one row per server. Wraps `GET /api/metrics/latest/`
+  (alpacax/alpacon-server#3654) and **requires alpacon-server 2.37.0 or later**. It is the servers
+  list with five metric cells added — filters, search, and pagination are `list_servers`'s own, plus
+  `state` (`stale`, which includes `no_data`, or `no_data` alone) and `ordering` (any of `name`,
+  `starred`, `sampled_at`, or a metric family by its hyphenated wire name or underscore spelling,
+  `-`-prefixed for descending; both `state` and `ordering` are validated client-side before the
+  request is built). Each metric cell carries `value`, `unit`, `sampled_at`, `device`, `collected`,
+  `reason`, and `interval_s`, with `value`/`sampled_at`/`device` null when nothing is stored for
+  that family. `get_server_metrics_summary`'s description now says explicitly that it answers for
+  one server; use the new tool for many servers at once. Two new resources proxy it:
+  `alpacon://metrics/{region}/{workspace}/latest` and
+  `alpacon://metrics/{region}/{workspace}/latest/stale` (pinned to `state=stale`).
 - `create_alert_rule` and `update_alert_rule` gained `notify_email` (`all`, `admins`,
   `group_members`, or `none`; validated against those four choices before the request is built)
   and `notify_slack_channel` (boolean), matching the alert-rule notification-destinations feature

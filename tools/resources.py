@@ -160,6 +160,11 @@ RESOURCES: list[tuple[str, str, str]] = [
         'alpacon://metrics/{region}/{workspace}/top',
     ),
     (
+        'metrics_latest',
+        'metrics_tools.list_latest_metrics',
+        'alpacon://metrics/{region}/{workspace}/latest',
+    ),
+    (
         'alert_rules',
         'metrics_tools.get_alert_rules',
         'alpacon://alert-rules/{region}/{workspace}',
@@ -447,6 +452,12 @@ REGISTRATIONS: list[tuple[str, str, str, dict | None]] = [
         'alert_tools.list_alerts',
         'alpacon://alerts/active/{region}/{workspace}',
         {'acknowledged': False},
+    ),
+    (
+        'metrics_latest_stale',
+        'metrics_tools.list_latest_metrics',
+        'alpacon://metrics/{region}/{workspace}/latest/stale',
+        {'state': 'stale'},
     ),
 ]
 

@@ -13,7 +13,7 @@ from utils.common import (
     unwrap_http_result,
 )
 from utils.decorators import mcp_tool_handler
-from utils.error_handler import UpstreamAuthError
+from utils.error_handler import UpstreamAuthError, format_validation_error
 from utils.http_client import http_client
 from utils.tool_annotations import READ_ONLY
 
@@ -828,10 +828,10 @@ async def get_alert_rules(
 
 
 @mcp_tool_handler(
-    description='Get a comprehensive monitoring overview combining CPU, memory, disk, and network metrics for a single server. Returns a compact summary with data availability status. When to use: quick health check of a server or starting point for investigation. Related: get_cpu_usage, get_memory_usage, get_disk_usage, get_network_traffic (full detailed data per metric). Note: Use individual metric tools for time-series data.',
+    description="Get one server's detail: a comprehensive monitoring overview combining CPU, memory, disk, and network metrics for that single server. Returns a compact summary with data availability status. When to use: quick health check of one server or starting point for investigation. Related: get_cpu_usage, get_memory_usage, get_disk_usage, get_network_traffic (full detailed data per metric), list_latest_metrics (latest reading for many servers at once). Note: Use individual metric tools for time-series data.",
     annotations=READ_ONLY,
     meta={
-        'anthropic/searchHint': 'server metrics summary overview health monitoring dashboard',
+        'anthropic/searchHint': 'server metrics summary overview health monitoring dashboard single server detail',
         'anthropic/alwaysLoad': True,
     },
 )
@@ -1036,3 +1036,130 @@ async def get_server_metrics_summary(
     }
 
     return success_response(data=summary)
+
+
+#: `?state=` values `/api/metrics/latest/` accepts; mirrors alpacon-server's
+#: `metrics.latest.LATEST_STATES`. `stale` includes `no_data` (a server with
+#: nothing stored is also overdue on every family).
+VALID_LATEST_METRIC_STATES = frozenset({'stale', 'no_data'})
+_LATEST_STATE_SENTENCE = (
+    f'state must be one of: {", ".join(sorted(VALID_LATEST_METRIC_STATES))}.'
+)
+
+#: `?ordering=` base names `/api/metrics/latest/` accepts, each optionally
+#: prefixed with `-` for descending. The five metric families are listed
+#: twice: alpacon-server aliases a family's hyphenated wire name (`disk-usage`,
+#: matching the response's own cell key) to its underscore `ordering_fields`
+#: spelling (`disk_usage`), and either reaches the server unchanged.
+VALID_LATEST_METRIC_ORDERING_FIELDS = frozenset(
+    {
+        'name',
+        'starred',
+        'sampled_at',
+        'cpu',
+        'memory',
+        'disk_usage',
+        'disk-usage',
+        'disk_io',
+        'disk-io',
+        'net',
+    }
+)
+_LATEST_ORDERING_SENTENCE = (
+    'ordering must be one of: '
+    f'{", ".join(sorted(VALID_LATEST_METRIC_ORDERING_FIELDS))}, '
+    "optionally prefixed with '-' for descending."
+)
+
+
+@mcp_tool_handler(
+    description=(
+        'Latest CPU, memory, disk usage, disk I/O and network reading for many '
+        'servers in one request; each cell says whether the value is missing, '
+        "stale or not collected. For one server's time series use get_cpu_usage "
+        "etc.; for one server's detail use get_server_metrics_summary. Requires "
+        'alpacon-server 2.37.0 or later.'
+    ),
+    annotations=READ_ONLY,
+    meta={
+        'anthropic/searchHint': 'latest metrics many servers fleet overview cpu memory disk network stale summary'
+    },
+)
+async def list_latest_metrics(
+    workspace: str,
+    region: str = '',
+    search: str | None = None,
+    groups: str | None = None,
+    tag: str | None = None,
+    is_connected: bool | None = None,
+    state: str | None = None,
+    ordering: str | None = None,
+    page: int | None = None,
+    page_size: int | None = None,
+    **kwargs,
+) -> dict[str, Any]:
+    """Get the latest metric reading for every server in a workspace, a page at a time.
+
+    Wraps `GET /api/metrics/latest/` (alpacax/alpacon-server#3654), which
+    requires alpacon-server 2.37.0 or later. It is the servers list with five
+    metric cells added: the filters, search, and pagination are `list_servers`'
+    own, plus `state` and `ordering`.
+
+    Args:
+        workspace: Workspace name. Required parameter
+        region: Region (ap1, us1). Auto-detected if not provided
+        search: Free-text search across server name, version, owner, and group name (optional)
+        groups: Filter by group ID(s) (optional)
+        tag: Filter by tag(s) in "key:value" form (optional)
+        is_connected: Filter by live agent connection state (optional)
+        state: Filter by staleness: "stale" (some family is overdue, including a
+            server storing nothing at all) or "no_data" (nothing stored for any
+            family). "stale" is the wider set and includes every "no_data"
+            server. (optional)
+        ordering: Sort field, one of VALID_LATEST_METRIC_ORDERING_FIELDS
+            (name, starred, sampled_at, cpu, memory, disk_usage/disk-usage,
+            disk_io/disk-io, net), optionally prefixed with "-" for descending.
+            A server with no value for the field sorts last. (optional)
+        page: Page number for pagination (optional)
+        page_size: Number of results per page, up to 100 (optional)
+
+    Returns:
+        Paginated response: `count`, `current`, `next`, `previous`, `last`, and
+        `results` — each result an `{id, name, is_connected, cpu, memory,
+        "disk-usage", "disk-io", net}` row, every metric cell an object with
+        `value`, `unit` ("percent" or "bytes_per_sec"), `sampled_at`, `device`,
+        `collected`, `reason`, and `interval_s` (`value`, `sampled_at`, and
+        `device` are null when no sample is stored for that family).
+    """
+    if state is not None and state not in VALID_LATEST_METRIC_STATES:
+        return format_validation_error('state', state, _LATEST_STATE_SENTENCE)
+
+    if ordering is not None:
+        base = ordering[1:] if ordering.startswith('-') else ordering
+        if base not in VALID_LATEST_METRIC_ORDERING_FIELDS:
+            return format_validation_error(
+                'ordering', ordering, _LATEST_ORDERING_SENTENCE
+            )
+
+    token = kwargs.get('token')
+
+    params = build_list_params(
+        page=page,
+        page_size=page_size,
+        search=search,
+        groups=groups,
+        tag=tag,
+        is_connected=is_connected,
+        state=state,
+        ordering=ordering,
+    )
+
+    return await http_call_response(
+        http_client.get,
+        region=region,
+        workspace=workspace,
+        endpoint='/api/metrics/latest/',
+        token=token,
+        default_message='Failed to list latest metrics',
+        params=params,
+    )
