@@ -1186,6 +1186,27 @@ class TestUploadContent:
         mock_http_client.post.assert_not_called()
 
     @pytest.mark.asyncio
+    async def test_upload_content_over_size_limit_rejected(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Decoded content over 3 MiB returns code='content_too_large' before any API call."""
+        oversized = base64.b64encode(b'x' * (3 * 1024 * 1024 + 1)).decode()
+
+        result = await webftp_upload_content(
+            server_id=self.SERVER_ID,
+            file_content=oversized,
+            remote_file_path='/remote/big.bin',
+            workspace='ws',
+            region='ap1',
+        )
+
+        assert result['status'] == 'error'
+        assert result.get('code') == 'content_too_large'
+        assert result['limit_bytes'] == 3 * 1024 * 1024
+        assert result['content_bytes'] == 3 * 1024 * 1024 + 1
+        mock_http_client.post.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_upload_content_invalid_path(
         self, mock_http_client, mock_token_manager
     ):

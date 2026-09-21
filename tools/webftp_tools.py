@@ -26,6 +26,10 @@ from utils.error_handler import format_validation_error, validate_file_path
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, READ_ONLY
 
+# base64 inflates bytes 4/3x; this keeps the decoded upload at 3 MiB even
+# though the ASGI layer allows a larger envelope (see #144, design in #275).
+_MAX_UPLOAD_CONTENT_BYTES = 3 * 1024 * 1024
+
 _REMOTE_MODE_ERROR = (
     'WebFTP file transfer is not supported in remote mode. '
     'The MCP server cannot access your local filesystem from a remote container. '
@@ -445,13 +449,27 @@ async def webftp_upload_content(
     allow_overwrite: bool = True,
     **kwargs,
 ) -> dict[str, Any]:
-    """Upload base64-encoded file content to a server via WebFTP."""
+    """Upload base64-encoded file content to a server via WebFTP.
+
+    file_content is limited to 3 MiB decoded (base64 inflates bytes 4/3x).
+    Larger files must use webftp_upload_file in local mode.
+    """
     token = kwargs.get('token')
 
     try:
         raw_bytes = base64.b64decode(file_content, validate=True)
     except binascii.Error as exc:
         return error_response(f'Invalid base64 content: {exc}', code='invalid_content')
+
+    if len(raw_bytes) > _MAX_UPLOAD_CONTENT_BYTES:
+        return error_response(
+            f'File content exceeds the {_MAX_UPLOAD_CONTENT_BYTES} byte '
+            f'(3 MiB) limit for webftp_upload_content; got {len(raw_bytes)} bytes. '
+            'Use webftp_upload_file in local mode for larger files.',
+            code='content_too_large',
+            limit_bytes=_MAX_UPLOAD_CONTENT_BYTES,
+            content_bytes=len(raw_bytes),
+        )
 
     if not validate_file_path(remote_file_path):
         return format_validation_error('remote_file_path', remote_file_path)

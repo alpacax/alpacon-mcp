@@ -71,6 +71,10 @@ def _sigterm_handler(signum, frame):
 DEFAULT_HOST = '127.0.0.1'
 DEFAULT_PORT = 8237  # MCAR - MCP Alpacon Remote
 
+# 1 MiB above the SDK default so a >3 MiB upload reaches webftp_upload_content's
+# own check instead of failing as a bare HTTP 413 (see #144).
+MAX_REQUEST_BODY_SIZE = 5 * 1024 * 1024
+
 
 def resolve_host() -> str:
     return os.getenv('ALPACON_MCP_HOST', DEFAULT_HOST)
@@ -275,6 +279,7 @@ def create_streamable_http_app(*, host: str) -> Starlette:
         host=host,
         json_response=True,
         stateless_http=True,
+        max_request_body_size=MAX_REQUEST_BODY_SIZE,
     )
 
 
@@ -379,7 +384,12 @@ def run(
         if transport == 'stdio':
             mcp.run(transport='stdio')
         elif transport == 'sse':
-            mcp.run(transport='sse', host=resolved_host, port=resolved_port)
+            mcp.run(
+                transport='sse',
+                host=resolved_host,
+                port=resolved_port,
+                max_request_body_size=MAX_REQUEST_BODY_SIZE,
+            )
         else:
             raise RuntimeError(
                 'streamable-http is served by main_http.py, which composes the '

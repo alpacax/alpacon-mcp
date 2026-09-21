@@ -13,7 +13,7 @@ import sys
 import httpx
 import pytest
 
-from server import create_streamable_http_app, mcp
+from server import MAX_REQUEST_BODY_SIZE, create_streamable_http_app, mcp
 from utils.common import MCP_VERSION
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -160,3 +160,52 @@ async def test_streamable_http_app_mints_no_session():
 
     assert sessions['stateful'] is not None
     assert sessions['stateless'] is None
+
+
+@pytest.mark.asyncio
+async def test_streamable_http_app_raises_body_limit_above_sdk_default():
+    """Given the app this deployment serves, When a body over the SDK's 4 MiB
+    default arrives, Then it is accepted rather than rejected as too large—the
+    limit was raised to MAX_REQUEST_BODY_SIZE (5 MiB) so oversized uploads reach
+    the tool's own error instead of a bare HTTP 413 (#144)."""
+    app = create_streamable_http_app(host='0.0.0.0')  # noqa: S104
+    oversized_body = b'{"pad": "' + b'x' * (4 * 1024 * 1024) + b'"}'
+
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url='http://testserver'
+        ) as client:
+            response = await client.post(
+                '/mcp',
+                headers={
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json, text/event-stream',
+                },
+                content=oversized_body,
+            )
+
+    assert response.status_code != 413, response.text
+
+
+@pytest.mark.asyncio
+async def test_streamable_http_app_rejects_body_over_configured_limit():
+    """Given the app this deployment serves, When a body over
+    MAX_REQUEST_BODY_SIZE arrives, Then the ASGI layer rejects it with 413,
+    proving the limit is actually enforced (not raised without bound)."""
+    app = create_streamable_http_app(host='0.0.0.0')  # noqa: S104
+    oversized_body = b'{"pad": "' + b'x' * (MAX_REQUEST_BODY_SIZE + 1) + b'"}'
+
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url='http://testserver'
+        ) as client:
+            response = await client.post(
+                '/mcp',
+                headers={
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json, text/event-stream',
+                },
+                content=oversized_body,
+            )
+
+    assert response.status_code == 413, response.text
