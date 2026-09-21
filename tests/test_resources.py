@@ -156,9 +156,6 @@ class TestResourceRegistration:
         assert fn.__name__ == 'named_probe'
         assert fn.__qualname__ == 'named_probe'
         assert fn.__module__ == 'tools.resources'
-        # co_filename lives on the exec'd wrapper, under validate_call's wrapping.
-        while hasattr(fn, '__wrapped__'):
-            fn = fn.__wrapped__
         assert fn.__code__.co_filename == res.__file__
 
     def test_uri_params_match_function_signatures(self):

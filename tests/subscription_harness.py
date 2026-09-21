@@ -5,10 +5,11 @@ MCPServer at import time from the environment, so remote mode has to be the
 first thing this module does and cannot be turned on inside an already-imported
 test session without reloading the module.
 
-What it serves is what ``main_http.py`` serves—``prepare('streamable-http')``,
+It composes what ``main_http.py`` composes—``prepare('streamable-http')``,
 ``create_streamable_http_app``, wrapped in ``UpstreamAuthErrorMiddleware``—plus
 two test-only endpoints and one test-only tool. Only the token verifier is
-stubbed.
+stubbed, and it binds 127.0.0.1 where production binds 0.0.0.0, so DNS rebinding
+protection is on here and off there.
 
 Usage: ``python tests/subscription_harness.py <port>``
 """

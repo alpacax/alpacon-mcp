@@ -10,6 +10,7 @@ import contextlib
 import httpx
 import pytest
 
+import server as server_module
 from server import create_streamable_http_app
 from utils.common import MCP_VERSION
 
@@ -124,8 +125,6 @@ async def test_lifespan_runs_once_across_several_stateless_requests(monkeypatch)
     owns the shared HTTP client is entered once and left once."""
     entered = 0
     exited = 0
-
-    import server as server_module
 
     original = server_module.mcp._lowlevel_server.lifespan
 

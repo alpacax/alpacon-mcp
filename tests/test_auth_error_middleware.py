@@ -64,7 +64,7 @@ class _MockApp:
 
 class _DispatchingApp:
     """ASGI app whose behavior depends on request path, not on which instance
-    called it — so one middleware instance can serve two concurrent requests
+    called it—so one middleware instance can serve two concurrent requests
     that behave differently, with its cooldown dict shared between them."""
 
     def __init__(self, fail_path: str, signal_error: dict):
@@ -231,6 +231,33 @@ async def test_cooldown_passes_the_apps_own_response_through_on_a_second_401():
 
 
 @pytest.mark.asyncio
+async def test_an_expired_cooldown_lets_the_next_401_through_and_is_pruned():
+    """Given a cooldown that has run out, When the same client signals again, Then
+    it gets a fresh 401, and the stale entry is dropped on a later request."""
+    token_a = 'expiring-token-a'
+    token_b = 'other-token-b'
+    scope_a = _http_scope(f'Bearer {token_a}')
+    key_a = UpstreamAuthErrorMiddleware._extract_token_key(scope_a)
+
+    app = _MockApp(signal_error={'mfa_required': False, 'source': ''})
+    mw = UpstreamAuthErrorMiddleware(app, cooldown_seconds=0.01)
+
+    sent1 = await _run(mw, scope=scope_a)
+    assert (await _collect_response(sent1))[0] == HTTPStatus.UNAUTHORIZED
+    assert key_a in mw._client_cooldowns
+
+    await asyncio.sleep(0.05)
+
+    sent2 = await _run(mw, scope=scope_a)
+    assert (await _collect_response(sent2))[0] == HTTPStatus.UNAUTHORIZED
+
+    await asyncio.sleep(0.05)
+
+    await _run(mw, scope=_http_scope(f'Bearer {token_b}'))
+    assert key_a not in mw._client_cooldowns
+
+
+@pytest.mark.asyncio
 async def test_per_client_cooldown_isolation():
     """Different clients have independent cooldowns."""
     token_a = 'token-A'
@@ -275,15 +302,16 @@ async def test_non_http_scope_passes_through():
 @pytest.mark.asyncio
 async def test_a_signal_left_before_the_request_does_not_leak_in():
     """Given a signal written before the middleware begins a request, When that
-    request runs with a clean app, Then it is not treated as this request's signal.
+    request runs with a clean app, Then nothing was stored to leak into it.
 
     A per-request ContextVar object replaces the old module-level dict, so a
-    signal recorded outside begin_request() cannot bleed into the next call.
+    signal recorded outside begin_request() is dropped rather than parked.
     """
     token = 'shared-token'
 
     # Simulate a signal recorded outside any request (no begin_request() yet).
-    request_signal.signal_upstream_auth_error({'mfa_required': False, 'source': ''})
+    request_signal.signal_upstream_auth_error({'mfa_required': True, 'source': 'exec'})
+    assert request_signal.current_signal() is None
 
     # This app succeeds (no signal, body has no 401)
     app = _MockApp(body={'ok': True})
@@ -574,7 +602,7 @@ class _LateSignalApp:
 async def test_a_late_signal_does_not_send_a_second_response_start(caplog):
     """Given a response that already started, When the signal fires mid-stream,
     Then the wire still sees exactly one `http.response.start` and the original
-    chunks, not a 401 — the client already got a 200 it cannot take back."""
+    chunks, not a 401—the client already got a 200 it cannot take back."""
     app = _LateSignalApp()
     mw = UpstreamAuthErrorMiddleware(app)
 
@@ -625,3 +653,38 @@ async def test_debug_instrumentation_logs_at_debug_level(caplog):
     records = [r for r in caplog.records if '[DEBUG-MW]' in r.getMessage()]
     assert records
     assert all(r.levelno == logging.DEBUG for r in records)
+
+
+class _StartOnlyApp:
+    """Signals an upstream 401 and answers with a start message and no body,
+    leaving the middleware's post-``self.app()`` check as the only one that runs."""
+
+    def __init__(self, signal_error: dict):
+        self._signal_error = signal_error
+
+    async def __call__(self, scope, receive, send):
+        request_signal.signal_upstream_auth_error(self._signal_error)
+        await send(
+            {
+                'type': 'http.response.start',
+                'status': HTTPStatus.OK,
+                'headers': [(b'content-type', b'application/json')],
+            }
+        )
+
+
+@pytest.mark.asyncio
+async def test_a_bodyless_signalled_response_is_still_replaced_with_a_401():
+    """Given an app that sends a start and no body, When it signalled an upstream
+    401, Then the held start is dropped and the client gets the 401 instead."""
+    app = _StartOnlyApp({'mfa_required': True, 'source': 'exec'})
+    mw = UpstreamAuthErrorMiddleware(app)
+
+    sent = await _run(mw)
+    status, headers, body = await _collect_response(sent)
+
+    starts = [msg for msg in sent if msg['type'] == 'http.response.start']
+    assert len(starts) == 1
+    assert status == HTTPStatus.UNAUTHORIZED
+    assert 'mfa' in headers['www-authenticate']
+    assert json.loads(body)['error'] == 'invalid_token'
