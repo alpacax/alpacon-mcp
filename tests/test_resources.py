@@ -115,7 +115,7 @@ class TestResourceRegistration:
         stale = next(
             t
             for t in await mcp.list_resource_templates()
-            if t.uriTemplate == 'alpacon://metrics/{region}/{workspace}/latest/stale'
+            if t.uri_template == 'alpacon://metrics/{region}/{workspace}/latest/stale'
         )
         assert "state='stale'" in stale.description
 
