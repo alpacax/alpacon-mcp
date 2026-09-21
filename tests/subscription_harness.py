@@ -34,13 +34,17 @@ from utils.auth import Auth0TokenVerifier  # noqa: E402
 from utils.auth_error_middleware import UpstreamAuthErrorMiddleware  # noqa: E402
 from utils.error_handler import UpstreamAuthError  # noqa: E402
 
-TOKEN = 'test-jwt'  # noqa: S105
+TOKEN_PREFIX = 'test-jwt'  # noqa: S105
 SIGNALLING_TOOL = 'raise_upstream_401'
 
 
 async def _accept_test_token(self, token: str) -> AccessToken | None:
-    """Stand in for Auth0 verification; the rest of the auth path stays real."""
-    if token != TOKEN:
+    """Stand in for Auth0 verification; the rest of the auth path stays real.
+
+    Every token under TOKEN_PREFIX is accepted, so a test that must not share
+    the middleware's per-token re-auth cooldown can mint its own.
+    """
+    if not token.startswith(TOKEN_PREFIX):
         return None
     return AccessToken(
         token=token,

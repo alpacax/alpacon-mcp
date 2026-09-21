@@ -29,6 +29,7 @@ import pytest
 JsonObject = dict[str, object]
 
 _TOKEN = 'test-jwt'  # noqa: S105
+_SIGNAL_TOKEN = 'test-jwt-signalled'  # noqa: S105
 _PROTOCOL_VERSION = '2026-07-28'
 _LISTEN = {'notifications': {'toolsListChanged': True}}
 _SIGNALLING_TOOL = 'raise_upstream_401'
@@ -71,7 +72,11 @@ def base_url():
         # SIGINT, not SIGTERM: server.py turns SIGTERM into KeyboardInterrupt
         # from inside the loop, which uvicorn logs as a crash.
         process.send_signal(signal.SIGINT)
-        process.wait(timeout=30)
+        try:
+            process.wait(timeout=30)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
 
 
 def _headers(
@@ -183,7 +188,7 @@ async def test_an_authenticated_subscription_connects_stays_idle_and_cancels(bas
             assert acknowledged['method'] == 'notifications/subscriptions/acknowledged'
             assert acknowledged['params']['notifications'] == _LISTEN['notifications']
 
-            await asyncio.sleep(2)  # idle
+            await asyncio.sleep(2)  # idle, short of the transport's 15s ping
 
             assert await _live_subscriptions(base_url) == 1
 
@@ -204,7 +209,7 @@ async def test_an_unauthenticated_subscription_is_refused(base_url):
         )
 
     assert response.status_code == 401
-    assert await _live_subscriptions(base_url) == 0
+    assert await _wait_for_subscriptions(base_url, 0) == 0
 
 
 @pytest.mark.asyncio
@@ -235,6 +240,8 @@ async def test_ordinary_requests_work_while_a_subscription_is_open(base_url):
             assert 'tools' in listed.json()['result']
             assert await _live_subscriptions(base_url) == 1
 
+    assert await _wait_for_subscriptions(base_url, 0) == 0
+
 
 @pytest.mark.asyncio
 async def test_disconnecting_a_subscription_releases_it(base_url):
@@ -264,11 +271,22 @@ async def test_a_signalled_request_still_becomes_401_under_the_composed_app(base
     async with httpx.AsyncClient(base_url=base_url, timeout=30) as client:
         response = await client.post(
             '/mcp',
-            headers=_headers('tools/call', tool=_SIGNALLING_TOOL),
+            # A token of its own: the middleware's re-auth cooldown is keyed by
+            # token, and a second 401 within 60s of the first arrives as a 500.
+            headers=_headers('tools/call', token=_SIGNAL_TOKEN, tool=_SIGNALLING_TOOL),
             json=_envelope(
                 'tools/call', {'name': _SIGNALLING_TOOL, 'arguments': {}}, 1
             ),
         )
 
     assert response.status_code == 401
-    assert 'invalid_token' in response.headers['www-authenticate']
+    # The auth boundary's own 401 also says invalid_token; only the middleware's
+    # replacement carries the re-auth scope and this description.
+    assert (
+        'scope="openid profile email offline_access"'
+        in response.headers['www-authenticate']
+    )
+    assert (
+        response.json()['error_description']
+        == 'Authentication expired. Re-authentication needed.'
+    )
