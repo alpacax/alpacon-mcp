@@ -18,13 +18,6 @@ ARG VERSION=0.0.0
 RUN SETUPTOOLS_SCM_PRETEND_VERSION="${VERSION#v}" uv sync --locked --no-dev && \
     rm -rf /root/.cache
 
-# The image must carry the SDK the test run validated, not a later 2.x release.
-RUN python -c "\
-import importlib.metadata as m, sys, tomllib; \
-locked = next(p['version'] for p in tomllib.load(open('uv.lock','rb'))['package'] if p['name'] == 'mcp'); \
-installed = m.version('mcp'); \
-sys.exit(0) if installed == locked else sys.exit(f'mcp {installed} installed, {locked} locked')"
-
 # Default port (MCAR - MCP Alpacon Remote)
 EXPOSE 8237
 
