@@ -140,17 +140,19 @@ class TestResourceRegistration:
     def test_wrapper_named_after_resource(self):
         """The exec'd wrapper must adopt the resource name and this module's
         identity, not stay '_wrapper' with a '<string>' traceback frame, so
-        stack traces and name-based diagnostics stay legible."""
+        stack traces and name-based diagnostics stay legible.
+
+        Built directly rather than read back out of the SDK's resource manager:
+        the published ResourceTemplate does not carry the callable, and the name
+        is ours to get right, not the SDK's to store."""
 
         async def fake_fn(region, workspace):
             return {'ok': True}
 
-        res.register_resource(
-            'alpacon://test-named/{region}/{workspace}', fake_fn, 'named_probe'
+        fn = res.build_resource_wrapper(
+            'alpacon://test-named/{region}/{workspace}', fake_fn, 'named_probe', None
         )
-        fn = mcp._resource_manager._templates[
-            'alpacon://test-named/{region}/{workspace}'
-        ].fn
+
         assert fn.__name__ == 'named_probe'
         assert fn.__qualname__ == 'named_probe'
         assert fn.__module__ == 'tools.resources'

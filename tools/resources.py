@@ -17,13 +17,13 @@ from collections.abc import Callable
 from server import TOOLS_PACKAGE, mcp
 
 
-def register_resource(
-    uri: str, fn: Callable, name: str, extra: dict | None = None
-) -> None:
-    """Register an alpacon:// resource that proxies a read-only tool.
+def build_resource_wrapper(
+    uri: str, fn: Callable, name: str, extra: dict | None
+) -> Callable:
+    """Build the named async wrapper an alpacon:// resource registers.
 
-    Path params in `uri` (e.g. {region}) become the wrapper's named arguments;
-    `extra` injects fixed keyword args (e.g. acknowledged=False) into the call.
+    Path params in `uri` (e.g. {region}) become named arguments; `extra` injects
+    fixed keyword args (e.g. acknowledged=False) into the call.
     """
     path_params = re.findall(r'\{(\w+)\}', uri)
     sig = ', '.join(f'{p}: str' for p in path_params)
@@ -38,6 +38,14 @@ def register_resource(
     exec(compile(src, __file__, 'exec'), ns)  # noqa: S102
     wrapper = ns['_wrapper']
     wrapper.__name__ = wrapper.__qualname__ = name
+    return wrapper
+
+
+def register_resource(
+    uri: str, fn: Callable, name: str, extra: dict | None = None
+) -> None:
+    """Register an alpacon:// resource that proxies a read-only tool."""
+    wrapper = build_resource_wrapper(uri, fn, name, extra)
     doc = inspect.getdoc(fn) or name
     if extra:
         # Surface the pinned filter so a filtered resource isn't mistaken for the bare one.
