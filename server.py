@@ -7,7 +7,8 @@ from contextlib import asynccontextmanager
 from typing import Literal
 from urllib.parse import urlparse
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server import MCPServer
+from starlette.applications import Starlette
 from starlette.responses import JSONResponse
 
 from utils.common import is_auth_enabled
@@ -19,7 +20,7 @@ logger = get_logger('server')
 
 
 @asynccontextmanager
-async def app_lifespan(app: FastMCP) -> AsyncIterator[None]:
+async def app_lifespan(app: MCPServer) -> AsyncIterator[None]:
     """Manage application startup and shutdown lifecycle.
 
     On startup: install SIGTERM handler (Unix only).
@@ -67,17 +68,20 @@ def _sigterm_handler(signum, frame):
     raise KeyboardInterrupt
 
 
-# This is the shared MCP server instance
-host = os.getenv('ALPACON_MCP_HOST', '127.0.0.1')  # Default to localhost for security
-port = int(
-    os.getenv('ALPACON_MCP_PORT', '8237')
-)  # Default port 8237 (MCAR - MCP Alpacon Remote)
-
-logger.info(f'Initializing FastMCP server - host: {host}, port: {port}')
+DEFAULT_HOST = '127.0.0.1'
+DEFAULT_PORT = 8237  # MCAR - MCP Alpacon Remote
 
 
-def _create_mcp_server() -> FastMCP:
-    """Create FastMCP server instance with optional JWT auth.
+def resolve_host() -> str:
+    return os.getenv('ALPACON_MCP_HOST', DEFAULT_HOST)
+
+
+def resolve_port() -> int:
+    return int(os.getenv('ALPACON_MCP_PORT', str(DEFAULT_PORT)))
+
+
+def _create_mcp_server() -> MCPServer:
+    """Create the MCP server instance with optional JWT auth.
 
     When ALPACON_MCP_AUTH_ENABLED=true (set by main_http.py before import),
     creates the server with Auth0 JWT authentication for HTTP transport.
@@ -142,23 +146,17 @@ def _create_mcp_server() -> FastMCP:
         )
         token_verifier = Auth0TokenVerifier()
 
-        logger.info(f'Creating FastMCP server with JWT auth - domain: {auth0_domain}')
-        return FastMCP(
+        logger.info(f'Creating MCP server with JWT auth - domain: {auth0_domain}')
+        return MCPServer(
             'alpacon',
-            host=host,
-            port=port,
             auth=auth_settings,
             token_verifier=token_verifier,
             lifespan=app_lifespan,
-            json_response=True,
-            stateless_http=True,
         )
     else:
-        logger.info('Creating FastMCP server without auth (stdio/SSE mode)')
-        return FastMCP(
+        logger.info('Creating MCP server without auth (stdio/SSE mode)')
+        return MCPServer(
             'alpacon',
-            host=host,
-            port=port,
             lifespan=app_lifespan,
         )
 
@@ -262,43 +260,22 @@ def _modules_to_load(toolsets: str | None, remote_mode: bool) -> set[str]:
     return enabled | ALWAYS_ON_MODULES
 
 
-def _install_upstream_auth_middleware():
-    """Override run_streamable_http_async to wrap app with auth error middleware.
+def create_streamable_http_app(*, host: str) -> Starlette:
+    """Build the streamable-http ASGI app with this deployment's transport settings.
 
-    When the Alpacon API returns 401 (e.g., MFA timeout), the middleware
-    replaces the HTTP 200 JSON-RPC response with HTTP 401, triggering
-    the MCP client's automatic OAuth re-authentication flow.
+    host decides DNS rebinding protection: the SDK enables it only for loopback
+    addresses, and it must match what the server actually binds to.
     """
-    # Local: this whole function only runs in remote mode (see the `if remote_mode:` call site below).
-    from utils.auth_error_middleware import UpstreamAuthErrorMiddleware
-
-    resource_url = os.getenv('ALPACON_MCP_RESOURCE_URL', 'https://mcp.alpacon.io')
-    resource_metadata_url = (
-        f'{resource_url.rstrip("/")}/.well-known/oauth-protected-resource'
+    return mcp.streamable_http_app(
+        host=host,
+        json_response=True,
+        stateless_http=True,
     )
 
-    async def patched_run():
-        # Local: uvicorn is only needed for HTTP transports, never stdio (mcp's own FastMCP defers it the same way).
-        import uvicorn
 
-        starlette_app = mcp.streamable_http_app()
-        wrapped_app = UpstreamAuthErrorMiddleware(
-            starlette_app,
-            resource_metadata_url=resource_metadata_url,
-        )
-
-        config = uvicorn.Config(
-            wrapped_app,
-            host=host,
-            port=port,
-            log_level='info',
-            server_header=False,
-        )
-        server = uvicorn.Server(config)
-        await server.serve()
-
-    mcp.run_streamable_http_async = patched_run
-    logger.info('Upstream auth error middleware installed for remote mode')
+def resource_metadata_url() -> str:
+    resource_url = os.getenv('ALPACON_MCP_RESOURCE_URL', 'https://mcp.alpacon.io')
+    return f'{resource_url.rstrip("/")}/.well-known/oauth-protected-resource'
 
 
 def _register_http_health_endpoint():
@@ -321,19 +298,12 @@ def _register_http_health_endpoint():
         )
 
 
-def run(
-    transport: Literal['stdio', 'sse', 'streamable-http'] = 'stdio',
+def prepare(
+    transport: str,
     config_file: str | None = None,
     toolsets: str | None = None,
-):
-    """Run MCP server with optional config file path.
-
-    Args:
-        transport: Transport type ('stdio', 'sse', or 'streamable-http')
-        config_file: Path to token config file (optional)
-        toolsets: Comma-separated toolset names for local mode (optional;
-            defaults to all; ignored in remote mode)
-    """
+) -> None:
+    """Register OAuth routes, tool modules and resources for this transport."""
     logger.info(f'Starting MCP server with transport: {transport}')
 
     # Set transport type for health check reporting
@@ -380,14 +350,35 @@ def run(
 
     register_resources(modules)
 
-    # In remote mode, wrap the Starlette app with upstream auth error
-    # middleware to propagate Alpacon API 401 as MCP transport 401.
-    if remote_mode:
-        _install_upstream_auth_middleware()
+
+def run(
+    transport: Literal['stdio', 'sse', 'streamable-http'] = 'stdio',
+    config_file: str | None = None,
+    toolsets: str | None = None,
+    host: str | None = None,
+    port: int | None = None,
+):
+    """Run the MCP server on the given transport.
+
+    host and port are ignored for stdio. They default to the ALPACON_MCP_HOST
+    and ALPACON_MCP_PORT environment variables.
+    """
+    prepare(transport, config_file=config_file, toolsets=toolsets)
+
+    resolved_host = host if host is not None else resolve_host()
+    resolved_port = port if port is not None else resolve_port()
 
     try:
-        logger.info('Starting FastMCP server...')
-        mcp.run(transport=transport)
+        logger.info('Starting MCP server...')
+        if transport == 'stdio':
+            mcp.run(transport='stdio')
+        elif transport == 'sse':
+            mcp.run(transport='sse', host=resolved_host, port=resolved_port)
+        else:
+            raise RuntimeError(
+                'streamable-http is served by main_http.py, which composes the '
+                'ASGI app with the upstream auth middleware.'
+            )
     except Exception as e:
-        logger.error(f'FastMCP server failed to run: {e}', exc_info=True)
+        logger.error(f'MCP server failed to run: {e}', exc_info=True)
         raise

@@ -55,10 +55,35 @@ def main():
 
     logger.info('Starting Alpacon MCP Server (HTTP Streamable transport)')
 
-    from server import run
+    import uvicorn
+
+    from server import (
+        create_streamable_http_app,
+        prepare,
+        resolve_host,
+        resolve_port,
+        resource_metadata_url,
+    )
+    from utils.auth_error_middleware import UpstreamAuthErrorMiddleware
 
     try:
-        run('streamable-http')
+        prepare('streamable-http')
+
+        host = resolve_host()
+        port = resolve_port()
+        app = UpstreamAuthErrorMiddleware(
+            create_streamable_http_app(host=host),
+            resource_metadata_url=resource_metadata_url(),
+        )
+        uvicorn.Server(
+            uvicorn.Config(
+                app,
+                host=host,
+                port=port,
+                log_level='info',
+                server_header=False,
+            )
+        ).run()
     except Exception as e:
         logger.error(f'Failed to start MCP server: {e}', exc_info=True)
         raise

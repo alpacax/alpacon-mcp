@@ -4,6 +4,7 @@ import inspect
 import re
 
 import pytest
+from mcp.shared.uri_template import UriTemplate
 
 import tools.resources as res
 from server import ALL_TOOL_MODULES, ALWAYS_ON_MODULES, mcp
@@ -20,7 +21,7 @@ def _register_all_resources():
 
 async def _registered_uris():
     """All registered alpacon:// URIs — templated (with {params}) and static."""
-    templates = {t.uriTemplate for t in await mcp.list_resource_templates()}
+    templates = {t.uri_template for t in await mcp.list_resource_templates()}
     static = {str(r.uri) for r in await mcp.list_resources()}
     return templates | static
 
@@ -98,7 +99,7 @@ class TestResourceRegistration:
         active = next(
             t
             for t in await mcp.list_resource_templates()
-            if t.uriTemplate == 'alpacon://alerts/active/{region}/{workspace}'
+            if t.uri_template == 'alpacon://alerts/active/{region}/{workspace}'
         )
         assert 'acknowledged=False' in active.description
 
@@ -186,14 +187,27 @@ class TestResourceRegistration:
         its own handler — a general guard so a future literal/{id} sibling pair
         can't silently shadow one another. Subsumes the specific /active/, /scopes/,
         etc. cases without hard-coding them."""
-        mgr = mcp._resource_manager
+        templates = await mcp.list_resource_templates()
+        statics = await mcp.list_resources()
 
         def concrete(uri: str) -> str:
             # Sentinel placeholders never collide with a literal segment.
             return re.sub(r'\{(\w+)\}', lambda m: f'_{m.group(1)}_', uri)
 
         for name, _ref, uri, _extra in res.REGISTRATIONS:
-            resolved = await mgr.get_resource(concrete(uri))
-            assert resolved.name == name, (
-                f'{uri} -> {resolved.name}, want {name} (shadowed)'
+            target = concrete(uri)
+            static_match = next((r for r in statics if str(r.uri) == target), None)
+            if static_match is not None:
+                resolved_name = static_match.name
+            else:
+                # Same precedence FastMCP itself uses: first template whose
+                # pattern matches the concrete URI wins.
+                template_match = next(
+                    t
+                    for t in templates
+                    if UriTemplate.parse(t.uri_template).match(target) is not None
+                )
+                resolved_name = template_match.name
+            assert resolved_name == name, (
+                f'{uri} -> {resolved_name}, want {name} (shadowed)'
             )

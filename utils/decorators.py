@@ -665,7 +665,7 @@ def mcp_tool_handler(
 
     Args:
         description: Tool description for MCP
-        annotations: MCP ToolAnnotations (readOnlyHint, destructiveHint, etc.)
+        annotations: MCP ToolAnnotations (read_only_hint, destructive_hint, etc.)
         meta: MCP meta dict (anthropic/alwaysLoad, anthropic/searchHint, etc.)
         requires_workspace: Whether the tool takes a workspace. Set False only
             for a tool that answers before any workspace is known and reaches
