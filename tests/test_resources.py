@@ -7,6 +7,9 @@ import pytest
 
 import tools.resources as res
 from server import ALL_TOOL_MODULES, ALWAYS_ON_MODULES, mcp
+from tests.conftest import http_client_fixture
+
+mock_metrics_http_client = http_client_fixture('tools.metrics_tools')
 
 
 @pytest.fixture(scope='module', autouse=True)
@@ -98,6 +101,40 @@ class TestResourceRegistration:
             if t.uriTemplate == 'alpacon://alerts/active/{region}/{workspace}'
         )
         assert 'acknowledged=False' in active.description
+
+    @pytest.mark.asyncio
+    async def test_metrics_latest_stale_registered_and_describes_its_pin(self):
+        """alpacon://.../latest/stale is registered separately from the bare
+        .../latest resource, and its description surfaces the state='stale'
+        pin rather than just inheriting list_latest_metrics's own docstring."""
+        uris = await _registered_uris()
+        assert 'alpacon://metrics/{region}/{workspace}/latest' in uris
+        assert 'alpacon://metrics/{region}/{workspace}/latest/stale' in uris
+
+        stale = next(
+            t
+            for t in await mcp.list_resource_templates()
+            if t.uriTemplate == 'alpacon://metrics/{region}/{workspace}/latest/stale'
+        )
+        assert "state='stale'" in stale.description
+
+    @pytest.mark.asyncio
+    async def test_metrics_latest_stale_pins_state_on_the_real_request(
+        self, mock_metrics_http_client, mock_token_manager
+    ):
+        """Reading the resource must reach list_latest_metrics with state='stale'
+        actually forwarded to the HTTP request, not just documented."""
+        mock_metrics_http_client.get.return_value = {'count': 0, 'results': []}
+
+        await mcp.read_resource('alpacon://metrics/ap1/testworkspace/latest/stale')
+
+        mock_metrics_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/metrics/latest/',
+            token='test-token',
+            params={'state': 'stale'},
+        )
 
     def test_wrapper_named_after_resource(self):
         """The exec'd wrapper must adopt the resource name and this module's
