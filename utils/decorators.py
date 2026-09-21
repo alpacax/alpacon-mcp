@@ -219,8 +219,8 @@ async def _check_mfa_requirement(
 
     Fetches workspace security settings, checks the JWT's MFA completion
     claims, and raises UpstreamAuthError if MFA is required but
-    expired/missing. The ASGI middleware catches this exception and
-    returns HTTP 401 with MFA scope to trigger re-authentication.
+    expired/missing. Before raising, it signals request_signal, which the
+    ASGI middleware reads to return HTTP 401 with MFA scope.
 
     Fails open on errors — the upstream API will catch it as a fallback.
 
@@ -459,8 +459,8 @@ def with_token_validation(func: Callable, requires_workspace: bool = True) -> Ca
                         workspace=workspace,
                     )
 
-                # Raises UpstreamAuthError when MFA is required but not done;
-                # the ASGI middleware turns that into HTTP 401.
+                # Signals request_signal and raises when MFA is required but
+                # not done; the ASGI middleware reads the signal for HTTP 401.
                 await _check_mfa_requirement(func.__name__, jwt_token, workspace)
 
             extra_kwargs['token'] = jwt_token

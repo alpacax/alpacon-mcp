@@ -63,7 +63,7 @@ def base_url():
                 if httpx.get(f'{url}/health', timeout=1).status_code == 200:
                     break
             except httpx.TransportError:
-                pass
+                pass  # harness is not listening yet; loop retries until the deadline
             if time.monotonic() > deadline:
                 raise RuntimeError('harness did not become ready')
             time.sleep(0.1)

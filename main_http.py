@@ -55,6 +55,8 @@ def main():
 
     logger.info('Starting Alpacon MCP Server (HTTP Streamable transport)')
 
+    # Deferred with the block below: keeps the HTTP-only dependency off the
+    # import path of non-HTTP entry points (stdio, SSE).
     import uvicorn
 
     from server import (
