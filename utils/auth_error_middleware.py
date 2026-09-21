@@ -115,7 +115,7 @@ class UpstreamAuthErrorMiddleware:
         """
         request_path = scope.get('path', '?')
         logger.debug(
-            '[DEBUG-MW] Request %s — cooldown_key=%s (None means no Bearer header)',
+            '[DEBUG-MW] Request %s—cooldown_key=%s (None means no Bearer header)',
             request_path,
             cooldown_key,
         )
@@ -125,9 +125,10 @@ class UpstreamAuthErrorMiddleware:
         pending_start: AsgiMessage | None = None
         replaced = False
         forwarding = False
+        cooldown_passed = False
 
         async def gated_send(message: AsgiMessage) -> None:
-            nonlocal pending_start, replaced, forwarding
+            nonlocal pending_start, replaced, forwarding, cooldown_passed
 
             if replaced:
                 return
@@ -137,9 +138,11 @@ class UpstreamAuthErrorMiddleware:
                 return
 
             if not forwarding:
-                if signal and await self._replace_with_401(send, signal, cooldown_key):
-                    replaced = True
-                    return
+                if signal:
+                    if await self._replace_with_401(send, signal, cooldown_key):
+                        replaced = True
+                        return
+                    cooldown_passed = True
                 start, pending_start, forwarding = pending_start, None, True
                 if start is not None:
                     await send(start)
@@ -160,12 +163,16 @@ class UpstreamAuthErrorMiddleware:
                 if not sent_401:
                     # The app raised instead of answering, so the cooldown has no
                     # original response to fall back on.
+                    logger.info(
+                        'Upstream 401 detected but cooldown active; sending 500 '
+                        '(no original response to fall back on)'
+                    )
                     await self._send_error(
                         send,
                         status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
                         message='Authentication error',
                     )
-            elif signal and not replaced:
+            elif signal and not replaced and not cooldown_passed:
                 logger.warning(
                     'Upstream 401 signalled after the response started; '
                     'cannot replace it'
@@ -178,7 +185,7 @@ class UpstreamAuthErrorMiddleware:
         if signal and not forwarding:
             if await self._replace_with_401(send, signal, cooldown_key):
                 return
-        elif signal:
+        elif signal and not cooldown_passed:
             logger.warning(
                 'Upstream 401 signalled after the response started; cannot replace it'
             )
@@ -209,7 +216,7 @@ class UpstreamAuthErrorMiddleware:
             remaining = self._cooldown_seconds - (now - last_401)
             logger.info(
                 'Upstream 401 detected but cooldown active (%.0fs remaining), '
-                'passing the original response through',
+                'not replacing the response',
                 remaining,
             )
             return False

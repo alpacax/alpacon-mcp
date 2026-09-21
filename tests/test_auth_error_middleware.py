@@ -231,6 +231,34 @@ async def test_cooldown_passes_the_apps_own_response_through_on_a_second_401():
 
 
 @pytest.mark.asyncio
+async def test_cooldown_pass_through_does_not_log_a_late_signal_warning(caplog):
+    """Given a client within cooldown, When the app's own response is passed
+    through, Then no 'cannot replace it' warning fires—the cooldown, not a
+    late signal, is why nothing was replaced, and it already logs at INFO."""
+    token = 'cooldown-warning-token'
+    original = {'jsonrpc': '2.0', 'result': {'isError': True, 'reason': 'upstream'}}
+
+    app = _MockApp(
+        body=original,
+        signal_error={'mfa_required': False, 'source': ''},
+        auth_value=token,
+    )
+    mw = UpstreamAuthErrorMiddleware(app, cooldown_seconds=60)
+
+    scope = _http_scope(f'Bearer {token}')
+
+    await _run(mw, scope=scope)  # First: consumes the 401, starts the cooldown.
+
+    with caplog.at_level(logging.WARNING, logger='alpacon_mcp.auth_error_middleware'):
+        sent2 = await _run(mw, scope=scope)
+
+    status2, _, body2 = await _collect_response(sent2)
+    assert status2 == HTTPStatus.OK
+    assert json.loads(body2) == original
+    assert not any('cannot replace it' in r.getMessage() for r in caplog.records)
+
+
+@pytest.mark.asyncio
 async def test_an_expired_cooldown_lets_the_next_401_through_and_is_pruned():
     """Given a cooldown that has run out, When the same client signals again, Then
     it gets a fresh 401, and the stale entry is dropped on a later request."""
