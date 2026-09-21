@@ -137,7 +137,9 @@ async def test_lifespan_runs_once_across_several_stateless_requests(monkeypatch)
             yield value
         exited += 1
 
-    monkeypatch.setattr(server_module.mcp._lowlevel_server, 'lifespan', counting_lifespan)
+    monkeypatch.setattr(
+        server_module.mcp._lowlevel_server, 'lifespan', counting_lifespan
+    )
     app = create_streamable_http_app(host='0.0.0.0')  # noqa: S104
 
     async with app.router.lifespan_context(app):
