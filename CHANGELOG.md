@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `initialize` and `server/discover` now report the package version in `serverInfo.version`, which was previously an empty string (#144). A client that parsed the empty value as "unknown" will now see a real version string.
 - `list_latest_metrics` (`workspace`, `region`, `search`, `groups`, `tag`, `is_connected`, `state`,
   `ordering`, `page`, `page_size`): the latest CPU, memory, disk usage, disk I/O and network reading
   for many servers in one request, one row per server. Wraps `GET /api/metrics/latest/`

@@ -11,7 +11,7 @@ from mcp.server import MCPServer
 from starlette.applications import Starlette
 from starlette.responses import JSONResponse
 
-from utils.common import is_auth_enabled
+from utils.common import MCP_VERSION, is_auth_enabled
 from utils.health import get_health_info
 from utils.http_client import http_client
 from utils.logger import get_logger, stop_log_listener
@@ -149,6 +149,7 @@ def _create_mcp_server() -> MCPServer:
         logger.info(f'Creating MCP server with JWT auth - domain: {auth0_domain}')
         return MCPServer(
             'alpacon',
+            version=MCP_VERSION,
             auth=auth_settings,
             token_verifier=token_verifier,
             lifespan=app_lifespan,
@@ -157,6 +158,7 @@ def _create_mcp_server() -> MCPServer:
         logger.info('Creating MCP server without auth (stdio/SSE mode)')
         return MCPServer(
             'alpacon',
+            version=MCP_VERSION,
             lifespan=app_lifespan,
         )
 

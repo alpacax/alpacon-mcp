@@ -82,3 +82,44 @@ async def test_streamable_http_app_accepts_external_host():
 
     assert response.status_code != 421, response.text
     assert response.headers['content-type'].startswith('application/json')
+
+
+@pytest.mark.asyncio
+async def test_initialize_reports_package_version():
+    """Given the server, When a client initializes, Then serverInfo carries the
+    package version rather than an empty string."""
+    import httpx
+
+    from server import create_streamable_http_app
+    from utils.common import MCP_VERSION
+
+    app = create_streamable_http_app(host='0.0.0.0')  # noqa: S104
+
+    # The session manager's task group is initialized by the app's own ASGI
+    # lifespan, so drive it directly instead of routing through httpx.
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url='http://testserver'
+        ) as client:
+            response = await client.post(
+                '/mcp',
+                headers={
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json, text/event-stream',
+                },
+                json={
+                    'jsonrpc': '2.0',
+                    'id': 1,
+                    'method': 'initialize',
+                    'params': {
+                        'protocolVersion': '2025-06-18',
+                        'capabilities': {},
+                        'clientInfo': {'name': 'test', 'version': '0'},
+                    },
+                },
+            )
+
+    server_info = response.json()['result']['serverInfo']
+    assert server_info['name'] == 'alpacon'
+    assert server_info['version'] == MCP_VERSION
+    assert server_info['version'] != ''
