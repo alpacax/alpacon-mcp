@@ -541,6 +541,8 @@ Download a file or folder from a server to local storage.
 ### `webftp_upload_content`
 Upload base64-encoded bytes as a file, with no local file on disk. Useful in hosted mode, where the server has no access to your filesystem.
 
+`file_content` is capped at 3 MiB of decoded (original) file bytes—base64 inflates bytes 4/3x, so the encoded string is larger. A file over this limit gets a tool error naming the limit and the size sent; use `webftp_upload_file` in local mode instead. A request far larger than that never reaches the tool at all—MCP SDK 2.x caps the streamable-http/SSE request body itself, and an oversized request fails as a plain-text HTTP 413 before any MCP error is produced. This limit is a stopgap around that SDK change; the upload path's design is being reconsidered in #275.
+
 **Parameters:**
 - `server_id` (string): Server ID
 - `file_content` (string): Base64-encoded content

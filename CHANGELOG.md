@@ -146,6 +146,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - `work_session_timeline` now defaults `include_records` to false, so websh terminal records are omitted unless requested (#286). A client that relied on the previous default must now pass `include_records=True` to keep seeing those records.
+- `webftp_upload_content` now rejects file content over 3 MiB decoded with a tool
+  error naming the limit and the size sent, instead of relying on the transport
+  to reject it (#144). MCP SDK 2.x added a 4 MiB request-body cap on
+  streamable-http/SSE that didn't exist under SDK 1.x; the ASGI limit is now
+  raised to 5 MiB so a too-large request reaches this check rather than failing
+  as a bare HTTP 413 with no JSON-RPC body. A request far larger than 3 MiB
+  (roughly 3.75 MiB of file bytes and up, once base64 envelope overhead is
+  included) still gets that plain-text 413 before reaching the tool at all;
+  use `webftp_upload_file` in local mode for such files. The upload path's
+  design is being reconsidered in #275.
+- MCP SDK 2.x also changed two error shapes clients should account for: a
+  `resources/read` on an unknown URI now returns JSON-RPC code `-32602`
+  (invalid params) with `error.data.uri` set, instead of `0`; and an unknown
+  method now returns `-32601` (method not found) instead of `-32602`.
 - The auth error middleware now streams the response instead of buffering it in
   full, so a long-lived tool call is no longer held back from the client until it
   finishes (#144). Nothing else about the response changes: on a second upstream
