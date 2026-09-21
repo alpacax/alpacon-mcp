@@ -17,9 +17,9 @@ from utils.http_client import HTTP_VERBS
 def _reset_request_signal():
     """A sync test's begin_request() call sets the ContextVar in the main
     thread, which then leaks into the next test unless reverted here."""
-    token = request_signal._signal.set(None)
+    request_signal.end_request()
     yield
-    request_signal._signal.reset(token)
+    request_signal.end_request()
 
 
 # Canonical http_client error envelope (the shape utils/http_client returns on

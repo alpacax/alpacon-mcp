@@ -21,6 +21,11 @@ def begin_request() -> AuthSignal:
     return holder
 
 
+def end_request() -> None:
+    """Clear the signal. Symmetric counterpart to begin_request()."""
+    _signal.set(None)
+
+
 def current_signal() -> AuthSignal | None:
     return _signal.get()
 

@@ -92,7 +92,20 @@ class UpstreamAuthErrorMiddleware:
 
         token_key = self._extract_token_key(scope)
         signal = request_signal.begin_request()
+        try:
+            await self._call_http(scope, receive, send, token_key, signal)
+        finally:
+            request_signal.end_request()
 
+    async def _call_http(
+        self,
+        scope: Scope,
+        receive: Receive,
+        send: Send,
+        token_key: str | None,
+        signal: request_signal.AuthSignal,
+    ) -> None:
+        """The original ``__call__`` body, run inside begin_request()/end_request()."""
         request_path = scope.get('path', '?')
         logger.debug(
             '[DEBUG-MW] Request %s — token_key=%s (None means no Bearer header)',
@@ -156,14 +169,15 @@ class UpstreamAuthErrorMiddleware:
                     message='Authentication error',
                 )
             return
-        except BaseException:
-            raise
 
         logger.debug(
             '[DEBUG-MW] App completed normally (no exception). '
             'Checking request signal for token_key=%s',
             token_key,
         )
+        # Not gated on token_key: signal_upstream_auth_error() is only ever
+        # called for requests carrying a JWT (see http_client, decorators),
+        # so an untokened request's signal is always empty here.
         error_info = signal or None
         if error_info:
             logger.debug(

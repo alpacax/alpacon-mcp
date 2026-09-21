@@ -62,10 +62,39 @@ class _MockApp:
         )
 
 
-def _http_scope(auth_header: str = 'Bearer test-jwt') -> dict:
+class _DispatchingApp:
+    """ASGI app whose behavior depends on request path, not on which instance
+    called it — so one middleware instance can serve two concurrent requests
+    that behave differently, with its cooldown dict shared between them."""
+
+    def __init__(self, fail_path: str, signal_error: dict):
+        self._fail_path = fail_path
+        self._signal_error = signal_error
+
+    async def __call__(self, scope, receive, send):
+        if scope.get('path') == self._fail_path:
+            request_signal.signal_upstream_auth_error(self._signal_error)
+
+        await send(
+            {
+                'type': 'http.response.start',
+                'status': HTTPStatus.OK,
+                'headers': [(b'content-type', b'application/json')],
+            }
+        )
+        await send(
+            {
+                'type': 'http.response.body',
+                'body': json.dumps({'ok': True}).encode(),
+            }
+        )
+
+
+def _http_scope(auth_header: str = 'Bearer test-jwt', path: str = '/') -> dict:
     return {
         'type': 'http',
         'method': 'POST',
+        'path': path,
         'headers': [(b'authorization', auth_header.encode())],
     }
 
@@ -360,10 +389,14 @@ async def test_exception_non_mfa_triggers_401_without_mfa_scope():
 @pytest.mark.asyncio
 async def test_exception_path_signal_does_not_leak_into_the_next_request():
     """Given a request whose app raises UpstreamAuthError, When a later request with
-    the same token runs against a clean app, Then it sees no leftover signal."""
+    the same token runs against a clean app, Then it sees no leftover signal.
+
+    cooldown_seconds=0 so a cooldown, not signal leakage, cannot be the reason
+    the second request comes back 200.
+    """
     token = 'test-jwt'
     raising_app = _RaisingApp(auth_value=token)
-    mw = UpstreamAuthErrorMiddleware(raising_app)
+    mw = UpstreamAuthErrorMiddleware(raising_app, cooldown_seconds=0)
     scope = _http_scope(f'Bearer {token}')
 
     await _run(mw, scope=scope)
@@ -374,6 +407,32 @@ async def test_exception_path_signal_does_not_leak_into_the_next_request():
 
     assert status == HTTPStatus.OK
     assert 'ok' in body
+
+
+@pytest.mark.asyncio
+async def test_normal_return_signal_does_not_leak_into_the_next_request():
+    """Given a request whose app signals a 401 and returns normally, When a later
+    request with the same token runs against a clean app, Then it sees no
+    leftover signal.
+
+    cooldown_seconds=0 so a cooldown cannot be mistaken for signal isolation.
+    """
+    token = 'test-jwt'
+    signaling_app = _MockApp(
+        signal_error={'mfa_required': True, 'source': 'exec'}, auth_value=token
+    )
+    mw = UpstreamAuthErrorMiddleware(signaling_app, cooldown_seconds=0)
+    scope = _http_scope(f'Bearer {token}')
+
+    sent1 = await _run(mw, scope=scope)
+    assert (await _collect_response(sent1))[0] == HTTPStatus.UNAUTHORIZED
+
+    mw.app = _MockApp(body={'ok': True})
+    sent2 = await _run(mw, scope=scope)
+    status2, _, body2 = await _collect_response(sent2)
+
+    assert status2 == HTTPStatus.OK
+    assert 'ok' in body2
 
 
 @pytest.mark.asyncio
@@ -396,12 +455,25 @@ async def test_exception_respects_cooldown():
 
 @pytest.mark.asyncio
 async def test_same_token_concurrent_requests_do_not_steal_each_others_signal():
-    """Given two requests with one token, one failing and one fine, When they run
-    together, Then only the failing one is answered with 401."""
-    failing = _make(error_value={'mfa_required': True, 'source': 'exec'})
-    passing = _make(error_value=None)
+    """Given two requests with the same token on one middleware instance, one
+    failing and one fine, When they run together, Then only the failing one
+    is answered with 401.
 
-    results = await asyncio.gather(_run(failing), _run(passing))
+    Both requests go through the same UpstreamAuthErrorMiddleware instance
+    (shared _client_cooldowns), so cooldown_seconds=0 keeps the first 401
+    from suppressing the second request's check.
+    """
+    app = _DispatchingApp(
+        fail_path='/fail', signal_error={'mfa_required': True, 'source': 'exec'}
+    )
+    mw = UpstreamAuthErrorMiddleware(app, cooldown_seconds=0)
+
+    failing_scope = _http_scope(path='/fail')
+    passing_scope = _http_scope(path='/ok')
+
+    results = await asyncio.gather(
+        _run(mw, scope=failing_scope), _run(mw, scope=passing_scope)
+    )
     failing_status, _, _ = await _collect_response(results[0])
     passing_status, _, _ = await _collect_response(results[1])
 
