@@ -207,6 +207,35 @@ Rank the top five servers by resource usage over the last 24 hours.
 - `metric_types` (string, optional): Comma-separated metrics to rank by (`cpu`, `memory`, `disk_io`, `traffic`); omit for all four
 - `region` (string, optional): Region name; resolved from the workspace when omitted
 
+### `list_latest_metrics`
+Get the latest CPU, memory, disk usage, disk I/O and network reading for many servers in one
+request, one row per server. It is the servers list with five metric cells added: filters, search,
+and pagination are `list_servers`'s own, plus `state` and `ordering`. Each cell says whether its
+value is missing, stale, or not collected — use `get_cpu_usage` etc. for one server's time series,
+or `get_server_metrics_summary` for one server's detail. **Requires alpacon-server 2.37.0 or
+later.**
+
+**Parameters:**
+- `workspace` (string): Workspace name
+- `region` (string, optional): Region name; resolved from the workspace when omitted
+- `search` (string, optional): Free-text search across server name, version, owner, and group name
+- `groups` (string, optional): Filter by group ID(s)
+- `tag` (string, optional): Filter by tag(s) in `key:value` form
+- `is_connected` (boolean, optional): Filter by live agent connection state
+- `state` (string, optional): `stale` (some family overdue, including a server storing nothing) or
+  `no_data` (nothing stored at all); `stale` includes every `no_data` server
+- `ordering` (string, optional): `name`, `starred`, `sampled_at`, `cpu`, `memory`, `disk_usage` (or
+  `disk-usage`), `disk_io` (or `disk-io`), `net`, optionally prefixed with `-` for descending; a
+  server with no value for the field sorts last
+- `page` (integer, optional): Page number for pagination
+- `page_size` (integer, optional): Number of results per page, up to 100
+
+**Response:** `count`, `current`, `next`, `previous`, `last`, and `results` — each result an
+`{id, name, is_connected, cpu, memory, "disk-usage", "disk-io", net}` row, every metric cell an
+object with `value`, `unit` (`percent` or `bytes_per_sec`), `sampled_at`, `device`, `collected`,
+`reason`, and `interval_s` (`value`, `sampled_at`, and `device` are null when no sample is stored
+for that family).
+
 ### `get_alert_rules`
 Get alert rules for servers.
 
