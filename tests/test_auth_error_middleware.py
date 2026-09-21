@@ -200,7 +200,16 @@ async def test_non_mfa_flag_excludes_mfa_scope():
 
 @pytest.mark.asyncio
 async def test_cooldown_passes_through_on_second_401():
-    """Second 401 within cooldown passes through as normal response."""
+    """Given a client within cooldown, When a second signal fires, Then it gets a
+    generic 500, not the app's original response.
+
+    Streaming (this task) holds only the `http.response.start` message before the
+    signal is known; the body chunks the app sends after it are forwarded live and
+    cannot be recalled once the signal check decides to replace them. So on
+    cooldown there is no buffered original response left to pass through — the
+    previous behavior of forwarding it as a tool error is no longer possible, and
+    the existing 500 fallback (used when nothing was buffered) covers this case too.
+    """
     # Use a shared token for both requests
     token = 'cooldown-test-token'
 
@@ -217,11 +226,11 @@ async def test_cooldown_passes_through_on_second_401():
     sent1 = await _run(mw, scope=scope)
     assert (await _collect_response(sent1))[0] == HTTPStatus.UNAUTHORIZED
 
-    # Second (same client, within cooldown): pass through as tool error
+    # Second (same client, within cooldown): generic 500, original body is gone
     sent2 = await _run(mw, scope=scope)
     status2, _, body2 = await _collect_response(sent2)
-    assert status2 == HTTPStatus.OK
-    assert 'status_code' in body2
+    assert status2 == HTTPStatus.INTERNAL_SERVER_ERROR
+    assert json.loads(body2)['error'] == 'Authentication error'
 
 
 @pytest.mark.asyncio
@@ -479,6 +488,85 @@ async def test_same_token_concurrent_requests_do_not_steal_each_others_signal():
 
     assert failing_status == HTTPStatus.UNAUTHORIZED
     assert passing_status == HTTPStatus.OK
+
+
+class _HandshakeApp:
+    """Sends one chunk, then waits for the receiver to acknowledge it.
+
+    A middleware that buffers never lets that acknowledgement happen, so the wait
+    times out. That is what makes this app able to tell the two apart.
+    """
+
+    def __init__(self, delivered: asyncio.Event):
+        self.delivered = delivered
+        self.finished = False
+
+    async def __call__(self, scope, receive, send):
+        await send(
+            {
+                'type': 'http.response.start',
+                'status': HTTPStatus.OK,
+                'headers': [(b'content-type', b'text/event-stream')],
+            }
+        )
+        await send(
+            {'type': 'http.response.body', 'body': b'chunk0', 'more_body': True}
+        )
+
+        await asyncio.wait_for(self.delivered.wait(), timeout=2)
+
+        await send(
+            {'type': 'http.response.body', 'body': b'chunk1', 'more_body': False}
+        )
+        self.finished = True
+
+
+@pytest.mark.asyncio
+async def test_a_chunk_reaches_the_client_while_the_app_is_still_running():
+    """Given a long-lived response, When the app emits its first chunk, Then the
+    client has it before the app produces the next one."""
+    delivered = asyncio.Event()
+    app = _HandshakeApp(delivered)
+    mw = UpstreamAuthErrorMiddleware(app)
+
+    received: list[bytes] = []
+
+    async def recording_send(message):
+        if message['type'] == 'http.response.body':
+            received.append(message['body'])
+            if message['body'] == b'chunk0':
+                assert not app.finished, 'the app had already finished'
+                delivered.set()
+
+    async def mock_receive():
+        return {'type': 'http.request', 'body': b''}
+
+    await mw(_http_scope(), mock_receive, recording_send)
+
+    assert received == [b'chunk0', b'chunk1']
+
+
+@pytest.mark.asyncio
+async def test_signalled_request_gets_the_full_401_not_the_original_body():
+    """Given a signalled request, When the response is replaced, Then the client
+    receives the OAuth error body and WWW-Authenticate, not the app's own body."""
+    app = _MockApp(
+        body={'jsonrpc': '2.0', 'result': {'isError': True}},
+        signal_error={'mfa_required': True, 'source': 'exec'},
+    )
+    mw = UpstreamAuthErrorMiddleware(
+        app,
+        resource_metadata_url='https://example.com/.well-known/oauth-protected-resource',
+    )
+
+    sent = await _run(mw)
+    status, headers, body = await _collect_response(sent)
+
+    assert status == HTTPStatus.UNAUTHORIZED
+    assert 'mfa' in headers['www-authenticate']
+    assert 'resource_metadata=' in headers['www-authenticate']
+    assert json.loads(body)['error'] == 'invalid_token'
+    assert 'jsonrpc' not in body
 
 
 @pytest.mark.asyncio
