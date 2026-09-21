@@ -4,7 +4,7 @@ import signal
 import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import Literal
+from typing import Final, Literal
 from urllib.parse import urlparse
 
 from mcp.server import MCPServer
@@ -17,6 +17,64 @@ from utils.http_client import http_client
 from utils.logger import get_logger, stop_log_listener
 
 logger = get_logger('server')
+
+TRANSPORT_STDIO: Final = 'stdio'
+TRANSPORT_SSE: Final = 'sse'
+TRANSPORT_STREAMABLE_HTTP: Final = 'streamable-http'
+
+Transport = Literal['stdio', 'sse', 'streamable-http']
+# run() serves these two; streamable-http is composed by main_http.py instead.
+ServedTransport = Literal['stdio', 'sse']
+
+HTTP_TRANSPORTS: frozenset[Transport] = frozenset(
+    {TRANSPORT_SSE, TRANSPORT_STREAMABLE_HTTP}
+)
+
+DEFAULT_HOST = '127.0.0.1'
+DEFAULT_PORT = 8237  # MCAR - MCP Alpacon Remote
+
+# 1 MiB above the SDK default so a >3 MiB upload reaches webftp_upload_content's
+# own check instead of failing as a bare HTTP 413 (see #144).
+MAX_REQUEST_BODY_SIZE = 5 * 1024 * 1024
+
+TOOLS_PACKAGE = 'tools'
+TOOLSETS_ENV_VAR = 'ALPACON_MCP_TOOLSETS'
+TOOLSETS_ALL = 'all'
+TOOLSETS_HELP = (
+    f'Comma-separated toolsets to register, '
+    f'e.g. servers,commands,webftp (default: {TOOLSETS_ALL})'
+)
+
+# Local (stdio/SSE) mode can register a subset of these; remote loads all.
+TOOLSET_REGISTRY: dict[str, str] = {
+    'servers': 'server_tools',
+    'commands': 'command_tools',
+    'webftp': 'webftp_tools',
+    'metrics': 'metrics_tools',
+    'alerts': 'alert_tools',
+    'events': 'events_tools',
+    'system-info': 'system_info_tools',
+    'iam': 'iam_tools',
+    'security': 'security_tools',
+    'audit': 'audit_tools',
+    'approvals': 'approval_tools',
+    'webhooks': 'webhook_tools',
+    'packages': 'package_tools',
+    'certs': 'cert_tools',
+    'tokens': 'token_tools',
+}
+ALL_TOOL_MODULES: frozenset[str] = frozenset(TOOLSET_REGISTRY.values())
+
+# Always registered; these names are accepted in --toolsets but select nothing.
+# work_session_tools must stay: gate denials tell the agent to call work_session_*.
+ALWAYS_ON: dict[str, str] = {
+    'workspace': 'workspace_tools',
+    'health': 'health_tools',
+    'work-sessions': 'work_session_tools',
+    'prompts': 'prompts',
+}
+ALWAYS_ON_MODULES: frozenset[str] = frozenset(ALWAYS_ON.values())
+ALWAYS_ON_TOOLSET_NAMES: frozenset[str] = frozenset(ALWAYS_ON)
 
 
 @asynccontextmanager
@@ -68,14 +126,6 @@ def _sigterm_handler(signum, frame):
     raise KeyboardInterrupt
 
 
-DEFAULT_HOST = '127.0.0.1'
-DEFAULT_PORT = 8237  # MCAR - MCP Alpacon Remote
-
-# 1 MiB above the SDK default so a >3 MiB upload reaches webftp_upload_content's
-# own check instead of failing as a bare HTTP 413 (see #144).
-MAX_REQUEST_BODY_SIZE = 5 * 1024 * 1024
-
-
 def resolve_host() -> str:
     return os.getenv('ALPACON_MCP_HOST', DEFAULT_HOST)
 
@@ -119,7 +169,6 @@ def _create_mcp_server() -> MCPServer:
             logger.error(message)
             raise RuntimeError(message)
 
-        # Validate resource_url with proper URL parsing before passing to AnyHttpUrl
         parsed_url = urlparse(resource_url)
         if parsed_url.scheme != 'https' or not parsed_url.netloc:
             message = (
@@ -129,21 +178,13 @@ def _create_mcp_server() -> MCPServer:
             )
             logger.error(message)
             raise RuntimeError(message)
-        # Reconstruct from parsed components to ensure canonical form
         resource_url = (
             f'{parsed_url.scheme}://{parsed_url.netloc}{parsed_url.path}'.rstrip('/')
         )
 
-        # Use the MCP server's own URL as issuer_url so that clients discover
-        # our OAuth proxy endpoints (authorize, token, register) instead of
-        # going directly to Auth0 — which doesn't support Dynamic Client
-        # Registration on non-Enterprise plans.
-        # JWT token verification still validates against Auth0's issuer
-        # independently via Auth0TokenVerifier.
-        # Ensure issuer_url has a trailing slash to match the issuer value
-        # in /.well-known/oauth-authorization-server metadata (RFC 8414
-        # requires exact string match for issuer identifiers).
-        issuer_url = resource_url.rstrip('/') + '/'
+        # Our own URL, not Auth0's: clients must discover our OAuth proxy, and
+        # Auth0 has no Dynamic Client Registration outside Enterprise plans.
+        issuer_url = resource_url.rstrip('/') + '/'  # RFC 8414 matches issuers exactly
         auth_settings = AuthSettings(
             issuer_url=AnyHttpUrl(issuer_url),
             resource_server_url=AnyHttpUrl(resource_url),
@@ -171,46 +212,6 @@ def _create_mcp_server() -> MCPServer:
 
 
 mcp = _create_mcp_server()
-
-
-TOOLS_PACKAGE = 'tools'
-TOOLSETS_ENV_VAR = 'ALPACON_MCP_TOOLSETS'
-TOOLSETS_ALL = 'all'
-TOOLSETS_HELP = (
-    f'Comma-separated toolsets to register, '
-    f'e.g. servers,commands,webftp (default: {TOOLSETS_ALL})'
-)
-
-# Local (stdio/SSE) mode can register a subset of these; remote loads all.
-TOOLSET_REGISTRY: dict[str, str] = {
-    'servers': 'server_tools',
-    'commands': 'command_tools',
-    'webftp': 'webftp_tools',
-    'metrics': 'metrics_tools',
-    'alerts': 'alert_tools',
-    'events': 'events_tools',
-    'system-info': 'system_info_tools',
-    'iam': 'iam_tools',
-    'security': 'security_tools',
-    'audit': 'audit_tools',
-    'approvals': 'approval_tools',
-    'webhooks': 'webhook_tools',
-    'packages': 'package_tools',
-    'certs': 'cert_tools',
-    'tokens': 'token_tools',
-}
-ALL_TOOL_MODULES: frozenset[str] = frozenset(TOOLSET_REGISTRY.values())
-
-# Always registered; these names are accepted in --toolsets but select nothing.
-# work_session_tools must stay: gate denials tell the agent to call work_session_*.
-ALWAYS_ON: dict[str, str] = {
-    'workspace': 'workspace_tools',
-    'health': 'health_tools',
-    'work-sessions': 'work_session_tools',
-    'prompts': 'prompts',
-}
-ALWAYS_ON_MODULES: frozenset[str] = frozenset(ALWAYS_ON.values())
-ALWAYS_ON_TOOLSET_NAMES: frozenset[str] = frozenset(ALWAYS_ON)
 
 
 class ToolsetError(ValueError):
@@ -309,7 +310,7 @@ def _register_http_health_endpoint():
 
 
 def prepare(
-    transport: str,
+    transport: Transport,
     config_file: str | None = None,
     toolsets: str | None = None,
 ) -> None:
@@ -343,7 +344,7 @@ def prepare(
         register_oauth_routes(mcp)
         logger.info('Remote mode: OAuth routes registered')
 
-    if transport in ('sse', 'streamable-http'):
+    if transport in HTTP_TRANSPORTS:
         # HTTP transports: register HTTP /health endpoint (bypasses auth)
         _register_http_health_endpoint()
         logger.info('HTTP /health endpoint registered for transport: %s', transport)
@@ -362,7 +363,7 @@ def prepare(
 
 
 def run(
-    transport: Literal['stdio', 'sse'] = 'stdio',
+    transport: ServedTransport = TRANSPORT_STDIO,
     config_file: str | None = None,
     toolsets: str | None = None,
     host: str | None = None,
@@ -381,11 +382,11 @@ def run(
 
     try:
         logger.info('Starting MCP server...')
-        if transport == 'stdio':
-            mcp.run(transport='stdio')
-        elif transport == 'sse':
+        if transport == TRANSPORT_STDIO:
+            mcp.run(transport=TRANSPORT_STDIO)
+        elif transport == TRANSPORT_SSE:
             mcp.run(
-                transport='sse',
+                transport=TRANSPORT_SSE,
                 host=resolved_host,
                 port=resolved_port,
                 max_request_body_size=MAX_REQUEST_BODY_SIZE,

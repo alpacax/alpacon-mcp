@@ -24,10 +24,9 @@ logger = get_logger('main_http')
 def main():
     """Main entry point for HTTP transport mode."""
     # Validate required Auth0 configuration (fail fast on missing env vars)
-    missing = []
-    for var in ['AUTH0_DOMAIN', 'AUTH0_CLIENT_ID']:
-        if not os.getenv(var, ''):
-            missing.append(var)
+    missing = [
+        var for var in ('AUTH0_DOMAIN', 'AUTH0_CLIENT_ID') if not os.getenv(var, '')
+    ]
 
     if missing:
         print(
@@ -60,6 +59,7 @@ def main():
     import uvicorn
 
     from server import (
+        TRANSPORT_STREAMABLE_HTTP,
         create_streamable_http_app,
         prepare,
         resolve_host,
@@ -69,7 +69,7 @@ def main():
     from utils.auth_error_middleware import UpstreamAuthErrorMiddleware
 
     try:
-        prepare('streamable-http')
+        prepare(TRANSPORT_STREAMABLE_HTTP)
 
         host = resolve_host()
         port = resolve_port()

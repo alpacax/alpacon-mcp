@@ -5,7 +5,7 @@ MCPServer at import time from the environment, so remote mode has to be the
 first thing this module does and cannot be turned on inside an already-imported
 test session without reloading the module.
 
-It composes what ``main_http.py`` composes—``prepare('streamable-http')``,
+It composes what ``main_http.py`` composes—``prepare(TRANSPORT_STREAMABLE_HTTP)``,
 ``create_streamable_http_app``, wrapped in ``UpstreamAuthErrorMiddleware``—plus
 two test-only endpoints and one test-only tool. Only the token verifier is
 stubbed, and it binds 127.0.0.1 where production binds 0.0.0.0, so DNS rebinding
@@ -79,7 +79,7 @@ def main() -> None:
     # setattr, not assignment: mypy refuses to rebind a method on the class.
     setattr(Auth0TokenVerifier, 'verify_token', _accept_test_token)  # noqa: B010
 
-    server.prepare('streamable-http')
+    server.prepare(server.TRANSPORT_STREAMABLE_HTTP)
     _register_test_endpoints()
 
     app = UpstreamAuthErrorMiddleware(
