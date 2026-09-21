@@ -577,6 +577,8 @@ class AlpaconHTTPClient:
             source,
         )
 
+        # Only a JWT-carrying request may signal: the middleware trusts that and
+        # checks the signal without knowing which credential produced it.
         if auth_enabled and token and is_jwt:
             logger.debug(
                 '[DEBUG-401] Recording upstream auth signal (mfa_required=%s, source=%s)',

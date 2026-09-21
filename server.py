@@ -357,7 +357,7 @@ def prepare(
 
 
 def run(
-    transport: Literal['stdio', 'sse', 'streamable-http'] = 'stdio',
+    transport: Literal['stdio', 'sse'] = 'stdio',
     config_file: str | None = None,
     toolsets: str | None = None,
     host: str | None = None,
@@ -366,7 +366,8 @@ def run(
     """Run the MCP server on the given transport.
 
     host and port are ignored for stdio. They default to the ALPACON_MCP_HOST
-    and ALPACON_MCP_PORT environment variables.
+    and ALPACON_MCP_PORT environment variables. streamable-http is not served
+    here; main_http.py composes that app itself.
     """
     prepare(transport, config_file=config_file, toolsets=toolsets)
 

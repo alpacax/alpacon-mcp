@@ -75,6 +75,9 @@ def main():
             create_streamable_http_app(host=host),
             resource_metadata_url=resource_metadata_url(),
         )
+        logger.info(
+            'Upstream auth error middleware installed on the streamable-http app'
+        )
         uvicorn.Server(
             uvicorn.Config(
                 app,

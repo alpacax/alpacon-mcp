@@ -516,8 +516,8 @@ def with_error_handling(func: Callable) -> Callable:
             return result
 
         except UpstreamAuthError:
-            # Let upstream auth errors propagate to the ASGI middleware
-            # which converts them to HTTP 401 for MCP client re-auth.
+            # Only ends the tool call: SDK 2.x keeps handler exceptions off the
+            # ASGI boundary, and request_signal carries the re-auth signal there.
             raise
 
         except Exception as e:
