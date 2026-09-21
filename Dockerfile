@@ -2,18 +2,28 @@ FROM python:3.12-slim
 
 # Prevent Python from writing .pyc files and enable unbuffered output
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    UV_PROJECT_ENVIRONMENT=/usr/local
 
 WORKDIR /app
+
+COPY --from=ghcr.io/astral-sh/uv:0.12.17 /uv /usr/local/bin/uv
 
 # Copy full source and install (hatchling needs source for metadata)
 COPY . .
 # CI resolves the version and passes it as VERSION (.git is excluded from the build context)
 ARG VERSION=0.0.0
-# Scope the global pretend-version to our own wheel build so it can't leak into a dependency's sdist build
-RUN SETUPTOOLS_SCM_PRETEND_VERSION="${VERSION#v}" pip wheel --no-cache-dir --no-deps --wheel-dir /tmp/wheels . && \
-    pip install --no-cache-dir /tmp/wheels/*.whl && \
-    rm -rf /tmp/wheels /root/.cache
+# --locked fails the build if uv.lock and pyproject.toml disagree, so the image
+# never resolves a dependency the test run did not see.
+RUN SETUPTOOLS_SCM_PRETEND_VERSION="${VERSION#v}" uv sync --locked --no-dev && \
+    rm -rf /root/.cache
+
+# The image must carry the SDK the test run validated, not a later 2.x release.
+RUN python -c "\
+import importlib.metadata as m, sys, tomllib; \
+locked = next(p['version'] for p in tomllib.load(open('uv.lock','rb'))['package'] if p['name'] == 'mcp'); \
+installed = m.version('mcp'); \
+sys.exit(0) if installed == locked else sys.exit(f'mcp {installed} installed, {locked} locked')"
 
 # Default port (MCAR - MCP Alpacon Remote)
 EXPOSE 8237
