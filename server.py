@@ -143,6 +143,9 @@ def _create_mcp_server() -> MCPServer:
         auth_settings = AuthSettings(
             issuer_url=AnyHttpUrl(issuer_url),
             resource_server_url=AnyHttpUrl(resource_url),
+            # Auth0TokenVerifier checks the audience itself; the token's RFC 8707
+            # resource indicator does not match resource_server_url yet (#267).
+            validate_token_resource=False,
         )
         token_verifier = Auth0TokenVerifier()
 
