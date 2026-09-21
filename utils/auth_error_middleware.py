@@ -280,8 +280,7 @@ class UpstreamAuthErrorMiddleware:
         if mfa_required:
             scopes += ' mfa'
 
-        www_auth_parts = ['error="invalid_token"']
-        www_auth_parts.append(f'scope="{scopes}"')
+        www_auth_parts = ['error="invalid_token"', f'scope="{scopes}"']
         if self.resource_metadata_url:
             www_auth_parts.append(f'resource_metadata="{self.resource_metadata_url}"')
 

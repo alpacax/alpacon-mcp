@@ -16,6 +16,14 @@ from server import create_streamable_http_app
 from utils import request_signal
 from utils.http_client import HTTP_VERBS
 
+# Canonical http_client error envelope (the shape utils/http_client returns on
+# 4xx/5xx). Shared across error-path tests so the envelope is defined once.
+HTTP_ERROR_ENVELOPE = {
+    'error': 'HTTP Error',
+    'status_code': HTTPStatus.NOT_FOUND,
+    'message': 'Not found',
+}
+
 
 @asynccontextmanager
 async def streamable_http_client(
@@ -38,15 +46,6 @@ def _reset_request_signal():
     request_signal.end_request()
     yield
     request_signal.end_request()
-
-
-# Canonical http_client error envelope (the shape utils/http_client returns on
-# 4xx/5xx). Shared across error-path tests so the envelope is defined once.
-HTTP_ERROR_ENVELOPE = {
-    'error': 'HTTP Error',
-    'status_code': HTTPStatus.NOT_FOUND,
-    'message': 'Not found',
-}
 
 
 def http_client_fixture(module_name: str):

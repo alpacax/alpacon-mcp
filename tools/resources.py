@@ -16,45 +16,6 @@ from collections.abc import Callable
 
 from server import TOOLS_PACKAGE, mcp
 
-
-def build_resource_wrapper(
-    uri: str, fn: Callable, name: str, extra: dict | None
-) -> Callable:
-    """Build the named async wrapper an alpacon:// resource registers.
-
-    Path params in `uri` (e.g. {region}) become named arguments; `extra` injects
-    fixed keyword args (e.g. acknowledged=False) into the call.
-    """
-    path_params = re.findall(r'\{(\w+)\}', uri)
-    sig = ', '.join(f'{p}: str' for p in path_params)
-    parts = [f'{p}={p}' for p in path_params]
-    if extra:
-        parts += [f'{k}={v!r}' for k, v in extra.items()]
-    call = ', '.join(parts)
-    # FastMCP needs a real named signature; a **kwargs wrapper fails func_metadata.
-    src = f"async def _wrapper({sig}):\n    return {{'content': await _fn({call})}}\n"
-    # __name__/__file__ give the wrapper a real __module__ and traceback frame.
-    ns: dict = {'_fn': fn, '__name__': __name__}
-    exec(compile(src, __file__, 'exec'), ns)  # noqa: S102
-    wrapper = ns['_wrapper']
-    wrapper.__name__ = wrapper.__qualname__ = name
-    return wrapper
-
-
-def register_resource(
-    uri: str, fn: Callable, name: str, extra: dict | None = None
-) -> None:
-    """Register an alpacon:// resource that proxies a read-only tool."""
-    wrapper = build_resource_wrapper(uri, fn, name, extra)
-    doc = inspect.getdoc(fn) or name
-    if extra:
-        # Surface the pinned filter so a filtered resource isn't mistaken for the bare one.
-        pinned = ', '.join(f'{k}={v!r}' for k, v in extra.items())
-        doc = f'{doc}\n\nThis resource pins: {pinned}.'
-    wrapper.__doc__ = doc
-    mcp.resource(uri, name=name, description=doc, mime_type='application/json')(wrapper)
-
-
 # (resource name, `module.func` reference, URI template)
 RESOURCES: list[tuple[str, str, str]] = [
     (
@@ -468,6 +429,44 @@ REGISTRATIONS: list[tuple[str, str, str, dict | None]] = [
         {'state': 'stale'},
     ),
 ]
+
+
+def build_resource_wrapper(
+    uri: str, fn: Callable, name: str, extra: dict | None
+) -> Callable:
+    """Build the named async wrapper an alpacon:// resource registers.
+
+    Path params in `uri` (e.g. {region}) become named arguments; `extra` injects
+    fixed keyword args (e.g. acknowledged=False) into the call.
+    """
+    path_params = re.findall(r'\{(\w+)\}', uri)
+    sig = ', '.join(f'{p}: str' for p in path_params)
+    parts = [f'{p}={p}' for p in path_params]
+    if extra:
+        parts += [f'{k}={v!r}' for k, v in extra.items()]
+    call = ', '.join(parts)
+    # FastMCP needs a real named signature; a **kwargs wrapper fails func_metadata.
+    src = f"async def _wrapper({sig}):\n    return {{'content': await _fn({call})}}\n"
+    # __name__/__file__ give the wrapper a real __module__ and traceback frame.
+    ns: dict = {'_fn': fn, '__name__': __name__}
+    exec(compile(src, __file__, 'exec'), ns)  # noqa: S102
+    wrapper = ns['_wrapper']
+    wrapper.__name__ = wrapper.__qualname__ = name
+    return wrapper
+
+
+def register_resource(
+    uri: str, fn: Callable, name: str, extra: dict | None = None
+) -> None:
+    """Register an alpacon:// resource that proxies a read-only tool."""
+    wrapper = build_resource_wrapper(uri, fn, name, extra)
+    doc = inspect.getdoc(fn) or name
+    if extra:
+        # Surface the pinned filter so a filtered resource isn't mistaken for the bare one.
+        pinned = ', '.join(f'{k}={v!r}' for k, v in extra.items())
+        doc = f'{doc}\n\nThis resource pins: {pinned}.'
+    wrapper.__doc__ = doc
+    mcp.resource(uri, name=name, description=doc, mime_type='application/json')(wrapper)
 
 
 def _resolve(ref: str) -> Callable:

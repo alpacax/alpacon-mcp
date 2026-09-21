@@ -786,15 +786,10 @@ async def webftp_bulk_upload(
     ):
         return err
 
-    file_ids = []
     upload_items = (
         result if isinstance(result, list) else result.get('results', [result])
     )
-
-    for item in upload_items:
-        file_id = item.get('id')
-        if file_id:
-            file_ids.append(file_id)
+    file_ids = [file_id for item in upload_items if (file_id := item.get('id'))]
 
     semaphore = asyncio.Semaphore(_UPLOAD_CONCURRENCY)
 

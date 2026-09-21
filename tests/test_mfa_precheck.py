@@ -293,7 +293,7 @@ class TestSecuritySettingsCache:
         cache._last_prune = 0
         time.sleep(0.01)
         cache._prune_expired()
-        assert len(cache._cache) == 0
+        assert not cache._cache
 
     @pytest.mark.asyncio
     async def test_fetch_on_cache_miss(self):

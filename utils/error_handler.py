@@ -4,6 +4,10 @@ import re
 import uuid
 from typing import Any
 
+# 'dev' is internal-only: the validator accepts it, but it is never advertised.
+SERVED_REGIONS = ('ap1', 'us1')
+VALID_REGIONS = (*SERVED_REGIONS, 'dev')
+
 
 class UpstreamAuthError(Exception):
     """Raised when re-authentication is required for the Alpacon API.
@@ -55,11 +59,6 @@ def validate_workspace_format(workspace: str) -> bool:
     # Workspace should be alphanumeric with possible hyphens/underscores
     pattern = r'^[a-zA-Z0-9][a-zA-Z0-9_-]*[a-zA-Z0-9]$|^[a-zA-Z0-9]$'
     return bool(re.match(pattern, workspace)) and len(workspace) <= 63
-
-
-# 'dev' is internal-only: the validator accepts it, but it is never advertised.
-SERVED_REGIONS = ('ap1', 'us1')
-VALID_REGIONS = (*SERVED_REGIONS, 'dev')
 
 
 def validate_region_format(region: str) -> bool:
