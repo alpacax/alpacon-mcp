@@ -20,6 +20,7 @@ from unittest.mock import patch
 
 import httpx
 import pytest
+from mcp.types import CallToolResult, InputRequiredResult
 
 import utils.decorators as decorators
 from server import ALL_TOOL_MODULES, ALWAYS_ON_MODULES, TOOLS_PACKAGE, mcp
@@ -36,6 +37,8 @@ _SERVER_ID = '11111111-1111-1111-1111-111111111111'
 _OVERSIZED_PAYLOAD = base64.b64encode(b'\x00' * 65536).decode()
 
 _LONG_COMMAND = 'echo ' + 'a' * 300
+
+ToolPayload = dict[str, object]
 
 
 def _entry_log(caplog, tool: str) -> str:
@@ -331,15 +334,13 @@ def _tool_functions() -> dict[str, Callable]:
     return functions
 
 
-def _structured(result):
+def _structured(result: CallToolResult | InputRequiredResult) -> ToolPayload:
     """Pull structured_content out of a CallToolResult, refusing anything else.
 
     SDK 2.x returns CallToolResult | InputRequiredResult where 1.x returned a
     2-tuple. A multi-round result here would mean the tool asked for input,
     which none of these tools do.
     """
-    from mcp.types import CallToolResult
-
     assert isinstance(result, CallToolResult), f'unexpected result type: {type(result)}'
     assert result.structured_content is not None, 'tool returned no structured content'
     return result.structured_content
