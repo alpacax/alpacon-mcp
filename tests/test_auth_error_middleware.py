@@ -199,22 +199,18 @@ async def test_non_mfa_flag_excludes_mfa_scope():
 
 
 @pytest.mark.asyncio
-async def test_cooldown_answers_with_a_generic_error_on_second_401():
-    """Given a client within cooldown, When a second signal fires, Then it gets a
-    generic 500, not the app's original response.
+async def test_cooldown_passes_the_apps_own_response_through_on_a_second_401():
+    """Given a client within cooldown, When a second signal fires, Then the app's
+    own response reaches the client untouched, with no second challenge.
 
-    Streaming (this task) holds only the `http.response.start` message before the
-    signal is known; the body chunks the app sends after it are forwarded live and
-    cannot be recalled once the signal check decides to replace them. So on
-    cooldown there is no buffered original response left to pass through, the
-    previous behavior of forwarding it as a tool error is no longer possible, and
-    the existing 500 fallback (used when nothing was buffered) covers this case too.
+    Nothing has gone out yet when the check runs—the start message is still held
+    and the first body chunk is in hand—so the original is still forwardable.
     """
-    # Use a shared token for both requests
     token = 'cooldown-test-token'
+    original = {'jsonrpc': '2.0', 'result': {'isError': True, 'reason': 'upstream'}}
 
-    # Create middleware with mock app that signals error.
     app = _MockApp(
+        body=original,
         signal_error={'mfa_required': False, 'source': ''},
         auth_value=token,
     )
@@ -226,11 +222,12 @@ async def test_cooldown_answers_with_a_generic_error_on_second_401():
     sent1 = await _run(mw, scope=scope)
     assert (await _collect_response(sent1))[0] == HTTPStatus.UNAUTHORIZED
 
-    # Second (same client, within cooldown): generic 500, original body is gone
+    # Second (same client, within cooldown): the app's own 200, byte for byte
     sent2 = await _run(mw, scope=scope)
-    status2, _, body2 = await _collect_response(sent2)
-    assert status2 == HTTPStatus.INTERNAL_SERVER_ERROR
-    assert json.loads(body2)['error'] == 'Authentication error'
+    status2, headers2, body2 = await _collect_response(sent2)
+    assert status2 == HTTPStatus.OK
+    assert json.loads(body2) == original
+    assert 'www-authenticate' not in headers2
 
 
 @pytest.mark.asyncio

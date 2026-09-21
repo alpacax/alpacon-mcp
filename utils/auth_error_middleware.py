@@ -37,9 +37,9 @@ class UpstreamAuthErrorMiddleware:
 
     Uses a per-client cooldown timer to prevent infinite re-auth loops:
     after emitting a 401 for a given client, subsequent upstream auth errors
-    from that client within the cooldown period get a generic 500 instead of
-    a second 401. Cooldown is tracked per client (by JWT token hash) so one
-    client's re-auth does not suppress another's.
+    from that client within the cooldown period leave the app's own response
+    alone instead of raising a second 401. Cooldown is tracked per client (by
+    JWT token hash) so one client's re-auth does not suppress another's.
     """
 
     def __init__(
@@ -51,7 +51,7 @@ class UpstreamAuthErrorMiddleware:
         self.app = app
         self.resource_metadata_url = resource_metadata_url
         self._cooldown_seconds = cooldown_seconds
-        # Per-client cooldown: token_key -> last 401 time.
+        # Per-client cooldown: cooldown_key -> last 401 time.
         # Pruned on each request to prevent unbounded growth.
         self._client_cooldowns: dict[str, float] = {}
 
@@ -93,10 +93,10 @@ class UpstreamAuthErrorMiddleware:
             await self.app(scope, receive, send)
             return
 
-        token_key = self._extract_token_key(scope)
+        cooldown_key = self._extract_token_key(scope)
         signal = request_signal.begin_request()
         try:
-            await self._call_http(scope, receive, send, token_key, signal)
+            await self._call_http(scope, receive, send, cooldown_key, signal)
         finally:
             request_signal.end_request()
 
@@ -105,7 +105,7 @@ class UpstreamAuthErrorMiddleware:
         scope: Scope,
         receive: Receive,
         send: Send,
-        token_key: str | None,
+        cooldown_key: str | None,
         signal: request_signal.AuthSignal,
     ) -> None:
         """Stream the app's response, replacing it with a 401 if the signal fires.
@@ -115,11 +115,13 @@ class UpstreamAuthErrorMiddleware:
         """
         request_path = scope.get('path', '?')
         logger.debug(
-            '[DEBUG-MW] Request %s — token_key=%s (None means no Bearer header)',
+            '[DEBUG-MW] Request %s — cooldown_key=%s (None means no Bearer header)',
             request_path,
-            token_key,
+            cooldown_key,
         )
 
+        # The signal checks below are not gated on the cooldown key: only a request
+        # carrying a JWT ever signals (see http_client), so any other stays empty.
         pending_start: AsgiMessage | None = None
         replaced = False
         forwarding = False
@@ -135,9 +137,8 @@ class UpstreamAuthErrorMiddleware:
                 return
 
             if not forwarding:
-                if signal:
+                if signal and await self._replace_with_401(send, signal, cooldown_key):
                     replaced = True
-                    await self._replace_with_401(send, signal, token_key)
                     return
                 start, pending_start, forwarding = pending_start, None, True
                 if start is not None:
@@ -151,12 +152,20 @@ class UpstreamAuthErrorMiddleware:
             # Unreachable through the SDK, which turns handler exceptions into
             # a wire response. Kept for a caller that invokes this app directly.
             if not replaced and not forwarding:
-                await self._replace_with_401(
+                sent_401 = await self._replace_with_401(
                     send,
                     {'mfa_required': e.mfa_required, 'source': e.source},
-                    token_key,
+                    cooldown_key,
                 )
-            elif signal:
+                if not sent_401:
+                    # The app raised instead of answering, so the cooldown has no
+                    # original response to fall back on.
+                    await self._send_error(
+                        send,
+                        status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
+                        message='Authentication error',
+                    )
+            elif signal and not replaced:
                 logger.warning(
                     'Upstream 401 signalled after the response started; '
                     'cannot replace it'
@@ -167,10 +176,9 @@ class UpstreamAuthErrorMiddleware:
             return
 
         if signal and not forwarding:
-            await self._replace_with_401(send, signal, token_key)
-            return
-
-        if signal:
+            if await self._replace_with_401(send, signal, cooldown_key):
+                return
+        elif signal:
             logger.warning(
                 'Upstream 401 signalled after the response started; cannot replace it'
             )
@@ -182,18 +190,17 @@ class UpstreamAuthErrorMiddleware:
         self,
         send: Send,
         signal: request_signal.AuthSignal,
-        token_key: str | None,
-    ) -> None:
+        cooldown_key: str | None,
+    ) -> bool:
         """Answer with 401, unless this client was told to re-authenticate already.
 
         The cooldown stops a client from looping on a challenge it cannot satisfy.
-        Streaming forecloses passing the original response through on cooldown,
-        since its earlier chunks are already gone by the time this runs; a 500
-        fallback replaces it instead.
+        Returns False without sending anything when the cooldown is active, leaving
+        the caller to pass the app's own response through.
         """
         now = time.monotonic()
         self._prune_expired_cooldowns(now)
-        client_key = token_key or '_anonymous'
+        client_key = cooldown_key or '_anonymous'
         last_401 = self._client_cooldowns.get(client_key)
         mfa_required = bool(signal.get('mfa_required', False))
         source = str(signal.get('source', ''))
@@ -202,15 +209,10 @@ class UpstreamAuthErrorMiddleware:
             remaining = self._cooldown_seconds - (now - last_401)
             logger.info(
                 'Upstream 401 detected but cooldown active (%.0fs remaining), '
-                'answering with a generic error',
+                'passing the original response through',
                 remaining,
             )
-            await self._send_error(
-                send,
-                status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
-                message='Authentication error',
-            )
-            return
+            return False
 
         self._client_cooldowns[client_key] = now
         logger.info(
@@ -220,6 +222,7 @@ class UpstreamAuthErrorMiddleware:
             source,
         )
         await self._send_401(send, mfa_required=mfa_required)
+        return True
 
     async def _send_error(
         self,
