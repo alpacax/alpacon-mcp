@@ -12,8 +12,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from server import MAX_REQUEST_BODY_SIZE
 from tests.conftest import http_client_fixture
 from tools.webftp_tools import (
+    _MAX_UPLOAD_CONTENT_BYTES,
     _STATUS_ERROR,
     _aiter_file,
     _ensure_parent_dir,
@@ -1575,6 +1577,17 @@ class TestWebFtpSessionCreateGateTranslation:
 
         assert result.get('code') == 'work_session_required'
         assert 'next_action' in result
+
+
+class TestUploadCapAgainstAsgiBodyLimit:
+    """The only test linking _MAX_UPLOAD_CONTENT_BYTES to MAX_REQUEST_BODY_SIZE."""
+
+    def test_upload_cap_leaves_room_under_the_asgi_body_limit(self):
+        # Given the max upload, When base64-encoded, Then it fits under the ASGI cap.
+        encoded = _MAX_UPLOAD_CONTENT_BYTES * 4 // 3
+
+        assert encoded < MAX_REQUEST_BODY_SIZE
+        assert encoded > MAX_REQUEST_BODY_SIZE // 2
 
 
 if __name__ == '__main__':

@@ -4,13 +4,31 @@ Provides autouse fixtures that prevent tests from hitting the real
 TokenManager (which requires ~/.alpacon-mcp/token.json to exist).
 """
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from http import HTTPStatus
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 
+from server import create_streamable_http_app
 from utils import request_signal
 from utils.http_client import HTTP_VERBS
+
+
+@asynccontextmanager
+async def streamable_http_client(
+    host: str = '0.0.0.0',  # noqa: S104
+) -> AsyncIterator[httpx.AsyncClient]:
+    """Drive the streamable-http app's own ASGI lifespan, which is what
+    initializes the session manager's task group."""
+    app = create_streamable_http_app(host=host)
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url='http://testserver'
+        ) as client:
+            yield client
 
 
 @pytest.fixture(autouse=True)

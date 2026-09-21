@@ -14,6 +14,7 @@ import httpx
 import pytest
 
 from server import MAX_REQUEST_BODY_SIZE, create_streamable_http_app, mcp
+from tests.conftest import streamable_http_client
 from utils.common import MCP_VERSION
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -54,32 +55,25 @@ def test_server_module_imports_in_auth_mode():
 async def test_streamable_http_app_accepts_external_host():
     """Given an app built for 0.0.0.0, When a request arrives with the public
     Host header, Then it is served rather than rejected as a rebinding attempt."""
-    app = create_streamable_http_app(host='0.0.0.0')  # noqa: S104
-
-    # The session manager's task group is initialized by the app's own ASGI
-    # lifespan, so drive it directly instead of routing through httpx.
-    async with app.router.lifespan_context(app):
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url='http://testserver'
-        ) as client:
-            response = await client.post(
-                '/mcp',
-                headers={
-                    'Host': 'mcp.dev.alpacon.io',
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json, text/event-stream',
+    async with streamable_http_client() as client:
+        response = await client.post(
+            '/mcp',
+            headers={
+                'Host': 'mcp.dev.alpacon.io',
+                'Content-Type': 'application/json',
+                'Accept': 'application/json, text/event-stream',
+            },
+            json={
+                'jsonrpc': '2.0',
+                'id': 1,
+                'method': 'initialize',
+                'params': {
+                    'protocolVersion': '2025-06-18',
+                    'capabilities': {},
+                    'clientInfo': {'name': 'test', 'version': '0'},
                 },
-                json={
-                    'jsonrpc': '2.0',
-                    'id': 1,
-                    'method': 'initialize',
-                    'params': {
-                        'protocolVersion': '2025-06-18',
-                        'capabilities': {},
-                        'clientInfo': {'name': 'test', 'version': '0'},
-                    },
-                },
-            )
+            },
+        )
 
     assert response.status_code == 200, response.text
     assert response.headers['content-type'].startswith('application/json')
@@ -89,31 +83,24 @@ async def test_streamable_http_app_accepts_external_host():
 async def test_initialize_reports_package_version():
     """Given the server, When a client initializes, Then serverInfo carries the
     package version rather than an empty string."""
-    app = create_streamable_http_app(host='0.0.0.0')  # noqa: S104
-
-    # The session manager's task group is initialized by the app's own ASGI
-    # lifespan, so drive it directly instead of routing through httpx.
-    async with app.router.lifespan_context(app):
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url='http://testserver'
-        ) as client:
-            response = await client.post(
-                '/mcp',
-                headers={
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json, text/event-stream',
+    async with streamable_http_client() as client:
+        response = await client.post(
+            '/mcp',
+            headers={
+                'Content-Type': 'application/json',
+                'Accept': 'application/json, text/event-stream',
+            },
+            json={
+                'jsonrpc': '2.0',
+                'id': 1,
+                'method': 'initialize',
+                'params': {
+                    'protocolVersion': '2025-06-18',
+                    'capabilities': {},
+                    'clientInfo': {'name': 'test', 'version': '0'},
                 },
-                json={
-                    'jsonrpc': '2.0',
-                    'id': 1,
-                    'method': 'initialize',
-                    'params': {
-                        'protocolVersion': '2025-06-18',
-                        'capabilities': {},
-                        'clientInfo': {'name': 'test', 'version': '0'},
-                    },
-                },
-            )
+            },
+        )
 
     server_info = response.json()['result']['serverInfo']
     assert server_info['name'] == 'alpacon'
@@ -168,21 +155,17 @@ async def test_streamable_http_app_raises_body_limit_above_sdk_default():
     default arrives, Then it is accepted rather than rejected as too large—the
     limit was raised to MAX_REQUEST_BODY_SIZE (5 MiB) so oversized uploads reach
     the tool's own error instead of a bare HTTP 413 (#144)."""
-    app = create_streamable_http_app(host='0.0.0.0')  # noqa: S104
     oversized_body = b'{"pad": "' + b'x' * (4 * 1024 * 1024) + b'"}'
 
-    async with app.router.lifespan_context(app):
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url='http://testserver'
-        ) as client:
-            response = await client.post(
-                '/mcp',
-                headers={
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json, text/event-stream',
-                },
-                content=oversized_body,
-            )
+    async with streamable_http_client() as client:
+        response = await client.post(
+            '/mcp',
+            headers={
+                'Content-Type': 'application/json',
+                'Accept': 'application/json, text/event-stream',
+            },
+            content=oversized_body,
+        )
 
     assert response.status_code != 413, response.text
 
@@ -192,20 +175,16 @@ async def test_streamable_http_app_rejects_body_over_configured_limit():
     """Given the app this deployment serves, When a body over
     MAX_REQUEST_BODY_SIZE arrives, Then the ASGI layer rejects it with 413,
     proving the limit is actually enforced (not raised without bound)."""
-    app = create_streamable_http_app(host='0.0.0.0')  # noqa: S104
     oversized_body = b'{"pad": "' + b'x' * (MAX_REQUEST_BODY_SIZE + 1) + b'"}'
 
-    async with app.router.lifespan_context(app):
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url='http://testserver'
-        ) as client:
-            response = await client.post(
-                '/mcp',
-                headers={
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json, text/event-stream',
-                },
-                content=oversized_body,
-            )
+    async with streamable_http_client() as client:
+        response = await client.post(
+            '/mcp',
+            headers={
+                'Content-Type': 'application/json',
+                'Accept': 'application/json, text/event-stream',
+            },
+            content=oversized_body,
+        )
 
     assert response.status_code == 413, response.text

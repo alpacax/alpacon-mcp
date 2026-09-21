@@ -19,6 +19,7 @@ import hashlib
 import json
 import time
 from collections.abc import MutableMapping
+from enum import Enum, auto
 from http import HTTPStatus
 
 from starlette.types import ASGIApp, Receive, Scope, Send
@@ -30,6 +31,16 @@ from utils.logger import get_logger
 AsgiMessage = MutableMapping[str, object]
 
 logger = get_logger('auth_error_middleware')
+
+
+class _Decision(Enum):
+    """Whether the response was replaced with a 401, forwarded as-is, or
+    forwarded because the cooldown suppressed the 401."""
+
+    PENDING = auto()
+    REPLACED = auto()
+    FORWARDED = auto()
+    FORWARDED_COOLDOWN = auto()
 
 
 class UpstreamAuthErrorMiddleware:
@@ -123,28 +134,28 @@ class UpstreamAuthErrorMiddleware:
         # The signal checks below are not gated on the cooldown key: only a request
         # carrying a JWT ever signals (see http_client), so any other stays empty.
         pending_start: AsgiMessage | None = None
-        replaced = False
-        forwarding = False
-        cooldown_passed = False
+        decision = _Decision.PENDING
 
         async def gated_send(message: AsgiMessage) -> None:
-            nonlocal pending_start, replaced, forwarding, cooldown_passed
+            nonlocal pending_start, decision
 
-            if replaced:
+            if decision is _Decision.REPLACED:
                 return
 
             if message['type'] == 'http.response.start':
                 pending_start = message
                 return
 
-            if not forwarding:
+            if decision is _Decision.PENDING:
                 if signal:
                     if await self._replace_with_401(send, signal, cooldown_key):
-                        replaced = True
+                        decision = _Decision.REPLACED
                         return
-                    cooldown_passed = True
-                start, pending_start, forwarding = pending_start, None, True
-                if start is not None:
+                    decision = _Decision.FORWARDED_COOLDOWN
+                else:
+                    decision = _Decision.FORWARDED
+                if pending_start is not None:
+                    start, pending_start = pending_start, None
                     await send(start)
 
             await send(message)
@@ -154,7 +165,7 @@ class UpstreamAuthErrorMiddleware:
         except UpstreamAuthError as e:
             # Unreachable through the SDK, which turns handler exceptions into
             # a wire response. Kept for a caller that invokes this app directly.
-            if not replaced and not forwarding:
+            if decision is _Decision.PENDING:
                 sent_401 = await self._replace_with_401(
                     send,
                     {'mfa_required': e.mfa_required, 'source': e.source},
@@ -172,20 +183,21 @@ class UpstreamAuthErrorMiddleware:
                         status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
                         message='Authentication error',
                     )
-            elif signal and not replaced and not cooldown_passed:
+            elif decision is _Decision.FORWARDED and signal:
                 logger.warning(
                     'Upstream 401 signalled after the response started; '
                     'cannot replace it'
                 )
             return
 
-        if replaced:
+        if decision is _Decision.REPLACED:
             return
 
-        if signal and not forwarding:
-            if await self._replace_with_401(send, signal, cooldown_key):
-                return
-        elif signal and not cooldown_passed:
+        if decision is _Decision.PENDING:
+            if signal:
+                if await self._replace_with_401(send, signal, cooldown_key):
+                    return
+        elif decision is _Decision.FORWARDED and signal:
             logger.warning(
                 'Upstream 401 signalled after the response started; cannot replace it'
             )
