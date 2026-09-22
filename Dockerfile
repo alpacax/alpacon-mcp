@@ -2,18 +2,26 @@ FROM python:3.12-slim
 
 # Prevent Python from writing .pyc files and enable unbuffered output
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    UV_PROJECT_ENVIRONMENT=/usr/local
 
 WORKDIR /app
+
+COPY --from=ghcr.io/astral-sh/uv:0.12.17 /uv /usr/local/bin/uv
+
+# --locked fails the build if uv.lock and pyproject.toml disagree, so the image
+# never resolves a dependency the test run did not see.
+COPY pyproject.toml uv.lock ./
+RUN uv sync --locked --no-dev --no-install-project && rm -rf /root/.cache
 
 # Copy full source and install (hatchling needs source for metadata)
 COPY . .
 # CI resolves the version and passes it as VERSION (.git is excluded from the build context)
 ARG VERSION=0.0.0
-# Scope the global pretend-version to our own wheel build so it can't leak into a dependency's sdist build
-RUN SETUPTOOLS_SCM_PRETEND_VERSION="${VERSION#v}" pip wheel --no-cache-dir --no-deps --wheel-dir /tmp/wheels . && \
-    pip install --no-cache-dir /tmp/wheels/*.whl && \
-    rm -rf /tmp/wheels /root/.cache
+# The pretend-version is set here, not on the dependency layer, so it cannot leak
+# into a dependency that builds from an sdist with setuptools-scm.
+RUN SETUPTOOLS_SCM_PRETEND_VERSION="${VERSION#v}" uv sync --locked --no-dev && \
+    rm -rf /root/.cache
 
 # Default port (MCAR - MCP Alpacon Remote)
 EXPOSE 8237

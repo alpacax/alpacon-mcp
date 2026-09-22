@@ -8,12 +8,9 @@ from urllib.parse import urljoin
 
 import httpx
 
+from utils import request_signal
 from utils.common import MCP_USER_AGENT, is_auth_enabled
-from utils.error_handler import (
-    UpstreamAuthError,
-    make_auth_error_key,
-    signal_upstream_auth_error,
-)
+from utils.error_handler import UpstreamAuthError
 from utils.logger import get_logger
 
 logger = get_logger('http_client')
@@ -547,21 +544,14 @@ class AlpaconHTTPClient:
     ) -> dict[str, Any]:
         """Handle upstream API 401 responses.
 
-        Detects MFA-required errors from the Alpacon API response body
-        and triggers re-authentication in remote (streamable-http) mode
-        via two complementary mechanisms:
+        Detects MFA-required errors from the Alpacon API response body and
+        records them on the in-flight request, which the ASGI middleware reads
+        after the app returns. SDK 2.x converts a handler exception to a wire
+        response before any middleware sees it, so UpstreamAuthError only cuts
+        this call short—it does not carry the signal across layers.
 
-        1. Dict-based signal: Sets a module-level flag keyed by token hash
-           that the ASGI middleware consumes after the request completes.
-        2. Exception: Raises UpstreamAuthError which propagates through
-           the call stack to the middleware's try/except handler.
-
-        The exception path is the primary mechanism (more reliable across
-        anyio task boundaries). The dict signal is a fallback for edge
-        cases where the exception might be caught by intermediate handlers.
-
-        In stdio/SSE mode (auth not enabled), only returns an error dict
-        without signaling or raising.
+        In stdio/SSE mode (auth not enabled), only returns an error dict without
+        recording or raising.
         """
         mfa_required = False
         source = ''
@@ -587,25 +577,19 @@ class AlpaconHTTPClient:
             source,
         )
 
-        # Token-hash dict, not contextvars: streamable-http runs handlers in a separate anyio task where ContextVar writes are invisible to the ASGI middleware.
-        # JWT only — the middleware cannot derive a matching key from API tokens, so their entries would go unconsumed.
+        # Only a JWT-carrying request may signal: the middleware trusts that and
+        # checks the signal without knowing which credential produced it.
         if auth_enabled and token and is_jwt:
-            token_key = make_auth_error_key(token)
             logger.debug(
-                '[DEBUG-401] Setting dict signal with token_key=%s',
-                token_key,
+                '[DEBUG-401] Recording upstream auth signal (mfa_required=%s, source=%s)',
+                mfa_required,
+                source,
             )
-            signal_upstream_auth_error(
-                token_key,
+            request_signal.signal_upstream_auth_error(
                 {
                     'mfa_required': mfa_required,
                     'source': source,
                 },
-            )
-            logger.debug(
-                '[DEBUG-401] Raising UpstreamAuthError (mfa_required=%s, source=%s)',
-                mfa_required,
-                source,
             )
             raise UpstreamAuthError(mfa_required=mfa_required, source=source)
 

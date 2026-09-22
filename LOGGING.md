@@ -36,8 +36,8 @@ python main.py
 
 ### Server start
 ```
-2024-01-20 10:30:15 - alpacon_mcp.main - INFO - [main.py:17] - Starting Alpacon MCP Server
-2024-01-20 10:30:15 - alpacon_mcp.server - INFO - [server.py:11] - Initializing FastMCP server - host: 127.0.0.1, port: 8237
+2024-01-20 10:30:15 - alpacon_mcp.main - INFO - [main.py:96] - Starting Alpacon MCP Server
+2024-01-20 10:30:15 - alpacon_mcp.server - INFO - [server.py:206] - Creating MCP server without auth (stdio/SSE mode)
 2024-01-20 10:30:15 - alpacon_mcp.token_manager - INFO - [token_manager.py:37] - Using default config file: config/token.json
 ```
 
@@ -65,7 +65,7 @@ python main.py
 
 ### 2. Module-specific loggers
 - `main`: Server startup/shutdown
-- `server`: FastMCP server initialization
+- `server`: MCP server creation and application lifespan
 - `http_client`: HTTP requests/responses
 - `token_manager`: Token management
 - `server_tools`: Server management tools

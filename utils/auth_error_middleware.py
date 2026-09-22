@@ -4,40 +4,43 @@ When the Alpacon API returns 401 (e.g., MFA timeout), this middleware
 intercepts the error and returns HTTP 401 + WWW-Authenticate header,
 triggering the MCP client's automatic OAuth re-authentication flow.
 
-Two complementary propagation mechanisms are supported:
-
-1. **Exception path (primary)**: ``http_client`` raises
-   ``UpstreamAuthError`` which propagates through the call stack.
-   The middleware catches it in the ``try/except`` around
-   ``self.app()``.
-
-2. **Dict-signal path (fallback)**: ``http_client`` sets a
-   module-level thread-safe dict entry (keyed by token hash) before
-   raising.  If an intermediate handler catches the exception, the
-   middleware still finds the signal after the request completes.
-   Uses a module-level dict instead of contextvars because MCP
-   streamable-http runs tool handlers in a separate anyio task
-   context where ContextVar mutations are invisible.
+The middleware plants an empty signal dict in a ContextVar at the start of
+each request; ``http_client`` and the MFA pre-check mutate that same object
+from the tool handler's task. The signal is read when the first body chunk
+arrives, while the start message is still held; a response with no body
+falls back to a check after ``self.app()`` returns. SDK 2.x turns a handler
+exception into a wire response, so ``UpstreamAuthError`` only reaches the
+``except`` branch from a caller that invokes this app directly.
 
 Only active in remote (streamable-http) mode where OAuth is enabled.
 """
 
+import hashlib
 import json
 import time
 from collections.abc import MutableMapping
+from enum import Enum, auto
 from http import HTTPStatus
-from typing import Any
 
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from utils.error_handler import (
-    UpstreamAuthError,
-    consume_upstream_auth_error,
-    make_auth_error_key,
-)
+from utils import request_signal
+from utils.error_handler import UpstreamAuthError
 from utils.logger import get_logger
 
+AsgiMessage = MutableMapping[str, object]
+
 logger = get_logger('auth_error_middleware')
+
+
+class _Decision(Enum):
+    """Whether the response was replaced with a 401, forwarded as-is, or
+    forwarded because the cooldown suppressed the 401."""
+
+    PENDING = auto()
+    REPLACED = auto()
+    FORWARDED = auto()
+    FORWARDED_COOLDOWN = auto()
 
 
 class UpstreamAuthErrorMiddleware:
@@ -45,9 +48,9 @@ class UpstreamAuthErrorMiddleware:
 
     Uses a per-client cooldown timer to prevent infinite re-auth loops:
     after emitting a 401 for a given client, subsequent upstream auth errors
-    from that client within the cooldown period are passed through as normal
-    tool error responses. Cooldown is tracked per client (by JWT token hash)
-    so one client's re-auth does not suppress another's.
+    from that client within the cooldown period leave the app's own response
+    alone instead of raising a second 401. Cooldown is tracked per client (by
+    JWT token hash) so one client's re-auth does not suppress another's.
     """
 
     def __init__(
@@ -59,7 +62,7 @@ class UpstreamAuthErrorMiddleware:
         self.app = app
         self.resource_metadata_url = resource_metadata_url
         self._cooldown_seconds = cooldown_seconds
-        # Per-client cooldown: token_key -> last 401 time.
+        # Per-client cooldown: cooldown_key -> last 401 time.
         # Pruned on each request to prevent unbounded growth.
         self._client_cooldowns: dict[str, float] = {}
 
@@ -75,14 +78,11 @@ class UpstreamAuthErrorMiddleware:
 
     @staticmethod
     def _extract_token_key(scope: Scope) -> str | None:
-        """Extract JWT token from Authorization header and derive a hash key.
+        """Extract JWT token from Authorization header and derive a cooldown key.
 
-        Returns a short hash key that matches make_auth_error_key() output
-        from the http_client, enabling cross-context error signaling.
-        Returns None if no Bearer token is present.
-
-        Handles the Bearer scheme case-insensitively per RFC 6750 and
-        decodes defensively to avoid UnicodeDecodeError on malformed headers.
+        Returns None if no Bearer token is present. Handles the Bearer scheme
+        case-insensitively per RFC 6750 and decodes defensively to avoid
+        UnicodeDecodeError on malformed headers.
         """
         headers = dict(scope.get('headers', []))
         auth_raw = headers.get(b'authorization', b'')
@@ -96,7 +96,7 @@ class UpstreamAuthErrorMiddleware:
         if auth_header.lower().startswith('bearer '):
             token = auth_header[len('Bearer ') :].strip()
             if token:
-                return make_auth_error_key(token)
+                return hashlib.sha256(token.encode()).hexdigest()[:16]
         return None
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
@@ -104,147 +104,144 @@ class UpstreamAuthErrorMiddleware:
             await self.app(scope, receive, send)
             return
 
-        # Extract token key upfront so we can always clean up stale entries
-        # in the module-level dict, even if the app raises or is cancelled.
-        token_key = self._extract_token_key(scope)
+        cooldown_key = self._extract_token_key(scope)
+        signal = request_signal.begin_request()
+        try:
+            await self._call_http(scope, receive, send, cooldown_key, signal)
+        finally:
+            request_signal.end_request()
 
+    async def _call_http(
+        self,
+        scope: Scope,
+        receive: Receive,
+        send: Send,
+        cooldown_key: str | None,
+        signal: request_signal.AuthSignal,
+    ) -> None:
+        """Stream the app's response, replacing it with a 401 if the signal fires.
+
+        The start message is held until the signal is known: once it goes out,
+        neither the status nor WWW-Authenticate can be changed.
+        """
         request_path = scope.get('path', '?')
         logger.debug(
-            '[DEBUG-MW] Request %s — token_key=%s (None means no Bearer header)',
+            '[DEBUG-MW] Request %s—cooldown_key=%s (None means no Bearer header)',
             request_path,
-            token_key,
+            cooldown_key,
         )
 
-        # Buffer the response so we can replace it if needed
-        buffered: list[MutableMapping[str, Any]] = []
+        # The signal checks below are not gated on the cooldown key: only a request
+        # carrying a JWT ever signals (see http_client), so any other stays empty.
+        pending_start: AsgiMessage | None = None
+        decision = _Decision.PENDING
 
-        async def buffer_send(message: MutableMapping[str, Any]) -> None:
-            buffered.append(message)
+        async def gated_send(message: AsgiMessage) -> None:
+            nonlocal pending_start, decision
+
+            if decision is _Decision.REPLACED:
+                return
+
+            if message['type'] == 'http.response.start':
+                pending_start = message
+                return
+
+            if decision is _Decision.PENDING:
+                if signal:
+                    if await self._replace_with_401(send, signal, cooldown_key):
+                        decision = _Decision.REPLACED
+                        return
+                    decision = _Decision.FORWARDED_COOLDOWN
+                else:
+                    decision = _Decision.FORWARDED
+                if pending_start is not None:
+                    start, pending_start = pending_start, None
+                    await send(start)
+
+            await send(message)
 
         try:
-            await self.app(scope, receive, buffer_send)
+            await self.app(scope, receive, gated_send)
         except UpstreamAuthError as e:
-            logger.debug(
-                '[DEBUG-MW] UpstreamAuthError CAUGHT by middleware! '
-                'mfa_required=%s, source=%s',
-                e.mfa_required,
-                e.source,
-            )
-            # Primary path: http_client raised UpstreamAuthError on upstream 401.
-            # This propagates reliably across anyio task boundaries.
-            # Consume any dict signal too (set before the raise) to prevent
-            # stale entries.
-            if token_key:
-                consume_upstream_auth_error(token_key)
-
-            now = time.monotonic()
-            self._prune_expired_cooldowns(now)
-            client_key = token_key or '_anonymous'
-            cooldown_active = False
-            if client_key in self._client_cooldowns:
-                last_401 = self._client_cooldowns[client_key]
-                cooldown_active = (now - last_401) <= self._cooldown_seconds
-
-            if not cooldown_active:
-                self._client_cooldowns[client_key] = now
-                logger.info(
-                    'UpstreamAuthError caught (mfa_required=%s, source=%s), '
-                    'returning HTTP 401 to trigger re-auth',
-                    e.mfa_required,
-                    e.source,
-                )
-                await self._send_401(send, mfa_required=e.mfa_required)
-                return
-
-            remaining = self._cooldown_seconds - (now - last_401)
-            logger.info(
-                'UpstreamAuthError caught but cooldown active '
-                '(%.0fs remaining), passing through buffered response',
-                remaining,
-            )
-            # Forward any buffered response from the app (which may be a
-            # tool error response generated by FastMCP's exception handler)
-            # instead of overriding with a generic error. This keeps cooldown
-            # behavior consistent with the dict-signal path.
-            if buffered:
-                for msg in buffered:
-                    await send(msg)
-            else:
-                # No response was buffered (exception raised before any
-                # response was written). Send a generic error as fallback.
-                await self._send_error(
+            # Unreachable through the SDK, which turns handler exceptions into
+            # a wire response. Kept for a caller that invokes this app directly.
+            if decision is _Decision.PENDING:
+                sent_401 = await self._replace_with_401(
                     send,
-                    status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
-                    message='Authentication error',
+                    {'mfa_required': e.mfa_required, 'source': e.source},
+                    cooldown_key,
+                )
+                if not sent_401:
+                    # The app raised instead of answering, so the cooldown has no
+                    # original response to fall back on.
+                    logger.info(
+                        'Upstream 401 detected but cooldown active; sending 500 '
+                        '(no original response to fall back on)'
+                    )
+                    await self._send_error(
+                        send,
+                        status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
+                        message='Authentication error',
+                    )
+            elif decision is _Decision.FORWARDED and signal:
+                logger.warning(
+                    'Upstream 401 signalled after the response started; '
+                    'cannot replace it'
                 )
             return
-        except BaseException:
-            # App raised or request was cancelled. Consume any pending
-            # signal to prevent stale entries and unbounded dict growth.
-            if token_key:
-                consume_upstream_auth_error(token_key)
-            raise
 
-        # Fallback path: Consume the upstream auth signal from the dict.
-        # This handles cases where the exception was caught by an intermediate
-        # handler but the dict signal was still set.
-        logger.debug(
-            '[DEBUG-MW] App completed normally (no exception). '
-            'Checking dict signal for token_key=%s',
-            token_key,
-        )
-        error_info = None
-        if token_key:
-            error_info = consume_upstream_auth_error(token_key)
-            logger.debug(
-                '[DEBUG-MW] Dict signal consumed: %s',
-                error_info,
+        if decision is _Decision.REPLACED:
+            return
+
+        if decision is _Decision.PENDING:
+            if signal:
+                if await self._replace_with_401(send, signal, cooldown_key):
+                    return
+        elif decision is _Decision.FORWARDED and signal:
+            logger.warning(
+                'Upstream 401 signalled after the response started; cannot replace it'
             )
+
+        if pending_start is not None:
+            await send(pending_start)
+
+    async def _replace_with_401(
+        self,
+        send: Send,
+        signal: request_signal.AuthSignal,
+        cooldown_key: str | None,
+    ) -> bool:
+        """Answer with 401, unless this client was told to re-authenticate already.
+
+        The cooldown stops a client from looping on a challenge it cannot satisfy.
+        Returns False without sending anything when the cooldown is active, leaving
+        the caller to pass the app's own response through.
+        """
         now = time.monotonic()
         self._prune_expired_cooldowns(now)
+        client_key = cooldown_key or '_anonymous'
+        last_401 = self._client_cooldowns.get(client_key)
+        mfa_required = bool(signal.get('mfa_required', False))
+        source = str(signal.get('source', ''))
 
-        if error_info:
-            client_key = token_key or '_anonymous'
-            cooldown_active = False
-            last_401 = 0.0
-            if client_key in self._client_cooldowns:
-                last_401 = self._client_cooldowns[client_key]
-                cooldown_active = (now - last_401) <= self._cooldown_seconds
-
-            if not cooldown_active:
-                self._client_cooldowns[client_key] = now
-                mfa_required = error_info.get('mfa_required', False)
-                source = error_info.get('source', '')
-                logger.info(
-                    'Upstream 401 detected (mfa_required=%s, source=%s), '
-                    'returning HTTP 401 to trigger re-auth',
-                    mfa_required,
-                    source,
-                )
-                await self._send_401(send, mfa_required=mfa_required)
-                return
-
+        if last_401 is not None and (now - last_401) <= self._cooldown_seconds:
             remaining = self._cooldown_seconds - (now - last_401)
             logger.info(
-                'Upstream 401 detected but cooldown active '
-                '(%.0fs remaining), passing through as tool error',
+                'Upstream 401 detected but cooldown active (%.0fs remaining), '
+                'not replacing the response',
                 remaining,
             )
+            return False
 
-        # DEBUG: Log what we're actually sending
-        if buffered:
-            status = None
-            for msg in buffered:
-                if msg.get('type') == 'http.response.start':
-                    status = msg.get('status')
-            logger.debug(
-                '[DEBUG-MW] Passing through buffered response — HTTP status=%s, '
-                'error_info_found=%s',
-                status,
-                error_info is not None,
-            )
-        for msg in buffered:
-            await send(msg)
+        self._client_cooldowns[client_key] = now
+        logger.info(
+            'Upstream 401 detected (mfa_required=%s, source=%s), returning HTTP '
+            '401 to trigger re-auth',
+            mfa_required,
+            source,
+        )
+        await self._send_401(send, mfa_required=mfa_required)
+        return True
 
     async def _send_error(
         self,
@@ -283,8 +280,7 @@ class UpstreamAuthErrorMiddleware:
         if mfa_required:
             scopes += ' mfa'
 
-        www_auth_parts = ['error="invalid_token"']
-        www_auth_parts.append(f'scope="{scopes}"')
+        www_auth_parts = ['error="invalid_token"', f'scope="{scopes}"']
         if self.resource_metadata_url:
             www_auth_parts.append(f'resource_metadata="{self.resource_metadata_url}"')
 

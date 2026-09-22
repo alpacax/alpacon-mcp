@@ -95,6 +95,23 @@ Things the code will not tell you at a glance:
   server**, carrying the device id minted for that grant. Rotating
   `ALPACON_MCP_GRANT_SECRET` (or `AUTH0_CLIENT_SECRET`, which it is derived
   from by default) logs every remote session out.
+- **Transport settings live at the entry point, not on the constructor.** SDK 2.x
+  takes `host`, `json_response` and `stateless_http` on
+  `mcp.streamable_http_app()`, so `create_streamable_http_app(host=...)` carries
+  them. `host` decides DNS rebinding protection—the SDK enables it for loopback
+  addresses only—and must be the address uvicorn actually binds, or a deployment
+  on `0.0.0.0` rejects its own public Host header with a 421.
+- **`server.run()` refuses streamable-http.** It serves stdio and SSE only;
+  `main_http.py` composes that transport itself, wrapping
+  `create_streamable_http_app()` in `UpstreamAuthErrorMiddleware`. An app built
+  through any other path is unguarded—no 401 is ever turned into a re-auth
+  challenge.
+- **The re-auth signal is a per-request mutable object in a ContextVar.** The
+  middleware plants an empty dict (`utils/request_signal.py`) and the tool
+  handler mutates it; the handler runs in a task the transport spawned, so
+  rebinding the ContextVar there never reaches the middleware. Only a
+  JWT-carrying request ever signals, and `UpstreamAuthError` no longer crosses
+  the ASGI boundary—SDK 2.x turns a handler exception into a wire response.
 
 ## Language and writing style
 

@@ -17,6 +17,35 @@ from utils.error_handler import UpstreamAuthError, format_validation_error
 from utils.http_client import http_client
 from utils.tool_annotations import READ_ONLY
 
+#: `?state=` values `/api/metrics/latest/` accepts; mirrors alpacon-server's
+#: `metrics.latest.LATEST_STATES`. `stale` covers `no_data`: never-stored is overdue.
+VALID_LATEST_METRIC_STATES = frozenset({'stale', 'no_data'})
+_LATEST_STATE_SENTENCE = (
+    f'state must be one of: {", ".join(sorted(VALID_LATEST_METRIC_STATES))}.'
+)
+
+#: `?ordering=` base names, optionally `-` prefixed. Only disk usage and disk I/O
+#: repeat: alpacon-server aliases the hyphenated wire name to the underscore one.
+VALID_LATEST_METRIC_ORDERING_FIELDS = frozenset(
+    {
+        'name',
+        'starred',
+        'sampled_at',
+        'cpu',
+        'memory',
+        'disk_usage',
+        'disk-usage',
+        'disk_io',
+        'disk-io',
+        'net',
+    }
+)
+_LATEST_ORDERING_SENTENCE = (
+    'ordering must be one of: '
+    f'{", ".join(sorted(VALID_LATEST_METRIC_ORDERING_FIELDS))}, '
+    "optionally prefixed with '-' for descending."
+)
+
 
 def parse_cpu_metrics(results: list) -> dict[str, Any]:
     """Parse CPU usage metrics to extract meaningful statistics.
@@ -27,7 +56,7 @@ def parse_cpu_metrics(results: list) -> dict[str, Any]:
     Returns:
         Parsed statistics including average, min, max, current usage with user-friendly format
     """
-    if not results or len(results) == 0:
+    if not results:
         return {'available': False, 'message': 'No CPU data available'}
 
     usage_values = [entry.get('usage', 0) for entry in results if 'usage' in entry]
@@ -150,7 +179,7 @@ def parse_memory_metrics(results: list) -> dict[str, Any]:
     Returns:
         Parsed statistics including average, min, max, current usage with user-friendly format
     """
-    if not results or len(results) == 0:
+    if not results:
         return {'available': False, 'message': 'No memory data available'}
 
     usage_values = [entry.get('usage', 0) for entry in results if 'usage' in entry]
@@ -273,7 +302,7 @@ def parse_disk_metrics(results: list) -> dict[str, Any]:
     Returns:
         Parsed statistics including average, min, max, current usage and space info
     """
-    if not results or len(results) == 0:
+    if not results:
         return {'available': False, 'message': 'No disk data available'}
 
     usage_values = [entry.get('usage', 0) for entry in results if 'usage' in entry]
@@ -380,7 +409,7 @@ async def get_disk_usage(
                 else []
             )
 
-            if available_devices and len(available_devices) > 0:
+            if available_devices:
                 # Use the first available device
                 device = available_devices[0]
             else:
@@ -452,7 +481,7 @@ def parse_network_metrics(results: list) -> dict[str, Any]:
     Returns:
         Parsed statistics including average, peak input/output in bps and pps
     """
-    if not results or len(results) == 0:
+    if not results:
         return {'available': False, 'message': 'No network data available'}
 
     # Extract various metrics
@@ -1003,7 +1032,7 @@ async def get_server_metrics_summary(
 
         # Handle list results (API may return empty list when no data)
         if isinstance(result, list):
-            if len(result) > 0:
+            if result:
                 return {
                     'available': True,
                     'data_points': len(result),
@@ -1036,40 +1065,6 @@ async def get_server_metrics_summary(
     }
 
     return success_response(data=summary)
-
-
-#: `?state=` values `/api/metrics/latest/` accepts; mirrors alpacon-server's
-#: `metrics.latest.LATEST_STATES`. `stale` includes `no_data` (a server with
-#: nothing stored is also overdue on every family).
-VALID_LATEST_METRIC_STATES = frozenset({'stale', 'no_data'})
-_LATEST_STATE_SENTENCE = (
-    f'state must be one of: {", ".join(sorted(VALID_LATEST_METRIC_STATES))}.'
-)
-
-#: `?ordering=` base names `/api/metrics/latest/` accepts, each optionally
-#: prefixed with `-` for descending. The five metric families are listed
-#: twice: alpacon-server aliases a family's hyphenated wire name (`disk-usage`,
-#: matching the response's own cell key) to its underscore `ordering_fields`
-#: spelling (`disk_usage`), and either reaches the server unchanged.
-VALID_LATEST_METRIC_ORDERING_FIELDS = frozenset(
-    {
-        'name',
-        'starred',
-        'sampled_at',
-        'cpu',
-        'memory',
-        'disk_usage',
-        'disk-usage',
-        'disk_io',
-        'disk-io',
-        'net',
-    }
-)
-_LATEST_ORDERING_SENTENCE = (
-    'ordering must be one of: '
-    f'{", ".join(sorted(VALID_LATEST_METRIC_ORDERING_FIELDS))}, '
-    "optionally prefixed with '-' for descending."
-)
 
 
 @mcp_tool_handler(

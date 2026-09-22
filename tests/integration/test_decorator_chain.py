@@ -20,6 +20,7 @@ from unittest.mock import patch
 
 import httpx
 import pytest
+from mcp.types import CallToolResult, InputRequiredResult
 
 import utils.decorators as decorators
 from server import ALL_TOOL_MODULES, ALWAYS_ON_MODULES, TOOLS_PACKAGE, mcp
@@ -36,6 +37,8 @@ _SERVER_ID = '11111111-1111-1111-1111-111111111111'
 _OVERSIZED_PAYLOAD = base64.b64encode(b'\x00' * 65536).decode()
 
 _LONG_COMMAND = 'echo ' + 'a' * 300
+
+ToolPayload = dict[str, object]
 
 
 def _entry_log(caplog, tool: str) -> str:
@@ -331,6 +334,18 @@ def _tool_functions() -> dict[str, Callable]:
     return functions
 
 
+def _structured(result: CallToolResult | InputRequiredResult) -> ToolPayload:
+    """Pull structured_content out of a CallToolResult, refusing anything else.
+
+    SDK 2.x returns CallToolResult | InputRequiredResult where 1.x returned a
+    2-tuple. A multi-round result here would mean the tool asked for input,
+    which none of these tools do.
+    """
+    assert isinstance(result, CallToolResult), f'unexpected result type: {type(result)}'
+    assert result.structured_content is not None, 'tool returned no structured content'
+    return result.structured_content
+
+
 class TestPublishedSchema:
     """Every test above awaits the coroutine directly and never reaches the
     pydantic validation FastMCP puts in front of it. These go through ``mcp``.
@@ -355,7 +370,7 @@ class TestPublishedSchema:
                 for p in signature.parameters.values()
                 if p.kind is inspect.Parameter.VAR_KEYWORD
             }
-            published = catch_alls & set(tool.inputSchema.get('properties', {}))
+            published = catch_alls & set(tool.input_schema.get('properties', {}))
             if published:
                 leaking[tool.name] = sorted(published)
 
@@ -366,7 +381,7 @@ class TestPublishedSchema:
 
     async def test_the_documented_arguments_survive_the_filter(self):
         _tool_functions()
-        schemas = {t.name: t.inputSchema for t in await mcp.list_tools()}
+        schemas = {t.name: t.input_schema for t in await mcp.list_tools()}
 
         assert set(schemas['list_servers']['properties']) == {
             'workspace',
@@ -390,22 +405,26 @@ class TestPublishedSchema:
 
         patched_http_client.set_handler(handler)
 
-        _, structured = await mcp.call_tool(
-            'list_servers', {'workspace': 'testworkspace', 'region': 'ap1'}
+        structured = _structured(
+            await mcp.call_tool(
+                'list_servers', {'workspace': 'testworkspace', 'region': 'ap1'}
+            )
         )
         assert structured['status'] == 'success'
 
         # The workaround the broken schema forced on clients still goes through:
         # FastMCP's argument model leaves pydantic's extra='ignore' in place.
-        _, with_workaround = await mcp.call_tool(
-            'list_servers',
-            {'workspace': 'testworkspace', 'region': 'ap1', 'kwargs': ''},
+        with_workaround = _structured(
+            await mcp.call_tool(
+                'list_servers',
+                {'workspace': 'testworkspace', 'region': 'ap1', 'kwargs': ''},
+            )
         )
         assert with_workaround['status'] == 'success'
 
     async def test_call_tool_with_no_arguments(self):
         """The shape #211 was reported as: list_workspaces has no required field."""
-        _, structured = await mcp.call_tool('list_workspaces', {})
+        structured = _structured(await mcp.call_tool('list_workspaces', {}))
 
         assert structured['status'] == 'success'
 

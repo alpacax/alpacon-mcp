@@ -9,17 +9,17 @@ a classification is shared by multiple tools.
 from mcp.types import ToolAnnotations
 
 # Read-only tools: list_*, get_*, search_*
-READ_ONLY = ToolAnnotations(readOnlyHint=True, destructiveHint=False)
+READ_ONLY = ToolAnnotations(read_only_hint=True, destructive_hint=False)
 
 # Create/execute tools that add data but don't destroy existing resources
 ADDITIVE = ToolAnnotations(
-    readOnlyHint=False, destructiveHint=False, idempotentHint=False
+    read_only_hint=False, destructive_hint=False, idempotent_hint=False
 )
 
 # Update tools that modify existing resources idempotently
 IDEMPOTENT_WRITE = ToolAnnotations(
-    readOnlyHint=False, destructiveHint=False, idempotentHint=True
+    read_only_hint=False, destructive_hint=False, idempotent_hint=True
 )
 
 # Destructive tools: delete_*, shutdown_*, reboot_*, revoke_*
-DESTRUCTIVE = ToolAnnotations(readOnlyHint=False, destructiveHint=True)
+DESTRUCTIVE = ToolAnnotations(read_only_hint=False, destructive_hint=True)

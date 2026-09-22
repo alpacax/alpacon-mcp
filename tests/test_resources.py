@@ -4,6 +4,7 @@ import inspect
 import re
 
 import pytest
+from mcp.shared.uri_template import UriTemplate
 
 import tools.resources as res
 from server import ALL_TOOL_MODULES, ALWAYS_ON_MODULES, mcp
@@ -20,7 +21,7 @@ def _register_all_resources():
 
 async def _registered_uris():
     """All registered alpacon:// URIs — templated (with {params}) and static."""
-    templates = {t.uriTemplate for t in await mcp.list_resource_templates()}
+    templates = {t.uri_template for t in await mcp.list_resource_templates()}
     static = {str(r.uri) for r in await mcp.list_resources()}
     return templates | static
 
@@ -98,7 +99,7 @@ class TestResourceRegistration:
         active = next(
             t
             for t in await mcp.list_resource_templates()
-            if t.uriTemplate == 'alpacon://alerts/active/{region}/{workspace}'
+            if t.uri_template == 'alpacon://alerts/active/{region}/{workspace}'
         )
         assert 'acknowledged=False' in active.description
 
@@ -114,7 +115,7 @@ class TestResourceRegistration:
         stale = next(
             t
             for t in await mcp.list_resource_templates()
-            if t.uriTemplate == 'alpacon://metrics/{region}/{workspace}/latest/stale'
+            if t.uri_template == 'alpacon://metrics/{region}/{workspace}/latest/stale'
         )
         assert "state='stale'" in stale.description
 
@@ -139,23 +140,22 @@ class TestResourceRegistration:
     def test_wrapper_named_after_resource(self):
         """The exec'd wrapper must adopt the resource name and this module's
         identity, not stay '_wrapper' with a '<string>' traceback frame, so
-        stack traces and name-based diagnostics stay legible."""
+        stack traces and name-based diagnostics stay legible.
+
+        Built directly rather than read back out of the SDK's resource manager:
+        the published ResourceTemplate does not carry the callable, and the name
+        is ours to get right, not the SDK's to store."""
 
         async def fake_fn(region, workspace):
             return {'ok': True}
 
-        res.register_resource(
-            'alpacon://test-named/{region}/{workspace}', fake_fn, 'named_probe'
+        fn = res.build_resource_wrapper(
+            'alpacon://test-named/{region}/{workspace}', fake_fn, 'named_probe', None
         )
-        fn = mcp._resource_manager._templates[
-            'alpacon://test-named/{region}/{workspace}'
-        ].fn
+
         assert fn.__name__ == 'named_probe'
         assert fn.__qualname__ == 'named_probe'
         assert fn.__module__ == 'tools.resources'
-        # co_filename lives on the exec'd wrapper, under validate_call's wrapping.
-        while hasattr(fn, '__wrapped__'):
-            fn = fn.__wrapped__
         assert fn.__code__.co_filename == res.__file__
 
     def test_uri_params_match_function_signatures(self):
@@ -186,14 +186,27 @@ class TestResourceRegistration:
         its own handler — a general guard so a future literal/{id} sibling pair
         can't silently shadow one another. Subsumes the specific /active/, /scopes/,
         etc. cases without hard-coding them."""
-        mgr = mcp._resource_manager
+        templates = await mcp.list_resource_templates()
+        statics = await mcp.list_resources()
 
         def concrete(uri: str) -> str:
             # Sentinel placeholders never collide with a literal segment.
             return re.sub(r'\{(\w+)\}', lambda m: f'_{m.group(1)}_', uri)
 
         for name, _ref, uri, _extra in res.REGISTRATIONS:
-            resolved = await mgr.get_resource(concrete(uri))
-            assert resolved.name == name, (
-                f'{uri} -> {resolved.name}, want {name} (shadowed)'
+            target = concrete(uri)
+            static_match = next((r for r in statics if str(r.uri) == target), None)
+            if static_match is not None:
+                resolved_name = static_match.name
+            else:
+                # Same precedence FastMCP itself uses: first template whose
+                # pattern matches the concrete URI wins.
+                template_match = next(
+                    t
+                    for t in templates
+                    if UriTemplate.parse(t.uri_template).match(target) is not None
+                )
+                resolved_name = template_match.name
+            assert resolved_name == name, (
+                f'{uri} -> {resolved_name}, want {name} (shadowed)'
             )
