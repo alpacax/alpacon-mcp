@@ -17,6 +17,7 @@ from http import HTTPStatus
 from unittest.mock import AsyncMock, MagicMock, patch
 from urllib.parse import parse_qs, urlparse
 
+import httpx
 import pytest
 from starlette.applications import Starlette
 from starlette.routing import Route
@@ -171,10 +172,18 @@ def _mock_auth0_response(status_code=HTTPStatus.OK, json_data=None):
     mock_client = AsyncMock()
     mock_resp = MagicMock()
     mock_resp.status_code = status_code
+    mock_resp.is_success = HTTPStatus.OK <= status_code < HTTPStatus.MULTIPLE_CHOICES
     mock_resp.json.return_value = json_data or {'access_token': 'test-token'}
     mock_client.post.return_value = mock_resp
     mock_client.__aenter__ = AsyncMock(return_value=mock_client)
     mock_client.__aexit__ = AsyncMock(return_value=None)
+    return mock_client
+
+
+def _mock_client_raising(exc: Exception):
+    """Create a mock httpx AsyncClient whose post() raises the given exception."""
+    mock_client = _mock_auth0_response()
+    mock_client.post.side_effect = exc
     return mock_client
 
 
@@ -2643,7 +2652,6 @@ class TestOAuthCallback:
         # Should redirect to Auth0 with regular audience (not MFA)
         audience = params.get('audience', [''])[0]
         assert audience == 'https://alpacon.io/access/'
-        assert '/mfa/' not in audience
 
         # Scope should be the original scope (not enroll)
         scope = params.get('scope', [''])[0]
@@ -2659,6 +2667,138 @@ class TestOAuthCallback:
 
         # MFA code should have been exchanged
         mock_client.post.assert_called_once()
+
+    @pytest.mark.parametrize(
+        ('make_mock_client', 'expected_description'),
+        [
+            pytest.param(
+                lambda: _mock_auth0_response(status_code=HTTPStatus.UNAUTHORIZED),
+                'MFA verification failed',
+                id='status-401',
+            ),
+            pytest.param(
+                lambda: _mock_auth0_response(status_code=HTTPStatus.FOUND),
+                'MFA verification failed',
+                id='status-302',
+            ),
+            pytest.param(
+                lambda: _mock_client_raising(httpx.ConnectError('boom')),
+                'MFA verification could not be completed',
+                id='connect-error',
+            ),
+            pytest.param(
+                lambda: _mock_client_raising(RuntimeError('boom')),
+                'MFA verification could not be completed',
+                id='runtime-error',
+            ),
+        ],
+    )
+    def test_callback_mfa_stage_fails_closed_when_exchange_does_not_succeed(
+        self, oauth_app, make_mock_client, expected_description
+    ):
+        """A Stage 1 exchange that fails or errors must fail closed, not fall
+        through to Stage 2."""
+        composite = _make_composite_state(
+            redirect_uri='http://localhost:8080/callback',
+            state='orig-state',
+            stage='mfa',
+            original_scope='openid profile email offline_access',
+        )
+
+        mock_client = make_mock_client()
+
+        with patch('httpx.AsyncClient', return_value=mock_client):
+            response = oauth_app.get(
+                '/oauth/callback',
+                params={'code': 'mfa-auth-code', 'state': composite},
+                follow_redirects=False,
+            )
+
+        assert response.status_code == HTTPStatus.FOUND
+        location = response.headers['location']
+        assert 'audience=https%3A%2F%2Falpacon.io%2Faccess%2F' not in location
+
+        assert location.startswith('http://localhost:8080/callback')
+        query = parse_qs(urlparse(location).query)
+        assert query['error'][0] == 'access_denied'
+        assert query['error_description'][0] == expected_description
+        assert query['state'][0] == 'orig-state'
+
+    def test_callback_mfa_stage_fails_closed_as_json_when_redirect_uri_was_untrusted(
+        self, oauth_app
+    ):
+        """A failed Stage 1 exchange answers with a JSON OAuth error once the
+        untrusted redirect_uri has already been cleared."""
+        composite = _make_composite_state(
+            redirect_uri=EVIL_REDIRECT_URI,
+            state='orig-state',
+            stage='mfa',
+            original_scope='openid profile email offline_access',
+        )
+
+        mock_client = _mock_auth0_response(status_code=HTTPStatus.UNAUTHORIZED)
+
+        with patch('httpx.AsyncClient', return_value=mock_client):
+            response = oauth_app.get(
+                '/oauth/callback',
+                params={'code': 'mfa-auth-code', 'state': composite},
+                follow_redirects=False,
+            )
+
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert 'location' not in response.headers
+        assert response.json()['error'] == 'access_denied'
+
+    def test_callback_mfa_stage_omits_state_param_without_original_state(
+        self, oauth_app
+    ):
+        """No original state means no state param should ride the redirect back."""
+        composite = _make_composite_state(
+            redirect_uri='http://localhost:8080/callback',
+            state='',
+            stage='mfa',
+            original_scope='openid profile email offline_access',
+        )
+
+        mock_client = _mock_auth0_response(status_code=HTTPStatus.UNAUTHORIZED)
+
+        with patch('httpx.AsyncClient', return_value=mock_client):
+            response = oauth_app.get(
+                '/oauth/callback',
+                params={'code': 'mfa-auth-code', 'state': composite},
+                follow_redirects=False,
+            )
+
+        assert response.status_code == HTTPStatus.FOUND
+        location = response.headers['location']
+        assert location.startswith('http://localhost:8080/callback')
+        query = parse_qs(urlparse(location).query)
+        assert query['error'][0] == 'access_denied'
+        assert 'state' not in query
+
+    def test_callback_mfa_stage_treats_any_2xx_exchange_as_success(self, oauth_app):
+        """A non-200 2xx exchange still counts as success and starts Stage 2."""
+        composite = _make_composite_state(
+            redirect_uri='http://localhost:8080/callback',
+            state='orig-state',
+            stage='mfa',
+            original_scope='openid profile email offline_access',
+        )
+
+        mock_client = _mock_auth0_response(status_code=HTTPStatus.NO_CONTENT)
+
+        with patch('httpx.AsyncClient', return_value=mock_client):
+            response = oauth_app.get(
+                '/oauth/callback',
+                params={'code': 'mfa-auth-code', 'state': composite},
+                follow_redirects=False,
+            )
+
+        assert response.status_code == HTTPStatus.FOUND
+        location = response.headers['location']
+        params = parse_qs(urlparse(location).query)
+        audience = params.get('audience', [''])[0]
+        assert audience == 'https://alpacon.io/access/'
 
     def test_final_redirect_clears_the_cookie(self, oauth_app):
         """The mark is spent once the code is relayed."""

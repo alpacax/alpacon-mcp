@@ -363,6 +363,25 @@ def _build_redirect_url(base_url: str, extra_params: dict) -> str:
     return urlunparse(parsed._replace(query=new_query))
 
 
+def _error_redirect_or_json(
+    error: str,
+    description: str | None,
+    redirect_uri: str,
+    state: str,
+) -> RedirectResponse | JSONResponse:
+    """Return an OAuth error the way the client can consume it: a redirect when
+    a trusted redirect_uri survived validation, otherwise a JSON body."""
+    if redirect_uri:
+        params = {'error': error, 'error_description': description or ''}
+        if state:
+            params['state'] = state
+        return RedirectResponse(
+            url=_build_redirect_url(redirect_uri, params),
+            status_code=HTTPStatus.FOUND,
+        )
+    return _oauth_error(error, description)
+
+
 def _get_oauth_config() -> dict[str, str]:
     """Get OAuth configuration from environment variables."""
     domain = os.getenv('AUTH0_DOMAIN', '')
@@ -1264,25 +1283,16 @@ def register_oauth_routes(mcp_server):
 
         if error:
             logger.warning(f'Auth0 callback error: {error} - {error_description}')
-            if client_redirect_uri:
-                params = {'error': error, 'error_description': error_description or ''}
-                if original_state:
-                    params['state'] = original_state
-                return RedirectResponse(
-                    url=_build_redirect_url(client_redirect_uri, params),
-                    status_code=HTTPStatus.FOUND,
-                )
-            return _oauth_error(error, error_description)
+            return _error_redirect_or_json(
+                error, error_description, client_redirect_uri, original_state
+            )
 
         if not code:
             return _oauth_error('invalid_request', 'Missing authorization code')
 
         # --- Two-stage MFA flow: Stage 1 callback ---
         if stage == _STAGE_MFA:
-            logger.info(
-                'Stage 1 complete: MFA authorization code received, '
-                'exchanging and proceeding to Stage 2 (regular audience)'
-            )
+            logger.info('Stage 1 complete: MFA authorization code received, exchanging')
 
             try:
                 config = _get_oauth_config()
@@ -1293,9 +1303,6 @@ def register_oauth_routes(mcp_server):
 
             server_url = _get_server_url(request)
 
-            # Exchange the MFA code to confirm MFA was completed.
-            # The resulting MFA token is discarded — we only need
-            # the side effect of MFA completion in the Auth0 session.
             try:
                 async with httpx.AsyncClient(timeout=30.0) as client:
                     mfa_response = await client.post(
@@ -1311,19 +1318,28 @@ def register_oauth_routes(mcp_server):
                             'Content-Type': 'application/x-www-form-urlencoded',
                         },
                     )
-                    # MFA token is discarded — we only need the side effect
-                    # of MFA completion in the Auth0 session. Log error
-                    # responses for debugging misconfiguration.
-                    if mfa_response.status_code >= HTTPStatus.BAD_REQUEST:
+                    # The token itself is discarded, but a failed exchange means
+                    # Auth0 never confirmed MFA, so Stage 2 must not start.
+                    if not mfa_response.is_success:
                         logger.warning(
-                            'MFA token exchange returned %s (non-fatal): %s',
-                            mfa_response.status_code,
-                            mfa_response.text[:200],
+                            f'MFA token exchange returned {mfa_response.status_code}: '
+                            f'{mfa_response.text[:200]}'
                         )
-                    else:
-                        logger.info('MFA token exchange succeeded (token discarded)')
-            except httpx.HTTPError as e:
-                logger.warning(f'MFA token exchange failed (non-fatal): {e}')
+                        return _error_redirect_or_json(
+                            'access_denied',
+                            'MFA verification failed',
+                            client_redirect_uri,
+                            original_state,
+                        )
+                    logger.info('MFA token exchange succeeded (token discarded)')
+            except Exception as e:
+                logger.warning(f'MFA token exchange failed ({type(e).__name__}): {e}')
+                return _error_redirect_or_json(
+                    'access_denied',
+                    'MFA verification could not be completed',
+                    client_redirect_uri,
+                    original_state,
+                )
 
             # Stage 2: redirect to Auth0 with regular audience.
             # The Auth0 SSO session will skip the login prompt since
