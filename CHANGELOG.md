@@ -157,7 +157,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and up, once base64 envelope overhead is included) still gets that plain-text
   413 before reaching the tool at all; use `webftp_upload_file` in local mode
   for such files. The upload path's design is being reconsidered in #275.
-- MCP SDK 2.x also changed two error shapes clients should account for: a
+- MCP SDK 2.x also changed two error shapes clients should account for (#144): a
   `resources/read` on an unknown URI now returns JSON-RPC code `-32602`
   (invalid params) with `error.data.uri` set, instead of `0`; and an unknown
   method now returns `-32601` (method not found) instead of `-32602`.
