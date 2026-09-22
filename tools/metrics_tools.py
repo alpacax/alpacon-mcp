@@ -17,15 +17,15 @@ from utils.error_handler import UpstreamAuthError, format_validation_error
 from utils.http_client import http_client
 from utils.tool_annotations import READ_ONLY
 
-#: `?state=` values `/api/metrics/latest/` accepts. `stale` covers `no_data`
-#: too: a server with nothing stored is also overdue on every family.
+#: `?state=` values `/api/metrics/latest/` accepts; mirrors alpacon-server's
+#: `metrics.latest.LATEST_STATES`. `stale` covers `no_data`: never-stored is overdue.
 VALID_LATEST_METRIC_STATES = frozenset({'stale', 'no_data'})
 _LATEST_STATE_SENTENCE = (
     f'state must be one of: {", ".join(sorted(VALID_LATEST_METRIC_STATES))}.'
 )
 
-#: `?ordering=` base names, each optionally prefixed with `-` for descending.
-#: A metric family is listed twice because both spellings of it are accepted.
+#: `?ordering=` base names, optionally `-` prefixed. Only disk usage and disk I/O
+#: repeat: alpacon-server aliases the hyphenated wire name to the underscore one.
 VALID_LATEST_METRIC_ORDERING_FIELDS = frozenset(
     {
         'name',
