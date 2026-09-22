@@ -9,12 +9,17 @@ WORKDIR /app
 
 COPY --from=ghcr.io/astral-sh/uv:0.12.17 /uv /usr/local/bin/uv
 
+# --locked fails the build if uv.lock and pyproject.toml disagree, so the image
+# never resolves a dependency the test run did not see.
+COPY pyproject.toml uv.lock ./
+RUN uv sync --locked --no-dev --no-install-project && rm -rf /root/.cache
+
 # Copy full source and install (hatchling needs source for metadata)
 COPY . .
 # CI resolves the version and passes it as VERSION (.git is excluded from the build context)
 ARG VERSION=0.0.0
-# --locked fails the build if uv.lock and pyproject.toml disagree, so the image
-# never resolves a dependency the test run did not see.
+# The pretend-version is set here, not on the dependency layer, so it cannot leak
+# into a dependency that builds from an sdist with setuptools-scm.
 RUN SETUPTOOLS_SCM_PRETEND_VERSION="${VERSION#v}" uv sync --locked --no-dev && \
     rm -rf /root/.cache
 
