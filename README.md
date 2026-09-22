@@ -430,7 +430,7 @@ Install the MCP extension and add to settings:
 - **work_session_create**: Open an auditable, approval-gated session for infrastructure work
 - **work_session_get** / **work_session_list**: Inspect sessions and their status
 - **work_session_update** / **work_session_extend**: Adjust scope, servers, or expiry
-- **work_session_timeline**: Chronological record of everything done in the session
+- **work_session_timeline**: Chronological record of commands, transfers, and sudo grants; opt in with `include_records=True` for websh terminal records
 - **work_session_close** / **work_session_analyze**: Close a session and run AI security analysis
 
 OAuth/browser callers must scope command execution and file transfers under an active Work Session; static API tokens bypass the gate.

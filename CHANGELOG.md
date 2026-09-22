@@ -144,6 +144,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `install_commands` list every other platform uses.
 
 ### Changed
+- `work_session_timeline` now defaults `include_records` to false, so websh terminal records are omitted unless requested (#286). A client that relied on the previous default must now pass `include_records=True` to keep seeing those records.
 - `create_alert_rule` and `update_alert_rule` no longer validate `target` against a
   client-side copy of the server's metric list before sending the request; an unrecognized
   `target` now reaches the server and comes back as its own `400` with an `error_code`
