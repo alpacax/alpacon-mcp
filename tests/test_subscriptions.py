@@ -30,7 +30,9 @@ JsonObject = dict[str, object]
 
 _TOKEN = 'test-jwt'  # noqa: S105
 _SIGNAL_TOKEN = 'test-jwt-signalled'  # noqa: S105
+_SIGNAL_TOKEN_2025 = 'test-jwt-signalled-2025'  # noqa: S105
 _PROTOCOL_VERSION = '2026-07-28'
+_STATELESS_PROTOCOL_VERSION = '2025-06-18'
 _LISTEN = {'notifications': {'toolsListChanged': True}}
 _SIGNALLING_TOOL = 'raise_upstream_401'
 
@@ -272,7 +274,8 @@ async def test_a_signalled_request_still_becomes_401_under_the_composed_app(base
         response = await client.post(
             '/mcp',
             # A token of its own: the middleware's re-auth cooldown is keyed by
-            # token, and a second 401 within 60s of the first arrives as a 500.
+            # token, and a second 401 within 60s of the first would pass through
+            # as the tool's own 200 with an isError result instead of a 401.
             headers=_headers('tools/call', token=_SIGNAL_TOKEN, tool=_SIGNALLING_TOOL),
             json=_envelope(
                 'tools/call', {'name': _SIGNALLING_TOOL, 'arguments': {}}, 1
@@ -282,6 +285,38 @@ async def test_a_signalled_request_still_becomes_401_under_the_composed_app(base
     assert response.status_code == 401
     # The auth boundary's own 401 also says invalid_token; only the middleware's
     # replacement carries the re-auth scope and this description.
+    assert (
+        'scope="openid profile email offline_access"'
+        in response.headers['www-authenticate']
+    )
+    assert (
+        response.json()['error_description']
+        == 'Authentication expired. Re-authentication needed.'
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_signalled_request_becomes_401_on_the_2025_stateless_path(base_url):
+    """Given a 2025-era handshake version routed to the stateless path, When a
+    tool signals an upstream 401 without a prior initialize, Then the
+    middleware still answers 401 rather than the tool's own error."""
+    headers = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json, text/event-stream',
+        'MCP-Protocol-Version': _STATELESS_PROTOCOL_VERSION,
+        'Authorization': f'Bearer {_SIGNAL_TOKEN_2025}',
+    }
+    body = {
+        'jsonrpc': '2.0',
+        'id': 1,
+        'method': 'tools/call',
+        'params': {'name': _SIGNALLING_TOOL, 'arguments': {}},
+    }
+
+    async with httpx.AsyncClient(base_url=base_url, timeout=30) as client:
+        response = await client.post('/mcp', headers=headers, json=body)
+
+    assert response.status_code == 401
     assert (
         'scope="openid profile email offline_access"'
         in response.headers['www-authenticate']
