@@ -749,7 +749,7 @@ Read one session (`session_id`) or list them (`status`, `requester_type`, `limit
 Partial update of `title`, `description`, `scopes`, `servers` (and `expires_at` for pending sessions only), or extend `expires_at` on an approved/active session. `description` carries the same prose-only rule as on `work_session_create`. An update that needs approval is queued as a modification request.
 
 ### `work_session_timeline`
-Chronological record of commands, file transfers, terminal activity, and sudo grants. **Parameters:** `session_id`, `workspace`, `include_records` (boolean, default true), `region` (optional).
+Chronological record of commands, file transfers, terminal activity, and sudo grants. **Parameters:** `session_id`, `workspace`, `include_records` (boolean, default false—set true to include websh terminal records, which can return a very large response), `region` (optional).
 
 ### `work_session_close` / `work_session_analyze`
 Close a session (triggers AI security analysis) or re-run analysis on a terminal session (`force` to redo).

@@ -528,14 +528,13 @@ class TestWorkSessionExtend:
 
 class TestWorkSessionTimeline:
     @pytest.mark.asyncio
-    async def test_timeline_success_includes_records_by_default(
+    async def test_timeline_excludes_records_by_default(
         self, mock_http_client, mock_token_manager
     ):
 
         mock_http_client.get.return_value = {
             'results': [
                 {'type': 'command', 'added_at': '2026-06-05T10:00:00+00:00'},
-                {'type': 'websh_record', 'added_at': '2026-06-05T10:01:00+00:00'},
             ],
         }
 
@@ -546,33 +545,34 @@ class TestWorkSessionTimeline:
         )
 
         assert result['status'] == 'success'
-        assert len(result['data']['results']) == 2
-        mock_http_client.get.assert_called_once_with(
-            region='ap1',
-            workspace='testworkspace',
-            endpoint='/api/work-sessions/sessions/550e8400-e29b-41d4-a716-446655440020/timeline/',
-            token='test-token',
-            params={'include_records': 'true'},
-        )
-
-    @pytest.mark.asyncio
-    async def test_timeline_without_records(self, mock_http_client, mock_token_manager):
-
-        mock_http_client.get.return_value = {'results': []}
-
-        await work_session_timeline(
-            session_id='550e8400-e29b-41d4-a716-446655440020',
-            workspace='testworkspace',
-            include_records=False,
-            region='ap1',
-        )
-
         mock_http_client.get.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
             endpoint='/api/work-sessions/sessions/550e8400-e29b-41d4-a716-446655440020/timeline/',
             token='test-token',
             params={'include_records': 'false'},
+        )
+
+    @pytest.mark.asyncio
+    async def test_timeline_with_records_when_opted_in(
+        self, mock_http_client, mock_token_manager
+    ):
+
+        mock_http_client.get.return_value = {'results': []}
+
+        await work_session_timeline(
+            session_id='550e8400-e29b-41d4-a716-446655440020',
+            workspace='testworkspace',
+            include_records=True,
+            region='ap1',
+        )
+
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/work-sessions/sessions/550e8400-e29b-41d4-a716-446655440020/timeline/',
+            token='test-token',
+            params={'include_records': 'true'},
         )
 
     @pytest.mark.asyncio

@@ -325,7 +325,8 @@ async def work_session_extend(
     description=(
         'Get the unified chronological timeline of a Work Session: commands, '
         'file transfers, websh activity, and sudo grants in execution order. '
-        'Set include_records=False to omit websh terminal records for a lighter response. '
+        'Websh terminal records are excluded by default; set include_records=True to '
+        'include them, which can return a very large response that grows with session length. '
         'Related: work_session_get (session detail), list_session_analyses / '
         'get_session_analysis_detail (AI security analysis results).'
     ),
@@ -337,7 +338,7 @@ async def work_session_extend(
 async def work_session_timeline(
     session_id: str,
     workspace: str,
-    include_records: bool = True,
+    include_records: bool = False,
     region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
