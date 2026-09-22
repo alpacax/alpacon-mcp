@@ -4,18 +4,19 @@ import re
 import uuid
 from typing import Any
 
+from mcp.server.mcpserver.exceptions import ToolError
+
 # 'dev' is internal-only: the validator accepts it, but it is never advertised.
 SERVED_REGIONS = ('ap1', 'us1')
 VALID_REGIONS = (*SERVED_REGIONS, 'dev')
 
 
-class UpstreamAuthError(Exception):
+class UpstreamAuthError(ToolError):
     """Raised when re-authentication is required for the Alpacon API.
 
-    Used in remote (streamable-http) mode to propagate authentication
-    state through the call stack to the ASGI middleware, which replaces
-    the HTTP 200 JSON-RPC response with HTTP 401 to trigger the MCP
-    client's OAuth re-authentication flow.
+    Used in remote (streamable-http) mode to signal that the current call
+    requires OAuth re-authentication. As a ``ToolError``, the SDK logs it
+    at INFO without a traceback and keeps the message intact for the client.
 
     Typically raised when the upstream Alpacon API returns 401 or when
     local checks (such as MFA pre-checks) determine that the current

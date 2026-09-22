@@ -752,6 +752,34 @@ class TestDebugLogPayloadsAreLazy:
         )
 
 
+class TestUpstreamAuthErrorReachesTheClient:
+    """The SDK boundary that turns a bare Exception into 'Error executing tool <name>'."""
+
+    async def test_upstream_auth_error_message_survives_the_tool_boundary(self, caplog):
+        from mcp.server.mcpserver import Context, MCPServer
+        from mcp.types import CallToolRequestParams
+
+        mcp_server = MCPServer(name='test-upstream-auth-error')
+
+        @mcp_server.tool()
+        async def failing_tool() -> str:
+            raise UpstreamAuthError(mfa_required=True, source='websh')
+
+        with caplog.at_level(logging.ERROR, logger='mcp.server.mcpserver.server'):
+            result = await mcp_server._handle_call_tool(
+                Context(mcp_server=mcp_server, subscriptions=mcp_server._subscriptions),
+                CallToolRequestParams(name='failing_tool', arguments={}),
+            )
+
+        assert result.is_error is True
+        # A plain Exception collapses to just this prefix; ToolError keeps the
+        # original message after it.
+        assert result.content[0].text == (
+            'Error executing tool failing_tool: MFA verification required'
+        )
+        assert not any(r.levelno >= logging.ERROR for r in caplog.records)
+
+
 class TestHTTPVerbsConstant:
     NON_VERB_ASYNC_METHODS = frozenset({'close', 'request', 'batch_request'})
 
