@@ -11,6 +11,7 @@ from typing import Any, cast
 
 import httpx
 
+from server import TRANSPORT_STDIO
 from utils.api_call import http_call_response
 from utils.common import (
     build_list_params,
@@ -432,6 +433,8 @@ async def webftp_upload_file(
         'Suitable for: remote mode (streamable-http), Claude Desktop file attachments, '
         'or when Claude Code reads a file with its Read tool. '
         'file_content must be base64-encoded bytes. '
+        'On streamable-http/SSE, file_content is capped at 3 MiB decoded; use '
+        'webftp_upload_file in local mode for larger files. '
         'Related: webftp_upload_file (local path), webftp_download_file.'
     ),
     annotations=ADDITIVE,
@@ -451,8 +454,9 @@ async def webftp_upload_content(
 ) -> dict[str, Any]:
     """Upload base64-encoded file content to a server via WebFTP.
 
-    file_content is limited to 3 MiB decoded (base64 inflates bytes 4/3x).
-    Larger files must use webftp_upload_file in local mode.
+    On streamable-http/SSE, file_content is limited to 3 MiB decoded (base64
+    inflates bytes 4/3x). stdio has no such cap. Larger files must use
+    webftp_upload_file in local mode.
     """
     token = kwargs.get('token')
 
@@ -461,7 +465,10 @@ async def webftp_upload_content(
     except binascii.Error as exc:
         return error_response(f'Invalid base64 content: {exc}', code='invalid_content')
 
-    if len(raw_bytes) > _MAX_UPLOAD_CONTENT_BYTES:
+    # Only the HTTP transports carry the SDK body cap this works around. An unset
+    # transport means a caller outside prepare(), and fails closed.
+    transport = os.environ.get('ALPACON_MCP_TRANSPORT', '')
+    if transport != TRANSPORT_STDIO and len(raw_bytes) > _MAX_UPLOAD_CONTENT_BYTES:
         return error_response(
             f'File content exceeds the {_MAX_UPLOAD_CONTENT_BYTES} byte '
             f'(3 MiB) limit for webftp_upload_content; got {len(raw_bytes)} bytes. '
