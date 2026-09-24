@@ -568,6 +568,7 @@ class TestLoggedParameterSurface:
             'timeout',
             'valid_days',
             'websh_session_timeout',
+            'window_s',
             # timestamps
             'end_date',
             'expires_at',

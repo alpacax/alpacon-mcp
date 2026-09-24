@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `preview_alert_rule` (`workspace`, `rule_id`, `servers`, `window_s`, and the `create_alert_rule`
+  fields minus `name` and `is_default`, `region`): replay an alert rule, saved or not, over up to
+  seven days of stored samples and report the episodes it would have raised, how many would have
+  interrupted someone, and who would receive them, without storing anything (#288). Wraps
+  `POST /api/metrics/alert-rules/preview/`; a server without that endpoint refuses the request. The
+  preview's four limit codes (`metrics_alert_rule_preview_window_too_long`, `_too_many_servers`,
+  `_too_many_samples`, `_servers_required`) surface as `error_code` with a hint naming what to
+  narrow, and `server_not_found` surfaces as `error_code` as elsewhere.
 - `list_latest_metrics` (`workspace`, `region`, `search`, `groups`, `tag`, `is_connected`, `state`,
   `ordering`, `page`, `page_size`): the latest CPU, memory, disk usage, disk I/O and network reading
   for many servers in one request, one row per server. Wraps `GET /api/metrics/latest/`

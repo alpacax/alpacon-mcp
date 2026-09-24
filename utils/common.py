@@ -220,9 +220,33 @@ WORKSPACE_EXTENSION_NOT_ENABLED_HINT = (
     'admin can enable it in workspace settings.'
 )
 
+#: The alert rule evaluation preview's own limits (preview_alert_rule). Each
+#: is settled by the request itself, so the hint names what to narrow.
+ALERT_RULE_PREVIEW_REFUSAL_HINTS: dict[str, str] = {
+    'metrics_alert_rule_preview_window_too_long': (
+        'window_s is over 604800 seconds (seven days), as far back as realtime '
+        'samples are kept. Retry with a shorter window_s.'
+    ),
+    'metrics_alert_rule_preview_too_many_servers': (
+        'The preview covers more than 20 servers, or servers x window_s is '
+        'over 5 x 604800. Pass fewer servers or a shorter window_s; a rule '
+        'attached to more than 20 servers needs servers named explicitly.'
+    ),
+    'metrics_alert_rule_preview_too_many_samples': (
+        'The replay would read or judge more than 300,000 samples. Narrow '
+        'servers, set device to one disk or interface, or shorten window_s.'
+    ),
+    'metrics_alert_rule_preview_servers_required': (
+        'Without rule_id there are no attached servers to default to. Pass '
+        'servers (server UUIDs from list_servers), or rule_id to preview a '
+        'saved rule over its own servers.'
+    ),
+}
+
 _ERROR_CODE_HINT: dict[str, str] = {
     'command_inline_credential': INLINE_CREDENTIAL_HINT,
     **FILE_EXEC_REFUSAL_HINTS,
+    **ALERT_RULE_PREVIEW_REFUSAL_HINTS,
     'workspace_extension_plan_required': WORKSPACE_EXTENSION_PLAN_REQUIRED_HINT,
     'workspace_extension_not_enabled': WORKSPACE_EXTENSION_NOT_ENABLED_HINT,
 }

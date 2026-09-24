@@ -619,6 +619,151 @@ async def get_alert_rule_recipients(
     )
 
 
+@mcp_tool_handler(
+    description=(
+        'Replay an alert rule over recent stored samples and report what it '
+        'would have raised, without saving anything. When to use: judging how '
+        'noisy a threshold would be before creating or updating a rule—how '
+        'many episodes it would have opened, how many would have interrupted '
+        'someone by email or Slack, and who would have received them. Pass '
+        'the rule fields to try; with rule_id they are a partial body over '
+        "that saved rule (omit them all to preview it unchanged) and the rule's "
+        'server overrides apply. servers defaults to the servers rule_id is '
+        'attached to and is required without rule_id. Limits: window_s is '
+        '60 to 604800 seconds (default 86400), at most 20 servers, servers x '
+        'window_s at most 5 x 604800, and at most 300,000 samples per replay; '
+        'each limit is refused with its own error_code. Stores nothing and '
+        'records no activity. Related: create_alert_rule, update_alert_rule, '
+        'get_alert_rule_recipients.'
+    ),
+    annotations=READ_ONLY,
+    meta={
+        'anthropic/searchHint': 'alert rule preview replay evaluate noisy threshold tune dry run'
+    },
+)
+async def preview_alert_rule(
+    workspace: str,
+    rule_id: str | None = None,
+    servers: list[str] | None = None,
+    window_s: int | None = None,
+    target: str | None = None,
+    threshold: float | None = None,
+    operator: str | None = None,
+    duration_s: int | None = None,
+    recovery_threshold: float | None = None,
+    no_data_after_s: int | None = None,
+    device: str | None = None,
+    severity: str | None = None,
+    notify_email: str | None = None,
+    notify_slack_channel: bool | None = None,
+    region: str = '',
+    **kwargs,
+) -> dict[str, Any]:
+    """Preview what an alert rule would have raised over a past window.
+
+    The rule is judged by the same evaluator that runs saved rules, one tick
+    every 60 seconds over the realtime samples of the window. Nothing is
+    stored and no activity is recorded.
+
+    Without rule_id, the rule fields describe a new rule (target and
+    threshold at least) and servers is required. With rule_id, the rule
+    fields given override that rule's values, every omitted field keeps the
+    rule's own, and the rule's server overrides apply.
+
+    Args:
+        workspace: Workspace name. Required parameter
+        rule_id: An existing alert rule to preview against; its attached
+            servers become the default for servers (optional)
+        servers: Server UUIDs to replay over, up to 20. Required when
+            rule_id is omitted (optional)
+        window_s: How far back to replay, in seconds: 60 to 604800 (seven
+            days), default 86400 (optional)
+        target: Target metric, as on create_alert_rule (optional)
+        threshold: Value the metric must cross to fire (optional)
+        operator: gte or lte, as on create_alert_rule (optional)
+        duration_s: How long the condition must hold before firing, in
+            seconds (optional)
+        recovery_threshold: Value the metric must return to before the alert
+            resolves (optional)
+        no_data_after_s: Raise when no sample arrives for this many seconds
+            (optional)
+        device: Narrow the rule to one disk, partition, or network interface;
+            device-scoped targets only (optional)
+        severity: critical, warning, or info; decides with the destinations
+            whether an episode would interrupt anyone (optional)
+        notify_email: all, admins, group_members, or none. Refused with a
+            400 from a service-token or agent caller (optional)
+        notify_slack_channel: Whether a raise posts to the workspace alert
+            channel. Refused with a 400 from a service-token or agent caller
+            (optional)
+        region: Region (ap1, us1). Auto-detected if not provided
+
+    Returns:
+        window (start, end), sample_interval_s, summary (episodes,
+        would_interrupt, open_at_end, longest_s), servers (one row per
+        server and device: server, device, samples, and episodes with
+        condition, raised_at, resolved_at, peak, outlived_hold,
+        would_interrupt), recipients (the get_alert_rule_recipients shape,
+        over the replayed servers), and not_reproduced (what the replay
+        cannot know, e.g. tick_jitter, state_before_window).
+
+        Refusals carry the server's error_code:
+        metrics_alert_rule_preview_window_too_long,
+        metrics_alert_rule_preview_too_many_servers,
+        metrics_alert_rule_preview_too_many_samples,
+        metrics_alert_rule_preview_servers_required, and server_not_found (a
+        server in servers is unknown or out of reach), each a 400. A 404
+        means no rule with rule_id, or every server it is attached to is
+        outside what you can see.
+    """
+    if notify_email is not None and notify_email not in ALERT_EMAIL_DESTINATIONS:
+        return format_validation_error(
+            'notify_email',
+            notify_email,
+            _EMAIL_DESTINATIONS_SENTENCE,
+        )
+
+    token = kwargs.get('token')
+
+    rule_fields = {
+        'target': target,
+        'threshold': threshold,
+        'operator': operator,
+        'duration_s': duration_s,
+        'recovery_threshold': recovery_threshold,
+        'no_data_after_s': no_data_after_s,
+        'device': device,
+        'severity': severity,
+        'notify_email': notify_email,
+        'notify_slack_channel': notify_slack_channel,
+    }
+    # The server always requires the rule object; an empty one previews the
+    # rule_id rule unchanged.
+    body: dict[str, Any] = {
+        'rule': {
+            field: value for field, value in rule_fields.items() if value is not None
+        }
+    }
+    if rule_id is not None:
+        body['rule_id'] = rule_id
+    if servers is not None:
+        body['servers'] = servers
+    if window_s is not None:
+        body['window_s'] = window_s
+    id_context: dict[str, Any] = {} if rule_id is None else {'rule_id': rule_id}
+
+    return await http_call_response(
+        http_client.post,
+        region=region,
+        workspace=workspace,
+        endpoint='/api/metrics/alert-rules/preview/',
+        token=token,
+        default_message='Failed to preview alert rule',
+        data=body,
+        **id_context,
+    )
+
+
 # ===============================
 # RULE OVERRIDE TOOLS
 # ===============================

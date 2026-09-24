@@ -1,7 +1,9 @@
 """Unit tests for alert management tools."""
 
 import inspect
+import json
 import sys
+from http import HTTPStatus
 from pathlib import Path
 
 import pytest
@@ -21,9 +23,11 @@ from tools.alert_tools import (
     get_rule_override,
     list_alerts,
     list_rule_overrides,
+    preview_alert_rule,
     update_alert_rule,
     update_rule_override,
 )
+from utils.common import ALERT_RULE_PREVIEW_REFUSAL_HINTS
 
 ALERT_ID = 'alert-1'
 RULE_ID = 'rule-1'
@@ -682,6 +686,246 @@ class TestGetAlertRuleRecipients:
         )
 
         assert result['status'] == 'error'
+
+
+PREVIEW_RESPONSE = {
+    'window': {'start': '2026-09-01T11:00:00Z', 'end': '2026-09-01T12:00:00Z'},
+    'sample_interval_s': 60,
+    'summary': {
+        'episodes': 1,
+        'would_interrupt': 1,
+        'open_at_end': 0,
+        'longest_s': 240,
+    },
+    'servers': [
+        {
+            'server': SERVER_ID,
+            'device': '',
+            'samples': 60,
+            'episodes': [
+                {
+                    'condition': 'threshold',
+                    'raised_at': '2026-09-01T11:50:00Z',
+                    'resolved_at': '2026-09-01T11:54:00Z',
+                    'peak': 91.2,
+                    'outlived_hold': True,
+                    'would_interrupt': True,
+                }
+            ],
+        }
+    ],
+    'recipients': {
+        'email': {
+            'mode': 'all',
+            'count': 3,
+            'reasons': {'admins': 1, 'group_members': 2, 'owner': 1},
+        },
+        'slack_channel': {'enabled': True, 'connected': False},
+        'event_subscriptions': 0,
+    },
+    'not_reproduced': ['tick_jitter', 'state_before_window'],
+}
+
+
+def _coded_envelope(status_code: HTTPStatus, code: str) -> dict:
+    """The http_client error envelope for a coded alpacon-server refusal."""
+    return {
+        'error': 'HTTP Error',
+        'status_code': status_code,
+        'message': f'HTTP {int(status_code)}',
+        'response': json.dumps({'code': code}),
+    }
+
+
+class TestPreviewAlertRule:
+    @pytest.mark.asyncio
+    async def test_preview_new_rule_posts_body_and_returns_response(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = PREVIEW_RESPONSE
+
+        result = await preview_alert_rule(
+            workspace='testworkspace',
+            region='ap1',
+            servers=[SERVER_ID],
+            window_s=3600,
+            target='cpu-usage',
+            threshold=80,
+            duration_s=300,
+        )
+
+        assert result['status'] == 'success'
+        assert result['data'] == PREVIEW_RESPONSE
+        assert 'rule_id' not in result
+        mock_http_client.post.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/metrics/alert-rules/preview/',
+            token='test-token',
+            data={
+                'rule': {'target': 'cpu-usage', 'threshold': 80, 'duration_s': 300},
+                'servers': [SERVER_ID],
+                'window_s': 3600,
+            },
+        )
+
+    @pytest.mark.asyncio
+    async def test_preview_saved_rule_unchanged_sends_empty_rule(
+        self, mock_http_client, mock_token_manager
+    ):
+        """rule is always required; {} previews the rule_id rule as saved."""
+        mock_http_client.post.return_value = PREVIEW_RESPONSE
+
+        result = await preview_alert_rule(
+            workspace='testworkspace', region='ap1', rule_id=RULE_ID
+        )
+
+        assert result['status'] == 'success'
+        assert result['rule_id'] == RULE_ID
+        assert mock_http_client.post.call_args.kwargs['data'] == {
+            'rule': {},
+            'rule_id': RULE_ID,
+        }
+
+    @pytest.mark.asyncio
+    async def test_every_rule_field_is_forwarded_when_given(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = PREVIEW_RESPONSE
+        fields = {
+            'target': 'disk-usage',
+            'threshold': 90.0,
+            **dict(NEW_RULE_FIELDS),
+            **dict(NEW_DESTINATION_FIELDS),
+        }
+
+        await preview_alert_rule(
+            workspace='testworkspace', region='ap1', rule_id=RULE_ID, **fields
+        )
+
+        assert mock_http_client.post.call_args.kwargs['data']['rule'] == fields
+
+    @pytest.mark.asyncio
+    async def test_invalid_notify_email_is_refused_before_the_request(
+        self, mock_http_client, mock_token_manager
+    ):
+        result = await preview_alert_rule(
+            workspace='testworkspace',
+            region='ap1',
+            rule_id=RULE_ID,
+            notify_email='everyone',
+        )
+
+        assert result['status'] == 'error'
+        assert result['error_code'] == 'validation'
+        mock_http_client.post.assert_not_called()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('code', sorted(ALERT_RULE_PREVIEW_REFUSAL_HINTS))
+    async def test_preview_refusal_codes_surface_with_hint(
+        self, mock_http_client, mock_token_manager, code
+    ):
+        mock_http_client.post.return_value = _coded_envelope(
+            HTTPStatus.BAD_REQUEST, code
+        )
+
+        result = await preview_alert_rule(
+            workspace='testworkspace',
+            region='ap1',
+            servers=[SERVER_ID],
+            target='cpu-usage',
+            threshold=80,
+        )
+
+        assert result['status'] == 'error'
+        assert result['status_code'] == HTTPStatus.BAD_REQUEST
+        assert result['error_code'] == code
+        assert result['message'].startswith('HTTP 400')
+        assert result['message'].endswith(ALERT_RULE_PREVIEW_REFUSAL_HINTS[code])
+
+    @pytest.mark.asyncio
+    async def test_unknown_server_surfaces_server_not_found(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = _coded_envelope(
+            HTTPStatus.BAD_REQUEST, 'server_not_found'
+        )
+
+        result = await preview_alert_rule(
+            workspace='testworkspace',
+            region='ap1',
+            servers=[SERVER_ID],
+            target='cpu-usage',
+            threshold=80,
+        )
+
+        assert result['status'] == 'error'
+        assert result['status_code'] == HTTPStatus.BAD_REQUEST
+        assert result['error_code'] == 'server_not_found'
+
+    @pytest.mark.asyncio
+    async def test_not_found_names_the_preview_cases(
+        self, mock_http_client, mock_token_manager
+    ):
+        """No such rule, or every attached server out of reach: a 404."""
+        mock_http_client.post.return_value = HTTP_ERROR_ENVELOPE
+
+        result = await preview_alert_rule(
+            workspace='testworkspace', region='ap1', rule_id=RULE_ID
+        )
+
+        assert result['status'] == 'error'
+        assert result['status_code'] == HTTPStatus.NOT_FOUND
+        assert result['rule_id'] == RULE_ID
+        assert any('preview_alert_rule' in h for h in result['recovery_hints'])
+
+    @pytest.mark.asyncio
+    async def test_forbidden_passes_through(self, mock_http_client, mock_token_manager):
+        """A token without alert_rule:read is refused with a 403."""
+        mock_http_client.post.return_value = {
+            'error': 'HTTP Error',
+            'status_code': HTTPStatus.FORBIDDEN,
+            'message': 'HTTP 403',
+        }
+
+        result = await preview_alert_rule(
+            workspace='testworkspace', region='ap1', rule_id=RULE_ID
+        )
+
+        assert result['status'] == 'error'
+        assert result['status_code'] == HTTPStatus.FORBIDDEN
+
+    @pytest.mark.asyncio
+    async def test_metrics_extension_off_gets_its_hint(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = _coded_envelope(
+            HTTPStatus.FORBIDDEN, 'workspace_extension_not_enabled'
+        )
+
+        result = await preview_alert_rule(
+            workspace='testworkspace', region='ap1', rule_id=RULE_ID
+        )
+
+        assert result['status'] == 'error'
+        assert result['status_code'] == HTTPStatus.FORBIDDEN
+        assert result['error_code'] == 'workspace_extension_not_enabled'
+        assert 'workspace admin' in result['message']
+
+    @pytest.mark.asyncio
+    async def test_non_uuid_server_is_refused_before_the_request(
+        self, mock_http_client, mock_token_manager
+    ):
+        result = await preview_alert_rule(
+            workspace='testworkspace',
+            region='ap1',
+            servers=['web-1'],
+            target='cpu-usage',
+            threshold=80,
+        )
+
+        assert result['status'] == 'error'
+        mock_http_client.post.assert_not_called()
 
 
 class TestAttachDetachAlertRule:

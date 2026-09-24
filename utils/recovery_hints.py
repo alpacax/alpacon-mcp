@@ -88,8 +88,10 @@ _HINT_REGISTRY: dict[tuple[int, str], dict[str, list[str]]] = {
         'recovery_hints': [
             'The alert or alert rule ID may be incorrect.',
             'Use list_alerts or get_alert_rules to find valid IDs.',
-            'A 404 on attach_alert_rule or detach_alert_rule means a wrong server_id.',
-            'A bad alert rule ID gives a 400 instead of a 404.',
+            'A 404 on attach_alert_rule or detach_alert_rule means a wrong server_id;'
+            ' a bad alert rule ID there gives a 400 instead.',
+            'A 404 on preview_alert_rule means no rule with that rule_id, or every'
+            ' server the rule is attached to is outside what you can see.',
         ],
         'related_tools': ['list_alerts', 'get_alert_rules', 'list_servers'],
     },

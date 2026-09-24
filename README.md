@@ -445,6 +445,7 @@ OAuth/browser callers must scope command execution and file transfers under an a
 - **update_alert_rule**: Update alert rule configuration, including notification destinations
 - **delete_alert_rule**: Delete an alert rule
 - **get_alert_rule_recipients**: Preview who a rule would notify, as counts only—never names
+- **preview_alert_rule**: Replay a rule, saved or not, over up to seven days of stored samples to see how many alerts it would have raised, how many would have interrupted someone, and who would receive them; stores nothing
 - **list_rule_overrides** / **get_rule_override**: Per-server departures from a workspace alert rule
 - **create_rule_override** / **update_rule_override** / **delete_rule_override**: Manage a per-server override
 
