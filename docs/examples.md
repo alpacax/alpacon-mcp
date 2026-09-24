@@ -263,6 +263,8 @@ attach_alert_rule(
 
 Restrict who hears about it: `update_alert_rule(rule_id="<uuid>", workspace="production", notify_email="admins", notify_slack_channel=False)` routes the mail to workspace admins alone and drops the channel post—only a human caller may set either field. Before or after tuning them, `get_alert_rule_recipients(rule_id="<uuid>", workspace="production")` (needs alpacon-server 2.36.0+) previews the effect as counts only, never names—useful for confirming a rule reaches the right group before it ever fires.
 
+Tune a threshold before saving it: `preview_alert_rule(workspace="production", servers=["<uuid>"], target="cpu-usage", threshold=80, duration_s=300)` replays that rule over the last 24 hours and reports each episode it would have raised, `summary.would_interrupt` (how many would have reached someone by email or Slack), and the recipient counts. For a saved rule, `preview_alert_rule(workspace="production", rule_id="<uuid>", threshold=90, window_s=604800)` tries a new threshold over its own servers and overrides for the full seven days. Nothing is stored either way.
+
 One host runs hotter than the fleet: `create_rule_override(server_id="<uuid>", rule_id="<uuid>", workspace="production", threshold=95)` replaces the threshold for that server alone, leaving `recovery_threshold` and `duration_s` at the rule's own value; `create_rule_override(..., enabled=False)` exempts the server from the rule entirely. `list_rule_overrides(workspace, server_id="<uuid>")` shows what a host currently departs from.
 
 ---
