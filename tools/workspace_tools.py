@@ -48,7 +48,12 @@ def _validate_rollout_policy(policy: Any) -> str | None:
             "agent_rollout_policy must be an object with only 'mode' and/or "
             "'window' keys."
         )
-    if 'mode' in policy and policy['mode'] not in _ROLLOUT_MODES:
+    if 'mode' in policy and (
+        not isinstance(policy['mode'], str) or policy['mode'] not in _ROLLOUT_MODES
+    ):
+        # isinstance guard first: an unhashable mode (a list or dict) would
+        # otherwise raise TypeError on the frozenset membership test below,
+        # turning a validation error into an unhandled exception.
         return (
             "agent_rollout_policy.mode must be one of 'latest', 'n_minus_1', "
             "or 'manual'."
@@ -506,10 +511,11 @@ async def get_workspace_preferences(
         'n_minus_1 with 400 preferences_agent_rollout_mode_unavailable when this '
         'deployment has no pinned-upgrade targets enabled yet. '
         'DEPRECATED: auto_agent_upgrade (boolean) is still accepted for one release and is '
-        'translated locally into agent_rollout_policy (true -> {"mode": "latest"}, false -> '
-        '{"mode": "manual"}); it is never sent to the server as-is. When both '
-        'agent_rollout_policy and auto_agent_upgrade are given, agent_rollout_policy wins. '
-        'Pass agent_rollout_policy directly instead. '
+        'translated locally into a policy fragment (true -> {"mode": "latest"}, false -> '
+        '{"mode": "manual"}); it is never sent to the server as-is. When both are given, '
+        'that fragment is merged underneath agent_rollout_policy: a key agent_rollout_policy '
+        'names wins, but a key it leaves out (e.g. window, when only the boolean set mode) '
+        'still comes from the boolean. Pass agent_rollout_policy directly instead. '
         "Warning: timezone is the workspace's billing clock—changing it shifts the daily "
         'usage-aggregation boundary. '
         'Warning: the list fields (enabled_extensions, allowed_domains) REPLACE the whole '
@@ -534,11 +540,14 @@ async def update_workspace_preferences(
     invite_ttl: int | None = None,
     enabled_extensions: list[str] | None = None,
     websh_session_timeout: int | None = None,
-    agent_rollout_policy: dict[str, Any] | None = None,
     auto_agent_upgrade: bool | None = None,
     package_proxy: str | None = None,
     billing_email: str | None = None,
     allowed_domains: list[str] | None = None,
+    # Appended after every pre-existing parameter, not inserted among them:
+    # a caller still passing the old parameters positionally (before
+    # `region`) must keep landing on the same ones.
+    agent_rollout_policy: dict[str, Any] | None = None,
     region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
@@ -555,21 +564,25 @@ async def update_workspace_preferences(
             (not additive); read via get_workspace_preferences and merge before sending.
             Narrowing this list fails with HTTP 402 on non-enterprise plans (optional)
         websh_session_timeout: Websh idle session timeout, in seconds (optional)
-        agent_rollout_policy: Agent-upgrade rollout policy: {"mode": "latest"|
-            "n_minus_1"|"manual", "window": {"days": [...], "start_hour": ...,
-            "length_hours": ..., "timezone": "..."}}. A write may name only part
-            of the object; the rest keeps its current value. Validated locally
-            before the request is sent (optional)
         auto_agent_upgrade: DEPRECATED, use agent_rollout_policy. Translated
-            locally to a policy write (true -> mode "latest", false -> mode
-            "manual") and never sent to the server as-is; ignored when
-            agent_rollout_policy is also given (optional)
+            locally to a policy fragment (true -> {"mode": "latest"}, false ->
+            {"mode": "manual"}) and never sent to the server as-is. Merged
+            underneath agent_rollout_policy when both are given: an explicit
+            key in agent_rollout_policy overrides the alias's value for that
+            same key, but a key the explicit object does not name (e.g. window
+            when only the alias set mode) still comes from the alias (optional)
         package_proxy: Proxy server URL for package installation, e.g.
             http://proxy.example.com:8080 (optional)
         billing_email: Billing contact email; SaaS-only field (optional)
         allowed_domains: Allowed email domains for invites; SaaS-only field. Replaces the
             whole list (not additive); read via get_workspace_preferences and merge before
             sending (optional)
+        agent_rollout_policy: Agent-upgrade rollout policy: {"mode": "latest"|
+            "n_minus_1"|"manual", "window": {"days": [...], "start_hour": ...,
+            "length_hours": ..., "timezone": "..."}}. A write may name only part
+            of the object; the rest keeps its current value. Validated locally
+            before the request is sent. See auto_agent_upgrade for the merge
+            order when both are given (optional)
         region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:

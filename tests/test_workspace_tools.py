@@ -901,6 +901,10 @@ class TestUpdateWorkspacePreferencesAgentRolloutPolicy:
             'not-a-dict',
             {'mode': 'latest', 'unknown_key': True},
             {'mode': 'sometimes'},
+            # Unhashable `mode` values: must not raise TypeError doing a
+            # frozenset membership test, only a clean validation error.
+            {'mode': ['latest']},
+            {'mode': {'nested': 'latest'}},
             {'window': 'not-a-dict'},
             {'window': {'days': []}},
             {'window': {'days': [0, 0, 1]}},
