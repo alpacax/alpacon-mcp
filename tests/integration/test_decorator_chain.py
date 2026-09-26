@@ -482,6 +482,9 @@ class TestLoggedParameterSurface:
             'remote_directory',
             'remote_file_path',
             'remote_paths',
+            # workspace-scoped configuration objects; no secrets, and useful
+            # in the audit trail to see what policy a write actually asked for
+            'agent_rollout_policy',
             # the authority a credential was granted
             'presets',
             'scopes',

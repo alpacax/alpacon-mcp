@@ -326,6 +326,17 @@ The `security_audit` prompt helps pick between these lenses when the question is
 
 Python packages have the same trio: `list_python_packages`, `install_python_package`, `remove_python_package`.
 
+### Setting the agent auto-upgrade policy
+
+> *"Hold agents one release behind latest, and only upgrade them overnight."*
+
+1. `get_workspace_preferences(workspace)`—check the current `agent_rollout_policy` (`mode` and `window`) before changing it
+2. `update_workspace_preferences(workspace, agent_rollout_policy={"mode": "n_minus_1", "window": {"days": [0, 1, 2, 3, 4, 5, 6], "start_hour": 1, "length_hours": 4, "timezone": "UTC"}})`—a write may name only part of the object (just `mode`, or just one `window` key); whatever it leaves out keeps its current value
+3. `n_minus_1` can come back refused with `error_code: preferences_agent_rollout_mode_unavailable` on a deployment that has no pinned agent-upgrade targets enabled yet—use `latest` (upgrade to the newest release) or `manual` (no automatic upgrade; upgrade a server explicitly with `upgrade_agent`) instead
+4. A malformed `window` (an hour out of `0-23`, an unknown timezone, …) is rejected locally before any request is sent, naming the field that is wrong
+
+The deprecated `auto_agent_upgrade` boolean is still accepted for one release—`update_workspace_preferences(workspace, auto_agent_upgrade=True)` is translated locally to `agent_rollout_policy={"mode": "latest"}`—but the response carries a `deprecation_note`, and a caller naming both fields gets whatever `agent_rollout_policy` says.
+
 ---
 
 ## 🖥️ Bringing a new host in

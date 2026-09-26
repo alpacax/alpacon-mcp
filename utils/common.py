@@ -243,10 +243,43 @@ ALERT_RULE_PREVIEW_REFUSAL_HINTS: dict[str, str] = {
     ),
 }
 
+#: `agent_rollout_policy` writes on `update_workspace_preferences`. The tool
+#: validates the shape locally before sending, so these only fire on a rule
+#: the client-side check does not (yet) mirror, or one that depends on
+#: server-side state the client cannot see (`_MODE_UNAVAILABLE`).
+AGENT_ROLLOUT_POLICY_REFUSAL_HINTS: dict[str, str] = {
+    'preferences_agent_rollout_policy_invalid': (
+        "agent_rollout_policy must be an object with only 'mode' and/or "
+        "'window' keys, e.g. {'mode': 'latest'}. Retry with a corrected shape."
+    ),
+    'preferences_agent_rollout_mode_invalid': (
+        "mode must be one of 'latest', 'n_minus_1', or 'manual'."
+    ),
+    'preferences_agent_rollout_mode_unavailable': (
+        'n_minus_1 cannot be chosen yet on this deployment: it needs pinned '
+        "agent-upgrade targets, which are not enabled here. Use 'latest' or "
+        "'manual' instead."
+    ),
+    'preferences_agent_rollout_window_days_invalid': (
+        'window.days must be a non-empty list of distinct integers 0-6 (Monday is 0).'
+    ),
+    'preferences_agent_rollout_window_start_hour_invalid': (
+        'window.start_hour must be an integer 0-23.'
+    ),
+    'preferences_agent_rollout_window_length_invalid': (
+        'window.length_hours must be an integer 1-24.'
+    ),
+    'preferences_agent_rollout_window_timezone_invalid': (
+        'window.timezone must be a valid IANA timezone name, e.g. '
+        "'Asia/Seoul' or 'UTC'."
+    ),
+}
+
 _ERROR_CODE_HINT: dict[str, str] = {
     'command_inline_credential': INLINE_CREDENTIAL_HINT,
     **FILE_EXEC_REFUSAL_HINTS,
     **ALERT_RULE_PREVIEW_REFUSAL_HINTS,
+    **AGENT_ROLLOUT_POLICY_REFUSAL_HINTS,
     'workspace_extension_plan_required': WORKSPACE_EXTENSION_PLAN_REQUIRED_HINT,
     'workspace_extension_not_enabled': WORKSPACE_EXTENSION_NOT_ENABLED_HINT,
 }

@@ -925,11 +925,13 @@ List the MFA methods allowed for the workspace (`allowed_mfa_methods`, `passkey_
 **Note:** Like `get_workspace_security`, this requires JWT (OAuth/SSO) authentication (a static API token is rejected up front) and the route is SaaS-only.
 
 ### `get_workspace_preferences`
-Get the workspace-wide preferences: timezone, locale, `front_url`, `invite_ttl`, `enabled_extensions`, `websh_session_timeout`, `auto_agent_upgrade`, `package_proxy`, `billing_email`, `allowed_domains`. Workspace-global configuration, not per-user.
+Get the workspace-wide preferences: timezone, locale, `front_url`, `invite_ttl`, `enabled_extensions`, `websh_session_timeout`, `agent_rollout_policy`, `package_proxy`, `billing_email`, `allowed_domains`. Workspace-global configuration, not per-user.
 
 **Parameters:**
 - `workspace` (string): Workspace name
 - `region` (string, optional): Region name; resolved from the workspace when omitted
+
+**Note:** The response also carries `auto_agent_upgrade`, a **deprecated** boolean alias for `agent_rollout_policy` (`true` unless `mode` is `manual`), kept for one release. Read `agent_rollout_policy` instead.
 
 ### `update_workspace_preferences`
 Update workspace-wide preferences. Only the fields you provide are sent (partial update).
@@ -943,13 +945,16 @@ Update workspace-wide preferences. Only the fields you provide are sent (partial
 - `invite_ttl` (integer, optional): Invitation link time-to-live, in seconds
 - `enabled_extensions` (array, optional): List of enabled extension names. Replaces the whole list (not additive); read via `get_workspace_preferences` and merge before sending. Narrowing it fails with HTTP 402 on non-enterprise plans
 - `websh_session_timeout` (integer, optional): Websh idle session timeout, in seconds
-- `auto_agent_upgrade` (boolean, optional): Whether agents auto-upgrade
+- `agent_rollout_policy` (object, optional): The agent-upgrade rollout policy: `{"mode": "latest"|"n_minus_1"|"manual", "window": {"days": [0-6, Monday is 0], "start_hour": 0-23, "length_hours": 1-24, "timezone": "<IANA>"}}`. A write may name only part of the object (just `mode`, or just one `window` key); whatever it leaves out keeps its current value. `manual` runs no automatic upgrade; `latest` and `n_minus_1` (one release behind) run the scheduled upgrade inside the window. The shape is validated locally before the request is sent
+- `auto_agent_upgrade` (boolean, optional): **Deprecated**, use `agent_rollout_policy`. Translated locally into a policy write—`true` becomes `{"mode": "latest"}`, `false` becomes `{"mode": "manual"}`—merged under whatever `agent_rollout_policy` also names, and never sent to the server as `auto_agent_upgrade`. When both are given, `agent_rollout_policy` wins on any key it names
 - `package_proxy` (string, optional): Proxy server URL for package installation
 - `billing_email` (string, optional): Billing contact email; SaaS-only field
 - `allowed_domains` (array, optional): Allowed email domains for invites; SaaS-only field. Replaces the whole list (not additive); read via `get_workspace_preferences` and merge before sending
 - `region` (string, optional): Region name; resolved from the workspace when omitted
 
 **⚠️ Warning:** `timezone` is the workspace's billing clock—changing it shifts the daily usage-aggregation boundary. The list fields (`enabled_extensions`, `allowed_domains`) replace the whole list rather than appending—read the current value, merge, then send. `billing_email` and `allowed_domains` are only accepted by the server on SaaS deployments.
+
+**Note:** Choosing `n_minus_1` can be refused with a `400` (`error_code: preferences_agent_rollout_mode_unavailable`) until this deployment has pinned agent-upgrade targets enabled—use `latest` or `manual` instead. A malformed `agent_rollout_policy` object is rejected locally with a field-specific message before any request is sent; a shape-valid object the server still refuses comes back with the coded `error_code` (`preferences_agent_rollout_policy_invalid`, `_mode_invalid`, `_window_days_invalid`, `_window_start_hour_invalid`, `_window_length_invalid`, `_window_timezone_invalid`) and an actionable message. The response of a call that used the deprecated `auto_agent_upgrade` input carries a `deprecation_note`.
 
 ### Why access control and security are read-only here
 
