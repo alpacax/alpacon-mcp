@@ -206,3 +206,16 @@ class TestDisruptiveActionForce:
                 in descriptions[action]
             )
         assert 'force=True' not in descriptions['update_information']
+
+    @pytest.mark.asyncio
+    async def test_removed_tools_are_not_registered(self):
+        """A future accidental re-registration of a removed tool must fail this test."""
+        names = {t.name for t in await mcp.list_tools()}
+
+        for removed in (
+            'shutdown_agent',
+            'upgrade_system',
+            'reboot_system',
+            'shutdown_system',
+        ):
+            assert removed not in names

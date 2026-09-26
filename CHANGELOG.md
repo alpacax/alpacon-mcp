@@ -125,7 +125,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   silently invalidate a secret the first call already issued.
 - `force` on the two disruptive server actions: `restart_agent` and `upgrade_agent` (#140). The
   server has refused these while a host is busy with an open Websh/WebFTP session or an in-flight
-  command since alpacon-server #2553, and `force=true` is the only way through. It defaults to
+  command since alpacax/alpacon-server#2553, and `force=true` is the only way through. It defaults to
   `false`, so an existing caller sends the same effective request as before; `update_information`
   is not disruptive and gains nothing.
 - `request_sudo_policy`: ask for a sudo policy through `/api/sudo/policy-requests/`, which mints an

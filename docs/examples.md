@@ -316,9 +316,12 @@ The `security_audit` prompt helps pick between these lenses when the question is
 
 1. `list_system_packages(server_id, workspace, package_name="openssl")` per server—inventory, no command execution
 2. `install_system_package(server_id, package_name="openssl", workspace)` to patch that one package
-3. For a full package upgrade across the fleet, start or reuse a Work Session (see "The shape of the
-   flow" above) and run `sudo apt-get upgrade -y` through `execute_command`—sudo may require MFA or a
-   separate approval; surface either to a human the same way as any other pending request
+3. For a full package upgrade across the fleet, open a Work Session with `scopes` including `sudo`
+   (see "The shape of the flow" above) and run `sudo apt-get upgrade -y` through `execute_command`.
+   A sudo invocation not already covered by a Work Session sudo policy either queues for human
+   approval or is denied outright with no request anyone can approve—check `sudo_denial.category`
+   before waiting on it, and surface a queued approval to a human the same way as any other pending
+   request
 4. `sudo reboot` through `execute_command` in that same session if the upgrade needs a restart
 
 Python packages have the same trio: `list_python_packages`, `install_python_package`, `remove_python_package`.
