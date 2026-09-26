@@ -119,17 +119,21 @@ Pin or unpin a server for the calling user. A personal preference flag, not a fl
 
 **Parameters:** `server_id`, `status` (boolean), `workspace`, `region` (optional)
 
-### Agent and host actions
+### Agent actions
 
-Each takes `server_id`, `workspace`, and an optional `region`. The six disruptive ones also take `force` (boolean, default `false`), which runs the action even while the host is busy with an open Websh or WebFTP session or an in-flight command, tearing that work down. `update_information` is not disruptive and takes no `force`.
+Each takes `server_id`, `workspace`, and an optional `region`. This is the complete set of actions
+this endpoint accepts; an action outside this set returns 400. The two disruptive ones also take
+`force` (boolean, default `false`), which runs the action even while the host is busy with an open
+Websh or WebFTP session or an in-flight command, tearing that work down. `update_information` is
+not disruptive and takes no `force`.
 
 - `restart_agent`: Restart the Alpacon agent process
-- `shutdown_agent`: Stop the agent process
 - `upgrade_agent`: Upgrade the agent to the latest version
 - `update_information`: Re-collect hardware, OS, network, and package data
-- `upgrade_system`: Upgrade all OS packages through the package manager
-- `reboot_system`: Reboot the host
-- `shutdown_system`: Power the host off
+
+Host-level power operations (an OS package upgrade, a reboot, a shutdown) are not one-click tools.
+They run through a Work Session and `execute_command`—see "Keeping hosts current" in
+[examples.md](examples.md)—so they carry sudo, MFA or approval, and recording.
 
 ### Registration tokens (Alpamon)
 

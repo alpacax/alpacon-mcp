@@ -435,7 +435,8 @@ async def _server_action(
         'Restart the Alpacon agent process on a server. The agent will briefly go offline during restart. '
         'Use this when the agent is unresponsive or after configuration changes. Returns a command object tracking the restart operation. '
         f'{_FORCE_BUSY_NOTE}'
-        'Related: shutdown_agent, upgrade_agent. Note: Server will briefly go offline.'
+        'This endpoint now accepts only three actions: restart_agent, upgrade_agent, and update_information. '
+        'Related: upgrade_agent. Note: Server will briefly go offline.'
     ),
     annotations=DESTRUCTIVE,
     meta={'anthropic/searchHint': 'agent restart alpacon process'},
@@ -455,6 +456,10 @@ async def restart_agent(
 
     Returns:
         Agent restart response
+
+    Note:
+        The server's action endpoint now accepts only three actions:
+        restart_agent, upgrade_agent, and update_information.
     """
     token = kwargs.get('token')
 
@@ -471,48 +476,10 @@ async def restart_agent(
 
 @mcp_tool_handler(
     description=(
-        'Shut down the Alpacon agent process on a server. The server will appear offline in the workspace until the agent is manually restarted. '
-        'Use with caution as remote access will be lost. Returns a command object tracking the shutdown operation. '
-        f'{_FORCE_BUSY_NOTE}'
-        'Related: restart_agent. Note: Remote access will be lost until manual restart.'
-    ),
-    annotations=DESTRUCTIVE,
-    meta={'anthropic/searchHint': 'agent shutdown stop process'},
-)
-async def shutdown_agent(
-    server_id: str, workspace: str, region: str = '', force: bool = False, **kwargs
-) -> dict[str, Any]:
-    """Shut down the Alpacon agent on a server.
-
-    Args:
-        server_id: Server ID
-        workspace: Workspace name. Required parameter
-        region: Region (ap1, us1). Auto-detected if not provided
-        force: Run even when the server is busy with an open Websh/WebFTP
-            session or an in-flight command, tearing that work down
-            (default: False)
-
-    Returns:
-        Agent shutdown response
-    """
-    token = kwargs.get('token')
-
-    return await _server_action(
-        server_id=server_id,
-        workspace=workspace,
-        region=region,
-        action='shutdown_agent',
-        default_message='Failed to shutdown agent',
-        token=token,
-        force=force,
-    )
-
-
-@mcp_tool_handler(
-    description=(
         'Upgrade the Alpacon agent on a server to the latest available version. The agent will briefly restart during the upgrade process. '
         'Use this to keep agents up to date with the latest features and security patches. Returns a command object tracking the upgrade operation. '
         f'{_FORCE_BUSY_NOTE}'
+        'This endpoint now accepts only three actions: restart_agent, upgrade_agent, and update_information. '
         'Related: restart_agent. Note: Agent briefly restarts during upgrade.'
     ),
     annotations=DESTRUCTIVE,
@@ -533,6 +500,10 @@ async def upgrade_agent(
 
     Returns:
         Agent upgrade response
+
+    Note:
+        The server's action endpoint now accepts only three actions:
+        restart_agent, upgrade_agent, and update_information.
     """
     token = kwargs.get('token')
 
@@ -551,7 +522,8 @@ async def upgrade_agent(
     description=(
         'Refresh system information for a server by triggering the agent to re-collect hardware, OS, network, and package data. '
         'Use this after hardware changes or OS updates to ensure the dashboard reflects the current state. '
-        'Returns a command object tracking the operation.'
+        'Returns a command object tracking the operation. '
+        'This endpoint now accepts only three actions: restart_agent, upgrade_agent, and update_information.'
     ),
     annotations=ADDITIVE,
     meta={'anthropic/searchHint': 'refresh system info hardware OS rescan'},
@@ -568,6 +540,10 @@ async def update_information(
 
     Returns:
         Update information response
+
+    Note:
+        The server's action endpoint now accepts only three actions:
+        restart_agent, upgrade_agent, and update_information.
     """
     token = kwargs.get('token')
 
@@ -578,125 +554,6 @@ async def update_information(
         action='update_information',
         default_message='Failed to update server information',
         token=token,
-    )
-
-
-@mcp_tool_handler(
-    description=(
-        'Upgrade all system packages on a server via the OS package manager (e.g., apt upgrade, yum update). '
-        'This may take several minutes depending on the number of pending updates. Use with caution in production environments. '
-        'Returns a command object tracking the upgrade operation. '
-        f'{_FORCE_BUSY_NOTE}'
-        'Related: list_system_packages (check pending updates), reboot_system (may be required after kernel updates). Note: May take several minutes.'
-    ),
-    annotations=DESTRUCTIVE,
-    meta={'anthropic/searchHint': 'system packages upgrade apt yum update all'},
-)
-async def upgrade_system(
-    server_id: str, workspace: str, region: str = '', force: bool = False, **kwargs
-) -> dict[str, Any]:
-    """Upgrade all system packages on a server.
-
-    Args:
-        server_id: Server ID
-        workspace: Workspace name. Required parameter
-        region: Region (ap1, us1). Auto-detected if not provided
-        force: Run even when the server is busy with an open Websh/WebFTP
-            session or an in-flight command, tearing that work down
-            (default: False)
-
-    Returns:
-        System upgrade response
-    """
-    token = kwargs.get('token')
-
-    return await _server_action(
-        server_id=server_id,
-        workspace=workspace,
-        region=region,
-        action='upgrade_system',
-        default_message='Failed to upgrade system',
-        token=token,
-        force=force,
-    )
-
-
-@mcp_tool_handler(
-    description=(
-        'Reboot a server. The server will go offline briefly during the reboot process and reconnect automatically when the agent starts back up. '
-        'Use this after kernel updates or when a full system restart is required. Returns a command object tracking the reboot operation. '
-        f'{_FORCE_BUSY_NOTE}'
-        'Related: shutdown_system (full power off), upgrade_system (often precedes reboot). Note: Server reconnects automatically.'
-    ),
-    annotations=DESTRUCTIVE,
-    meta={'anthropic/searchHint': 'server reboot restart machine'},
-)
-async def reboot_system(
-    server_id: str, workspace: str, region: str = '', force: bool = False, **kwargs
-) -> dict[str, Any]:
-    """Reboot a server.
-
-    Args:
-        server_id: Server ID
-        workspace: Workspace name. Required parameter
-        region: Region (ap1, us1). Auto-detected if not provided
-        force: Run even when the server is busy with an open Websh/WebFTP
-            session or an in-flight command, tearing that work down
-            (default: False)
-
-    Returns:
-        System reboot response
-    """
-    token = kwargs.get('token')
-
-    return await _server_action(
-        server_id=server_id,
-        workspace=workspace,
-        region=region,
-        action='reboot_system',
-        default_message='Failed to reboot system',
-        token=token,
-        force=force,
-    )
-
-
-@mcp_tool_handler(
-    description=(
-        'Shut down a server completely. The server will power off and will NOT automatically reconnect. '
-        'Manual intervention is required to bring the server back online. Use with extreme caution. '
-        'Returns a command object tracking the shutdown operation. '
-        f'{_FORCE_BUSY_NOTE}'
-        'Related: reboot_system (use if you want the server to come back). Note: Requires manual intervention to power on again.'
-    ),
-    annotations=DESTRUCTIVE,
-    meta={'anthropic/searchHint': 'server shutdown power off halt'},
-)
-async def shutdown_system(
-    server_id: str, workspace: str, region: str = '', force: bool = False, **kwargs
-) -> dict[str, Any]:
-    """Shut down a server.
-
-    Args:
-        server_id: Server ID
-        workspace: Workspace name. Required parameter
-        region: Region (ap1, us1). Auto-detected if not provided
-        force: Run even when the server is busy with an open Websh/WebFTP
-            session or an in-flight command, tearing that work down
-            (default: False)
-
-    Returns:
-        System shutdown response
-    """
-    token = kwargs.get('token')
-
-    return await _server_action(
-        server_id=server_id,
-        workspace=workspace,
-        region=region,
-        action='shutdown_system',
-        default_message='Failed to shutdown system',
-        token=token,
-        force=force,
     )
 
 

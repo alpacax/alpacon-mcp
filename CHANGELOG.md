@@ -123,12 +123,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   its expiry is refused with `400 API_TOKEN_ALREADY_EXPIRED`. Paid plans only. The tool is annotated
   destructive rather than idempotent, so a client that auto-retries on idempotent hints will not
   silently invalidate a secret the first call already issued.
-- `force` on the six disruptive server actions: `restart_agent`, `shutdown_agent`, `upgrade_agent`,
-  `upgrade_system`, `reboot_system` and `shutdown_system` (#140). The server has refused these while
-  a host is busy with an open Websh/WebFTP session or an in-flight command since alpacon-server
-  #2553, and `force=true` is the only way through. It defaults to `false`, so an existing caller
-  sends the same effective request as before; `update_information` is not disruptive and gains
-  nothing.
+- `force` on the two disruptive server actions: `restart_agent` and `upgrade_agent` (#140). The
+  server has refused these while a host is busy with an open Websh/WebFTP session or an in-flight
+  command since alpacon-server #2553, and `force=true` is the only way through. It defaults to
+  `false`, so an existing caller sends the same effective request as before; `update_information`
+  is not disruptive and gains nothing.
 - `request_sudo_policy`: ask for a sudo policy through `/api/sudo/policy-requests/`, which mints an
   approval request an admin has to approve before the policy exists (#140). The tool returns
   `status="pending_approval"` with category `SUDO_POLICY_REQUEST_PENDING`, so a client that already
@@ -193,8 +192,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `""` meaning "no filter" now gets whatever the server does with a blank filter value.
   `server_id`, `limit`, and `page_size` are unaffected: a blank one was already rejected
   before the request was built.
+- `restart_agent`, `upgrade_agent`, and `update_information` now state in their description and
+  docstring that the server's action endpoint accepts only these three actions (#290).
 
 ### Removed
+- `shutdown_agent`, `upgrade_system`, `reboot_system`, and `shutdown_system` (#290). Privileged
+  power operations on a host or its agent—a shutdown, a reboot, an OS-level package upgrade—now go
+  through a Work Session with sudo, MFA, policy, or approval, and recording, rather than a
+  one-click action. The four action verbs were removed from the server's action endpoint, which
+  answers a removed action with `400`. `restart_agent`, `upgrade_agent`, and `update_information`
+  are unaffected; for the host upgrade/reboot flow, see "Keeping hosts current" in
+  [examples.md](docs/examples.md).
 - BREAKING: the invented `title` on `create_server_note` and `update_server_note`. The note
   serializer has no such field, so the server discarded whatever was sent.
 - BREAKING: `mentioned_users` on `update_server_note`. Only the `create` action routes to

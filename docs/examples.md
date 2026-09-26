@@ -315,8 +315,11 @@ The `security_audit` prompt helps pick between these lenses when the question is
 > *"Which servers still run the vulnerable openssl, and can we patch them?"*
 
 1. `list_system_packages(server_id, workspace, package_name="openssl")` per server—inventory, no command execution
-2. `install_system_package(server_id, package_name="openssl", workspace)` to patch one package, or `upgrade_system(server_id, workspace)` for everything
-3. `reboot_system(server_id, workspace)` when the update needs it
+2. `install_system_package(server_id, package_name="openssl", workspace)` to patch that one package
+3. For a full package upgrade across the fleet, start or reuse a Work Session (see "The shape of the
+   flow" above) and run `sudo apt-get upgrade -y` through `execute_command`—sudo may require MFA or a
+   separate approval; surface either to a human the same way as any other pending request
+4. `sudo reboot` through `execute_command` in that same session if the upgrade needs a restart
 
 Python packages have the same trio: `list_python_packages`, `install_python_package`, `remove_python_package`.
 
