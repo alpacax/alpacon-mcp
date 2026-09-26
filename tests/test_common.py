@@ -195,6 +195,35 @@ class TestUnwrapHttpResultGate:
         assert 'workspace admin' in out['message']
         assert 'workspace settings' in out['message']
 
+    @pytest.mark.parametrize(
+        ('code', 'expected_snippet'),
+        [
+            ('preferences_agent_rollout_policy_invalid', 'mode'),
+            ('preferences_agent_rollout_mode_invalid', 'n_minus_1'),
+            ('preferences_agent_rollout_mode_unavailable', 'pinned'),
+            ('preferences_agent_rollout_window_days_invalid', 'window.days'),
+            (
+                'preferences_agent_rollout_window_start_hour_invalid',
+                'window.start_hour',
+            ),
+            (
+                'preferences_agent_rollout_window_length_invalid',
+                'window.length_hours',
+            ),
+            (
+                'preferences_agent_rollout_window_timezone_invalid',
+                'window.timezone',
+            ),
+        ],
+    )
+    def test_agent_rollout_policy_codes_get_actionable_hints(
+        self, code, expected_snippet
+    ):
+        out = unwrap_http_result(self._envelope(code), default_message='failed')
+        assert out['status'] == 'error'
+        assert out['error_code'] == code
+        assert expected_snippet in out['message']
+
 
 class TestErrorCodeHint:
     def test_command_inline_credential_names_env_and_reason(self):
@@ -218,6 +247,27 @@ class TestErrorCodeHint:
         # Gate codes are handled entirely by work_session_gate_response;
         # _ERROR_CODE_HINT is only consulted on the generic error path.
         assert not (set(_ERROR_CODE_HINT) & _WORK_SESSION_GATE_CODES)
+
+    def test_mode_unavailable_names_pinned_upgrades_not_a_retry(self):
+        hint = _ERROR_CODE_HINT['preferences_agent_rollout_mode_unavailable']
+        assert 'pinned' in hint
+        assert 'latest' in hint
+        assert 'manual' in hint
+
+    @pytest.mark.parametrize(
+        'code',
+        [
+            'preferences_agent_rollout_policy_invalid',
+            'preferences_agent_rollout_mode_invalid',
+            'preferences_agent_rollout_mode_unavailable',
+            'preferences_agent_rollout_window_days_invalid',
+            'preferences_agent_rollout_window_start_hour_invalid',
+            'preferences_agent_rollout_window_length_invalid',
+            'preferences_agent_rollout_window_timezone_invalid',
+        ],
+    )
+    def test_agent_rollout_policy_hints_are_registered_and_non_empty(self, code):
+        assert _ERROR_CODE_HINT[code].strip()
 
 
 class TestResolveWorkSessionId:

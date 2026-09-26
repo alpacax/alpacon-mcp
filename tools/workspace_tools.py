@@ -2,6 +2,7 @@
 
 from http import HTTPStatus
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from utils.api_call import http_call_response
 from utils.auth import get_token_workspaces_with_dropped
@@ -15,6 +16,96 @@ from utils.decorators import mcp_tool_handler, require_jwt_auth
 from utils.http_client import http_client
 from utils.token_manager import TokenManager, get_token_manager
 from utils.tool_annotations import IDEMPOTENT_WRITE, READ_ONLY
+
+# Mirrors alpacon-server's AgentUpgradePolicy choices
+# (workspaces/api/agent_rollout.py); kept here rather than imported since this
+# is a separate deployable that talks to the server only over HTTP.
+_ROLLOUT_MODES = frozenset({'latest', 'n_minus_1', 'manual'})
+_ROLLOUT_POLICY_KEYS = frozenset({'mode', 'window'})
+_ROLLOUT_WINDOW_KEYS = frozenset({'days', 'start_hour', 'length_hours', 'timezone'})
+
+
+def _is_plain_int(value: Any) -> bool:
+    """True for a real int, not the `bool` subclass (`True`/`False` are ints)."""
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _validate_rollout_policy(policy: Any) -> str | None:
+    """Validate an `agent_rollout_policy` write locally before it reaches the API.
+
+    Mirrors the shape `AgentRolloutPolicyField.to_internal_value` accepts
+    (alpacon-server `workspaces/api/agent_rollout.py`), so a malformed write
+    fails fast with a field-specific message instead of round-tripping to the
+    server for a generic 400. A shape this check accepts can still be refused
+    server-side by state only the server knows—`n_minus_1` while pinned
+    upgrades are off comes back as the coded `preferences_agent_rollout_mode_unavailable`
+    (surfaced as `error_code` with a hint by `unwrap_http_result`).
+
+    Returns an error message, or None when the shape is valid.
+    """
+    if not isinstance(policy, dict) or not set(policy) <= _ROLLOUT_POLICY_KEYS:
+        return (
+            "agent_rollout_policy must be an object with only 'mode' and/or "
+            "'window' keys."
+        )
+    if 'mode' in policy and (
+        not isinstance(policy['mode'], str) or policy['mode'] not in _ROLLOUT_MODES
+    ):
+        # isinstance guard first: an unhashable mode (a list or dict) would
+        # otherwise raise TypeError on the frozenset membership test below,
+        # turning a validation error into an unhandled exception.
+        return (
+            "agent_rollout_policy.mode must be one of 'latest', 'n_minus_1', "
+            "or 'manual'."
+        )
+    if 'window' in policy:
+        window = policy['window']
+        if not isinstance(window, dict) or not set(window) <= _ROLLOUT_WINDOW_KEYS:
+            return (
+                'agent_rollout_policy.window must be an object with only '
+                "'days', 'start_hour', 'length_hours', 'timezone' keys."
+            )
+        if 'days' in window:
+            days = window['days']
+            if (
+                not isinstance(days, list)
+                or not days
+                or not all(_is_plain_int(day) and 0 <= day <= 6 for day in days)
+                or len(set(days)) != len(days)
+            ):
+                return (
+                    'agent_rollout_policy.window.days must be a non-empty '
+                    'list of distinct integers 0-6 (Monday is 0).'
+                )
+        if 'start_hour' in window:
+            start_hour = window['start_hour']
+            if not _is_plain_int(start_hour) or not 0 <= start_hour <= 23:
+                return 'agent_rollout_policy.window.start_hour must be an integer 0-23.'
+        if 'length_hours' in window:
+            length_hours = window['length_hours']
+            if not _is_plain_int(length_hours) or not 1 <= length_hours <= 24:
+                return (
+                    'agent_rollout_policy.window.length_hours must be an integer 1-24.'
+                )
+        if 'timezone' in window:
+            timezone_name = window['timezone']
+            if (
+                not isinstance(timezone_name, str)
+                or not timezone_name
+                or len(timezone_name) > 64
+            ):
+                return (
+                    'agent_rollout_policy.window.timezone must be a valid '
+                    'IANA timezone name.'
+                )
+            try:
+                ZoneInfo(timezone_name)
+            except (ZoneInfoNotFoundError, ValueError):
+                return (
+                    'agent_rollout_policy.window.timezone must be a valid '
+                    'IANA timezone name.'
+                )
+    return None
 
 
 def _collect_workspaces_from_tokens(
@@ -364,8 +455,13 @@ async def list_workspace_mfa_methods(
     description=(
         'Get the workspace-wide preferences: timezone, locale (country/language), '
         'front_url, invite_ttl, enabled_extensions, websh_session_timeout, '
-        'auto_agent_upgrade, package_proxy, billing_email, and allowed_domains. '
-        'This is workspace-global configuration, not a per-user preference. '
+        'agent_rollout_policy, package_proxy, billing_email, and allowed_domains. '
+        'agent_rollout_policy is {"mode": "latest"|"n_minus_1"|"manual", "window": '
+        '{"days": [0-6, Monday is 0], "start_hour": 0-23, "length_hours": 1-24, '
+        '"timezone": "<IANA>"}} and controls automatic agent upgrades. '
+        'DEPRECATED: the response also carries auto_agent_upgrade, a boolean alias '
+        '(true unless mode is manual) kept for one release; read agent_rollout_policy '
+        'instead. This is workspace-global configuration, not a per-user preference. '
         'Related: update_workspace_preferences.'
     ),
     annotations=READ_ONLY,
@@ -383,7 +479,11 @@ async def get_workspace_preferences(
         region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
-        Workspace preferences response
+        Workspace preferences response. `agent_rollout_policy` is the current
+        agent-upgrade rollout policy (`mode` plus its upgrade `window`).
+        DEPRECATED: the response also carries `auto_agent_upgrade` (a boolean
+        alias, kept for one release) alongside it; read `agent_rollout_policy`
+        instead.
     """
     token = kwargs.get('token')
 
@@ -401,8 +501,21 @@ async def get_workspace_preferences(
     description=(
         'Update workspace-wide preferences. Only the fields you provide are sent (partial '
         'update). Fields: front_url, country, language, timezone, invite_ttl, '
-        'enabled_extensions, websh_session_timeout, auto_agent_upgrade, package_proxy, '
+        'enabled_extensions, websh_session_timeout, agent_rollout_policy, package_proxy, '
         'billing_email, allowed_domains. '
+        'agent_rollout_policy controls automatic agent upgrades: {"mode": '
+        '"latest"|"n_minus_1"|"manual", "window": {"days": [0-6, Monday is 0], '
+        '"start_hour": 0-23, "length_hours": 1-24, "timezone": "<IANA>"}}. A write may '
+        'name only part of the object (e.g. just "mode"); what it leaves out keeps its '
+        'current value. Validated locally before sending; the server may still refuse '
+        'n_minus_1 with 400 preferences_agent_rollout_mode_unavailable when this '
+        'deployment has no pinned-upgrade targets enabled yet. '
+        'DEPRECATED: auto_agent_upgrade (boolean) is still accepted for one release and is '
+        'translated locally into a policy fragment (true -> {"mode": "latest"}, false -> '
+        '{"mode": "manual"}); it is never sent to the server as-is. When both are given, '
+        'that fragment is merged underneath agent_rollout_policy: a key agent_rollout_policy '
+        'names wins, but a key it leaves out (e.g. window, when only the boolean set mode) '
+        'still comes from the boolean. Pass agent_rollout_policy directly instead. '
         "Warning: timezone is the workspace's billing clock—changing it shifts the daily "
         'usage-aggregation boundary. '
         'Warning: the list fields (enabled_extensions, allowed_domains) REPLACE the whole '
@@ -415,7 +528,7 @@ async def get_workspace_preferences(
     ),
     annotations=IDEMPOTENT_WRITE,
     meta={
-        'anthropic/searchHint': 'workspace preferences update modify timezone billing',
+        'anthropic/searchHint': 'workspace preferences update modify timezone billing agent rollout upgrade',
     },
 )
 async def update_workspace_preferences(
@@ -431,6 +544,10 @@ async def update_workspace_preferences(
     package_proxy: str | None = None,
     billing_email: str | None = None,
     allowed_domains: list[str] | None = None,
+    # Appended after every pre-existing parameter, not inserted among them:
+    # a caller still passing the old parameters positionally (before
+    # `region`) must keep landing on the same ones.
+    agent_rollout_policy: dict[str, Any] | None = None,
     region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
@@ -447,17 +564,30 @@ async def update_workspace_preferences(
             (not additive); read via get_workspace_preferences and merge before sending.
             Narrowing this list fails with HTTP 402 on non-enterprise plans (optional)
         websh_session_timeout: Websh idle session timeout, in seconds (optional)
-        auto_agent_upgrade: Whether agents auto-upgrade (optional)
+        auto_agent_upgrade: DEPRECATED, use agent_rollout_policy. Translated
+            locally to a policy fragment (true -> {"mode": "latest"}, false ->
+            {"mode": "manual"}) and never sent to the server as-is. Merged
+            underneath agent_rollout_policy when both are given: an explicit
+            key in agent_rollout_policy overrides the alias's value for that
+            same key, but a key the explicit object does not name (e.g. window
+            when only the alias set mode) still comes from the alias (optional)
         package_proxy: Proxy server URL for package installation, e.g.
             http://proxy.example.com:8080 (optional)
         billing_email: Billing contact email; SaaS-only field (optional)
         allowed_domains: Allowed email domains for invites; SaaS-only field. Replaces the
             whole list (not additive); read via get_workspace_preferences and merge before
             sending (optional)
+        agent_rollout_policy: Agent-upgrade rollout policy: {"mode": "latest"|
+            "n_minus_1"|"manual", "window": {"days": [...], "start_hour": ...,
+            "length_hours": ..., "timezone": "..."}}. A write may name only part
+            of the object; the rest keeps its current value. Validated locally
+            before the request is sent. See auto_agent_upgrade for the merge
+            order when both are given (optional)
         region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
-        Workspace preferences update response
+        Workspace preferences update response. Carries a `deprecation_note` when
+        the deprecated `auto_agent_upgrade` input was used.
     """
     token = kwargs.get('token')
 
@@ -476,8 +606,6 @@ async def update_workspace_preferences(
         update_data['enabled_extensions'] = enabled_extensions
     if websh_session_timeout is not None:
         update_data['websh_session_timeout'] = websh_session_timeout
-    if auto_agent_upgrade is not None:
-        update_data['auto_agent_upgrade'] = auto_agent_upgrade
     if package_proxy is not None:
         update_data['package_proxy'] = package_proxy
     if billing_email is not None:
@@ -485,10 +613,37 @@ async def update_workspace_preferences(
     if allowed_domains is not None:
         update_data['allowed_domains'] = allowed_domains
 
+    # auto_agent_upgrade is the deprecated alias: map it to a policy fragment
+    # first, then let an explicit agent_rollout_policy override it field by
+    # field, matching the server's own "agent_rollout_policy wins" precedence
+    # (workspaces/api/agent_rollout.py). Neither is ever sent to the server as
+    # `auto_agent_upgrade`.
+    rollout_policy_update: dict[str, Any] = {}
+    deprecation_note: str | None = None
+    if auto_agent_upgrade is not None:
+        alias_mode = 'latest' if auto_agent_upgrade else 'manual'
+        rollout_policy_update['mode'] = alias_mode
+        deprecation_note = (
+            'auto_agent_upgrade is deprecated and will be removed in a future '
+            f"release; it was translated to agent_rollout_policy={{'mode': "
+            f"'{alias_mode}'}}. Pass agent_rollout_policy directly instead."
+        )
+    if agent_rollout_policy is not None:
+        validation_error = _validate_rollout_policy(agent_rollout_policy)
+        if validation_error:
+            return error_response(validation_error, region=region, workspace=workspace)
+        rollout_policy_update.update(agent_rollout_policy)
+    if rollout_policy_update:
+        update_data['agent_rollout_policy'] = rollout_policy_update
+
     if not update_data:
         return error_response(
             'No update data provided', region=region, workspace=workspace
         )
+
+    extra_context: dict[str, Any] = {}
+    if deprecation_note is not None:
+        extra_context['deprecation_note'] = deprecation_note
 
     return await http_call_response(
         http_client.patch,
@@ -498,4 +653,5 @@ async def update_workspace_preferences(
         token=token,
         default_message='Failed to update workspace preferences',
         data=update_data,
+        **extra_context,
     )

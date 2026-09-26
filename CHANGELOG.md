@@ -194,6 +194,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   before the request was built.
 - `restart_agent`, `upgrade_agent`, and `update_information` now state in their description and
   docstring that the server's action endpoint accepts only these three actions (#290).
+- `get_workspace_preferences` and `update_workspace_preferences` now read and write
+  `agent_rollout_policy` (#292), the workspace's agent-upgrade rollout policy:
+  `{"mode": "latest"|"n_minus_1"|"manual", "window": {"days": [0-6, Monday is 0],
+  "start_hour": 0-23, "length_hours": 1-24, "timezone": "<IANA>"}}`. A write may name
+  only part of the object; whatever it leaves out keeps its current value, and the
+  shape is validated locally—naming an unknown key, an out-of-range hour, a duplicate
+  day, or an unrecognized timezone fails before any request is sent. `update_workspace_preferences`
+  no longer sends `auto_agent_upgrade` to the server. Choosing `n_minus_1` while this
+  deployment has no pinned agent-upgrade targets enabled comes back as a readable
+  `error_code: preferences_agent_rollout_mode_unavailable` instead of an opaque `400`;
+  the window validation codes (`preferences_agent_rollout_{policy,mode,window_days,
+  window_start_hour,window_length,window_timezone}_invalid`) surface the same way.
+
+### Deprecated
+- `auto_agent_upgrade` on `update_workspace_preferences` (#292). Still accepted for one
+  release: `true` is translated locally to `agent_rollout_policy={"mode": "latest"}` and
+  `false` to `{"mode": "manual"}`, merged under whatever `agent_rollout_policy` also
+  names (which wins on any key it names), and the response carries a `deprecation_note`.
+  `get_workspace_preferences` still returns `auto_agent_upgrade` alongside
+  `agent_rollout_policy`, matching the server's own one-release alias. Removed in a
+  future release—callers should move to `agent_rollout_policy`.
 
 ### Removed
 - `shutdown_agent`, `upgrade_system`, `reboot_system`, and `shutdown_system` (#290). Privileged

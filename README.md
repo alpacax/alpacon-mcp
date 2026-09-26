@@ -518,8 +518,8 @@ These tools need a JWT/OAuth session (hosted server), a browser session, or a lo
 - **get_workspace_access_control**: Get access control settings (read-only)
 - **get_workspace_security**: Get authentication/security settings (JWT/SSO auth only, SaaS only)
 - **list_workspace_mfa_methods**: List allowed MFA methods (JWT/SSO auth only, SaaS only)
-- **get_workspace_preferences**: Get workspace-wide preferences
-- **update_workspace_preferences**: Update workspace-wide preferences (partial)
+- **get_workspace_preferences**: Get workspace-wide preferences, including the `agent_rollout_policy` (mode + upgrade window)
+- **update_workspace_preferences**: Update workspace-wide preferences (partial), including `agent_rollout_policy`; the old `auto_agent_upgrade` boolean is accepted for one release and mapped onto it, deprecated
 - **health_check**: MCP server health, version, and authentication mode
 
 ### 🧩 Resources and prompts
