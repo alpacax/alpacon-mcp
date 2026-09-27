@@ -6,6 +6,7 @@ import os
 import platform
 import re
 from datetime import UTC, datetime, timedelta
+from http import HTTPStatus
 from typing import Any
 from urllib.parse import urlparse
 
@@ -313,8 +314,8 @@ _ERROR_CODE_HINT: dict[str, str] = {
 # unchanged.
 #
 # An older or self-hosted alpacon-server omits `gate` entirely but still sends
-# one of these six legacy `*_limit_exceeded` codes (ADR 0069 D8 backward
-# compatibility); this table is what recovers the axis in that case.
+# one of these six legacy `*_limit_exceeded` codes for backward compatibility;
+# this table is what recovers the axis in that case.
 _LIMIT_EXCEEDED_CODE_TO_AXIS: dict[str, str] = {
     'server_limit_exceeded': 'server',
     'user_limit_exceeded': 'user',
@@ -619,7 +620,7 @@ def _plan_limit_axis(body: dict[str, Any] | None, code: str | None) -> str | Non
     `gate: "plan"` but no `axis`, so it falls through to None here and keeps
     the generic _ERROR_CODE_HINT/(402, "general") handling.
 
-    Rule 2 (an older or self-hosted alpacon-server, ADR 0069 D8 backward
+    Rule 2 (an older or self-hosted alpacon-server, kept for backward
     compatibility): no `gate` at all, but `code` is one of the six legacy
     `*_limit_exceeded` codes -> the axis _LIMIT_EXCEEDED_CODE_TO_AXIS maps it
     to. A `gate` present with any other value (a non-plan gate, or "plan"
@@ -661,9 +662,15 @@ def plan_limit_response(
             passed through unmodified.
         axis: One of `server`, `user`, `application`, `websh`, `webftp`,
             `websh-share`, `workspace` (#296).
-        next_value: The body's `next` field, passed through unmodified: the
-            server's self-relative entitlements-read pointer on a count cap,
+        next_value: The body's `next` field, passed through unmodified for a
+            machine caller that wants to read current usage numbers: the
+            server's self-relative entitlements-read API path (e.g.
+            `/api/workspaces/workspaces/<id>/entitlements/`) on a count cap,
             or None on a monthly axis or an older server that never sent one.
+            Deliberately never used to build the billing link in
+            `next_action`—it is an API path to call, not a console page to
+            open, and the workspace host decides that link instead (see
+            _plan_limit_billing_link).
         **kwargs: Extra identifiers merged into the response (region,
             workspace, status_code, ...); `region` and `workspace` also
             decide the billing link in `next_action`.
@@ -703,11 +710,14 @@ def unwrap_http_result(
     can wrap the payload with `success_response`.
 
     WorkSession gate codes (``_WORK_SESSION_GATE_CODES``) take the dedicated
-    ``work_session_gate_response`` path, unchanged from before. A plan-limit
-    refusal (``gate: "plan"`` with an ``axis``, or a gate-less legacy
-    ``*_limit_exceeded`` code) takes the dedicated ``plan_limit_response``
-    path next—see ``_plan_limit_axis``. Any other server `code` found in the
-    error body is now surfaced as `error_code` in the returned response
+    ``work_session_gate_response`` path, unchanged from before. On a 402, a
+    plan-limit refusal (``gate: "plan"`` with an ``axis``, or a gate-less
+    legacy ``*_limit_exceeded`` code) takes the dedicated
+    ``plan_limit_response`` path next—see ``_plan_limit_axis``. This check is
+    402-only: alpacon-server's plan-limit contract is specific to that status,
+    so a different status carrying a similarly shaped body is never
+    misclassified. Any other server `code` found in the error body is now
+    surfaced as `error_code` in the returned response
     instead of being silently dropped—alpacon-server's 4xx bodies carry only
     ``{"code": "..."}``, no message, so without this the caller only ever
     sees a generic "Client error '400 Bad Request'" string. A curated subset
@@ -742,14 +752,18 @@ def unwrap_http_result(
         return work_session_gate_response(code, **error_kwargs)
 
     # A plan-limit refusal gets its own actionable result, ahead of the
-    # generic _ERROR_CODE_HINT lookup below.
-    body = _parse_error_body(result)
-    axis = _plan_limit_axis(body, code)
-    if axis is not None:
-        next_value = body.get('next') if isinstance(body, dict) else None
-        return plan_limit_response(
-            error_code=code, axis=axis, next_value=next_value, **error_kwargs
-        )
+    # generic _ERROR_CODE_HINT lookup below. The contract is 402-specific
+    # (every PlanUpgradeRequired answers 402); gated on status_code so a
+    # different status that happens to carry a similarly shaped body (e.g. a
+    # 400 or 500) is never misclassified as a plan limit.
+    if status_code == HTTPStatus.PAYMENT_REQUIRED:
+        body = _parse_error_body(result)
+        axis = _plan_limit_axis(body, code)
+        if axis is not None:
+            next_value = body.get('next') if isinstance(body, dict) else None
+            return plan_limit_response(
+                error_code=code, axis=axis, next_value=next_value, **error_kwargs
+            )
 
     message = result.get('message', default_message)
     if code is not None:

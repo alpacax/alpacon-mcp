@@ -431,6 +431,7 @@ class TestUnwrapHttpResultPlanLimit:
         gate: str | None = 'plan',
         axis: str | None = None,
         next: str | None = None,  # noqa: A002 - mirrors the body's own field name
+        status_code: HTTPStatus = HTTPStatus.PAYMENT_REQUIRED,
     ) -> dict[str, Any]:
         body: dict[str, Any] = {'code': code}
         if gate is not None:
@@ -441,8 +442,8 @@ class TestUnwrapHttpResultPlanLimit:
             body['next'] = next
         return {
             'error': 'HTTP Error',
-            'status_code': HTTPStatus.PAYMENT_REQUIRED,
-            'message': 'HTTP 402',
+            'status_code': status_code,
+            'message': f'HTTP {int(status_code)}',
             'response': json.dumps(body),
         }
 
@@ -562,6 +563,24 @@ class TestUnwrapHttpResultPlanLimit:
         )
         assert 'alpacon.io' not in out['next_action']
         assert 'Settings → Billing in your Alpacon console' in out['next_action']
+
+    def test_non_402_status_never_becomes_a_plan_limit_response(self):
+        # The plan-limit contract is 402-specific; a different status that
+        # happens to carry a similarly shaped body (gate/axis) must stay on
+        # the generic error path, not be misread as a plan limit.
+        out = unwrap_http_result(
+            self._envelope(
+                code='server_limit_exceeded',
+                axis='server',
+                status_code=HTTPStatus.BAD_REQUEST,
+            ),
+            default_message='failed',
+        )
+        assert out['status'] == 'error'
+        assert out['error_code'] == 'server_limit_exceeded'
+        assert 'axis' not in out
+        assert 'next_action' not in out
+        assert 'gate' not in out
 
     def test_workspace_axis_does_not_crash(self):
         # workspace_free_limit_exceeded is not one of the six legacy codes
