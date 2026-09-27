@@ -752,6 +752,8 @@ Read one session (`session_id`) or list them (`status`, `requester_type`, `limit
 ### `work_session_update` / `work_session_extend`
 Partial update of `title`, `description`, `scopes`, `servers` (and `expires_at` for pending sessions only), or extend `expires_at` on an approved/active session. `description` carries the same prose-only rule as on `work_session_create`. An update that needs approval is queued as a modification request.
 
+`work_session_extend` **parameters:** `session_id`, `workspace`, `expires_at` (ISO 8601, must be later than the current expiry), `reason` (required—a short justification the human approver judges the request by), `region` (optional). Whether the extension applies immediately or waits for approval follows the workspace's approval policy, the same rule `work_session_create` uses: an auto-approve lane extends directly and the tool returns a normal success; any other lane queues an extension request instead, and the tool returns `status="pending_approval"`—the session's `expires_at` stays at its prior value until a human decides out-of-band. Poll `work_session_get` until `expires_at` changes to see the outcome; the session's `pending_extension_request` field names the open request until then. A blank `reason` is rejected with `error_code: work_session_extension_reason_required`.
+
 ### `work_session_timeline`
 Chronological record of commands, file transfers, and sudo grants, with websh terminal records only when `include_records=True`. **Parameters:** `session_id`, `workspace`, `include_records` (boolean, default false—set true to include websh terminal records, which can return a very large response), `region` (optional).
 

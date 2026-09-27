@@ -45,6 +45,9 @@ _SCOPE_NOT_ALLOWED_NEXT_ACTION = (
 # non-interactive, so it can never supply MFA). SUDO_INTENT_DEVIATION and
 # WORK_SESSION_SCOPE_NOT_ALLOWED each carry a second path the agent can start
 # via work_session_update, though the server may still queue that edit.
+# WORK_SESSION_EXTENSION_PENDING is narrower than WORK_SESSION_PENDING: the
+# session itself is already usable at its prior expires_at, so "retry" would
+# mislead—the agent instead polls work_session_get for the new expiry.
 _NEXT_ACTION_BY_CATEGORY: dict[str, str] = {
     'SUDO_APPROVAL_REQUIRED': (
         'A human must approve this out-of-band (Alpacon web console or Slack). '
@@ -99,6 +102,14 @@ _NEXT_ACTION_BY_CATEGORY: dict[str, str] = {
         'every server in the session.'
     ),
     'WORK_SESSION_SCOPE_NOT_ALLOWED': _SCOPE_NOT_ALLOWED_NEXT_ACTION,
+    'WORK_SESSION_EXTENSION_PENDING': (
+        'A human must approve this extension request out-of-band (Alpacon web '
+        'console or Slack); the approver may adjust the requested expiry. The '
+        'session keeps its prior expires_at until then. You cannot approve it '
+        'yourself. Poll work_session_get and read expires_at once it changes; '
+        'do not resubmit work_session_extend, which only files a second '
+        'request.'
+    ),
     'APPROVAL_DECISION_HUMAN_ONLY': (
         'Surface this request to a human reviewer; only a human can approve or '
         'reject it, out-of-band (Alpacon web console or Slack). You cannot make '
@@ -220,6 +231,13 @@ WORKSPACE_EXTENSION_NOT_ENABLED_HINT = (
     'admin can enable it in workspace settings.'
 )
 
+#: work_session_extend's own required-field refusal (#294): reason is required
+#: on every request, including one an auto-approve lane would extend directly.
+WORK_SESSION_EXTENSION_REASON_REQUIRED_HINT = (
+    'reason must not be blank: a short justification the human approver can '
+    'judge the extension request by. Retry with reason set.'
+)
+
 #: The alert rule evaluation preview's own limits (preview_alert_rule). Each
 #: is settled by the request itself, so the hint names what to narrow.
 ALERT_RULE_PREVIEW_REFUSAL_HINTS: dict[str, str] = {
@@ -282,6 +300,7 @@ _ERROR_CODE_HINT: dict[str, str] = {
     **AGENT_ROLLOUT_POLICY_REFUSAL_HINTS,
     'workspace_extension_plan_required': WORKSPACE_EXTENSION_PLAN_REQUIRED_HINT,
     'workspace_extension_not_enabled': WORKSPACE_EXTENSION_NOT_ENABLED_HINT,
+    'work_session_extension_reason_required': WORK_SESSION_EXTENSION_REASON_REQUIRED_HINT,
 }
 
 
