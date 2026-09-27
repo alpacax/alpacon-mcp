@@ -560,6 +560,8 @@ class TestWorkSessionExtend:
         assert result['approvable_by_agent'] is False
         assert result['session_id'] == '550e8400-e29b-41d4-a716-446655440020'
         assert result['data']['pending_extension_request']['id'] == 'ext-req-uuid-1'
+        assert 'work_session_get' in result['next_action']
+        assert 'expires_at' in result['next_action']
 
     @pytest.mark.asyncio
     async def test_extend_propagates_api_error(

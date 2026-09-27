@@ -194,15 +194,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   before the request was built.
 - `restart_agent`, `upgrade_agent`, and `update_information` now state in their description and
   docstring that the server's action endpoint accepts only these three actions (#290).
-- `work_session_extend` now requires `reason` (#294): a short justification the human
-  approver judges the request by, sent on every request, including one an auto-approve
-  lane extends directly. Whether the extension applies immediately or waits for approval
-  follows the workspace's approval policy, the same rule `work_session_create` uses—an
-  auto-approve lane still returns a normal success, but any other lane now queues an
-  extension request and the tool returns `status="pending_approval"` instead of applying
-  it; the session's `expires_at` stays at its prior value until a human decides
-  out-of-band. Poll `work_session_get` until `expires_at` changes to see the outcome. A
-  blank `reason` now surfaces as `error_code: work_session_extension_reason_required` with
+- BREAKING: `work_session_extend` now requires `reason` (#294): a short justification the
+  human approver judges the request by, sent on every request, including one an auto-approve
+  lane extends directly. A call that omitted `reason` before now fails with a `TypeError`
+  at the tool boundary instead of extending the session. Whether the extension applies
+  immediately or waits for approval follows the workspace's approval policy, the same rule
+  `work_session_create` uses—an auto-approve lane still returns a normal success, but any
+  other lane now queues an extension request and the tool returns `status="pending_approval"`
+  instead of applying it; the session's `expires_at` stays at its prior value until a human
+  decides out-of-band. Poll `work_session_get` until `expires_at` changes to see the outcome.
+  A blank `reason` now surfaces as `error_code: work_session_extension_reason_required` with
   an actionable hint instead of an opaque `400`. Matches alpacon-server's extension-approval
   change (alpacax/alpacon-server#3805); this must ship in the same MCP release as, or
   before, the server release that enforces it.

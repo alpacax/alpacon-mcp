@@ -336,7 +336,7 @@ async def work_session_extend(
     ):
         return err
 
-    # Queued extension (server 202): http_client hides 2xx status codes, so branch on the body marker (ADR 0015/0044).
+    # Queued extension (server 202): http_client hides 2xx status codes, so branch on the body marker (ADR 0015).
     if isinstance(result, dict) and result.get('pending_extension_request'):
         return pending_approval_response(
             'This extension was queued as an extension request and is pending '
