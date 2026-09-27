@@ -482,16 +482,19 @@ class TestWorkSessionExtend:
     @pytest.mark.asyncio
     async def test_extend_success(self, mock_http_client, mock_token_manager):
 
+        # Applied immediately: no extension request was queued.
         mock_http_client.post.return_value = {
             'id': '550e8400-e29b-41d4-a716-446655440020',
             'status': 'active',
             'expires_at': '2026-06-06T18:00:00+00:00',
+            'pending_extension_request': None,
         }
 
         result = await work_session_extend(
             session_id='550e8400-e29b-41d4-a716-446655440020',
             workspace='testworkspace',
             expires_at='2026-06-06T18:00:00+00:00',
+            reason='Customer escalation, still triaging',
             region='ap1',
         )
 
@@ -501,8 +504,62 @@ class TestWorkSessionExtend:
             workspace='testworkspace',
             endpoint='/api/work-sessions/sessions/550e8400-e29b-41d4-a716-446655440020/extend/',
             token='test-token',
-            data={'expires_at': '2026-06-06T18:00:00+00:00'},
+            data={
+                'expires_at': '2026-06-06T18:00:00+00:00',
+                'reason': 'Customer escalation, still triaging',
+            },
         )
+
+    @pytest.mark.asyncio
+    async def test_extend_without_reason_is_a_type_error(
+        self, mock_http_client, mock_token_manager
+    ):
+        """reason is a required parameter; omitting it never reaches the server."""
+        with pytest.raises(TypeError):
+            await work_session_extend(
+                session_id='550e8400-e29b-41d4-a716-446655440020',
+                workspace='testworkspace',
+                expires_at='2026-06-06T18:00:00+00:00',
+            )
+
+    @pytest.mark.asyncio
+    async def test_extend_queued_surfaces_approval_signal(
+        self, mock_http_client, mock_token_manager
+    ):
+        """A queued extension (server HTTP 202) is surfaced as pending approval.
+
+        An extension on a lane other than auto-approve is not applied
+        immediately—the server queues a ``work_session_mod`` approval request
+        and reports it via a non-null ``pending_extension_request``.
+        """
+
+        mock_http_client.post.return_value = {
+            'id': '550e8400-e29b-41d4-a716-446655440020',
+            'status': 'active',
+            'expires_at': '2026-06-05T00:00:00+00:00',
+            'pending_extension_request': {
+                'id': 'ext-req-uuid-1',
+                'requested_expires_at': '2026-06-06T18:00:00+00:00',
+                'expires_at': '2026-06-05T12:00:00+00:00',
+                'reason': 'Customer escalation, still triaging',
+                'added_at': '2026-06-05T00:05:00+00:00',
+            },
+        }
+
+        result = await work_session_extend(
+            session_id='550e8400-e29b-41d4-a716-446655440020',
+            workspace='testworkspace',
+            expires_at='2026-06-06T18:00:00+00:00',
+            reason='Customer escalation, still triaging',
+            region='ap1',
+        )
+
+        assert result['status'] == 'pending_approval'
+        assert result['category'] == 'WORK_SESSION_EXTENSION_PENDING'
+        assert result['requires_human_approval'] is True
+        assert result['approvable_by_agent'] is False
+        assert result['session_id'] == '550e8400-e29b-41d4-a716-446655440020'
+        assert result['data']['pending_extension_request']['id'] == 'ext-req-uuid-1'
 
     @pytest.mark.asyncio
     async def test_extend_propagates_api_error(
@@ -519,11 +576,40 @@ class TestWorkSessionExtend:
             session_id='550e8400-e29b-41d4-a716-446655440020',
             workspace='testworkspace',
             expires_at='2026-06-05T00:00:00+00:00',
+            reason='Customer escalation, still triaging',
             region='ap1',
         )
 
         assert result['status'] == 'error'
         assert 'later than current' in result['message']
+
+    @pytest.mark.asyncio
+    async def test_extend_missing_reason_error_code_mapped(
+        self, mock_http_client, mock_token_manager
+    ):
+        """The server's reason-required refusal comes back with an actionable hint.
+
+        Only reachable when reason is supplied but blank/whitespace—the tool's
+        own required parameter stops an omitted reason before any request.
+        """
+
+        mock_http_client.post.return_value = {
+            'error': 'Bad Request',
+            'response': '{"code": "work_session_extension_reason_required"}',
+            'status_code': HTTPStatus.BAD_REQUEST,
+        }
+
+        result = await work_session_extend(
+            session_id='550e8400-e29b-41d4-a716-446655440020',
+            workspace='testworkspace',
+            expires_at='2026-06-06T18:00:00+00:00',
+            reason='   ',
+            region='ap1',
+        )
+
+        assert result['status'] == 'error'
+        assert result['error_code'] == 'work_session_extension_reason_required'
+        assert 'reason must not be blank' in result['message']
 
 
 class TestWorkSessionTimeline:

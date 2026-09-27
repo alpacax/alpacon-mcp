@@ -294,6 +294,15 @@ async def work_session_update(
         'can be extended, and the new expires_at must be later than the current one. '
         'Bound sudo policies are extended together. '
         'expires_at is an ISO 8601 datetime string. '
+        'reason is required on every request: a short justification for why more time '
+        'is needed, shown to the human approver when this extension needs a decision. '
+        'Whether the extension applies immediately or waits for approval follows the '
+        "workspace's approval policy, the same rule work_session_create uses: an "
+        'auto-approve lane extends directly and this tool returns a normal success; '
+        'any other lane queues an extension request instead, and this tool returns '
+        'status="pending_approval"—the session keeps its prior expires_at until a '
+        'human decides out-of-band. Poll work_session_get until expires_at changes to '
+        'see the outcome. '
         'Related: work_session_update (modify other fields), work_session_get (check current expiry).'
     ),
     annotations=IDEMPOTENT_WRITE,
@@ -303,21 +312,48 @@ async def work_session_extend(
     session_id: str,
     workspace: str,
     expires_at: str,
+    reason: str,
     region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
     """Extend a Work Session's expiry time."""
     token = kwargs.get('token')
 
-    return await http_call_response(
-        http_client.post,
+    result = await http_client.post(
         region=region,
         workspace=workspace,
         endpoint=f'{_API_SESSIONS}{session_id}/extend/',
         token=token,
+        data={'expires_at': expires_at, 'reason': reason},
+    )
+
+    if err := unwrap_http_result(
+        result,
         default_message='Failed to extend Work Session',
-        data={'expires_at': expires_at},
         session_id=session_id,
+        region=region,
+        workspace=workspace,
+    ):
+        return err
+
+    # Queued extension (server 202): http_client hides 2xx status codes, so branch on the body marker (ADR 0015/0044).
+    if isinstance(result, dict) and result.get('pending_extension_request'):
+        return pending_approval_response(
+            'This extension was queued as an extension request and is pending '
+            'human approval. A human must approve it out-of-band (Alpacon web '
+            'console or Slack) before the new expiry applies; the approver may '
+            'adjust the requested expiry. The session keeps its prior expires_at '
+            'until then. Poll work_session_get and only rely on the new expiry '
+            'once it changes.',
+            category='WORK_SESSION_EXTENSION_PENDING',
+            data=result,
+            session_id=session_id,
+            region=region,
+            workspace=workspace,
+        )
+
+    return success_response(
+        data=result, session_id=session_id, region=region, workspace=workspace
     )
 
 

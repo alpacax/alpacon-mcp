@@ -220,6 +220,13 @@ WORKSPACE_EXTENSION_NOT_ENABLED_HINT = (
     'admin can enable it in workspace settings.'
 )
 
+#: work_session_extend's own required-field refusal (#294): reason is required
+#: on every request, including one an auto-approve lane would extend directly.
+WORK_SESSION_EXTENSION_REASON_REQUIRED_HINT = (
+    'reason must not be blank: a short justification the human approver can '
+    'judge the extension request by. Retry with reason set.'
+)
+
 #: The alert rule evaluation preview's own limits (preview_alert_rule). Each
 #: is settled by the request itself, so the hint names what to narrow.
 ALERT_RULE_PREVIEW_REFUSAL_HINTS: dict[str, str] = {
@@ -282,6 +289,7 @@ _ERROR_CODE_HINT: dict[str, str] = {
     **AGENT_ROLLOUT_POLICY_REFUSAL_HINTS,
     'workspace_extension_plan_required': WORKSPACE_EXTENSION_PLAN_REQUIRED_HINT,
     'workspace_extension_not_enabled': WORKSPACE_EXTENSION_NOT_ENABLED_HINT,
+    'work_session_extension_reason_required': WORK_SESSION_EXTENSION_REASON_REQUIRED_HINT,
 }
 
 
