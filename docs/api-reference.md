@@ -1009,6 +1009,44 @@ Common error scenarios:
 - **404 Not Found**: Server, resource, or session not found
 - **500 Internal Error**: Server-side error
 
+### Plan-limit refusals (402)
+
+A 402 whose body carries `gate: "plan"` and an `axis`—or, from an older or
+self-hosted alpacon-server, a gate-less `server_limit_exceeded`,
+`user_limit_exceeded`, `application_limit_exceeded`, `websh_limit_exceeded`,
+`webftp_limit_exceeded`, or `websh_share_limit_exceeded`—is a **plan-limit**
+refusal: the workspace hit a plan limit on that axis, not a permissions or
+input problem. It comes back structured instead of a generic error:
+
+```json
+{
+  "status": "error",
+  "error_code": "server_limit_exceeded",
+  "gate": "plan",
+  "axis": "server",
+  "next": "/api/workspaces/workspaces/<id>/entitlements/",
+  "requires_human_approval": false,
+  "next_action": "Do not retry. Tell the user the servers plan limit was reached; remove one no longer used or upgrade; if this host was registered before, delete the old server entry first, then retry; upgrade at https://alpacon.io/<workspace>/settings/billing; or talk to us: https://www.alpacax.com/alpacon/pricing"
+}
+```
+
+`next` is the server's self-relative entitlements-read pointer on a count-cap
+axis (`server`, `user`, `application`, `workspace`); it is `null` on a
+monthly axis (`websh`, `webftp`, `websh-share`), where `next_action` instead
+says the allowance resets at the end of the month. The billing link in
+`next_action` resolves from the workspace this call was made against—an
+Alpacon Cloud workspace (`<label>.<region>.alpacon.io`) gets a direct
+`https://alpacon.io/<label>/settings/billing` link; a self-hosted deployment
+gets the words "Settings → Billing in your Alpacon console" instead. Retrying
+does not change the answer; `requires_human_approval` is `false` because the
+caller (an admin, or whoever can free up or upgrade the plan) can usually
+resolve it directly, without an out-of-band approval.
+
+A 402 with `gate: "plan"` and **no** `axis` is a feature lock, not a plan
+limit (the plan itself excludes the action, on any usage). It stays a plain
+error with `error_code` set and, for a curated few codes, an actionable hint
+appended to `message`—the same handling any other 4xx `code` gets.
+
 ## 📝 Response format
 
 Successful responses follow this structure:

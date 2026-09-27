@@ -1,17 +1,25 @@
 """Unit tests for utils.common WorkSession gate and denial-guidance helpers."""
 
+import json
 from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
+from typing import Any
 from unittest.mock import patch
 
 import pytest
 
 from utils.common import (
     _ERROR_CODE_HINT,
+    _LIMIT_EXCEEDED_CODE_TO_AXIS,
+    _MONTHLY_PLAN_LIMIT_AXES,
     _NEXT_ACTION_BY_CATEGORY,
+    _PLAN_LIMIT_AXIS_NAME,
     _WORK_SESSION_GATE_CODES,
     _WORK_SESSION_GATE_NEXT_ACTION,
+    _plan_limit_axis,
+    _plan_limit_billing_link,
     build_list_params,
+    plan_limit_response,
     resolve_time_window,
     resolve_work_session_id,
     unwrap_http_result,
@@ -268,6 +276,347 @@ class TestErrorCodeHint:
     )
     def test_agent_rollout_policy_hints_are_registered_and_non_empty(self, code):
         assert _ERROR_CODE_HINT[code].strip()
+
+
+class TestPlanLimitAxisClassification:
+    """Classification rules for a plan-limit 402 (#296): rule 1 and rule 2."""
+
+    @pytest.mark.parametrize('code', list(_LIMIT_EXCEEDED_CODE_TO_AXIS))
+    def test_rule1_gate_plan_reads_axis_off_the_body_not_the_code(self, code):
+        # Rule 1 reads `axis` straight off the body; a current server always
+        # sends the matching code too, but here `axis` is deliberately made
+        # to disagree with what the code table would say, to prove axis wins.
+        assert (
+            _plan_limit_axis({'code': code, 'gate': 'plan', 'axis': 'user'}, code)
+            == 'user'
+        )
+
+    def test_rule1_gate_plan_without_axis_is_a_feature_lock(self):
+        assert (
+            _plan_limit_axis(
+                {'gate': 'plan', 'code': 'workspace_enterprise_plan_required'}, None
+            )
+            is None
+        )
+
+    @pytest.mark.parametrize(
+        ('code', 'expected_axis'), list(_LIMIT_EXCEEDED_CODE_TO_AXIS.items())
+    )
+    def test_rule2_gate_absent_legacy_code_maps_to_its_axis(self, code, expected_axis):
+        assert _plan_limit_axis({'code': code}, code) == expected_axis
+
+    def test_gate_absent_unrecognized_code_is_not_a_plan_limit(self):
+        assert (
+            _plan_limit_axis({'code': 'some_other_error'}, 'some_other_error') is None
+        )
+
+    def test_gate_present_but_not_plan_never_falls_back_to_rule2(self):
+        # Even though the code matches the legacy table, a non-plan gate is a
+        # different kind of 402 entirely (role, token_scope, approval, rate).
+        assert (
+            _plan_limit_axis(
+                {'gate': 'role', 'code': 'server_limit_exceeded'},
+                'server_limit_exceeded',
+            )
+            is None
+        )
+
+    def test_non_dict_body_is_not_a_plan_limit(self):
+        assert _plan_limit_axis(None, 'server_limit_exceeded') is None
+
+    def test_axis_must_be_a_non_empty_string(self):
+        assert _plan_limit_axis({'gate': 'plan', 'axis': ''}, None) is None
+        assert _plan_limit_axis({'gate': 'plan', 'axis': 5}, None) is None
+
+
+class TestPlanLimitBillingLink:
+    """The console billing link a plan-limit next_action carries (#296)."""
+
+    def test_derived_cloud_host_resolves_a_link(self, mock_token_manager):
+        mock_token_manager.get_base_url_override.return_value = None
+        assert (
+            _plan_limit_billing_link('us1', 'acme')
+            == 'https://alpacon.io/acme/settings/billing'
+        )
+
+    def test_pinned_cloud_override_resolves_its_own_label(self, mock_token_manager):
+        # ADR 0027: the pinned host, not the (possibly stale) workspace label.
+        mock_token_manager.get_base_url_override.return_value = (
+            'https://old-slug.us1.alpacon.io'
+        )
+        assert (
+            _plan_limit_billing_link('us1', 'new-slug')
+            == 'https://alpacon.io/old-slug/settings/billing'
+        )
+
+    def test_self_hosted_override_gets_words(self, mock_token_manager):
+        mock_token_manager.get_base_url_override.return_value = (
+            'https://onprem.acme-corp.internal'
+        )
+        assert (
+            _plan_limit_billing_link('ap1', 'onprem')
+            == 'Settings → Billing in your Alpacon console'
+        )
+
+    def test_missing_region_or_workspace_gets_words(self):
+        assert (
+            _plan_limit_billing_link(None, 'acme')
+            == 'Settings → Billing in your Alpacon console'
+        )
+        assert (
+            _plan_limit_billing_link('us1', None)
+            == 'Settings → Billing in your Alpacon console'
+        )
+
+
+class TestPlanLimitResponse:
+    def test_shape_and_fields(self):
+        out = plan_limit_response(
+            error_code='server_limit_exceeded',
+            axis='server',
+            next_value='/api/workspaces/workspaces/ws-1/entitlements/',
+            region=None,
+            workspace=None,
+        )
+        assert out['status'] == 'error'
+        assert out['error_code'] == 'server_limit_exceeded'
+        assert out['gate'] == 'plan'
+        assert out['axis'] == 'server'
+        assert out['next'] == '/api/workspaces/workspaces/ws-1/entitlements/'
+        assert out['requires_human_approval'] is False
+        assert out['next_action'].startswith('Do not retry.')
+
+    def test_next_value_passes_through_none_unmodified(self):
+        out = plan_limit_response(
+            error_code='websh_limit_exceeded', axis='websh', next_value=None
+        )
+        assert out['next'] is None
+
+    def test_extra_kwargs_are_carried_and_cannot_override_fixed_fields(self):
+        out = plan_limit_response(
+            error_code='server_limit_exceeded',
+            axis='server',
+            next_value=None,
+            region='us1',
+            workspace='acme',
+            status_code=HTTPStatus.PAYMENT_REQUIRED,
+            gate='role',  # a caller-supplied 'gate' must not leak through
+        )
+        assert out['region'] == 'us1'
+        assert out['workspace'] == 'acme'
+        assert out['status_code'] == HTTPStatus.PAYMENT_REQUIRED
+        assert out['gate'] == 'plan'
+
+    @pytest.mark.parametrize('axis', list(_PLAN_LIMIT_AXIS_NAME))
+    def test_every_known_axis_gets_a_non_empty_next_action(self, axis):
+        out = plan_limit_response(error_code='x', axis=axis, next_value=None)
+        assert out['next_action']
+
+    def test_unknown_axis_falls_back_to_the_raw_token(self):
+        # Defensive: a server axis this client does not yet know about should
+        # still produce a readable (if unpolished) next_action, not a KeyError.
+        out = plan_limit_response(
+            error_code='x', axis='brand-new-axis', next_value=None
+        )
+        assert 'brand-new-axis plan limit was reached' in out['next_action']
+
+
+class TestUnwrapHttpResultPlanLimit:
+    """unwrap_http_result on a plan-limit 402 (#296)."""
+
+    def _envelope(
+        self,
+        *,
+        code: str,
+        gate: str | None = 'plan',
+        axis: str | None = None,
+        next: str | None = None,  # noqa: A002 - mirrors the body's own field name
+        status_code: HTTPStatus = HTTPStatus.PAYMENT_REQUIRED,
+    ) -> dict[str, Any]:
+        body: dict[str, Any] = {'code': code}
+        if gate is not None:
+            body['gate'] = gate
+        if axis is not None:
+            body['axis'] = axis
+        if next is not None:
+            body['next'] = next
+        return {
+            'error': 'HTTP Error',
+            'status_code': status_code,
+            'message': f'HTTP {int(status_code)}',
+            'response': json.dumps(body),
+        }
+
+    def test_current_server_envelope_becomes_plan_limit_response(
+        self, mock_token_manager
+    ):
+        mock_token_manager.get_base_url_override.return_value = None
+        out = unwrap_http_result(
+            self._envelope(
+                code='server_limit_exceeded',
+                axis='server',
+                next='/api/workspaces/workspaces/ws-1/entitlements/',
+            ),
+            default_message='failed',
+            region='us1',
+            workspace='acme',
+        )
+        assert out['status'] == 'error'
+        assert out['error_code'] == 'server_limit_exceeded'
+        assert out['gate'] == 'plan'
+        assert out['axis'] == 'server'
+        assert out['next'] == '/api/workspaces/workspaces/ws-1/entitlements/'
+        assert out['requires_human_approval'] is False
+        assert out['region'] == 'us1'
+        assert out['workspace'] == 'acme'
+        assert out['status_code'] == HTTPStatus.PAYMENT_REQUIRED
+        next_action = out['next_action']
+        assert next_action.startswith('Do not retry.')
+        assert 'servers plan limit was reached' in next_action
+        assert 'https://alpacon.io/acme/settings/billing' in next_action
+        assert 'https://www.alpacax.com/alpacon/pricing' in next_action
+        # Re-registration guidance (C9) is server-axis only.
+        assert 'delete the old server entry' in next_action
+
+    def test_gate_less_legacy_code_becomes_the_same_shape(self, mock_token_manager):
+        mock_token_manager.get_base_url_override.return_value = None
+        out = unwrap_http_result(
+            self._envelope(code='user_limit_exceeded', gate=None),
+            default_message='failed',
+            region='ap1',
+            workspace='corp',
+        )
+        assert out['status'] == 'error'
+        assert out['error_code'] == 'user_limit_exceeded'
+        assert out['gate'] == 'plan'
+        assert out['axis'] == 'user'
+        assert out['next'] is None
+        assert out['requires_human_approval'] is False
+        next_action = out['next_action']
+        assert 'users (pending invitations count) plan limit was reached' in next_action
+        assert 'https://alpacon.io/corp/settings/billing' in next_action
+
+    def test_feature_lock_stays_on_the_generic_path(self):
+        # gate:"plan" with no axis is a feature lock, not a plan limit: the
+        # existing (402, "general") recovery-hint path (utils/recovery_hints.py,
+        # applied by the decorator, not here) is what handles it.
+        out = unwrap_http_result(
+            self._envelope(code='workspace_enterprise_plan_required'),
+            default_message='failed',
+        )
+        assert out['status'] == 'error'
+        assert out['error_code'] == 'workspace_enterprise_plan_required'
+        assert 'axis' not in out
+        assert 'next' not in out
+        assert 'next_action' not in out
+        assert 'requires_human_approval' not in out
+        assert 'gate' not in out
+
+    def test_feature_lock_keeps_its_existing_error_code_hint(self):
+        # workspace_extension_plan_required already had a curated hint before
+        # this change (a different, older feature lock); it must be unaffected.
+        out = unwrap_http_result(
+            self._envelope(code='workspace_extension_plan_required'),
+            default_message='failed',
+        )
+        assert 'axis' not in out
+        assert 'plan' in out['message']
+        assert 'upgrading' in out['message']
+
+    def test_no_next_in_body_is_still_fine(self):
+        out = unwrap_http_result(
+            self._envelope(code='application_limit_exceeded', axis='application'),
+            default_message='failed',
+        )
+        assert out['next'] is None
+        assert 'applications plan limit was reached' in out['next_action']
+        assert 'remove one no longer used or upgrade' in out['next_action']
+
+    @pytest.mark.parametrize('axis', sorted(_MONTHLY_PLAN_LIMIT_AXES))
+    def test_monthly_axis_remedy_names_the_reset_not_a_day_count(self, axis):
+        code = next(c for c, a in _LIMIT_EXCEEDED_CODE_TO_AXIS.items() if a == axis)
+        out = unwrap_http_result(
+            self._envelope(code=code, axis=axis), default_message='failed'
+        )
+        assert 'resets at the end of the month' in out['next_action']
+        # No fabricated day count: utils.http_client's error dict never
+        # carries the Retry-After header.
+        assert 'day' not in out['next_action']
+
+    def test_self_hosted_host_gets_words_not_a_url(self, mock_token_manager):
+        mock_token_manager.get_base_url_override.return_value = (
+            'https://onprem.acme-corp.internal'
+        )
+        out = unwrap_http_result(
+            self._envelope(code='server_limit_exceeded', axis='server'),
+            default_message='failed',
+            region='ap1',
+            workspace='onprem',
+        )
+        assert 'alpacon.io' not in out['next_action']
+        assert 'Settings → Billing in your Alpacon console' in out['next_action']
+
+    def test_missing_region_or_workspace_gets_words_not_a_url(self):
+        out = unwrap_http_result(
+            self._envelope(code='server_limit_exceeded', axis='server'),
+            default_message='failed',
+        )
+        assert 'alpacon.io' not in out['next_action']
+        assert 'Settings → Billing in your Alpacon console' in out['next_action']
+
+    def test_non_402_status_never_becomes_a_plan_limit_response(self):
+        # The plan-limit contract is 402-specific; a different status that
+        # happens to carry a similarly shaped body (gate/axis) must stay on
+        # the generic error path, not be misread as a plan limit.
+        out = unwrap_http_result(
+            self._envelope(
+                code='server_limit_exceeded',
+                axis='server',
+                status_code=HTTPStatus.BAD_REQUEST,
+            ),
+            default_message='failed',
+        )
+        assert out['status'] == 'error'
+        assert out['error_code'] == 'server_limit_exceeded'
+        assert 'axis' not in out
+        assert 'next_action' not in out
+        assert 'gate' not in out
+
+    def test_workspace_axis_does_not_crash(self):
+        # workspace_free_limit_exceeded is not one of the six legacy codes
+        # (rule 2), but a current server still sends gate:"plan"+axis (rule 1).
+        out = unwrap_http_result(
+            self._envelope(code='workspace_free_limit_exceeded', axis='workspace'),
+            default_message='failed',
+        )
+        assert out['axis'] == 'workspace'
+        assert 'Free workspaces plan limit was reached' in out['next_action']
+
+
+class TestPlanLimitDoesNotTouchOtherPaths:
+    """Must NOT change: the work-session gate table, _ERROR_CODE_HINT, 401/403 hints."""
+
+    def test_legacy_limit_codes_are_not_work_session_gate_codes(self):
+        assert not (set(_LIMIT_EXCEEDED_CODE_TO_AXIS) & _WORK_SESSION_GATE_CODES)
+
+    def test_legacy_limit_codes_have_no_error_code_hint_entries(self):
+        # They are classified structurally by _plan_limit_axis before
+        # _ERROR_CODE_HINT is ever consulted; an entry here would be dead code.
+        assert not (set(_LIMIT_EXCEEDED_CODE_TO_AXIS) & set(_ERROR_CODE_HINT))
+
+    def test_work_session_gate_check_still_runs_first(self):
+        # A WorkSession gate code takes that path even though it is unrelated
+        # to plan limits, confirming the new check was inserted after it.
+        out = unwrap_http_result(
+            {
+                'error': 'HTTP Error',
+                'status_code': HTTPStatus.BAD_REQUEST,
+                'response': json.dumps({'code': 'work_session_required'}),
+            },
+            default_message='failed',
+        )
+        assert out['code'] == 'work_session_required'
+        assert 'axis' not in out
 
 
 class TestResolveWorkSessionId:
