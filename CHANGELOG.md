@@ -219,6 +219,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `error_code: preferences_agent_rollout_mode_unavailable` instead of an opaque `400`;
   the window validation codes (`preferences_agent_rollout_{policy,mode,window_days,
   window_start_hour,window_length,window_timezone}_invalid`) surface the same way.
+- A plan-limit 402 (`gate: "plan"` with an `axis`, or, from an older or self-hosted
+  alpacon-server, a gate-less `server_limit_exceeded`, `user_limit_exceeded`,
+  `application_limit_exceeded`, `websh_limit_exceeded`, `webftp_limit_exceeded`, or
+  `websh_share_limit_exceeded`) now comes back as a structured result—`error_code`, `gate`,
+  `axis`, `next` (passed through unmodified), `requires_human_approval: false`, and a
+  `next_action` telling the agent not to retry and what to tell the user, with a console
+  billing link when the workspace host resolves to one (#296). A client parsing error
+  responses should check for `axis` before falling back to generic error handling. A feature
+  lock (`gate: "plan"` with no `axis`) is unaffected and keeps its existing generic-error
+  handling.
 
 ### Deprecated
 - `auto_agent_upgrade` on `update_workspace_preferences` (#292). Still accepted for one

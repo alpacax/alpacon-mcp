@@ -4,8 +4,10 @@ import importlib.metadata
 import json
 import os
 import platform
+import re
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from urllib.parse import urlparse
 
 from utils.logger import get_logger
 from utils.token_manager import get_token_manager
@@ -303,6 +305,52 @@ _ERROR_CODE_HINT: dict[str, str] = {
     'work_session_extension_reason_required': WORK_SESSION_EXTENSION_REASON_REQUIRED_HINT,
 }
 
+# A plan-limit 402 (#296) is distinct from every other _ERROR_CODE_HINT entry
+# above: it always carries `gate: "plan"` plus an `axis` on a current
+# alpacon-server, so unwrap_http_result classifies it structurally instead of
+# by `code`. A feature lock also carries `gate: "plan"` but no `axis`, and
+# keeps taking the generic _ERROR_CODE_HINT/(402, "general") path above
+# unchanged.
+#
+# An older or self-hosted alpacon-server omits `gate` entirely but still sends
+# one of these six legacy `*_limit_exceeded` codes (ADR 0069 D8 backward
+# compatibility); this table is what recovers the axis in that case.
+_LIMIT_EXCEEDED_CODE_TO_AXIS: dict[str, str] = {
+    'server_limit_exceeded': 'server',
+    'user_limit_exceeded': 'user',
+    'application_limit_exceeded': 'application',
+    'websh_limit_exceeded': 'websh',
+    'webftp_limit_exceeded': 'webftp',
+    'websh_share_limit_exceeded': 'websh-share',
+}
+
+# The three axes alpacon-server resets on a monthly cycle rather than freeing
+# by deleting something. A current server also sends a `Retry-After` header
+# with the exact reset time on these, but utils.http_client's error dict
+# carries only the response body (no headers), so the remedy names the cycle
+# without a day count instead of extending the client to plumb the header
+# through (#296).
+_MONTHLY_PLAN_LIMIT_AXES: frozenset[str] = frozenset({'websh', 'webftp', 'websh-share'})
+
+# Human-readable axis names for the plan-limit next_action (#296).
+_PLAN_LIMIT_AXIS_NAME: dict[str, str] = {
+    'server': 'servers',
+    'user': 'users (pending invitations count)',
+    'application': 'applications',
+    'websh': 'Websh hours this month',
+    'webftp': 'WebFTP transfer volume this month',
+    'websh-share': 'Websh session sharing',
+    'workspace': 'Free workspaces',
+}
+
+_PLAN_LIMIT_TALK_TO_US_URL = 'https://www.alpacax.com/alpacon/pricing'
+_PLAN_LIMIT_SELF_HOSTED_BILLING_WORDS = 'Settings → Billing in your Alpacon console'
+
+# Matches only an Alpacon Cloud host, `<label>.<region>.alpacon.io`; anything
+# else (a self-hosted deployment) gets the words above instead of a guessed
+# or broken link (#296).
+_ALPACON_CLOUD_HOST_RE = re.compile(r'^(?P<label>[^.]+)\.[^.]+\.alpacon\.io$')
+
 
 def is_auth_enabled() -> bool:
     """Check if remote (streamable-http) mode with Auth0 JWT auth is enabled.
@@ -508,6 +556,140 @@ def work_session_gate_response(code: str, **kwargs: Any) -> dict[str, Any]:
     )
 
 
+def _plan_limit_billing_link(region: Any, workspace: Any) -> str:
+    """Console billing link for a plan-limit next_action.
+
+    Derived from the workspace host the tool was called for (#296): an
+    Alpacon Cloud host, `<label>.<region>.alpacon.io`—including a pinned
+    base-URL override that still resolves to one—gets the direct billing
+    page. A self-hosted deployment, or a call whose `region`/`workspace`
+    unwrap_http_result was not given, gets the words instead of a guessed or
+    broken link.
+    """
+    if not (
+        isinstance(region, str) and region and isinstance(workspace, str) and workspace
+    ):
+        return _PLAN_LIMIT_SELF_HOSTED_BILLING_WORDS
+    override = token_manager.get_base_url_override(region, workspace)
+    host = (
+        urlparse(override).netloc
+        if isinstance(override, str) and override
+        else f'{workspace}.{region}.alpacon.io'
+    )
+    match = _ALPACON_CLOUD_HOST_RE.match(host)
+    if match is None:
+        return _PLAN_LIMIT_SELF_HOSTED_BILLING_WORDS
+    return f'https://alpacon.io/{match.group("label")}/settings/billing'
+
+
+def _plan_limit_remedy(axis: str) -> str:
+    """The action that lifts this axis's cap, named in the plan-limit next_action."""
+    remedy = (
+        'resets at the end of the month'
+        if axis in _MONTHLY_PLAN_LIMIT_AXES
+        else 'remove one no longer used or upgrade'
+    )
+    if axis == 'server':
+        # A re-registering host creates a new Server row instead of updating
+        # the old one, so at the cap it is that new row which gets refused;
+        # the fix is to clear the stale one first (#296).
+        remedy += (
+            '; if this host was registered before, delete the old server '
+            'entry first, then retry'
+        )
+    return remedy
+
+
+def _plan_limit_next_action(axis: str, region: Any, workspace: Any) -> str:
+    """The agent-facing instruction for a plan-limit 402 on the given axis."""
+    axis_name = _PLAN_LIMIT_AXIS_NAME.get(axis, axis)
+    return (
+        f'Do not retry. Tell the user the {axis_name} plan limit was reached; '
+        f'{_plan_limit_remedy(axis)}; upgrade at '
+        f'{_plan_limit_billing_link(region, workspace)}; or talk to us: '
+        f'{_PLAN_LIMIT_TALK_TO_US_URL}'
+    )
+
+
+def _plan_limit_axis(body: dict[str, Any] | None, code: str | None) -> str | None:
+    """Classify an http error body as a plan-limit refusal, and on which axis.
+
+    Rule 1 (current alpacon-server): `gate == "plan"` and `axis` is a
+    non-empty string -> that axis. A feature lock also carries
+    `gate: "plan"` but no `axis`, so it falls through to None here and keeps
+    the generic _ERROR_CODE_HINT/(402, "general") handling.
+
+    Rule 2 (an older or self-hosted alpacon-server, ADR 0069 D8 backward
+    compatibility): no `gate` at all, but `code` is one of the six legacy
+    `*_limit_exceeded` codes -> the axis _LIMIT_EXCEEDED_CODE_TO_AXIS maps it
+    to. A `gate` present with any other value (a non-plan gate, or "plan"
+    with no axis) is never treated as this legacy shape, even if `code`
+    happens to match.
+
+    Anything else is not a plan limit -> None.
+    """
+    if not isinstance(body, dict):
+        return None
+    gate = body.get('gate')
+    if gate == 'plan':
+        axis = body.get('axis')
+        return axis if isinstance(axis, str) and axis else None
+    if gate is None and code in _LIMIT_EXCEEDED_CODE_TO_AXIS:
+        return _LIMIT_EXCEEDED_CODE_TO_AXIS[code]
+    return None
+
+
+def plan_limit_response(
+    *,
+    error_code: str | None,
+    axis: str,
+    next_value: str | None,
+    **kwargs: Any,
+) -> dict[str, Any]:
+    """Build the agent-facing result for a plan-limit 402 (see _plan_limit_axis).
+
+    Unlike a feature lock, which needs no more than the generic
+    _ERROR_CODE_HINT/(402, "general") "ask for a higher plan" hint, a plan
+    limit is usually something the caller—human or agent—can get past
+    directly (delete a server, wait for the monthly reset, or subscribe), so
+    it gets a dedicated `next_action` telling the agent not to retry and what
+    to tell the user instead, built from `axis` and the console billing link
+    derived from the workspace this call was made against (#296).
+
+    Args:
+        error_code: The server's `code` string (e.g. `server_limit_exceeded`),
+            passed through unmodified.
+        axis: One of `server`, `user`, `application`, `websh`, `webftp`,
+            `websh-share`, `workspace` (#296).
+        next_value: The body's `next` field, passed through unmodified: the
+            server's self-relative entitlements-read pointer on a count cap,
+            or None on a monthly axis or an older server that never sent one.
+        **kwargs: Extra identifiers merged into the response (region,
+            workspace, status_code, ...); `region` and `workspace` also
+            decide the billing link in `next_action`.
+
+    Returns:
+        Structured plan-limit response dict.
+    """
+    # Apply caller context first so the fixed fields below always win and
+    # cannot be overridden by a kwarg (mirrors pending_approval_response).
+    response: dict[str, Any] = {**kwargs}
+    response.update(
+        {
+            'status': 'error',
+            'error_code': error_code,
+            'gate': 'plan',
+            'axis': axis,
+            'next': next_value,
+            'requires_human_approval': False,
+            'next_action': _plan_limit_next_action(
+                axis, kwargs.get('region'), kwargs.get('workspace')
+            ),
+        }
+    )
+    return response
+
+
 def unwrap_http_result(
     result: Any,
     *,
@@ -521,15 +703,19 @@ def unwrap_http_result(
     can wrap the payload with `success_response`.
 
     WorkSession gate codes (``_WORK_SESSION_GATE_CODES``) take the dedicated
-    ``work_session_gate_response`` path, unchanged from before. Any other
-    server `code` found in the error body is now surfaced as `error_code` in
-    the returned response instead of being silently dropped—alpacon-server's
-    4xx bodies carry only ``{"code": "..."}``, no message, so without this the
-    caller only ever sees a generic "Client error '400 Bad Request'" string.
-    A curated subset of codes (``_ERROR_CODE_HINT``) also get an actionable
-    hint appended to the message, e.g. `command_inline_credential` (see
+    ``work_session_gate_response`` path, unchanged from before. A plan-limit
+    refusal (``gate: "plan"`` with an ``axis``, or a gate-less legacy
+    ``*_limit_exceeded`` code) takes the dedicated ``plan_limit_response``
+    path next—see ``_plan_limit_axis``. Any other server `code` found in the
+    error body is now surfaced as `error_code` in the returned response
+    instead of being silently dropped—alpacon-server's 4xx bodies carry only
+    ``{"code": "..."}``, no message, so without this the caller only ever
+    sees a generic "Client error '400 Bad Request'" string. A curated subset
+    of codes (``_ERROR_CODE_HINT``) also get an actionable hint appended to
+    the message, e.g. `command_inline_credential` (see
     alpacax/alpacon-server#2745) telling the agent to retry via the `env`
-    parameter.
+    parameter. A feature lock (``gate: "plan"``, no ``axis``) falls through to
+    this same generic path.
 
     Args:
         result: Raw value returned by an http_client method.
@@ -548,12 +734,22 @@ def unwrap_http_result(
     if status_code is not None:
         error_kwargs['status_code'] = status_code
 
-    # Parse the body's `code` once; it decides both whether this is a
-    # WorkSession gate (membership in _WORK_SESSION_GATE_CODES) and, on the
-    # generic path below, what gets surfaced as `error_code`.
+    # Parse the body's `code` once; it decides whether this is a WorkSession
+    # gate (membership in _WORK_SESSION_GATE_CODES) and, on the generic path
+    # below, what gets surfaced as `error_code`.
     code = _extract_error_code(result)
     if code is not None and code in _WORK_SESSION_GATE_CODES:
         return work_session_gate_response(code, **error_kwargs)
+
+    # A plan-limit refusal gets its own actionable result, ahead of the
+    # generic _ERROR_CODE_HINT lookup below.
+    body = _parse_error_body(result)
+    axis = _plan_limit_axis(body, code)
+    if axis is not None:
+        next_value = body.get('next') if isinstance(body, dict) else None
+        return plan_limit_response(
+            error_code=code, axis=axis, next_value=next_value, **error_kwargs
+        )
 
     message = result.get('message', default_message)
     if code is not None:
@@ -565,13 +761,11 @@ def unwrap_http_result(
     return error_response(message, **error_kwargs)
 
 
-def _extract_error_code(result: dict[str, Any]) -> str | None:
-    """Return the `code` field carried by an http error envelope's body, if any.
+def _parse_error_body(result: dict[str, Any]) -> dict[str, Any] | None:
+    """Return the JSON object an http error envelope carries in its body, if any.
 
-    alpacon-server's exception handler returns 4xx bodies shaped as
-    ``{"code": "<error_code>"}``; ``utils.http_client`` carries the raw body in
-    the ``response`` key. Returns None when the body is missing, not JSON, or
-    lacks a string `code` field.
+    ``utils.http_client`` carries the raw body text in the ``response`` key.
+    Returns None when the body is missing, not JSON, or not a JSON object.
     """
     raw = result.get('response')
     if not isinstance(raw, str):
@@ -580,7 +774,18 @@ def _extract_error_code(result: dict[str, Any]) -> str | None:
         body = json.loads(raw)
     except ValueError:
         return None
-    if not isinstance(body, dict):
+    return body if isinstance(body, dict) else None
+
+
+def _extract_error_code(result: dict[str, Any]) -> str | None:
+    """Return the `code` field carried by an http error envelope's body, if any.
+
+    alpacon-server's exception handler returns 4xx bodies shaped as at least
+    ``{"code": "<error_code>"}``. Returns None when the body is missing, not
+    JSON, not a JSON object, or lacks a string `code` field.
+    """
+    body = _parse_error_body(result)
+    if body is None:
         return None
     code = body.get('code')
     return code if isinstance(code, str) else None
