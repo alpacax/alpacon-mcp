@@ -119,17 +119,21 @@ Pin or unpin a server for the calling user. A personal preference flag, not a fl
 
 **Parameters:** `server_id`, `status` (boolean), `workspace`, `region` (optional)
 
-### Agent and host actions
+### Agent actions
 
-Each takes `server_id`, `workspace`, and an optional `region`. The six disruptive ones also take `force` (boolean, default `false`), which runs the action even while the host is busy with an open Websh or WebFTP session or an in-flight command, tearing that work down. `update_information` is not disruptive and takes no `force`.
+Each takes `server_id`, `workspace`, and an optional `region`. This is the complete set of actions
+this endpoint accepts; an action outside this set returns 400. The two disruptive ones also take
+`force` (boolean, default `false`), which runs the action even while the host is busy with an open
+Websh or WebFTP session or an in-flight command, tearing that work down. `update_information` is
+not disruptive and takes no `force`.
 
 - `restart_agent`: Restart the Alpacon agent process
-- `shutdown_agent`: Stop the agent process
 - `upgrade_agent`: Upgrade the agent to the latest version
 - `update_information`: Re-collect hardware, OS, network, and package data
-- `upgrade_system`: Upgrade all OS packages through the package manager
-- `reboot_system`: Reboot the host
-- `shutdown_system`: Power the host off
+
+Host-level power operations (an OS package upgrade, a reboot, a shutdown) are not one-click tools.
+They run through a Work Session and `execute_command`—see "Keeping hosts current" in
+[examples.md](examples.md)—so they carry sudo, MFA or approval, and recording.
 
 ### Registration tokens (Alpamon)
 
@@ -750,6 +754,8 @@ Read one session (`session_id`) or list them (`status`, `requester_type`, `limit
 ### `work_session_update` / `work_session_extend`
 Partial update of `title`, `description`, `scopes`, `servers` (and `expires_at` for pending sessions only), or extend `expires_at` on an approved/active session. `description` carries the same prose-only rule as on `work_session_create`. An update that needs approval is queued as a modification request.
 
+`work_session_extend` **parameters:** `session_id`, `workspace`, `expires_at` (ISO 8601, must be later than the current expiry), `reason` (required—a short justification the human approver judges the request by), `region` (optional). Whether the extension applies immediately or waits for approval follows the workspace's approval policy, the same rule `work_session_create` uses: an auto-approve lane extends directly and the tool returns a normal success; any other lane queues an extension request instead, and the tool returns `status="pending_approval"`—the session's `expires_at` stays at its prior value until a human decides out-of-band. Poll `work_session_get` until `expires_at` changes to see the outcome; the session's `pending_extension_request` field names the open request until then. A blank `reason` is rejected with `error_code: work_session_extension_reason_required`.
+
 ### `work_session_timeline`
 Chronological record of commands, file transfers, and sudo grants, with websh terminal records only when `include_records=True`. **Parameters:** `session_id`, `workspace`, `include_records` (boolean, default false—set true to include websh terminal records, which can return a very large response), `region` (optional).
 
@@ -782,6 +788,7 @@ There is intentionally no `approve_request`/`reject_request` tool: the Alpacon s
 - `delete_alert_rule`: by `rule_id`. A rule with `is_default=true` cannot be deleted
 - `attach_alert_rule` / `detach_alert_rule`: `server_id`, `rule_id`, `workspace`, `region` (optional). Each is idempotent in the state it aims at: attaching a rule the server already has changes nothing, and so does detaching a rule the server does not have
 - `get_alert_rule_recipients`: `rule_id`, `workspace`, `region` (optional). Preview who the rule would notify, as counts only—never names. Requires alpacon-server 2.36.0 or later. Returns `email` (`mode`, `count`, `reasons` with `admins`/`group_members`/`owner`—these overlap each other and need not sum to `count`), `slack_channel` (`enabled`, `connected`—both stay as configured for an `info`-severity rule even though `info` posts nothing), and `event_subscriptions` (machine listeners, unaffected by either destination). Counted over the servers the rule is attached to that the caller can see and that the rule can actually fire on; a `404` while the rule itself reads fine through `get_alert_rules` means every one of its servers is outside what the caller can see, not that the rule is gone, while a rule attached to no server answers zeros
+- `preview_alert_rule`: `workspace`, `rule_id` (optional), `servers` (optional UUID list, up to 20), `window_s` (optional; `60` to `604800`, default `86400`), any of `target`, `threshold`, `operator`, `duration_s`, `recovery_threshold`, `no_data_after_s`, `device`, `severity`, `notify_email`, `notify_slack_channel` (the `create_alert_rule` fields minus `name` and `is_default`, sent only when given), `region` (optional). Replays the rule over the window's realtime samples with the live evaluator's own logic, one tick every 60 seconds, and stores nothing. Without `rule_id` the fields describe a new rule and `servers` is required; with `rule_id` they override that rule's values (give none to preview it unchanged), its server overrides apply, and `servers` defaults to its attached servers. Returns `window` (`start`, `end`), `sample_interval_s`, `summary` (`episodes`, `would_interrupt`, `open_at_end`, `longest_s`), `servers` (one row per server and device: `server`, `device`, `samples`, `episodes` with `condition`, `raised_at`, `resolved_at`, `peak`, `outlived_hold`, `would_interrupt`), `recipients` (the `get_alert_rule_recipients` shape, over the replayed servers), and `not_reproduced`. Refused with `400` and an `error_code`: `metrics_alert_rule_preview_window_too_long` (`window_s` over seven days), `metrics_alert_rule_preview_too_many_servers` (over 20 servers, or servers × `window_s` over 5 × 604800), `metrics_alert_rule_preview_too_many_samples` (over 300,000 samples), `metrics_alert_rule_preview_servers_required` (neither `rule_id` nor `servers`), and `server_not_found` (an entry in `servers` is unknown or out of reach). A `404` means no rule with `rule_id`, or every server it is attached to is outside what the caller can see. `notify_email` and `notify_slack_channel` carry the same human-only restriction as on `create_alert_rule`
 
 Creating and updating a rule need a paid plan; reading, attaching and detaching work on any plan. A
 listed or fetched alert can carry `device` and `severity` from the rule that raised it, and
@@ -922,11 +929,13 @@ List the MFA methods allowed for the workspace (`allowed_mfa_methods`, `passkey_
 **Note:** Like `get_workspace_security`, this requires JWT (OAuth/SSO) authentication (a static API token is rejected up front) and the route is SaaS-only.
 
 ### `get_workspace_preferences`
-Get the workspace-wide preferences: timezone, locale, `front_url`, `invite_ttl`, `enabled_extensions`, `websh_session_timeout`, `auto_agent_upgrade`, `package_proxy`, `billing_email`, `allowed_domains`. Workspace-global configuration, not per-user.
+Get the workspace-wide preferences: timezone, locale, `front_url`, `invite_ttl`, `enabled_extensions`, `websh_session_timeout`, `agent_rollout_policy`, `package_proxy`, `billing_email`, `allowed_domains`. Workspace-global configuration, not per-user.
 
 **Parameters:**
 - `workspace` (string): Workspace name
 - `region` (string, optional): Region name; resolved from the workspace when omitted
+
+**Note:** The response also carries `auto_agent_upgrade`, a **deprecated** boolean alias for `agent_rollout_policy` (`true` unless `mode` is `manual`), kept for one release. Read `agent_rollout_policy` instead.
 
 ### `update_workspace_preferences`
 Update workspace-wide preferences. Only the fields you provide are sent (partial update).
@@ -940,13 +949,16 @@ Update workspace-wide preferences. Only the fields you provide are sent (partial
 - `invite_ttl` (integer, optional): Invitation link time-to-live, in seconds
 - `enabled_extensions` (array, optional): List of enabled extension names. Replaces the whole list (not additive); read via `get_workspace_preferences` and merge before sending. Narrowing it fails with HTTP 402 on non-enterprise plans
 - `websh_session_timeout` (integer, optional): Websh idle session timeout, in seconds
-- `auto_agent_upgrade` (boolean, optional): Whether agents auto-upgrade
+- `agent_rollout_policy` (object, optional): The agent-upgrade rollout policy: `{"mode": "latest"|"n_minus_1"|"manual", "window": {"days": [0-6, Monday is 0], "start_hour": 0-23, "length_hours": 1-24, "timezone": "<IANA>"}}`. A write may name only part of the object (just `mode`, or just one `window` key); whatever it leaves out keeps its current value. `manual` runs no automatic upgrade; `latest` and `n_minus_1` (one release behind) run the scheduled upgrade inside the window. The shape is validated locally before the request is sent
+- `auto_agent_upgrade` (boolean, optional): **Deprecated**, use `agent_rollout_policy`. Translated locally into a policy write—`true` becomes `{"mode": "latest"}`, `false` becomes `{"mode": "manual"}`—merged under whatever `agent_rollout_policy` also names, and never sent to the server as `auto_agent_upgrade`. When both are given, `agent_rollout_policy` wins on any key it names
 - `package_proxy` (string, optional): Proxy server URL for package installation
 - `billing_email` (string, optional): Billing contact email; SaaS-only field
 - `allowed_domains` (array, optional): Allowed email domains for invites; SaaS-only field. Replaces the whole list (not additive); read via `get_workspace_preferences` and merge before sending
 - `region` (string, optional): Region name; resolved from the workspace when omitted
 
 **⚠️ Warning:** `timezone` is the workspace's billing clock—changing it shifts the daily usage-aggregation boundary. The list fields (`enabled_extensions`, `allowed_domains`) replace the whole list rather than appending—read the current value, merge, then send. `billing_email` and `allowed_domains` are only accepted by the server on SaaS deployments.
+
+**Note:** Choosing `n_minus_1` can be refused with a `400` (`error_code: preferences_agent_rollout_mode_unavailable`) until this deployment has pinned agent-upgrade targets enabled—use `latest` or `manual` instead. A malformed `agent_rollout_policy` object is rejected locally with a field-specific message before any request is sent; a shape-valid object the server still refuses comes back with the coded `error_code` (`preferences_agent_rollout_policy_invalid`, `_mode_invalid`, `_window_days_invalid`, `_window_start_hour_invalid`, `_window_length_invalid`, `_window_timezone_invalid`) and an actionable message. The response of a call that used the deprecated `auto_agent_upgrade` input carries a `deprecation_note`.
 
 ### Why access control and security are read-only here
 
@@ -998,6 +1010,44 @@ Common error scenarios:
 - **403 Forbidden**: Insufficient permissions
 - **404 Not Found**: Server, resource, or session not found
 - **500 Internal Error**: Server-side error
+
+### Plan-limit refusals (402)
+
+A 402 whose body carries `gate: "plan"` and an `axis`—or, from an older or
+self-hosted alpacon-server, a gate-less `server_limit_exceeded`,
+`user_limit_exceeded`, `application_limit_exceeded`, `websh_limit_exceeded`,
+`webftp_limit_exceeded`, or `websh_share_limit_exceeded`—is a **plan-limit**
+refusal: the workspace hit a plan limit on that axis, not a permissions or
+input problem. It comes back structured instead of a generic error:
+
+```json
+{
+  "status": "error",
+  "error_code": "server_limit_exceeded",
+  "gate": "plan",
+  "axis": "server",
+  "next": "/api/workspaces/workspaces/<id>/entitlements/",
+  "requires_human_approval": false,
+  "next_action": "Do not retry. Tell the user the servers plan limit was reached; remove one no longer used or upgrade; if this host was registered before, delete the old server entry first, then retry; upgrade at https://alpacon.io/<workspace>/settings/billing; or talk to us: https://www.alpacax.com/alpacon/pricing"
+}
+```
+
+`next` is the server's self-relative entitlements-read pointer on a count-cap
+axis (`server`, `user`, `application`, `workspace`); it is `null` on a
+monthly axis (`websh`, `webftp`, `websh-share`), where `next_action` instead
+says the allowance resets at the end of the month. The billing link in
+`next_action` resolves from the workspace this call was made against—an
+Alpacon Cloud workspace (`<label>.<region>.alpacon.io`) gets a direct
+`https://alpacon.io/<label>/settings/billing` link; a self-hosted deployment
+gets the words "Settings → Billing in your Alpacon console" instead. Retrying
+does not change the answer; `requires_human_approval` is `false` because the
+caller (an admin, or whoever can free up or upgrade the plan) can usually
+resolve it directly, without an out-of-band approval.
+
+A 402 with `gate: "plan"` and **no** `axis` is a feature lock, not a plan
+limit (the plan itself excludes the action, on any usage). It stays a plain
+error with `error_code` set and, for a curated few codes, an actionable hint
+appended to `message`—the same handling any other 4xx `code` gets.
 
 ## 📝 Response format
 

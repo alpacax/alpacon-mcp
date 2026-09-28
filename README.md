@@ -382,8 +382,9 @@ Install the MCP extension and add to settings:
 - **unregister_server**: Unregister a host from the workspace
 - **star_server**: Pin or unpin a server for yourself
 - **list_server_notes** / **get_server_note** / **create_server_note** / **update_server_note** / **delete_server_note**: Server documentation notes
-- **restart_agent** / **shutdown_agent** / **upgrade_agent** / **update_information**: Alpacon agent lifecycle
-- **upgrade_system** / **reboot_system** / **shutdown_system**: Host-level actions
+- **restart_agent** / **upgrade_agent** / **update_information**: Alpacon agent lifecycle. This is the
+  complete set of actions this endpoint accepts; a host-level power operation (OS package upgrade,
+  reboot, shutdown) goes through a Work Session and `execute_command` instead
 - **list_registration_tokens** / **create_registration_token** / **delete_registration_token** / **get_registration_guide**: Register new hosts with Alpamon
 
 ### 📊 Monitoring & metrics
@@ -445,6 +446,7 @@ OAuth/browser callers must scope command execution and file transfers under an a
 - **update_alert_rule**: Update alert rule configuration, including notification destinations
 - **delete_alert_rule**: Delete an alert rule
 - **get_alert_rule_recipients**: Preview who a rule would notify, as counts only—never names
+- **preview_alert_rule**: Replay a rule, saved or not, over up to seven days of stored samples to see how many alerts it would have raised, how many would have interrupted someone, and who would receive them; stores nothing
 - **list_rule_overrides** / **get_rule_override**: Per-server departures from a workspace alert rule
 - **create_rule_override** / **update_rule_override** / **delete_rule_override**: Manage a per-server override
 
@@ -516,8 +518,8 @@ These tools need a JWT/OAuth session (hosted server), a browser session, or a lo
 - **get_workspace_access_control**: Get access control settings (read-only)
 - **get_workspace_security**: Get authentication/security settings (JWT/SSO auth only, SaaS only)
 - **list_workspace_mfa_methods**: List allowed MFA methods (JWT/SSO auth only, SaaS only)
-- **get_workspace_preferences**: Get workspace-wide preferences
-- **update_workspace_preferences**: Update workspace-wide preferences (partial)
+- **get_workspace_preferences**: Get workspace-wide preferences, including the `agent_rollout_policy` (mode + upgrade window)
+- **update_workspace_preferences**: Update workspace-wide preferences (partial), including `agent_rollout_policy`; the old `auto_agent_upgrade` boolean is accepted for one release and mapped onto it, deprecated
 - **health_check**: MCP server health, version, and authentication mode
 
 ### 🧩 Resources and prompts

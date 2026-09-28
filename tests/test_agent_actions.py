@@ -7,13 +7,9 @@ import pytest
 from server import mcp
 from tests.conftest import HTTP_ERROR_ENVELOPE, http_client_fixture
 from tools.server_tools import (
-    reboot_system,
     restart_agent,
-    shutdown_agent,
-    shutdown_system,
     update_information,
     upgrade_agent,
-    upgrade_system,
 )
 
 mock_http_client = http_client_fixture('tools.server_tools')
@@ -27,12 +23,8 @@ SERVER_ID = '550e8400-e29b-41d4-a716-446655440123'
     ('tool', 'action'),
     [
         (restart_agent, 'restart_agent'),
-        (shutdown_agent, 'shutdown_agent'),
         (upgrade_agent, 'upgrade_agent'),
         (update_information, 'update_information'),
-        (upgrade_system, 'upgrade_system'),
-        (reboot_system, 'reboot_system'),
-        (shutdown_system, 'shutdown_system'),
     ],
 )
 async def test_agent_action_http_error_envelope_returns_error(
@@ -77,27 +69,6 @@ class TestRestartAgent:
             endpoint=f'/api/servers/servers/{SERVER_ID}/actions/',
             token='test-token',
             data={'action': 'restart_agent', 'force': False},
-        )
-
-
-class TestShutdownAgent:
-    @pytest.mark.asyncio
-    async def test_shutdown_agent_success(self, mock_http_client, mock_token_manager):
-        """Test successful agent shutdown."""
-        mock_http_client.post.return_value = {'status': 'shutting_down'}
-
-        result = await shutdown_agent(
-            server_id=SERVER_ID, workspace='testworkspace', region='ap1'
-        )
-
-        assert result['status'] == 'success'
-        assert result['server_id'] == SERVER_ID
-        mock_http_client.post.assert_called_once_with(
-            region='ap1',
-            workspace='testworkspace',
-            endpoint=f'/api/servers/servers/{SERVER_ID}/actions/',
-            token='test-token',
-            data={'action': 'shutdown_agent', 'force': False},
         )
 
 
@@ -162,85 +133,12 @@ class TestUpdateInformation:
         )
 
 
-class TestUpgradeSystem:
-    """Test system upgrade functionality."""
-
-    @pytest.mark.asyncio
-    async def test_upgrade_system_success(self, mock_http_client, mock_token_manager):
-        """Test successful system upgrade."""
-        mock_http_client.post.return_value = {'status': 'upgrading'}
-
-        result = await upgrade_system(
-            server_id=SERVER_ID, workspace='testworkspace', region='ap1'
-        )
-
-        assert result['status'] == 'success'
-        assert result['server_id'] == SERVER_ID
-        mock_http_client.post.assert_called_once_with(
-            region='ap1',
-            workspace='testworkspace',
-            endpoint=f'/api/servers/servers/{SERVER_ID}/actions/',
-            token='test-token',
-            data={'action': 'upgrade_system', 'force': False},
-        )
-
-
-class TestRebootSystem:
-    """Test system reboot functionality."""
-
-    @pytest.mark.asyncio
-    async def test_reboot_system_success(self, mock_http_client, mock_token_manager):
-        """Test successful system reboot."""
-        mock_http_client.post.return_value = {'status': 'rebooting'}
-
-        result = await reboot_system(
-            server_id=SERVER_ID, workspace='testworkspace', region='ap1'
-        )
-
-        assert result['status'] == 'success'
-        assert result['server_id'] == SERVER_ID
-        mock_http_client.post.assert_called_once_with(
-            region='ap1',
-            workspace='testworkspace',
-            endpoint=f'/api/servers/servers/{SERVER_ID}/actions/',
-            token='test-token',
-            data={'action': 'reboot_system', 'force': False},
-        )
-
-
-class TestShutdownSystem:
-    """Test system shutdown functionality."""
-
-    @pytest.mark.asyncio
-    async def test_shutdown_system_success(self, mock_http_client, mock_token_manager):
-        """Test successful system shutdown."""
-        mock_http_client.post.return_value = {'status': 'shutting_down'}
-
-        result = await shutdown_system(
-            server_id=SERVER_ID, workspace='testworkspace', region='ap1'
-        )
-
-        assert result['status'] == 'success'
-        assert result['server_id'] == SERVER_ID
-        mock_http_client.post.assert_called_once_with(
-            region='ap1',
-            workspace='testworkspace',
-            endpoint=f'/api/servers/servers/{SERVER_ID}/actions/',
-            token='test-token',
-            data={'action': 'shutdown_system', 'force': False},
-        )
-
-
 class TestDisruptiveActionForce:
     """Tests for the force flag on disruptive server actions."""
 
     DISRUPTIVE = [
         (restart_agent, 'restart_agent'),
-        (shutdown_agent, 'shutdown_agent'),
         (upgrade_agent, 'upgrade_agent'),
-        (upgrade_system, 'upgrade_system'),
-        (reboot_system, 'reboot_system'),
-        (shutdown_system, 'shutdown_system'),
     ]
 
     @pytest.mark.asyncio
@@ -299,7 +197,7 @@ class TestDisruptiveActionForce:
 
     @pytest.mark.asyncio
     async def test_every_disruptive_description_carries_the_force_note(self):
-        """The note lives in one constant; a client must still read it on all six tools."""
+        """The note lives in one constant; a client must still read it on both tools."""
         descriptions = {t.name: t.description for t in await mcp.list_tools()}
 
         for _, action in self.DISRUPTIVE:
@@ -308,3 +206,16 @@ class TestDisruptiveActionForce:
                 in descriptions[action]
             )
         assert 'force=True' not in descriptions['update_information']
+
+    @pytest.mark.asyncio
+    async def test_removed_tools_are_not_registered(self):
+        """A future accidental re-registration of a removed tool must fail this test."""
+        names = {t.name for t in await mcp.list_tools()}
+
+        for removed in (
+            'shutdown_agent',
+            'upgrade_system',
+            'reboot_system',
+            'shutdown_system',
+        ):
+            assert removed not in names

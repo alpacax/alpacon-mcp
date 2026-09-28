@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - `initialize` and `server/discover` now report the package version in `serverInfo.version`, which was previously an empty string (#144). A client that parsed the empty value as "unknown" will now see a real version string.
+- `preview_alert_rule` (`workspace`, `rule_id`, `servers`, `window_s`, and the `create_alert_rule`
+  fields minus `name` and `is_default`, `region`): replay an alert rule, saved or not, over up to
+  seven days of stored samples and report the episodes it would have raised, how many would have
+  interrupted someone, and who would receive them, without storing anything (#288). Wraps
+  `POST /api/metrics/alert-rules/preview/`; a server without that endpoint refuses the request. The
+  preview's four limit codes (`metrics_alert_rule_preview_window_too_long`, `_too_many_servers`,
+  `_too_many_samples`, `_servers_required`) surface as `error_code` with a hint naming what to
+  narrow, and `server_not_found` surfaces as `error_code` as elsewhere.
 - `list_latest_metrics` (`workspace`, `region`, `search`, `groups`, `tag`, `is_connected`, `state`,
   `ordering`, `page`, `page_size`): the latest CPU, memory, disk usage, disk I/O and network reading
   for many servers in one request, one row per server. Wraps `GET /api/metrics/latest/`
@@ -116,12 +124,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   its expiry is refused with `400 API_TOKEN_ALREADY_EXPIRED`. Paid plans only. The tool is annotated
   destructive rather than idempotent, so a client that auto-retries on idempotent hints will not
   silently invalidate a secret the first call already issued.
-- `force` on the six disruptive server actions: `restart_agent`, `shutdown_agent`, `upgrade_agent`,
-  `upgrade_system`, `reboot_system` and `shutdown_system` (#140). The server has refused these while
-  a host is busy with an open Websh/WebFTP session or an in-flight command since alpacon-server
-  #2553, and `force=true` is the only way through. It defaults to `false`, so an existing caller
-  sends the same effective request as before; `update_information` is not disruptive and gains
-  nothing.
+- `force` on the two disruptive server actions: `restart_agent` and `upgrade_agent` (#140). The
+  server has refused these while a host is busy with an open Websh/WebFTP session or an in-flight
+  command since alpacax/alpacon-server#2553, and `force=true` is the only way through. It defaults to
+  `false`, so an existing caller sends the same effective request as before; `update_information`
+  is not disruptive and gains nothing.
 - `request_sudo_policy`: ask for a sudo policy through `/api/sudo/policy-requests/`, which mints an
   approval request an admin has to approve before the policy exists (#140). The tool returns
   `status="pending_approval"` with category `SUDO_POLICY_REQUEST_PENDING`, so a client that already
@@ -205,8 +212,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `""` meaning "no filter" now gets whatever the server does with a blank filter value.
   `server_id`, `limit`, and `page_size` are unaffected: a blank one was already rejected
   before the request was built.
+- `restart_agent`, `upgrade_agent`, and `update_information` now state in their description and
+  docstring that the server's action endpoint accepts only these three actions (#290).
+- BREAKING: `work_session_extend` now requires `reason` (#294): a short justification the
+  human approver judges the request by, sent on every request, including one an auto-approve
+  lane extends directly. A call that omitted `reason` before now fails with a `TypeError`
+  at the tool boundary instead of extending the session. Whether the extension applies
+  immediately or waits for approval follows the workspace's approval policy, the same rule
+  `work_session_create` uses—an auto-approve lane still returns a normal success, but any
+  other lane now queues an extension request and the tool returns `status="pending_approval"`
+  instead of applying it; the session's `expires_at` stays at its prior value until a human
+  decides out-of-band. Poll `work_session_get` until `expires_at` changes to see the outcome.
+  A blank `reason` now surfaces as `error_code: work_session_extension_reason_required` with
+  an actionable hint instead of an opaque `400`. Matches alpacon-server's extension-approval
+  change (alpacax/alpacon-server#3805); this must ship in the same MCP release as, or
+  before, the server release that enforces it.
+- `get_workspace_preferences` and `update_workspace_preferences` now read and write
+  `agent_rollout_policy` (#292), the workspace's agent-upgrade rollout policy:
+  `{"mode": "latest"|"n_minus_1"|"manual", "window": {"days": [0-6, Monday is 0],
+  "start_hour": 0-23, "length_hours": 1-24, "timezone": "<IANA>"}}`. A write may name
+  only part of the object; whatever it leaves out keeps its current value, and the
+  shape is validated locally—naming an unknown key, an out-of-range hour, a duplicate
+  day, or an unrecognized timezone fails before any request is sent. `update_workspace_preferences`
+  no longer sends `auto_agent_upgrade` to the server. Choosing `n_minus_1` while this
+  deployment has no pinned agent-upgrade targets enabled comes back as a readable
+  `error_code: preferences_agent_rollout_mode_unavailable` instead of an opaque `400`;
+  the window validation codes (`preferences_agent_rollout_{policy,mode,window_days,
+  window_start_hour,window_length,window_timezone}_invalid`) surface the same way.
+- A plan-limit 402 (`gate: "plan"` with an `axis`, or, from an older or self-hosted
+  alpacon-server, a gate-less `server_limit_exceeded`, `user_limit_exceeded`,
+  `application_limit_exceeded`, `websh_limit_exceeded`, `webftp_limit_exceeded`, or
+  `websh_share_limit_exceeded`) now comes back as a structured result—`error_code`, `gate`,
+  `axis`, `next` (passed through unmodified), `requires_human_approval: false`, and a
+  `next_action` telling the agent not to retry and what to tell the user, with a console
+  billing link when the workspace host resolves to one (#296). A client parsing error
+  responses should check for `axis` before falling back to generic error handling. A feature
+  lock (`gate: "plan"` with no `axis`) is unaffected and keeps its existing generic-error
+  handling.
+
+### Deprecated
+- `auto_agent_upgrade` on `update_workspace_preferences` (#292). Still accepted for one
+  release: `true` is translated locally to `agent_rollout_policy={"mode": "latest"}` and
+  `false` to `{"mode": "manual"}`, merged under whatever `agent_rollout_policy` also
+  names (which wins on any key it names), and the response carries a `deprecation_note`.
+  `get_workspace_preferences` still returns `auto_agent_upgrade` alongside
+  `agent_rollout_policy`, matching the server's own one-release alias. Removed in a
+  future release—callers should move to `agent_rollout_policy`.
 
 ### Removed
+- BREAKING: `shutdown_agent`, `upgrade_system`, `reboot_system`, and `shutdown_system` (#290,
+  #291). Privileged power operations on a host or its agent—a shutdown, a reboot, an OS-level
+  package upgrade—now go through a Work Session with sudo, MFA, policy, or approval, and
+  recording, rather than a one-click action. The four action verbs were removed from the
+  server's action endpoint, which answers a removed action with `400`; a caller still naming
+  one of these tools gets a `Tool not found` error instead of the action it used to perform.
+  `restart_agent`, `upgrade_agent`, and `update_information` are unaffected; for the host
+  upgrade/reboot flow, see "Keeping hosts current" in [examples.md](docs/examples.md).
 - BREAKING: the invented `title` on `create_server_note` and `update_server_note`. The note
   serializer has no such field, so the server discarded whatever was sent.
 - BREAKING: `mentioned_users` on `update_server_note`. Only the `create` action routes to

@@ -263,6 +263,8 @@ attach_alert_rule(
 
 Restrict who hears about it: `update_alert_rule(rule_id="<uuid>", workspace="production", notify_email="admins", notify_slack_channel=False)` routes the mail to workspace admins alone and drops the channel post—only a human caller may set either field. Before or after tuning them, `get_alert_rule_recipients(rule_id="<uuid>", workspace="production")` (needs alpacon-server 2.36.0+) previews the effect as counts only, never names—useful for confirming a rule reaches the right group before it ever fires.
 
+Tune a threshold before saving it: `preview_alert_rule(workspace="production", servers=["<uuid>"], target="cpu-usage", threshold=80, duration_s=300)` replays that rule over the last 24 hours and reports each episode it would have raised, `summary.would_interrupt` (how many would have reached someone by email or Slack), and the recipient counts. For a saved rule, `preview_alert_rule(workspace="production", rule_id="<uuid>", threshold=90, window_s=604800)` tries a new threshold over its own servers and overrides for the full seven days. Nothing is stored either way.
+
 One host runs hotter than the fleet: `create_rule_override(server_id="<uuid>", rule_id="<uuid>", workspace="production", threshold=95)` replaces the threshold for that server alone, leaving `recovery_threshold` and `duration_s` at the rule's own value; `create_rule_override(..., enabled=False)` exempts the server from the rule entirely. `list_rule_overrides(workspace, server_id="<uuid>")` shows what a host currently departs from.
 
 ---
@@ -313,10 +315,27 @@ The `security_audit` prompt helps pick between these lenses when the question is
 > *"Which servers still run the vulnerable openssl, and can we patch them?"*
 
 1. `list_system_packages(server_id, workspace, package_name="openssl")` per server—inventory, no command execution
-2. `install_system_package(server_id, package_name="openssl", workspace)` to patch one package, or `upgrade_system(server_id, workspace)` for everything
-3. `reboot_system(server_id, workspace)` when the update needs it
+2. `install_system_package(server_id, package_name="openssl", workspace)` to patch that one package
+3. For a full package upgrade across the fleet, open a Work Session with `scopes` including `sudo`
+   (see "The shape of the flow" above) and run `sudo apt-get upgrade -y` through `execute_command`.
+   A sudo invocation not already covered by a Work Session sudo policy either queues for human
+   approval or is denied outright with no request anyone can approve—check `sudo_denial.category`
+   before waiting on it, and surface a queued approval to a human the same way as any other pending
+   request
+4. `sudo reboot` through `execute_command` in that same session if the upgrade needs a restart
 
 Python packages have the same trio: `list_python_packages`, `install_python_package`, `remove_python_package`.
+
+### Setting the agent auto-upgrade policy
+
+> *"Hold agents one release behind latest, and only upgrade them overnight."*
+
+1. `get_workspace_preferences(workspace)`—check the current `agent_rollout_policy` (`mode` and `window`) before changing it
+2. `update_workspace_preferences(workspace, agent_rollout_policy={"mode": "n_minus_1", "window": {"days": [0, 1, 2, 3, 4, 5, 6], "start_hour": 1, "length_hours": 4, "timezone": "UTC"}})`—a write may name only part of the object (just `mode`, or just one `window` key); whatever it leaves out keeps its current value
+3. `n_minus_1` can come back refused with `error_code: preferences_agent_rollout_mode_unavailable` on a deployment that has no pinned agent-upgrade targets enabled yet—use `latest` (upgrade to the newest release) or `manual` (no automatic upgrade; upgrade a server explicitly with `upgrade_agent`) instead
+4. A malformed `window` (an hour out of `0-23`, an unknown timezone, …) is rejected locally before any request is sent, naming the field that is wrong
+
+The deprecated `auto_agent_upgrade` boolean is still accepted for one release—`update_workspace_preferences(workspace, auto_agent_upgrade=True)` is translated locally to `agent_rollout_policy={"mode": "latest"}`—but the response carries a `deprecation_note`, and a caller naming both fields gets whatever `agent_rollout_policy` says.
 
 ---
 

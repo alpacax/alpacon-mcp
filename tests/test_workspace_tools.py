@@ -625,6 +625,36 @@ class TestGetWorkspacePreferences:
 
         assert result['status'] == 'error'
 
+    @pytest.mark.asyncio
+    async def test_agent_rollout_policy_and_deprecated_alias_both_pass_through(
+        self, mock_http_client, mock_token
+    ):
+        # get_workspace_preferences does no read-side mapping of its own: the
+        # server sends both fields for one release, and both must reach the
+        # caller unchanged so a client already reading auto_agent_upgrade
+        # keeps working while it migrates to agent_rollout_policy.
+        mock_http_client.get.return_value = {
+            'timezone': 'Asia/Seoul',
+            'agent_rollout_policy': {
+                'mode': 'latest',
+                'window': {
+                    'days': [0, 1, 2, 3, 4, 5, 6],
+                    'start_hour': 0,
+                    'length_hours': 24,
+                    'timezone': 'UTC',
+                },
+            },
+            'auto_agent_upgrade': True,
+        }
+
+        result = await get_workspace_preferences(
+            workspace='testworkspace', region='ap1'
+        )
+
+        assert result['status'] == 'success'
+        assert result['data']['agent_rollout_policy']['mode'] == 'latest'
+        assert result['data']['auto_agent_upgrade'] is True
+
 
 class TestUpdateWorkspacePreferences:
     """Test update_workspace_preferences function."""
@@ -654,14 +684,22 @@ class TestUpdateWorkspacePreferences:
     async def test_update_multiple_fields(self, mock_http_client, mock_token):
         mock_http_client.patch.return_value = {
             'timezone': 'Asia/Seoul',
-            'auto_agent_upgrade': False,
+            'agent_rollout_policy': {
+                'mode': 'manual',
+                'window': {
+                    'days': [0, 1, 2, 3, 4, 5, 6],
+                    'start_hour': 0,
+                    'length_hours': 24,
+                    'timezone': 'UTC',
+                },
+            },
             'enabled_extensions': ['metrics'],
         }
 
         result = await update_workspace_preferences(
             workspace='testworkspace',
             timezone='Asia/Seoul',
-            auto_agent_upgrade=False,
+            agent_rollout_policy={'mode': 'manual'},
             enabled_extensions=['metrics'],
             region='ap1',
         )
@@ -674,8 +712,8 @@ class TestUpdateWorkspacePreferences:
             token='test-token',
             data={
                 'timezone': 'Asia/Seoul',
-                'auto_agent_upgrade': False,
                 'enabled_extensions': ['metrics'],
+                'agent_rollout_policy': {'mode': 'manual'},
             },
         )
 
@@ -699,6 +737,258 @@ class TestUpdateWorkspacePreferences:
         )
 
         assert result['status'] == 'error'
+
+
+class TestUpdateWorkspacePreferencesAgentRolloutPolicy:
+    """`agent_rollout_policy` writes, the deprecated `auto_agent_upgrade` alias
+    mapping, their merge precedence, and locally-surfaced validation errors.
+    """
+
+    @pytest.mark.asyncio
+    async def test_full_policy_object_sent_as_is(self, mock_http_client, mock_token):
+        mock_http_client.patch.return_value = {'agent_rollout_policy': {}}
+        policy = {
+            'mode': 'n_minus_1',
+            'window': {
+                'days': [0, 2, 4],
+                'start_hour': 9,
+                'length_hours': 8,
+                'timezone': 'Asia/Seoul',
+            },
+        }
+
+        result = await update_workspace_preferences(
+            workspace='testworkspace', agent_rollout_policy=policy, region='ap1'
+        )
+
+        assert result['status'] == 'success'
+        assert 'deprecation_note' not in result
+        mock_http_client.patch.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/workspaces/preferences/-/',
+            token='test-token',
+            data={'agent_rollout_policy': policy},
+        )
+
+    @pytest.mark.asyncio
+    async def test_partial_policy_object_only_names_given_keys(
+        self, mock_http_client, mock_token
+    ):
+        mock_http_client.patch.return_value = {'agent_rollout_policy': {}}
+
+        await update_workspace_preferences(
+            workspace='testworkspace',
+            agent_rollout_policy={'window': {'start_hour': 3}},
+            region='ap1',
+        )
+
+        mock_http_client.patch.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/workspaces/preferences/-/',
+            token='test-token',
+            data={'agent_rollout_policy': {'window': {'start_hour': 3}}},
+        )
+
+    @pytest.mark.asyncio
+    async def test_deprecated_true_maps_to_latest(self, mock_http_client, mock_token):
+        mock_http_client.patch.return_value = {'agent_rollout_policy': {}}
+
+        result = await update_workspace_preferences(
+            workspace='testworkspace', auto_agent_upgrade=True, region='ap1'
+        )
+
+        assert result['status'] == 'success'
+        assert 'deprecated' in result['deprecation_note']
+        assert 'latest' in result['deprecation_note']
+        mock_http_client.patch.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/workspaces/preferences/-/',
+            token='test-token',
+            data={'agent_rollout_policy': {'mode': 'latest'}},
+        )
+
+    @pytest.mark.asyncio
+    async def test_deprecated_false_maps_to_manual(self, mock_http_client, mock_token):
+        mock_http_client.patch.return_value = {'agent_rollout_policy': {}}
+
+        result = await update_workspace_preferences(
+            workspace='testworkspace', auto_agent_upgrade=False, region='ap1'
+        )
+
+        assert result['status'] == 'success'
+        assert 'manual' in result['deprecation_note']
+        mock_http_client.patch.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/workspaces/preferences/-/',
+            token='test-token',
+            data={'agent_rollout_policy': {'mode': 'manual'}},
+        )
+
+    @pytest.mark.asyncio
+    async def test_auto_agent_upgrade_never_sent_to_server(
+        self, mock_http_client, mock_token
+    ):
+        mock_http_client.patch.return_value = {'agent_rollout_policy': {}}
+
+        await update_workspace_preferences(
+            workspace='testworkspace', auto_agent_upgrade=True, region='ap1'
+        )
+
+        sent_data = mock_http_client.patch.call_args.kwargs['data']
+        assert 'auto_agent_upgrade' not in sent_data
+
+    @pytest.mark.asyncio
+    async def test_explicit_policy_mode_wins_over_deprecated_boolean(
+        self, mock_http_client, mock_token
+    ):
+        mock_http_client.patch.return_value = {'agent_rollout_policy': {}}
+
+        result = await update_workspace_preferences(
+            workspace='testworkspace',
+            auto_agent_upgrade=True,
+            agent_rollout_policy={'mode': 'n_minus_1'},
+            region='ap1',
+        )
+
+        assert result['status'] == 'success'
+        # The alias still produced a note (it was supplied), but the explicit
+        # mode it wrote is overridden by the explicit agent_rollout_policy.
+        assert result['deprecation_note']
+        mock_http_client.patch.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/workspaces/preferences/-/',
+            token='test-token',
+            data={'agent_rollout_policy': {'mode': 'n_minus_1'}},
+        )
+
+    @pytest.mark.asyncio
+    async def test_deprecated_boolean_merges_under_explicit_window(
+        self, mock_http_client, mock_token
+    ):
+        """true -> {"mode": "latest"} merge: a field the explicit object does
+        not name (here, mode) still comes from the deprecated boolean.
+        """
+        mock_http_client.patch.return_value = {'agent_rollout_policy': {}}
+
+        await update_workspace_preferences(
+            workspace='testworkspace',
+            auto_agent_upgrade=True,
+            agent_rollout_policy={'window': {'start_hour': 5}},
+            region='ap1',
+        )
+
+        mock_http_client.patch.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/workspaces/preferences/-/',
+            token='test-token',
+            data={
+                'agent_rollout_policy': {
+                    'mode': 'latest',
+                    'window': {'start_hour': 5},
+                }
+            },
+        )
+
+    @pytest.mark.parametrize(
+        'policy',
+        [
+            'not-a-dict',
+            {'mode': 'latest', 'unknown_key': True},
+            {'mode': 'sometimes'},
+            # Unhashable `mode` values: must not raise TypeError doing a
+            # frozenset membership test, only a clean validation error.
+            {'mode': ['latest']},
+            {'mode': {'nested': 'latest'}},
+            {'window': 'not-a-dict'},
+            {'window': {'days': []}},
+            {'window': {'days': [0, 0, 1]}},
+            {'window': {'days': [7]}},
+            {'window': {'days': [True]}},
+            {'window': {'start_hour': -1}},
+            {'window': {'start_hour': 24}},
+            {'window': {'start_hour': True}},
+            {'window': {'length_hours': 0}},
+            {'window': {'length_hours': 25}},
+            {'window': {'timezone': ''}},
+            {'window': {'timezone': 'Not/AZone'}},
+            {'window': {'timezone': 'x' * 65}},
+            {'window': {'unknown_key': 1}},
+        ],
+    )
+    @pytest.mark.asyncio
+    async def test_invalid_policy_shapes_are_rejected_locally(
+        self, mock_http_client, mock_token, policy
+    ):
+        result = await update_workspace_preferences(
+            workspace='testworkspace', agent_rollout_policy=policy, region='ap1'
+        )
+
+        assert result['status'] == 'error'
+        assert result['message']
+        mock_http_client.patch.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_valid_iana_timezone_is_accepted(self, mock_http_client, mock_token):
+        mock_http_client.patch.return_value = {'agent_rollout_policy': {}}
+
+        result = await update_workspace_preferences(
+            workspace='testworkspace',
+            agent_rollout_policy={'window': {'timezone': 'America/New_York'}},
+            region='ap1',
+        )
+
+        assert result['status'] == 'success'
+        mock_http_client.patch.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_mode_unavailable_400_surfaces_as_readable_error(
+        self, mock_http_client, mock_token
+    ):
+        mock_http_client.patch.return_value = {
+            'error': 'HTTP Error',
+            'status_code': HTTPStatus.BAD_REQUEST,
+            'message': 'HTTP 400',
+            'response': '{"code": "preferences_agent_rollout_mode_unavailable"}',
+        }
+
+        result = await update_workspace_preferences(
+            workspace='testworkspace',
+            agent_rollout_policy={'mode': 'n_minus_1'},
+            region='ap1',
+        )
+
+        assert result['status'] == 'error'
+        assert result['error_code'] == 'preferences_agent_rollout_mode_unavailable'
+        assert 'pinned' in result['message']
+
+    @pytest.mark.asyncio
+    async def test_window_days_invalid_400_surfaces_as_readable_error(
+        self, mock_http_client, mock_token
+    ):
+        # A server-side refusal the local check does not itself raise for this
+        # request still comes back readable, not a bare "400 Bad Request".
+        mock_http_client.patch.return_value = {
+            'error': 'HTTP Error',
+            'status_code': HTTPStatus.BAD_REQUEST,
+            'message': 'HTTP 400',
+            'response': '{"code": "preferences_agent_rollout_window_days_invalid"}',
+        }
+
+        result = await update_workspace_preferences(
+            workspace='testworkspace',
+            agent_rollout_policy={'window': {'days': [1, 2, 3]}},
+            region='ap1',
+        )
+
+        assert result['status'] == 'error'
+        assert result['error_code'] == 'preferences_agent_rollout_window_days_invalid'
+        assert 'window.days' in result['message']
 
 
 if __name__ == '__main__':
