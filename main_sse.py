@@ -1,7 +1,7 @@
 # main_sse.py
 import argparse
 
-from server import TOOLSETS_HELP, ToolsetError, run
+from server import TOOLSETS_HELP, TRANSPORT_SSE, ToolsetError, run
 from utils.logger import get_logger
 
 logger = get_logger('main_sse')
@@ -23,7 +23,7 @@ def main():
 
     args = parser.parse_args()
     try:
-        run('sse', config_file=args.config_file, toolsets=args.toolsets)
+        run(TRANSPORT_SSE, config_file=args.config_file, toolsets=args.toolsets)
     except ToolsetError as e:
         # A toolsets typo is user error, not a crash: one clean line, no traceback.
         # Scoped to ToolsetError so an unrelated ValueError during tool import is

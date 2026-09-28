@@ -2,7 +2,7 @@
 import argparse
 from pathlib import Path
 
-from server import TOOLSETS_HELP, ToolsetError, run
+from server import TOOLSETS_HELP, TRANSPORT_STDIO, ToolsetError, run
 from utils.logger import get_logger
 
 logger = get_logger('main')
@@ -113,7 +113,7 @@ Examples:
     logger.info(f'Configuration: config_file={args.config_file}')
 
     try:
-        run('stdio', config_file=args.config_file, toolsets=args.toolsets)
+        run(TRANSPORT_STDIO, config_file=args.config_file, toolsets=args.toolsets)
     except ToolsetError as e:
         # A toolsets typo is user error, not a crash: one clean line, no traceback.
         # Scoped to ToolsetError so an unrelated ValueError during tool import

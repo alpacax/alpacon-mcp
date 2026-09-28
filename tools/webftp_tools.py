@@ -11,6 +11,7 @@ from typing import Any, cast
 
 import httpx
 
+from server import TRANSPORT_STDIO
 from utils.api_call import http_call_response
 from utils.common import (
     build_list_params,
@@ -25,6 +26,10 @@ from utils.decorators import mcp_tool_handler
 from utils.error_handler import format_validation_error, validate_file_path
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, READ_ONLY
+
+# base64 inflates bytes 4/3x; this keeps the decoded upload at 3 MiB even
+# though the ASGI layer allows a larger envelope (see #144, design in #275).
+_MAX_UPLOAD_CONTENT_BYTES = 3 * 1024 * 1024
 
 _REMOTE_MODE_ERROR = (
     'WebFTP file transfer is not supported in remote mode. '
@@ -428,6 +433,8 @@ async def webftp_upload_file(
         'Suitable for: remote mode (streamable-http), Claude Desktop file attachments, '
         'or when Claude Code reads a file with its Read tool. '
         'file_content must be base64-encoded bytes. '
+        'On streamable-http/SSE, file_content is capped at 3 MiB decoded; use '
+        'webftp_upload_file in local mode for larger files. '
         'Related: webftp_upload_file (local path), webftp_download_file.'
     ),
     annotations=ADDITIVE,
@@ -445,13 +452,31 @@ async def webftp_upload_content(
     allow_overwrite: bool = True,
     **kwargs,
 ) -> dict[str, Any]:
-    """Upload base64-encoded file content to a server via WebFTP."""
+    """Upload base64-encoded file content to a server via WebFTP.
+
+    On streamable-http/SSE, file_content is limited to 3 MiB decoded (base64
+    inflates bytes 4/3x). stdio has no such cap. Larger files must use
+    webftp_upload_file in local mode.
+    """
     token = kwargs.get('token')
 
     try:
         raw_bytes = base64.b64decode(file_content, validate=True)
     except binascii.Error as exc:
         return error_response(f'Invalid base64 content: {exc}', code='invalid_content')
+
+    # Only the HTTP transports carry the SDK body cap this works around. An unset
+    # transport means a caller outside prepare(), and fails closed.
+    transport = os.environ.get('ALPACON_MCP_TRANSPORT', '')
+    if transport != TRANSPORT_STDIO and len(raw_bytes) > _MAX_UPLOAD_CONTENT_BYTES:
+        return error_response(
+            f'File content exceeds the {_MAX_UPLOAD_CONTENT_BYTES} byte '
+            f'(3 MiB) limit for webftp_upload_content; got {len(raw_bytes)} bytes. '
+            'Use webftp_upload_file in local mode for larger files.',
+            code='content_too_large',
+            limit_bytes=_MAX_UPLOAD_CONTENT_BYTES,
+            content_bytes=len(raw_bytes),
+        )
 
     if not validate_file_path(remote_file_path):
         return format_validation_error('remote_file_path', remote_file_path)
@@ -768,15 +793,10 @@ async def webftp_bulk_upload(
     ):
         return err
 
-    file_ids = []
     upload_items = (
         result if isinstance(result, list) else result.get('results', [result])
     )
-
-    for item in upload_items:
-        file_id = item.get('id')
-        if file_id:
-            file_ids.append(file_id)
+    file_ids = [file_id for item in upload_items if (file_id := item.get('id'))]
 
     semaphore = asyncio.Semaphore(_UPLOAD_CONCURRENCY)
 

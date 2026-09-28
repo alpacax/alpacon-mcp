@@ -24,10 +24,9 @@ logger = get_logger('main_http')
 def main():
     """Main entry point for HTTP transport mode."""
     # Validate required Auth0 configuration (fail fast on missing env vars)
-    missing = []
-    for var in ['AUTH0_DOMAIN', 'AUTH0_CLIENT_ID']:
-        if not os.getenv(var, ''):
-            missing.append(var)
+    missing = [
+        var for var in ('AUTH0_DOMAIN', 'AUTH0_CLIENT_ID') if not os.getenv(var, '')
+    ]
 
     if missing:
         print(
@@ -55,10 +54,41 @@ def main():
 
     logger.info('Starting Alpacon MCP Server (HTTP Streamable transport)')
 
-    from server import run
+    # Deferred with the block below: keeps the HTTP-only dependency off the
+    # import path of non-HTTP entry points (stdio, SSE).
+    import uvicorn
+
+    from server import (
+        TRANSPORT_STREAMABLE_HTTP,
+        create_streamable_http_app,
+        prepare,
+        resolve_host,
+        resolve_port,
+        resource_metadata_url,
+    )
+    from utils.auth_error_middleware import UpstreamAuthErrorMiddleware
 
     try:
-        run('streamable-http')
+        prepare(TRANSPORT_STREAMABLE_HTTP)
+
+        host = resolve_host()
+        port = resolve_port()
+        app = UpstreamAuthErrorMiddleware(
+            create_streamable_http_app(host=host),
+            resource_metadata_url=resource_metadata_url(),
+        )
+        logger.info(
+            'Upstream auth error middleware installed on the streamable-http app'
+        )
+        uvicorn.Server(
+            uvicorn.Config(
+                app,
+                host=host,
+                port=port,
+                log_level='info',
+                server_header=False,
+            )
+        ).run()
     except Exception as e:
         logger.error(f'Failed to start MCP server: {e}', exc_info=True)
         raise

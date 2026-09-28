@@ -12,8 +12,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from server import MAX_REQUEST_BODY_SIZE
 from tests.conftest import http_client_fixture
 from tools.webftp_tools import (
+    _MAX_UPLOAD_CONTENT_BYTES,
     _STATUS_ERROR,
     _aiter_file,
     _ensure_parent_dir,
@@ -1186,6 +1188,55 @@ class TestUploadContent:
         mock_http_client.post.assert_not_called()
 
     @pytest.mark.asyncio
+    async def test_upload_content_over_size_limit_rejected_on_streamable_http(
+        self, mock_http_client, mock_token_manager, monkeypatch
+    ):
+        """Decoded content over 3 MiB on streamable-http returns code='content_too_large' before any API call."""
+        monkeypatch.setenv('ALPACON_MCP_TRANSPORT', 'streamable-http')
+        oversized = base64.b64encode(b'x' * (3 * 1024 * 1024 + 1)).decode()
+
+        result = await webftp_upload_content(
+            server_id=self.SERVER_ID,
+            file_content=oversized,
+            remote_file_path='/remote/big.bin',
+            workspace='ws',
+            region='ap1',
+        )
+
+        assert result['status'] == 'error'
+        assert result.get('code') == 'content_too_large'
+        assert result['limit_bytes'] == 3 * 1024 * 1024
+        assert result['content_bytes'] == 3 * 1024 * 1024 + 1
+        mock_http_client.post.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_upload_content_over_size_limit_allowed_on_stdio(
+        self, mock_http_client, mock_token_manager, mock_httpx, monkeypatch
+    ):
+        """Given stdio transport, when decoded content exceeds 3 MiB, then the upload proceeds unchecked."""
+        monkeypatch.setenv('ALPACON_MCP_TRANSPORT', 'stdio')
+        mock_http_client.post.return_value = {
+            'id': 'upload-abc',
+            'upload_url': 'https://s3.example.com/put?sig=abc',
+        }
+        mock_http_client.get.return_value = {}
+        put_resp = AsyncMock()
+        put_resp.status_code = HTTPStatus.OK
+        mock_httpx.put.return_value = put_resp
+        oversized = base64.b64encode(b'x' * (3 * 1024 * 1024 + 1)).decode()
+
+        result = await webftp_upload_content(
+            server_id=self.SERVER_ID,
+            file_content=oversized,
+            remote_file_path='/remote/big.bin',
+            workspace='ws',
+            region='ap1',
+        )
+
+        assert result['status'] == 'success'
+        mock_http_client.post.assert_called_once()
+
+    @pytest.mark.asyncio
     async def test_upload_content_invalid_path(
         self, mock_http_client, mock_token_manager
     ):
@@ -1554,6 +1605,17 @@ class TestWebFtpSessionCreateGateTranslation:
 
         assert result.get('code') == 'work_session_required'
         assert 'next_action' in result
+
+
+class TestUploadCapAgainstAsgiBodyLimit:
+    """The only test linking _MAX_UPLOAD_CONTENT_BYTES to MAX_REQUEST_BODY_SIZE."""
+
+    def test_upload_cap_leaves_room_under_the_asgi_body_limit(self):
+        # Given the max upload, When base64-encoded, Then it fits under the ASGI cap.
+        encoded = _MAX_UPLOAD_CONTENT_BYTES * 4 // 3
+
+        assert encoded < MAX_REQUEST_BODY_SIZE
+        assert encoded > MAX_REQUEST_BODY_SIZE // 2
 
 
 if __name__ == '__main__':

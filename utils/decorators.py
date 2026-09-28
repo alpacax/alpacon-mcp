@@ -12,7 +12,7 @@ from typing import Any
 from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.types import ToolAnnotations
 
-from utils import error_handler, token_manager
+from utils import request_signal, token_manager
 from utils.auth import (
     decode_claims_unverified,
     get_token_workspaces,
@@ -219,8 +219,8 @@ async def _check_mfa_requirement(
 
     Fetches workspace security settings, checks the JWT's MFA completion
     claims, and raises UpstreamAuthError if MFA is required but
-    expired/missing. The ASGI middleware catches this exception and
-    returns HTTP 401 with MFA scope to trigger re-authentication.
+    expired/missing. Before raising, it signals request_signal, which the
+    ASGI middleware reads to return HTTP 401 with MFA scope.
 
     Fails open on errors — the upstream API will catch it as a fallback.
 
@@ -243,10 +243,8 @@ async def _check_mfa_requirement(
         if check_mfa_completed(claims, settings):
             return
 
-        # MFA required but not completed — also set dict signal as fallback
-        token_key = error_handler.make_auth_error_key(jwt_token)
-        error_handler.signal_upstream_auth_error(
-            token_key,
+        # MFA required but not completed
+        request_signal.signal_upstream_auth_error(
             {'mfa_required': True, 'source': action},
         )
         logger.info(
@@ -461,8 +459,8 @@ def with_token_validation(func: Callable, requires_workspace: bool = True) -> Ca
                         workspace=workspace,
                     )
 
-                # Raises UpstreamAuthError when MFA is required but not done;
-                # the ASGI middleware turns that into HTTP 401.
+                # Signals request_signal and raises when MFA is required but
+                # not done; the ASGI middleware reads the signal for HTTP 401.
                 await _check_mfa_requirement(func.__name__, jwt_token, workspace)
 
             extra_kwargs['token'] = jwt_token
@@ -518,8 +516,8 @@ def with_error_handling(func: Callable) -> Callable:
             return result
 
         except UpstreamAuthError:
-            # Let upstream auth errors propagate to the ASGI middleware
-            # which converts them to HTTP 401 for MCP client re-auth.
+            # Only ends the tool call: SDK 2.x keeps handler exceptions off the
+            # ASGI boundary, and request_signal carries the re-auth signal there.
             raise
 
         except Exception as e:
@@ -665,7 +663,7 @@ def mcp_tool_handler(
 
     Args:
         description: Tool description for MCP
-        annotations: MCP ToolAnnotations (readOnlyHint, destructiveHint, etc.)
+        annotations: MCP ToolAnnotations (read_only_hint, destructive_hint, etc.)
         meta: MCP meta dict (anthropic/alwaysLoad, anthropic/searchHint, etc.)
         requires_workspace: Whether the tool takes a workspace. Set False only
             for a tool that answers before any workspace is known and reaches

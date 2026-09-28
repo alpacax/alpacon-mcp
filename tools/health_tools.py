@@ -13,7 +13,7 @@ from utils.health import get_health_info
 # Raw registration: this tool has to answer before any workspace or JWT exists.
 @mcp.tool(
     description='Check MCP server health status. Returns server version, uptime, authentication mode, and connection pool info. When to use: verifying the MCP server is running and reachable before making other calls. Note: No parameters required.',
-    annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False),
+    annotations=ToolAnnotations(read_only_hint=True, destructive_hint=False),
     meta={
         'anthropic/alwaysLoad': True,
         'anthropic/searchHint': 'health check status ping connectivity',

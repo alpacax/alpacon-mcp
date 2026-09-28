@@ -2492,7 +2492,7 @@ class TestExecuteFileRegistration:
     @pytest.mark.asyncio
     async def test_schema_has_no_shell_lane_fields(self):
         tools = {t.name: t for t in await mcp.list_tools()}
-        schema = tools['execute_file'].inputSchema
+        schema = tools['execute_file'].input_schema
 
         properties = schema['properties']
         for forbidden in ('line', 'command', 'data', 'env', 'shell', 'kwargs'):

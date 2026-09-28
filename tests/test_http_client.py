@@ -13,11 +13,8 @@ from unittest.mock import ANY, AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from utils.error_handler import (
-    UpstreamAuthError,
-    consume_upstream_auth_error,
-    make_auth_error_key,
-)
+from utils import request_signal
+from utils.error_handler import UpstreamAuthError
 from utils.http_client import HTTP_VERBS, AlpaconHTTPClient, http_client
 from utils.recovery_hints import _detect_error_domain, enrich_error_response
 
@@ -561,9 +558,10 @@ class TestHandleUpstream401:
 
     @patch.dict('os.environ', {'ALPACON_MCP_AUTH_ENABLED': 'true'})
     def test_raises_and_signals_in_remote_mode(self):
-        """Raises UpstreamAuthError and signals dict in remote mode."""
+        """Raises UpstreamAuthError and records the request signal in remote mode."""
         token = 'header.payload.signature'  # Must pass _is_jwt() check
         exc = self._make_401_exc({'code': 'auth_mfa_required', 'source': 'websh'})
+        holder = request_signal.begin_request()
 
         with pytest.raises(UpstreamAuthError) as exc_info:
             AlpaconHTTPClient._handle_upstream_401(exc, token=token)
@@ -571,23 +569,19 @@ class TestHandleUpstream401:
         assert exc_info.value.mfa_required is True
         assert exc_info.value.source == 'websh'
 
-        # Dict signal should also be set (fallback mechanism)
-        token_key = make_auth_error_key(token)
-        error_info = consume_upstream_auth_error(token_key)
-        assert error_info is not None
-        assert error_info['mfa_required'] is True
-        assert error_info['source'] == 'websh'
+        assert holder['mfa_required'] is True
+        assert holder['source'] == 'websh'
 
     @patch.dict('os.environ', {'ALPACON_MCP_AUTH_ENABLED': 'false'})
     def test_no_signal_in_stdio_mode(self):
-        """Does NOT signal error when auth is disabled (stdio mode)."""
+        """Does NOT record a signal when auth is disabled (stdio mode)."""
         token = 'header.payload.signature'
         exc = self._make_401_exc({'code': 'auth_mfa_required', 'source': 'websh'})
+        holder = request_signal.begin_request()
+
         AlpaconHTTPClient._handle_upstream_401(exc, token=token)
 
-        token_key = make_auth_error_key(token)
-        error_info = consume_upstream_auth_error(token_key)
-        assert error_info is None
+        assert holder == {}
 
     def test_debug_instrumentation_logs_at_debug_level(self, caplog):
         """[DEBUG-401] records are leftover instrumentation, so ALPACON_MCP_LOG_LEVEL must silence them."""
@@ -756,6 +750,34 @@ class TestDebugLogPayloadsAreLazy:
         assert payload_for('Empty response') == (
             {'status': 'success', 'status_code': HTTPStatus.OK},
         )
+
+
+class TestUpstreamAuthErrorReachesTheClient:
+    """The SDK boundary that turns a bare Exception into 'Error executing tool <name>'."""
+
+    async def test_upstream_auth_error_message_survives_the_tool_boundary(self, caplog):
+        from mcp.server.mcpserver import Context, MCPServer
+        from mcp.types import CallToolRequestParams
+
+        mcp_server = MCPServer(name='test-upstream-auth-error')
+
+        @mcp_server.tool()
+        async def failing_tool() -> str:
+            raise UpstreamAuthError(mfa_required=True, source='websh')
+
+        with caplog.at_level(logging.ERROR, logger='mcp.server.mcpserver.server'):
+            result = await mcp_server._handle_call_tool(
+                Context(mcp_server=mcp_server, subscriptions=mcp_server._subscriptions),
+                CallToolRequestParams(name='failing_tool', arguments={}),
+            )
+
+        assert result.is_error is True
+        # A plain Exception collapses to just this prefix; ToolError keeps the
+        # original message after it.
+        assert result.content[0].text == (
+            'Error executing tool failing_tool: MFA verification required'
+        )
+        assert not any(r.levelno >= logging.ERROR for r in caplog.records)
 
 
 class TestHTTPVerbsConstant:

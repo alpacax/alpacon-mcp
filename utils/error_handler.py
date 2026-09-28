@@ -1,79 +1,31 @@
 """Enhanced error handling utilities for Alpacon MCP server."""
 
-import hashlib
 import re
-import threading
 import uuid
 from typing import Any
 
-# Module-level thread-safe dict for signaling upstream auth errors between
-# the ASGI middleware and MCP tool handlers. Uses a module-level dict
-# instead of contextvars because MCP streamable-http transport runs tool
-# handlers in a separate anyio task context where ContextVar mutations
-# are invisible to the middleware's parent context.
-_upstream_auth_errors: dict[str, dict] = {}
-_upstream_auth_lock = threading.Lock()
+from mcp.server.mcpserver.exceptions import ToolError
+
+# 'dev' is internal-only: the validator accepts it, but it is never advertised.
+SERVED_REGIONS = ('ap1', 'us1')
+VALID_REGIONS = (*SERVED_REGIONS, 'dev')
 
 
-def make_auth_error_key(token: str) -> str:
-    """Derive a short hash key from an auth token for error signaling.
-
-    NOTE: Uses SHA-256 for fast, collision-resistant key derivation only
-    (not for password hashing). The input is a JWT token, not a password.
-    """
-    return hashlib.sha256(token.encode()).hexdigest()[:16]
-
-
-def signal_upstream_auth_error(token_key: str, error_info: dict) -> None:
-    """Signal that an upstream 401 was received for the given token.
-
-    Called by http_client when the Alpacon API returns 401 in remote mode.
-    The ASGI middleware reads this via consume_upstream_auth_error().
-
-    If a signal already exists for this token_key (e.g., multiple API
-    calls in one tool run), merges with the existing entry, preserving
-    mfa_required=True once set so a later non-MFA 401 cannot downgrade it.
-    """
-    with _upstream_auth_lock:
-        existing = _upstream_auth_errors.get(token_key)
-        if existing is None:
-            _upstream_auth_errors[token_key] = error_info
-            return
-
-        merged = existing.copy()
-        merged.update(error_info)
-        if existing.get('mfa_required') or error_info.get('mfa_required'):
-            merged['mfa_required'] = True
-        _upstream_auth_errors[token_key] = merged
-
-
-def consume_upstream_auth_error(token_key: str) -> dict | None:
-    """Check and consume an upstream auth error for the given token.
-
-    Called by the ASGI middleware after the request completes.
-    Returns the error info dict if present, None otherwise.
-    Atomically removes the entry to prevent double-consumption.
-    """
-    with _upstream_auth_lock:
-        return _upstream_auth_errors.pop(token_key, None)
-
-
-class UpstreamAuthError(Exception):
+class UpstreamAuthError(ToolError):
     """Raised when re-authentication is required for the Alpacon API.
 
-    Used in remote (streamable-http) mode to propagate authentication
-    state through the call stack to the ASGI middleware, which replaces
-    the HTTP 200 JSON-RPC response with HTTP 401 to trigger the MCP
-    client's OAuth re-authentication flow.
+    Used in remote (streamable-http) mode to signal that the current call
+    requires OAuth re-authentication. As a ``ToolError``, the SDK logs it
+    at INFO without a traceback and keeps the message intact for the client.
 
     Typically raised when the upstream Alpacon API returns 401 or when
     local checks (such as MFA pre-checks) determine that the current
     session requires re-authentication. The ``mfa_required`` flag
     indicates whether multi-factor verification is specifically needed.
 
-    This exception-based path complements the dict-based signaling
-    mechanism (signal_upstream_auth_error) for more reliable
-    cross-task propagation.
+    Raising this only cuts the current call short; the signal the
+    middleware reads is recorded separately via
+    ``utils.request_signal.signal_upstream_auth_error``.
     """
 
     def __init__(self, mfa_required: bool = False, source: str = ''):
@@ -108,11 +60,6 @@ def validate_workspace_format(workspace: str) -> bool:
     # Workspace should be alphanumeric with possible hyphens/underscores
     pattern = r'^[a-zA-Z0-9][a-zA-Z0-9_-]*[a-zA-Z0-9]$|^[a-zA-Z0-9]$'
     return bool(re.match(pattern, workspace)) and len(workspace) <= 63
-
-
-# 'dev' is internal-only: the validator accepts it, but it is never advertised.
-SERVED_REGIONS = ('ap1', 'us1')
-VALID_REGIONS = (*SERVED_REGIONS, 'dev')
 
 
 def validate_region_format(region: str) -> bool:
