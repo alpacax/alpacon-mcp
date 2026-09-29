@@ -746,7 +746,7 @@ Open a session. **Parameters:** `workspace`, `scopes` (array; agents may request
 
 `description` is prose for the human who approves the session. It is not a command list and nothing in it is executed; commands run via `execute_command` once the session is active.
 
-A session that needs human approval comes back with `status="pending_approval"`—surface it to a person and retry after they approve.
+A session that needs human approval comes back with `status="pending_approval"`, and no command or file transfer runs in it until a human approves it out-of-band (Alpacon web console or Slack). Surface it to a person, then call `work_session_get` and proceed once `data.status` is `active`; stop if it is `rejected`, `cancelled`, `expired`, or `revoked`, since those never become active.
 
 ### `work_session_get` / `work_session_list`
 Read one session (`session_id`) or list them (`status`, `requester_type`, `limit` filters).
