@@ -423,7 +423,6 @@ async def _server_action(
         'Restart the Alpacon agent process on a server. The agent will briefly go offline during restart. '
         'Use this when the agent is unresponsive or after configuration changes. Returns a command object tracking the restart operation. '
         f'{_FORCE_BUSY_NOTE}'
-        'This endpoint now accepts only three actions: restart_agent, upgrade_agent, and update_information. '
         'Related: upgrade_agent. Note: Server will briefly go offline.'
     ),
     annotations=DESTRUCTIVE,
@@ -444,10 +443,6 @@ async def restart_agent(
 
     Returns:
         Agent restart response
-
-    Note:
-        The server's action endpoint now accepts only three actions:
-        restart_agent, upgrade_agent, and update_information.
     """
     token = kwargs.get('token')
 
@@ -467,7 +462,6 @@ async def restart_agent(
         'Upgrade the Alpacon agent on a server to the latest available version. The agent will briefly restart during the upgrade process. '
         'Use this to keep agents up to date with the latest features and security patches. Returns a command object tracking the upgrade operation. '
         f'{_FORCE_BUSY_NOTE}'
-        'This endpoint now accepts only three actions: restart_agent, upgrade_agent, and update_information. '
         'Related: restart_agent. Note: Agent briefly restarts during upgrade.'
     ),
     annotations=DESTRUCTIVE,
@@ -488,10 +482,6 @@ async def upgrade_agent(
 
     Returns:
         Agent upgrade response
-
-    Note:
-        The server's action endpoint now accepts only three actions:
-        restart_agent, upgrade_agent, and update_information.
     """
     token = kwargs.get('token')
 
@@ -510,8 +500,7 @@ async def upgrade_agent(
     description=(
         'Refresh system information for a server by triggering the agent to re-collect hardware, OS, network, and package data. '
         'Use this after hardware changes or OS updates to ensure the dashboard reflects the current state. '
-        'Returns a command object tracking the operation. '
-        'This endpoint now accepts only three actions: restart_agent, upgrade_agent, and update_information.'
+        'Returns a command object tracking the operation.'
     ),
     annotations=ADDITIVE,
     meta={'anthropic/searchHint': 'refresh system info hardware OS rescan'},
@@ -528,10 +517,6 @@ async def update_information(
 
     Returns:
         Update information response
-
-    Note:
-        The server's action endpoint now accepts only three actions:
-        restart_agent, upgrade_agent, and update_information.
     """
     token = kwargs.get('token')
 

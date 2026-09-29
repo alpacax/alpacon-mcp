@@ -1095,8 +1095,7 @@ async def list_latest_metrics(
 ) -> dict[str, Any]:
     """Get the latest metric reading for every server in a workspace, a page at a time.
 
-    Wraps `GET /api/metrics/latest/` (alpacax/alpacon-server#3654), which
-    requires alpacon-server 2.37.0 or later. It is the servers list with five
+    Requires alpacon-server 2.37.0 or later. It is the servers list with five
     metric cells added: the filters, search, and pagination are `list_servers`'
     own, plus `state` and `ordering`.
 
