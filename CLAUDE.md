@@ -62,7 +62,7 @@ Things the code will not tell you at a glance:
   injection. `list_workspaces` is the only tool using it. The decorator also
   rewrites the published signature, dropping the `**kwargs` it injects the token
   into: the SDK reads that catch-all as an ordinary required field and would
-  publish it to clients (#211). Two rules follow: a tool must declare `**kwargs`
+  publish it to clients. Two rules follow: a tool must declare `**kwargs`
   or decoration raises, and no tool may forward its own `**kwargs` on to another
   tool, because by then it holds the resolved credential. `with_logging` binds
   the published signature strictly, so a forwarded catch-all raises a
@@ -110,8 +110,8 @@ Things the code will not tell you at a glance:
   middleware plants an empty dict (`utils/request_signal.py`) and the tool
   handler mutates it; the handler runs in a task the transport spawned, so
   rebinding the ContextVar there never reaches the middleware. Only a
-  JWT-carrying request ever signals, and `UpstreamAuthError` no longer crosses
-  the ASGI boundary—SDK 2.x turns a handler exception into a wire response.
+  JWT-carrying request ever signals, and `UpstreamAuthError` does not cross
+  the ASGI boundary: the SDK turns a handler exception into a wire response.
 
 ## Language and writing style
 

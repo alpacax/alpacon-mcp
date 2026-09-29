@@ -746,7 +746,7 @@ Open a session. **Parameters:** `workspace`, `scopes` (array; agents may request
 
 `description` is prose for the human who approves the session. It is not a command list and nothing in it is executed; commands run via `execute_command` once the session is active.
 
-A session that needs human approval comes back with `status="pending_approval"`—surface it to a person and retry after they approve.
+A session that needs human approval comes back with `status="pending_approval"`, and no command or file transfer runs in it until a human approves it out-of-band (Alpacon web console or Slack). Surface it to a person, then call `work_session_get` and proceed once `data.status` is `active`; stop if it is `rejected`, `cancelled`, `expired`, `revoked`, or `completed`, since those never become active.
 
 ### `work_session_get` / `work_session_list`
 Read one session (`session_id`) or list them (`status`, `requester_type`, `limit` filters).
@@ -935,7 +935,7 @@ Get the workspace-wide preferences: timezone, locale, `front_url`, `invite_ttl`,
 - `workspace` (string): Workspace name
 - `region` (string, optional): Region name; resolved from the workspace when omitted
 
-**Note:** The response also carries `auto_agent_upgrade`, a **deprecated** boolean alias for `agent_rollout_policy` (`true` unless `mode` is `manual`), kept for one release. Read `agent_rollout_policy` instead.
+**Note:** The response also carries `auto_agent_upgrade`, a **deprecated** boolean alias for `agent_rollout_policy` (`true` unless `mode` is `manual`). Read `agent_rollout_policy` instead.
 
 ### `update_workspace_preferences`
 Update workspace-wide preferences. Only the fields you provide are sent (partial update).

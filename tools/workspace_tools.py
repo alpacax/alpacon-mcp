@@ -459,9 +459,9 @@ async def list_workspace_mfa_methods(
         'agent_rollout_policy is {"mode": "latest"|"n_minus_1"|"manual", "window": '
         '{"days": [0-6, Monday is 0], "start_hour": 0-23, "length_hours": 1-24, '
         '"timezone": "<IANA>"}} and controls automatic agent upgrades. '
-        'DEPRECATED: the response also carries auto_agent_upgrade, a boolean alias '
-        '(true unless mode is manual) kept for one release; read agent_rollout_policy '
-        'instead. This is workspace-global configuration, not a per-user preference. '
+        'DEPRECATED: the response also carries auto_agent_upgrade, a boolean '
+        'alias of agent_rollout_policy (true unless mode is manual); read '
+        'agent_rollout_policy instead. This is workspace-global configuration, not a per-user preference. '
         'Related: update_workspace_preferences.'
     ),
     annotations=READ_ONLY,
@@ -482,8 +482,7 @@ async def get_workspace_preferences(
         Workspace preferences response. `agent_rollout_policy` is the current
         agent-upgrade rollout policy (`mode` plus its upgrade `window`).
         DEPRECATED: the response also carries `auto_agent_upgrade` (a boolean
-        alias, kept for one release) alongside it; read `agent_rollout_policy`
-        instead.
+        alias) alongside it; read `agent_rollout_policy` instead.
     """
     token = kwargs.get('token')
 
@@ -510,7 +509,7 @@ async def get_workspace_preferences(
         'current value. Validated locally before sending; the server may still refuse '
         'n_minus_1 with 400 preferences_agent_rollout_mode_unavailable when this '
         'deployment has no pinned-upgrade targets enabled yet. '
-        'DEPRECATED: auto_agent_upgrade (boolean) is still accepted for one release and is '
+        'DEPRECATED: auto_agent_upgrade (boolean) is still accepted and is '
         'translated locally into a policy fragment (true -> {"mode": "latest"}, false -> '
         '{"mode": "manual"}); it is never sent to the server as-is. When both are given, '
         'that fragment is merged underneath agent_rollout_policy: a key agent_rollout_policy '

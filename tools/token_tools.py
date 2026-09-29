@@ -294,7 +294,7 @@ async def update_api_token(
     description=(
         'Delete an API token permanently. When to use: revoking access for a specific token. '
         'Related: list_api_tokens (find token ID), update_api_token (disable instead of deleting), '
-        f'duplicate_api_token (create a copy before deleting). Note: This cannot be undone. {_JWT_REQUIRED_NOTE}'
+        f'rotate_api_token (regenerate the secret instead of deleting). Note: This cannot be undone. {_JWT_REQUIRED_NOTE}'
     ),
     annotations=DESTRUCTIVE,
     meta={'anthropic/searchHint': 'api token delete revoke remove'},
@@ -335,9 +335,13 @@ async def delete_api_token(
 
 @mcp_tool_handler(
     description=(
-        'Duplicate an existing API token to create a copy with the same configuration. When to use: '
-        'creating a backup token or rotating credentials. Related: list_api_tokens (find token ID), '
-        'create_api_token (create from scratch), delete_api_token (remove old token after rotation). '
+        'Duplicate an existing API token, copying its configuration subject to current scope and expiry '
+        'policy: scopes that can no longer be granted are dropped, and expiry is capped at the '
+        "workspace's current maximum. When to use: creating a second token like an existing one. "
+        'To roll a leaked or aging key use '
+        'rotate_api_token; duplicate leaves the original key live. Related: list_api_tokens (find token ID), '
+        'create_api_token (create from scratch), rotate_api_token (regenerate the secret in place), '
+        'delete_api_token (revoke the original key). '
         f'{_JWT_REQUIRED_NOTE}'
     ),
     annotations=ADDITIVE,
@@ -353,8 +357,8 @@ async def duplicate_api_token(
 ) -> dict[str, Any]:
     """Duplicate an API token.
 
-    The duplicate inherits all configuration (scopes, expiry) from the source
-    token. If name is omitted, the server generates one (e.g. "Token (copy)").
+    Copies the source's configuration subject to current policy: scopes that can no
+    longer be granted are dropped and expiry is capped at the workspace maximum.
 
     Args:
         token_id: ID of the API token to duplicate

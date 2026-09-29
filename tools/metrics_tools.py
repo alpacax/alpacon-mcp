@@ -820,7 +820,7 @@ async def get_top_servers(
 
 
 @mcp_tool_handler(
-    description='Get the monitoring alert rules configured for servers. Each rule carries a name, a target metric, a threshold, and whether it is the workspace default. When to use: reviewing what alerts are configured or checking thresholds. Related: list_alerts (triggered alerts), create_alert_rule (create new rules in alert_tools). Note: This is in metrics_tools; alert CRUD operations are in alert_tools.',
+    description='Get the monitoring alert rules configured for servers. Each rule carries a name, a target metric, a threshold, and whether it is the workspace default. When to use: reviewing what alerts are configured or checking thresholds. Pass server_id to list only the rules attached to that server. Related: list_alerts (triggered alerts), create_alert_rule, update_alert_rule.',
     annotations=READ_ONLY,
     meta={
         'anthropic/searchHint': 'alert rules monitoring threshold notification configuration'
@@ -1095,8 +1095,7 @@ async def list_latest_metrics(
 ) -> dict[str, Any]:
     """Get the latest metric reading for every server in a workspace, a page at a time.
 
-    Wraps `GET /api/metrics/latest/` (alpacax/alpacon-server#3654), which
-    requires alpacon-server 2.37.0 or later. It is the servers list with five
+    Requires alpacon-server 2.37.0 or later. It is the servers list with five
     metric cells added: the filters, search, and pagination are `list_servers`'
     own, plus `state` and `ordering`.
 

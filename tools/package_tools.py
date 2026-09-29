@@ -14,7 +14,7 @@ from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, READ_ONLY
 
 
 @mcp_tool_handler(
-    description='List system package entries on a specific server. Returns package names, versions, and installation details from the OS package manager. Filterable by server ID. Use this to audit installed OS-level packages or check for specific software. Related: install_system_package (add packages), list_system_packages (proc-level package list).',
+    description='List system package entries on a specific server. Returns package names, versions, and installation details from the OS package manager. server_id is required. Use this to audit installed OS-level packages or check for specific software. Related: install_system_package (add packages), list_system_packages (proc-level package list).',
     annotations=READ_ONLY,
     meta={'anthropic/searchHint': 'system package entries installed server'},
 )
@@ -138,7 +138,7 @@ async def remove_system_package(
 
 
 @mcp_tool_handler(
-    description='List Python packages installed on a specific server. Returns package names, versions, and installation details. Filterable by server ID. Use this to audit Python dependencies or check for specific libraries. Related: install_python_package (add packages), remove_python_package.',
+    description='List Python packages installed on a specific server. Returns package names, versions, and installation details. server_id is required. Use this to audit Python dependencies or check for specific libraries. Related: install_python_package (add packages), remove_python_package.',
     annotations=READ_ONLY,
     meta={'anthropic/searchHint': 'python package pip installed server'},
 )

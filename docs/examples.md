@@ -335,7 +335,7 @@ Python packages have the same trio: `list_python_packages`, `install_python_pack
 3. `n_minus_1` can come back refused with `error_code: preferences_agent_rollout_mode_unavailable` on a deployment that has no pinned agent-upgrade targets enabled yet—use `latest` (upgrade to the newest release) or `manual` (no automatic upgrade; upgrade a server explicitly with `upgrade_agent`) instead
 4. A malformed `window` (an hour out of `0-23`, an unknown timezone, …) is rejected locally before any request is sent, naming the field that is wrong
 
-The deprecated `auto_agent_upgrade` boolean is still accepted for one release—`update_workspace_preferences(workspace, auto_agent_upgrade=True)` is translated locally to `agent_rollout_policy={"mode": "latest"}`—but the response carries a `deprecation_note`, and a caller naming both fields gets whatever `agent_rollout_policy` says.
+The deprecated `auto_agent_upgrade` boolean is still accepted—`update_workspace_preferences(workspace, auto_agent_upgrade=True)` is translated locally to `agent_rollout_policy={"mode": "latest"}`—but the response carries a `deprecation_note`, and a caller naming both fields gets whatever `agent_rollout_policy` says.
 
 ---
 

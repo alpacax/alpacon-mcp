@@ -22,18 +22,23 @@ _API_SESSIONS = '/api/work-sessions/sessions/'
         'Create a Work Session to scope all infrastructure actions under an auditable, '
         'approval-gated session. Every execute_command and file transfer should be linked '
         'to a Work Session—the server enforces this for MCP OAuth and browser-based auth '
-        '(session_id is optional for other auth methods such as service tokens). '
+        '(work_session_id is optional for other auth methods such as service tokens). '
+        'A new session usually lands in pending: this tool then returns '
+        'status="pending_approval", and no command or file transfer runs in it until a '
+        'human approves out-of-band (Alpacon web console or Slack). Do not open another '
+        'session; call work_session_get and proceed once data.status is active, or stop '
+        'if it is rejected, cancelled, expired, revoked, or completed, since those never become active. '
         'description: what you are doing and why, written as prose for the human who '
         'approves the session. It is NOT a command list and nothing in it is executed—'
-        'commands run via execute_command once the session is active. Be specific; a '
-        'vague one-liner like "maintenance" is hard to approve. Markdown supported. '
-        'E.g. "Restart nginx on prod-web-1 to clear 502s; no package installs". '
+        'commands run via execute_command once the session is active. Be specific: '
+        'name the targets, the action, and what will not be touched; a bare word like '
+        '"maintenance" gives the approver nothing to decide on. Markdown supported. '
         'scopes declares which operations are allowed: '
         '"command" (execute_command, execute_file), "webftp" (file transfers), '
         '"tunnel" (port forwarding), "sudo" (privilege elevation). '
         'servers is the list of target server UUIDs. '
         'expires_at is an ISO 8601 datetime string. '
-        'Related: work_session_close (end session), execute_command (pass session_id).'
+        'Related: work_session_close (end session), execute_command (pass work_session_id).'
     ),
     annotations=ADDITIVE,
     meta={'anthropic/searchHint': 'work session create audit approval scope intent'},
@@ -87,8 +92,9 @@ async def work_session_create(
         return pending_approval_response(
             'This Work Session was created but is pending human approval. A '
             'human must approve it out-of-band (Alpacon web console or Slack) '
-            'before any command or file transfer in this session will run. Poll '
-            'work_session_get for status, and only proceed once it is active.',
+            'before any command or file transfer in this session will run. Call '
+            'work_session_get and proceed only once data.status is active; stop if '
+            'it is rejected, cancelled, expired, revoked, or completed.',
             category='WORK_SESSION_PENDING',
             data=result,
             session_id=session_id,

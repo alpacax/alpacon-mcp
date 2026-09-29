@@ -88,6 +88,32 @@ class TestWorkSessionCreate:
         assert 'out-of-band' in result['next_action']
 
     @pytest.mark.asyncio
+    async def test_create_pending_guidance_reads_data_status_and_names_stop_states(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = {
+            'id': 'ws-uuid-pending',
+            'status': 'pending',
+            'auth_method': 'mcp_oauth',
+        }
+
+        result = await work_session_create(
+            workspace='testworkspace',
+            scopes=['command'],
+            servers=['550e8400-e29b-41d4-a716-446655440001'],
+            expires_at='2026-05-19T13:00:00+00:00',
+            description='Fix nginx config',
+            region='ap1',
+        )
+
+        assert result['status'] == 'pending_approval'
+        assert 'data.status' in result['next_action']
+        assert 'data.status' in result['message']
+        for state in ('rejected', 'cancelled', 'expired', 'revoked', 'completed'):
+            assert state in result['next_action']
+            assert state in result['message']
+
+    @pytest.mark.asyncio
     async def test_create_active_returns_success(
         self, mock_http_client, mock_token_manager
     ):
@@ -767,6 +793,21 @@ class TestDescriptionIsNotAnExecutionChannel:
         text = descriptions[tool_name]
         assert 'NOT a command list' in text
         assert 'nothing in it is executed' in text
+
+    @pytest.mark.asyncio
+    async def test_create_description_names_work_session_id_pending_approval_and_stop_states(
+        self,
+    ):
+        descriptions = {t.name: t.description for t in await mcp.list_tools()}
+
+        text = descriptions['work_session_create']
+
+        assert 'work_session_id' in text
+        assert 'pending_approval' in text
+        assert 'data.status' in text
+        for state in ('rejected', 'cancelled', 'expired', 'revoked', 'completed'):
+            assert state in text
+        assert 'pass session_id' not in text
 
 
 class TestWorkSessionListParams:

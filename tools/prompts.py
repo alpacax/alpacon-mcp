@@ -31,15 +31,17 @@ must belong to an approved Work Session. Follow this order.
      Work Session sudo policy already covers the command, a sudo invocation routes to human
      approval (HITL)—and some are denied outright, leaving no request a human can unblock.
      Request `sudo` only when the work genuinely requires root. Interactive `websh`/`editor`
-     access requires human presence (MFA) and is NOT available to you.
+     access requires human presence (MFA) and is not available to you.
    - Scope to the specific target servers only—do not request workspace-wide access.
 
 2. Handle the result by status:
    - `pending_approval`: you cannot approve your own work—an agent has no presence (MFA),
-     so the session routes to a human approver. Surface the request to a human and WAIT.
-     Do not retry-spam.
-     Use `explain_approval_decision` (pass `workspace`) to relay why a human must
-     act out-of-band.
+     so the session routes to a human approver. Surface the request to a human and wait
+     for the decision. One request per action is enough; resubmitting only creates
+     duplicates. Use `explain_approval_decision` (pass `workspace`) to relay why a human
+     must act out-of-band. Check `work_session_get` and read `data.status`: continue to
+     step 3 once it is `active`; stop if it is `rejected`, `cancelled`, `expired`,
+     `revoked`, or `completed`, since those never become active.
    - `error` with a gate `code` (`work_session_required`, `work_session_scope_not_allowed`,
      `work_session_server_not_allowed`, `work_session_expired`, ...): read `next_action`,
      narrow the scope or server set, and retry deliberately—never brute-force.
@@ -111,7 +113,7 @@ def incident_response(server_id: str = '', workspace: str = '') -> str:
    - Server state: `get_server_overview`, `get_cpu_usage`, `get_memory_usage`.
    - Recent events: `list_events`. Identify the likely cause before acting.
 
-2. If remediation requires running commands, do NOT execute directly. Open a Work Session
+2. If remediation requires running commands, do not execute directly. Open a Work Session
    via the `work_session_workflow`: scope it to the affected server(s) only, with the
    `command` scope, and wait for human approval.
 
