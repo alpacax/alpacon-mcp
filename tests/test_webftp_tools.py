@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from server import MAX_REQUEST_BODY_SIZE
+from server import MAX_REQUEST_BODY_SIZE, mcp
 from tests.conftest import VALID_SERVER_ID, http_client_fixture
 from tools.webftp_tools import (
     _MAX_UPLOAD_CONTENT_BYTES,
@@ -1337,6 +1337,7 @@ class TestRemoteModeUnsupported:
             )
         assert result['status'] == 'error'
         assert 'remote mode' in result['message']
+        assert 'webftp_upload_content' in result['message']
         assert result.get('code') == 'remote_mode_unsupported'
         mock_http_client.post.assert_not_called()
 
@@ -1373,6 +1374,18 @@ class TestRemoteModeUnsupported:
         assert 'remote mode' in result['message']
         assert result.get('code') == 'remote_mode_unsupported'
         mock_http_client.post.assert_not_called()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        'tool_name',
+        ['webftp_upload_file', 'webftp_bulk_upload', 'webftp_bulk_download'],
+    )
+    async def test_local_file_tool_description_advertises_remote_mode_unsupported(
+        self, tool_name
+    ):
+        descriptions = {t.name: t.description for t in await mcp.list_tools()}
+
+        assert 'remote_mode_unsupported' in descriptions[tool_name]
 
 
 class TestRemoteModeDownload:

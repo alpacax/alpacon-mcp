@@ -32,9 +32,9 @@ from utils.tool_annotations import ADDITIVE, READ_ONLY
 _MAX_UPLOAD_CONTENT_BYTES = 3 * 1024 * 1024
 
 _REMOTE_MODE_ERROR = (
-    'WebFTP file transfer is not supported in remote mode. '
-    'The MCP server cannot access your local filesystem from a remote container. '
-    'Use local mode (stdio) for file transfers.'
+    'This tool reads or writes a local file, which the MCP server cannot reach in remote mode. '
+    'Use local mode (stdio or SSE), or webftp_upload_content and webftp_download_file, '
+    'which work in remote mode.'
 )
 
 # API endpoints
@@ -320,7 +320,7 @@ async def webftp_sessions_list(
 
 
 @mcp_tool_handler(
-    description='Upload a local file to a remote server. Reads the file from a local absolute path, transfers it via S3 presigned URL, and places it at the specified remote path on the server. Pass work_session_id to link this upload to a Work Session for audit; the server enforces this for MCP OAuth and browser-based auth. When to use: transferring a single file to a server. Related: webftp_bulk_upload (multiple files), webftp_download_file (download from server), webftp_uploads_list (check upload history), work_session_create (create a Work Session). Note: Both local and remote paths must be absolute.',
+    description='Upload a local file to a remote server. Reads the file from a local absolute path, transfers it via S3 presigned URL, and places it at the specified remote path on the server. Pass work_session_id to link this upload to a Work Session for audit; the server enforces this for MCP OAuth and browser-based auth. In remote mode (ALPACON_MCP_AUTH_ENABLED=true) the MCP server cannot reach your local filesystem, so this returns error code remote_mode_unsupported; use webftp_upload_content instead. When to use: transferring a single file to a server. Related: webftp_bulk_upload (multiple files), webftp_download_file (download from server), webftp_uploads_list (check upload history), work_session_create (create a Work Session). Note: Both local and remote paths must be absolute.',
     annotations=ADDITIVE,
     meta={'anthropic/searchHint': 'file upload transfer scp sftp send server'},
 )
@@ -730,7 +730,7 @@ async def webftp_downloads_list(
 
 
 @mcp_tool_handler(
-    description='Upload multiple local files to a remote server in a single operation. All files are placed in the same destination directory. Uses S3 presigned URLs with concurrent uploads. Pass work_session_id to link this upload to a Work Session for audit; the server enforces this for MCP OAuth and browser-based auth. When to use: uploading several files at once (more efficient than repeated webftp_upload_file calls). Related: webftp_upload_file (single file), webftp_bulk_download (download multiple), work_session_create (create a Work Session). Note: All files go to the same remote directory.',
+    description='Upload multiple local files to a remote server in a single operation. All files are placed in the same destination directory. Uses S3 presigned URLs with concurrent uploads. Pass work_session_id to link this upload to a Work Session for audit; the server enforces this for MCP OAuth and browser-based auth. In remote mode (ALPACON_MCP_AUTH_ENABLED=true) the MCP server cannot reach your local filesystem, so this returns error code remote_mode_unsupported; use webftp_upload_content instead. When to use: uploading several files at once (more efficient than repeated webftp_upload_file calls). Related: webftp_upload_file (single file), webftp_bulk_download (download multiple), work_session_create (create a Work Session). Note: All files go to the same remote directory.',
     annotations=ADDITIVE,
     meta={'anthropic/searchHint': 'bulk upload multiple files batch transfer'},
 )
@@ -887,7 +887,7 @@ async def webftp_bulk_upload(
 
 
 @mcp_tool_handler(
-    description='Download multiple files or folders from a remote server as a single ZIP archive. All paths must share the same parent directory. Pass work_session_id to link this download to a Work Session for audit; the server enforces this for MCP OAuth and browser-based auth. When to use: downloading several files at once. Related: webftp_download_file (single file), webftp_bulk_upload (upload multiple), webftp_check_status (poll if still processing), work_session_create (create a Work Session). Note: If ZIP is not ready, poll with webftp_check_status then retry.',
+    description='Download multiple files or folders from a remote server as a single ZIP archive. All paths must share the same parent directory. Pass work_session_id to link this download to a Work Session for audit; the server enforces this for MCP OAuth and browser-based auth. In remote mode (ALPACON_MCP_AUTH_ENABLED=true) the MCP server cannot reach your local filesystem, so this returns error code remote_mode_unsupported; use webftp_download_file per file instead. When to use: downloading several files at once. Related: webftp_download_file (single file), webftp_bulk_upload (upload multiple), webftp_check_status (poll if still processing), work_session_create (create a Work Session). Note: If ZIP is not ready, poll with webftp_check_status then retry.',
     annotations=ADDITIVE,
     meta={'anthropic/searchHint': 'bulk download multiple files zip archive batch'},
 )
