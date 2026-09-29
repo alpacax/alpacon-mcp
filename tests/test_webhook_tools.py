@@ -1,5 +1,6 @@
 """Unit tests for webhook and event subscription tools module."""
 
+import inspect
 from pathlib import Path
 
 import pytest
@@ -397,35 +398,25 @@ class TestWebhooks:
         assert result['field'] == 'provider'
         mock_http_client.get.assert_not_called()
 
-    @pytest.mark.asyncio
-    async def test_list_rejects_a_username_as_owner(
-        self, mock_http_client, mock_token_manager
-    ):
-        result = await list_webhooks(workspace='testworkspace', owner='alice')
-
-        assert result['status'] == 'error'
-        assert result['field'] == 'owner'
-        mock_http_client.get.assert_not_called()
+    def test_list_no_longer_accepts_owner(self):
+        # alpacon-server#3925 ignores ?owner=, so the filter would come back
+        # unnarrowed while looking applied. list_webhooks takes **kwargs, so a
+        # dead argument is swallowed rather than rejected; assert on the
+        # signature instead.
+        assert 'owner' not in inspect.signature(list_webhooks).parameters
 
     @pytest.mark.asyncio
-    async def test_list_forwards_owner_and_provider(
-        self, mock_http_client, mock_token_manager
-    ):
+    async def test_list_forwards_provider(self, mock_http_client, mock_token_manager):
         mock_http_client.get.return_value = {'results': [], 'count': 0}
 
-        await list_webhooks(
-            workspace='testworkspace',
-            region='ap1',
-            owner=self.OWNER_ID,
-            provider='slack',
-        )
+        await list_webhooks(workspace='testworkspace', region='ap1', provider='slack')
 
         mock_http_client.get.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
             endpoint='/api/notifications/webhooks/',
             token='test-token',
-            params={'owner': self.OWNER_ID, 'provider': 'slack'},
+            params={'provider': 'slack'},
         )
 
     @pytest.mark.asyncio

@@ -155,18 +155,16 @@ async def delete_event_subscription(
 
 @mcp_tool_handler(
     description=(
-        'List configured webhooks in a workspace, optionally filtered by owner '
-        f'or provider. {_OWNER_SENTENCE} {_PROVIDERS_FILTER_SENTENCE} Returns '
-        'webhook ID, name, URL, provider, SSL verification setting, and '
-        'enabled status. Needs an admin account. Related: create_webhook, '
-        'list_event_subscriptions.'
+        'List configured webhooks in a workspace, optionally filtered by '
+        f'provider. {_PROVIDERS_FILTER_SENTENCE} Returns webhook ID, name, URL, '
+        'provider, SSL verification setting, and enabled status. Needs an '
+        'admin account. Related: create_webhook, list_event_subscriptions.'
     ),
     annotations=READ_ONLY,
     meta={'anthropic/searchHint': 'webhooks list endpoints callbacks'},
 )
 async def list_webhooks(
     workspace: str,
-    owner: str | None = None,
     provider: str | None = None,
     region: str = '',
     page: int | None = None,
@@ -177,7 +175,6 @@ async def list_webhooks(
 
     Args:
         workspace: Workspace name. Required parameter
-        owner: Filter by the owning user's UUID (optional)
         provider: Filter by provider; one of slack, discord, teams, telegram,
             custom (optional)
         region: Region (ap1, us1). Auto-detected if not provided
@@ -187,9 +184,6 @@ async def list_webhooks(
     Returns:
         Webhooks list response
     """
-    if owner is not None and not validate_uuid_format(owner):
-        return format_validation_error('owner', owner, _OWNER_SENTENCE)
-
     if provider is not None and provider not in WEBHOOK_PROVIDERS:
         return format_validation_error('provider', provider, _PROVIDERS_FILTER_SENTENCE)
 
@@ -198,7 +192,6 @@ async def list_webhooks(
     params = build_list_params(
         page=page,
         page_size=page_size,
-        owner=owner,
         provider=provider,
     )
 
@@ -216,7 +209,7 @@ async def list_webhooks(
 @mcp_tool_handler(
     description=(
         'Get detailed information about a specific webhook by its ID. '
-        'Returns webhook ID, name, URL, SSL verification setting, enabled status, and owner. '
+        'Returns webhook ID, name, URL, SSL verification setting, and enabled status. '
         'Use this when you need full details about one webhook rather than the summary list. '
         'Related: list_webhooks (find webhook ID first), update_webhook, delete_webhook.'
     ),
