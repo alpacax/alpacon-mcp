@@ -348,7 +348,7 @@ def _structured(result: CallToolResult | InputRequiredResult) -> ToolPayload:
 
 class TestPublishedSchema:
     """Every test above awaits the coroutine directly and never reaches the
-    pydantic validation FastMCP puts in front of it. These go through ``mcp``.
+    pydantic validation the SDK puts in front of it. These go through ``mcp``.
     """
 
     async def test_no_tool_publishes_a_catch_all_parameter(self):
@@ -413,7 +413,7 @@ class TestPublishedSchema:
         assert structured['status'] == 'success'
 
         # The workaround the broken schema forced on clients still goes through:
-        # FastMCP's argument model leaves pydantic's extra='ignore' in place.
+        # The SDK's argument model leaves pydantic's extra='ignore' in place.
         with_workaround = _structured(
             await mcp.call_tool(
                 'list_servers',

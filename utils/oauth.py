@@ -4,7 +4,7 @@ These endpoints allow MCP clients (e.g. claude.ai) to perform
 OAuth authorization code flow through this MCP server, which
 proxies requests to Auth0.
 
-All routes are registered via FastMCP's custom_route decorator,
+All routes are registered via the MCP server's custom_route decorator,
 which bypasses MCP authentication — appropriate for OAuth flow endpoints.
 """
 
@@ -661,10 +661,10 @@ def _clear_nonce_cookie(response: Response) -> None:
 
 
 def register_oauth_routes(mcp_server):
-    """Register OAuth proxy routes on the FastMCP server.
+    """Register OAuth proxy routes on the MCP server.
 
     Args:
-        mcp_server: FastMCP server instance
+        mcp_server: the MCP server object server.py builds
 
     Raises:
         ValueError: ALPACON_MCP_STATE_SECRET or ALPACON_MCP_GRANT_SECRET is set

@@ -100,7 +100,7 @@ async def test_registered_tool_includes_exception_handling(
 def _registered_tools():
     for module in sorted(server.ALL_TOOL_MODULES | server.ALWAYS_ON_MODULES):
         importlib.import_module(f'{server.TOOLS_PACKAGE}.{module}')
-    # Reaching into the manager: no public FastMCP API hands back the function.
+    # Reaching into the manager: no public SDK API hands back the function.
     return server.mcp._tool_manager.list_tools()
 
 

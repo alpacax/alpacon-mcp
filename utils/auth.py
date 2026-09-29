@@ -294,7 +294,7 @@ def match_workspace(
 
 
 class Auth0TokenVerifier:
-    """Auth0 JWT token verifier implementing FastMCP's TokenVerifier protocol.
+    """Auth0 JWT token verifier implementing the SDK's TokenVerifier protocol.
 
     Verifies RS256-signed JWTs using Auth0's JWKS endpoint and extracts
     workspace claims for authorization.
@@ -312,7 +312,7 @@ class Auth0TokenVerifier:
     async def verify_token(self, token: str) -> AccessToken | None:
         """Verify a Bearer token and return access info if valid.
 
-        Implements the TokenVerifier protocol for FastMCP integration.
+        Implements the SDK TokenVerifier protocol.
 
         Args:
             token: Raw JWT string from Authorization header

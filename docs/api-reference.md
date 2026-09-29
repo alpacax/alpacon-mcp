@@ -249,7 +249,7 @@ Get alert rules for servers.
 - `workspace` (string): Workspace name
 
 ### `get_server_metrics_summary`
-Get comprehensive metrics summary for a server.
+Comprehensive health overview for one server; for many servers at once, use `list_latest_metrics`.
 
 **Parameters:**
 - `server_id` (string): Server ID
@@ -974,7 +974,7 @@ There are likewise no user-settings or user-profile tools: `/api/user/settings/`
 Most read tools are also exposed as read-only MCP resources under the `alpacon://` scheme, so a client can pull data without a tool call. `search_events`, `get_registration_guide`, `work_session_timeline`, `explain_approval_decision`, `webftp_check_status`, and `health_check` are tool-only. The URI convention is `alpacon://<domain>[/<sub>]/{region}/{workspace}[/{id}]`; optional filters are not part of the URI, so resources use each tool's defaults.
 
 - `alpacon://servers/{region}/{workspace}` — also `/{server_id}`, `/{server_id}/overview`, `/{server_id}/notes`; a single note is `alpacon://server-notes/{region}/{workspace}/{note_id}`
-- `alpacon://metrics/{region}/{workspace}/{server_id}/{cpu|memory|disk|disk-io|network|summary}` and `alpacon://metrics/{region}/{workspace}/top`
+- `alpacon://metrics/{region}/{workspace}/{server_id}/{cpu|memory|disk|disk-io|network|summary}` and `alpacon://metrics/{region}/{workspace}/top`—also `alpacon://metrics/{region}/{workspace}/latest` and `alpacon://metrics/{region}/{workspace}/latest/stale` (pinned to `state=stale`), each returning only the first page at the API's default page size; read the rest with `list_latest_metrics` and `page`, adding `state="stale"` for the stale one
 - `alpacon://system/{region}/{workspace}/{server_id}/{info|os-version|users|groups|packages|network-interfaces|disk-info|time}`
 - `alpacon://alerts/{region}/{workspace}`, `alpacon://alerts/active/{region}/{workspace}`, `alpacon://alert-rules/{region}/{workspace}`, `alpacon://alert-rules/{region}/{workspace}/{rule_id}/recipients`, `alpacon://rule-overrides/{region}/{workspace}` (also `/{override_id}`)
 - `alpacon://iam/{users|groups|memberships|applications}/{region}/{workspace}`
