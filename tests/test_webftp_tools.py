@@ -1386,6 +1386,7 @@ class TestRemoteModeUnsupported:
         descriptions = {t.name: t.description for t in await mcp.list_tools()}
 
         assert 'remote_mode_unsupported' in descriptions[tool_name]
+        assert 'ALPACON_MCP_AUTH_ENABLED=true' in descriptions[tool_name]
 
 
 class TestRemoteModeDownload:
