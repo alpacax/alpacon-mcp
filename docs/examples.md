@@ -43,7 +43,7 @@ get_cpu_usage(
 )
 ```
 
-Related: `get_memory_usage`, `get_disk_usage` (by `device` or `partition`), `get_disk_io`, `get_network_traffic` (by `interface`).
+Related: `get_memory_usage`, `get_disk_usage` (by `device` or `partition`), `get_disk_io`, `get_network_traffic` (requires an `interface` ID from `get_network_interfaces`).
 
 ### Rank the fleet
 

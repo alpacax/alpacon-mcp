@@ -351,7 +351,7 @@ Install the MCP extension and add to settings:
 ## 💬 Usage examples
 
 ### Server health monitoring
-> *"Give me a comprehensive health check for server web-01 including CPU, memory, and disk usage for the last 24 hours"*
+> *"Give me a comprehensive health check for server web-01 including CPU, memory, and disk usage for the last 12 hours"*
 
 ### Performance analysis
 > *"Show me the top 5 servers with highest CPU usage and analyze performance trends"*

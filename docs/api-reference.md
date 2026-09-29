@@ -151,7 +151,7 @@ Get CPU usage metrics for a server.
 
 **Parameters:**
 - `server_id` (string): Server ID to get metrics for
-- `start_date` (string, optional): Start date in ISO format
+- `start_date` (string, optional, default: 12 hours ago): Start date in ISO format; the server returns at most the last 12 hours
 - `end_date` (string, optional): End date in ISO format
 - `region` (string, optional): Region name; resolved from the workspace when omitted
 - `workspace` (string): Workspace name
@@ -176,8 +176,8 @@ Get disk usage metrics for a server.
 **Parameters:**
 - `server_id` (string): Server ID
 - `device` (string, optional): Device path (e.g., '/dev/sda1')
-- `partition` (string, optional): Partition path (e.g., '/')
-- `start_date` (string, optional): Start date
+- `partition` (string, optional): Partition ID (UUID) from `/api/proc/partitions/`
+- `start_date` (string, optional, default: 12 hours ago): Start date; the server returns at most the last 12 hours
 - `end_date` (string, optional): End date
 - `region` (string, optional): Region name; resolved from the workspace when omitted
 - `workspace` (string): Workspace name
@@ -187,8 +187,8 @@ Get network traffic metrics for a server.
 
 **Parameters:**
 - `server_id` (string): Server ID
-- `interface` (string, optional): Network interface (e.g., 'eth0')
-- `start_date` (string, optional): Start date
+- `interface` (string): Interface ID (UUID) from `/api/proc/interfaces/`, required; the endpoint returns HTTP 400 when it is missing or is an interface name such as `eth0`
+- `start_date` (string, optional, default: 12 hours ago): Start date; the server returns at most the last 12 hours
 - `end_date` (string, optional): End date
 - `region` (string, optional): Region name; resolved from the workspace when omitted
 - `workspace` (string): Workspace name
@@ -198,7 +198,7 @@ Get disk I/O performance metrics for a server.
 
 **Parameters:**
 - `server_id` (string): Server ID
-- `start_date` (string, optional): Start date in ISO format
+- `start_date` (string, optional, default: 12 hours ago): Start date in ISO format; the server returns at most the last 12 hours
 - `end_date` (string, optional): End date in ISO format
 - `region` (string, optional): Region name; resolved from the workspace when omitted
 - `workspace` (string): Workspace name
@@ -253,9 +253,11 @@ Comprehensive health overview for one server; for many servers at once, use `lis
 
 **Parameters:**
 - `server_id` (string): Server ID
-- `hours` (integer, default: 24): Number of hours back to get metrics
+- `hours` (integer, default: 12, max: 12): Number of hours back to get metrics; the realtime endpoints keep only the last 12 hours, so a larger value is clamped to 12
 - `region` (string, optional): Region name; resolved from the workspace when omitted
 - `workspace` (string): Workspace name
+
+**Returns:** `metrics.cpu`, `metrics.memory`, `metrics.disk`, and `metrics.network`, each with `available` and either `data_points` or `error`. Disk usage is read for the partition mounted at `/`, preferring one that is not virtual, using its ID from `/api/proc/partitions/`. Network traffic is read for the first active non-loopback interface whose name does not look virtual (`docker`, `br-`, `veth`, `virbr`, `cni`, `flannel`, `cali`, `vxlan`, `tun`, `tap`, `lxc`, `kube` prefixes), falling back to the first active non-loopback interface, using its ID from `/api/proc/interfaces/` (every page is fetched). If the partition lookup fails or returns no root partition, `metrics.disk.error` describes the problem and the disk-usage endpoint is not called. If the interface lookup fails or finds no active non-loopback interface, `metrics.network.error` describes the problem and the traffic endpoint is not called.
 
 ---
 
@@ -974,7 +976,7 @@ There are likewise no user-settings or user-profile tools: `/api/user/settings/`
 Most read tools are also exposed as read-only MCP resources under the `alpacon://` scheme, so a client can pull data without a tool call. `search_events`, `get_registration_guide`, `work_session_timeline`, `explain_approval_decision`, `webftp_check_status`, and `health_check` are tool-only. The URI convention is `alpacon://<domain>[/<sub>]/{region}/{workspace}[/{id}]`; optional filters are not part of the URI, so resources use each tool's defaults.
 
 - `alpacon://servers/{region}/{workspace}` — also `/{server_id}`, `/{server_id}/overview`, `/{server_id}/notes`; a single note is `alpacon://server-notes/{region}/{workspace}/{note_id}`
-- `alpacon://metrics/{region}/{workspace}/{server_id}/{cpu|memory|disk|disk-io|network|summary}` and `alpacon://metrics/{region}/{workspace}/top`—also `alpacon://metrics/{region}/{workspace}/latest` and `alpacon://metrics/{region}/{workspace}/latest/stale` (pinned to `state=stale`), each returning only the first page at the API's default page size; read the rest with `list_latest_metrics` and `page`, adding `state="stale"` for the stale one
+- `alpacon://metrics/{region}/{workspace}/{server_id}/{cpu|memory|disk|disk-io|summary}`, `alpacon://metrics/{region}/{workspace}/{server_id}/network/{interface}` and `alpacon://metrics/{region}/{workspace}/top`—also `alpacon://metrics/{region}/{workspace}/latest` and `alpacon://metrics/{region}/{workspace}/latest/stale` (pinned to `state=stale`), each returning only the first page at the API's default page size; read the rest with `list_latest_metrics` and `page`, adding `state="stale"` for the stale one
 - `alpacon://system/{region}/{workspace}/{server_id}/{info|os-version|users|groups|packages|network-interfaces|disk-info|time}`
 - `alpacon://alerts/{region}/{workspace}`, `alpacon://alerts/active/{region}/{workspace}`, `alpacon://alert-rules/{region}/{workspace}`, `alpacon://alert-rules/{region}/{workspace}/{rule_id}/recipients`, `alpacon://rule-overrides/{region}/{workspace}` (also `/{override_id}`)
 - `alpacon://iam/{users|groups|memberships|applications}/{region}/{workspace}`

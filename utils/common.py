@@ -404,7 +404,8 @@ def resolve_time_window(
 ) -> tuple[str, str | None]:
     """Default a missing or blank start while preserving the supplied end."""
     # A blank start is not a bound the API can read, so it takes the default too.
-    start = start_date or (datetime.now(UTC) - timedelta(hours=24)).isoformat()
+    # 12 hours is all the realtime endpoints keep: the server clamps an older start.
+    start = start_date or (datetime.now(UTC) - timedelta(hours=12)).isoformat()
     return start, end_date
 
 

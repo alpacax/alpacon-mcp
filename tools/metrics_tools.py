@@ -1,6 +1,7 @@
 """Metrics and monitoring tools for Alpacon MCP server."""
 
 import asyncio
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -47,6 +48,25 @@ _LATEST_ORDERING_SENTENCE = (
 )
 
 
+_EPOCH = datetime.min.replace(tzinfo=UTC)
+
+
+def _timestamp_key(entry: dict[str, Any]) -> datetime:
+    """Parse a row's timestamp; a naive one is read as UTC, a bad one sorts first."""
+    try:
+        parsed = datetime.fromisoformat(
+            str(entry.get('timestamp')).replace('Z', '+00:00')
+        )
+    except ValueError:
+        return _EPOCH
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+
+
+def _oldest_first(results: list) -> list:
+    """Order metric rows by the instant of their timestamp; the API returns newest first."""
+    return sorted(results, key=_timestamp_key)
+
+
 def parse_cpu_metrics(results: list) -> dict[str, Any]:
     """Parse CPU usage metrics to extract meaningful statistics.
 
@@ -58,6 +78,8 @@ def parse_cpu_metrics(results: list) -> dict[str, Any]:
     """
     if not results:
         return {'available': False, 'message': 'No CPU data available'}
+
+    results = _oldest_first(results)
 
     usage_values = [entry.get('usage', 0) for entry in results if 'usage' in entry]
 
@@ -109,7 +131,7 @@ def parse_cpu_metrics(results: list) -> dict[str, Any]:
 
 
 @mcp_tool_handler(
-    description='Get CPU utilization metrics for a server over a time range. Returns current, average, min, max usage percentage with health status. When to use: investigating performance issues or checking server load. Related: get_memory_usage (pair with CPU for full picture), get_server_metrics_summary (quick overview of all metrics), get_top_servers (compare across servers). Note: Defaults to last 24 hours if no date range specified.',
+    description='Get CPU utilization metrics for a server over a time range. Returns current, average, min, max usage percentage with health status. When to use: investigating performance issues or checking server load. Related: get_memory_usage (pair with CPU for full picture), get_server_metrics_summary (quick overview of all metrics), get_top_servers (compare across servers). Note: Defaults to the last 12 hours if no date range is specified; the realtime endpoint returns at most the last 12 hours.',
     annotations=READ_ONLY,
     meta={'anthropic/searchHint': 'cpu usage load processor utilization performance'},
 )
@@ -182,6 +204,8 @@ def parse_memory_metrics(results: list) -> dict[str, Any]:
     if not results:
         return {'available': False, 'message': 'No memory data available'}
 
+    results = _oldest_first(results)
+
     usage_values = [entry.get('usage', 0) for entry in results if 'usage' in entry]
 
     if not usage_values:
@@ -232,7 +256,7 @@ def parse_memory_metrics(results: list) -> dict[str, Any]:
 
 
 @mcp_tool_handler(
-    description='Get RAM memory utilization metrics for a server over a time range. Returns current, average, min, max usage percentage with health status. When to use: investigating memory pressure or OOM issues. Related: get_cpu_usage (pair for full resource picture), get_server_metrics_summary (quick overview). Note: Defaults to last 24 hours.',
+    description='Get RAM memory utilization metrics for a server over a time range. Returns current, average, min, max usage percentage with health status. When to use: investigating memory pressure or OOM issues. Related: get_cpu_usage (pair for full resource picture), get_server_metrics_summary (quick overview). Note: Defaults to the last 12 hours; the realtime endpoint returns at most the last 12 hours.',
     annotations=READ_ONLY,
     meta={'anthropic/searchHint': 'memory ram usage utilization'},
 )
@@ -305,6 +329,8 @@ def parse_disk_metrics(results: list) -> dict[str, Any]:
     if not results:
         return {'available': False, 'message': 'No disk data available'}
 
+    results = _oldest_first(results)
+
     usage_values = [entry.get('usage', 0) for entry in results if 'usage' in entry]
 
     if not usage_values:
@@ -346,7 +372,7 @@ def parse_disk_metrics(results: list) -> dict[str, Any]:
 
 
 @mcp_tool_handler(
-    description='Get disk space usage metrics for a server by device or partition. Returns usage percentage and total/used/free space. When to use: checking available disk space or monitoring storage growth. Related: get_disk_io (I/O throughput, not space), get_disk_info (physical disk layout). Note: Auto-discovers first device if none specified.',
+    description='Get disk space usage metrics for a server by device or partition. Returns usage percentage and total/used/free space. When to use: checking available disk space or monitoring storage growth. Related: get_disk_io (I/O throughput, not space), get_disk_info (physical disk layout). Note: Auto-discovers first device if none specified. Defaults to the last 12 hours; the realtime endpoint returns at most the last 12 hours.',
     annotations=READ_ONLY,
     meta={'anthropic/searchHint': 'disk space storage partition mount usage'},
 )
@@ -369,7 +395,7 @@ async def get_disk_usage(
         server_id: Server ID to get metrics for
         workspace: Workspace name. Required parameter
         device: Optional device path (e.g., '/dev/sda1'). If not provided, will fetch first available device
-        partition: Optional partition path (e.g., '/')
+        partition: Optional partition ID (UUID) from /api/proc/partitions/
         start_date: Start date in ISO format (e.g., '2024-01-01T00:00:00Z')
         end_date: End date in ISO format (e.g., '2024-01-02T00:00:00Z')
         region: Region (ap1, us1). Auto-detected if not provided
@@ -484,6 +510,8 @@ def parse_network_metrics(results: list) -> dict[str, Any]:
     if not results:
         return {'available': False, 'message': 'No network data available'}
 
+    results = _oldest_first(results)
+
     # Extract various metrics
     peak_input_bps = [entry.get('peak_input_bps', 0) for entry in results]
     peak_output_bps = [entry.get('peak_output_bps', 0) for entry in results]
@@ -562,7 +590,7 @@ def parse_network_metrics(results: list) -> dict[str, Any]:
 
 
 @mcp_tool_handler(
-    description='Get disk I/O read/write throughput metrics for a server. Returns peak and average transfer rates per device. When to use: diagnosing storage performance bottlenecks or slow I/O. Related: get_disk_usage (space, not I/O), get_top_servers (compare I/O across servers). Note: Defaults to last 24 hours.',
+    description='Get disk I/O read/write throughput metrics for a server. Returns peak and average transfer rates per device. When to use: diagnosing storage performance bottlenecks or slow I/O. Related: get_disk_usage (space, not I/O), get_top_servers (compare I/O across servers). Note: Defaults to the last 12 hours; the realtime endpoint returns at most the last 12 hours.',
     annotations=READ_ONLY,
     meta={
         'anthropic/searchHint': 'disk io read write throughput iops storage performance'
@@ -585,7 +613,7 @@ async def get_disk_io(
         server_id: Server ID to get disk I/O metrics for
         workspace: Workspace name. Required parameter
         device: Optional disk device name (e.g., 'sda', 'nvme0n1')
-        start_date: Start date for metrics (ISO 8601 format). Defaults to last 24 hours
+        start_date: Start date for metrics (ISO 8601 format). Defaults to the last 12 hours; older data is not returned
         end_date: End date for metrics (ISO 8601 format)
         region: Region (ap1, us1). Auto-detected if not provided
 
@@ -633,14 +661,14 @@ async def get_disk_io(
 
 
 @mcp_tool_handler(
-    description='Get network bandwidth and traffic metrics for a server by interface. Returns current, average, and peak values for input/output in bps and pps. When to use: investigating network bottlenecks or monitoring bandwidth. Related: get_network_interfaces (list available interfaces), get_top_servers (compare traffic across servers). Note: Defaults to last 24 hours.',
+    description='Get network bandwidth and traffic metrics for a server by interface. Returns current, average, and peak values for input/output in bps and pps. When to use: investigating network bottlenecks or monitoring bandwidth. Related: get_network_interfaces (list available interfaces), get_top_servers (compare traffic across servers). Note: Defaults to the last 12 hours; the realtime endpoint returns at most the last 12 hours.',
     annotations=READ_ONLY,
     meta={'anthropic/searchHint': 'network traffic bandwidth interface bps packets'},
 )
 async def get_network_traffic(
     server_id: str,
     workspace: str,
-    interface: str | None = None,
+    interface: str,
     start_date: str | None = None,
     end_date: str | None = None,
     region: str = '',
@@ -651,7 +679,7 @@ async def get_network_traffic(
     Args:
         server_id: Server ID to get metrics for
         workspace: Workspace name. Required parameter
-        interface: Optional network interface (e.g., 'eth0')
+        interface: Required interface ID (UUID) from /api/proc/interfaces/, not a name like 'eth0'
         start_date: Start date in ISO format (e.g., '2024-01-01T00:00:00Z')
         end_date: End date in ISO format (e.g., '2024-01-02T00:00:00Z')
         region: Region (ap1, us1). Auto-detected if not provided
@@ -856,6 +884,81 @@ async def get_alert_rules(
     )
 
 
+def _is_http_error(result: object) -> bool:
+    return isinstance(result, dict) and 'error' in result
+
+
+def _find_record_id(
+    result: object, predicate: Callable[[dict[str, Any]], bool]
+) -> str | None:
+    """Return the id of the first /api/proc/ record matching predicate.
+
+    Those endpoints answer with a plain list or a paginated `results` dict.
+    """
+    if isinstance(result, dict) and not _is_http_error(result):
+        result = result.get('results')
+    if not isinstance(result, list):
+        return None
+    for record in result:
+        if isinstance(record, dict) and predicate(record):
+            return record.get('id')
+    return None
+
+
+_MAX_SUMMARY_HOURS = 12  # the server clamps a realtime `start` older than this
+
+# Interfaces the server has no virtual flag for; the summary avoids them by name.
+_VIRTUAL_INTERFACE_PREFIXES = (
+    'docker',
+    'br-',
+    'veth',
+    'virbr',
+    'cni',
+    'flannel',
+    'cali',
+    'vxlan',
+    'tun',
+    'tap',
+    'lxc',
+    'kube',
+)
+
+_MAX_INTERFACE_PAGES = 20  # with page_size=100, at most 2000 interfaces
+
+
+async def _list_all_interfaces(
+    *, region: str, workspace: str, token: Any, server_id: str
+) -> list[Any] | dict[str, Any]:
+    """Collect a server's /api/proc/interfaces/ records, or return the error dict.
+
+    `next` is a page number; paging stops after `_MAX_INTERFACE_PAGES` pages.
+    """
+    base_params = {'server': server_id, 'page_size': 100}
+    params = base_params
+    records: list[Any] = []
+    for _ in range(_MAX_INTERFACE_PAGES):
+        result = await http_client.get(
+            region=region,
+            workspace=workspace,
+            endpoint='/api/proc/interfaces/',
+            token=token,
+            params=params,
+        )
+        if _is_http_error(result):
+            return result
+        if isinstance(result, list):
+            return records + result
+        page = result.get('results') if isinstance(result, dict) else None
+        if not page:
+            return records
+        records.extend(page)
+        next_page = result.get('next')
+        if not next_page:
+            return records
+        params = {**base_params, 'page': next_page}
+    return records
+
+
 @mcp_tool_handler(
     description="Get one server's detail: a comprehensive monitoring overview combining CPU, memory, disk, and network metrics for that single server. Returns a compact summary with data availability status. When to use: quick health check of one server or starting point for investigation. Related: get_cpu_usage, get_memory_usage, get_disk_usage, get_network_traffic (full detailed data per metric), list_latest_metrics (latest reading for many servers at once). Note: Use individual metric tools for time-series data.",
     annotations=READ_ONLY,
@@ -865,14 +968,14 @@ async def get_alert_rules(
     },
 )
 async def get_server_metrics_summary(
-    server_id: str, workspace: str, hours: int = 24, region: str = '', **kwargs
+    server_id: str, workspace: str, hours: int = 12, region: str = '', **kwargs
 ) -> dict[str, Any]:
     """Get comprehensive metrics summary for a server.
 
     Args:
         server_id: Server ID to get metrics for
         workspace: Workspace name. Required parameter
-        hours: Number of hours back to get metrics (default: 24, max: 168)
+        hours: Hours back to read (default and max: 12, all the realtime endpoints keep)
         region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
@@ -880,9 +983,7 @@ async def get_server_metrics_summary(
     """
     token = kwargs.get('token')
 
-    # Limit hours to prevent response size overflow
-    if hours > 168:  # Max 1 week
-        hours = 168
+    hours = min(hours, _MAX_SUMMARY_HOURS)
 
     # Calculate time range
     end_time = datetime.now(UTC)
@@ -891,107 +992,77 @@ async def get_server_metrics_summary(
     start_date = start_time.isoformat()
     end_date = end_time.isoformat()
 
-    # First, get disk and network interface information to satisfy API requirements
-    # DiskUsage API requires: server + start + (device OR partition)
-    # Traffic API accepts: server + start + interface (optional, but may have no data without it)
-    disk_device = None
-    network_interface = None
-
-    try:
-        # Get partition information using /api/proc/partitions/
-        partitions_result = await http_client.get(
+    # The disk-usage endpoint refuses a request without `device` or `partition`, and
+    # both filters take record ids from /api/proc/, never device names.
+    partitions_result, interfaces_result = await asyncio.gather(
+        http_client.get(
             region=region,
             workspace=workspace,
             endpoint='/api/proc/partitions/',
             token=token,
             params={'server': server_id},
-        )
-
-        # http_client.get returns raw API response (paginated list format)
-        if isinstance(partitions_result, dict) and 'results' in partitions_result:
-            partitions = partitions_result.get('results', [])
-            # Find the root partition (mounted at /)
-            for partition in partitions:
-                mount_points = partition.get('mount_points', [])
-                if '/' in mount_points:
-                    disk_device = partition.get('name')
-                    break
-    except UpstreamAuthError:
-        raise
-    except Exception:
-        pass  # Disk metrics will show as unavailable
-
-    try:
-        # Get network interface information using /api/proc/interfaces/
-        interfaces_result = await http_client.get(
+        ),
+        _list_all_interfaces(
             region=region,
             workspace=workspace,
-            endpoint='/api/proc/interfaces/',
             token=token,
-            params={'server': server_id},
+            server_id=server_id,
+        ),
+    )
+
+    def is_root(p):
+        return '/' in (p.get('mount_points') or [])
+
+    root_partition_id = _find_record_id(
+        partitions_result, lambda p: is_root(p) and not p.get('is_virtual', False)
+    ) or _find_record_id(partitions_result, is_root)
+
+    def is_active(i):
+        return not i.get('is_loopback', False) and i.get('is_up', False)
+
+    interface_id = _find_record_id(
+        interfaces_result,
+        lambda i: (
+            is_active(i)
+            and not str(i.get('name', '')).startswith(_VIRTUAL_INTERFACE_PREFIXES)
+        ),
+    ) or _find_record_id(interfaces_result, is_active)
+
+    window = {'server': server_id, 'start': start_date, 'end': end_date}
+    tasks = {
+        'cpu': http_client.get(
+            region, workspace, '/api/metrics/realtime/cpu/', token, params=window
+        ),
+        'memory': http_client.get(
+            region, workspace, '/api/metrics/realtime/memory/', token, params=window
+        ),
+    }
+    if root_partition_id:
+        tasks['disk'] = http_client.get(
+            region,
+            workspace,
+            '/api/metrics/realtime/disk-usage/',
+            token,
+            params={**window, 'partition': root_partition_id},
+        )
+    if interface_id:
+        tasks['network'] = http_client.get(
+            region,
+            workspace,
+            '/api/metrics/realtime/traffic/',
+            token,
+            params={**window, 'interface': interface_id},
         )
 
-        # http_client.get returns raw API response (paginated list format)
-        if isinstance(interfaces_result, dict) and 'results' in interfaces_result:
-            interfaces = interfaces_result.get('results', [])
-            # Find first non-loopback, active interface
-            for iface in interfaces:
-                if not iface.get('is_loopback', False) and iface.get('is_up', False):
-                    network_interface = iface.get('name')
-                    break
-    except UpstreamAuthError:
-        raise
-    except Exception:
-        pass  # Network metrics will show as unavailable
-
-    # Prepare query parameters
-    cpu_params = {'server': server_id, 'start': start_date, 'end': end_date}
-    memory_params = {'server': server_id, 'start': start_date, 'end': end_date}
-    disk_params = {'server': server_id, 'start': start_date, 'end': end_date}
-    traffic_params = {'server': server_id, 'start': start_date, 'end': end_date}
-
-    # Add device/interface to satisfy API requirements
-    # DiskUsage API: requires device OR partition (at least one optional field)
-    if disk_device:
-        disk_params['device'] = disk_device
-
-    # Traffic API: interface is optional, but include if available
-    if network_interface:
-        traffic_params['interface'] = network_interface
-
-    # Get all metrics concurrently using http_client directly
-    cpu_task = http_client.get(
-        region, workspace, '/api/metrics/realtime/cpu/', token, params=cpu_params
-    )
-    memory_task = http_client.get(
-        region, workspace, '/api/metrics/realtime/memory/', token, params=memory_params
-    )
-    disk_task = http_client.get(
-        region,
-        workspace,
-        '/api/metrics/realtime/disk-usage/',
-        token,
-        params=disk_params,
-    )
-    traffic_task = http_client.get(
-        region,
-        workspace,
-        '/api/metrics/realtime/traffic/',
-        token,
-        params=traffic_params,
-    )
-
     # Wait for all metrics
-    gather_results = await asyncio.gather(
-        cpu_task, memory_task, disk_task, traffic_task, return_exceptions=True
-    )
+    gathered = await asyncio.gather(*tasks.values(), return_exceptions=True)
 
     # Re-raise BaseExceptions that are not regular Exceptions (e.g. CancelledError)
-    for r in gather_results:
+    for r in gathered:
         if isinstance(r, BaseException) and not isinstance(r, Exception):
             raise r
 
-    cpu_result, memory_result, disk_result, traffic_result = gather_results
+    metric_results = dict(zip(tasks, gathered, strict=True))
 
     # Helper function to extract summary from metric result (from http_client directly)
     def extract_summary(result, metric_type):
@@ -1049,15 +1120,38 @@ async def get_server_metrics_summary(
             'error': f'Unexpected result type: {type(result).__name__}',
         }
 
-    # Prepare compact summary
+    if root_partition_id:
+        disk_summary = extract_summary(metric_results['disk'], 'disk')
+    elif _is_http_error(partitions_result):
+        disk_summary = extract_summary(partitions_result, 'partition lookup')
+        disk_summary['error'] = f'Partition lookup failed: {disk_summary["error"]}'
+    else:
+        disk_summary = {
+            'available': False,
+            'error': 'No partition mounted at / was found for this server',
+        }
+
+    if interface_id:
+        network_summary = extract_summary(metric_results['network'], 'network')
+    elif _is_http_error(interfaces_result):
+        network_summary = extract_summary(interfaces_result, 'interface lookup')
+        network_summary['error'] = (
+            f'Interface lookup failed: {network_summary["error"]}'
+        )
+    else:
+        network_summary = {
+            'available': False,
+            'error': 'No active non-loopback interface was found',
+        }
+
     summary = {
         'server_id': server_id,
         'time_range': {'start': start_date, 'end': end_date, 'hours': hours},
         'metrics': {
-            'cpu': extract_summary(cpu_result, 'CPU'),
-            'memory': extract_summary(memory_result, 'memory'),
-            'disk': extract_summary(disk_result, 'disk'),
-            'network': extract_summary(traffic_result, 'network'),
+            'cpu': extract_summary(metric_results['cpu'], 'CPU'),
+            'memory': extract_summary(metric_results['memory'], 'memory'),
+            'disk': disk_summary,
+            'network': network_summary,
         },
         'note': 'This is a summary. Use individual metric endpoints for full data.',
         'region': region,
