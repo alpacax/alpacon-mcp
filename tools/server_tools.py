@@ -3,7 +3,7 @@
 from typing import Any
 
 from utils.api_call import http_call_response
-from utils.common import build_list_params, error_response, success_response
+from utils.common import build_list_params
 from utils.decorators import mcp_tool_handler
 from utils.error_handler import format_validation_error, validate_server_id_format
 from utils.http_client import http_client
@@ -60,27 +60,15 @@ async def list_servers(
 
     params = build_list_params(page=page, page_size=page_size)
 
-    # Make async call to servers endpoint
-    result = await http_client.get(
+    return await http_call_response(
+        http_client.get,
         region=region,
         workspace=workspace,
         endpoint='/api/servers/servers/',
         token=token,
+        default_message='Failed to get servers list',
         params=params,
     )
-
-    # Check if result is an error response from http_client
-    if isinstance(result, dict) and 'error' in result:
-        error_kwargs: dict[str, Any] = {'region': region, 'workspace': workspace}
-        status_code = result.get('status_code')
-        if status_code is not None:
-            error_kwargs['status_code'] = status_code
-        return error_response(
-            result.get('message', 'Failed to get servers list'),
-            **error_kwargs,
-        )
-
-    return success_response(data=result, region=region, workspace=workspace)
 
 
 @mcp_tool_handler(

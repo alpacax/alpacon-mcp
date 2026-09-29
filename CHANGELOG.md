@@ -152,6 +152,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `install_commands` list every other platform uses.
 
 ### Changed
+- `list_servers` error responses now carry the upstream `code` the way every other server tool does (#237): an ordinary coded 4xx adds `error_code`, a WorkSession gate code adds `code` and `next_action`, a code with a known hint appends that hint to `message`, and a 402 plan-limit response returns the plan-limit shape (`error_code`, `gate`, `axis`, `next`, `requires_human_approval`, `next_action`). The success response is unchanged; a client parsing `list_servers` errors may now see those fields.
 - `work_session_timeline` now defaults `include_records` to false, so websh terminal records are omitted unless requested (#286). A client that relied on the previous default must now pass `include_records=True` to keep seeing those records.
 - `webftp_upload_content` now rejects file content over 3 MiB decoded with a tool
   error naming the limit and the size sent, instead of relying on the transport

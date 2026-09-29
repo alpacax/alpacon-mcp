@@ -10,7 +10,7 @@ from http import HTTPStatus
 import pytest
 
 from server import mcp
-from tests.conftest import HTTP_ERROR_ENVELOPE, http_client_fixture
+from tests.conftest import HTTP_ERROR_ENVELOPE, VALID_SERVER_ID, http_client_fixture
 from tools.server_tools import (
     create_registration_token,
     create_server_note,
@@ -28,6 +28,7 @@ from tools.server_tools import (
     update_server,
     update_server_note,
 )
+from utils.common import INLINE_CREDENTIAL_HINT
 
 mock_http_client = http_client_fixture('tools.server_tools')
 
@@ -173,6 +174,125 @@ class TestListServers:
             token='test-token',
             params={},
         )
+
+    @pytest.mark.asyncio
+    async def test_list_servers_error_keeps_status_code_and_message(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.get.return_value = {
+            'error': 'HTTP Error',
+            'status_code': HTTPStatus.FORBIDDEN,
+            'message': "Client error '403 Forbidden'",
+            'response': '{"detail":"You do not have permission."}',
+        }
+
+        result = await list_servers(workspace='testworkspace', region='ap1')
+
+        assert result['status'] == 'error'
+        assert result['status_code'] == HTTPStatus.FORBIDDEN
+        assert result['message'] == "Client error '403 Forbidden'"
+        assert result['region'] == 'ap1'
+        assert result['workspace'] == 'testworkspace'
+
+    @pytest.mark.asyncio
+    async def test_list_servers_surfaces_upstream_error_code(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.get.return_value = {
+            'error': 'HTTP Error',
+            'status_code': HTTPStatus.BAD_REQUEST,
+            'message': "Client error '400 Bad Request'",
+            'response': '{"code":"some_server_code"}',
+        }
+
+        result = await list_servers(workspace='testworkspace')
+
+        assert result['status'] == 'error'
+        assert result['status_code'] == HTTPStatus.BAD_REQUEST
+        assert result['error_code'] == 'some_server_code'
+
+    @pytest.mark.asyncio
+    async def test_list_servers_surfaces_work_session_gate_code(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.get.return_value = {
+            'error': 'HTTP Error',
+            'status_code': HTTPStatus.FORBIDDEN,
+            'message': "Client error '403 Forbidden'",
+            'response': '{"code":"work_session_required"}',
+        }
+
+        result = await list_servers(workspace='testworkspace')
+
+        assert result['status'] == 'error'
+        assert result['status_code'] == HTTPStatus.FORBIDDEN
+        assert result['code'] == 'work_session_required'
+        assert result['next_action']
+
+    @pytest.mark.asyncio
+    async def test_list_servers_appends_hint_for_hinted_error_code(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.get.return_value = {
+            'error': 'HTTP Error',
+            'status_code': HTTPStatus.BAD_REQUEST,
+            'message': "Client error '400 Bad Request'",
+            'response': '{"code":"command_inline_credential"}',
+        }
+
+        result = await list_servers(workspace='testworkspace')
+
+        assert result['status'] == 'error'
+        assert result['status_code'] == HTTPStatus.BAD_REQUEST
+        assert result['error_code'] == 'command_inline_credential'
+        assert result['message'].startswith("Client error '400 Bad Request'")
+        assert result['message'].endswith(INLINE_CREDENTIAL_HINT)
+
+    @pytest.mark.asyncio
+    async def test_list_servers_returns_plan_limit_shape_on_402(
+        self, mock_http_client, mock_token_manager
+    ):
+        next_path = '/api/workspaces/workspaces/ws-1/entitlements/'
+        mock_http_client.get.return_value = {
+            'error': 'HTTP Error',
+            'status_code': HTTPStatus.PAYMENT_REQUIRED,
+            'message': "Client error '402 Payment Required'",
+            'response': (
+                '{"code":"server_limit_exceeded","gate":"plan","axis":"server",'
+                f'"next":"{next_path}"}}'
+            ),
+        }
+
+        result = await list_servers(workspace='testworkspace', region='ap1')
+
+        assert result['status'] == 'error'
+        assert result['status_code'] == HTTPStatus.PAYMENT_REQUIRED
+        assert result['error_code'] == 'server_limit_exceeded'
+        assert result['gate'] == 'plan'
+        assert result['axis'] == 'server'
+        assert result['next'] == next_path
+        assert result['requires_human_approval'] is False
+        assert result['next_action']
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        'body',
+        ['{"code":"work_session_required"}', '{"code":"some_server_code"}'],
+    )
+    async def test_list_servers_error_fields_match_get_server(
+        self, mock_http_client, mock_token_manager, body
+    ):
+        mock_http_client.get.return_value = {
+            'error': 'HTTP Error',
+            'status_code': HTTPStatus.FORBIDDEN,
+            'message': "Client error '403 Forbidden'",
+            'response': body,
+        }
+
+        listed = await list_servers(workspace='testworkspace')
+        fetched = await get_server(server_id=VALID_SERVER_ID, workspace='testworkspace')
+
+        assert set(listed) == set(fetched) - {'server_id'}
 
 
 class TestGetServer:
