@@ -109,7 +109,7 @@ class TestWorkSessionCreate:
         assert result['status'] == 'pending_approval'
         assert 'data.status' in result['next_action']
         assert 'data.status' in result['message']
-        for state in ('rejected', 'cancelled', 'expired', 'revoked'):
+        for state in ('rejected', 'cancelled', 'expired', 'revoked', 'completed'):
             assert state in result['next_action']
             assert state in result['message']
 
@@ -805,7 +805,7 @@ class TestDescriptionIsNotAnExecutionChannel:
         assert 'work_session_id' in text
         assert 'pending_approval' in text
         assert 'data.status' in text
-        for state in ('rejected', 'cancelled', 'expired', 'revoked'):
+        for state in ('rejected', 'cancelled', 'expired', 'revoked', 'completed'):
             assert state in text
         assert 'pass session_id' not in text
 

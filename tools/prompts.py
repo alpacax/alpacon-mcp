@@ -40,8 +40,8 @@ must belong to an approved Work Session. Follow this order.
      for the decision. One request per action is enough; resubmitting only creates
      duplicates. Use `explain_approval_decision` (pass `workspace`) to relay why a human
      must act out-of-band. Check `work_session_get` and read `data.status`: continue to
-     step 3 once it is `active`; stop if it is `rejected`, `cancelled`, `expired`, or
-     `revoked`, since those never become active.
+     step 3 once it is `active`; stop if it is `rejected`, `cancelled`, `expired`,
+     `revoked`, or `completed`, since those never become active.
    - `error` with a gate `code` (`work_session_required`, `work_session_scope_not_allowed`,
      `work_session_server_not_allowed`, `work_session_expired`, ...): read `next_action`,
      narrow the scope or server set, and retry deliberately—never brute-force.

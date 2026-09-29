@@ -64,5 +64,5 @@ async def test_work_session_workflow_pending_approval_names_status_and_stop_stat
     result = await mcp.get_prompt('work_session_workflow', {'intent': 'restart nginx'})
     text = result.messages[0].content.text
     assert 'data.status' in text
-    for state in ('rejected', 'cancelled', 'expired', 'revoked'):
+    for state in ('rejected', 'cancelled', 'expired', 'revoked', 'completed'):
         assert state in text

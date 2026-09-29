@@ -61,7 +61,7 @@ _NEXT_ACTION_BY_CATEGORY: dict[str, str] = {
         'A human must approve this Work Session out-of-band (Alpacon web console '
         'or Slack) before it activates. You cannot approve it yourself. Do not open '
         'another session. Check work_session_get: once data.status is active, retry '
-        'the action; if it is rejected, cancelled, expired, or revoked, stop.'
+        'the action; if it is rejected, cancelled, expired, revoked, or completed, stop.'
     ),
     'COMMAND_AWAITING_APPROVAL': (
         'A human must approve this command out-of-band (Alpacon web console or '
@@ -546,7 +546,7 @@ def work_session_gate_response(code: str, **kwargs: Any) -> dict[str, Any]:
             'The attached Work Session is not active yet. A human must approve '
             'it out-of-band (Alpacon web console or Slack) before this operation '
             'will run. Call work_session_get and retry once data.status is active; '
-            'stop if it is rejected, cancelled, expired, or revoked.',
+            'stop if it is rejected, cancelled, expired, revoked, or completed.',
             category='WORK_SESSION_PENDING',
             **kwargs,
         )

@@ -27,7 +27,7 @@ _API_SESSIONS = '/api/work-sessions/sessions/'
         'status="pending_approval", and no command or file transfer runs in it until a '
         'human approves out-of-band (Alpacon web console or Slack). Do not open another '
         'session; call work_session_get and proceed once data.status is active, or stop '
-        'if it is rejected, cancelled, expired, or revoked, since those never become active. '
+        'if it is rejected, cancelled, expired, revoked, or completed, since those never become active. '
         'description: what you are doing and why, written as prose for the human who '
         'approves the session. It is NOT a command list and nothing in it is executed—'
         'commands run via execute_command once the session is active. Be specific: '
@@ -94,7 +94,7 @@ async def work_session_create(
             'human must approve it out-of-band (Alpacon web console or Slack) '
             'before any command or file transfer in this session will run. Call '
             'work_session_get and proceed only once data.status is active; stop if '
-            'it is rejected, cancelled, expired, or revoked.',
+            'it is rejected, cancelled, expired, revoked, or completed.',
             category='WORK_SESSION_PENDING',
             data=result,
             session_id=session_id,
