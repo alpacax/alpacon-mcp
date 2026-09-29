@@ -36,7 +36,7 @@ _TARGETS_SENTENCE = (
 
 
 @mcp_tool_handler(
-    description='List alerts with optional filtering by server, alert type, severity, resolution state, or server name. When to use: checking active alerts or reviewing alert history. Related: get_alert (full details), get_alert_rules (threshold configuration), acknowledge_alert (mark one as seen).',
+    description='List alerts with optional filtering by server, alert type, severity, resolution state, or server name. When to use: checking active alerts, or pass resolved=true to review resolved history. Without resolved, only open alerts are returned. Related: get_alert (full details), get_alert_rules (threshold configuration), acknowledge_alert (mark one as seen).',
     annotations=READ_ONLY,
     meta={
         'anthropic/alwaysLoad': True,
