@@ -24,6 +24,9 @@ HTTP_ERROR_ENVELOPE = {
     'message': 'Not found',
 }
 
+# Any well-formed UUID: a public tool's decorator rejects any other server_id.
+VALID_SERVER_ID = '550e8400-e29b-41d4-a716-446655440001'
+
 
 @asynccontextmanager
 async def streamable_http_client(

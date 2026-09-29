@@ -8,7 +8,7 @@ from unittest.mock import patch
 import pytest
 
 from server import mcp
-from tests.conftest import http_client_fixture
+from tests.conftest import VALID_SERVER_ID, http_client_fixture
 from tools.command_tools import (
     _SUDO_DENIAL_HINTS,
     FILE_CONTENT_MAX_BYTES,
@@ -43,7 +43,6 @@ _GATE_ENVELOPE_NOT_ACTIVE = {
 }
 
 
-_FILE_SERVER = '550e8400-e29b-41d4-a716-446655440001'
 _FILE_SCRIPT = '#!/bin/bash\nset -euo pipefail\necho deploy\n'
 
 _FILE_EXEC_CODES = frozenset(
@@ -207,7 +206,7 @@ class TestSubmitCommand:
         mock_http_client.post.return_value = {'id': 'cmd-123', 'status': 'running'}
 
         result = await _submit_command(
-            server_id='550e8400-e29b-41d4-a716-446655440001',
+            server_id=VALID_SERVER_ID,
             command='ls -la',
             workspace='testworkspace',
             region='ap1',
@@ -221,7 +220,7 @@ class TestSubmitCommand:
             endpoint='/api/events/commands/',
             token='test-token',
             data={
-                'server': '550e8400-e29b-41d4-a716-446655440001',
+                'server': VALID_SERVER_ID,
                 'shell': 'system',
                 'line': 'ls -la',
                 'groupname': 'alpacon',
@@ -233,7 +232,7 @@ class TestSubmitCommand:
         mock_http_client.post.return_value = {'id': 'cmd-456'}
 
         await _submit_command(
-            server_id='550e8400-e29b-41d4-a716-446655440001',
+            server_id=VALID_SERVER_ID,
             command='echo done',
             workspace='testworkspace',
             username='testuser',
@@ -251,7 +250,7 @@ class TestSubmitCommand:
             endpoint='/api/events/commands/',
             token='test-token',
             data={
-                'server': '550e8400-e29b-41d4-a716-446655440001',
+                'server': VALID_SERVER_ID,
                 'shell': 'system',
                 'line': 'echo done',
                 'groupname': 'alpacon',
@@ -268,7 +267,7 @@ class TestSubmitCommand:
         mock_http_client.post.return_value = {'id': 'cmd-789'}
 
         await _submit_command(
-            server_id='550e8400-e29b-41d4-a716-446655440001',
+            server_id=VALID_SERVER_ID,
             command='ls',
             workspace='testworkspace',
             token='test-token',
@@ -280,7 +279,7 @@ class TestSubmitCommand:
             endpoint='/api/events/commands/',
             token='test-token',
             data={
-                'server': '550e8400-e29b-41d4-a716-446655440001',
+                'server': VALID_SERVER_ID,
                 'shell': 'system',
                 'line': 'ls',
                 'groupname': 'alpacon',
@@ -295,7 +294,7 @@ class TestSubmitCommand:
         mock_http_client.post.return_value = {'id': 'cmd-env'}
 
         await _submit_command(
-            server_id='550e8400-e29b-41d4-a716-446655440001',
+            server_id=VALID_SERVER_ID,
             command='ls',
             workspace='testworkspace',
             region='ap1',
@@ -308,7 +307,7 @@ class TestSubmitCommand:
             endpoint='/api/events/commands/',
             token='test-token',
             data={
-                'server': '550e8400-e29b-41d4-a716-446655440001',
+                'server': VALID_SERVER_ID,
                 'shell': 'system',
                 'line': 'ls',
                 'groupname': 'alpacon',
@@ -324,7 +323,7 @@ class TestSubmitCommand:
         mock_http_client.post.return_value = {'id': 'cmd-explicit'}
 
         await _submit_command(
-            server_id='550e8400-e29b-41d4-a716-446655440001',
+            server_id=VALID_SERVER_ID,
             command='ls',
             workspace='testworkspace',
             work_session_id='explicit-ws',
@@ -338,7 +337,7 @@ class TestSubmitCommand:
             endpoint='/api/events/commands/',
             token='test-token',
             data={
-                'server': '550e8400-e29b-41d4-a716-446655440001',
+                'server': VALID_SERVER_ID,
                 'shell': 'system',
                 'line': 'ls',
                 'groupname': 'alpacon',
@@ -380,7 +379,7 @@ class TestListCommands:
 
         result = await list_commands(
             workspace='testworkspace',
-            server_id='550e8400-e29b-41d4-a716-446655440001',
+            server_id=VALID_SERVER_ID,
         )
 
         assert result['status'] == 'success'
@@ -392,7 +391,7 @@ class TestListCommands:
             params={
                 'page_size': 20,
                 'ordering': '-added_at',
-                'server': '550e8400-e29b-41d4-a716-446655440001',
+                'server': VALID_SERVER_ID,
             },
         )
 
@@ -522,7 +521,7 @@ class TestExecuteCommand:
             }
 
             result = await execute_command(
-                server_id='550e8400-e29b-41d4-a716-446655440001',
+                server_id=VALID_SERVER_ID,
                 command='echo test',
                 workspace='testworkspace',
                 timeout=10,
@@ -555,7 +554,7 @@ class TestExecuteCommand:
             ]
 
             result = await execute_command(
-                server_id='550e8400-e29b-41d4-a716-446655440001',
+                server_id=VALID_SERVER_ID,
                 command='echo test',
                 workspace='testworkspace',
                 timeout=10,
@@ -578,7 +577,7 @@ class TestExecuteCommand:
             }
 
             result = await execute_command(
-                server_id='550e8400-e29b-41d4-a716-446655440001',
+                server_id=VALID_SERVER_ID,
                 command='echo test',
                 workspace='testworkspace',
             )
@@ -600,7 +599,7 @@ class TestExecuteCommand:
             }
 
             result = await execute_command(
-                server_id='550e8400-e29b-41d4-a716-446655440001',
+                server_id=VALID_SERVER_ID,
                 command='sleep 100',
                 workspace='testworkspace',
                 timeout=1,
@@ -620,7 +619,7 @@ class TestExecuteCommand:
             }
 
             result = await execute_command(
-                server_id='550e8400-e29b-41d4-a716-446655440001',
+                server_id=VALID_SERVER_ID,
                 command='ls',
                 workspace='testworkspace',
             )
@@ -634,7 +633,7 @@ class TestExecuteCommand:
             mock_submit.return_value = []
 
             result = await execute_command(
-                server_id='550e8400-e29b-41d4-a716-446655440001',
+                server_id=VALID_SERVER_ID,
                 command='echo test',
                 workspace='testworkspace',
             )
@@ -660,7 +659,7 @@ class TestExecuteCommand:
             }
 
             result = await execute_command(
-                server_id='550e8400-e29b-41d4-a716-446655440001',
+                server_id=VALID_SERVER_ID,
                 command='ls /nope',
                 workspace='testworkspace',
                 timeout=10,
@@ -688,7 +687,7 @@ class TestExecuteCommand:
             }
 
             result = await execute_command(
-                server_id='550e8400-e29b-41d4-a716-446655440001',
+                server_id=VALID_SERVER_ID,
                 command='rm -rf /',
                 workspace='testworkspace',
                 timeout=10,
@@ -715,7 +714,7 @@ class TestExecuteCommand:
             }
 
             result = await execute_command(
-                server_id='550e8400-e29b-41d4-a716-446655440001',
+                server_id=VALID_SERVER_ID,
                 command='sudo reboot',
                 workspace='testworkspace',
                 timeout=10,
@@ -741,7 +740,7 @@ class TestExecuteCommand:
             }
 
             await execute_command(
-                server_id='550e8400-e29b-41d4-a716-446655440001',
+                server_id=VALID_SERVER_ID,
                 command='echo test',
                 workspace='testworkspace',
                 run_after=['cmd-100'],
@@ -760,7 +759,7 @@ class TestExecuteCommand:
         mock_token_manager.get_token.return_value = None
 
         result = await execute_command(
-            server_id='550e8400-e29b-41d4-a716-446655440001',
+            server_id=VALID_SERVER_ID,
             command='ls -la',
             workspace='testworkspace',
         )
@@ -790,7 +789,7 @@ class TestExecuteCommand:
             }
 
             result = await execute_command(
-                server_id='550e8400-e29b-41d4-a716-446655440001',
+                server_id=VALID_SERVER_ID,
                 command='sudo systemctl restart nginx',
                 workspace='testworkspace',
                 timeout=10,
@@ -829,7 +828,7 @@ class TestExecuteCommand:
             }
 
             result = await execute_command(
-                server_id='550e8400-e29b-41d4-a716-446655440001',
+                server_id=VALID_SERVER_ID,
                 command='sudo systemctl restart nginx',
                 workspace='testworkspace',
                 timeout=10,
@@ -860,7 +859,7 @@ class TestExecuteCommand:
             }
 
             result = await execute_command(
-                server_id='550e8400-e29b-41d4-a716-446655440001',
+                server_id=VALID_SERVER_ID,
                 command='sudo rm -rf /',
                 workspace='testworkspace',
                 timeout=10,
@@ -896,7 +895,7 @@ class TestExecuteCommand:
             }
 
             result = await execute_command(
-                server_id='550e8400-e29b-41d4-a716-446655440001',
+                server_id=VALID_SERVER_ID,
                 command='sudo systemctl restart nginx',
                 workspace='testworkspace',
                 timeout=10,
@@ -934,7 +933,7 @@ class TestExecuteCommand:
             }
 
             result = await execute_command(
-                server_id='550e8400-e29b-41d4-a716-446655440001',
+                server_id=VALID_SERVER_ID,
                 command='sudo id',
                 workspace='testworkspace',
                 timeout=10,
@@ -972,7 +971,7 @@ class TestExecuteCommand:
             }
 
             result = await execute_command(
-                server_id='550e8400-e29b-41d4-a716-446655440001',
+                server_id=VALID_SERVER_ID,
                 command='id',
                 workspace='testworkspace',
                 timeout=10,
@@ -991,7 +990,7 @@ class TestSubmitCommandWithSession:
         mock_http_client.post.return_value = {'id': 'cmd-ws-001'}
 
         await _submit_command(
-            server_id='550e8400-e29b-41d4-a716-446655440001',
+            server_id=VALID_SERVER_ID,
             command='ls',
             workspace='testworkspace',
             work_session_id='ws-uuid-abcd',
@@ -1005,7 +1004,7 @@ class TestSubmitCommandWithSession:
             endpoint='/api/events/commands/',
             token='test-token',
             data={
-                'server': '550e8400-e29b-41d4-a716-446655440001',
+                'server': VALID_SERVER_ID,
                 'shell': 'system',
                 'line': 'ls',
                 'groupname': 'alpacon',
@@ -1018,7 +1017,7 @@ class TestSubmitCommandWithSession:
         mock_http_client.post.return_value = {'id': 'cmd-ws-002'}
 
         await _submit_command(
-            server_id='550e8400-e29b-41d4-a716-446655440001',
+            server_id=VALID_SERVER_ID,
             command='ls',
             workspace='testworkspace',
             region='ap1',
@@ -1031,7 +1030,7 @@ class TestSubmitCommandWithSession:
             endpoint='/api/events/commands/',
             token='test-token',
             data={
-                'server': '550e8400-e29b-41d4-a716-446655440001',
+                'server': VALID_SERVER_ID,
                 'shell': 'system',
                 'line': 'ls',
                 'groupname': 'alpacon',
@@ -1052,7 +1051,7 @@ class TestExecuteCommandWithSession:
         }
 
         await execute_command(
-            server_id='550e8400-e29b-41d4-a716-446655440001',
+            server_id=VALID_SERVER_ID,
             command='ls',
             workspace='testworkspace',
             work_session_id='ws-uuid-abcd',
@@ -1065,7 +1064,7 @@ class TestExecuteCommandWithSession:
             endpoint='/api/events/commands/',
             token='test-token',
             data={
-                'server': '550e8400-e29b-41d4-a716-446655440001',
+                'server': VALID_SERVER_ID,
                 'shell': 'system',
                 'line': 'ls',
                 'groupname': 'alpacon',
@@ -1083,7 +1082,7 @@ class TestExecuteCommandMultiServerWithSession:
         mock_http_client.post.return_value = {'id': 'cmd-multi-1'}
 
         await execute_command_multi_server(
-            server_ids=['550e8400-e29b-41d4-a716-446655440001'],
+            server_ids=[VALID_SERVER_ID],
             command='ls',
             workspace='testworkspace',
             work_session_id='ws-uuid-abcd',
@@ -1096,7 +1095,7 @@ class TestExecuteCommandMultiServerWithSession:
             endpoint='/api/events/commands/',
             token='test-token',
             data={
-                'server': '550e8400-e29b-41d4-a716-446655440001',
+                'server': VALID_SERVER_ID,
                 'shell': 'system',
                 'line': 'ls',
                 'groupname': 'alpacon',
@@ -1116,7 +1115,7 @@ class TestExecuteCommandGateTranslation:
             mock_submit.return_value = _GATE_ENVELOPE_REQUIRED
 
             result = await execute_command(
-                server_id='550e8400-e29b-41d4-a716-446655440001',
+                server_id=VALID_SERVER_ID,
                 command='ls',
                 workspace='testworkspace',
                 region='ap1',
@@ -1133,7 +1132,7 @@ class TestExecuteCommandGateTranslation:
             mock_submit.return_value = _GATE_ENVELOPE_NOT_ACTIVE
 
             result = await execute_command(
-                server_id='550e8400-e29b-41d4-a716-446655440001',
+                server_id=VALID_SERVER_ID,
                 command='ls',
                 workspace='testworkspace',
                 region='ap1',
@@ -1149,7 +1148,7 @@ class TestExecuteCommandGateTranslation:
             mock_submit.return_value = _GATE_ENVELOPE_REQUIRED
 
             result = await execute_command(
-                server_id='550e8400-e29b-41d4-a716-446655440001',
+                server_id=VALID_SERVER_ID,
                 command='ls',
                 workspace='testworkspace',
                 region='ap1',
@@ -1169,14 +1168,13 @@ class TestExecuteCommandMultiServerGateTranslation:
         mock_http_client.post.return_value = _GATE_ENVELOPE_REQUIRED
 
         result = await execute_command_multi_server(
-            server_ids=['550e8400-e29b-41d4-a716-446655440001'],
+            server_ids=[VALID_SERVER_ID],
             command='ls',
             workspace='testworkspace',
             region='ap1',
         )
 
-        sid = '550e8400-e29b-41d4-a716-446655440001'
-        server_entry = result['deploy_shell_results'][sid]
+        server_entry = result['deploy_shell_results'][VALID_SERVER_ID]
         assert server_entry.get('code') == 'work_session_required'
         assert 'next_action' in server_entry
 
@@ -1238,7 +1236,7 @@ class TestPurposeDemand:
             }
 
             await execute_command(
-                server_id='550e8400-e29b-41d4-a716-446655440001',
+                server_id=VALID_SERVER_ID,
                 command='ls -la',
                 workspace='testworkspace',
                 timeout=10,
@@ -1256,7 +1254,7 @@ class TestPurposeDemand:
             mock_submit.return_value = {'id': 'cmd-501'}
 
             await execute_command_multi_server(
-                server_ids=['550e8400-e29b-41d4-a716-446655440001'],
+                server_ids=[VALID_SERVER_ID],
                 command='uptime',
                 workspace='testworkspace',
                 purpose='Confirm the reboot window actually took.',
@@ -1273,7 +1271,7 @@ class TestPurposeDemand:
         mock_http_client.post.return_value = {'id': 'cmd-502'}
 
         await _submit_command(
-            server_id='550e8400-e29b-41d4-a716-446655440001',
+            server_id=VALID_SERVER_ID,
             command='systemctl restart chronyd',
             workspace='testworkspace',
             purpose='The host clock is 40s ahead, so the cert reads as not-yet-valid.',
@@ -1288,7 +1286,7 @@ class TestPurposeDemand:
             endpoint='/api/events/commands/',
             token='test-token',
             data={
-                'server': '550e8400-e29b-41d4-a716-446655440001',
+                'server': VALID_SERVER_ID,
                 'shell': 'system',
                 'line': 'systemctl restart chronyd',
                 'groupname': 'alpacon',
@@ -1308,7 +1306,7 @@ class TestPurposeDemand:
         mock_http_client.post.return_value = {'id': 'cmd-503'}
 
         await _submit_command(
-            server_id='550e8400-e29b-41d4-a716-446655440001',
+            server_id=VALID_SERVER_ID,
             command='true',
             workspace='testworkspace',
             purpose='x' * (PURPOSE_MAX_LENGTH + 500),
@@ -1322,7 +1320,7 @@ class TestPurposeDemand:
             endpoint='/api/events/commands/',
             token='test-token',
             data={
-                'server': '550e8400-e29b-41d4-a716-446655440001',
+                'server': VALID_SERVER_ID,
                 'shell': 'system',
                 'line': 'true',
                 'groupname': 'alpacon',
@@ -1338,7 +1336,7 @@ class TestPurposeDemand:
         mock_http_client.post.return_value = {'id': 'cmd-509'}
 
         await _submit_command(
-            server_id='550e8400-e29b-41d4-a716-446655440001',
+            server_id=VALID_SERVER_ID,
             command='true',
             workspace='testworkspace',
             purpose='   \n\t ',
@@ -1353,7 +1351,7 @@ class TestPurposeDemand:
             endpoint='/api/events/commands/',
             token='test-token',
             data={
-                'server': '550e8400-e29b-41d4-a716-446655440001',
+                'server': VALID_SERVER_ID,
                 'shell': 'system',
                 'line': 'true',
                 'groupname': 'alpacon',
@@ -1407,13 +1405,13 @@ class TestPurposeDemand:
             }
 
             result = await execute_command(
-                server_id='550e8400-e29b-41d4-a716-446655440001',
+                server_id=VALID_SERVER_ID,
                 command='ls -la',
                 workspace='testworkspace',
                 timeout=10,
             )
 
-        assert result['server_id'] == '550e8400-e29b-41d4-a716-446655440001'
+        assert result['server_id'] == VALID_SERVER_ID
         assert result['command'] == 'ls -la'
         assert result['shell'] == 'system'
 
@@ -1436,7 +1434,7 @@ class TestPurposeDemand:
             }
 
             result = await execute_command(
-                server_id='550e8400-e29b-41d4-a716-446655440001',
+                server_id=VALID_SERVER_ID,
                 command='bash /tmp/rotate.sh',
                 workspace='testworkspace',
                 timeout=10,
@@ -1469,7 +1467,7 @@ class TestPurposeDemand:
             }
 
             await execute_command(
-                server_id='550e8400-e29b-41d4-a716-446655440001',
+                server_id=VALID_SERVER_ID,
                 command='bash /tmp/rotate.sh',
                 workspace='testworkspace',
                 timeout=10,
@@ -1583,7 +1581,7 @@ class TestPurposeDemandWindow:
             mock_submit.return_value = {'id': 'cmd-600'}
             mock_poll.return_value = row
             return await execute_command(
-                server_id='550e8400-e29b-41d4-a716-446655440001',
+                server_id=VALID_SERVER_ID,
                 command='bash /tmp/rotate.sh',
                 workspace='testworkspace',
                 timeout=10,
@@ -1653,7 +1651,7 @@ class TestPurposeDemandHonesty:
             }
 
             await execute_command(
-                server_id='550e8400-e29b-41d4-a716-446655440001',
+                server_id=VALID_SERVER_ID,
                 command='uptime',
                 workspace='testworkspace',
                 scheduled_at='2099-01-01T00:00:00Z',
@@ -1677,7 +1675,7 @@ class TestPurposeDemandHonesty:
             }
 
             await execute_command(
-                server_id='550e8400-e29b-41d4-a716-446655440001',
+                server_id=VALID_SERVER_ID,
                 command='uptime',
                 workspace='testworkspace',
                 run_after=['cmd-100'],
@@ -1703,7 +1701,7 @@ class TestPurposeDemandHonesty:
             }
 
             await execute_command(
-                server_id='550e8400-e29b-41d4-a716-446655440001',
+                server_id=VALID_SERVER_ID,
                 command='systemctl restart chronyd',
                 workspace='testworkspace',
                 purpose='The host clock is 40s ahead of the cert window.',
@@ -1732,7 +1730,7 @@ class TestPurposeDemandHonesty:
             }
 
             result = await execute_command(
-                server_id='550e8400-e29b-41d4-a716-446655440001',
+                server_id=VALID_SERVER_ID,
                 command='true',
                 workspace='testworkspace',
                 purpose='x' * (PURPOSE_MAX_LENGTH + 1),
@@ -1756,7 +1754,7 @@ class TestPurposeDemandHonesty:
             }
 
             result = await execute_command(
-                server_id='550e8400-e29b-41d4-a716-446655440001',
+                server_id=VALID_SERVER_ID,
                 command='true',
                 workspace='testworkspace',
                 purpose='short',
@@ -1826,7 +1824,7 @@ class TestPurposeDemandHonesty:
             mock_submit.return_value = {'id': 'cmd-608'}
 
             result = await execute_command_multi_server(
-                server_ids=['550e8400-e29b-41d4-a716-446655440001'],
+                server_ids=[VALID_SERVER_ID],
                 command='uptime',
                 workspace='testworkspace',
                 purpose='x' * (PURPOSE_MAX_LENGTH + 1),
@@ -1842,7 +1840,7 @@ class TestPurposeDemandHonesty:
             mock_submit.return_value = {'id': 'cmd-609'}
 
             result = await execute_command_multi_server(
-                server_ids=['550e8400-e29b-41d4-a716-446655440001'],
+                server_ids=[VALID_SERVER_ID],
                 command='uptime',
                 workspace='testworkspace',
                 purpose='short',
@@ -1887,7 +1885,7 @@ class TestEmptyCommandRejected:
     ):
         with patch('tools.command_tools._submit_command') as mock_submit:
             result = await execute_command(
-                server_id='550e8400-e29b-41d4-a716-446655440001',
+                server_id=VALID_SERVER_ID,
                 command='',
                 workspace='testworkspace',
                 region='ap1',
@@ -1903,7 +1901,7 @@ class TestEmptyCommandRejected:
     ):
         with patch('tools.command_tools._submit_command') as mock_submit:
             result = await execute_command(
-                server_id='550e8400-e29b-41d4-a716-446655440001',
+                server_id=VALID_SERVER_ID,
                 command='  \n\t ',
                 workspace='testworkspace',
                 region='ap1',
@@ -1918,7 +1916,7 @@ class TestEmptyCommandRejected:
         self, mock_http_client, mock_token_manager
     ):
         result = await execute_command_multi_server(
-            server_ids=['550e8400-e29b-41d4-a716-446655440001'],
+            server_ids=[VALID_SERVER_ID],
             command='',
             workspace='testworkspace',
             region='ap1',
@@ -1933,7 +1931,7 @@ class TestEmptyCommandRejected:
         self, mock_http_client, mock_token_manager
     ):
         result = await execute_command_multi_server(
-            server_ids=['550e8400-e29b-41d4-a716-446655440001'],
+            server_ids=[VALID_SERVER_ID],
             command='   ',
             workspace='testworkspace',
             region='ap1',
@@ -1962,7 +1960,7 @@ class TestSubmitFileExecution:
         mock_http_client.post.return_value = {'id': 'cmd-700'}
 
         await _submit_file_execution(
-            server_id=_FILE_SERVER,
+            server_id=VALID_SERVER_ID,
             path='/opt/deploy.sh',
             content=_FILE_SCRIPT,
             workspace='testworkspace',
@@ -1983,7 +1981,7 @@ class TestSubmitFileExecution:
             endpoint='/api/events/commands/',
             token='test-token',
             data={
-                'server': _FILE_SERVER,
+                'server': VALID_SERVER_ID,
                 'groupname': 'root',
                 'file': {
                     'path': '/opt/deploy.sh',
@@ -2003,7 +2001,7 @@ class TestSubmitFileExecution:
         mock_http_client.post.return_value = {'id': 'cmd-701'}
 
         await _submit_file_execution(
-            server_id=_FILE_SERVER,
+            server_id=VALID_SERVER_ID,
             path='/opt/deploy.sh',
             content=content,
             workspace='testworkspace',
@@ -2017,7 +2015,7 @@ class TestSubmitFileExecution:
             endpoint='/api/events/commands/',
             token='test-token',
             data={
-                'server': _FILE_SERVER,
+                'server': VALID_SERVER_ID,
                 'groupname': 'alpacon',
                 'file': {
                     'path': '/opt/deploy.sh',
@@ -2035,7 +2033,7 @@ class TestSubmitFileExecution:
         mock_http_client.post.return_value = {'id': 'cmd-702'}
 
         await _submit_file_execution(
-            server_id=_FILE_SERVER,
+            server_id=VALID_SERVER_ID,
             path='/opt/deploy.sh',
             content=_FILE_SCRIPT,
             workspace='testworkspace',
@@ -2049,7 +2047,7 @@ class TestSubmitFileExecution:
             endpoint='/api/events/commands/',
             token='test-token',
             data={
-                'server': _FILE_SERVER,
+                'server': VALID_SERVER_ID,
                 'groupname': 'alpacon',
                 'file': {
                     'path': '/opt/deploy.sh',
@@ -2067,7 +2065,7 @@ class TestSubmitFileExecution:
         mock_http_client.post.return_value = {'id': 'cmd-703'}
 
         await _submit_file_execution(
-            server_id=_FILE_SERVER,
+            server_id=VALID_SERVER_ID,
             path='/opt/deploy.sh',
             content=_FILE_SCRIPT,
             workspace='testworkspace',
@@ -2088,7 +2086,7 @@ class TestSubmitFileExecution:
             endpoint='/api/events/commands/',
             token='test-token',
             data={
-                'server': _FILE_SERVER,
+                'server': VALID_SERVER_ID,
                 'groupname': 'alpacon',
                 'file': {
                     'path': '/opt/deploy.sh',
@@ -2111,7 +2109,7 @@ class TestSubmitFileExecution:
         mock_http_client.post.return_value = {'id': 'cmd-704'}
 
         await _submit_file_execution(
-            server_id=_FILE_SERVER,
+            server_id=VALID_SERVER_ID,
             path='/opt/deploy.sh',
             content=_FILE_SCRIPT,
             workspace='testworkspace',
@@ -2126,7 +2124,7 @@ class TestSubmitFileExecution:
             endpoint='/api/events/commands/',
             token='test-token',
             data={
-                'server': _FILE_SERVER,
+                'server': VALID_SERVER_ID,
                 'groupname': 'alpacon',
                 'file': {
                     'path': '/opt/deploy.sh',
@@ -2160,7 +2158,7 @@ class TestExecuteFileLocalValidation:
         }
 
         result = await execute_file(
-            server_id=_FILE_SERVER,
+            server_id=VALID_SERVER_ID,
             content=_FILE_SCRIPT,
             workspace='testworkspace',
             region='ap1',
@@ -2177,7 +2175,7 @@ class TestExecuteFileLocalValidation:
         self, mock_http_client, mock_token_manager
     ):
         result = await execute_file(
-            server_id=_FILE_SERVER,
+            server_id=VALID_SERVER_ID,
             path='/opt/deploy.sh',
             content='',
             workspace='testworkspace',
@@ -2198,7 +2196,7 @@ class TestExecuteFileLocalValidation:
             mock_submit.return_value = _file_exec_envelope('file_exec_empty_content')
 
             await execute_file(
-                server_id=_FILE_SERVER,
+                server_id=VALID_SERVER_ID,
                 path='/opt/deploy.sh',
                 content='\n',
                 workspace='testworkspace',
@@ -2212,7 +2210,7 @@ class TestExecuteFileLocalValidation:
         self, mock_http_client, mock_token_manager
     ):
         result = await execute_file(
-            server_id=_FILE_SERVER,
+            server_id=VALID_SERVER_ID,
             path='/opt/deploy.sh',
             content='a' * (FILE_CONTENT_MAX_BYTES + 1),
             workspace='testworkspace',
@@ -2230,7 +2228,7 @@ class TestExecuteFileLocalValidation:
         # 21846 three-byte characters are 65538 bytes: under the cap by
         # character count, over it by the measure the server uses.
         result = await execute_file(
-            server_id=_FILE_SERVER,
+            server_id=VALID_SERVER_ID,
             path='/opt/deploy.sh',
             content='가' * 21846,
             workspace='testworkspace',
@@ -2248,7 +2246,7 @@ class TestExecuteFileLocalValidation:
             mock_submit.return_value = _file_exec_envelope('file_exec_line_too_long')
 
             await execute_file(
-                server_id=_FILE_SERVER,
+                server_id=VALID_SERVER_ID,
                 path='/opt/deploy.sh',
                 content='a' * FILE_CONTENT_MAX_BYTES,
                 workspace='testworkspace',
@@ -2262,7 +2260,7 @@ class TestExecuteFileLocalValidation:
         self, mock_http_client, mock_token_manager
     ):
         result = await execute_file(
-            server_id=_FILE_SERVER,
+            server_id=VALID_SERVER_ID,
             path='deploy.sh',
             content=_FILE_SCRIPT,
             workspace='testworkspace',
@@ -2270,7 +2268,7 @@ class TestExecuteFileLocalValidation:
         )
 
         assert result['message'] == FILE_EXEC_REFUSAL_HINTS['file_exec_invalid_path']
-        assert result['server_id'] == _FILE_SERVER
+        assert result['server_id'] == VALID_SERVER_ID
         # The same echo a server-side refusal carries, so the error shape does
         # not depend on which side caught the problem.
         assert result['file'] == {
@@ -2284,7 +2282,7 @@ class TestExecuteFileLocalValidation:
         self, mock_http_client, mock_token_manager
     ):
         result = await execute_file(
-            server_id=_FILE_SERVER,
+            server_id=VALID_SERVER_ID,
             path='/opt/../etc/deploy.sh',
             content=_FILE_SCRIPT,
             workspace='testworkspace',
@@ -2319,7 +2317,7 @@ class TestExecuteFileRefusalRendering:
             mock_submit.return_value = _file_exec_envelope(code)
 
             result = await execute_file(
-                server_id=_FILE_SERVER,
+                server_id=VALID_SERVER_ID,
                 path='/opt/deploy.sh',
                 content=_FILE_SCRIPT,
                 workspace='testworkspace',
@@ -2348,7 +2346,7 @@ class TestExecuteFileRefusalRendering:
             mock_submit.return_value = _file_exec_envelope('command_inline_credential')
 
             result = await execute_file(
-                server_id=_FILE_SERVER,
+                server_id=VALID_SERVER_ID,
                 path='/opt/deploy.sh',
                 content=_FILE_SCRIPT,
                 workspace='testworkspace',
@@ -2368,7 +2366,7 @@ class TestExecuteFileRefusalRendering:
             mock_submit.return_value = _GATE_ENVELOPE_NOT_ACTIVE
 
             result = await execute_file(
-                server_id=_FILE_SERVER,
+                server_id=VALID_SERVER_ID,
                 path='/opt/deploy.sh',
                 content=_FILE_SCRIPT,
                 workspace='testworkspace',
@@ -2400,7 +2398,7 @@ class TestExecuteFileRun:
             }
 
             result = await execute_file(
-                server_id=_FILE_SERVER,
+                server_id=VALID_SERVER_ID,
                 path='/opt/deploy.sh',
                 content=_FILE_SCRIPT,
                 args=['--fast'],
@@ -2411,7 +2409,7 @@ class TestExecuteFileRun:
 
         assert result['status'] == 'success'
         assert result['command_id'] == 'cmd-710'
-        assert result['server_id'] == _FILE_SERVER
+        assert result['server_id'] == VALID_SERVER_ID
         assert result['file'] == {
             'path': '/opt/deploy.sh',
             'interpreter': '/bin/bash',
@@ -2430,7 +2428,7 @@ class TestExecuteFileRun:
             mock_submit.return_value = _file_exec_envelope('file_exec_empty_content')
 
             await execute_file(
-                server_id=_FILE_SERVER,
+                server_id=VALID_SERVER_ID,
                 path='/opt/deploy.sh',
                 content=_FILE_SCRIPT,
                 workspace='testworkspace',
@@ -2439,7 +2437,7 @@ class TestExecuteFileRun:
             assert mock_submit.call_args.kwargs['purpose_demand_supported'] is True
 
             await execute_file(
-                server_id=_FILE_SERVER,
+                server_id=VALID_SERVER_ID,
                 path='/opt/deploy.sh',
                 content=_FILE_SCRIPT,
                 workspace='testworkspace',
@@ -2449,7 +2447,7 @@ class TestExecuteFileRun:
             assert mock_submit.call_args.kwargs['purpose_demand_supported'] is False
 
             await execute_file(
-                server_id=_FILE_SERVER,
+                server_id=VALID_SERVER_ID,
                 path='/opt/deploy.sh',
                 content=_FILE_SCRIPT,
                 workspace='testworkspace',
@@ -2474,7 +2472,7 @@ class TestExecuteFileRun:
             }
 
             result = await execute_file(
-                server_id=_FILE_SERVER,
+                server_id=VALID_SERVER_ID,
                 path='/opt/deploy.sh',
                 content=_FILE_SCRIPT,
                 workspace='testworkspace',
