@@ -2,7 +2,7 @@
 
 Resources are generated from the RESOURCES registry table to avoid ~75 copies
 of identical boilerplate. Each wrapper is built via exec with real named
-parameters because FastMCP matches URI template params to the function
+parameters because the SDK matches URI template params to the function
 signature by name; a **kwargs wrapper fails its func_metadata check.
 
 Tool refs are `module.func` strings resolved lazily: importing this module must
@@ -445,7 +445,7 @@ def build_resource_wrapper(
     if extra:
         parts += [f'{k}={v!r}' for k, v in extra.items()]
     call = ', '.join(parts)
-    # FastMCP needs a real named signature; a **kwargs wrapper fails func_metadata.
+    # The SDK needs a real named signature; a **kwargs wrapper fails func_metadata.
     src = f"async def _wrapper({sig}):\n    return {{'content': await _fn({call})}}\n"
     # __name__/__file__ give the wrapper a real __module__ and traceback frame.
     ns: dict = {'_fn': fn, '__name__': __name__}
@@ -476,7 +476,7 @@ def _resolve(ref: str) -> Callable:
 
 def register_resources(enabled_modules: set[str]) -> None:
     """Fewer placeholders first so a literal segment (/active/) beats a sibling
-    {id} wildcard — FastMCP takes the first match. That holds only within one
+    {id} wildcard—the SDK takes the first match. That holds only within one
     call, so pass the complete enabled set at once.
     """
     selected = [r for r in REGISTRATIONS if r[1].split('.', 1)[0] in enabled_modules]

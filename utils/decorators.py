@@ -120,7 +120,7 @@ _PAGINATION_FIELDS = ('limit', 'page_size')
 
 
 def _get_jwt_token() -> str | None:
-    """Get JWT token from FastMCP auth context if available.
+    """Get JWT token from the SDK auth context if available.
 
     Returns the raw JWT string when running in HTTP transport mode
     with JWT authentication. Returns None in stdio/SSE mode.
@@ -343,7 +343,7 @@ def with_token_validation(func: Callable, requires_workspace: bool = True) -> Ca
 
     Returns:
         Decorated async function whose published signature drops the **kwargs
-        catch-all, so it never reaches the schema FastMCP publishes
+        catch-all, so it never reaches the schema the SDK publishes
     """
     original_sig = inspect.signature(func)
     catch_all = next(
@@ -477,7 +477,7 @@ def with_token_validation(func: Callable, requires_workspace: bool = True) -> Ca
         # both positional and keyword region correctly
         return await func(*bound_args.args, **bound_args.kwargs)
 
-    # FastMCP publishes a VAR_KEYWORD as a required field, not a catch-all.
+    # The SDK publishes a VAR_KEYWORD as a required field, not a catch-all.
     new_params = [p for p in original_sig.parameters.values() if p.name != catch_all]
     wrapper.__signature__ = original_sig.replace(parameters=new_params)  # type: ignore[attr-defined]
 
@@ -680,7 +680,7 @@ def mcp_tool_handler(
         func = with_token_validation(func, requires_workspace=requires_workspace)
         func = with_logging(func)
 
-        # Deliberately local: server.py builds the FastMCP instance at module
+        # Deliberately local: server.py builds the MCP server at module
         # level from ALPACON_MCP_AUTH_ENABLED, which main_http.py sets just
         # before importing it. Hoisting this would decide the auth mode
         # whenever anything first reaches this module.

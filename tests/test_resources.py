@@ -199,7 +199,7 @@ class TestResourceRegistration:
             if static_match is not None:
                 resolved_name = static_match.name
             else:
-                # Same precedence FastMCP itself uses: first template whose
+                # Same precedence the SDK itself uses: first template whose
                 # pattern matches the concrete URI wins.
                 template_match = next(
                     t

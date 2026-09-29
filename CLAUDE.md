@@ -5,7 +5,7 @@ stack: python
 
 # CLAUDE.md
 
-Alpacon MCP Server: a FastMCP server that bridges Alpacon's zero-trust
+Alpacon MCP Server: an MCP server that bridges Alpacon's zero-trust
 infrastructure access to AI assistants over plain HTTP. No alpacon CLI, no
 subprocess, no external binaries in the runtime path.
 
@@ -61,7 +61,7 @@ Things the code will not tell you at a glance:
   the JWT workspace authorization, the MFA pre-check, and the stdio token
   injection. `list_workspaces` is the only tool using it. The decorator also
   rewrites the published signature, dropping the `**kwargs` it injects the token
-  into: FastMCP reads that catch-all as an ordinary required field and would
+  into: the SDK reads that catch-all as an ordinary required field and would
   publish it to clients (#211). Two rules follow: a tool must declare `**kwargs`
   or decoration raises, and no tool may forward its own `**kwargs` on to another
   tool, because by then it holds the resolved credential. `with_logging` binds

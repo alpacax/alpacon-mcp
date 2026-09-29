@@ -116,7 +116,7 @@ def _set_oauth_env():
 
 
 class MockMCPServer:
-    """Stands in for FastMCP, collecting whatever register_oauth_routes registers."""
+    """Stands in for the MCP server, collecting whatever register_oauth_routes registers."""
 
     def __init__(self):
         self.routes = []
