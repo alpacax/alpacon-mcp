@@ -717,6 +717,73 @@ class TestWebFtpCheckStatus:
         assert result['transfer_type'] == 'upload'
 
     @pytest.mark.asyncio
+    async def test_check_status_says_in_progress_while_success_is_null(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.get.return_value = {'success': None, 'message': None}
+
+        result = await webftp_check_status(
+            file_id='file-123',
+            transfer_type='download',
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert result['status'] == 'success'
+        assert result['message'] == 'Download still in progress; check again shortly'
+        assert result['data'] == {'success': None, 'message': None}
+
+    @pytest.mark.asyncio
+    async def test_check_status_says_completed_when_success_is_true(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.get.return_value = {'success': True, 'message': None}
+
+        result = await webftp_check_status(
+            file_id='file-123',
+            transfer_type='upload',
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert result['status'] == 'success'
+        assert result['message'] == 'Upload completed'
+
+    @pytest.mark.asyncio
+    async def test_check_status_failure_carries_the_server_message(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.get.return_value = {
+            'success': False,
+            'message': 'Permission denied',
+        }
+
+        result = await webftp_check_status(
+            file_id='file-123',
+            transfer_type='upload',
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert result['status'] == 'success'
+        assert result['message'] == 'Upload failed: Permission denied'
+
+    @pytest.mark.asyncio
+    async def test_check_status_failure_without_server_message(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.get.return_value = {'success': False, 'message': None}
+
+        result = await webftp_check_status(
+            file_id='file-123',
+            transfer_type='download',
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert result['message'] == 'Download failed'
+
+    @pytest.mark.asyncio
     async def test_check_status_invalid_transfer_type(
         self, mock_http_client, mock_token_manager
     ):

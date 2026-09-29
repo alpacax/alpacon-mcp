@@ -1028,7 +1028,19 @@ async def webftp_check_status(
     ):
         return err
 
+    # The server leaves `success` null until the transfer finishes.
+    transfer_state = result.get('success') if isinstance(result, dict) else None
+    if transfer_state is True:
+        message = f'{transfer_type.capitalize()} completed'
+    elif transfer_state is False:
+        message = f'{transfer_type.capitalize()} failed'
+        if server_message := result.get('message'):
+            message = f'{message}: {server_message}'
+    else:
+        message = f'{transfer_type.capitalize()} still in progress; check again shortly'
+
     return success_response(
+        message=message,
         data=result,
         file_id=file_id,
         transfer_type=transfer_type,

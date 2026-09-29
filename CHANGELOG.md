@@ -306,6 +306,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   correction is the first entry under Changed.
 
 ### Fixed
+- `webftp_check_status` now returns a `message` naming the transfer state—still in progress, completed, or failed with the server's own message when it gives one (#247). The top-level `status: "success"` only means the status call itself succeeded, and a running transfer used to come back as `{"success": null, "message": null}` with no words at all. `data` is unchanged, so a client already branching on `data.success` needs nothing new.
 - `webftp_upload_content` no longer writes the uploaded file into the log (#233). `with_logging`
   logged every argument value in full, and `file_content` carries the base64 payload, so the whole
   uploaded file landed in one INFO line, measured at 1.4 MB of log for a 1 MB upload. The entry
