@@ -36,7 +36,8 @@ _SERVER_ID = '11111111-1111-1111-1111-111111111111'
 # Base64 far past _MAX_LOGGED_VALUE_LEN: the shape #233 was reported as.
 _OVERSIZED_PAYLOAD = base64.b64encode(b'\x00' * 65536).decode()
 
-_LONG_COMMAND = 'echo ' + 'a' * 300
+# Past _MAX_LOGGED_VALUE_LEN under a key the log keeps.
+_LONG_ID = 'a' * 300
 
 ToolPayload = dict[str, object]
 
@@ -46,20 +47,26 @@ def _entry_log(caplog, tool: str) -> str:
     return next(r.message for r in caplog.records if f'{tool} called with' in r.message)
 
 
-async def _upload_oversized_content() -> None:
+async def _upload_to(remote_file_path: str) -> None:
     await webftp_upload_content(
         server_id=_SERVER_ID,
         file_content=_OVERSIZED_PAYLOAD,
-        remote_file_path='/tmp/upload.bin',
+        remote_file_path=remote_file_path,
         workspace='testworkspace',
         region='invalid',
     )
 
 
-async def _request_sudo_policy(commands: list[str]) -> None:
+async def _upload_oversized_content() -> None:
+    await _upload_to('/tmp/upload.bin')
+
+
+async def _request_sudo_policy(
+    commands: list[str], servers: list[str] | None = None
+) -> None:
     await request_sudo_policy(
         workspace='testworkspace',
-        servers=[_SERVER_ID],
+        servers=servers or [_SERVER_ID],
         commands=commands,
         reason='Before the deploy',
         region='invalid',
@@ -221,36 +228,33 @@ class TestLoggingDecorator:
         entry = _entry_log(caplog, 'list_servers')
         assert "'region': 'invalid'" in entry
 
-    async def test_logging_drops_the_uploaded_payload(self, caplog):
-        """The entry log never carries file_content: it is dropped by name (#233)."""
+    async def test_logging_records_the_uploaded_payload_by_size(self, caplog):
+        """The entry log never carries file_content, only its length (#233)."""
         with caplog.at_level(logging.INFO):
             await _upload_oversized_content()
 
         entry = _entry_log(caplog, 'webftp_upload_content')
         assert _OVERSIZED_PAYLOAD not in entry
-        assert "'file_content'" not in entry
+        assert f"'file_content': '<str len={len(_OVERSIZED_PAYLOAD)}>'" in entry
+        assert "'remote_file_path': '/tmp/upload.bin'" in entry
         assert len(entry) < 1024
 
-    async def test_logging_bounds_a_long_string_argument(self, caplog):
+    async def test_logging_bounds_a_long_verbatim_argument(self, caplog):
         """A value the log keeps records its length past the bound (#233)."""
+        long_path = '/srv/' + 'a' * 300
         with caplog.at_level(logging.INFO):
-            await execute_command(
-                server_id=_SERVER_ID,
-                command=_LONG_COMMAND,
-                workspace='testworkspace',
-                region='invalid',
-            )
+            await _upload_to(long_path)
 
-        entry = _entry_log(caplog, 'execute_command')
-        assert _LONG_COMMAND not in entry
-        assert f'<len={len(_LONG_COMMAND)}>' in entry
+        entry = _entry_log(caplog, 'webftp_upload_content')
+        assert long_path not in entry
+        assert f"'remote_file_path': '<str len={len(long_path)}>'" in entry
 
     async def test_logging_skips_argument_work_when_info_disabled(self, caplog):
         """Below INFO, with_logging summarizes nothing and writes no entry (#233)."""
         with patch.object(
             decorators,
-            '_summarize_log_value',
-            wraps=decorators._summarize_log_value,
+            '_log_arguments',
+            wraps=decorators._log_arguments,
         ) as summarize:
             with caplog.at_level(logging.WARNING, logger='alpacon_mcp.decorators'):
                 await _upload_oversized_content()
@@ -262,8 +266,8 @@ class TestLoggingDecorator:
             if 'webftp_upload_content called with' in r.message
         ]
 
-    async def test_logging_omits_free_text_env_and_personal_data(self, caplog):
-        """Keys the log has no use for are dropped, not summarized (#233)."""
+    async def test_logging_records_free_text_and_env_by_size(self, caplog):
+        """An argument outside the reviewed set keeps its key and loses its value."""
         with caplog.at_level(logging.INFO):
             await execute_command(
                 server_id=_SERVER_ID,
@@ -277,39 +281,91 @@ class TestLoggingDecorator:
 
         entry = _entry_log(caplog, 'execute_command')
 
-        assert "'purpose'" not in entry
-        assert "'data'" not in entry
-        assert "'env'" not in entry
+        assert "'purpose': '<str len=28>'" in entry
+        assert "'data': '<str len=18>'" in entry
+        assert "'env': '<dict items=1>'" in entry
+        assert "'command': '<str len=6>'" in entry
         assert 'hunter2' not in entry
+        assert 'DEPLOY_TOKEN' not in entry
         assert 'Check load' not in entry
         assert 'stdin payload' not in entry
-        assert "'command': 'uptime'" in entry
+        assert 'uptime' not in entry
         assert _SERVER_ID in entry
 
     async def test_logging_bounds_the_elements_of_a_container_argument(self, caplog):
-        """A list argument is summarized element by element, not passed through (#233)."""
+        """A verbatim list is summarized element by element, not passed through (#233)."""
         with caplog.at_level(logging.INFO):
-            await _request_sudo_policy(['uptime', _LONG_COMMAND])
+            await _request_sudo_policy(['uptime'], servers=[_SERVER_ID, _LONG_ID])
 
         entry = _entry_log(caplog, 'request_sudo_policy')
 
-        assert _LONG_COMMAND not in entry
-        assert f'<len={len(_LONG_COMMAND)}>' in entry
-        assert "'uptime'" in entry
+        assert _LONG_ID not in entry
+        assert f'<str len={len(_LONG_ID)}>' in entry
+        assert f"'{_SERVER_ID}'" in entry
 
     async def test_logging_replaces_an_oversized_container_with_its_item_count(
         self, caplog
     ):
         """Past the element bound the container itself becomes the placeholder (#233)."""
-        commands = [f'systemctl restart svc{n}' for n in range(50)]
+        servers = [f'{n:08d}-1111-1111-1111-111111111111' for n in range(50)]
 
         with caplog.at_level(logging.INFO):
-            await _request_sudo_policy(commands)
+            await _request_sudo_policy(['uptime'], servers=servers)
 
         entry = _entry_log(caplog, 'request_sudo_policy')
 
-        assert "'commands': '<items=50>'" in entry
-        assert 'svc49' not in entry
+        assert "'servers': '<list items=50>'" in entry
+        assert servers[49] not in entry
+
+
+# Every shape of an inline credential the entry log used to keep whole.
+_SECRET = 'S3cr3t-Pa55'
+_SECRET_COMMANDS = (
+    f'mysql -uroot -p{_SECRET} -e "select 1"',
+    f'curl -H "Authorization: Bearer {_SECRET}" https://example.com/?k={_SECRET}',
+    f'PGPASSWORD={_SECRET} psql -h db -c "select 1"',
+)
+
+
+class TestCredentialsStayOutOfLogs:
+    """No log line at any level carries what a caller typed into a command (#311)."""
+
+    @pytest.mark.parametrize('command', _SECRET_COMMANDS)
+    async def test_execute_command_writes_no_part_of_the_command(
+        self, patched_http_client, mock_token_for_integration, caplog, command
+    ):
+        """The upstream error echoes the command back, as a validation error can."""
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                HTTPStatus.BAD_REQUEST, json={'line': [f'Rejected: {command}']}
+            )
+
+        patched_http_client.set_handler(handler)
+
+        with caplog.at_level(logging.DEBUG):
+            await execute_command(
+                server_id=_SERVER_ID,
+                command=command,
+                workspace='testworkspace',
+                region='ap1',
+                env={'DB_PASSWORD': _SECRET},
+                data=_SECRET,
+            )
+
+        assert caplog.records
+        assert _SECRET not in caplog.text
+        entry = _entry_log(caplog, 'execute_command')
+        assert f"'command': '<str len={len(command)}>'" in entry
+        assert _SERVER_ID in entry
+
+    async def test_a_command_list_is_recorded_by_size(self, caplog):
+        with caplog.at_level(logging.DEBUG):
+            await _request_sudo_policy(list(_SECRET_COMMANDS))
+
+        assert _SECRET not in caplog.text
+        entry = _entry_log(caplog, 'request_sudo_policy')
+        assert "'commands': '<list items=3>'" in entry
 
 
 def _tool_modules() -> list[ModuleType]:
@@ -430,177 +486,36 @@ class TestPublishedSchema:
 
 
 class TestLoggedParameterSurface:
-    """The key half of the entry-log filter is a deny-list, so a short new
-    parameter is logged in full unless someone remembers to list it. This pins
-    the whole surface: every parameter a tool declares is either dropped by
-    name in ``_UNLOGGED_KEYS`` or reviewed and kept here (#233). Adding a
-    field fails this test until the author decides which side it belongs on.
+    """The entry log writes an argument's value only when its name is in
+    ``_LOGGED_VERBATIM_KEYS``; every other argument keeps its key and is
+    recorded by type and size, so a new parameter is safe until reviewed.
     """
 
-    REVIEWED_LOGGED_KEYS = frozenset(
+    # Reviewed out of the verbatim set: a value here can carry a credential
+    # or text a person wrote, and the log keeps its size alone (#311).
+    NEVER_VERBATIM = frozenset(
         {
-            # identifiers minted upstream
-            'acl_id',
-            'alert_id',
-            'analysis_id',
-            'api_token_id',
-            'app_id',
-            'authority_id',
-            'ca_id',
-            'certificate_id',
-            'command_id',
-            'csr_id',
-            'entry_id',
-            'event_id',
-            'file_id',
-            'group_id',
-            'log_id',
-            'membership_id',
-            'mentioned_users',
-            'note_id',
-            'override_id',
-            'request_id',
-            'revoke_id',
-            'rule_id',
-            'run_after',
-            'server_id',
-            'server_ids',
-            'service_token_id',
-            'session_id',
-            'subscription_id',
-            'system_user_ids',
-            'target_id',
-            'token_id',
-            'user_id',
-            'webhook_id',
-            'work_session_id',
-            # names and the permission context a call ran under
-            'channel',
-            'display_name',
-            'domain',
-            'groupname',
-            'name',
-            'organization',
-            'owner',
-            'package_name',
-            'reporter',
-            'role',
-            'server_name',
-            'servers',
-            'target',
-            'user',
-            'username',
-            'users',
-            # paths, files, and URLs
-            'file_name',
-            'front_url',
-            'interpreter',
-            'local_file_path',
-            'local_file_paths',
-            'path',
-            'remote_directory',
-            'remote_file_path',
-            'remote_paths',
-            # workspace-scoped configuration objects; no secrets, and useful
-            # in the audit trail to see what policy a write actually asked for
-            'agent_rollout_policy',
-            # the authority a credential was granted
-            'presets',
-            'scopes',
-            # the subject alternative names a CSR asks for, published in
-            # the certificate itself
-            'domain_list',
-            'ip_list',
-            # the command a call ran
             'command',
             'commands',
-            # flags
-            'acknowledged',
-            'allow_overwrite',
-            'auto',
-            'auto_agent_upgrade',
-            'clear_expires_at',
-            'dismissed',
-            'enabled',
-            'force',
-            'include_records',
-            'install',
-            'is_active',
-            'is_connected',
-            'is_default',
-            'login_enabled_only',
-            'notify_slack_channel',
-            'offline_alert_enabled',
-            'parallel',
-            'pinned',
-            'private',
-            'purge_provisioned_accounts',
-            'resolved',
-            'ssl_verify',
-            # filters and enums
-            'action',
-            'action_type',
-            'alert_type',
-            'architecture',
-            'country',
-            'device',
-            'event_type',
-            'groupname_filter',
-            'groups',
-            'interface',
-            'key_algorithm',
-            'language',
-            'metric_types',
-            'notify_email',
-            'operator',
-            'ordering',
-            'partition',
-            'platform',
-            'provider',
-            'requester_type',
-            'resource_type',
-            'risk_score',
-            'service_type',
-            'severity',
-            'shell',
-            'state',
-            'status',
-            'tag',
-            'timezone',
-            'transfer_type',
-            'username_filter',
-            'version',
-            # free text, kept because the log is where a filter is read back
             'search',
             'search_query',
-            # sizes, counts, and windows
-            'default_valid_days',
-            'duration_s',
-            'hours',
-            'invite_ttl',
-            'key_size',
-            'limit',
-            'max_valid_days',
-            'no_data_after_s',
-            'page',
-            'page_size',
-            'recovery_threshold',
-            'root_valid_days',
-            'threshold',
-            'timeout',
-            'valid_days',
-            'websh_session_timeout',
-            'window_s',
-            # timestamps
-            'end_date',
-            'expires_at',
-            'scheduled_at',
-            'start_date',
-            'valid_from',
-            'valid_until',
-            # the call target itself
-            'region',
-            'workspace',
+            'token',
+            'password',
+            'secret',
+            'key',
+            'content',
+            'data',
+            'file_content',
+            'description',
+            'purpose',
+            'reason',
+            'requested_reason',
+            'url',
+            'front_url',
+            'package_proxy',
+            'email',
+            'env',
+            'args',
         }
     )
 
@@ -617,34 +532,18 @@ class TestLoggedParameterSurface:
                 declared.setdefault(parameter.name, set()).add(name)
         return declared
 
-    async def test_every_logged_parameter_has_been_reviewed(self):
-        declared = self._declared_parameters()
-
-        unreviewed = {
-            name: sorted(tools)
-            for name, tools in declared.items()
-            if name not in decorators._UNLOGGED_KEYS
-            and name not in self.REVIEWED_LOGGED_KEYS
-        }
-
-        assert not unreviewed, (
-            f'These parameters reach the entry log unreviewed. Add each to '
-            f'_UNLOGGED_KEYS in utils/decorators.py if the log has no use for '
-            f'it, or to REVIEWED_LOGGED_KEYS here if it belongs in the log: '
-            f'{unreviewed}'
-        )
-
-    async def test_the_two_lists_stay_disjoint_and_current(self):
-        overlap = decorators._UNLOGGED_KEYS & self.REVIEWED_LOGGED_KEYS
+    async def test_no_credential_bearing_name_is_verbatim(self):
+        overlap = decorators._LOGGED_VERBATIM_KEYS & self.NEVER_VERBATIM
         assert not overlap, (
-            f'These are both dropped and reviewed as kept, so the review says '
-            f'nothing: {sorted(overlap)}'
+            f'These can carry a credential or free text and must be logged by '
+            f'size: {sorted(overlap)}'
         )
 
-        stale = self.REVIEWED_LOGGED_KEYS - set(self._declared_parameters())
+    async def test_the_verbatim_set_is_current(self):
+        stale = decorators._LOGGED_VERBATIM_KEYS - set(self._declared_parameters())
         assert not stale, (
             f'No tool declares these any more; drop them from '
-            f'REVIEWED_LOGGED_KEYS: {sorted(stale)}'
+            f'_LOGGED_VERBATIM_KEYS: {sorted(stale)}'
         )
 
 

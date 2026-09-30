@@ -9,8 +9,15 @@ import logging.handlers
 import sys
 
 import pytest
+import uvicorn
 
-from utils.logger import AlpaconLogger
+from utils.logger import (
+    LOG_VALUE_MAX_CHARS,
+    AlpaconLogger,
+    describe_for_log,
+    escape_for_log,
+    redact_for_log,
+)
 
 
 @pytest.fixture
@@ -91,6 +98,161 @@ class TestQueuedFileSink:
 
         instance.stop_listener()
         instance.stop_listener()
+
+
+# A client value carrying a line break and what a real record looks like
+# after it: unescaped, a log reader starts a second record at the timestamp.
+FORGED_LINE = '\r\n2026-09-30 01:02:03 - alpacon_mcp.auth - INFO - [auth.py:1] - forged'
+
+
+def _record(msg, *args, exc_info=None):
+    return logging.LogRecord(
+        'alpacon_mcp.test', logging.WARNING, __file__, 1, msg, args, exc_info
+    )
+
+
+def _stderr_handler(handlers):
+    return next(
+        h
+        for h in handlers
+        if isinstance(h, logging.StreamHandler) and h.stream is sys.stderr
+    )
+
+
+class TestOneRecordOneLine:
+    """No value inside a record can make a sink print a line a reader takes
+    for a record of its own."""
+
+    def test_a_line_break_in_a_value_stays_on_the_record_line(self, manager):
+        _, handlers = manager
+
+        output = _stderr_handler(handlers).format(
+            _record('Rejected value: %s', FORGED_LINE)
+        )
+
+        assert '\n' not in output
+        assert '\r' not in output
+        assert output.endswith(
+            'Rejected value: \\r\\n2026-09-30 01:02:03 - '
+            'alpacon_mcp.auth - INFO - [auth.py:1] - forged'
+        )
+
+    def test_no_traceback_line_starts_where_a_record_would(self, manager):
+        """A traceback keeps its lines, each indented under the record line."""
+        _, handlers = manager
+        try:
+            raise ValueError(f'bad value {FORGED_LINE}')
+        except ValueError:
+            exc_info = sys.exc_info()
+
+        output = _stderr_handler(handlers).format(_record('failed', exc_info=exc_info))
+        first, *rest = output.split('\n')
+
+        assert first.endswith('failed')
+        assert rest, 'the traceback should follow the record line'
+        assert all(line == '' or line[0].isspace() for line in rest)
+        assert '\r' not in output
+
+    def test_the_log_file_gets_the_same_single_line_record(self, manager, tmp_path):
+        instance, handlers = manager
+        queue_handler = next(
+            h for h in handlers if isinstance(h, logging.handlers.QueueHandler)
+        )
+
+        queue_handler.handle(_record('file value: %s', FORGED_LINE))
+        instance.stop_listener()
+
+        lines = (tmp_path / 'logs' / 'alpacon-mcp.log').read_text().splitlines()
+        assert len(lines) == 1
+        assert 'file value: \\r\\n2026-09-30' in lines[0]
+
+
+class TestThirdPartyLoggers:
+    """Libraries below this server log what it deliberately keeps out."""
+
+    @pytest.mark.parametrize('name', ['httpx', 'httpcore', 'httpx2', 'httpcore2'])
+    def test_http_libraries_log_warnings_only(self, manager, name):
+        """At INFO httpx writes each request URL with its query string, and at
+        DEBUG httpcore writes the response headers."""
+        assert logging.getLogger(name).getEffectiveLevel() >= logging.WARNING
+
+    def test_the_mcp_sdk_stays_at_info_under_debug(self, manager, monkeypatch):
+        """At DEBUG the SDK writes each client message, tool arguments included."""
+        monkeypatch.setenv('ALPACON_MCP_LOG_LEVEL', 'DEBUG')
+        root = logging.getLogger()
+        root.handlers.clear()
+        instance = AlpaconLogger()
+        try:
+            assert logging.getLogger('mcp').getEffectiveLevel() == logging.INFO
+        finally:
+            instance.stop_listener()
+
+    def test_the_access_log_drops_the_query_string(self, manager):
+        """The OAuth callback carries the authorization code in its query."""
+        uvicorn.Config(app=None, log_level='info')
+        record = logging.LogRecord(
+            'uvicorn.access',
+            logging.INFO,
+            __file__,
+            1,
+            '%s - "%s %s HTTP/%s" %d',
+            ('10.0.0.1:5000', 'GET', '/oauth/callback?code=abc&state=xyz', '1.1', 302),
+            None,
+        )
+
+        assert logging.getLogger('uvicorn.access').filter(record)
+        assert 'code=abc' not in record.getMessage()
+        assert '/oauth/callback' in record.getMessage()
+
+
+class TestEscapeForLog:
+    """Tests for the client-value escaping helper."""
+
+    def test_escapes_a_line_break(self):
+        assert escape_for_log('a\r\nb') == 'a\\r\\nb'
+
+    def test_accepts_a_value_that_is_not_a_string(self):
+        assert escape_for_log(ValueError('bad\nkid')) == 'bad\\nkid'
+
+    def test_truncates_an_oversized_value(self):
+        escaped = escape_for_log('a' * (LOG_VALUE_MAX_CHARS + 100))
+
+        assert escaped == 'a' * LOG_VALUE_MAX_CHARS + '...(truncated)'
+
+    def test_truncates_when_escaping_expands_the_value(self):
+        """Escaping grows a control character, so the input cap alone is not enough."""
+        escaped = escape_for_log('\n' * LOG_VALUE_MAX_CHARS)
+
+        assert escaped == '\\n' * (LOG_VALUE_MAX_CHARS // 2) + '...(truncated)'
+
+
+class TestRedactForLog:
+    """Keys survive; values are reduced to their type and size."""
+
+    @pytest.mark.parametrize(
+        ('value', 'expected'),
+        [
+            ('mysql -pX', '<str len=9>'),
+            (b'abc', '<bytes len=3>'),
+            (['a', 'b'], '<list items=2>'),
+            ({'k': 'v'}, '<dict items=1>'),
+            (None, None),
+            (True, True),
+            (300, 300),
+            (object(), '<object>'),
+        ],
+    )
+    def test_describe(self, value, expected):
+        assert describe_for_log(value) == expected
+
+    def test_a_mapping_keeps_its_keys(self):
+        body = {'line': 'PGPASSWORD=x psql', 'env': {'A': 'x'}, 'timeout': 30}
+
+        assert redact_for_log(body) == {
+            'line': '<str len=17>',
+            'env': '<dict items=1>',
+            'timeout': 30,
+        }
 
 
 if __name__ == '__main__':

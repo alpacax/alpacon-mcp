@@ -11,7 +11,7 @@ import httpx
 from utils import request_signal
 from utils.common import MCP_USER_AGENT, is_auth_enabled
 from utils.error_handler import UpstreamAuthError
-from utils.logger import get_logger
+from utils.logger import get_logger, redact_for_log
 
 logger = get_logger('http_client')
 
@@ -25,6 +25,14 @@ _ERR_TIMEOUT = 'Timeout'
 _ERR_UNEXPECTED = 'Unexpected Error'
 
 HTTP_VERBS = ('get', 'post', 'put', 'patch', 'delete')
+
+
+def _error_body_for_log(response: httpx.Response) -> Any:
+    """An upstream error body by its field names, or by its size if not JSON."""
+    try:
+        return redact_for_log(response.json())
+    except ValueError:
+        return redact_for_log(response.text)
 
 
 class AlpaconHTTPClient:
@@ -182,16 +190,14 @@ class AlpaconHTTPClient:
             return True
 
         logger.info('HTTP %s request to %s', method, url)
+        # Names and sizes only: a body carries the command a call runs, and
+        # the params the text a caller filtered by.
         if logger.isEnabledFor(logging.DEBUG):
-            redacted_headers = {
-                k: (v if k != 'Authorization' else '[REDACTED]')
-                for k, v in request_headers.items()
-            }
-            logger.debug('Request headers: %s', redacted_headers)
-        if params:
-            logger.debug('Request params: %s', params)
-        if json_data:
-            logger.debug('Request body: %s', json_data)
+            logger.debug('Request headers: %s', sorted(request_headers))
+            if params:
+                logger.debug('Request params: %s', redact_for_log(params))
+            if json_data:
+                logger.debug('Request body: %s', redact_for_log(json_data))
 
         while retry_count < self.max_retries:
             try:
@@ -216,12 +222,13 @@ class AlpaconHTTPClient:
                     len(response.content),
                 )
                 if logger.isEnabledFor(logging.DEBUG):
-                    logger.debug('Response headers: %s', dict(response.headers))
+                    logger.debug('Response headers: %s', sorted(response.headers))
 
                 # Return JSON response
                 if response.text:
                     result = response.json()
-                    logger.debug('Response body: %s', result)
+                    if logger.isEnabledFor(logging.DEBUG):
+                        logger.debug('Response body: %s', redact_for_log(result))
                     return result
                 else:
                     result = {'status': 'success', 'status_code': response.status_code}
@@ -233,9 +240,10 @@ class AlpaconHTTPClient:
                 logger.error(
                     f'HTTP {method} error - Status: {e.response.status_code}, URL: {url}'
                 )
-                # Omit response body for 401 to avoid leaking auth error details/PII
+                # Field names only, never the text: an upstream error can
+                # echo back what the request sent. A 401 logs nothing here.
                 if e.response.status_code != HTTPStatus.UNAUTHORIZED:
-                    logger.error(f'Response body: {e.response.text}')
+                    logger.error('Response body: %s', _error_body_for_log(e.response))
 
                 if e.response.status_code >= HTTPStatus.INTERNAL_SERVER_ERROR:
                     # Server error - retry
@@ -260,7 +268,10 @@ class AlpaconHTTPClient:
                         'message': str(e),
                         'response': e.response.text,
                     }
-                    logger.error(f'Client error, not retrying: {error_response}')
+                    logger.error(
+                        'Client error, not retrying - Status: %s',
+                        e.response.status_code,
+                    )
                     return error_response
 
             except httpx.TimeoutException:
