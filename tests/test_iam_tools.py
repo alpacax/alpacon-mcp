@@ -34,9 +34,9 @@ from tools.iam_tools import (
 # Valid UUIDs for tools that validate ID format before calling the API
 GROUP_ID = '11111111-1111-1111-1111-111111111111'
 USER_ID = '22222222-2222-2222-2222-222222222222'
-USER_ID_2 = '33333333-3333-3333-3333-333333333333'
+SECOND_USER_ID = '33333333-3333-3333-3333-333333333333'
 MEMBERSHIP_ID = '44444444-4444-4444-4444-444444444444'
-MEMBERSHIP_ID_2 = '77777777-7777-7777-7777-777777777777'
+SECOND_MEMBERSHIP_ID = '77777777-7777-7777-7777-777777777777'
 APP_ID = '55555555-5555-5555-5555-555555555555'
 SYSTEM_USER_ID = '66666666-6666-6666-6666-666666666666'
 
@@ -77,7 +77,7 @@ def sample_users_list():
                 'num_groups': 1,
             },
             {
-                'id': USER_ID_2,
+                'id': SECOND_USER_ID,
                 'username': 'testuser2',
                 'email': 'test2@example.com',
                 'first_name': 'Test',
@@ -579,7 +579,7 @@ class TestIAMMembershipManagement:
             'count': 2,
             'results': [
                 {'id': MEMBERSHIP_ID, 'group': GROUP_ID, 'user': USER_ID},
-                {'id': MEMBERSHIP_ID_2, 'group': GROUP_ID, 'user': USER_ID_2},
+                {'id': SECOND_MEMBERSHIP_ID, 'group': GROUP_ID, 'user': SECOND_USER_ID},
             ],
         }
         mock_http_client.get.return_value = memberships_data
@@ -655,11 +655,14 @@ class TestIAMMembershipManagement:
     @pytest.mark.asyncio
     async def test_add_iam_member_with_role(self, mock_http_client, mock_token_manager):
         """Test member addition with an explicit role."""
-        mock_http_client.post.return_value = {'id': MEMBERSHIP_ID_2, 'role': 'manager'}
+        mock_http_client.post.return_value = {
+            'id': SECOND_MEMBERSHIP_ID,
+            'role': 'manager',
+        }
 
         result = await add_iam_member(
             group_id=GROUP_ID,
-            user_id=USER_ID_2,
+            user_id=SECOND_USER_ID,
             workspace='testworkspace',
             role='manager',
         )
@@ -670,7 +673,7 @@ class TestIAMMembershipManagement:
             workspace='testworkspace',
             endpoint='/api/iam/memberships/',
             token='test-token',
-            data={'group': GROUP_ID, 'user': USER_ID_2, 'role': 'manager'},
+            data={'group': GROUP_ID, 'user': SECOND_USER_ID, 'role': 'manager'},
         )
 
     @pytest.mark.asyncio

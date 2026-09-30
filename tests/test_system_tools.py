@@ -22,6 +22,9 @@ from tools.system_info_tools import (
 
 mock_http_client = http_client_fixture('tools.system_info_tools')
 
+SERVER_ID = '550e8400-e29b-41d4-a716-446655440001'
+US_REGION_SERVER_ID = '660e8400-e29b-41d4-a716-446655440001'
+
 
 class TestSystemInfoEdgeCases:
     """Test get_system_info edge cases."""
@@ -41,14 +44,14 @@ class TestSystemInfoEdgeCases:
         }
 
         result = await get_system_info(
-            server_id='550e8400-e29b-41d4-a716-446655440001',
+            server_id=SERVER_ID,
             workspace='testworkspace',
             region='ap1',
         )
 
         # Verify response structure
         assert result['status'] == 'success'
-        assert result['server_id'] == '550e8400-e29b-41d4-a716-446655440001'
+        assert result['server_id'] == SERVER_ID
         assert result['region'] == 'ap1'
         assert result['workspace'] == 'testworkspace'
         assert 'data' in result
@@ -60,7 +63,7 @@ class TestSystemInfoEdgeCases:
             workspace='testworkspace',
             endpoint='/api/proc/info/',
             token='test-token',
-            params={'server': '550e8400-e29b-41d4-a716-446655440001'},
+            params={'server': SERVER_ID},
         )
 
     @pytest.mark.asyncio
@@ -69,9 +72,7 @@ class TestSystemInfoEdgeCases:
 
         mock_token_manager.get_token.return_value = None
 
-        result = await get_system_info(
-            server_id='550e8400-e29b-41d4-a716-446655440001', workspace='testworkspace'
-        )
+        result = await get_system_info(server_id=SERVER_ID, workspace='testworkspace')
 
         assert result['status'] == 'error'
         assert 'No token found' in result['message']
@@ -86,7 +87,7 @@ class TestSystemInfoEdgeCases:
         mock_http_client.get.return_value = {'hostname': 'us-server'}
 
         result = await get_system_info(
-            server_id='550e8400-e29b-41d4-a716-446655440001',
+            server_id=SERVER_ID,
             workspace='testworkspace',
             region='us1',
         )
@@ -99,7 +100,7 @@ class TestSystemInfoEdgeCases:
             workspace='testworkspace',
             endpoint='/api/proc/info/',
             token='test-token',
-            params={'server': '550e8400-e29b-41d4-a716-446655440001'},
+            params={'server': SERVER_ID},
         )
 
 
@@ -142,14 +143,14 @@ class TestListSystemUsersEdgeCases:
         }
 
         result = await list_system_users(
-            server_id='550e8400-e29b-41d4-a716-446655440001',
+            server_id=SERVER_ID,
             workspace='testworkspace',
             region='ap1',
         )
 
         # Verify response structure
         assert result['status'] == 'success'
-        assert result['server_id'] == '550e8400-e29b-41d4-a716-446655440001'
+        assert result['server_id'] == SERVER_ID
         assert result['region'] == 'ap1'
         assert result['workspace'] == 'testworkspace'
         assert 'data' in result
@@ -161,7 +162,7 @@ class TestListSystemUsersEdgeCases:
             workspace='testworkspace',
             endpoint='/api/proc/users/',
             token='test-token',
-            params={'server': '550e8400-e29b-41d4-a716-446655440001'},
+            params={'server': SERVER_ID},
         )
 
     @pytest.mark.asyncio
@@ -170,9 +171,7 @@ class TestListSystemUsersEdgeCases:
 
         mock_token_manager.get_token.return_value = None
 
-        result = await list_system_users(
-            server_id='550e8400-e29b-41d4-a716-446655440001', workspace='testworkspace'
-        )
+        result = await list_system_users(server_id=SERVER_ID, workspace='testworkspace')
 
         assert result['status'] == 'error'
         assert 'No token found' in result['message']
@@ -204,14 +203,14 @@ class TestListSystemPackagesEdgeCases:
         }
 
         result = await list_system_packages(
-            server_id='550e8400-e29b-41d4-a716-446655440001',
+            server_id=SERVER_ID,
             workspace='testworkspace',
             region='ap1',
         )
 
         # Verify response structure
         assert result['status'] == 'success'
-        assert result['server_id'] == '550e8400-e29b-41d4-a716-446655440001'
+        assert result['server_id'] == SERVER_ID
         assert result['region'] == 'ap1'
         assert result['workspace'] == 'testworkspace'
         assert 'data' in result
@@ -224,7 +223,7 @@ class TestListSystemPackagesEdgeCases:
         mock_http_client.get.return_value = {'count': 0, 'results': []}
 
         result = await list_system_packages(
-            server_id='550e8400-e29b-41d4-a716-446655440001', workspace='testworkspace'
+            server_id=SERVER_ID, workspace='testworkspace'
         )
 
         assert result['status'] == 'success'
@@ -237,7 +236,7 @@ class TestListSystemPackagesEdgeCases:
         mock_token_manager.get_token.return_value = None
 
         result = await list_system_packages(
-            server_id='550e8400-e29b-41d4-a716-446655440001', workspace='testworkspace'
+            server_id=SERVER_ID, workspace='testworkspace'
         )
 
         assert result['status'] == 'error'
@@ -284,13 +283,13 @@ class TestGetDiskInfoEdgeCases:
         mock_http_client.get.side_effect = mock_get_side_effect
 
         result = await get_disk_info(
-            server_id='550e8400-e29b-41d4-a716-446655440001',
+            server_id=SERVER_ID,
             workspace='testworkspace',
             region='ap1',
         )
 
         assert result['status'] == 'success'
-        assert result['data']['server_id'] == '550e8400-e29b-41d4-a716-446655440001'
+        assert result['data']['server_id'] == SERVER_ID
         assert result['data']['region'] == 'ap1'
         assert result['data']['workspace'] == 'testworkspace'
         assert 'disks' in result['data']
@@ -305,9 +304,7 @@ class TestGetDiskInfoEdgeCases:
 
         mock_token_manager.get_token.return_value = None
 
-        result = await get_disk_info(
-            server_id='550e8400-e29b-41d4-a716-446655440001', workspace='testworkspace'
-        )
+        result = await get_disk_info(server_id=SERVER_ID, workspace='testworkspace')
 
         assert result['status'] == 'error'
         assert 'No token found' in result['message']
@@ -319,9 +316,7 @@ class TestGetDiskInfoEdgeCases:
 
         mock_http_client.get.side_effect = Exception('Disk service unavailable')
 
-        result = await get_disk_info(
-            server_id='550e8400-e29b-41d4-a716-446655440001', workspace='testworkspace'
-        )
+        result = await get_disk_info(server_id=SERVER_ID, workspace='testworkspace')
 
         # A failed sub-call must surface as an error, not a wrapped success.
         assert result['status'] == 'error'
@@ -343,13 +338,13 @@ class TestCrossFunctionScenarios:
         # Test with different regions
         for func in [get_system_info, list_system_users]:
             result = await func(
-                server_id='660e8400-e29b-41d4-a716-446655440001',
+                server_id=US_REGION_SERVER_ID,
                 workspace='us-workspace',
                 region='us1',
             )
 
             assert result['status'] == 'success'
-            assert result['server_id'] == '660e8400-e29b-41d4-a716-446655440001'
+            assert result['server_id'] == US_REGION_SERVER_ID
             assert result['workspace'] == 'us-workspace'
             assert result['region'] == 'us1'
 

@@ -28,8 +28,9 @@ from tools.system_info_tools import get_server_overview
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
-SERVER_UUID = '550e8400-e29b-41d4-a716-446655440001'
-IAM_USER_UUID = '550e8400-e29b-41d4-a716-446655440002'
+SERVER_ID = '550e8400-e29b-41d4-a716-446655440001'
+USER_ID = '550e8400-e29b-41d4-a716-446655440002'
+MISSING_SERVER_ID = '99999999-9999-9999-9999-999999999999'
 
 
 class TestServerToolsEndToEnd:
@@ -62,18 +63,18 @@ class TestServerToolsEndToEnd:
 
         def handler(request: httpx.Request) -> httpx.Response:
             # The server must be addressed by URL path, not a list filter
-            assert request.url.path.endswith(f'/api/servers/servers/{SERVER_UUID}/')
+            assert request.url.path.endswith(f'/api/servers/servers/{SERVER_ID}/')
             return httpx.Response(HTTPStatus.OK, json=api_data['server_detail'])
 
         patched_http_client.set_handler(handler)
 
         result = await get_server(
-            server_id=SERVER_UUID, workspace='production', region='ap1'
+            server_id=SERVER_ID, workspace='production', region='ap1'
         )
 
         assert result['status'] == 'success'
         assert result['data']['name'] == 'web-server-01'
-        assert result['server_id'] == SERVER_UUID
+        assert result['server_id'] == SERVER_ID
 
     async def test_get_server_not_found(
         self, patched_http_client, mock_token_for_integration, sample_api_responses
@@ -89,14 +90,14 @@ class TestServerToolsEndToEnd:
         patched_http_client.set_handler(handler)
 
         result = await get_server(
-            server_id='99999999-9999-9999-9999-999999999999',
+            server_id=MISSING_SERVER_ID,
             workspace='production',
             region='ap1',
         )
 
         assert result['status'] == 'error'
         assert result['status_code'] == HTTPStatus.NOT_FOUND
-        assert result['server_id'] == '99999999-9999-9999-9999-999999999999'
+        assert result['server_id'] == MISSING_SERVER_ID
 
     async def test_create_server_note_post_body(
         self, patched_http_client, mock_token_for_integration, sample_api_responses
@@ -115,7 +116,7 @@ class TestServerToolsEndToEnd:
         patched_http_client.set_handler(handler)
 
         result = await create_server_note(
-            server_id=SERVER_UUID,
+            server_id=SERVER_ID,
             content='Test content',
             workspace='production',
             region='ap1',
@@ -126,7 +127,7 @@ class TestServerToolsEndToEnd:
         assert result['data']['id'] == 'note-001'
 
         # Verify the POST body
-        assert captured_body['server'] == SERVER_UUID
+        assert captured_body['server'] == SERVER_ID
         assert captured_body['content'] == 'Test content'
         assert captured_body['pinned'] is True
         assert 'title' not in captured_body
@@ -196,7 +197,7 @@ class TestIAMToolsEndToEnd:
         patched_http_client.set_handler(handler)
 
         result = await update_iam_user(
-            user_id=IAM_USER_UUID,
+            user_id=USER_ID,
             workspace='production',
             email='updated@example.com',
             region='ap1',
@@ -215,13 +216,13 @@ class TestIAMToolsEndToEnd:
 
         def handler(request: httpx.Request) -> httpx.Response:
             captured_method.append(request.method)
-            assert f'/api/iam/users/{IAM_USER_UUID}/' in str(request.url)
+            assert f'/api/iam/users/{USER_ID}/' in str(request.url)
             return httpx.Response(HTTPStatus.NO_CONTENT, text='')
 
         patched_http_client.set_handler(handler)
 
         result = await delete_iam_user(
-            user_id=IAM_USER_UUID, workspace='production', region='ap1'
+            user_id=USER_ID, workspace='production', region='ap1'
         )
 
         assert result['status'] == 'success'
@@ -268,7 +269,7 @@ class TestMetricsEndToEnd:
         patched_http_client.set_handler(handler)
 
         result = await get_cpu_usage(
-            server_id=SERVER_UUID,
+            server_id=SERVER_ID,
             workspace='production',
             start_date='2024-06-01T00:00:00Z',
             end_date='2024-06-02T00:00:00Z',
@@ -308,7 +309,7 @@ class TestSystemInfoEndToEnd:
         patched_http_client.set_handler(handler)
 
         result = await get_server_overview(
-            server_id=SERVER_UUID, workspace='testworkspace', region='ap1'
+            server_id=SERVER_ID, workspace='testworkspace', region='ap1'
         )
 
         assert result['status'] == 'success'

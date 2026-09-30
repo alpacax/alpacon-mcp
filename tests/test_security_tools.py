@@ -19,8 +19,8 @@ from tools.security_tools import (
     update_server_acl,
 )
 
-SERVER_UUID = '7e3984de-49ab-4cc6-bcdf-21fbd35858b8'
-SERVER_UUID_2 = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890'
+SERVER_ID = '7e3984de-49ab-4cc6-bcdf-21fbd35858b8'
+SECOND_SERVER_ID = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890'
 
 
 mock_http_client = http_client_fixture('tools.security_tools')
@@ -426,12 +426,12 @@ class TestCreateServerAcl:
         mock_http_client.post.return_value = {
             'id': 'acl-1',
             'token': 'token-uuid',
-            'server': SERVER_UUID,
+            'server': SERVER_ID,
         }
 
         result = await create_server_acl(
             workspace='testworkspace',
-            server_id=SERVER_UUID,
+            server_id=SERVER_ID,
             api_token_id='token-uuid',
             region='ap1',
         )
@@ -442,7 +442,7 @@ class TestCreateServerAcl:
             workspace='testworkspace',
             endpoint='/api/security/server-acl/',
             token='test-token',
-            data={'server': SERVER_UUID, 'token': 'token-uuid'},
+            data={'server': SERVER_ID, 'token': 'token-uuid'},
         )
 
     @pytest.mark.asyncio
@@ -453,7 +453,7 @@ class TestCreateServerAcl:
 
         result = await create_server_acl(
             workspace='testworkspace',
-            server_id=SERVER_UUID,
+            server_id=SERVER_ID,
             service_token_id='svc-uuid',
             region='ap1',
         )
@@ -464,7 +464,7 @@ class TestCreateServerAcl:
             workspace='testworkspace',
             endpoint='/api/security/server-acl/',
             token='test-token',
-            data={'server': SERVER_UUID, 'service_token': 'svc-uuid'},
+            data={'server': SERVER_ID, 'service_token': 'svc-uuid'},
         )
 
     @pytest.mark.asyncio
@@ -473,7 +473,7 @@ class TestCreateServerAcl:
     ):
         result = await create_server_acl(
             workspace='testworkspace',
-            server_id=SERVER_UUID,
+            server_id=SERVER_ID,
             region='ap1',
         )
 
@@ -486,7 +486,7 @@ class TestCreateServerAcl:
     ):
         result = await create_server_acl(
             workspace='testworkspace',
-            server_id=SERVER_UUID,
+            server_id=SERVER_ID,
             api_token_id='token-uuid',
             service_token_id='svc-uuid',
             region='ap1',
@@ -499,12 +499,15 @@ class TestCreateServerAcl:
 class TestUpdateServerAcl:
     @pytest.mark.asyncio
     async def test_update_server(self, mock_http_client, mock_token_manager):
-        mock_http_client.patch.return_value = {'id': 'acl-1', 'server': SERVER_UUID_2}
+        mock_http_client.patch.return_value = {
+            'id': 'acl-1',
+            'server': SECOND_SERVER_ID,
+        }
 
         result = await update_server_acl(
             acl_id='acl-1',
             workspace='testworkspace',
-            server_id=SERVER_UUID_2,
+            server_id=SECOND_SERVER_ID,
             region='ap1',
         )
 
@@ -515,7 +518,7 @@ class TestUpdateServerAcl:
             workspace='testworkspace',
             endpoint='/api/security/server-acl/acl-1/',
             token='test-token',
-            data={'server': SERVER_UUID_2},
+            data={'server': SECOND_SERVER_ID},
         )
 
     @pytest.mark.asyncio
@@ -571,7 +574,7 @@ class TestUpdateServerAcl:
         result = await update_server_acl(
             acl_id='acl-1',
             workspace='testworkspace',
-            server_id=SERVER_UUID_2,
+            server_id=SECOND_SERVER_ID,
             api_token_id='new-token-uuid',
             region='ap1',
         )
@@ -583,7 +586,7 @@ class TestUpdateServerAcl:
             endpoint='/api/security/server-acl/acl-1/',
             token='test-token',
             data={
-                'server': SERVER_UUID_2,
+                'server': SECOND_SERVER_ID,
                 'token': 'new-token-uuid',
                 'service_token': None,
             },
@@ -663,7 +666,7 @@ class TestBulkServerAcl:
         result = await bulk_server_acl(
             workspace='testworkspace',
             action='add',
-            server_ids=[SERVER_UUID, SERVER_UUID_2],
+            server_ids=[SERVER_ID, SECOND_SERVER_ID],
             api_token_id='token-uuid',
             region='ap1',
         )
@@ -674,7 +677,7 @@ class TestBulkServerAcl:
             workspace='testworkspace',
             endpoint='/api/security/server-acl/bulk/',
             token='test-token',
-            data={'servers': [SERVER_UUID, SERVER_UUID_2], 'token': 'token-uuid'},
+            data={'servers': [SERVER_ID, SECOND_SERVER_ID], 'token': 'token-uuid'},
         )
 
     @pytest.mark.asyncio
@@ -686,7 +689,7 @@ class TestBulkServerAcl:
         result = await bulk_server_acl(
             workspace='testworkspace',
             action='remove',
-            server_ids=[SERVER_UUID, SERVER_UUID_2],
+            server_ids=[SERVER_ID, SECOND_SERVER_ID],
             api_token_id='token-uuid',
             region='ap1',
         )
@@ -697,7 +700,7 @@ class TestBulkServerAcl:
             workspace='testworkspace',
             endpoint='/api/security/server-acl/bulk/delete/',
             token='test-token',
-            data={'servers': [SERVER_UUID, SERVER_UUID_2], 'token': 'token-uuid'},
+            data={'servers': [SERVER_ID, SECOND_SERVER_ID], 'token': 'token-uuid'},
         )
 
     @pytest.mark.asyncio
@@ -707,7 +710,7 @@ class TestBulkServerAcl:
         result = await bulk_server_acl(
             workspace='testworkspace',
             action='add',
-            server_ids=[SERVER_UUID],
+            server_ids=[SERVER_ID],
             service_token_id='svc-uuid',
             region='ap1',
         )
@@ -718,7 +721,7 @@ class TestBulkServerAcl:
             workspace='testworkspace',
             endpoint='/api/security/server-acl/bulk/',
             token='test-token',
-            data={'servers': [SERVER_UUID], 'service_token': 'svc-uuid'},
+            data={'servers': [SERVER_ID], 'service_token': 'svc-uuid'},
         )
 
     @pytest.mark.asyncio
@@ -728,7 +731,7 @@ class TestBulkServerAcl:
         result = await bulk_server_acl(
             workspace='testworkspace',
             action='delete',
-            server_ids=[SERVER_UUID],
+            server_ids=[SERVER_ID],
             api_token_id='token-uuid',
             region='ap1',
         )
@@ -743,7 +746,7 @@ class TestBulkServerAcl:
         result = await bulk_server_acl(
             workspace='testworkspace',
             action='add',
-            server_ids=[SERVER_UUID],
+            server_ids=[SERVER_ID],
             region='ap1',
         )
 
@@ -757,7 +760,7 @@ class TestBulkServerAcl:
         result = await bulk_server_acl(
             workspace='testworkspace',
             action='add',
-            server_ids=[SERVER_UUID],
+            server_ids=[SERVER_ID],
             api_token_id='token-uuid',
             service_token_id='svc-uuid',
             region='ap1',

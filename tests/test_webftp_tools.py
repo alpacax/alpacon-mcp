@@ -36,7 +36,7 @@ from tools.webftp_tools import (
 
 mock_http_client = http_client_fixture('tools.webftp_tools')
 
-OTHER_SERVER_ID = '550e8400-e29b-41d4-a716-446655440002'  # listings span two servers
+SECOND_SERVER_ID = '550e8400-e29b-41d4-a716-446655440002'  # listings span two servers
 
 
 @pytest.fixture
@@ -147,7 +147,7 @@ class TestWebFtpSessionsList:
                 },
                 {
                     'id': 'session-124',
-                    'server': OTHER_SERVER_ID,
+                    'server': SECOND_SERVER_ID,
                     'username': 'testuser2',
                     'created_at': '2024-01-01T00:01:00Z',
                 },
@@ -562,7 +562,7 @@ class TestWebFtpUploadsList:
                 {
                     'id': 'upload-124',
                     'name': 'file2.txt',
-                    'server': OTHER_SERVER_ID,
+                    'server': SECOND_SERVER_ID,
                     'created_at': '2024-01-01T00:01:00Z',
                 },
             ],
@@ -637,7 +637,7 @@ class TestWebFtpDownloadsList:
                 {
                     'id': 'download-124',
                     'name': 'file2.txt',
-                    'server': OTHER_SERVER_ID,
+                    'server': SECOND_SERVER_ID,
                     'created_at': '2024-01-01T00:01:00Z',
                 },
             ],

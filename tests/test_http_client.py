@@ -18,6 +18,8 @@ from utils.error_handler import UpstreamAuthError
 from utils.http_client import HTTP_VERBS, AlpaconHTTPClient, http_client
 from utils.recovery_hints import _detect_error_domain, enrich_error_response
 
+SERVER_ID = '550e8400-e29b-41d4-a716-446655440123'
+
 
 @pytest.fixture
 def mock_httpx_client():
@@ -643,7 +645,7 @@ async def test_delete_forwards_query_parameters():
         await http_client.delete(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/servers/servers/550e8400-e29b-41d4-a716-446655440123/',
+            endpoint=f'/api/servers/servers/{SERVER_ID}/',
             token='test-token',
             params={'auto': 'true'},
         )
@@ -655,7 +657,7 @@ async def test_delete_forwards_query_parameters():
         params={'auto': 'true'},
     )
     assert mock_request.call_args.kwargs['url'].endswith(
-        '/api/servers/servers/550e8400-e29b-41d4-a716-446655440123/'
+        f'/api/servers/servers/{SERVER_ID}/'
     )
 
 

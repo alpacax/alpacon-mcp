@@ -22,6 +22,24 @@ from tools.token_tools import (
 
 mock_http_client = http_client_fixture('tools.token_tools')
 
+DELETE_TOKEN_ID = '550e8400-e29b-41d4-a716-446655440001'
+DELETE_RESPONSE_TOKEN_ID = '550e8400-e29b-41d4-a716-446655440002'
+UNKNOWN_TOKEN_ID = '550e8400-e29b-41d4-a716-446655440099'
+DUPLICATE_TOKEN_ID = '550e8400-e29b-41d4-a716-446655440003'
+DUPLICATE_EMPTY_NAME_TOKEN_ID = '550e8400-e29b-41d4-a716-446655440005'
+DUPLICATE_RESPONSE_TOKEN_ID = '550e8400-e29b-41d4-a716-446655440004'
+GET_TOKEN_ID = '550e8400-e29b-41d4-a716-446655440010'
+UPDATE_TOGGLE_TOKEN_ID = '550e8400-e29b-41d4-a716-446655440020'
+UPDATE_ALL_FIELDS_TOKEN_ID = '550e8400-e29b-41d4-a716-446655440021'
+CLEAR_EXPIRES_TOKEN_ID = '550e8400-e29b-41d4-a716-446655440024'
+CLEAR_EXPIRES_WITH_FIELDS_TOKEN_ID = '550e8400-e29b-41d4-a716-446655440027'
+CLEAR_AND_SET_TOKEN_ID = '550e8400-e29b-41d4-a716-446655440025'
+CLEAR_FALSE_TOKEN_ID = '550e8400-e29b-41d4-a716-446655440026'
+NO_FIELDS_TOKEN_ID = '550e8400-e29b-41d4-a716-446655440022'
+HTTP_ERROR_TOKEN_ID = '550e8400-e29b-41d4-a716-446655440023'
+NON_JWT_TOKEN_ID = '550e8400-e29b-41d4-a716-446655440000'
+ROTATE_TOKEN_ID = '550e8400-e29b-41d4-a716-446655440006'
+
 
 @pytest.fixture
 def mock_token_manager():
@@ -351,7 +369,7 @@ class TestDeleteApiToken:
         mock_http_client.delete.return_value = {}
 
         result = await delete_api_token(
-            token_id='550e8400-e29b-41d4-a716-446655440001',
+            token_id=DELETE_TOKEN_ID,
             workspace='testworkspace',
             region='ap1',
         )
@@ -360,7 +378,7 @@ class TestDeleteApiToken:
         mock_http_client.delete.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/auth/tokens/550e8400-e29b-41d4-a716-446655440001/',
+            endpoint=f'/api/auth/tokens/{DELETE_TOKEN_ID}/',
             token='header.payload.signature',
         )
 
@@ -372,13 +390,13 @@ class TestDeleteApiToken:
         mock_http_client.delete.return_value = {}
 
         result = await delete_api_token(
-            token_id='550e8400-e29b-41d4-a716-446655440002',
+            token_id=DELETE_RESPONSE_TOKEN_ID,
             workspace='testworkspace',
             region='ap1',
         )
 
         assert result['status'] == 'success'
-        assert result['token_id'] == '550e8400-e29b-41d4-a716-446655440002'
+        assert result['token_id'] == DELETE_RESPONSE_TOKEN_ID
 
     @pytest.mark.asyncio
     async def test_delete_api_token_invalid_token_id(
@@ -404,7 +422,7 @@ class TestDeleteApiToken:
         }
 
         result = await delete_api_token(
-            token_id='550e8400-e29b-41d4-a716-446655440099',
+            token_id=UNKNOWN_TOKEN_ID,
             workspace='testworkspace',
             region='ap1',
         )
@@ -427,7 +445,7 @@ class TestDuplicateApiToken:
         }
 
         result = await duplicate_api_token(
-            token_id='550e8400-e29b-41d4-a716-446655440003',
+            token_id=DUPLICATE_TOKEN_ID,
             workspace='testworkspace',
             region='ap1',
         )
@@ -437,7 +455,7 @@ class TestDuplicateApiToken:
         mock_http_client.post.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/auth/tokens/550e8400-e29b-41d4-a716-446655440003/duplicate/',
+            endpoint=f'/api/auth/tokens/{DUPLICATE_TOKEN_ID}/duplicate/',
             token='header.payload.signature',
             data={},
         )
@@ -453,7 +471,7 @@ class TestDuplicateApiToken:
         }
 
         result = await duplicate_api_token(
-            token_id='550e8400-e29b-41d4-a716-446655440003',
+            token_id=DUPLICATE_TOKEN_ID,
             workspace='testworkspace',
             region='ap1',
             name='My Backup Token',
@@ -463,7 +481,7 @@ class TestDuplicateApiToken:
         mock_http_client.post.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/auth/tokens/550e8400-e29b-41d4-a716-446655440003/duplicate/',
+            endpoint=f'/api/auth/tokens/{DUPLICATE_TOKEN_ID}/duplicate/',
             token='header.payload.signature',
             data={'name': 'My Backup Token'},
         )
@@ -480,7 +498,7 @@ class TestDuplicateApiToken:
         }
 
         await duplicate_api_token(
-            token_id='550e8400-e29b-41d4-a716-446655440005',
+            token_id=DUPLICATE_EMPTY_NAME_TOKEN_ID,
             workspace='testworkspace',
             region='ap1',
             name='',
@@ -489,7 +507,7 @@ class TestDuplicateApiToken:
         mock_http_client.post.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/auth/tokens/550e8400-e29b-41d4-a716-446655440005/duplicate/',
+            endpoint=f'/api/auth/tokens/{DUPLICATE_EMPTY_NAME_TOKEN_ID}/duplicate/',
             token='header.payload.signature',
             data={'name': ''},
         )
@@ -502,13 +520,13 @@ class TestDuplicateApiToken:
         mock_http_client.post.return_value = {'id': 'tok-dup', 'name': 'Token (copy)'}
 
         result = await duplicate_api_token(
-            token_id='550e8400-e29b-41d4-a716-446655440004',
+            token_id=DUPLICATE_RESPONSE_TOKEN_ID,
             workspace='testworkspace',
             region='ap1',
         )
 
         assert result['status'] == 'success'
-        assert result['token_id'] == '550e8400-e29b-41d4-a716-446655440004'
+        assert result['token_id'] == DUPLICATE_RESPONSE_TOKEN_ID
 
     @pytest.mark.asyncio
     async def test_duplicate_api_token_invalid_token_id(
@@ -534,7 +552,7 @@ class TestDuplicateApiToken:
         }
 
         result = await duplicate_api_token(
-            token_id='550e8400-e29b-41d4-a716-446655440099',
+            token_id=UNKNOWN_TOKEN_ID,
             workspace='testworkspace',
             region='ap1',
         )
@@ -610,25 +628,25 @@ class TestGetApiToken:
     async def test_get_api_token_success(self, mock_http_client, mock_token_manager):
         """Test successful single API token retrieval."""
         mock_http_client.get.return_value = {
-            'id': '550e8400-e29b-41d4-a716-446655440010',
+            'id': GET_TOKEN_ID,
             'name': 'Detail Token',
             'enabled': True,
             'scopes': ['*'],
         }
 
         result = await get_api_token(
-            token_id='550e8400-e29b-41d4-a716-446655440010',
+            token_id=GET_TOKEN_ID,
             workspace='testworkspace',
             region='ap1',
         )
 
         assert result['status'] == 'success'
-        assert result['token_id'] == '550e8400-e29b-41d4-a716-446655440010'
+        assert result['token_id'] == GET_TOKEN_ID
         assert result['data']['name'] == 'Detail Token'
         mock_http_client.get.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/auth/tokens/550e8400-e29b-41d4-a716-446655440010/',
+            endpoint=f'/api/auth/tokens/{GET_TOKEN_ID}/',
             token='header.payload.signature',
         )
 
@@ -654,7 +672,7 @@ class TestGetApiToken:
         }
 
         result = await get_api_token(
-            token_id='550e8400-e29b-41d4-a716-446655440099',
+            token_id=UNKNOWN_TOKEN_ID,
             workspace='testworkspace',
             region='ap1',
         )
@@ -671,13 +689,13 @@ class TestUpdateApiToken:
     ):
         """Test disabling a token via update_api_token (enabled=False)."""
         mock_http_client.patch.return_value = {
-            'id': '550e8400-e29b-41d4-a716-446655440020',
+            'id': UPDATE_TOGGLE_TOKEN_ID,
             'name': 'Active Token',
             'enabled': False,
         }
 
         result = await update_api_token(
-            token_id='550e8400-e29b-41d4-a716-446655440020',
+            token_id=UPDATE_TOGGLE_TOKEN_ID,
             workspace='testworkspace',
             region='ap1',
             enabled=False,
@@ -687,7 +705,7 @@ class TestUpdateApiToken:
         mock_http_client.patch.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/auth/tokens/550e8400-e29b-41d4-a716-446655440020/',
+            endpoint=f'/api/auth/tokens/{UPDATE_TOGGLE_TOKEN_ID}/',
             token='header.payload.signature',
             data={'enabled': False},
         )
@@ -698,7 +716,7 @@ class TestUpdateApiToken:
     ):
         """Test update_api_token forwards every supplied field."""
         mock_http_client.patch.return_value = {
-            'id': '550e8400-e29b-41d4-a716-446655440021',
+            'id': UPDATE_ALL_FIELDS_TOKEN_ID,
             'name': 'Renamed',
             'enabled': True,
             'scopes': ['server:read'],
@@ -706,7 +724,7 @@ class TestUpdateApiToken:
         }
 
         result = await update_api_token(
-            token_id='550e8400-e29b-41d4-a716-446655440021',
+            token_id=UPDATE_ALL_FIELDS_TOKEN_ID,
             workspace='testworkspace',
             region='ap1',
             name='Renamed',
@@ -719,7 +737,7 @@ class TestUpdateApiToken:
         mock_http_client.patch.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/auth/tokens/550e8400-e29b-41d4-a716-446655440021/',
+            endpoint=f'/api/auth/tokens/{UPDATE_ALL_FIELDS_TOKEN_ID}/',
             token='header.payload.signature',
             data={
                 'name': 'Renamed',
@@ -735,12 +753,12 @@ class TestUpdateApiToken:
     ):
         """Test clear_expires_at=True sends expires_at=null to remove the expiry."""
         mock_http_client.patch.return_value = {
-            'id': '550e8400-e29b-41d4-a716-446655440024',
+            'id': CLEAR_EXPIRES_TOKEN_ID,
             'expires_at': None,
         }
 
         result = await update_api_token(
-            token_id='550e8400-e29b-41d4-a716-446655440024',
+            token_id=CLEAR_EXPIRES_TOKEN_ID,
             workspace='testworkspace',
             region='ap1',
             clear_expires_at=True,
@@ -750,7 +768,7 @@ class TestUpdateApiToken:
         mock_http_client.patch.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/auth/tokens/550e8400-e29b-41d4-a716-446655440024/',
+            endpoint=f'/api/auth/tokens/{CLEAR_EXPIRES_TOKEN_ID}/',
             token='header.payload.signature',
             data={'expires_at': None},
         )
@@ -761,13 +779,13 @@ class TestUpdateApiToken:
     ):
         """Test clear_expires_at combines with other fields in a single PATCH."""
         mock_http_client.patch.return_value = {
-            'id': '550e8400-e29b-41d4-a716-446655440027',
+            'id': CLEAR_EXPIRES_WITH_FIELDS_TOKEN_ID,
             'name': 'Renamed',
             'expires_at': None,
         }
 
         await update_api_token(
-            token_id='550e8400-e29b-41d4-a716-446655440027',
+            token_id=CLEAR_EXPIRES_WITH_FIELDS_TOKEN_ID,
             workspace='testworkspace',
             region='ap1',
             name='Renamed',
@@ -777,7 +795,7 @@ class TestUpdateApiToken:
         mock_http_client.patch.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/auth/tokens/550e8400-e29b-41d4-a716-446655440027/',
+            endpoint=f'/api/auth/tokens/{CLEAR_EXPIRES_WITH_FIELDS_TOKEN_ID}/',
             token='header.payload.signature',
             data={'name': 'Renamed', 'expires_at': None},
         )
@@ -788,7 +806,7 @@ class TestUpdateApiToken:
     ):
         """Test mutual exclusion of expires_at and clear_expires_at."""
         result = await update_api_token(
-            token_id='550e8400-e29b-41d4-a716-446655440025',
+            token_id=CLEAR_AND_SET_TOKEN_ID,
             workspace='testworkspace',
             region='ap1',
             expires_at='2027-01-01T00:00:00Z',
@@ -804,12 +822,12 @@ class TestUpdateApiToken:
     ):
         """Test clear_expires_at=False (default) does not inject expires_at."""
         mock_http_client.patch.return_value = {
-            'id': '550e8400-e29b-41d4-a716-446655440026',
+            'id': CLEAR_FALSE_TOKEN_ID,
             'enabled': False,
         }
 
         await update_api_token(
-            token_id='550e8400-e29b-41d4-a716-446655440026',
+            token_id=CLEAR_FALSE_TOKEN_ID,
             workspace='testworkspace',
             region='ap1',
             enabled=False,
@@ -818,7 +836,7 @@ class TestUpdateApiToken:
         mock_http_client.patch.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/auth/tokens/550e8400-e29b-41d4-a716-446655440026/',
+            endpoint=f'/api/auth/tokens/{CLEAR_FALSE_TOKEN_ID}/',
             token='header.payload.signature',
             data={'enabled': False},
         )
@@ -829,7 +847,7 @@ class TestUpdateApiToken:
     ):
         """Test update_api_token returns error when no field is provided."""
         result = await update_api_token(
-            token_id='550e8400-e29b-41d4-a716-446655440022',
+            token_id=NO_FIELDS_TOKEN_ID,
             workspace='testworkspace',
             region='ap1',
         )
@@ -868,7 +886,7 @@ class TestUpdateApiToken:
         }
 
         result = await update_api_token(
-            token_id='550e8400-e29b-41d4-a716-446655440023',
+            token_id=HTTP_ERROR_TOKEN_ID,
             workspace='testworkspace',
             region='ap1',
             scopes=['server:read'],
@@ -888,7 +906,7 @@ class TestUpdateApiToken:
         }
 
         result = await update_api_token(
-            token_id='550e8400-e29b-41d4-a716-446655440099',
+            token_id=UNKNOWN_TOKEN_ID,
             workspace='testworkspace',
             region='ap1',
             enabled=False,
@@ -988,7 +1006,7 @@ class TestApiTokenMutationAuthGuard:
         result = await update_api_token(
             workspace='testworkspace',
             region='ap1',
-            token_id='550e8400-e29b-41d4-a716-446655440000',
+            token_id=NON_JWT_TOKEN_ID,
             name='Renamed',
         )
 
@@ -1005,7 +1023,7 @@ class TestApiTokenMutationAuthGuard:
         result = await duplicate_api_token(
             workspace='testworkspace',
             region='ap1',
-            token_id='550e8400-e29b-41d4-a716-446655440000',
+            token_id=NON_JWT_TOKEN_ID,
         )
 
         assert result['status'] == 'error'
@@ -1021,7 +1039,7 @@ class TestApiTokenMutationAuthGuard:
         result = await delete_api_token(
             workspace='testworkspace',
             region='ap1',
-            token_id='550e8400-e29b-41d4-a716-446655440000',
+            token_id=NON_JWT_TOKEN_ID,
         )
 
         assert result['status'] == 'error'
@@ -1054,22 +1072,22 @@ class TestRotateApiToken:
     async def test_rotate_api_token_success(self, mock_http_client, mock_token_manager):
         """Rotation posts to the rotate action on the same token id."""
         mock_http_client.post.return_value = {
-            'id': '550e8400-e29b-41d4-a716-446655440003',
+            'id': ROTATE_TOKEN_ID,
             'key': 'new-secret',
         }
 
         result = await rotate_api_token(
-            token_id='550e8400-e29b-41d4-a716-446655440003',
+            token_id=ROTATE_TOKEN_ID,
             workspace='testworkspace',
             region='ap1',
         )
 
         assert result['status'] == 'success'
-        assert result['token_id'] == '550e8400-e29b-41d4-a716-446655440003'
+        assert result['token_id'] == ROTATE_TOKEN_ID
         mock_http_client.post.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/auth/tokens/550e8400-e29b-41d4-a716-446655440003/rotate/',
+            endpoint=f'/api/auth/tokens/{ROTATE_TOKEN_ID}/rotate/',
             token='header.payload.signature',
         )
 
