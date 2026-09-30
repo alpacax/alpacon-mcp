@@ -22,6 +22,9 @@ _APPROVAL_TOOLS = sys.modules[list_sudo_policies.__module__]
 
 mock_http_client = http_client_fixture('tools.approval_tools')
 
+USER_ID = '550e8400-e29b-41d4-a716-446655440001'
+SERVER_ID = '550e8400-e29b-41d4-a716-446655440002'
+
 
 class TestListApprovalRequests:
     """Test approval requests listing."""
@@ -226,8 +229,8 @@ class TestSudoPolicies:
         result = await list_sudo_policies(
             workspace='testworkspace',
             region='ap1',
-            user='550e8400-e29b-41d4-a716-446655440001',
-            server_id='550e8400-e29b-41d4-a716-446655440002',
+            user=USER_ID,
+            server_id=SERVER_ID,
         )
 
         assert result['status'] == 'success'
@@ -237,8 +240,8 @@ class TestSudoPolicies:
             endpoint='/api/sudo/policies/',
             token='test-token',
             params={
-                'user': '550e8400-e29b-41d4-a716-446655440001',
-                'server': '550e8400-e29b-41d4-a716-446655440002',
+                'user': USER_ID,
+                'server': SERVER_ID,
             },
         )
 
@@ -269,7 +272,7 @@ class TestRequestSudoPolicy:
 
         result = await request_sudo_policy(
             workspace='testworkspace',
-            servers=['550e8400-e29b-41d4-a716-446655440002'],
+            servers=[SERVER_ID],
             commands=['/usr/bin/systemctl restart nginx'],
             reason='Deploy window for the nginx config rollout',
             region='ap1',
@@ -286,7 +289,7 @@ class TestRequestSudoPolicy:
             endpoint='/api/sudo/policy-requests/',
             token='test-token',
             data={
-                'servers': ['550e8400-e29b-41d4-a716-446655440002'],
+                'servers': [SERVER_ID],
                 'commands': ['/usr/bin/systemctl restart nginx'],
                 'reason': 'Deploy window for the nginx config rollout',
             },
@@ -301,10 +304,10 @@ class TestRequestSudoPolicy:
 
         await request_sudo_policy(
             workspace='testworkspace',
-            servers=['550e8400-e29b-41d4-a716-446655440002'],
+            servers=[SERVER_ID],
             commands=['/usr/bin/systemctl restart nginx'],
             reason='Deploy window for the nginx config rollout',
-            users=['550e8400-e29b-41d4-a716-446655440001'],
+            users=[USER_ID],
             valid_from='2026-08-26T09:00:00Z',
             valid_until='2026-08-26T18:00:00Z',
             region='ap1',
@@ -316,10 +319,10 @@ class TestRequestSudoPolicy:
             endpoint='/api/sudo/policy-requests/',
             token='test-token',
             data={
-                'servers': ['550e8400-e29b-41d4-a716-446655440002'],
+                'servers': [SERVER_ID],
                 'commands': ['/usr/bin/systemctl restart nginx'],
                 'reason': 'Deploy window for the nginx config rollout',
-                'users': ['550e8400-e29b-41d4-a716-446655440001'],
+                'users': [USER_ID],
                 'valid_from': '2026-08-26T09:00:00Z',
                 'valid_until': '2026-08-26T18:00:00Z',
             },
@@ -334,7 +337,7 @@ class TestRequestSudoPolicy:
 
         result = await request_sudo_policy(
             workspace='testworkspace',
-            servers=['550e8400-e29b-41d4-a716-446655440002'],
+            servers=[SERVER_ID],
             commands=['/usr/bin/systemctl restart nginx'],
             reason='Deploy window for the nginx config rollout',
             region='ap1',

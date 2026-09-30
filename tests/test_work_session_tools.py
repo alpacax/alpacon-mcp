@@ -19,6 +19,10 @@ from tools.work_session_tools import (
 
 mock_http_client = http_client_fixture('tools.work_session_tools')
 
+SERVER_ID = '550e8400-e29b-41d4-a716-446655440001'
+SESSION_ID = '550e8400-e29b-41d4-a716-446655440020'
+UNKNOWN_SESSION_ID = '550e8400-e29b-41d4-a716-446655440099'
+
 
 class TestWorkSessionCreate:
     @pytest.mark.asyncio
@@ -28,7 +32,7 @@ class TestWorkSessionCreate:
         # so the success path is exercised; the pending path is covered by
         # test_create_pending_surfaces_approval_signal.
         mock_http_client.post.return_value = {
-            'id': '550e8400-e29b-41d4-a716-446655440020',
+            'id': SESSION_ID,
             'status': 'active',
             'auth_method': 'mcp_oauth',
         }
@@ -36,14 +40,14 @@ class TestWorkSessionCreate:
         result = await work_session_create(
             workspace='testworkspace',
             scopes=['command'],
-            servers=['550e8400-e29b-41d4-a716-446655440001'],
+            servers=[SERVER_ID],
             expires_at='2026-05-19T13:00:00+00:00',
             description='Fix nginx config',
             region='ap1',
         )
 
         assert result['status'] == 'success'
-        assert result['data']['id'] == '550e8400-e29b-41d4-a716-446655440020'
+        assert result['data']['id'] == SESSION_ID
         mock_http_client.post.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
@@ -52,7 +56,7 @@ class TestWorkSessionCreate:
             data={
                 'requester_type': 'agent',
                 'scopes': ['command'],
-                'servers': ['550e8400-e29b-41d4-a716-446655440001'],
+                'servers': [SERVER_ID],
                 'expires_at': '2026-05-19T13:00:00+00:00',
                 'description': 'Fix nginx config',
             },
@@ -73,7 +77,7 @@ class TestWorkSessionCreate:
         result = await work_session_create(
             workspace='testworkspace',
             scopes=['command'],
-            servers=['550e8400-e29b-41d4-a716-446655440001'],
+            servers=[SERVER_ID],
             expires_at='2026-05-19T13:00:00+00:00',
             description='Fix nginx config',
             region='ap1',
@@ -100,7 +104,7 @@ class TestWorkSessionCreate:
         result = await work_session_create(
             workspace='testworkspace',
             scopes=['command'],
-            servers=['550e8400-e29b-41d4-a716-446655440001'],
+            servers=[SERVER_ID],
             expires_at='2026-05-19T13:00:00+00:00',
             description='Fix nginx config',
             region='ap1',
@@ -127,7 +131,7 @@ class TestWorkSessionCreate:
         result = await work_session_create(
             workspace='testworkspace',
             scopes=['command'],
-            servers=['550e8400-e29b-41d4-a716-446655440001'],
+            servers=[SERVER_ID],
             expires_at='2026-05-19T13:00:00+00:00',
             description='Fix nginx config',
             region='ap1',
@@ -146,7 +150,7 @@ class TestWorkSessionCreate:
         await work_session_create(
             workspace='testworkspace',
             scopes=['command', 'webftp'],
-            servers=['550e8400-e29b-41d4-a716-446655440001'],
+            servers=[SERVER_ID],
             expires_at='2026-05-19T13:00:00+00:00',
             title='Deploy session',
             description='Deploying config files',
@@ -161,7 +165,7 @@ class TestWorkSessionCreate:
             data={
                 'requester_type': 'agent',
                 'scopes': ['command', 'webftp'],
-                'servers': ['550e8400-e29b-41d4-a716-446655440001'],
+                'servers': [SERVER_ID],
                 'expires_at': '2026-05-19T13:00:00+00:00',
                 'description': 'Deploying config files',
                 'title': 'Deploy session',
@@ -176,7 +180,7 @@ class TestWorkSessionCreate:
         await work_session_create(
             workspace='testworkspace',
             scopes=['command'],
-            servers=['550e8400-e29b-41d4-a716-446655440001'],
+            servers=[SERVER_ID],
             expires_at='2026-05-19T13:00:00+00:00',
             description='Routine maintenance',
             region='ap1',
@@ -190,7 +194,7 @@ class TestWorkSessionCreate:
             data={
                 'requester_type': 'agent',
                 'scopes': ['command'],
-                'servers': ['550e8400-e29b-41d4-a716-446655440001'],
+                'servers': [SERVER_ID],
                 'expires_at': '2026-05-19T13:00:00+00:00',
                 'description': 'Routine maintenance',
             },
@@ -202,12 +206,12 @@ class TestWorkSessionClose:
     async def test_close_success(self, mock_http_client, mock_token_manager):
 
         mock_http_client.post.return_value = {
-            'id': '550e8400-e29b-41d4-a716-446655440020',
+            'id': SESSION_ID,
             'status': 'completed',
         }
 
         result = await work_session_close(
-            session_id='550e8400-e29b-41d4-a716-446655440020',
+            session_id=SESSION_ID,
             workspace='testworkspace',
             region='ap1',
         )
@@ -216,7 +220,7 @@ class TestWorkSessionClose:
         mock_http_client.post.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/work-sessions/sessions/550e8400-e29b-41d4-a716-446655440020/complete/',
+            endpoint=f'/api/work-sessions/sessions/{SESSION_ID}/complete/',
             token='test-token',
             data={},
         )
@@ -227,23 +231,23 @@ class TestWorkSessionGet:
     async def test_get_success(self, mock_http_client, mock_token_manager):
 
         mock_http_client.get.return_value = {
-            'id': '550e8400-e29b-41d4-a716-446655440020',
+            'id': SESSION_ID,
             'status': 'active',
             'requester_type': 'agent',
         }
 
         result = await work_session_get(
-            session_id='550e8400-e29b-41d4-a716-446655440020',
+            session_id=SESSION_ID,
             workspace='testworkspace',
             region='ap1',
         )
 
         assert result['status'] == 'success'
-        assert result['data']['id'] == '550e8400-e29b-41d4-a716-446655440020'
+        assert result['data']['id'] == SESSION_ID
         mock_http_client.get.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/work-sessions/sessions/550e8400-e29b-41d4-a716-446655440020/',
+            endpoint=f'/api/work-sessions/sessions/{SESSION_ID}/',
             token='test-token',
         )
 
@@ -257,7 +261,7 @@ class TestWorkSessionGet:
         }
 
         result = await work_session_get(
-            session_id='550e8400-e29b-41d4-a716-446655440099',
+            session_id=UNKNOWN_SESSION_ID,
             workspace='testworkspace',
             region='ap1',
         )
@@ -349,19 +353,19 @@ class TestWorkSessionUpdate:
 
         # Applied immediately: no modification request was queued.
         mock_http_client.patch.return_value = {
-            'id': '550e8400-e29b-41d4-a716-446655440020',
+            'id': SESSION_ID,
             'status': 'pending',
             'description': 'Updated intent',
             'pending_modification_request': None,
         }
 
         result = await work_session_update(
-            session_id='550e8400-e29b-41d4-a716-446655440020',
+            session_id=SESSION_ID,
             workspace='testworkspace',
             title='New title',
             description='Updated intent',
             scopes=['command', 'webftp'],
-            servers=['550e8400-e29b-41d4-a716-446655440001'],
+            servers=[SERVER_ID],
             expires_at='2026-06-06T13:00:00+00:00',
             region='ap1',
         )
@@ -370,13 +374,13 @@ class TestWorkSessionUpdate:
         mock_http_client.patch.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/work-sessions/sessions/550e8400-e29b-41d4-a716-446655440020/',
+            endpoint=f'/api/work-sessions/sessions/{SESSION_ID}/',
             token='test-token',
             data={
                 'title': 'New title',
                 'description': 'Updated intent',
                 'scopes': ['command', 'webftp'],
-                'servers': ['550e8400-e29b-41d4-a716-446655440001'],
+                'servers': [SERVER_ID],
                 'expires_at': '2026-06-06T13:00:00+00:00',
             },
         )
@@ -386,12 +390,10 @@ class TestWorkSessionUpdate:
         self, mock_http_client, mock_token_manager
     ):
 
-        mock_http_client.patch.return_value = {
-            'id': '550e8400-e29b-41d4-a716-446655440020'
-        }
+        mock_http_client.patch.return_value = {'id': SESSION_ID}
 
         await work_session_update(
-            session_id='550e8400-e29b-41d4-a716-446655440020',
+            session_id=SESSION_ID,
             workspace='testworkspace',
             description='Only description changed',
             region='ap1',
@@ -400,7 +402,7 @@ class TestWorkSessionUpdate:
         mock_http_client.patch.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/work-sessions/sessions/550e8400-e29b-41d4-a716-446655440020/',
+            endpoint=f'/api/work-sessions/sessions/{SESSION_ID}/',
             token='test-token',
             data={'description': 'Only description changed'},
         )
@@ -411,7 +413,7 @@ class TestWorkSessionUpdate:
     ):
 
         result = await work_session_update(
-            session_id='550e8400-e29b-41d4-a716-446655440020',
+            session_id=SESSION_ID,
             workspace='testworkspace',
             region='ap1',
         )
@@ -427,12 +429,12 @@ class TestWorkSessionUpdate:
         """An explicit empty string is sent so the server clears the title."""
 
         mock_http_client.patch.return_value = {
-            'id': '550e8400-e29b-41d4-a716-446655440020',
+            'id': SESSION_ID,
             'pending_modification_request': None,
         }
 
         await work_session_update(
-            session_id='550e8400-e29b-41d4-a716-446655440020',
+            session_id=SESSION_ID,
             workspace='testworkspace',
             title='',
             region='ap1',
@@ -441,7 +443,7 @@ class TestWorkSessionUpdate:
         mock_http_client.patch.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/work-sessions/sessions/550e8400-e29b-41d4-a716-446655440020/',
+            endpoint=f'/api/work-sessions/sessions/{SESSION_ID}/',
             token='test-token',
             data={'title': ''},
         )
@@ -458,7 +460,7 @@ class TestWorkSessionUpdate:
         """
 
         mock_http_client.patch.return_value = {
-            'id': '550e8400-e29b-41d4-a716-446655440020',
+            'id': SESSION_ID,
             'status': 'active',
             'scopes': ['command'],
             'pending_modification_request': {
@@ -469,7 +471,7 @@ class TestWorkSessionUpdate:
         }
 
         result = await work_session_update(
-            session_id='550e8400-e29b-41d4-a716-446655440020',
+            session_id=SESSION_ID,
             workspace='testworkspace',
             scopes=['command', 'sudo'],
             region='ap1',
@@ -479,7 +481,7 @@ class TestWorkSessionUpdate:
         assert result['category'] == 'WORK_SESSION_MOD_PENDING'
         assert result['requires_human_approval'] is True
         assert result['approvable_by_agent'] is False
-        assert result['session_id'] == '550e8400-e29b-41d4-a716-446655440020'
+        assert result['session_id'] == SESSION_ID
         assert result['data']['pending_modification_request']['id'] == 'mod-req-uuid-1'
 
     @pytest.mark.asyncio
@@ -494,7 +496,7 @@ class TestWorkSessionUpdate:
         }
 
         result = await work_session_update(
-            session_id='550e8400-e29b-41d4-a716-446655440020',
+            session_id=SESSION_ID,
             workspace='testworkspace',
             description='Too late',
             region='ap1',
@@ -510,14 +512,14 @@ class TestWorkSessionExtend:
 
         # Applied immediately: no extension request was queued.
         mock_http_client.post.return_value = {
-            'id': '550e8400-e29b-41d4-a716-446655440020',
+            'id': SESSION_ID,
             'status': 'active',
             'expires_at': '2026-06-06T18:00:00+00:00',
             'pending_extension_request': None,
         }
 
         result = await work_session_extend(
-            session_id='550e8400-e29b-41d4-a716-446655440020',
+            session_id=SESSION_ID,
             workspace='testworkspace',
             expires_at='2026-06-06T18:00:00+00:00',
             reason='Customer escalation, still triaging',
@@ -528,7 +530,7 @@ class TestWorkSessionExtend:
         mock_http_client.post.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/work-sessions/sessions/550e8400-e29b-41d4-a716-446655440020/extend/',
+            endpoint=f'/api/work-sessions/sessions/{SESSION_ID}/extend/',
             token='test-token',
             data={
                 'expires_at': '2026-06-06T18:00:00+00:00',
@@ -543,7 +545,7 @@ class TestWorkSessionExtend:
         """reason is a required parameter; omitting it never reaches the server."""
         with pytest.raises(TypeError):
             await work_session_extend(
-                session_id='550e8400-e29b-41d4-a716-446655440020',
+                session_id=SESSION_ID,
                 workspace='testworkspace',
                 expires_at='2026-06-06T18:00:00+00:00',
             )
@@ -560,7 +562,7 @@ class TestWorkSessionExtend:
         """
 
         mock_http_client.post.return_value = {
-            'id': '550e8400-e29b-41d4-a716-446655440020',
+            'id': SESSION_ID,
             'status': 'active',
             'expires_at': '2026-06-05T00:00:00+00:00',
             'pending_extension_request': {
@@ -573,7 +575,7 @@ class TestWorkSessionExtend:
         }
 
         result = await work_session_extend(
-            session_id='550e8400-e29b-41d4-a716-446655440020',
+            session_id=SESSION_ID,
             workspace='testworkspace',
             expires_at='2026-06-06T18:00:00+00:00',
             reason='Customer escalation, still triaging',
@@ -584,7 +586,7 @@ class TestWorkSessionExtend:
         assert result['category'] == 'WORK_SESSION_EXTENSION_PENDING'
         assert result['requires_human_approval'] is True
         assert result['approvable_by_agent'] is False
-        assert result['session_id'] == '550e8400-e29b-41d4-a716-446655440020'
+        assert result['session_id'] == SESSION_ID
         assert result['data']['pending_extension_request']['id'] == 'ext-req-uuid-1'
         assert 'work_session_get' in result['next_action']
         assert 'expires_at' in result['next_action']
@@ -601,7 +603,7 @@ class TestWorkSessionExtend:
         }
 
         result = await work_session_extend(
-            session_id='550e8400-e29b-41d4-a716-446655440020',
+            session_id=SESSION_ID,
             workspace='testworkspace',
             expires_at='2026-06-05T00:00:00+00:00',
             reason='Customer escalation, still triaging',
@@ -628,7 +630,7 @@ class TestWorkSessionExtend:
         }
 
         result = await work_session_extend(
-            session_id='550e8400-e29b-41d4-a716-446655440020',
+            session_id=SESSION_ID,
             workspace='testworkspace',
             expires_at='2026-06-06T18:00:00+00:00',
             reason='   ',
@@ -653,7 +655,7 @@ class TestWorkSessionTimeline:
         }
 
         result = await work_session_timeline(
-            session_id='550e8400-e29b-41d4-a716-446655440020',
+            session_id=SESSION_ID,
             workspace='testworkspace',
             region='ap1',
         )
@@ -662,7 +664,7 @@ class TestWorkSessionTimeline:
         mock_http_client.get.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/work-sessions/sessions/550e8400-e29b-41d4-a716-446655440020/timeline/',
+            endpoint=f'/api/work-sessions/sessions/{SESSION_ID}/timeline/',
             token='test-token',
             params={'include_records': 'false'},
         )
@@ -675,7 +677,7 @@ class TestWorkSessionTimeline:
         mock_http_client.get.return_value = {'results': []}
 
         await work_session_timeline(
-            session_id='550e8400-e29b-41d4-a716-446655440020',
+            session_id=SESSION_ID,
             workspace='testworkspace',
             include_records=True,
             region='ap1',
@@ -684,7 +686,7 @@ class TestWorkSessionTimeline:
         mock_http_client.get.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/work-sessions/sessions/550e8400-e29b-41d4-a716-446655440020/timeline/',
+            endpoint=f'/api/work-sessions/sessions/{SESSION_ID}/timeline/',
             token='test-token',
             params={'include_records': 'true'},
         )
@@ -701,7 +703,7 @@ class TestWorkSessionTimeline:
         }
 
         result = await work_session_timeline(
-            session_id='550e8400-e29b-41d4-a716-446655440099',
+            session_id=UNKNOWN_SESSION_ID,
             workspace='testworkspace',
             region='ap1',
         )
@@ -716,11 +718,11 @@ class TestWorkSessionAnalyze:
 
         mock_http_client.post.return_value = {
             'status': 'accepted',
-            'work_session': '550e8400-e29b-41d4-a716-446655440020',
+            'work_session': SESSION_ID,
         }
 
         result = await work_session_analyze(
-            session_id='550e8400-e29b-41d4-a716-446655440020',
+            session_id=SESSION_ID,
             workspace='testworkspace',
             region='ap1',
         )
@@ -729,7 +731,7 @@ class TestWorkSessionAnalyze:
         mock_http_client.post.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/work-sessions/sessions/550e8400-e29b-41d4-a716-446655440020/analyze/',
+            endpoint=f'/api/work-sessions/sessions/{SESSION_ID}/analyze/',
             token='test-token',
             data={},
         )
@@ -739,11 +741,11 @@ class TestWorkSessionAnalyze:
 
         mock_http_client.post.return_value = {
             'status': 'accepted',
-            'work_session': '550e8400-e29b-41d4-a716-446655440020',
+            'work_session': SESSION_ID,
         }
 
         await work_session_analyze(
-            session_id='550e8400-e29b-41d4-a716-446655440020',
+            session_id=SESSION_ID,
             workspace='testworkspace',
             force=True,
             region='ap1',
@@ -752,7 +754,7 @@ class TestWorkSessionAnalyze:
         mock_http_client.post.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/work-sessions/sessions/550e8400-e29b-41d4-a716-446655440020/analyze/',
+            endpoint=f'/api/work-sessions/sessions/{SESSION_ID}/analyze/',
             token='test-token',
             data={},
             params={'force': 'true'},
@@ -770,7 +772,7 @@ class TestWorkSessionAnalyze:
         }
 
         result = await work_session_analyze(
-            session_id='550e8400-e29b-41d4-a716-446655440020',
+            session_id=SESSION_ID,
             workspace='testworkspace',
             region='ap1',
         )

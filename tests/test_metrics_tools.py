@@ -33,9 +33,14 @@ from tools.metrics_tools import (
 
 mock_http_client = http_client_fixture('tools.metrics_tools')
 
-METRICS_SERVER_ID = '550e8400-e29b-41d4-a716-446655440001'
+SERVER_ID = '550e8400-e29b-41d4-a716-446655440001'
 INTERFACE_ID = '7c9e6679-7425-40de-944b-e07fc1f90ae7'
 ROOT_PARTITION_ID = '16fd2706-8baf-433b-82eb-8c7fada847da'
+BOOT_PARTITION_ID = '0b8a1f4e-1111-4c1e-9d7a-000000000001'
+LOOPBACK_INTERFACE_ID = 'a1b2c3d4-0000-4000-8000-000000000001'
+ETHERNET_INTERFACE_ID = 'a1b2c3d4-0000-4000-8000-000000000002'
+SECOND_SERVER_ID = '550e8400-e29b-41d4-a716-446655440002'
+GROUP_ID = '550e8400-e29b-41d4-a716-446655440099'
 START = '2024-01-01T00:00:00Z'
 END = '2024-01-01T01:00:00Z'
 
@@ -52,7 +57,7 @@ class TestGetCpuUsage:
         }
 
         result = await get_cpu_usage(
-            server_id='550e8400-e29b-41d4-a716-446655440001',
+            server_id=SERVER_ID,
             workspace='testworkspace',
             start_date='2024-01-01T00:00:00Z',
             end_date='2024-01-01T01:00:00Z',
@@ -67,7 +72,7 @@ class TestGetCpuUsage:
 
         # Verify parsed data structure
         data = result['data']
-        assert data['server_id'] == '550e8400-e29b-41d4-a716-446655440001'
+        assert data['server_id'] == SERVER_ID
         assert data['metric_type'] == 'cpu_usage'
         assert 'statistics' in data
         assert data['raw_data_available'] is True
@@ -79,7 +84,7 @@ class TestGetCpuUsage:
             endpoint='/api/metrics/realtime/cpu/',
             token='test-token',
             params={
-                'server': '550e8400-e29b-41d4-a716-446655440001',
+                'server': SERVER_ID,
                 'start': '2024-01-01T00:00:00Z',
                 'end': '2024-01-01T01:00:00Z',
             },
@@ -94,7 +99,7 @@ class TestGetCpuUsage:
         with patch('utils.common.datetime') as mock_datetime:
             mock_datetime.now.return_value = frozen
             result = await get_cpu_usage(
-                server_id='550e8400-e29b-41d4-a716-446655440001',
+                server_id=SERVER_ID,
                 workspace='testworkspace',
             )
 
@@ -108,7 +113,7 @@ class TestGetCpuUsage:
             endpoint='/api/metrics/realtime/cpu/',
             token='test-token',
             params={
-                'server': '550e8400-e29b-41d4-a716-446655440001',
+                'server': SERVER_ID,
                 'start': expected_start,
             },
         )
@@ -120,9 +125,7 @@ class TestGetCpuUsage:
         """Test CPU usage returns error when http_client returns an error envelope."""
         mock_http_client.get.return_value = HTTP_ERROR_ENVELOPE
 
-        result = await get_cpu_usage(
-            server_id='550e8400-e29b-41d4-a716-446655440001', workspace='testworkspace'
-        )
+        result = await get_cpu_usage(server_id=SERVER_ID, workspace='testworkspace')
 
         assert result['status'] == 'error'
         assert result['status_code'] == HTTPStatus.NOT_FOUND
@@ -133,9 +136,7 @@ class TestGetCpuUsage:
         """Test CPU usage when no token is available."""
         mock_token_manager.get_token.return_value = None
 
-        result = await get_cpu_usage(
-            server_id='550e8400-e29b-41d4-a716-446655440001', workspace='testworkspace'
-        )
+        result = await get_cpu_usage(server_id=SERVER_ID, workspace='testworkspace')
 
         assert result['status'] == 'error'
         assert 'No token found' in result['message']
@@ -152,7 +153,7 @@ class TestGetMemoryUsage:
         }
 
         result = await get_memory_usage(
-            server_id='550e8400-e29b-41d4-a716-446655440001',
+            server_id=SERVER_ID,
             workspace='testworkspace',
             start_date='2024-01-01T00:00:00Z',
             end_date='2024-01-01T01:00:00Z',
@@ -165,7 +166,7 @@ class TestGetMemoryUsage:
 
         # Verify parsed data
         data = result['data']
-        assert data['server_id'] == '550e8400-e29b-41d4-a716-446655440001'
+        assert data['server_id'] == SERVER_ID
         assert data['metric_type'] == 'memory_usage'
         assert 'statistics' in data
 
@@ -176,7 +177,7 @@ class TestGetMemoryUsage:
             endpoint='/api/metrics/realtime/memory/',
             token='test-token',
             params={
-                'server': '550e8400-e29b-41d4-a716-446655440001',
+                'server': SERVER_ID,
                 'start': '2024-01-01T00:00:00Z',
                 'end': '2024-01-01T01:00:00Z',
             },
@@ -187,9 +188,7 @@ class TestGetMemoryUsage:
         """Test memory usage when no token is available."""
         mock_token_manager.get_token.return_value = None
 
-        result = await get_memory_usage(
-            server_id='550e8400-e29b-41d4-a716-446655440001', workspace='testworkspace'
-        )
+        result = await get_memory_usage(server_id=SERVER_ID, workspace='testworkspace')
 
         assert result['status'] == 'error'
         assert 'No token found' in result['message']
@@ -214,7 +213,7 @@ class TestGetDiskUsage:
         }
 
         result = await get_disk_usage(
-            server_id='550e8400-e29b-41d4-a716-446655440001',
+            server_id=SERVER_ID,
             workspace='testworkspace',
             device='/dev/sda1',
             partition='/',
@@ -229,7 +228,7 @@ class TestGetDiskUsage:
 
         # Verify parsed data
         data = result['data']
-        assert data['server_id'] == '550e8400-e29b-41d4-a716-446655440001'
+        assert data['server_id'] == SERVER_ID
         assert data['metric_type'] == 'disk_usage'
         assert data['device'] == '/dev/sda1'
         assert data['partition'] == '/'
@@ -242,7 +241,7 @@ class TestGetDiskUsage:
             endpoint='/api/metrics/realtime/disk-usage/',
             token='test-token',
             params={
-                'server': '550e8400-e29b-41d4-a716-446655440001',
+                'server': SERVER_ID,
                 'device': '/dev/sda1',
                 'partition': '/',
                 'start': '2024-01-01T00:00:00Z',
@@ -263,9 +262,7 @@ class TestGetDiskUsage:
             },  # Disk metrics
         ]
 
-        result = await get_disk_usage(
-            server_id='550e8400-e29b-41d4-a716-446655440001', workspace='testworkspace'
-        )
+        result = await get_disk_usage(server_id=SERVER_ID, workspace='testworkspace')
 
         assert result['status'] == 'success'
 
@@ -279,9 +276,7 @@ class TestGetDiskUsage:
         """Device-discovery 4xx/5xx must surface as an error, not 'no devices'."""
         mock_http_client.get.return_value = HTTP_ERROR_ENVELOPE
 
-        result = await get_disk_usage(
-            server_id='550e8400-e29b-41d4-a716-446655440001', workspace='testworkspace'
-        )
+        result = await get_disk_usage(server_id=SERVER_ID, workspace='testworkspace')
 
         assert result['status'] == 'error'
         assert result['status_code'] == HTTPStatus.NOT_FOUND
@@ -294,9 +289,7 @@ class TestGetDiskUsage:
         """Test disk usage when no token is available."""
         mock_token_manager.get_token.return_value = None
 
-        result = await get_disk_usage(
-            server_id='550e8400-e29b-41d4-a716-446655440001', workspace='testworkspace'
-        )
+        result = await get_disk_usage(server_id=SERVER_ID, workspace='testworkspace')
 
         assert result['status'] == 'error'
         assert 'No token found' in result['message']
@@ -325,7 +318,7 @@ class TestGetNetworkTraffic:
         }
 
         result = await get_network_traffic(
-            server_id='550e8400-e29b-41d4-a716-446655440001',
+            server_id=SERVER_ID,
             workspace='testworkspace',
             interface=INTERFACE_ID,
             start_date='2024-01-01T00:00:00Z',
@@ -339,7 +332,7 @@ class TestGetNetworkTraffic:
 
         # Verify parsed data
         data = result['data']
-        assert data['server_id'] == '550e8400-e29b-41d4-a716-446655440001'
+        assert data['server_id'] == SERVER_ID
         assert data['metric_type'] == 'network_traffic'
         assert data['interface'] == INTERFACE_ID
         assert 'statistics' in data
@@ -351,7 +344,7 @@ class TestGetNetworkTraffic:
             endpoint='/api/metrics/realtime/traffic/',
             token='test-token',
             params={
-                'server': '550e8400-e29b-41d4-a716-446655440001',
+                'server': SERVER_ID,
                 'interface': INTERFACE_ID,
                 'start': '2024-01-01T00:00:00Z',
                 'end': '2024-01-01T01:00:00Z',
@@ -372,7 +365,7 @@ class TestGetNetworkTraffic:
         mock_token_manager.get_token.return_value = None
 
         result = await get_network_traffic(
-            server_id='550e8400-e29b-41d4-a716-446655440001',
+            server_id=SERVER_ID,
             workspace='testworkspace',
             interface=INTERFACE_ID,
         )
@@ -391,9 +384,7 @@ class TestGetDiskIo:
         """Test disk I/O returns error when http_client returns an error envelope."""
         mock_http_client.get.return_value = HTTP_ERROR_ENVELOPE
 
-        result = await get_disk_io(
-            server_id='550e8400-e29b-41d4-a716-446655440001', workspace='testworkspace'
-        )
+        result = await get_disk_io(server_id=SERVER_ID, workspace='testworkspace')
 
         assert result['status'] == 'error'
         assert result['status_code'] == HTTPStatus.NOT_FOUND
@@ -412,13 +403,13 @@ class TestGetTopServers:
         mock_http_client.get.return_value = {
             'data': [
                 {
-                    'server_id': '550e8400-e29b-41d4-a716-446655440001',
+                    'server_id': SERVER_ID,
                     'server_name': 'web-server-1',
                     'cpu_percent': 89.5,
                     'timestamp': '2024-01-01T00:00:00Z',
                 },
                 {
-                    'server_id': '550e8400-e29b-41d4-a716-446655440002',
+                    'server_id': SECOND_SERVER_ID,
                     'server_name': 'api-server-1',
                     'cpu_percent': 72.3,
                     'timestamp': '2024-01-01T00:00:00Z',
@@ -534,7 +525,7 @@ class TestGetAlertRules:
                     'metric': 'cpu_percent',
                     'threshold': 80.0,
                     'comparison': 'gt',
-                    'server': '550e8400-e29b-41d4-a716-446655440001',
+                    'server': SERVER_ID,
                     'enabled': True,
                 },
                 {
@@ -543,7 +534,7 @@ class TestGetAlertRules:
                     'metric': 'disk_percent',
                     'threshold': 90.0,
                     'comparison': 'gt',
-                    'server': '550e8400-e29b-41d4-a716-446655440001',
+                    'server': SERVER_ID,
                     'enabled': True,
                 },
             ],
@@ -551,12 +542,12 @@ class TestGetAlertRules:
 
         result = await get_alert_rules(
             workspace='testworkspace',
-            server_id='550e8400-e29b-41d4-a716-446655440001',
+            server_id=SERVER_ID,
             region='ap1',
         )
 
         assert result['status'] == 'success'
-        assert result['server_id'] == '550e8400-e29b-41d4-a716-446655440001'
+        assert result['server_id'] == SERVER_ID
         assert result['region'] == 'ap1'
         assert result['workspace'] == 'testworkspace'
         assert result['data']['count'] == 3
@@ -567,7 +558,7 @@ class TestGetAlertRules:
             workspace='testworkspace',
             endpoint='/api/metrics/alert-rules/',
             token='test-token',
-            params={'server': '550e8400-e29b-41d4-a716-446655440001'},
+            params={'server': SERVER_ID},
         )
 
     @pytest.mark.asyncio
@@ -626,14 +617,14 @@ class TestGetServerMetricsSummary:
         }
 
         result = await get_server_metrics_summary(
-            server_id='550e8400-e29b-41d4-a716-446655440001',
+            server_id=SERVER_ID,
             workspace='testworkspace',
             hours=12,
             region='ap1',
         )
 
         assert result['status'] == 'success'
-        assert result['data']['server_id'] == '550e8400-e29b-41d4-a716-446655440001'
+        assert result['data']['server_id'] == SERVER_ID
         assert result['data']['time_range']['hours'] == 12
 
         # Verify all metric sections are present
@@ -651,7 +642,7 @@ class TestGetServerMetricsSummary:
         mock_http_client.get.return_value = {'results': [{'usage': 30.0}]}
 
         result = await get_server_metrics_summary(
-            server_id='550e8400-e29b-41d4-a716-446655440001',
+            server_id=SERVER_ID,
             workspace='testworkspace',
             hours=6,
             region='us1',
@@ -667,7 +658,7 @@ class TestGetServerMetricsSummary:
         mock_http_client.get.return_value = {'results': []}
 
         result = await get_server_metrics_summary(
-            server_id=METRICS_SERVER_ID, workspace='testworkspace'
+            server_id=SERVER_ID, workspace='testworkspace'
         )
 
         assert result['data']['time_range']['hours'] == 12
@@ -679,7 +670,7 @@ class TestGetServerMetricsSummary:
         mock_http_client.get.return_value = {'results': []}
 
         result = await get_server_metrics_summary(
-            server_id=METRICS_SERVER_ID, workspace='testworkspace', hours=500
+            server_id=SERVER_ID, workspace='testworkspace', hours=500
         )
 
         time_range = result['data']['time_range']
@@ -696,7 +687,7 @@ class TestGetServerMetricsSummary:
         mock_token_manager.get_token.return_value = None
 
         result = await get_server_metrics_summary(
-            server_id='550e8400-e29b-41d4-a716-446655440001', workspace='testworkspace'
+            server_id=SERVER_ID, workspace='testworkspace'
         )
 
         assert result['status'] == 'error'
@@ -709,7 +700,7 @@ class TestGetServerMetricsSummary:
         mock_http_client.get.return_value = HTTP_ERROR_ENVELOPE
 
         result = await get_server_metrics_summary(
-            server_id=METRICS_SERVER_ID, workspace='testworkspace'
+            server_id=SERVER_ID, workspace='testworkspace'
         )
 
         assert result['status'] == 'success'
@@ -725,7 +716,7 @@ class TestServerMetricsSummaryLookups:
 
     PARTITIONS = [
         {
-            'id': '0b8a1f4e-1111-4c1e-9d7a-000000000001',
+            'id': BOOT_PARTITION_ID,
             'name': '/dev/nvme0n1p1',
             'mount_points': ['/boot/efi'],
         },
@@ -738,13 +729,13 @@ class TestServerMetricsSummaryLookups:
     INTERFACES = {
         'results': [
             {
-                'id': 'a1b2c3d4-0000-4000-8000-000000000001',
+                'id': LOOPBACK_INTERFACE_ID,
                 'name': 'lo',
                 'is_loopback': True,
                 'is_up': True,
             },
             {
-                'id': 'a1b2c3d4-0000-4000-8000-000000000002',
+                'id': ETHERNET_INTERFACE_ID,
                 'name': 'enp4s0',
                 'is_loopback': False,
                 'is_up': False,
@@ -780,24 +771,24 @@ class TestServerMetricsSummaryLookups:
         sent = self.route_calls(mock_http_client)
 
         result = await get_server_metrics_summary(
-            server_id=METRICS_SERVER_ID, workspace='testworkspace'
+            server_id=SERVER_ID, workspace='testworkspace'
         )
 
         assert result['status'] == 'success'
-        assert sent['/api/proc/partitions/'] == {'server': METRICS_SERVER_ID}
+        assert sent['/api/proc/partitions/'] == {'server': SERVER_ID}
         assert sent['/api/proc/interfaces/'] == {
-            'server': METRICS_SERVER_ID,
+            'server': SERVER_ID,
             'page_size': 100,
         }
         disk_params = sent['/api/metrics/realtime/disk-usage/']
         assert set(disk_params) == {'server', 'start', 'end', 'partition'}
-        assert disk_params['server'] == METRICS_SERVER_ID
+        assert disk_params['server'] == SERVER_ID
         assert disk_params['partition'] == ROOT_PARTITION_ID
         assert isinstance(disk_params['start'], str)
         assert isinstance(disk_params['end'], str)
         traffic_params = sent['/api/metrics/realtime/traffic/']
         assert set(traffic_params) == {'server', 'start', 'end', 'interface'}
-        assert traffic_params['server'] == METRICS_SERVER_ID
+        assert traffic_params['server'] == SERVER_ID
         assert traffic_params['interface'] == INTERFACE_ID
         assert isinstance(traffic_params['start'], str)
         assert isinstance(traffic_params['end'], str)
@@ -818,9 +809,7 @@ class TestServerMetricsSummaryLookups:
             mock_http_client, **{'/api/proc/interfaces/': interfaces}
         )
 
-        await get_server_metrics_summary(
-            server_id=METRICS_SERVER_ID, workspace='testworkspace'
-        )
+        await get_server_metrics_summary(server_id=SERVER_ID, workspace='testworkspace')
 
         assert sent['/api/metrics/realtime/traffic/']['interface'] == INTERFACE_ID
 
@@ -837,9 +826,7 @@ class TestServerMetricsSummaryLookups:
             mock_http_client, **{'/api/proc/interfaces/': interfaces}
         )
 
-        await get_server_metrics_summary(
-            server_id=METRICS_SERVER_ID, workspace='testworkspace'
-        )
+        await get_server_metrics_summary(server_id=SERVER_ID, workspace='testworkspace')
 
         assert sent['/api/metrics/realtime/traffic/']['interface'] == 'v1'
 
@@ -855,9 +842,7 @@ class TestServerMetricsSummaryLookups:
             mock_http_client, **{'/api/proc/interfaces/': interfaces}
         )
 
-        await get_server_metrics_summary(
-            server_id=METRICS_SERVER_ID, workspace='testworkspace'
-        )
+        await get_server_metrics_summary(server_id=SERVER_ID, workspace='testworkspace')
 
         assert sent['/api/metrics/realtime/traffic/']['interface'] == 'v1'
 
@@ -878,9 +863,7 @@ class TestServerMetricsSummaryLookups:
             mock_http_client, **{'/api/proc/partitions/': partitions}
         )
 
-        await get_server_metrics_summary(
-            server_id=METRICS_SERVER_ID, workspace='testworkspace'
-        )
+        await get_server_metrics_summary(server_id=SERVER_ID, workspace='testworkspace')
 
         disk_params = sent['/api/metrics/realtime/disk-usage/']
         assert disk_params['partition'] == ROOT_PARTITION_ID
@@ -896,9 +879,7 @@ class TestServerMetricsSummaryLookups:
             mock_http_client, **{'/api/proc/partitions/': partitions}
         )
 
-        await get_server_metrics_summary(
-            server_id=METRICS_SERVER_ID, workspace='testworkspace'
-        )
+        await get_server_metrics_summary(server_id=SERVER_ID, workspace='testworkspace')
 
         assert sent['/api/metrics/realtime/disk-usage/']['partition'] == 'tmp'
 
@@ -911,7 +892,7 @@ class TestServerMetricsSummaryLookups:
         )
 
         result = await get_server_metrics_summary(
-            server_id=METRICS_SERVER_ID, workspace='testworkspace'
+            server_id=SERVER_ID, workspace='testworkspace'
         )
 
         assert result['status'] == 'success'
@@ -932,7 +913,7 @@ class TestServerMetricsSummaryLookups:
         )
 
         result = await get_server_metrics_summary(
-            server_id=METRICS_SERVER_ID, workspace='testworkspace'
+            server_id=SERVER_ID, workspace='testworkspace'
         )
 
         assert result['status'] == 'success'
@@ -963,7 +944,7 @@ class TestServerMetricsSummaryLookups:
         )
 
         result = await get_server_metrics_summary(
-            server_id=METRICS_SERVER_ID, workspace='testworkspace'
+            server_id=SERVER_ID, workspace='testworkspace'
         )
 
         assert result['status'] == 'success'
@@ -982,7 +963,7 @@ class TestServerMetricsSummaryLookups:
         )
 
         result = await get_server_metrics_summary(
-            server_id=METRICS_SERVER_ID, workspace='testworkspace'
+            server_id=SERVER_ID, workspace='testworkspace'
         )
 
         assert result['status'] == 'success'
@@ -1009,13 +990,13 @@ class TestServerMetricsSummaryLookups:
         )
 
         result = await get_server_metrics_summary(
-            server_id=METRICS_SERVER_ID, workspace='testworkspace'
+            server_id=SERVER_ID, workspace='testworkspace'
         )
 
         assert result['status'] == 'success'
         assert page_params == [
-            {'server': METRICS_SERVER_ID, 'page_size': 100},
-            {'server': METRICS_SERVER_ID, 'page_size': 100, 'page': 2},
+            {'server': SERVER_ID, 'page_size': 100},
+            {'server': SERVER_ID, 'page_size': 100, 'page': 2},
         ]
         assert sent['/api/metrics/realtime/traffic/']['interface'] == INTERFACE_ID
         assert result['data']['metrics']['network']['available'] is True
@@ -1036,7 +1017,7 @@ class TestServerMetricsSummaryLookups:
         )
 
         result = await get_server_metrics_summary(
-            server_id=METRICS_SERVER_ID, workspace='testworkspace'
+            server_id=SERVER_ID, workspace='testworkspace'
         )
 
         assert result['status'] == 'success'
@@ -1059,7 +1040,7 @@ class TestServerMetricsSummaryLookups:
         self.route_calls(mock_http_client, **{'/api/proc/interfaces/': interfaces})
 
         result = await get_server_metrics_summary(
-            server_id=METRICS_SERVER_ID, workspace='testworkspace'
+            server_id=SERVER_ID, workspace='testworkspace'
         )
 
         assert result['status'] == 'success'
@@ -1083,7 +1064,7 @@ class TestServerMetricsSummaryLookups:
         self.route_calls(mock_http_client, **{'/api/proc/interfaces/': interfaces})
 
         result = await get_server_metrics_summary(
-            server_id=METRICS_SERVER_ID, workspace='testworkspace'
+            server_id=SERVER_ID, workspace='testworkspace'
         )
 
         assert result['status'] == 'success'
@@ -1310,7 +1291,7 @@ class TestMetricsWindowParams:
         with patch('utils.common.datetime') as mock_datetime:
             mock_datetime.now.return_value = frozen
             result = await tool(
-                server_id=METRICS_SERVER_ID,
+                server_id=SERVER_ID,
                 workspace='testworkspace',
                 region='ap1',
                 **call_kwargs,
@@ -1325,7 +1306,7 @@ class TestMetricsWindowParams:
             endpoint=endpoint,
             token='test-token',
             params={
-                'server': METRICS_SERVER_ID,
+                'server': SERVER_ID,
                 'start': expected_start,
                 **extra_params,
             },
@@ -1347,7 +1328,7 @@ class TestMetricsWindowParams:
         mock_http_client.get.return_value = {'results': []}
 
         result = await tool(
-            server_id=METRICS_SERVER_ID,
+            server_id=SERVER_ID,
             workspace='testworkspace',
             start_date=START,
             end_date=END,
@@ -1362,7 +1343,7 @@ class TestMetricsWindowParams:
             endpoint=endpoint,
             token='test-token',
             params={
-                'server': METRICS_SERVER_ID,
+                'server': SERVER_ID,
                 'start': START,
                 'end': END,
                 **extra_params,
@@ -1388,7 +1369,7 @@ class TestMetricsWindowParams:
         with patch('utils.common.datetime') as mock_datetime:
             mock_datetime.now.return_value = frozen
             result = await tool(
-                server_id=METRICS_SERVER_ID,
+                server_id=SERVER_ID,
                 workspace='testworkspace',
                 start_date='',
                 region='ap1',
@@ -1404,7 +1385,7 @@ class TestMetricsWindowParams:
             endpoint=endpoint,
             token='test-token',
             params={
-                'server': METRICS_SERVER_ID,
+                'server': SERVER_ID,
                 'start': expected_start,
                 **extra_params,
             },
@@ -1426,7 +1407,7 @@ class TestMetricsWindowParams:
         mock_http_client.get.return_value = {'results': []}
 
         result = await tool(
-            server_id=METRICS_SERVER_ID,
+            server_id=SERVER_ID,
             workspace='testworkspace',
             start_date=START,
             end_date='',
@@ -1441,7 +1422,7 @@ class TestMetricsWindowParams:
             endpoint=endpoint,
             token='test-token',
             params={
-                'server': METRICS_SERVER_ID,
+                'server': SERVER_ID,
                 'start': START,
                 'end': '',
                 **extra_params,
@@ -1513,7 +1494,7 @@ class TestMetricsDeviceFilters:
         mock_http_client.get.return_value = {'results': []}
 
         result = await tool(
-            server_id=METRICS_SERVER_ID,
+            server_id=SERVER_ID,
             workspace='testworkspace',
             start_date=START,
             end_date=END,
@@ -1528,7 +1509,7 @@ class TestMetricsDeviceFilters:
             endpoint=endpoint,
             token='test-token',
             params={
-                'server': METRICS_SERVER_ID,
+                'server': SERVER_ID,
                 'start': START,
                 'end': END,
                 **extra_params,
@@ -1546,7 +1527,7 @@ class TestMetricsDeviceFilters:
         ]
 
         result = await get_disk_usage(
-            server_id=METRICS_SERVER_ID,
+            server_id=SERVER_ID,
             workspace='testworkspace',
             device='',
             partition='',
@@ -1563,7 +1544,7 @@ class TestMetricsDeviceFilters:
             endpoint='/api/metrics/realtime/disk-usage/',
             token='test-token',
             params={
-                'server': METRICS_SERVER_ID,
+                'server': SERVER_ID,
                 'start': START,
                 'end': END,
                 'device': '/dev/sda1',
@@ -1588,7 +1569,7 @@ class TestListLatestMetrics:
             'last': 1,
             'results': [
                 {
-                    'id': METRICS_SERVER_ID,
+                    'id': SERVER_ID,
                     'name': 'web-01',
                     'is_connected': True,
                     'cpu': {
@@ -1631,7 +1612,7 @@ class TestListLatestMetrics:
             workspace='testworkspace',
             region='ap1',
             search='web',
-            groups='550e8400-e29b-41d4-a716-446655440099',
+            groups=GROUP_ID,
             tag='env:prod',
             is_connected=True,
             state='stale',
@@ -1650,7 +1631,7 @@ class TestListLatestMetrics:
                 'page': 2,
                 'page_size': 50,
                 'search': 'web',
-                'groups': '550e8400-e29b-41d4-a716-446655440099',
+                'groups': GROUP_ID,
                 'tag': 'env:prod',
                 'is_connected': True,
                 'state': 'stale',

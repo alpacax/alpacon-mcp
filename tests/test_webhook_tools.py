@@ -16,6 +16,8 @@ from tools.webhook_tools import (
     update_webhook,
 )
 
+OWNER_ID = '550e8400-e29b-41d4-a716-446655440999'
+
 mock_http_client = http_client_fixture('tools.webhook_tools')
 
 
@@ -74,7 +76,7 @@ mock_http_client = http_client_fixture('tools.webhook_tools')
                 'workspace': 'testworkspace',
                 'name': 'alerts',
                 'url': 'https://example.com/webhook',
-                'owner': '550e8400-e29b-41d4-a716-446655440999',
+                'owner': OWNER_ID,
                 'region': 'ap1',
             },
             'post',
@@ -267,8 +269,6 @@ class TestEventSubscriptions:
 class TestWebhooks:
     """Test webhook tools."""
 
-    OWNER_ID = '550e8400-e29b-41d4-a716-446655440999'
-
     @pytest.mark.asyncio
     async def test_list_webhooks_success(self, mock_http_client, mock_token_manager):
         """Test successful webhooks list."""
@@ -298,7 +298,7 @@ class TestWebhooks:
             workspace='testworkspace',
             name='alerts to slack',
             url='https://hooks.slack.com/services/x',
-            owner=self.OWNER_ID,
+            owner=OWNER_ID,
             region='ap1',
         )
 
@@ -311,7 +311,7 @@ class TestWebhooks:
             data={
                 'name': 'alerts to slack',
                 'url': 'https://hooks.slack.com/services/x',
-                'owner': self.OWNER_ID,
+                'owner': OWNER_ID,
                 'ssl_verify': True,
                 'enabled': True,
             },
@@ -325,7 +325,7 @@ class TestWebhooks:
             workspace='testworkspace',
             name='n',
             url='https://example.test/hook',
-            owner=self.OWNER_ID,
+            owner=OWNER_ID,
             provider='mattermost',
         )
 
@@ -344,7 +344,7 @@ class TestWebhooks:
             workspace='testworkspace',
             name='n',
             url='https://example.test/hook',
-            owner=self.OWNER_ID,
+            owner=OWNER_ID,
             provider='custom',
         )
 
@@ -356,7 +356,7 @@ class TestWebhooks:
             data={
                 'name': 'n',
                 'url': 'https://example.test/hook',
-                'owner': self.OWNER_ID,
+                'owner': OWNER_ID,
                 'ssl_verify': True,
                 'enabled': True,
                 'provider': 'custom',
@@ -416,7 +416,7 @@ class TestWebhooks:
         await list_webhooks(
             workspace='testworkspace',
             region='ap1',
-            owner=self.OWNER_ID,
+            owner=OWNER_ID,
             provider='slack',
         )
 
@@ -425,7 +425,7 @@ class TestWebhooks:
             workspace='testworkspace',
             endpoint='/api/notifications/webhooks/',
             token='test-token',
-            params={'owner': self.OWNER_ID, 'provider': 'slack'},
+            params={'owner': OWNER_ID, 'provider': 'slack'},
         )
 
     @pytest.mark.asyncio

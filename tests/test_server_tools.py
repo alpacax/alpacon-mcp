@@ -10,7 +10,7 @@ from http import HTTPStatus
 import pytest
 
 from server import mcp
-from tests.conftest import HTTP_ERROR_ENVELOPE, VALID_SERVER_ID, http_client_fixture
+from tests.conftest import HTTP_ERROR_ENVELOPE, http_client_fixture
 from tools.server_tools import (
     create_registration_token,
     create_server_note,
@@ -30,6 +30,12 @@ from tools.server_tools import (
 )
 from utils.common import INLINE_CREDENTIAL_HINT
 
+SERVER_ID = '550e8400-e29b-41d4-a716-446655440123'
+SECOND_SERVER_ID = '550e8400-e29b-41d4-a716-446655440456'
+MISSING_SERVER_ID = '99999999-9999-9999-9999-999999999999'
+MENTIONED_USER_ID = '550e8400-e29b-41d4-a716-446655440999'
+REGISTRATION_TOKEN_ID = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890'
+
 mock_http_client = http_client_fixture('tools.server_tools')
 
 
@@ -37,7 +43,7 @@ mock_http_client = http_client_fixture('tools.server_tools')
 def sample_server():
     """Sample server data for testing."""
     return {
-        'id': '550e8400-e29b-41d4-a716-446655440123',
+        'id': SERVER_ID,
         'name': 'web-server-01',
         'ip': '192.168.1.10',
         'status': 'running',
@@ -59,7 +65,7 @@ def sample_servers_list():
         'previous': None,
         'results': [
             {
-                'id': '550e8400-e29b-41d4-a716-446655440123',
+                'id': SERVER_ID,
                 'name': 'web-server-01',
                 'ip': '192.168.1.10',
                 'status': 'running',
@@ -67,7 +73,7 @@ def sample_servers_list():
                 'tags': ['web', 'production'],
             },
             {
-                'id': '550e8400-e29b-41d4-a716-446655440456',
+                'id': SECOND_SERVER_ID,
                 'name': 'db-server-01',
                 'ip': '192.168.1.11',
                 'status': 'running',
@@ -290,7 +296,7 @@ class TestListServers:
         }
 
         listed = await list_servers(workspace='testworkspace')
-        fetched = await get_server(server_id=VALID_SERVER_ID, workspace='testworkspace')
+        fetched = await get_server(server_id=SERVER_ID, workspace='testworkspace')
 
         assert set(listed) == set(fetched) - {'server_id'}
 
@@ -303,20 +309,18 @@ class TestGetServer:
         """Test successful server details retrieval."""
         mock_http_client.get.return_value = sample_server
 
-        result = await get_server(
-            server_id='550e8400-e29b-41d4-a716-446655440123', workspace='testworkspace'
-        )
+        result = await get_server(server_id=SERVER_ID, workspace='testworkspace')
 
         assert result['status'] == 'success'
         assert result['data'] == sample_server
-        assert result['server_id'] == '550e8400-e29b-41d4-a716-446655440123'
+        assert result['server_id'] == SERVER_ID
 
         # Must address the server directly: the list endpoint ignores an 'id'
         # filter and would return the first server of the default ordering.
         mock_http_client.get.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/servers/servers/550e8400-e29b-41d4-a716-446655440123/',
+            endpoint=f'/api/servers/servers/{SERVER_ID}/',
             token='test-token',
         )
 
@@ -325,9 +329,7 @@ class TestGetServer:
         """Test server details with no token."""
         mock_token_manager.get_token.return_value = None
 
-        result = await get_server(
-            server_id='550e8400-e29b-41d4-a716-446655440123', workspace='testworkspace'
-        )
+        result = await get_server(server_id=SERVER_ID, workspace='testworkspace')
 
         assert result['status'] == 'error'
         assert 'No token found' in result['message']
@@ -344,12 +346,12 @@ class TestGetServer:
         }
 
         result = await get_server(
-            server_id='99999999-9999-9999-9999-999999999999', workspace='testworkspace'
+            server_id=MISSING_SERVER_ID, workspace='testworkspace'
         )
 
         assert result['status'] == 'error'
         assert result['status_code'] == HTTPStatus.NOT_FOUND
-        assert result['server_id'] == '99999999-9999-9999-9999-999999999999'
+        assert result['server_id'] == MISSING_SERVER_ID
 
     @pytest.mark.asyncio
     async def test_get_server_different_region(
@@ -359,7 +361,7 @@ class TestGetServer:
         mock_http_client.get.return_value = sample_server
 
         result = await get_server(
-            server_id='550e8400-e29b-41d4-a716-446655440123',
+            server_id=SERVER_ID,
             workspace='testworkspace',
             region='us1',
         )
@@ -368,7 +370,7 @@ class TestGetServer:
         mock_http_client.get.assert_called_once_with(
             region='us1',
             workspace='testworkspace',
-            endpoint='/api/servers/servers/550e8400-e29b-41d4-a716-446655440123/',
+            endpoint=f'/api/servers/servers/{SERVER_ID}/',
             token='test-token',
         )
 
@@ -424,18 +426,18 @@ class TestGetCollectionProfile:
         mock_http_client.get.return_value = profile
 
         result = await get_collection_profile(
-            server_id='550e8400-e29b-41d4-a716-446655440123',
+            server_id=SERVER_ID,
             workspace='testworkspace',
             region='ap1',
         )
 
         assert result['status'] == 'success'
         assert result['data'] == profile
-        assert result['server_id'] == '550e8400-e29b-41d4-a716-446655440123'
+        assert result['server_id'] == SERVER_ID
         mock_http_client.get.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/servers/servers/550e8400-e29b-41d4-a716-446655440123/collection-profile/',
+            endpoint=f'/api/servers/servers/{SERVER_ID}/collection-profile/',
             token='test-token',
         )
 
@@ -446,7 +448,7 @@ class TestGetCollectionProfile:
         mock_token_manager.get_token.return_value = None
 
         result = await get_collection_profile(
-            server_id='550e8400-e29b-41d4-a716-446655440123', workspace='testworkspace'
+            server_id=SERVER_ID, workspace='testworkspace'
         )
 
         assert result['status'] == 'error'
@@ -460,13 +462,13 @@ class TestGetCollectionProfile:
         mock_http_client.get.return_value = HTTP_ERROR_ENVELOPE
 
         result = await get_collection_profile(
-            server_id='550e8400-e29b-41d4-a716-446655440123',
+            server_id=SERVER_ID,
             workspace='testworkspace',
             region='ap1',
         )
 
         assert result['status'] == 'error'
-        assert result['server_id'] == '550e8400-e29b-41d4-a716-446655440123'
+        assert result['server_id'] == SERVER_ID
 
 
 class TestServerNotes:
@@ -477,9 +479,7 @@ class TestServerNotes:
         """Test successful server notes list retrieval."""
         mock_http_client.get.return_value = sample_server_notes
 
-        result = await list_server_notes(
-            server_id='550e8400-e29b-41d4-a716-446655440123', workspace='testworkspace'
-        )
+        result = await list_server_notes(server_id=SERVER_ID, workspace='testworkspace')
 
         assert result['status'] == 'success'
         assert result['data'] == sample_server_notes
@@ -488,7 +488,7 @@ class TestServerNotes:
         mock_http_client.get.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/servers/notes/?server=550e8400-e29b-41d4-a716-446655440123',
+            endpoint=f'/api/servers/notes/?server={SERVER_ID}',
             token='test-token',
         )
 
@@ -499,7 +499,7 @@ class TestServerNotes:
         mock_http_client.get.return_value = HTTP_ERROR_ENVELOPE
 
         result = await list_server_notes(
-            server_id='550e8400-e29b-41d4-a716-446655440123',
+            server_id=SERVER_ID,
             workspace='testworkspace',
             region='ap1',
         )
@@ -507,7 +507,7 @@ class TestServerNotes:
         assert result['status'] == 'error'
         assert result['message'] == HTTP_ERROR_ENVELOPE['message']
         assert result['status_code'] == HTTP_ERROR_ENVELOPE['status_code']
-        assert result['server_id'] == '550e8400-e29b-41d4-a716-446655440123'
+        assert result['server_id'] == SERVER_ID
         assert result['region'] == 'ap1'
         assert result['workspace'] == 'testworkspace'
 
@@ -518,9 +518,7 @@ class TestServerNotes:
         """Test server notes list with no token."""
         mock_token_manager.get_token.return_value = None
 
-        result = await list_server_notes(
-            server_id='550e8400-e29b-41d4-a716-446655440123', workspace='testworkspace'
-        )
+        result = await list_server_notes(server_id=SERVER_ID, workspace='testworkspace')
 
         assert result['status'] == 'error'
         assert 'No token found' in result['message']
@@ -533,7 +531,7 @@ class TestServerNotes:
         mock_http_client.post.return_value = {'id': 'note-1'}
 
         await create_server_note(
-            server_id='550e8400-e29b-41d4-a716-446655440123',
+            server_id=SERVER_ID,
             content='This is a new note about the server',
             workspace='testworkspace',
         )
@@ -544,7 +542,7 @@ class TestServerNotes:
             endpoint='/api/servers/notes/',
             token='test-token',
             data={
-                'server': '550e8400-e29b-41d4-a716-446655440123',
+                'server': SERVER_ID,
                 'content': 'This is a new note about the server',
             },
         )
@@ -556,12 +554,12 @@ class TestServerNotes:
         mock_http_client.post.return_value = {'id': 'note-1'}
 
         await create_server_note(
-            server_id='550e8400-e29b-41d4-a716-446655440123',
+            server_id=SERVER_ID,
             content='pinned note',
             workspace='testworkspace',
             private=True,
             pinned=True,
-            mentioned_users=['550e8400-e29b-41d4-a716-446655440999'],
+            mentioned_users=[MENTIONED_USER_ID],
         )
 
         mock_http_client.post.assert_called_once_with(
@@ -570,11 +568,11 @@ class TestServerNotes:
             endpoint='/api/servers/notes/',
             token='test-token',
             data={
-                'server': '550e8400-e29b-41d4-a716-446655440123',
+                'server': SERVER_ID,
                 'content': 'pinned note',
                 'private': True,
                 'pinned': True,
-                'mentioned_users': ['550e8400-e29b-41d4-a716-446655440999'],
+                'mentioned_users': [MENTIONED_USER_ID],
             },
         )
 
@@ -585,7 +583,7 @@ class TestServerNotes:
         mock_http_client.post.return_value = HTTP_ERROR_ENVELOPE
 
         result = await create_server_note(
-            server_id='550e8400-e29b-41d4-a716-446655440123',
+            server_id=SERVER_ID,
             content='This is a new note about the server',
             workspace='testworkspace',
             region='ap1',
@@ -594,7 +592,7 @@ class TestServerNotes:
         assert result['status'] == 'error'
         assert result['message'] == HTTP_ERROR_ENVELOPE['message']
         assert result['status_code'] == HTTP_ERROR_ENVELOPE['status_code']
-        assert result['server_id'] == '550e8400-e29b-41d4-a716-446655440123'
+        assert result['server_id'] == SERVER_ID
         assert result['region'] == 'ap1'
         assert result['workspace'] == 'testworkspace'
 
@@ -606,7 +604,7 @@ class TestServerNotes:
         mock_token_manager.get_token.return_value = None
 
         result = await create_server_note(
-            server_id='550e8400-e29b-41d4-a716-446655440123',
+            server_id=SERVER_ID,
             content='This is a new note about the server',
             workspace='testworkspace',
         )
@@ -650,7 +648,7 @@ class TestParameterValidation:
         mock_http_client.post.return_value = created_note
 
         result = await create_server_note(
-            server_id='550e8400-e29b-41d4-a716-446655440123',
+            server_id=SERVER_ID,
             content=long_content,
             workspace='testworkspace',
         )
@@ -662,7 +660,7 @@ class TestParameterValidation:
             endpoint='/api/servers/notes/',
             token='test-token',
             data={
-                'server': '550e8400-e29b-41d4-a716-446655440123',
+                'server': SERVER_ID,
                 'content': long_content,
             },
         )
@@ -672,7 +670,7 @@ class TestParameterValidation:
         self, mock_http_client, mock_token_manager
     ):
         result = await create_server_note(
-            server_id='550e8400-e29b-41d4-a716-446655440123',
+            server_id=SERVER_ID,
             content='x' * 513,
             workspace='testworkspace',
         )
@@ -818,13 +816,13 @@ class TestUpdateServer:
     async def test_update_server_success(self, mock_http_client, mock_token_manager):
         """Updates server fields via PATCH and returns updated data."""
         updated_server = {
-            'id': '550e8400-e29b-41d4-a716-446655440123',
+            'id': SERVER_ID,
             'name': 'renamed-server',
         }
         mock_http_client.patch.return_value = updated_server
 
         result = await update_server(
-            server_id='550e8400-e29b-41d4-a716-446655440123',
+            server_id=SERVER_ID,
             workspace='testworkspace',
             name='renamed-server',
             region='ap1',
@@ -835,7 +833,7 @@ class TestUpdateServer:
         mock_http_client.patch.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/servers/servers/550e8400-e29b-41d4-a716-446655440123/',
+            endpoint=f'/api/servers/servers/{SERVER_ID}/',
             token='test-token',
             data={'name': 'renamed-server'},
         )
@@ -846,7 +844,7 @@ class TestUpdateServer:
         mock_token_manager.get_token.return_value = None
 
         result = await update_server(
-            server_id='550e8400-e29b-41d4-a716-446655440123',
+            server_id=SERVER_ID,
             workspace='testworkspace',
             name='renamed-server',
         )
@@ -861,7 +859,7 @@ class TestUpdateServer:
     ):
         """Returns error when no update fields are provided and makes no API call."""
         result = await update_server(
-            server_id='550e8400-e29b-41d4-a716-446655440123',
+            server_id=SERVER_ID,
             workspace='testworkspace',
             region='ap1',
         )
@@ -881,12 +879,12 @@ class TestUpdateServer:
     ):
         """Only provided fields are sent in PATCH body."""
         mock_http_client.patch.return_value = {
-            'id': '550e8400-e29b-41d4-a716-446655440123',
+            'id': SERVER_ID,
             'description': 'Updated description',
         }
 
         await update_server(
-            server_id='550e8400-e29b-41d4-a716-446655440123',
+            server_id=SERVER_ID,
             workspace='testworkspace',
             description='Updated description',
             region='ap1',
@@ -895,7 +893,7 @@ class TestUpdateServer:
         mock_http_client.patch.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/servers/servers/550e8400-e29b-41d4-a716-446655440123/',
+            endpoint=f'/api/servers/servers/{SERVER_ID}/',
             token='test-token',
             data={'description': 'Updated description'},
         )
@@ -906,13 +904,13 @@ class TestUpdateServer:
     ):
         """Both name and description are sent in PATCH body when provided together."""
         mock_http_client.patch.return_value = {
-            'id': '550e8400-e29b-41d4-a716-446655440123',
+            'id': SERVER_ID,
             'name': 'renamed-server',
             'description': 'Updated description',
         }
 
         await update_server(
-            server_id='550e8400-e29b-41d4-a716-446655440123',
+            server_id=SERVER_ID,
             workspace='testworkspace',
             name='renamed-server',
             description='Updated description',
@@ -922,7 +920,7 @@ class TestUpdateServer:
         mock_http_client.patch.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/servers/servers/550e8400-e29b-41d4-a716-446655440123/',
+            endpoint=f'/api/servers/servers/{SERVER_ID}/',
             token='test-token',
             data={
                 'name': 'renamed-server',
@@ -936,12 +934,12 @@ class TestUpdateServer:
     ):
         """offline_alert_enabled is sent alone, alongside name/description if given."""
         mock_http_client.patch.return_value = {
-            'id': '550e8400-e29b-41d4-a716-446655440123',
+            'id': SERVER_ID,
             'offline_alert_enabled': False,
         }
 
         await update_server(
-            server_id='550e8400-e29b-41d4-a716-446655440123',
+            server_id=SERVER_ID,
             workspace='testworkspace',
             offline_alert_enabled=False,
             region='ap1',
@@ -950,7 +948,7 @@ class TestUpdateServer:
         mock_http_client.patch.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/servers/servers/550e8400-e29b-41d4-a716-446655440123/',
+            endpoint=f'/api/servers/servers/{SERVER_ID}/',
             token='test-token',
             data={'offline_alert_enabled': False},
         )
@@ -966,7 +964,7 @@ class TestUpdateServer:
         }
 
         await update_server(
-            server_id='550e8400-e29b-41d4-a716-446655440123',
+            server_id=SERVER_ID,
             workspace='testworkspace',
             name='renamed-server',
             offline_alert_enabled=False,
@@ -991,7 +989,7 @@ class TestUnregisterServer:
         mock_http_client.delete.return_value = {}
 
         result = await unregister_server(
-            server_id='550e8400-e29b-41d4-a716-446655440123',
+            server_id=SERVER_ID,
             workspace='testworkspace',
             region='ap1',
         )
@@ -1000,7 +998,7 @@ class TestUnregisterServer:
         mock_http_client.delete.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/servers/servers/550e8400-e29b-41d4-a716-446655440123/',
+            endpoint=f'/api/servers/servers/{SERVER_ID}/',
             token='test-token',
             params={'auto': False, 'purge_provisioned_accounts': False},
         )
@@ -1013,7 +1011,7 @@ class TestUnregisterServer:
         mock_token_manager.get_token.return_value = None
 
         result = await unregister_server(
-            server_id='550e8400-e29b-41d4-a716-446655440123',
+            server_id=SERVER_ID,
             workspace='testworkspace',
         )
 
@@ -1029,7 +1027,7 @@ class TestUnregisterServer:
         mock_http_client.delete.return_value = {}
 
         await unregister_server(
-            server_id='550e8400-e29b-41d4-a716-446655440123',
+            server_id=SERVER_ID,
             workspace='testworkspace',
             region='ap1',
             auto=True,
@@ -1039,7 +1037,7 @@ class TestUnregisterServer:
         mock_http_client.delete.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/servers/servers/550e8400-e29b-41d4-a716-446655440123/',
+            endpoint=f'/api/servers/servers/{SERVER_ID}/',
             token='test-token',
             params={'auto': True, 'purge_provisioned_accounts': True},
         )
@@ -1054,7 +1052,7 @@ class TestStarServer:
         mock_http_client.post.return_value = {'status': True}
 
         result = await star_server(
-            server_id='550e8400-e29b-41d4-a716-446655440123',
+            server_id=SERVER_ID,
             status=True,
             workspace='testworkspace',
             region='ap1',
@@ -1064,7 +1062,7 @@ class TestStarServer:
         mock_http_client.post.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/servers/servers/550e8400-e29b-41d4-a716-446655440123/star/',
+            endpoint=f'/api/servers/servers/{SERVER_ID}/star/',
             token='test-token',
             data={'status': True},
         )
@@ -1075,7 +1073,7 @@ class TestStarServer:
         mock_token_manager.get_token.return_value = None
 
         result = await star_server(
-            server_id='550e8400-e29b-41d4-a716-446655440123',
+            server_id=SERVER_ID,
             status=True,
             workspace='testworkspace',
         )
@@ -1229,7 +1227,7 @@ class TestDeleteRegistrationToken:
         mock_http_client.delete.return_value = {}
 
         result = await delete_registration_token(
-            token_id='a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+            token_id=REGISTRATION_TOKEN_ID,
             workspace='testworkspace',
             region='ap1',
         )
@@ -1238,7 +1236,7 @@ class TestDeleteRegistrationToken:
         mock_http_client.delete.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint='/api/servers/registration-tokens/a1b2c3d4-e5f6-7890-abcd-ef1234567890/',
+            endpoint=f'/api/servers/registration-tokens/{REGISTRATION_TOKEN_ID}/',
             token='test-token',
         )
 
@@ -1250,7 +1248,7 @@ class TestDeleteRegistrationToken:
         mock_token_manager.get_token.return_value = None
 
         result = await delete_registration_token(
-            token_id='a1b2c3d4-e5f6-7890-abcd-ef1234567890', workspace='testworkspace'
+            token_id=REGISTRATION_TOKEN_ID, workspace='testworkspace'
         )
 
         assert result['status'] == 'error'
@@ -1291,7 +1289,7 @@ class TestGetRegistrationGuide:
         result = await get_registration_guide(
             workspace='testworkspace',
             platform='debian',
-            token_id='a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+            token_id=REGISTRATION_TOKEN_ID,
             region='ap1',
         )
 
@@ -1304,7 +1302,7 @@ class TestGetRegistrationGuide:
             token='test-token',
             data={
                 'platform': 'debian',
-                'token': 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+                'token': REGISTRATION_TOKEN_ID,
             },
             params={'response_type': 'json'},
         )
@@ -1319,7 +1317,7 @@ class TestGetRegistrationGuide:
         await get_registration_guide(
             workspace='testworkspace',
             platform='rhel',
-            token_id='a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+            token_id=REGISTRATION_TOKEN_ID,
             server_name='my-new-server',
             region='ap1',
         )
@@ -1331,7 +1329,7 @@ class TestGetRegistrationGuide:
             token='test-token',
             data={
                 'platform': 'rhel',
-                'token': 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+                'token': REGISTRATION_TOKEN_ID,
                 'server_name': 'my-new-server',
             },
             params={'response_type': 'json'},
@@ -1347,7 +1345,7 @@ class TestGetRegistrationGuide:
         result = await get_registration_guide(
             workspace='testworkspace',
             platform='debian',
-            token_id='a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+            token_id=REGISTRATION_TOKEN_ID,
         )
 
         assert result['status'] == 'error'
@@ -1381,7 +1379,7 @@ class TestGetRegistrationGuide:
         result = await get_registration_guide(
             workspace='testworkspace',
             platform='suse',
-            token_id='a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+            token_id=REGISTRATION_TOKEN_ID,
             region='ap1',
         )
 
@@ -1394,7 +1392,7 @@ class TestGetRegistrationGuide:
             token='test-token',
             data={
                 'platform': 'suse',
-                'token': 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+                'token': REGISTRATION_TOKEN_ID,
             },
             params={'response_type': 'json'},
         )
@@ -1418,7 +1416,7 @@ class TestGetRegistrationGuide:
         result = await get_registration_guide(
             workspace='testworkspace',
             platform='solaris',
-            token_id='a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+            token_id=REGISTRATION_TOKEN_ID,
             region='ap1',
         )
 

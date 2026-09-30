@@ -15,6 +15,10 @@ from tools.server_tools import list_servers
 from tools.webftp_tools import webftp_download_file, webftp_upload_file
 from utils.decorators import _PAGINATION_FIELDS, with_token_validation
 
+SERVER_ID = '550e8400-e29b-41d4-a716-446655440000'
+SECOND_SERVER_ID = '660e8400-e29b-41d4-a716-446655440001'
+SESSION_ID = '550e8400-e29b-41d4-a716-446655440000'
+
 # --- Helper: create a dummy async function decorated with with_token_validation ---
 
 
@@ -236,7 +240,7 @@ class TestServerIdValidation:
         result = await func(
             workspace='demo',
             region='ap1',
-            server_id='550e8400-e29b-41d4-a716-446655440000',
+            server_id=SERVER_ID,
         )
         assert result['status'] == 'success'
 
@@ -285,7 +289,7 @@ class TestServerIdsValidation:
             workspace='demo',
             region='ap1',
             server_ids=[
-                '550e8400-e29b-41d4-a716-446655440000',
+                SERVER_ID,
                 'not-a-uuid',
             ],
         )
@@ -300,8 +304,8 @@ class TestServerIdsValidation:
             workspace='demo',
             region='ap1',
             server_ids=[
-                '550e8400-e29b-41d4-a716-446655440000',
-                '660e8400-e29b-41d4-a716-446655440001',
+                SERVER_ID,
+                SECOND_SERVER_ID,
             ],
         )
         assert result['status'] == 'success'
@@ -321,12 +325,12 @@ class TestServerIdsValidation:
         result = await func(
             workspace='demo',
             region='ap1',
-            server_ids='550e8400-e29b-41d4-a716-446655440000',
+            server_ids=SERVER_ID,
         )
         assert result['status'] == 'error'
         assert result['field'] == 'server_ids'
         # The whole string is reported, not a confusing list of single characters.
-        assert result['value'] == '550e8400-e29b-41d4-a716-446655440000'
+        assert result['value'] == SERVER_ID
 
 
 # ---------------------------------------------------------------------------
@@ -357,7 +361,7 @@ class TestServersValidation:
             workspace='demo',
             region='ap1',
             servers=[
-                '550e8400-e29b-41d4-a716-446655440000',
+                SERVER_ID,
                 'not-a-uuid',
             ],
         )
@@ -372,8 +376,8 @@ class TestServersValidation:
             workspace='demo',
             region='ap1',
             servers=[
-                '550e8400-e29b-41d4-a716-446655440000',
-                '660e8400-e29b-41d4-a716-446655440001',
+                SERVER_ID,
+                SECOND_SERVER_ID,
             ],
         )
         assert result['status'] == 'success'
@@ -393,12 +397,12 @@ class TestServersValidation:
         result = await func(
             workspace='demo',
             region='ap1',
-            servers='550e8400-e29b-41d4-a716-446655440000',
+            servers=SERVER_ID,
         )
         assert result['status'] == 'error'
         assert result['field'] == 'servers'
         # The whole string is reported, not a confusing list of single characters.
-        assert result['value'] == '550e8400-e29b-41d4-a716-446655440000'
+        assert result['value'] == SERVER_ID
 
 
 # ---------------------------------------------------------------------------
@@ -439,7 +443,7 @@ class TestSessionIdValidation:
         result = await func(
             workspace='demo',
             region='ap1',
-            session_id='550e8400-e29b-41d4-a716-446655440000',
+            session_id=SESSION_ID,
         )
         assert result['status'] == 'success'
 
@@ -506,7 +510,7 @@ class TestPathIdentifierValidation:
         'target_id',
     ]
 
-    TRAVERSAL_ID = '../../servers/servers/550e8400-e29b-41d4-a716-446655440000'
+    TRAVERSAL_ID = f'../../servers/servers/{SERVER_ID}'
 
     # Each was observed rewriting the outgoing URL: bare '..' climbs a level and
     # '#' truncates the path, so rejecting only '../' leaves both open.
@@ -534,7 +538,7 @@ class TestPathIdentifierValidation:
     SAFE_ID = 'ca-1'
 
     # 'a..b' is not a dot-segment, so the gate must not reject it for holding '..'.
-    SAFE_VALUES = [SAFE_ID, '550e8400-e29b-41d4-a716-446655440000', 'a..b', '~x']
+    SAFE_VALUES = [SAFE_ID, SERVER_ID, 'a..b', '~x']
 
     # Everything outside the unreserved set, plus the two dot-segments. The
     # trailing newlines are here because '$' also matches before a final one,
@@ -912,7 +916,7 @@ class TestFilePathValidation:
     @patch('utils.decorators.validate_token', return_value='fake-token')
     async def test_upload_rejects_relative_local_path(self, mock_token):
         result = await webftp_upload_file(
-            server_id='550e8400-e29b-41d4-a716-446655440000',
+            server_id=SERVER_ID,
             local_file_path='relative/path.txt',
             remote_file_path='/home/user/file.txt',
             workspace='demo',
@@ -925,7 +929,7 @@ class TestFilePathValidation:
     @patch('utils.decorators.validate_token', return_value='fake-token')
     async def test_upload_rejects_traversal_in_remote_path(self, mock_token):
         result = await webftp_upload_file(
-            server_id='550e8400-e29b-41d4-a716-446655440000',
+            server_id=SERVER_ID,
             local_file_path='/tmp/safe.txt',
             remote_file_path='/home/user/../../../etc/passwd',
             workspace='demo',
@@ -938,7 +942,7 @@ class TestFilePathValidation:
     @patch('utils.decorators.validate_token', return_value='fake-token')
     async def test_download_rejects_relative_remote_path(self, mock_token):
         result = await webftp_download_file(
-            server_id='550e8400-e29b-41d4-a716-446655440000',
+            server_id=SERVER_ID,
             remote_file_path='relative/path.log',
             local_file_path='/tmp/download.log',
             workspace='demo',
@@ -951,7 +955,7 @@ class TestFilePathValidation:
     @patch('utils.decorators.validate_token', return_value='fake-token')
     async def test_download_rejects_traversal_in_local_path(self, mock_token):
         result = await webftp_download_file(
-            server_id='550e8400-e29b-41d4-a716-446655440000',
+            server_id=SERVER_ID,
             remote_file_path='/var/log/app.log',
             local_file_path='/tmp/../../../etc/evil',
             workspace='demo',
@@ -964,7 +968,7 @@ class TestFilePathValidation:
     @patch('utils.decorators.validate_token', return_value='fake-token')
     async def test_upload_rejects_null_byte_path(self, mock_token):
         result = await webftp_upload_file(
-            server_id='550e8400-e29b-41d4-a716-446655440000',
+            server_id=SERVER_ID,
             local_file_path='/tmp/file\x00.txt',
             remote_file_path='/home/user/file.txt',
             workspace='demo',
