@@ -5,11 +5,18 @@ Tests WebFTP functionality including session management, file uploads,
 file downloads, and file transfer history.
 """
 
+import asyncio
 import base64
+import binascii
+import os
+import re
+import time
+from collections.abc import Awaitable
 from http import HTTPStatus
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pybase64
 import pytest
 
 from server import MAX_REQUEST_BODY_SIZE, mcp
@@ -46,6 +53,33 @@ def mock_httpx():
         mock_client = AsyncMock()
         mock_client_class.return_value.__aenter__.return_value = mock_client
         yield mock_client
+
+
+@pytest.fixture
+def upload_accepted(mock_http_client, mock_httpx):
+    """Stub the upload API and the S3 PUT so webftp_upload_content succeeds."""
+    mock_http_client.post.return_value = {
+        'id': 'upload-abc',
+        'upload_url': 'https://s3.example.com/put?sig=abc',
+        'download_url': 'https://s3.example.com/get?sig=abc',
+    }
+    mock_http_client.get.return_value = {}
+    put_resp = AsyncMock()
+    put_resp.status_code = HTTPStatus.OK
+    mock_httpx.put.return_value = put_resp
+
+
+async def _max_loop_gap_during[T](coro: Awaitable[T]) -> tuple[float, T]:
+    """Run coro and return (longest stretch the loop did not turn, coro's result)."""
+    task = asyncio.ensure_future(coro)
+    longest = 0.0
+    last = time.perf_counter()
+    while not task.done():
+        await asyncio.sleep(0)
+        now = time.perf_counter()
+        longest = max(longest, now - last)
+        last = now
+    return longest, task.result()
 
 
 class TestWebFtpSessionCreate:
@@ -1203,22 +1237,11 @@ class TestUploadContent:
 
     @pytest.mark.asyncio
     async def test_upload_content_success(
-        self, mock_http_client, mock_token_manager, mock_httpx
+        self, mock_http_client, mock_token_manager, mock_httpx, upload_accepted
     ):
         """Happy path: base64 content is decoded, PUT to S3, server is triggered."""
         file_bytes = b'hello remote world'
         encoded = base64.b64encode(file_bytes).decode()
-
-        mock_http_client.post.return_value = {
-            'id': 'upload-abc',
-            'upload_url': 'https://s3.example.com/put?sig=abc',
-            'download_url': 'https://s3.example.com/get?sig=abc',
-        }
-        mock_http_client.get.return_value = {}
-
-        put_resp = AsyncMock()
-        put_resp.status_code = HTTPStatus.OK
-        mock_httpx.put.return_value = put_resp
 
         result = await webftp_upload_content(
             server_id=VALID_SERVER_ID,
@@ -1251,6 +1274,140 @@ class TestUploadContent:
         mock_http_client.post.assert_not_called()
 
     @pytest.mark.asyncio
+    async def test_upload_content_decodes_with_pybase64(
+        self, mock_token_manager, mock_httpx, upload_accepted
+    ):
+        # Given a payload whose decoded bytes span every byte value
+        file_bytes = bytes(range(256)) * 4
+
+        # When it is uploaded with asyncio.to_thread spied on
+        with patch(
+            'tools.webftp_tools.asyncio.to_thread', wraps=asyncio.to_thread
+        ) as spy:
+            result = await webftp_upload_content(
+                server_id=VALID_SERVER_ID,
+                file_content=base64.b64encode(file_bytes).decode(),
+                remote_file_path='/remote/blob.bin',
+                workspace='ws',
+                region='ap1',
+            )
+
+        # Then pybase64 decoded it strictly off the event loop, bytes identical
+        assert result['status'] == 'success'
+        spy.assert_called_once()
+        assert spy.call_args.args[0] is pybase64.b64decode
+        assert spy.call_args.kwargs == {'validate': True}
+        assert mock_httpx.put.call_args.kwargs['content'] == file_bytes
+
+    def test_pybase64_loads_its_simd_c_extension(self):
+        # A speed check, not a blocking one: the C extension releases the GIL even
+        # without SIMD, and the event-loop test below catches the pure-Python fallback.
+        # Given the installed pybase64 wheel
+        # When it reports the decoder it loaded
+        version = pybase64.get_version()
+
+        # Then the decoder runs on a SIMD path
+        assert re.search(
+            r'C extension active - (AVX512VBMI|AVX2|SSE42|SSE41|SSSE3|NEON)\)$',
+            version,
+        ), version
+
+    @pytest.mark.asyncio
+    async def test_upload_content_decode_does_not_block_the_event_loop(
+        self, mock_token_manager, upload_accepted, monkeypatch
+    ):
+        # Given a 32 MiB payload, large enough that an inline decode stalls for ms
+        monkeypatch.setenv('ALPACON_MCP_TRANSPORT', 'stdio')
+        encoded = base64.b64encode(os.urandom(32 * 1024 * 1024)).decode()
+
+        async def decode_inline():
+            return pybase64.b64decode(encoded, validate=True)
+
+        inline_gap = min(
+            [(await _max_loop_gap_during(decode_inline()))[0] for _ in range(3)]
+        )
+
+        # When the upload runs beside a coroutine timing each event-loop turn
+        gaps = []
+        for _ in range(3):
+            gap, result = await _max_loop_gap_during(
+                webftp_upload_content(
+                    server_id=VALID_SERVER_ID,
+                    file_content=encoded,
+                    remote_file_path='/remote/big.bin',
+                    workspace='ws',
+                    region='ap1',
+                )
+            )
+            assert result['status'] == 'success'
+            gaps.append(gap)
+
+        # Then the loop turns far more often than an inline SIMD decode would let it
+        assert min(gaps) < inline_gap / 4, (gaps, inline_gap)
+
+    @pytest.mark.parametrize(
+        'payload',
+        [b'', b'QQ==', b'QUJD', b'QUI=', b'\x00\xff' * 1000],
+    )
+    def test_pybase64_matches_stdlib_on_valid_input(self, payload):
+        # Given valid base64 of several lengths and paddings
+        encoded = base64.b64encode(payload)
+
+        # When decoded by both implementations
+        # Then the bytes are identical
+        assert pybase64.b64decode(encoded, validate=True) == payload
+        assert pybase64.b64decode(encoded, validate=True) == base64.b64decode(
+            encoded, validate=True
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        'content',
+        [
+            'QQ==QUJD',
+            'not-valid-base64!!!',
+            'QUJD\nREVG',
+            'QUJD REVG',
+            'QUJDR',
+            'QUJ',
+            'QUJD=',
+            '=QUJ',
+        ],
+    )
+    async def test_upload_content_malformed_base64_error_shape(
+        self, mock_http_client, mock_token_manager, mock_httpx, content
+    ):
+        # Given malformed base64 (excess after padding, non-alphabet, bad length)
+        # When it is uploaded
+        result = await webftp_upload_content(
+            server_id=VALID_SERVER_ID,
+            file_content=content,
+            remote_file_path='/remote/test.txt',
+            workspace='ws',
+            region='ap1',
+        )
+
+        # Then the same invalid_content error is returned before any API call
+        assert result['status'] == 'error'
+        assert result['code'] == 'invalid_content'
+        assert result['message'].startswith('Invalid base64 content: ')
+        mock_http_client.post.assert_not_called()
+        mock_httpx.put.assert_not_called()
+
+    @pytest.mark.parametrize(
+        'content',
+        [b'QQ==QUJD', b'not-valid-base64!!!', b'QUJD\nREVG', b'QUJDR', b'QUJ'],
+    )
+    def test_pybase64_and_stdlib_both_raise_binascii_error(self, content):
+        # Given malformed base64
+        # When decoded by either implementation
+        # Then both raise binascii.Error
+        with pytest.raises(binascii.Error):
+            base64.b64decode(content, validate=True)
+        with pytest.raises(binascii.Error):
+            pybase64.b64decode(content, validate=True)
+
+    @pytest.mark.asyncio
     async def test_upload_content_over_size_limit_rejected_on_streamable_http(
         self, mock_http_client, mock_token_manager, monkeypatch
     ):
@@ -1274,18 +1431,10 @@ class TestUploadContent:
 
     @pytest.mark.asyncio
     async def test_upload_content_over_size_limit_allowed_on_stdio(
-        self, mock_http_client, mock_token_manager, mock_httpx, monkeypatch
+        self, mock_http_client, mock_token_manager, upload_accepted, monkeypatch
     ):
         """Given stdio transport, when decoded content exceeds 3 MiB, then the upload proceeds unchecked."""
         monkeypatch.setenv('ALPACON_MCP_TRANSPORT', 'stdio')
-        mock_http_client.post.return_value = {
-            'id': 'upload-abc',
-            'upload_url': 'https://s3.example.com/put?sig=abc',
-        }
-        mock_http_client.get.return_value = {}
-        put_resp = AsyncMock()
-        put_resp.status_code = HTTPStatus.OK
-        mock_httpx.put.return_value = put_resp
         oversized = base64.b64encode(b'x' * (3 * 1024 * 1024 + 1)).decode()
 
         result = await webftp_upload_content(
