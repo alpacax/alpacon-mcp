@@ -85,6 +85,14 @@ def redact_for_log(value: Any) -> Any:
     return describe_for_log(value)
 
 
+def _indent_block(block: str) -> str:
+    """Escape each line of a traceback and indent it under the record line."""
+    return '\n'.join(
+        _TRACEBACK_INDENT + _escape_controls(line) if line else line
+        for line in block.split('\n')
+    )
+
+
 class SingleLineFormatter(logging.Formatter):
     """Format a record so no value inside it can pass for another record.
 
@@ -107,11 +115,30 @@ class SingleLineFormatter(logging.Formatter):
         if record.stack_info:
             blocks.append(self.formatStack(record.stack_info))
         for block in blocks:
-            output += '\n' + '\n'.join(
-                _TRACEBACK_INDENT + _escape_controls(line) if line else line
-                for line in block.split('\n')
-            )
+            output += '\n' + _indent_block(block)
         return output
+
+
+class SingleLineRecordFilter(logging.Filter):
+    """Give a record the escaping SingleLineFormatter applies, before any handler.
+
+    For loggers whose handlers this module does not own: uvicorn installs its
+    own formatter on its stderr handler. That formatter reuses a filled
+    ``exc_text``, so the indented traceback stands in for its own.
+    """
+
+    _traceback_formatter = logging.Formatter()
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.msg = _escape_controls(record.getMessage())
+        record.args = None
+        if record.exc_info:
+            record.exc_text = _indent_block(
+                self._traceback_formatter.formatException(record.exc_info)
+            )
+        if record.stack_info:
+            record.stack_info = _indent_block(record.stack_info)
+        return True
 
 
 class AccessLogQueryFilter(logging.Filter):
@@ -132,6 +159,11 @@ class AccessLogQueryFilter(logging.Filter):
                     *args[_ACCESS_LOG_PATH_ARG + 1 :],
                 )
         return True
+
+
+def _add_filter_once(logger: logging.Logger, kind: type[logging.Filter]) -> None:
+    if not any(isinstance(f, kind) for f in logger.filters):
+        logger.addFilter(kind())
 
 
 class AlpaconLogger:
@@ -181,9 +213,11 @@ class AlpaconLogger:
 
         # On the logger, not a handler: uvicorn replaces the handlers when it
         # configures logging and leaves logger filters in place.
-        access_logger = logging.getLogger('uvicorn.access')
-        if not any(isinstance(f, AccessLogQueryFilter) for f in access_logger.filters):
-            access_logger.addFilter(AccessLogQueryFilter())
+        _add_filter_once(logging.getLogger('uvicorn.access'), AccessLogQueryFilter)
+        # A logger filter sees only records logged on that logger, not those
+        # propagating through it, so both names uvicorn writes under need one.
+        for name in ('uvicorn', 'uvicorn.error'):
+            _add_filter_once(logging.getLogger(name), SingleLineRecordFilter)
 
     def stop_listener(self) -> None:
         """Stop the queue listener, draining pending records to the log file."""

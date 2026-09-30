@@ -319,8 +319,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   access log drops query strings, since those write request URLs with their query, each client
   message, and the OAuth callback's authorization code. Nothing changes for a client, but an
   existing `logs/alpacon-mcp.log` can hold commands as they were typed.
-- A client-supplied value can no longer start a second log record (#310). The stderr and file sinks
-  escape every control character in a message and indent each line of a traceback, and the OAuth
+- A client-supplied value can no longer start a second log record (#310). The stderr and file sinks,
+  uvicorn's own records included, escape every control character in a message and indent each line
+  of a traceback, and the OAuth
   callback `error` and `error_description`, a mismatched `client_id`, a JWT `kid`, and JWT claim
   values are escaped and bounded where they are logged. Nothing changes for a client.
 - `get_server_metrics_summary` now reads disk usage and network traffic for the root partition (a non-virtual one when several exist) and the first active interface (a non-virtual name such as `eth0` before `docker0` or `br-…`), and reports a failed or empty lookup in `metrics.disk.error` or `metrics.network.error` (#298). `get_network_traffic` now requires `interface`, an interface ID, so its resource URI is now `alpacon://metrics/{region}/{workspace}/{server_id}/network/{interface}`. The CPU, memory, disk, and network metrics now report the newest sample as `current` and a `time_range` running oldest to newest, so a client reading `current` sees different values, and because the realtime endpoints keep only 12 hours, the CPU, memory, disk usage, disk I/O, and network tools now default to the last 12 hours, with `hours` defaulting to 12 and capped at 12 (it was 24 and 168).

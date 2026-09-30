@@ -125,6 +125,7 @@ Every tool call behind `@mcp_tool_handler` writes one `called with` line at INFO
 - `httpx` and `httpcore` write warnings and errors only: at INFO httpx writes each request URL with its query string, and at DEBUG httpcore writes the response headers.
 - The MCP SDK (`mcp`) never writes below INFO, even with `ALPACON_MCP_LOG_LEVEL=DEBUG`: at DEBUG it writes each client message, tool arguments included.
 - The uvicorn access log records the request path without its query string, which on `/oauth/callback` carries the authorization code.
+- uvicorn's own records, which go to stderr through uvicorn's handler, get the same escaping and traceback indentation as this server's.
 
 ## 🎯 Performance considerations
 

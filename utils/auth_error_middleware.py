@@ -26,7 +26,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 from utils import request_signal
 from utils.error_handler import UpstreamAuthError
-from utils.logger import escape_for_log, get_logger
+from utils.logger import get_logger
 
 AsgiMessage = MutableMapping[str, object]
 
@@ -124,10 +124,9 @@ class UpstreamAuthErrorMiddleware:
         The start message is held until the signal is known: once it goes out,
         neither the status nor WWW-Authenticate can be changed.
         """
-        request_path = escape_for_log(scope.get('path', '?'))
         logger.debug(
             '[DEBUG-MW] Request %s—cooldown_key=%s (None means no Bearer header)',
-            request_path,
+            scope.get('path', '?'),
             cooldown_key,
         )
 

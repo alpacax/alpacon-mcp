@@ -167,6 +167,32 @@ class TestOneRecordOneLine:
         assert 'file value: \\r\\n2026-09-30' in lines[0]
 
 
+class TestUvicornRecords:
+    """uvicorn writes through its own stderr handler and formatter."""
+
+    def test_an_application_traceback_stays_under_its_record(self, manager, capsys):
+        uvicorn.Config(app=None, log_level='info')
+        try:
+            raise ValueError(f'bad value {FORGED_LINE}\nINFO:     forged')
+        except ValueError:
+            logging.getLogger('uvicorn.error').exception(
+                'Exception in ASGI application'
+            )
+
+        first, *rest = capsys.readouterr().err.rstrip('\n').split('\n')
+
+        assert first.endswith('Exception in ASGI application')
+        assert rest
+        assert all(line == '' or line[0].isspace() for line in rest)
+
+    def test_a_message_value_is_escaped(self, manager, capsys):
+        uvicorn.Config(app=None, log_level='info')
+
+        logging.getLogger('uvicorn.error').warning('value: %s', FORGED_LINE)
+
+        assert capsys.readouterr().err.count('\n') == 1
+
+
 class TestThirdPartyLoggers:
     """Libraries below this server log what it deliberately keeps out."""
 

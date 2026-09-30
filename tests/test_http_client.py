@@ -719,7 +719,7 @@ class TestDebugLogPayloadsAreLazy:
         self, mock_httpx_client
     ):
         """Every payload the client logs reaches the logger unrendered, by field name."""
-        params = {'page': 1}
+        params = {'page': 1, 'search': 'db-prod'}
         data = {'name': 'web-01'}
         mock_httpx_client.request.return_value = create_mock_response(
             status_code=HTTPStatus.OK
@@ -747,7 +747,7 @@ class TestDebugLogPayloadsAreLazy:
             assert '%s' in fmt
             return logged[fmt]
 
-        assert payload_for('Request params') == (params,)
+        assert payload_for('Request params') == ({'page': 1, 'search': '<str len=7>'},)
         assert payload_for('Request body') == ({'name': '<str len=6>'},)
         assert payload_for('Empty response') == (
             {'status': 'success', 'status_code': HTTPStatus.OK},

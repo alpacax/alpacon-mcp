@@ -53,8 +53,9 @@ ERROR_HANDLING_MARKER = '_error_handled'
 # later stays out of the log until someone reviews it into this set. What is
 # left out on purpose: the command a call runs (``command``, ``commands``),
 # where a credential typed inline cannot be told apart from the rest; filter
-# text (``search``, ``search_query``); credentials, payloads and free text;
-# URLs, which carry their own credential; personal data; and env maps.
+# text (``search``, ``search_query``, the ``*_filter`` names, ``tag``);
+# credentials, payloads and free text; URLs, which carry their own
+# credential; personal data; and env maps.
 _LOGGED_VERBATIM_KEYS = frozenset(
     {
         # identifiers minted upstream
@@ -136,13 +137,11 @@ _LOGGED_VERBATIM_KEYS = frozenset(
         'country',
         'device',
         'event_type',
-        'groupname_filter',
         'groups',
         'interface',
         'key_algorithm',
         'language',
         'metric_types',
-        'notify_email',
         'operator',
         'ordering',
         'partition',
@@ -156,10 +155,8 @@ _LOGGED_VERBATIM_KEYS = frozenset(
         'shell',
         'state',
         'status',
-        'tag',
         'timezone',
         'transfer_type',
-        'username_filter',
         'version',
         # timestamps
         'end_date',
@@ -645,7 +642,12 @@ def _summarize_log_value(value: Any, _nested: bool = False) -> Any:
         if _nested or len(value) > _MAX_LOGGED_ITEMS:
             return describe_for_log(value)
         if isinstance(value, dict):
-            return {k: _summarize_log_value(v, _nested=True) for k, v in value.items()}
+            return {
+                _summarize_log_value(k, _nested=True): _summarize_log_value(
+                    v, _nested=True
+                )
+                for k, v in value.items()
+            }
         return [_summarize_log_value(item, _nested=True) for item in value]
     return value
 
