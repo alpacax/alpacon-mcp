@@ -1308,7 +1308,7 @@ class TestUploadContent:
 
         # Then the decoder runs on a SIMD path
         assert re.search(
-            r'C extension active - (AVX512VBMI|AVX2|SSE42|SSE41|SSSE3|NEON)\)$',
+            r'C extension active - (AVX512VBMI|AVX2|AVX|SSE42|SSE41|SSSE3|NEON)\)$',
             version,
         ), version
 
