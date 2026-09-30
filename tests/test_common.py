@@ -690,12 +690,12 @@ class TestResolveTimeWindow:
         assert resolve_time_window('2024-01-01T00:00:00Z', '')[1] == ''
 
     @pytest.mark.parametrize('blank', [None, ''])
-    def test_missing_start_defaults_to_24_hours_ago(self, blank):
+    def test_missing_start_defaults_to_12_hours_ago(self, blank):
         frozen = datetime(2024, 6, 1, 12, 0, tzinfo=UTC)
         with patch('utils.common.datetime') as mock_datetime:
             mock_datetime.now.return_value = frozen
 
             start, _ = resolve_time_window(blank, None)
 
-        assert start == (frozen - timedelta(hours=24)).isoformat()
-        assert start == '2024-05-31T12:00:00+00:00'
+        assert start == (frozen - timedelta(hours=12)).isoformat()
+        assert start == '2024-06-01T00:00:00+00:00'

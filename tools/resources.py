@@ -116,7 +116,7 @@ RESOURCES: list[tuple[str, str, str]] = [
     (
         'metrics_network',
         'metrics_tools.get_network_traffic',
-        'alpacon://metrics/{region}/{workspace}/{server_id}/network',
+        'alpacon://metrics/{region}/{workspace}/{server_id}/network/{interface}',
     ),
     (
         'metrics_summary',
