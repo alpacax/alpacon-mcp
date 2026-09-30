@@ -690,7 +690,7 @@ class TestDebugLogPayloadsAreLazy:
 
     @pytest.mark.asyncio
     async def test_response_body_is_passed_as_a_lazy_argument(self, mock_httpx_client):
-        """The body must reach the logger as an argument, not an already-formatted string."""
+        """The body reaches the logger as an argument, reduced to its field names."""
         payload = {'servers': ['a', 'b']}
         mock_httpx_client.request.return_value = create_mock_response(
             status_code=HTTPStatus.OK, json_data=payload
@@ -712,14 +712,14 @@ class TestDebugLogPayloadsAreLazy:
         ]
         assert body_calls
         assert '%s' in body_calls[0].args[0]
-        assert body_calls[0].args[1:] == (payload,)
+        assert body_calls[0].args[1:] == ({'servers': '<list items=2>'},)
 
     @pytest.mark.asyncio
     async def test_request_and_empty_response_payloads_are_lazy_arguments(
         self, mock_httpx_client
     ):
-        """Every payload the client logs must reach the logger unrendered."""
-        params = {'page': 1}
+        """Every payload the client logs reaches the logger unrendered, by field name."""
+        params = {'page': 1, 'search': 'db-prod'}
         data = {'name': 'web-01'}
         mock_httpx_client.request.return_value = create_mock_response(
             status_code=HTTPStatus.OK
@@ -747,8 +747,8 @@ class TestDebugLogPayloadsAreLazy:
             assert '%s' in fmt
             return logged[fmt]
 
-        assert payload_for('Request params') == (params,)
-        assert payload_for('Request body') == (data,)
+        assert payload_for('Request params') == ({'page': 1, 'search': '<str len=7>'},)
+        assert payload_for('Request body') == ({'name': '<str len=6>'},)
         assert payload_for('Empty response') == (
             {'status': 'success', 'status_code': HTTPStatus.OK},
         )

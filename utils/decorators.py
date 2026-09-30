@@ -32,7 +32,7 @@ from utils.error_handler import (
     validate_workspace_format,
 )
 from utils.http_client import AlpaconHTTPClient
-from utils.logger import get_logger
+from utils.logger import describe_for_log, get_logger
 from utils.recovery_hints import enrich_error_response
 from utils.security_settings import (
     check_mfa_completed,
@@ -48,49 +48,132 @@ _SPECIFY_REGION_HINT = 'Please specify a region parameter.'
 # __dict__ outward, so a registered tool can still be swept for it.
 ERROR_HANDLING_MARKER = '_error_handled'
 
-# Never written to the entry log. The credential names are forward cover: no
-# tool documents one as its own parameter today, but with_logging would bind
-# it if one did. The rest the log has no use for—payloads, free text a person
-# wrote, URLs that are themselves a credential, personal data, env maps that can
-# carry a secret under any key, and config lists—and the server stores every one
-# of them.
-_UNLOGGED_KEYS = frozenset(
+# The arguments the entry log writes as given. Every other argument is
+# recorded by type and size alone (``<str len=42>``), so a parameter added
+# later stays out of the log until someone reviews it into this set. What is
+# left out on purpose: the command a call runs (``command``, ``commands``),
+# where a credential typed inline cannot be told apart from the rest; filter
+# text (``search``, ``search_query``, the ``*_filter`` names, ``tag``);
+# credentials, payloads and free text; URLs, which carry their own
+# credential; personal data; and env maps.
+_LOGGED_VERBATIM_KEYS = frozenset(
     {
-        # credentials
-        'token',
-        'password',
-        'secret',
-        'key',
-        # payloads and free text (data is the stdin payload of execute_command)
-        'content',
-        'data',
-        'file_content',
-        'description',
-        'title',
-        'reason',  # free text on one tool, an RFC 5280 code on another
-        'requested_reason',
-        'purpose',
-        # URLs that carry their own credential: a webhook URL is the secret
-        # for Slack, Discord and Telegram, and a proxy URL takes user:pass
-        'url',
-        'package_proxy',
-        # personal data
-        'email',
-        'billing_email',
-        'first_name',
-        'last_name',
-        # env maps, and the workspace config lists nothing reads back from a
-        # log. Not a size decision—the container bound covers that—so a list
-        # naming what one call granted or asked for is kept instead.
-        'env',
-        'args',  # execute_file's argv: any position can carry a secret
-        'enabled_extensions',
-        'allowed_domains',
+        # identifiers minted upstream
+        'acl_id',
+        'alert_id',
+        'analysis_id',
+        'api_token_id',
+        'app_id',
+        'authority_id',
+        'ca_id',
+        'certificate_id',
+        'command_id',
+        'csr_id',
+        'entry_id',
+        'event_id',
+        'file_id',
+        'group_id',
+        'log_id',
+        'membership_id',
+        'mentioned_users',
+        'note_id',
+        'override_id',
+        'request_id',
+        'revoke_id',
+        'rule_id',
+        'run_after',
+        'server_id',
+        'server_ids',
+        'service_token_id',
+        'session_id',
+        'subscription_id',
+        'system_user_ids',
+        'target_id',
+        'token_id',
+        'user_id',
+        'webhook_id',
+        'work_session_id',
+        # names and the permission context a call ran under
+        'channel',
+        'display_name',
+        'domain',
+        'groupname',
+        'name',
+        'organization',
+        'owner',
+        'package_name',
+        'reporter',
+        'role',
+        'server_name',
+        'servers',
+        'target',
+        'user',
+        'username',
+        'users',
+        # paths and files
+        'file_name',
+        'interpreter',
+        'local_file_path',
+        'local_file_paths',
+        'path',
+        'remote_directory',
+        'remote_file_path',
+        'remote_paths',
+        # workspace-scoped configuration objects; no secrets, and useful
+        # in the audit trail to see what policy a write actually asked for
+        'agent_rollout_policy',
+        # the authority a credential was granted
+        'presets',
+        'scopes',
+        # the subject alternative names a CSR asks for, published in
+        # the certificate itself
+        'domain_list',
+        'ip_list',
+        # filters and enums
+        'action',
+        'action_type',
+        'alert_type',
+        'architecture',
+        'country',
+        'device',
+        'event_type',
+        'groups',
+        'interface',
+        'key_algorithm',
+        'language',
+        'metric_types',
+        'operator',
+        'ordering',
+        'partition',
+        'platform',
+        'provider',
+        'requester_type',
+        'resource_type',
+        'risk_score',
+        'service_type',
+        'severity',
+        'shell',
+        'state',
+        'status',
+        'timezone',
+        'transfer_type',
+        'version',
+        # timestamps
+        'end_date',
+        'expires_at',
+        'scheduled_at',
+        'start_date',
+        'valid_from',
+        'valid_until',
+        # the call target itself
+        'region',
+        'workspace',
     }
 )
 
-# A payload reaches a tool as an ordinary string, under whatever name that tool
-# gives it, so the guard is on the value's size and not on the key (#233).
+# Bounds on a verbatim argument. A payload reaches a tool as an ordinary
+# string, under whatever name that tool gives it, so the guard is on the
+# value's size and not only on the key (#233).
 _MAX_LOGGED_VALUE_LEN = 256
 
 # Containers carry identifier, path, and enum lists today, which is what the
@@ -546,31 +629,47 @@ def with_error_handling(func: Callable) -> Callable:
 
 
 def _summarize_log_value(value: Any, _nested: bool = False) -> Any:
-    """Replace an oversized string or container with a placeholder.
+    """Bound a verbatim argument, describing whatever is past the bound.
 
-    A string past the bound becomes ``<len=N>`` and a container ``<items=N>``,
-    named apart because one line can carry both. A list, tuple, or dict is
+    A string longer than the bound becomes ``<str len=N>``, a container
+    ``<list items=N>`` or ``<dict items=N>``. A short list, tuple, or dict is
     summarized one level down: an entry that is itself a container becomes the
-    placeholder, so nothing arbitrarily deep reaches the log line. Anything
-    else passes through untouched, whatever its size.
+    placeholder, so nothing arbitrarily deep reaches the log line.
     """
     if isinstance(value, str) and len(value) > _MAX_LOGGED_VALUE_LEN:
-        return f'<len={len(value)}>'
+        return describe_for_log(value)
     if isinstance(value, (list, tuple, dict)):
         if _nested or len(value) > _MAX_LOGGED_ITEMS:
-            return f'<items={len(value)}>'
+            return describe_for_log(value)
         if isinstance(value, dict):
-            return {k: _summarize_log_value(v, _nested=True) for k, v in value.items()}
+            return {
+                _summarize_log_value(k, _nested=True): _summarize_log_value(
+                    v, _nested=True
+                )
+                for k, v in value.items()
+            }
         return [_summarize_log_value(item, _nested=True) for item in value]
     return value
+
+
+def _log_arguments(arguments: dict[str, Any]) -> dict[str, Any]:
+    """The entry log's view of a call: every key, and a value only if reviewed."""
+    return {
+        key: (
+            _summarize_log_value(value)
+            if key in _LOGGED_VERBATIM_KEYS
+            else describe_for_log(value)
+        )
+        for key, value in arguments.items()
+    }
 
 
 def with_logging(func: Callable) -> Callable:
     """Decorator to add automatic logging to MCP tools.
 
     This decorator:
-    1. Logs function entry: `_UNLOGGED_KEYS` drops arguments by name,
-       `_summarize_log_value` bounds the rest
+    1. Logs function entry: `_LOGGED_VERBATIM_KEYS` are written bounded by
+       `_summarize_log_value`, every other argument by type and size alone
     2. Logs successful completion
     3. Logs errors (works with with_error_handling)
 
@@ -595,12 +694,9 @@ def with_logging(func: Callable) -> Callable:
             bound_args = sig.bind(*args, **kwargs)
             bound_args.apply_defaults()
 
-            log_args = {
-                k: _summarize_log_value(v)
-                for k, v in bound_args.arguments.items()
-                if k not in _UNLOGGED_KEYS
-            }
-            logger.info('%s called with: %s', func_name, log_args)
+            logger.info(
+                '%s called with: %s', func_name, _log_arguments(bound_args.arguments)
+            )
 
         # Call the original function
         result = await func(*args, **kwargs)
