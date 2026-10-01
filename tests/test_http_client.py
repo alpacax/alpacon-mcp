@@ -68,13 +68,13 @@ def create_mock_response(
     mock_response.headers = headers or {}
     if json_data is not None:
         mock_response.json.return_value = json_data
-        # Set text to string representation that won't be empty
-        mock_response.text = 'mock response text'
+        # A JSON body is never empty, whatever text_data says.
+        text_data = text_data or 'mock response text'
     else:
         mock_response.json.return_value = {}
-        mock_response.text = ''
     # A real body's bytes and text are empty together; the client checks the bytes.
-    mock_response.content = (text_data or mock_response.text).encode()
+    mock_response.text = text_data
+    mock_response.content = text_data.encode()
 
     # Mock raise_for_status to raise HTTPStatusError for error codes
     if status_code >= HTTPStatus.BAD_REQUEST:
