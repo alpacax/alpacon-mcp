@@ -245,8 +245,8 @@ class TestErrorCodeHint:
         hint = _ERROR_CODE_HINT['workspace_extension_plan_required']
         assert 'plan' in hint
         assert 'upgrading' in hint
-        # Four extensions share this code (alpacon-server#3559), so the hint
-        # must not name one of them.
+        # Four extensions share this code (alpacax/alpacon-server#3559), so
+        # the hint must not name one of them.
         assert 'metrics' not in hint
 
     def test_workspace_extension_not_enabled_names_the_admin_path(self):

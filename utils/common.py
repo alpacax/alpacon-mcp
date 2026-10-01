@@ -223,8 +223,9 @@ FILE_EXEC_INLINE_CREDENTIAL_HINT = (
 )
 
 #: The workspace extension gates: endpoints owned by a workspace extension
-#: (metrics, and since alpacon-server#3559 also dns, proxy and private_ssl)
-#: return one of these two codes when the caller's workspace cannot use them.
+#: (metrics, and since alpacax/alpacon-server#3559 also dns, proxy and
+#: private_ssl) return one of these two codes when the caller's workspace
+#: cannot use them.
 #: 402 means the plan itself excludes the extension; 403 means the plan
 #: allows it but a workspace admin has not turned it on yet. The body does not
 #: name the extension, so the hint stays generic.
