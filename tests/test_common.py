@@ -244,12 +244,16 @@ class TestErrorCodeHint:
     def test_workspace_extension_plan_required_names_the_upgrade_path(self):
         hint = _ERROR_CODE_HINT['workspace_extension_plan_required']
         assert 'plan' in hint
-        assert 'metrics' in hint
+        assert 'upgrading' in hint
+        # Four extensions share this code (alpacon-server#3559), so the hint
+        # must not name one of them.
+        assert 'metrics' not in hint
 
     def test_workspace_extension_not_enabled_names_the_admin_path(self):
         hint = _ERROR_CODE_HINT['workspace_extension_not_enabled']
         assert 'workspace admin' in hint
         assert 'workspace settings' in hint
+        assert 'metrics' not in hint
 
     def test_gate_codes_have_no_hint_entries(self):
         # Gate codes are handled entirely by work_session_gate_response;
