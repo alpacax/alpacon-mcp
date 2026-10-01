@@ -574,6 +574,7 @@ uvx alpacon-mcp
 ```bash
 # Build and run with Docker
 docker build -t alpacon-mcp .
+# The container runs as uid 200, so the mounted config/ must be readable by it
 docker run -v $(pwd)/config:/app/config:ro alpacon-mcp
 ```
 

@@ -301,6 +301,8 @@ Images are published to Docker Hub by the release workflow; the repository name 
 
 The image's default command is `main_http.py`—the remote transport with Auth0 JWT auth, which needs the `AUTH0_*` variables. Override the command to run the stdio server instead.
 
+The container runs as the non-root user `alpacon` (uid and gid 200, home `/home/alpacon`), so the default token path is `/home/alpacon/.alpacon-mcp/token.json`, not a path under `/root`. A directory mounted at `/app/config` must be readable by uid 200, and a directory mounted at `/app/logs` must be writable by it.
+
 ### Building from source
 
 ```bash
@@ -361,6 +363,14 @@ chmod 600 config/token.json
 # Global configuration
 chmod 700 ~/.alpacon-mcp/
 chmod 600 ~/.alpacon-mcp/token.json
+```
+
+These commands suit a host that runs the server directly. For a `config/` directory mounted into the Docker image, the container user is uid 200, so run `chown` last, after the `chmod` commands, or the mount is unreadable:
+
+```bash
+chmod 700 config/
+chmod 600 config/token.json
+sudo chown -R 200:200 config/
 ```
 
 ### Network security

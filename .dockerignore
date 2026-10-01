@@ -2,9 +2,9 @@
 .github
 .venv
 .claude
-__pycache__
-*.pyc
-*.pyo
+**/__pycache__
+**/*.pyc
+**/*.pyo
 node_modules
 tests
 dist

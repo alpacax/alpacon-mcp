@@ -3,7 +3,8 @@ FROM python:3.12-slim
 # Prevent Python from writing .pyc files and enable unbuffered output
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    UV_PROJECT_ENVIRONMENT=/usr/local
+    UV_PROJECT_ENVIRONMENT=/usr/local \
+    UV_COMPILE_BYTECODE=1
 
 WORKDIR /app
 
@@ -22,6 +23,19 @@ ARG VERSION=0.0.0
 # into a dependency that builds from an sdist with setuptools-scm.
 RUN SETUPTOOLS_SCM_PRETEND_VERSION="${VERSION#v}" uv sync --locked --no-dev && \
     rm -rf /root/.cache
+
+# uid 200 cannot write __pycache__ into this root-owned tree, so bytecode is baked
+# here. The project is an editable install, which UV_COMPILE_BYTECODE skips.
+RUN python -m compileall -q /app && \
+    python -c "import importlib.util, os, sys, httpx; missing = [p for p in map(importlib.util.cache_from_source, (httpx.__file__, '/app/server.py')) if not os.path.exists(p)]; sys.exit(f'bytecode missing: {missing}' if missing else 0)"
+
+# Default token path is /home/alpacon/.alpacon-mcp/token.json, not under /root
+RUN addgroup --system --gid 200 alpacon && \
+    adduser --system --uid 200 --gid 200 --home /home/alpacon --shell /usr/sbin/nologin alpacon && \
+    mkdir -p /app/logs /app/config && \
+    chown -R alpacon:alpacon /app/logs /app/config /home/alpacon
+
+USER alpacon
 
 # Default port (MCAR - MCP Alpacon Remote)
 EXPOSE 8237
