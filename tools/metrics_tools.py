@@ -943,7 +943,7 @@ async def _list_all_interfaces(
         result = expect_json_object(result)
         if 'error' in result:
             return result
-        page = result.get('results')
+        page = json_records(result)
         if not page:
             return records
         records.extend(page)

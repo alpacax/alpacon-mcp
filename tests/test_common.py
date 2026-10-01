@@ -742,3 +742,8 @@ class TestJsonRecords:
     def test_scalar_body_raises(self, body):
         with pytest.raises(UnexpectedResponseShapeError):
             json_records(body)
+
+    @pytest.mark.parametrize('results', [None, {}, {'id': 'a'}, 'x', 3])
+    def test_non_list_results_raises(self, results):
+        with pytest.raises(UnexpectedResponseShapeError, match='results'):
+            json_records({'results': results})

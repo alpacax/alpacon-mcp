@@ -829,10 +829,15 @@ def json_records(
 ) -> list[Any]:
     """Return a list body, or an object's `results`; an object without it is one record or none.
 
-    Raises UnexpectedResponseShapeError on a scalar body."""
+    Raises UnexpectedResponseShapeError on a scalar body or a non-list `results`."""
     if isinstance(result, list):
         return result
     obj = expect_json_object(result)
     if 'results' in obj:
-        return obj['results']
+        records = obj['results']
+        if not isinstance(records, list):
+            raise UnexpectedResponseShapeError(
+                f'Expected a list in upstream `results`, got {type(records).__name__}'
+            )
+        return records
     return [obj] if single_object_as_record else []

@@ -1101,6 +1101,21 @@ class TestServerMetricsSummaryLookups:
         assert result['status'] == 'error'
         assert 'JSON object' in result['message']
 
+    @pytest.mark.asyncio
+    async def test_non_list_results_is_an_error_not_interface_names(
+        self, mock_http_client, mock_token_manager
+    ):
+        self.route_calls(
+            mock_http_client, **{'/api/proc/interfaces/': {'results': {'id': 'x'}}}
+        )
+
+        result = await get_server_metrics_summary(
+            server_id=SERVER_ID, workspace='testworkspace'
+        )
+
+        assert result['status'] == 'error'
+        assert '`results`' in result['message']
+
 
 class TestParseCpuMetrics:
     """Test parse_cpu_metrics helper function."""
@@ -1896,3 +1911,16 @@ class TestMetricsToolsBodyShapes:
 
         assert result['status'] == 'error'
         assert 'JSON object' in result['message']
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('name', CALLS)
+    @pytest.mark.parametrize('results', [None, {'usage': 1}])
+    async def test_non_list_results_is_an_error_not_no_data(
+        self, name, results, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.get.return_value = {'results': results}
+
+        result = await self._call(name)
+
+        assert result['status'] == 'error'
+        assert '`results`' in result['message']
