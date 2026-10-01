@@ -155,6 +155,22 @@ class TestRegionAutoDetection:
         assert result['status'] == 'success'
 
     @pytest.mark.asyncio
+    @patch('utils.decorators._get_jwt_token', return_value='header.payload.signature')
+    @patch('utils.decorators.get_token_workspaces')
+    @patch.dict('os.environ', {'ALPACON_MCP_AUTH_ENABLED': 'true'})
+    async def test_jwt_mode_decodes_token_once_per_call(self, mock_workspaces, _):
+        """Region resolution and authorization share one decode of the JWT."""
+        mock_workspaces.return_value = [
+            {'schema_name': 'demo', 'auth0_id': 'org_demo', 'region': 'ap1'}
+        ]
+        func = _make_decorated_func()
+
+        result = await func(workspace='demo', region='')
+
+        assert result['status'] == 'success'
+        mock_workspaces.assert_called_once_with('header.payload.signature')
+
+    @pytest.mark.asyncio
     @patch('utils.decorators._get_jwt_token', return_value=None)
     @patch('utils.token_manager.get_token_manager')
     async def test_ambiguous_region_returns_error(self, mock_tm, mock_jwt):
