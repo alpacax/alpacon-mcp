@@ -1,4 +1,4 @@
-FROM python:3.12-slim AS builder
+FROM python:3.14-slim-bookworm AS builder
 
 # The venv is copied whole into the runtime stage, so uv itself never ships
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -27,7 +27,7 @@ RUN SETUPTOOLS_SCM_PRETEND_VERSION="${VERSION#v}" uv sync --locked --no-dev && \
 # The project is an editable install, which UV_COMPILE_BYTECODE skips
 RUN python -m compileall -q /app
 
-FROM python:3.12-slim
+FROM python:3.14-slim-bookworm
 
 # Prevent Python from writing .pyc files and enable unbuffered output
 ENV PYTHONDONTWRITEBYTECODE=1 \
