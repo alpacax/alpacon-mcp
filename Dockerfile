@@ -1,10 +1,10 @@
-FROM python:3.12-slim
+FROM python:3.12-slim AS builder
 
-# Prevent Python from writing .pyc files and enable unbuffered output
+# The venv is copied whole into the runtime stage, so uv itself never ships
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    UV_PROJECT_ENVIRONMENT=/usr/local \
-    UV_COMPILE_BYTECODE=1
+    UV_PROJECT_ENVIRONMENT=/opt/venv \
+    UV_COMPILE_BYTECODE=1 \
+    UV_PYTHON_DOWNLOADS=never
 
 WORKDIR /app
 
@@ -24,10 +24,26 @@ ARG VERSION=0.0.0
 RUN SETUPTOOLS_SCM_PRETEND_VERSION="${VERSION#v}" uv sync --locked --no-dev && \
     rm -rf /root/.cache
 
-# uid 200 cannot write __pycache__ into this root-owned tree, so bytecode is baked
-# here. The project is an editable install, which UV_COMPILE_BYTECODE skips.
-RUN python -m compileall -q /app && \
-    python -c "import importlib.util, os, sys, httpx; missing = [p for p in map(importlib.util.cache_from_source, (httpx.__file__, '/app/server.py')) if not os.path.exists(p)]; sys.exit(f'bytecode missing: {missing}' if missing else 0)"
+# The project is an editable install, which UV_COMPILE_BYTECODE skips
+RUN python -m compileall -q /app
+
+FROM python:3.12-slim
+
+# Prevent Python from writing .pyc files and enable unbuffered output
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PATH=/opt/venv/bin:$PATH
+
+WORKDIR /app
+
+# The editable install points at /app, so both trees keep their builder paths
+COPY --from=builder /opt/venv /opt/venv
+COPY --from=builder /app /app
+
+# uid 200 cannot write __pycache__ into these root-owned trees, so the build fails
+# here unless the builder baked it. pip is only an installer, so it is removed.
+RUN python -c "import importlib.util, os, sys, httpx; missing = [p for p in map(importlib.util.cache_from_source, (httpx.__file__, '/app/server.py')) if not os.path.exists(p)]; sys.exit(f'bytecode missing: {missing}' if missing else 0)" && \
+    /usr/local/bin/python -m pip uninstall -y -q pip
 
 # Default token path is /home/alpacon/.alpacon-mcp/token.json, not under /root
 RUN addgroup --system --gid 200 alpacon && \
