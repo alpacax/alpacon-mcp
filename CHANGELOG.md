@@ -268,8 +268,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   dropped as an unknown argument and gets the whole list, while `provider` still narrows. Those
   servers return no `owner` on a webhook either, so `get_webhook` no longer promises one and a
   client reading either tool's results must not expect it; `create_webhook` keeps its required
-  `owner`, which an older alpacon-server still needs on every create and a server carrying #3925
-  ignores.
+  `owner`, which an older alpacon-server still needs on every create and a server carrying
+  alpacax/alpacon-server#3925 ignores.
 - BREAKING: `shutdown_agent`, `upgrade_system`, `reboot_system`, and `shutdown_system` (#290,
   #291). Privileged power operations on a host or its agent—a shutdown, a reboot, an OS-level
   package upgrade—now go through a Work Session with sudo, MFA, policy, or approval, and
