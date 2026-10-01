@@ -9,7 +9,7 @@ from urllib.parse import urljoin
 import httpx
 
 from utils import request_signal
-from utils.common import MCP_USER_AGENT, is_auth_enabled
+from utils.common import MCP_USER_AGENT, JsonValue, is_auth_enabled
 from utils.error_handler import UpstreamAuthError
 from utils.logger import get_logger, redact_for_log
 
@@ -132,7 +132,7 @@ class AlpaconHTTPClient:
         json_data: dict[str, Any] | None = None,
         params: dict[str, Any] | None = None,
         timeout: float | None = None,
-    ) -> dict[str, Any]:
+    ) -> JsonValue:
         """Execute HTTP request with retry logic.
 
         Args:
@@ -145,7 +145,7 @@ class AlpaconHTTPClient:
             timeout: Request timeout in seconds
 
         Returns:
-            Response data as dictionary
+            The parsed JSON body (object, list, or scalar), or an error dict on failure
 
         Raises:
             httpx.HTTPError: If request fails after retries
@@ -309,9 +309,7 @@ class AlpaconHTTPClient:
         logger.error(f'Loop never ran - max_retries is {self.max_retries}')
         return error_response
 
-    async def batch_request(
-        self, requests: list[dict[str, Any]]
-    ) -> list[dict[str, Any]]:
+    async def batch_request(self, requests: list[dict[str, Any]]) -> list[JsonValue]:
         """Execute multiple requests in parallel.
 
         Args:
@@ -325,7 +323,7 @@ class AlpaconHTTPClient:
                 - data: Optional request body data
 
         Returns:
-            List of response dictionaries in the same order as requests
+            Parsed bodies or error dicts, in the same order as requests
         """
         if not requests:
             return []
@@ -369,7 +367,7 @@ class AlpaconHTTPClient:
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         # Convert exceptions to error dictionaries
-        processed_results: list[dict[str, Any]] = []
+        processed_results: list[JsonValue] = []
         for i, result in enumerate(results):
             if isinstance(result, Exception):
                 processed_results.append(
@@ -394,7 +392,7 @@ class AlpaconHTTPClient:
         endpoint: str,
         token: str | None = None,
         params: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
+    ) -> JsonValue:
         """Execute GET request.
 
         Args:
@@ -405,7 +403,7 @@ class AlpaconHTTPClient:
             params: Query parameters
 
         Returns:
-            Response data
+            The parsed JSON body, or an error dict on failure
         """
         base_url = self.get_base_url(region, workspace)
         full_url = urljoin(base_url, endpoint)
@@ -422,7 +420,7 @@ class AlpaconHTTPClient:
         token: str | None = None,
         data: dict[str, Any] | None = None,
         params: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
+    ) -> JsonValue:
         """Execute POST request.
 
         Args:
@@ -434,7 +432,7 @@ class AlpaconHTTPClient:
             params: Query parameters
 
         Returns:
-            Response data
+            The parsed JSON body, or an error dict on failure
         """
         base_url = self.get_base_url(region, workspace)
         full_url = urljoin(base_url, endpoint)
@@ -450,7 +448,7 @@ class AlpaconHTTPClient:
         endpoint: str,
         token: str | None = None,
         data: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
+    ) -> JsonValue:
         """Execute PUT request.
 
         Args:
@@ -461,7 +459,7 @@ class AlpaconHTTPClient:
             data: Request body data
 
         Returns:
-            Response data
+            The parsed JSON body, or an error dict on failure
         """
         base_url = self.get_base_url(region, workspace)
         full_url = urljoin(base_url, endpoint)
@@ -477,7 +475,7 @@ class AlpaconHTTPClient:
         endpoint: str,
         token: str | None = None,
         data: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
+    ) -> JsonValue:
         """Execute PATCH request.
 
         Args:
@@ -488,7 +486,7 @@ class AlpaconHTTPClient:
             data: Request body data
 
         Returns:
-            Response data
+            The parsed JSON body, or an error dict on failure
         """
         base_url = self.get_base_url(region, workspace)
         full_url = urljoin(base_url, endpoint)
@@ -504,7 +502,7 @@ class AlpaconHTTPClient:
         endpoint: str,
         token: str | None = None,
         params: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
+    ) -> JsonValue:
         """Execute DELETE request.
 
         Args:
@@ -515,7 +513,7 @@ class AlpaconHTTPClient:
             params: Query parameters
 
         Returns:
-            Response data
+            The parsed JSON body, or an error dict on failure
         """
         base_url = self.get_base_url(region, workspace)
         full_url = urljoin(base_url, endpoint)

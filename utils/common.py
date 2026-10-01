@@ -13,6 +13,8 @@ from urllib.parse import urlparse
 from utils.logger import get_logger
 from utils.token_manager import get_token_manager
 
+JsonValue = dict[str, Any] | list[Any] | str | int | float | bool | None
+
 # Initialize shared instances
 token_manager = get_token_manager()
 logger = get_logger('common')
@@ -806,3 +808,30 @@ def _extract_error_code(result: dict[str, Any]) -> str | None:
         return None
     code = body.get('code')
     return code if isinstance(code, str) else None
+
+
+class UnexpectedResponseShapeError(ValueError):
+    """Upstream answered with a JSON body whose shape the caller cannot use."""
+
+
+def expect_json_object(result: JsonValue) -> dict[str, Any]:
+    """Return `result` when it is a JSON object, else raise UnexpectedResponseShapeError."""
+    if not isinstance(result, dict):
+        raise UnexpectedResponseShapeError(
+            f'Expected a JSON object from upstream, got {type(result).__name__}'
+        )
+    return result
+
+
+def json_records(
+    result: JsonValue, *, single_object_as_record: bool = False
+) -> list[Any]:
+    """Return a list body, or an object's `results`; an object without it is one record or none.
+
+    Raises UnexpectedResponseShapeError on a scalar body."""
+    if isinstance(result, list):
+        return result
+    obj = expect_json_object(result)
+    if 'results' in obj:
+        return obj['results']
+    return [obj] if single_object_as_record else []

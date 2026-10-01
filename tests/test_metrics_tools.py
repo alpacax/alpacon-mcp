@@ -1070,6 +1070,37 @@ class TestServerMetricsSummaryLookups:
         assert result['status'] == 'success'
         assert len(pages) == _MAX_INTERFACE_PAGES
 
+    @pytest.mark.asyncio
+    async def test_list_body_picks_the_same_interface_as_the_object_body(
+        self, mock_http_client, mock_token_manager
+    ):
+        records = self.INTERFACES['results']
+        sent = self.route_calls(mock_http_client)
+        await get_server_metrics_summary(server_id=SERVER_ID, workspace='testworkspace')
+        from_object = sent['/api/metrics/realtime/traffic/']['interface']
+        sent = self.route_calls(mock_http_client, **{'/api/proc/interfaces/': records})
+
+        result = await get_server_metrics_summary(
+            server_id=SERVER_ID, workspace='testworkspace'
+        )
+
+        assert result['status'] == 'success'
+        assert sent['/api/metrics/realtime/traffic/']['interface'] == from_object
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('body', ['ok', 42, None])
+    async def test_scalar_body_is_an_error_not_an_empty_list(
+        self, body, mock_http_client, mock_token_manager
+    ):
+        self.route_calls(mock_http_client, **{'/api/proc/interfaces/': body})
+
+        result = await get_server_metrics_summary(
+            server_id=SERVER_ID, workspace='testworkspace'
+        )
+
+        assert result['status'] == 'error'
+        assert 'JSON object' in result['message']
+
 
 class TestParseCpuMetrics:
     """Test parse_cpu_metrics helper function."""
@@ -1802,3 +1833,66 @@ class TestListLatestMetrics:
 
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])
+
+
+class TestMetricsToolsBodyShapes:
+    """The four usage tools read a list or a paginated object alike, and refuse a scalar."""
+
+    CALLS = {
+        'cpu': (get_cpu_usage, {}),
+        'memory': (get_memory_usage, {}),
+        'disk': (get_disk_usage, {'device': '/dev/sda1', 'partition': '/'}),
+        'network': (get_network_traffic, {'interface': INTERFACE_ID}),
+    }
+
+    @staticmethod
+    def _call(name):
+        tool, extra = TestMetricsToolsBodyShapes.CALLS[name]
+        return tool(
+            server_id=SERVER_ID,
+            workspace='testworkspace',
+            start_date=START,
+            end_date=END,
+            region='ap1',
+            **extra,
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('name', CALLS)
+    async def test_list_body_gives_the_same_statistics_as_the_object_body(
+        self, name, mock_http_client, mock_token_manager
+    ):
+        records = [{'timestamp': START, 'usage': 25.5, 'avg_input_bps': 1}]
+        mock_http_client.get.return_value = {'results': records}
+        from_object = await self._call(name)
+        mock_http_client.get.return_value = records
+
+        from_list = await self._call(name)
+
+        assert from_object['status'] == 'success'
+        assert from_list['data']['statistics'] == from_object['data']['statistics']
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('name', CALLS)
+    async def test_object_without_results_reads_as_no_data(
+        self, name, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.get.return_value = {'count': 0}
+
+        result = await self._call(name)
+
+        assert result['status'] == 'success'
+        assert result['data']['statistics']['available'] is False
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('name', CALLS)
+    @pytest.mark.parametrize('body', ['ok', 42, None])
+    async def test_scalar_body_is_an_error_not_no_data(
+        self, name, body, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.get.return_value = body
+
+        result = await self._call(name)
+
+        assert result['status'] == 'error'
+        assert 'JSON object' in result['message']

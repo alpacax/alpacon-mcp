@@ -897,6 +897,59 @@ class TestWebFtpBulkUpload:
         assert all(r['status'] == 'uploaded' for r in result['data'])
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        'wrap',
+        [
+            lambda items: items,
+            lambda items: {'results': items},
+            lambda items: items[0],
+        ],
+        ids=['list', 'paginated-object', 'single-object'],
+    )
+    async def test_bulk_upload_reads_every_create_response_shape(
+        self, wrap, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.side_effect = [
+            wrap(self._bulk_create_response(1)),
+            None,
+        ]
+
+        is_file, os_access, os_stat = self._patch_local_file_checks()
+        with is_file, os_access, os_stat, patch('httpx.AsyncClient') as httpx_cls:
+            client = AsyncMock()
+            httpx_cls.return_value.__aenter__.return_value = client
+            client.put = AsyncMock(return_value=MagicMock(status_code=HTTPStatus.OK))
+
+            result = await webftp_bulk_upload(
+                server_id=VALID_SERVER_ID,
+                local_file_paths=['/local/a.txt'],
+                remote_directory='/remote/',
+                workspace='ws',
+            )
+
+        assert result['status'] == 'success'
+        assert result['successful_count'] == 1
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('body', ['ok', 42])
+    async def test_bulk_upload_scalar_create_response_is_an_error(
+        self, body, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = body
+
+        is_file, os_access, os_stat = self._patch_local_file_checks()
+        with is_file, os_access, os_stat:
+            result = await webftp_bulk_upload(
+                server_id=VALID_SERVER_ID,
+                local_file_paths=['/local/a.txt'],
+                remote_directory='/remote/',
+                workspace='ws',
+            )
+
+        assert result['status'] == 'error'
+        assert 'JSON object' in result['message']
+
+    @pytest.mark.asyncio
     async def test_bulk_upload_partial_success(
         self, mock_http_client, mock_token_manager
     ):
@@ -1818,6 +1871,126 @@ class TestUploadCapAgainstAsgiBodyLimit:
 
         assert encoded < MAX_REQUEST_BODY_SIZE
         assert encoded > MAX_REQUEST_BODY_SIZE // 2
+
+
+class TestNonObjectResponseBodies:
+    """Each boundary that reads fields off the body rejects list and scalar bodies."""
+
+    BODIES = [[{'id': 'x'}], 'ok', 42, True]
+    BODY_IDS = ['list', 'string', 'number', 'bool']
+
+    @staticmethod
+    def _assert_shape_error(result):
+        assert result['status'] == 'error'
+        assert 'JSON object' in result['message']
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('body', BODIES, ids=BODY_IDS)
+    async def test_upload_file_rejects_non_object_create_response(
+        self, body, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = body
+
+        with patch.object(Path, 'read_bytes', return_value=b'data'):
+            result = await webftp_upload_file(
+                server_id=VALID_SERVER_ID,
+                local_file_path='/local/test.txt',
+                remote_file_path='/remote/test.txt',
+                workspace='ws',
+                region='ap1',
+            )
+
+        self._assert_shape_error(result)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('body', BODIES, ids=BODY_IDS)
+    async def test_upload_content_rejects_non_object_create_response(
+        self, body, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = body
+        encoded = base64.b64encode(b'hello').decode()
+
+        result = await webftp_upload_content(
+            server_id=VALID_SERVER_ID,
+            file_content=encoded,
+            remote_file_path='/remote/hello.txt',
+            workspace='ws',
+            region='ap1',
+        )
+
+        self._assert_shape_error(result)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('body', BODIES, ids=BODY_IDS)
+    async def test_download_file_rejects_non_object_create_response(
+        self, body, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = body
+
+        result = await webftp_download_file(
+            server_id=VALID_SERVER_ID,
+            remote_file_path='/remote/test.txt',
+            local_file_path='/local/test.txt',
+            workspace='ws',
+            region='ap1',
+        )
+
+        self._assert_shape_error(result)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('body', BODIES, ids=BODY_IDS)
+    async def test_remote_download_rejects_non_object_create_response(
+        self, body, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = body
+
+        with patch('tools.webftp_tools.is_auth_enabled', return_value=True):
+            result = await webftp_download_file(
+                server_id=VALID_SERVER_ID,
+                remote_file_path='/remote/file.txt',
+                workspace='ws',
+                region='ap1',
+            )
+
+        self._assert_shape_error(result)
+        mock_http_client.get.assert_not_called()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('body', BODIES, ids=BODY_IDS)
+    async def test_remote_download_rejects_non_object_status_poll(
+        self, body, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = {'id': 'dl-abc', 'download_url': None}
+        mock_http_client.get.return_value = body
+
+        with (
+            patch('tools.webftp_tools.is_auth_enabled', return_value=True),
+            patch('asyncio.sleep', new_callable=AsyncMock),
+        ):
+            result = await webftp_download_file(
+                server_id=VALID_SERVER_ID,
+                remote_file_path='/remote/file.txt',
+                workspace='ws',
+                region='ap1',
+            )
+
+        self._assert_shape_error(result)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('body', BODIES, ids=BODY_IDS)
+    async def test_check_status_rejects_non_object_body(
+        self, body, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.get.return_value = body
+
+        result = await webftp_check_status(
+            file_id='file-123',
+            transfer_type='upload',
+            workspace='ws',
+            region='ap1',
+        )
+
+        self._assert_shape_error(result)
 
 
 if __name__ == '__main__':
