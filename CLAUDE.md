@@ -112,6 +112,12 @@ Things the code will not tell you at a glance:
   rebinding the ContextVar there never reaches the middleware. Only a
   JWT-carrying request ever signals, and `UpstreamAuthError` does not cross
   the ASGI boundary: the SDK turns a handler exception into a wire response.
+- **The agent's `clientInfo` travels the other way, so a plain ContextVar
+  works.** `utils/declared_agent.py` binds it in an SDK `ServerMiddleware`,
+  which wraps the handler call, and `http_client` forwards it as two
+  `X-Alpacon-Declared-Agent-*` headers. It is self-reported, and the server
+  composes and sanitizes it. A stateless streamable-http server never sees a
+  pre-2026 client's handshake at tool time, so nothing is sent there (#317).
 
 ## Language and writing style
 

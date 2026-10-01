@@ -12,6 +12,7 @@ from starlette.applications import Starlette
 from starlette.responses import JSONResponse
 
 from utils.common import MCP_VERSION, is_auth_enabled
+from utils.declared_agent import capture_declared_agent
 from utils.health import get_health_info
 from utils.http_client import http_client
 from utils.logger import get_logger, stop_log_listener
@@ -201,6 +202,7 @@ def _create_mcp_server() -> MCPServer:
             auth=auth_settings,
             token_verifier=token_verifier,
             lifespan=app_lifespan,
+            middleware=[capture_declared_agent],
         )
     else:
         logger.info('Creating MCP server without auth (stdio/SSE mode)')
@@ -208,6 +210,7 @@ def _create_mcp_server() -> MCPServer:
             'alpacon',
             version=MCP_VERSION,
             lifespan=app_lifespan,
+            middleware=[capture_declared_agent],
         )
 
 

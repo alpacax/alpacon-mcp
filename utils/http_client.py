@@ -10,6 +10,7 @@ import httpx
 
 from utils import request_signal
 from utils.common import MCP_USER_AGENT, JsonValue, is_auth_enabled
+from utils.declared_agent import declared_agent_headers
 from utils.error_handler import UpstreamAuthError
 from utils.logger import get_logger, redact_for_log
 
@@ -155,6 +156,8 @@ class AlpaconHTTPClient:
             'Content-Type': 'application/json',
             'Accept': 'application/json',
             'User-Agent': MCP_USER_AGENT,
+            # The agent behind this request, as it reported itself (#317).
+            **declared_agent_headers(),
         }
 
         if token:
