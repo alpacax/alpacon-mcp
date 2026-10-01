@@ -82,11 +82,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   accepted once a workspace's metrics extension was enabled. Both carry an `alert_id` pairing the
   crossing to its resolution; subscribing to every server (an omitted `target_id`) needs an admin
   account.
-- Actionable hints for two error codes the metrics extension gate returns:
-  `workspace_extension_plan_required` (402, the workspace's plan excludes the metrics
-  extension) and `workspace_extension_not_enabled` (403, the plan allows it but a workspace
-  admin has not enabled it yet). A client already reading `error_code` from an error response
-  needs no new handling; the hint text is appended to `message`.
+- Actionable hints for two error codes the workspace extension gates return:
+  `workspace_extension_plan_required` (402, the workspace's plan excludes the extension that
+  owns the endpoint) and `workspace_extension_not_enabled` (403, the plan allows it but a
+  workspace admin has not enabled it yet). The metrics, DNS, proxy, and Private SSL extensions
+  share these codes (alpacax/alpacon-server#3559) and the body does not name the extension, so
+  the hints stay generic. A client already reading `error_code` from an error response needs no
+  new handling; the hint text is appended to `message`.
 - `execute_file`: run a script that already exists on a server as a verified file (#207, the
   client half of ADR 0053). It submits `POST /api/events/commands/` with a `file` object—`path`,
   `interpreter`, `args`, and the script's `content` byte-for-byte—instead of `line`, so the

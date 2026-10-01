@@ -237,6 +237,11 @@ class TestUnwrapHttpResultGate:
 
 
 class TestErrorCodeHint:
+    # Four extensions share the workspace extension gate codes
+    # (alpacax/alpacon-server#3559), so neither hint may name one of them, in
+    # its display spelling or its identifier spelling.
+    EXTENSION_NAMES = ('metrics', 'dns', 'proxy', 'private ssl', 'private_ssl')
+
     def test_command_inline_credential_names_env_and_reason(self):
         hint = _ERROR_CODE_HINT['command_inline_credential']
         assert 'env' in hint
@@ -247,12 +252,16 @@ class TestErrorCodeHint:
     def test_workspace_extension_plan_required_names_the_upgrade_path(self):
         hint = _ERROR_CODE_HINT['workspace_extension_plan_required']
         assert 'plan' in hint
-        assert 'metrics' in hint
+        assert 'upgrading' in hint
+        for name in self.EXTENSION_NAMES:
+            assert name not in hint.lower()
 
     def test_workspace_extension_not_enabled_names_the_admin_path(self):
         hint = _ERROR_CODE_HINT['workspace_extension_not_enabled']
         assert 'workspace admin' in hint
         assert 'workspace settings' in hint
+        for name in self.EXTENSION_NAMES:
+            assert name not in hint.lower()
 
     def test_gate_codes_have_no_hint_entries(self):
         # Gate codes are handled entirely by work_session_gate_response;
