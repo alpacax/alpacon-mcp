@@ -262,14 +262,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   future release—callers should move to `agent_rollout_policy`.
 
 ### Removed
-- BREAKING: the `owner` filter on `list_webhooks`. An alpacon-server carrying
-  alpacax/alpacon-server#3925 ignores `?owner=` and returns every webhook, so the tool would have
-  answered an unnarrowed list that looked filtered; an MCP client still sending `owner` now has it
-  dropped as an unknown argument and gets the whole list, while `provider` still narrows. Those
-  servers return no `owner` on a webhook either, so `get_webhook` no longer promises one and a
-  client reading either tool's results must not expect it; `create_webhook` keeps its required
-  `owner`, which an older alpacon-server still needs on every create and a server carrying
-  alpacax/alpacon-server#3925 ignores.
+- BREAKING: the `owner` filter on `list_webhooks` (alpacax/alpacon-server#3647). A server
+  carrying alpacax/alpacon-server#3925 ignores `?owner=`, so the filter would have answered an
+  unfiltered list; a client still sending `owner` now has it dropped and gets every webhook. Those
+  servers return no `owner` on a webhook either, so `list_webhooks` and `get_webhook` results
+  carry none.
 - BREAKING: `shutdown_agent`, `upgrade_system`, `reboot_system`, and `shutdown_system` (#290,
   #291). Privileged power operations on a host or its agent—a shutdown, a reboot, an OS-level
   package upgrade—now go through a Work Session with sudo, MFA, policy, or approval, and

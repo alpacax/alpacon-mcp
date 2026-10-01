@@ -1,10 +1,10 @@
 """Unit tests for webhook and event subscription tools module."""
 
-import inspect
 from pathlib import Path
 
 import pytest
 
+from server import mcp
 from tests.conftest import HTTP_ERROR_ENVELOPE, http_client_fixture
 from tools.webhook_tools import (
     create_event_subscription,
@@ -398,12 +398,17 @@ class TestWebhooks:
         assert result['field'] == 'provider'
         mock_http_client.get.assert_not_called()
 
-    def test_list_no_longer_accepts_owner(self):
-        # alpacax/alpacon-server#3925 ignores ?owner=, so the filter would
-        # come back unnarrowed while looking applied. list_webhooks takes
-        # **kwargs, so a dead argument is swallowed rather than rejected;
-        # assert on the signature instead.
-        assert 'owner' not in inspect.signature(list_webhooks).parameters
+    @pytest.mark.asyncio
+    async def test_list_drops_a_stray_owner(self, mock_http_client, mock_token_manager):
+        # The schema no longer has owner, so the SDK drops it before the tool runs.
+        mock_http_client.get.return_value = {'results': [], 'count': 0}
+
+        await mcp.call_tool(
+            'list_webhooks',
+            {'workspace': 'testworkspace', 'region': 'ap1', 'owner': OWNER_ID},
+        )
+
+        assert mock_http_client.get.call_args.kwargs['params'] == {}
 
     @pytest.mark.asyncio
     async def test_list_forwards_provider(self, mock_http_client, mock_token_manager):
