@@ -28,6 +28,8 @@ from tools.cert_tools import (
 )
 
 mock_http_client = http_client_fixture('tools.cert_tools')
+SERVER_ID = '7e3984de-49ab-4cc6-bcdf-21fbd35858b8'
+OWNER_ID = '11111111-1111-1111-1111-111111111111'
 
 
 class TestCertificateAuthorities:
@@ -72,8 +74,8 @@ class TestCertificateAuthorities:
             name='Internal CA',
             domain='internal.acme.com',
             organization='ACME Corp',
-            server_id='7e3984de-49ab-4cc6-bcdf-21fbd35858b8',
-            owner='11111111-1111-1111-1111-111111111111',
+            server_id=SERVER_ID,
+            owner=OWNER_ID,
             root_valid_days=3650,
             default_valid_days=365,
             max_valid_days=730,
@@ -93,8 +95,8 @@ class TestCertificateAuthorities:
                 'name': 'Internal CA',
                 'domain': 'internal.acme.com',
                 'organization': 'ACME Corp',
-                'agent': '7e3984de-49ab-4cc6-bcdf-21fbd35858b8',
-                'owner': '11111111-1111-1111-1111-111111111111',
+                'agent': SERVER_ID,
+                'owner': OWNER_ID,
                 'root_valid_days': 3650,
                 'default_valid_days': 365,
                 'max_valid_days': 730,
@@ -136,8 +138,8 @@ class TestCertificateAuthorities:
             name='Test CA',
             domain='test.acme.com',
             organization='ACME Corp',
-            server_id='7e3984de-49ab-4cc6-bcdf-21fbd35858b8',
-            owner='11111111-1111-1111-1111-111111111111',
+            server_id=SERVER_ID,
+            owner=OWNER_ID,
             region='ap1',
         )
 
@@ -151,8 +153,8 @@ class TestCertificateAuthorities:
                 'name': 'Test CA',
                 'domain': 'test.acme.com',
                 'organization': 'ACME Corp',
-                'agent': '7e3984de-49ab-4cc6-bcdf-21fbd35858b8',
-                'owner': '11111111-1111-1111-1111-111111111111',
+                'agent': SERVER_ID,
+                'owner': OWNER_ID,
             },
         )
 
@@ -428,7 +430,7 @@ class TestGetCertificateAuthority:
             workspace='testworkspace',
             default_valid_days=180,
             max_valid_days=365,
-            owner='11111111-1111-1111-1111-111111111111',
+            owner=OWNER_ID,
             region='ap1',
         )
 
@@ -442,7 +444,7 @@ class TestGetCertificateAuthority:
             data={
                 'default_valid_days': 180,
                 'max_valid_days': 365,
-                'owner': '11111111-1111-1111-1111-111111111111',
+                'owner': OWNER_ID,
             },
         )
 

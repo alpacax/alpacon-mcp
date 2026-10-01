@@ -122,6 +122,22 @@ class TestGetSigningKey:
         key = _get_signing_key(jwks_response, 'not-a-jwt')
         assert key is None
 
+    @pytest.mark.parametrize('quiet_miss', [True, False])
+    def test_an_unknown_kid_is_logged_escaped(
+        self, rsa_keypair, jwks_response, caplog, quiet_miss
+    ):
+        """The kid is read before the signature is checked, so anyone sets it."""
+        forged = '\r\n2026-09-30 01:02:03 - alpacon_mcp.auth - INFO - forged'
+        token = _make_token(rsa_keypair, kid=f'unknown{forged}')
+
+        with caplog.at_level(logging.DEBUG, logger='alpacon_mcp'):
+            assert _get_signing_key(jwks_response, token, quiet_miss=quiet_miss) is None
+
+        messages = [r.getMessage() for r in caplog.records]
+        assert messages
+        assert not any('\n' in m or '\r' in m for m in messages)
+        assert any('unknown\\r\\n2026-09-30' in m for m in messages)
+
 
 class TestDecodeJwt:
     """Tests for decode_jwt function."""

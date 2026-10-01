@@ -316,24 +316,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   correction is the first entry under Changed.
 
 ### Fixed
+- The tool entry log no longer writes the command a call runs (#311). It writes an argument's value
+  only for a reviewed set of identifiers, names, paths, enums, filters and timestamps
+  (`_LOGGED_VERBATIM_KEYS`); every other argument, `command`, `commands`, `search` and
+  `search_query` among them, keeps its key and is recorded as `<str len=N>`, `<list items=N>` or
+  `<dict items=N>`, so a credential typed inline on a command line never reaches the log. At DEBUG
+  the HTTP client records request and response bodies and query parameters by field name and size,
+  and headers by name; an upstream 4xx or 5xx error body is logged by field name, not text. httpx
+  and httpcore now log warnings and errors only, the MCP SDK nothing below INFO, and the uvicorn
+  access log drops query strings, since those write request URLs with their query, each client
+  message, and the OAuth callback's authorization code. Nothing changes for a client, but an
+  existing `logs/alpacon-mcp.log` can hold commands as they were typed.
+- A client-supplied value can no longer start a second log record (#310). The stderr and file sinks,
+  uvicorn's own records included, escape every control character in a message and indent each line
+  of a traceback, and the OAuth
+  callback `error` and `error_description`, a mismatched `client_id`, a JWT `kid`, and JWT claim
+  values are escaped and bounded where they are logged. Nothing changes for a client.
+- `get_server_metrics_summary` now reads disk usage and network traffic for the root partition (a non-virtual one when several exist) and the first active interface (a non-virtual name such as `eth0` before `docker0` or `br-…`), and reports a failed or empty lookup in `metrics.disk.error` or `metrics.network.error` (#298). `get_network_traffic` now requires `interface`, an interface ID, so its resource URI is now `alpacon://metrics/{region}/{workspace}/{server_id}/network/{interface}`. The CPU, memory, disk, and network metrics now report the newest sample as `current` and a `time_range` running oldest to newest, so a client reading `current` sees different values, and because the realtime endpoints keep only 12 hours, the CPU, memory, disk usage, disk I/O, and network tools now default to the last 12 hours, with `hours` defaulting to 12 and capped at 12 (it was 24 and 168).
 - `webftp_check_status` now returns a `message` naming the transfer state—still in progress, completed, or failed with the server's own message when it gives one (#247). The top-level `status: "success"` only means the status call itself succeeded, and a running transfer used to come back as `{"success": null, "message": null}` with no words at all. `data` is unchanged, so a client already branching on `data.success` needs nothing new.
 - `webftp_upload_content` no longer writes the uploaded file into the log (#233). `with_logging`
   logged every argument value in full, and `file_content` carries the base64 payload, so the whole
   uploaded file landed in one INFO line, measured at 1.4 MB of log for a 1 MB upload. The entry
-  log now drops the payload by name, replaces a kept string over 256 characters with `<len=N>` and
-  a list or dict over ten entries with `<items=N>`, and builds the summary only when INFO is
-  enabled. Nothing changes for a client, but an
+  log now records the payload by its length, replaces a kept string over 256 characters with
+  `<str len=N>` and a list or dict over ten entries with `<list items=N>` or `<dict items=N>`, and
+  builds the summary only when INFO is enabled. Nothing changes for a client, but an
   existing `logs/alpacon-mcp.log` can hold uploaded file contents and should be treated
   accordingly.
 - The entry log no longer records the free text, personal data, environment maps, and config lists
-  a tool receives (#233). `_SENSITIVE_LOG_KEYS` is now `_UNLOGGED_KEYS` and drops the payload and
-  free text a person wrote, the webhook and proxy URLs that are themselves a credential, personal
-  data, the `env` map that could carry a secret under any key, and bulk config lists; the
-  identifiers, paths, flags, filters, the `scopes` and `presets` a credential was granted, and the
-  `command` a call ran are kept. The 22 names dropped at this release are `token`, `password`,
-  `secret`, `key`, `content`, `data`, `file_content`, `description`, `title`, `reason`,
-  `requested_reason`, `purpose`, `url`, `package_proxy`, `email`, `billing_email`, `first_name`,
-  `last_name`, `env`, `args`, `enabled_extensions`, and `allowed_domains`. Nothing changes for a
+  a tool receives (#233). The payload and free text a person wrote, the webhook and proxy URLs
+  that are themselves a credential, personal data, the `env` map that could carry a secret under
+  any key, and bulk config lists are recorded by type and size alone; the identifiers, paths,
+  filters, and the `scopes` and `presets` a credential was granted are kept. Nothing changes for a
   client.
 - The published input schema of every tool behind `@mcp_tool_handler` no longer carries
   `kwargs`, the catch-all the decorator injects the token through (#211). FastMCP did not read

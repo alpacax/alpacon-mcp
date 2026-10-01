@@ -1,7 +1,6 @@
 """WebFTP (Web FTP) management tools for Alpacon MCP server."""
 
 import asyncio
-import base64
 import binascii
 import os
 import shlex
@@ -10,6 +9,7 @@ from pathlib import Path
 from typing import Any, cast
 
 import httpx
+import pybase64
 
 from server import TRANSPORT_STDIO
 from utils.api_call import http_call_response
@@ -461,7 +461,9 @@ async def webftp_upload_content(
     token = kwargs.get('token')
 
     try:
-        raw_bytes = base64.b64decode(file_content, validate=True)
+        raw_bytes = await asyncio.to_thread(
+            pybase64.b64decode, file_content, validate=True
+        )
     except binascii.Error as exc:
         return error_response(f'Invalid base64 content: {exc}', code='invalid_content')
 

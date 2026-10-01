@@ -124,10 +124,9 @@ class UpstreamAuthErrorMiddleware:
         The start message is held until the signal is known: once it goes out,
         neither the status nor WWW-Authenticate can be changed.
         """
-        request_path = scope.get('path', '?')
         logger.debug(
             '[DEBUG-MW] Request %s—cooldown_key=%s (None means no Bearer header)',
-            request_path,
+            scope.get('path', '?'),
             cooldown_key,
         )
 

@@ -5,7 +5,7 @@ A comprehensive logging system has been added to the MCP server. Debugging and m
 ## 📋 Features
 
 ### Logging levels
-- **DEBUG**: Detailed debugging information (API request/response bodies, token lookup, etc.)
+- **DEBUG**: Detailed debugging information (API request/response field names and sizes, token lookup, etc.)
 - **INFO**: General operational information (server start, successful API calls, etc.)
 - **WARNING**: Situations requiring attention (no token, retries, etc.)
 - **ERROR**: Error situations (API failures, exceptions, etc.)
@@ -71,11 +71,11 @@ python main.py
 - `server_tools`: Server management tools
 
 ### 3. HTTP request logging
-- Request URL, method, parameters
+- Request URL and method; at DEBUG, the names of the parameters, body fields and headers, with each value's type and size
 - Response status code, content length
-- Detailed information in error situations
+- On an upstream error, the status and the error body's field names, never its text
 - Retry logic tracking
-- **Security**: Authorization headers are automatically processed as [REDACTED]
+- **Security**: no header value, parameter value, or body value is written at any level
 
 ## 🛠️ Debugging tips
 
@@ -110,14 +110,26 @@ Currently, logs accumulate in a single file. Log rotation functionality can be a
 
 Every tool call behind `@mcp_tool_handler` writes one `called with` line at INFO. Read this before deciding what your log file may hold.
 
-- Dropped by name: credential names (`token`, `password`, `secret`, `key`), the upload payload `file_content`, URLs that are themselves a credential (`url`, `package_proxy`), free text such as `content`, `description`, and `purpose`, personal data such as `email`, the `env` map, and config lists such as `allowed_domains`. See `_UNLOGGED_KEYS` in `utils/decorators.py` for the full set.
-- Bounded by size: a remaining string longer than 256 characters is replaced by `<len=N>`, a list or dict longer than ten entries by `<items=N>`. A shorter list or dict keeps its entries, each under the same 256-character bound.
-- Kept whole, up to 256 characters each: the command a call ran (`command`, `commands`) and the text a caller typed into a filter (`search`, `search_query`). A credential passed inline on a command line (`-p`, `--token`, an `Authorization` header on `curl`) is recorded, and no key filter can catch it—the secret sits inside a value the log exists to keep.
-- Outside the entry log: at DEBUG the HTTP client writes each request and response body whole (`Request body`, `Response body`), so the fields dropped above are recorded one layer down. Run at INFO wherever that matters. One exception survives the level: an upstream 4xx or 5xx writes the response body at ERROR, 401 alone excepted (`utils/http_client.py`). That is the response and not the request.
+- Written as given, bounded: the arguments in `_LOGGED_VERBATIM_KEYS` (`utils/decorators.py`), which are identifiers, names, paths, enums and filters, timestamps, and the `workspace` and `region` a call targets. A string longer than 256 characters is replaced by `<str len=N>`, a list or dict longer than ten entries by `<list items=N>` or `<dict items=N>`. A shorter list or dict keeps its entries, each under the same bound.
+- Recorded by type and size alone: every other argument, under its own key. `{"command": "<str len=42>"}` is all the log keeps of a command (`command`, `commands`), and the same goes for filter text (`search`, `search_query`), payloads, free text, URLs, personal data, and `env` maps. A credential typed inline on a command line never reaches the log. A parameter added later is recorded this way until someone reviews it into the verbatim set.
+- Numbers, flags and `None` are written as given, since they carry no text.
+- The audit trail of what a command ran is the server's own command record, not this log.
+
+## 🧱 One record per line
+
+- A client-supplied value such as an OAuth `error_description`, a `client_id`, a JWT `kid`, or a claim is escaped and bounded at the call site (`escape_for_log` in `utils/logger.py`).
+- Both sinks escape every control character in a message, so no value can start a second line. A traceback keeps its line breaks, and each of its lines is indented under the record line, so none starts where a record would.
+
+## 🔌 Libraries
+
+- `httpx` and `httpcore` write warnings and errors only: at INFO httpx writes each request URL with its query string, and at DEBUG httpcore writes the response headers.
+- The MCP SDK (`mcp`) never writes below INFO, even with `ALPACON_MCP_LOG_LEVEL=DEBUG`: at DEBUG it writes each client message, tool arguments included.
+- The uvicorn access log records the request path without its query string, which on `/oauth/callback` carries the authorization code.
+- uvicorn's own records, which go to stderr through uvicorn's handler, get the same escaping and traceback indentation as this server's.
 
 ## 🎯 Performance considerations
 
-- DEBUG level records request/response bodies in logs, which may impact performance
+- DEBUG level records the shape of every request and response, which may impact performance
 - INFO level is recommended for production environments
 
 ---

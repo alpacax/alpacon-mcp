@@ -10,7 +10,7 @@ import httpx
 import jwt
 from mcp.server.auth.provider import AccessToken
 
-from utils.logger import get_logger
+from utils.logger import escape_for_log, get_logger
 
 logger = get_logger('auth')
 
@@ -116,7 +116,7 @@ def _get_signing_key(
     try:
         unverified_header = jwt.get_unverified_header(token)
     except jwt.exceptions.DecodeError as e:
-        logger.error(f'Failed to decode JWT header: {e}')
+        logger.error('Failed to decode JWT header: %s', escape_for_log(e))
         return None
 
     kid = unverified_header.get('kid')
@@ -129,9 +129,9 @@ def _get_signing_key(
             return jwt.algorithms.RSAAlgorithm.from_jwk(json.dumps(key))
 
     if quiet_miss:
-        logger.info(f'No matching key for kid in cached JWKS: {kid}')
+        logger.info('No matching key for kid in cached JWKS: %s', escape_for_log(kid))
     else:
-        logger.error(f'No matching key found for kid: {kid}')
+        logger.error('No matching key found for kid: %s', escape_for_log(kid))
     return None
 
 
@@ -164,7 +164,7 @@ def decode_jwt(
     except jwt.InvalidIssuerError:
         logger.warning('JWT token has invalid issuer')
     except jwt.InvalidTokenError as e:
-        logger.warning(f'JWT token validation failed: {e}')
+        logger.warning('JWT token validation failed: %s', escape_for_log(e))
     return None
 
 
@@ -185,7 +185,7 @@ def decode_claims_unverified(jwt_token: str) -> dict[str, Any] | None:
             },
         )
     except Exception as e:
-        logger.error(f'JWT decode failed: {e}')
+        logger.error('JWT decode failed: %s', escape_for_log(e))
         return None
 
 
@@ -342,7 +342,9 @@ class Auth0TokenVerifier:
             workspaces = extract_workspaces(claims, self._config['namespace'])
             ws_names = [ws.get('schema_name', '?') for ws in workspaces]
             logger.info(
-                f'JWT verified - sub: {claims.get("sub")}, workspaces: {ws_names}'
+                'JWT verified - sub: %s, workspaces: %s',
+                escape_for_log(claims.get('sub')),
+                ws_names,
             )
 
             return AccessToken(

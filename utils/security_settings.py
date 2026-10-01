@@ -14,7 +14,7 @@ from typing import Any
 
 import httpx
 
-from utils.logger import get_logger
+from utils.logger import escape_for_log, get_logger
 
 logger = get_logger('security_settings')
 
@@ -229,9 +229,9 @@ def check_mfa_completed(
 
         if not isinstance(timestamp_str, str):
             logger.warning(
-                'MFA claim value is not a string for method %s: %r',
-                method,
-                timestamp_str,
+                'MFA claim value is not a string for method %s: %s',
+                escape_for_log(method),
+                escape_for_log(repr(timestamp_str)),
             )
             continue
 
@@ -242,13 +242,20 @@ def check_mfa_completed(
 
             elapsed = (now - mfa_time).total_seconds()
             if elapsed < 0:
-                logger.warning('MFA timestamp from future rejected: %s', timestamp_str)
+                logger.warning(
+                    'MFA timestamp from future rejected: %s',
+                    escape_for_log(timestamp_str),
+                )
                 continue
 
             if elapsed < settings.mfa_timeout:
                 return True
         except (ValueError, TypeError) as e:
-            logger.warning('Failed to parse MFA timestamp %s: %s', timestamp_str, e)
+            logger.warning(
+                'Failed to parse MFA timestamp %s: %s',
+                escape_for_log(timestamp_str),
+                escape_for_log(e),
+            )
             continue
 
     return False

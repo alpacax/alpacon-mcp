@@ -26,7 +26,6 @@ from utils.oauth import (
     _CORS_PREFLIGHT_HEADERS,
     _GRANT_SECRET_ENV,
     _GRANT_SECRET_INFO,
-    _LOG_VALUE_MAX_CHARS,
     _MAX_REGISTERED_REDIRECT_URIS,
     _NONCE_COOKIE_NAME,
     _PKCE_CHALLENGE_METHOD,
@@ -35,7 +34,6 @@ from utils.oauth import (
     _STATE_TTL_SECONDS,
     _build_state,
     _check_redirect_uri,
-    _escape_for_log,
     _get_allowed_redirect_uris,
     _get_grant_secret,
     _get_state_secret,
@@ -433,21 +431,6 @@ class TestAuthorizeObservation:
 
         assert 'cb\\nforged line' in caplog.text
         assert 'cb\nforged line' not in caplog.text
-
-
-class TestEscapeForLog:
-    """Tests for the client-value escaping helper."""
-
-    def test_truncates_an_oversized_value(self):
-        escaped = _escape_for_log('a' * (_LOG_VALUE_MAX_CHARS + 100))
-
-        assert escaped == 'a' * _LOG_VALUE_MAX_CHARS + '...(truncated)'
-
-    def test_truncates_when_escaping_expands_the_value(self):
-        """Escaping grows a control character, so the input cap alone is not enough."""
-        escaped = _escape_for_log('\n' * _LOG_VALUE_MAX_CHARS)
-
-        assert escaped == '\\n' * (_LOG_VALUE_MAX_CHARS // 2) + '...(truncated)'
 
 
 class TestStateSecret:
@@ -2826,3 +2809,59 @@ class TestOAuthCallback:
         )
         assert response.status_code == HTTPStatus.BAD_REQUEST
         assert 'location' not in response.headers
+
+
+# A line break and what a real record looks like after it: unescaped, a log
+# reader starts a second record at the timestamp.
+FORGED_LINE = '\r\n2026-09-30 01:02:03 - alpacon_mcp.oauth - INFO - forged'
+
+
+def _assert_single_line_records(caplog):
+    assert caplog.records
+    for record in caplog.records:
+        message = record.getMessage()
+        assert '\n' not in message, message
+        assert '\r' not in message, message
+
+
+class TestClientValuesInLogs:
+    """A value the client sends reaches the log escaped, one record per line."""
+
+    def test_callback_error_values_are_escaped(self, oauth_app, caplog):
+        with caplog.at_level(logging.DEBUG, logger='alpacon_mcp'):
+            oauth_app.get(
+                '/oauth/callback',
+                params={
+                    'error': f'access_denied{FORGED_LINE}',
+                    'error_description': f'denied{FORGED_LINE}',
+                },
+                follow_redirects=False,
+            )
+
+        _assert_single_line_records(caplog)
+        assert 'access_denied\\r\\n2026-09-30' in caplog.text
+
+    def test_callback_error_description_is_bounded(self, oauth_app, caplog):
+        with caplog.at_level(logging.WARNING, logger='alpacon_mcp'):
+            oauth_app.get(
+                '/oauth/callback',
+                params={'error': 'access_denied', 'error_description': 'x' * 5000},
+                follow_redirects=False,
+            )
+
+        assert 'x' * 600 not in caplog.text
+
+    def test_mismatched_client_id_is_escaped(self, oauth_app, caplog):
+        with caplog.at_level(logging.DEBUG, logger='alpacon_mcp'):
+            response = oauth_app.post(
+                '/oauth/token',
+                data={
+                    'grant_type': 'refresh_token',
+                    'refresh_token': _seal_refresh_token('test-refresh', DEVICE_ID),
+                    'client_id': f'other-client{FORGED_LINE}',
+                },
+            )
+
+        assert response.json()['error'] == 'invalid_client'
+        _assert_single_line_records(caplog)
+        assert 'other-client\\r\\n2026-09-30' in caplog.text

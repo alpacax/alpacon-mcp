@@ -26,7 +26,7 @@ import httpx
 from starlette.requests import Request
 from starlette.responses import JSONResponse, RedirectResponse, Response
 
-from utils.logger import get_logger
+from utils.logger import escape_for_log, get_logger
 
 logger = get_logger('oauth')
 
@@ -88,10 +88,6 @@ _ALLOWED_LOOPBACK_HOSTS = ('localhost', '127.0.0.1', '::1')
 # consumer sit in different repos, so a value we accept but the action rejects
 # would silently fall back to the fingerprint keying this fix exists to avoid.
 _DEVICE_ID_PATTERN = re.compile(r'^[A-Za-z0-9-]{8,64}$')
-
-# Caps a client-supplied value in a log line. Escaping expands a byte up to
-# sixfold, so an unbounded value on an unauthenticated route inflates log volume.
-_LOG_VALUE_MAX_CHARS = 512
 
 # A real client registers one or two callbacks. The cap keeps one unauthenticated
 # registration from driving a check — and in report-only mode a warning — per entry.
@@ -169,19 +165,6 @@ _DEFAULT_REDIRECT_DOMAINS = tuple(
         | {'chat.openai.com'}
     )
 )
-
-
-def _escape_for_log(value: str) -> str:
-    """Escape control characters in a client-supplied value.
-
-    A raw newline would otherwise let a client forge a second log line.
-    """
-    escaped = ''.join(
-        c if c.isprintable() else repr(c)[1:-1] for c in value[:_LOG_VALUE_MAX_CHARS]
-    )
-    if len(value) > _LOG_VALUE_MAX_CHARS or len(escaped) > _LOG_VALUE_MAX_CHARS:
-        return escaped[:_LOG_VALUE_MAX_CHARS] + '...(truncated)'
-    return escaped
 
 
 def _get_server_url(request) -> str:
@@ -295,13 +278,13 @@ def _check_redirect_uri(url: str) -> bool:
         logger.warning(
             'redirect_uri is outside the endpoint allowlist and is allowed only '
             'because report-only mode is on: %s',
-            _escape_for_log(url),
+            escape_for_log(url),
         )
         return True
 
     logger.warning(
         'Rejected redirect_uri outside the endpoint allowlist: %s',
-        _escape_for_log(url),
+        escape_for_log(url),
     )
     return False
 
@@ -348,8 +331,8 @@ def _log_authorize_client_profile(
     """
     logger.info(
         'authorize observed - redirect_uri: %s, pkce: %s',
-        _escape_for_log(redirect_uri) or '(none)',
-        _escape_for_log(code_challenge_method) or 'none',
+        escape_for_log(redirect_uri) or '(none)',
+        escape_for_log(code_challenge_method) or 'none',
     )
 
 
@@ -961,7 +944,7 @@ def register_oauth_routes(mcp_server):
         if provided_client_id and provided_client_id != configured_client_id:
             logger.warning(
                 'Rejected /oauth/token request with mismatched client_id: %s',
-                provided_client_id,
+                escape_for_log(provided_client_id),
             )
             return _oauth_error(
                 'invalid_client', 'client_id is not allowed for this endpoint'
@@ -1071,7 +1054,7 @@ def register_oauth_routes(mcp_server):
                         'status: %s, error: %s',
                         grant_type,
                         response.status_code,
-                        response_data.get('error', 'unknown'),
+                        escape_for_log(response_data.get('error', 'unknown')),
                     )
             else:
                 logger.warning(
@@ -1258,12 +1241,16 @@ def register_oauth_routes(mcp_server):
         if client_redirect_uri and not _check_redirect_uri(client_redirect_uri):
             logger.warning(
                 'Callback rejected untrusted redirect_uri from state: %s',
-                _escape_for_log(client_redirect_uri),
+                escape_for_log(client_redirect_uri),
             )
             client_redirect_uri = ''
 
         if error:
-            logger.warning(f'Auth0 callback error: {error} - {error_description}')
+            logger.warning(
+                'Auth0 callback error: %s - %s',
+                escape_for_log(error),
+                escape_for_log(error_description or ''),
+            )
             if client_redirect_uri:
                 params = {'error': error, 'error_description': error_description or ''}
                 if original_state:
@@ -1318,7 +1305,7 @@ def register_oauth_routes(mcp_server):
                         logger.warning(
                             'MFA token exchange returned %s (non-fatal): %s',
                             mfa_response.status_code,
-                            mfa_response.text[:200],
+                            escape_for_log(mfa_response.text, max_chars=200),
                         )
                     else:
                         logger.info('MFA token exchange succeeded (token discarded)')

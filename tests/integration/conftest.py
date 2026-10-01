@@ -12,6 +12,9 @@ import pytest
 
 from utils.http_client import http_client
 
+SERVER_ID = '550e8400-e29b-41d4-a716-446655440001'
+SECOND_SERVER_ID = '550e8400-e29b-41d4-a716-446655440002'
+
 
 @pytest.fixture
 def make_mock_transport():
@@ -105,14 +108,14 @@ def sample_api_responses():
                 'previous': None,
                 'results': [
                     {
-                        'id': '550e8400-e29b-41d4-a716-446655440001',
+                        'id': SERVER_ID,
                         'name': 'web-server-01',
                         'ip': '10.0.1.10',
                         'status': 'running',
                         'os': 'Ubuntu 22.04',
                     },
                     {
-                        'id': '550e8400-e29b-41d4-a716-446655440002',
+                        'id': SECOND_SERVER_ID,
                         'name': 'db-server-01',
                         'ip': '10.0.1.11',
                         'status': 'running',
@@ -121,7 +124,7 @@ def sample_api_responses():
                 ],
             },
             'server_detail': {
-                'id': '550e8400-e29b-41d4-a716-446655440001',
+                'id': SERVER_ID,
                 'name': 'web-server-01',
                 'ip': '10.0.1.10',
                 'status': 'running',
@@ -132,7 +135,7 @@ def sample_api_responses():
             'server_not_found': {'detail': 'Not found.'},
             'server_note_created': {
                 'id': 'note-001',
-                'server': '550e8400-e29b-41d4-a716-446655440001',
+                'server': SERVER_ID,
                 'title': 'Test Note',
                 'content': 'Test content',
                 'created_at': '2024-06-01T12:00:00Z',
@@ -169,14 +172,14 @@ def sample_api_responses():
                 'results': [
                     {
                         'id': 'evt-001',
-                        'server': '550e8400-e29b-41d4-a716-446655440001',
+                        'server': SERVER_ID,
                         'reporter': 'system',
                         'record': 'Server started',
                         'added_at': '2024-06-01T12:00:00Z',
                     },
                     {
                         'id': 'evt-002',
-                        'server': '550e8400-e29b-41d4-a716-446655440001',
+                        'server': SERVER_ID,
                         'reporter': 'user',
                         'record': 'Config updated',
                         'added_at': '2024-06-01T13:00:00Z',
