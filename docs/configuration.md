@@ -354,6 +354,8 @@ Building the image and the `docker-compose.yml` to run it live in the [installat
 
 The shipped image runs `main_http.py`—the remote (streamable-http) transport with JWT auth—so it needs the `AUTH0_*` variables above and no token file. Override the command to `python main.py` to run the stdio server instead; that path authenticates from `token.json`, so mount the config directory and point `ALPACON_MCP_CONFIG_FILE` at the mounted file.
 
+The image runs as the non-root user `alpacon` (uid and gid 200), so the home-directory default is `/home/alpacon/.alpacon-mcp/token.json`, and a mounted config directory must be readable by uid 200.
+
 #### MCP client Docker configuration
 ```json
 {
@@ -399,6 +401,8 @@ export ALPACON_MCP_LOG_LEVEL=ERROR
 chmod 600 config/token.json
 chmod 700 config/
 ```
+
+For a `config/` directory mounted into the Docker image, the container user is uid 200, so run `sudo chown -R 200:200 config/` after the `chmod` commands above (once the owner changes, a non-root host user can no longer `chmod`), or a `chmod 700` directory owned by another uid is unreadable inside the container.
 
 #### Environment-based tokens
 ```bash

@@ -574,7 +574,10 @@ uvx alpacon-mcp
 ```bash
 # Build and run with Docker
 docker build -t alpacon-mcp .
-docker run -v $(pwd)/config:/app/config:ro alpacon-mcp
+# The default command is main_http.py (needs AUTH0_*); this runs the stdio server
+# from the mounted token instead, which the container's uid 200 must be able to read
+docker run -i -v $(pwd)/config:/app/config:ro \
+  -e ALPACON_MCP_CONFIG_FILE=/app/config/token.json alpacon-mcp python main.py
 ```
 
 ### SSE mode (HTTP transport)

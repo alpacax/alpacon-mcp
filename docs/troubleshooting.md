@@ -97,6 +97,12 @@ chmod 600 config/token.json
 python -c "import json; json.load(open('config/token.json'))"
 ```
 
+For the Docker image, which reads the token as uid 200, hand the directory over after the checks above—once it belongs to uid 200, your host user can no longer read it:
+
+```bash
+sudo chown -R 200:200 config/
+```
+
 **Discovery order:** `ALPACON_MCP_<REGION>_<WORKSPACE>_TOKEN` env var → `ALPACON_MCP_CONFIG_FILE` → `~/.alpacon-mcp/token.json` → `./config/token.json`.
 
 **Verify token format:**
