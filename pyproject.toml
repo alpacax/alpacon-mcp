@@ -137,7 +137,7 @@ indent-style = "space"
 line-ending = "auto"
 
 [tool.mypy]
-python_version = "3.14"
+python_version = "3.12"
 ignore_missing_imports = true
 strict_optional = false
 namespace_packages = true
