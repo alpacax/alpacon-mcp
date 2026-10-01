@@ -114,6 +114,45 @@ class TestHeaderSafety:
         }
 
     @pytest.mark.asyncio
+    async def test_oversized_values_are_cut_to_the_server_limits(self) -> None:
+        """The server would truncate them too, but only if the request reaches it.
+
+        The limits are written out because they are alpacon-server's, not ours.
+        """
+        headers = await _headers_inside(_ctx('a' * 100_000, '1' * 100_000))
+        assert headers == {
+            DECLARED_AGENT_NAME_HEADER: 'a' * 64,
+            DECLARED_AGENT_VERSION_HEADER: '1' * 32,
+        }
+
+    @pytest.mark.asyncio
+    async def test_a_cut_that_lands_on_a_space_leaves_no_trailing_whitespace(
+        self,
+    ) -> None:
+        headers = await _headers_inside(_ctx('a' * 63 + ' tail', '2.1.0'))
+        assert headers[DECLARED_AGENT_NAME_HEADER] == 'a' * 63
+
+    @pytest.mark.asyncio
+    async def test_an_oversized_value_does_not_break_the_request(self) -> None:
+        """The pinned h11 refuses a header block past 16 KiB on the receiving side."""
+        headers = await _headers_inside(_ctx('a' * 100_000, '1' * 100_000))
+        sender = h11.Connection(h11.CLIENT)
+        data = sender.send(
+            h11.Request(
+                method='GET',
+                target='/',
+                headers=[('Host', 'x'), *headers.items()],
+            )
+        )
+        receiver = h11.Connection(h11.SERVER)
+        for start in range(0, len(data), 1024):
+            receiver.receive_data(data[start : start + 1024])
+            event = receiver.next_event()
+            if event is not h11.NEED_DATA:
+                break
+        assert isinstance(event, h11.Request)
+
+    @pytest.mark.asyncio
     @pytest.mark.parametrize(
         'name', ['claude-code', 'acme agent', ' acme ', 'acme/agent', '클로드', 'a\nb']
     )
