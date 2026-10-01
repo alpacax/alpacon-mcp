@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from server import mcp
 from tests.conftest import HTTP_ERROR_ENVELOPE, http_client_fixture
 from tools.webhook_tools import (
     create_event_subscription,
@@ -398,34 +399,29 @@ class TestWebhooks:
         mock_http_client.get.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_list_rejects_a_username_as_owner(
-        self, mock_http_client, mock_token_manager
-    ):
-        result = await list_webhooks(workspace='testworkspace', owner='alice')
-
-        assert result['status'] == 'error'
-        assert result['field'] == 'owner'
-        mock_http_client.get.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_list_forwards_owner_and_provider(
-        self, mock_http_client, mock_token_manager
-    ):
+    async def test_list_drops_a_stray_owner(self, mock_http_client, mock_token_manager):
+        # The schema no longer has owner, so the SDK drops it before the tool runs.
         mock_http_client.get.return_value = {'results': [], 'count': 0}
 
-        await list_webhooks(
-            workspace='testworkspace',
-            region='ap1',
-            owner=OWNER_ID,
-            provider='slack',
+        await mcp.call_tool(
+            'list_webhooks',
+            {'workspace': 'testworkspace', 'region': 'ap1', 'owner': OWNER_ID},
         )
+
+        assert mock_http_client.get.call_args.kwargs['params'] == {}
+
+    @pytest.mark.asyncio
+    async def test_list_forwards_provider(self, mock_http_client, mock_token_manager):
+        mock_http_client.get.return_value = {'results': [], 'count': 0}
+
+        await list_webhooks(workspace='testworkspace', region='ap1', provider='slack')
 
         mock_http_client.get.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
             endpoint='/api/notifications/webhooks/',
             token='test-token',
-            params={'owner': OWNER_ID, 'provider': 'slack'},
+            params={'provider': 'slack'},
         )
 
     @pytest.mark.asyncio
