@@ -13,6 +13,7 @@ from urllib.parse import urlparse
 from utils.logger import get_logger
 from utils.token_manager import get_token_manager
 
+# Every value response.json() can produce; AlpaconHTTPClient methods return it.
 JsonValue = dict[str, Any] | list[Any] | str | int | float | bool | None
 
 # Initialize shared instances
