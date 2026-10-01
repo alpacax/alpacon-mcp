@@ -17,7 +17,9 @@ from utils.common import (
     build_list_params,
     empty_value_error,
     error_response,
+    expect_json_object,
     is_auth_enabled,
+    json_records,
     resolve_work_session_id,
     success_response,
     unwrap_http_result,
@@ -197,6 +199,7 @@ async def _download_remote_mode(
     ):
         return err
 
+    result = expect_json_object(result)
     download_url = result.get('download_url')
 
     if not download_url:
@@ -215,6 +218,7 @@ async def _download_remote_mode(
                 file_id=file_id,
             ):
                 return err
+            status = expect_json_object(status)
             if status.get('success') is True:
                 download_url = status.get('download_url')
                 break
@@ -381,6 +385,7 @@ async def webftp_upload_file(
     ):
         return http_err
 
+    result = expect_json_object(result)
     if result.get('upload_url'):
         err = await _upload_bytes_to_s3(result['upload_url'], file_content)
         if err:
@@ -513,6 +518,7 @@ async def webftp_upload_content(
     ):
         return http_err
 
+    result = expect_json_object(result)
     if result.get('upload_url'):
         err = await _upload_bytes_to_s3(result['upload_url'], raw_bytes)
         if err:
@@ -644,6 +650,7 @@ async def webftp_download_file(
     ):
         return err
 
+    result = expect_json_object(result)
     if result.get('download_url'):
         try:
             file_size = await _stream_s3_to_file(
@@ -795,9 +802,7 @@ async def webftp_bulk_upload(
     ):
         return err
 
-    upload_items = (
-        result if isinstance(result, list) else result.get('results', [result])
-    )
+    upload_items = json_records(result, single_object_as_record=True)
     file_ids = [file_id for item in upload_items if (file_id := item.get('id'))]
 
     semaphore = asyncio.Semaphore(_UPLOAD_CONCURRENCY)
@@ -1031,7 +1036,8 @@ async def webftp_check_status(
         return err
 
     # The server leaves `success` null until the transfer finishes.
-    transfer_state = result.get('success') if isinstance(result, dict) else None
+    result = expect_json_object(result)
+    transfer_state = result.get('success')
     if transfer_state is True:
         message = f'{transfer_type.capitalize()} completed'
     elif transfer_state is False:

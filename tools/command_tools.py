@@ -9,6 +9,7 @@ from utils.common import (
     FILE_EXEC_INLINE_CREDENTIAL_HINT,
     FILE_EXEC_REFUSAL_HINTS,
     INLINE_CREDENTIAL_HINT,
+    JsonValue,
     build_list_params,
     empty_value_error,
     error_response,
@@ -250,7 +251,7 @@ async def _submit_command(
     region: str = '',
     *,
     token: str | None = None,
-) -> dict[str, Any] | list[Any]:
+) -> JsonValue:
     command_data: dict[str, Any] = {
         'server': server_id,
         'shell': shell,
@@ -299,7 +300,7 @@ async def _submit_file_execution(
     region: str = '',
     *,
     token: str | None = None,
-) -> dict[str, Any] | list[Any]:
+) -> JsonValue:
     """Submit a verified file execution (ADR 0053).
 
     Same endpoint as ``_submit_command``; the ``file`` object is what selects
@@ -347,7 +348,7 @@ async def _get_command_result(
     region: str = '',
     *,
     token: str | None = None,
-) -> dict[str, Any]:
+) -> JsonValue:
     return await http_client.get(
         region=region,
         workspace=workspace,
@@ -363,7 +364,7 @@ async def _answer_purpose_demand(
     region: str = '',
     *,
     token: str | None = None,
-) -> dict[str, Any]:
+) -> JsonValue:
     return await http_client.post(
         region=region,
         workspace=workspace,
@@ -578,7 +579,7 @@ async def execute_command(
 
 
 async def _settle_submission(
-    exec_data: dict[str, Any] | list[Any],
+    exec_data: JsonValue,
     *,
     server_id: str,
     workspace: str,
@@ -1007,7 +1008,7 @@ async def execute_command_multi_server(
     if not command.strip():
         return empty_value_error('command')
 
-    async def _submit_one(sid: str) -> dict[str, Any] | list[Any]:
+    async def _submit_one(sid: str) -> JsonValue:
         return await _submit_command(
             server_id=sid,
             command=command,

@@ -265,6 +265,60 @@ class TestHTTPClientPatch:
         assert result == {'updated': True}
 
 
+class TestHTTPClientBodyShapes:
+    """The client hands back whatever JSON the server sent, untouched."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        'body',
+        [
+            {'results': [{'id': 'a'}]},
+            [{'id': 'a'}, {'id': 'b'}],
+            'plain text',
+            42,
+            True,
+        ],
+        ids=['object', 'list', 'string', 'number', 'bool'],
+    )
+    async def test_get_returns_the_parsed_body_as_sent(self, mock_httpx_client, body):
+        mock_httpx_client.request.return_value = create_mock_response(
+            status_code=HTTPStatus.OK, json_data=body
+        )
+
+        result = await http_client.get(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/shapes/',
+            token='test-token',
+        )
+
+        assert result == body
+        assert type(result) is type(body)
+
+    @pytest.mark.asyncio
+    async def test_batch_request_keeps_list_entries_beside_objects(
+        self, mock_httpx_client
+    ):
+        mock_httpx_client.request.side_effect = [
+            create_mock_response(status_code=HTTPStatus.OK, json_data={'a': 1}),
+            create_mock_response(status_code=HTTPStatus.OK, json_data=[1, 2]),
+        ]
+        requests = [
+            {
+                'method': 'GET',
+                'region': 'ap1',
+                'workspace': 'testworkspace',
+                'endpoint': f'/api/{name}/',
+                'token': 'test-token',
+            }
+            for name in ('one', 'two')
+        ]
+
+        results = await http_client.batch_request(requests)
+
+        assert results == [{'a': 1}, [1, 2]]
+
+
 class TestHTTPClientDelete:
     """Test HTTP DELETE operations."""
 

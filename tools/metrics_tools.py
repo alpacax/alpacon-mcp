@@ -9,6 +9,8 @@ from utils.api_call import http_call_response
 from utils.common import (
     build_list_params,
     error_response,
+    expect_json_object,
+    json_records,
     resolve_time_window,
     success_response,
     unwrap_http_result,
@@ -183,9 +185,7 @@ async def get_cpu_usage(
     parsed_data = {
         'server_id': server_id,
         'metric_type': 'cpu_usage',
-        'statistics': parse_cpu_metrics(result.get('results', []))
-        if isinstance(result, dict)
-        else parse_cpu_metrics(result if isinstance(result, list) else []),
+        'statistics': parse_cpu_metrics(json_records(result)),
         'raw_data_available': True,
     }
 
@@ -308,9 +308,7 @@ async def get_memory_usage(
     parsed_data = {
         'server_id': server_id,
         'metric_type': 'memory_usage',
-        'statistics': parse_memory_metrics(result.get('results', []))
-        if isinstance(result, dict)
-        else parse_memory_metrics(result if isinstance(result, list) else []),
+        'statistics': parse_memory_metrics(json_records(result)),
         'raw_data_available': True,
     }
 
@@ -489,9 +487,7 @@ async def get_disk_usage(
         'metric_type': 'disk_usage',
         'device': device,
         'partition': partition,
-        'statistics': parse_disk_metrics(result.get('results', []))
-        if isinstance(result, dict)
-        else parse_disk_metrics(result if isinstance(result, list) else []),
+        'statistics': parse_disk_metrics(json_records(result)),
         'raw_data_available': True,
     }
 
@@ -721,9 +717,7 @@ async def get_network_traffic(
         'server_id': server_id,
         'metric_type': 'network_traffic',
         'interface': interface,
-        'statistics': parse_network_metrics(result.get('results', []))
-        if isinstance(result, dict)
-        else parse_network_metrics(result if isinstance(result, list) else []),
+        'statistics': parse_network_metrics(json_records(result)),
         'raw_data_available': True,
     }
 
@@ -825,7 +819,7 @@ async def get_top_servers(
         )
 
     # Multiple metrics - combine into dict
-    combined_data = {}
+    combined_data: dict[str, Any] = {}
     for metric, result in zip(tasks.keys(), results, strict=False):
         if isinstance(result, BaseException):
             if not isinstance(result, Exception):
@@ -944,11 +938,12 @@ async def _list_all_interfaces(
             token=token,
             params=params,
         )
-        if _is_http_error(result):
-            return result
         if isinstance(result, list):
             return records + result
-        page = result.get('results') if isinstance(result, dict) else None
+        result = expect_json_object(result)
+        if 'error' in result:
+            return result
+        page = json_records(result)
         if not page:
             return records
         records.extend(page)

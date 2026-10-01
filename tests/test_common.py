@@ -16,9 +16,12 @@ from utils.common import (
     _PLAN_LIMIT_AXIS_NAME,
     _WORK_SESSION_GATE_CODES,
     _WORK_SESSION_GATE_NEXT_ACTION,
+    UnexpectedResponseShapeError,
     _plan_limit_axis,
     _plan_limit_billing_link,
     build_list_params,
+    expect_json_object,
+    json_records,
     plan_limit_response,
     resolve_time_window,
     resolve_work_session_id,
@@ -699,3 +702,48 @@ class TestResolveTimeWindow:
 
         assert start == (frozen - timedelta(hours=12)).isoformat()
         assert start == '2024-06-01T00:00:00+00:00'
+
+
+class TestExpectJsonObject:
+    def test_object_is_returned_unchanged(self):
+        body = {'id': 'x', 'results': [1]}
+
+        assert expect_json_object(body) is body
+
+    @pytest.mark.parametrize('body', [[{'id': 'x'}], 'ok', 42, 1.5, True, None])
+    def test_non_object_body_raises(self, body):
+        with pytest.raises(UnexpectedResponseShapeError, match='JSON object'):
+            expect_json_object(body)
+
+
+class TestJsonRecords:
+    def test_list_body_is_the_records(self):
+        records = [{'id': 'a'}, {'id': 'b'}]
+
+        assert json_records(records) is records
+
+    def test_paginated_object_yields_results(self):
+        assert json_records({'results': [{'id': 'a'}], 'next': None}) == [{'id': 'a'}]
+
+    def test_object_without_results_is_empty(self):
+        assert json_records({'detail': 'x'}) == []
+
+    def test_object_without_results_is_one_record_when_asked(self):
+        body = {'id': 'a', 'upload_url': 'u'}
+
+        assert json_records(body, single_object_as_record=True) == [body]
+
+    def test_results_key_wins_over_single_record_flag(self):
+        body = {'results': [{'id': 'a'}]}
+
+        assert json_records(body, single_object_as_record=True) == [{'id': 'a'}]
+
+    @pytest.mark.parametrize('body', ['ok', 42, None])
+    def test_scalar_body_raises(self, body):
+        with pytest.raises(UnexpectedResponseShapeError):
+            json_records(body)
+
+    @pytest.mark.parametrize('results', [None, {}, {'id': 'a'}, 'x', 3])
+    def test_non_list_results_raises(self, results):
+        with pytest.raises(UnexpectedResponseShapeError, match='results'):
+            json_records({'results': results})
