@@ -9,10 +9,11 @@ flight, and the HTTP client forwards it in two headers.
 The value is self-reported and nobody checks it. alpacon-server records it as
 ``declared_agent``, beside the channel it derived from the credential, and no
 gate reads it. Composition into ``name/version``, sanitization and truncation
-all happen on the server, so this module passes the values through untouched,
-with one exception: a value that cannot travel as a header is left out. httpx
-refuses a non-ASCII header value and h11 a newline, and either would fail the
-tool call.
+all happen on the server, so this module passes the values through, with two
+exceptions that keep a header sendable. Boundary whitespace is trimmed, since
+h11 refuses a value that starts or ends with it and the server trims it anyway.
+A value that still cannot travel as a header is left out: httpx refuses a
+non-ASCII value and h11 a newline, and either would fail the tool call.
 
 A stateless streamable-http server builds a fresh connection for each request,
 so a pre-2026 client's handshake does not reach the tool call there, and
@@ -55,7 +56,7 @@ def declared_agent_headers() -> dict[str, str]:
     declared = _declared_agent.get()
     if declared is None:
         return {}
-    name, version = declared
+    name, version = (part.strip() for part in declared)
     headers = {}
     if name and _header_safe(name):
         headers[DECLARED_AGENT_NAME_HEADER] = name

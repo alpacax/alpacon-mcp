@@ -4,6 +4,7 @@ from http import HTTPStatus
 from types import SimpleNamespace
 from typing import Any
 
+import h11
 import pytest
 from mcp.client.client import Client
 from mcp.server import MCPServer
@@ -97,12 +98,36 @@ class TestHeaderSafety:
         }
 
     @pytest.mark.asyncio
-    async def test_values_pass_through_untouched(self) -> None:
-        """Composition and sanitization belong to the server, so no rewriting."""
-        assert await _headers_inside(_ctx(' acme/agent ', '1.0/beta')) == {
-            DECLARED_AGENT_NAME_HEADER: ' acme/agent ',
+    async def test_values_pass_through_unrewritten(self) -> None:
+        """Composition and sanitization belong to the server: no ``/`` rewrite."""
+        assert await _headers_inside(_ctx('acme/agent', '1.0/beta')) == {
+            DECLARED_AGENT_NAME_HEADER: 'acme/agent',
             DECLARED_AGENT_VERSION_HEADER: '1.0/beta',
         }
+
+    @pytest.mark.asyncio
+    async def test_boundary_whitespace_is_trimmed(self) -> None:
+        """h11 refuses a value that starts or ends with whitespace."""
+        assert await _headers_inside(_ctx(' acme agent ', ' 1.0 ')) == {
+            DECLARED_AGENT_NAME_HEADER: 'acme agent',
+            DECLARED_AGENT_VERSION_HEADER: '1.0',
+        }
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        'name', ['claude-code', 'acme agent', ' acme ', 'acme/agent', '클로드', 'a\nb']
+    )
+    async def test_whatever_is_sent_is_a_header_h11_accepts(self, name: str) -> None:
+        """End to end against the pinned h11, which the mocked client never reaches."""
+        headers = await _headers_inside(_ctx(name, '2.1.0'))
+        connection = h11.Connection(h11.CLIENT)
+        connection.send(
+            h11.Request(
+                method='GET',
+                target='/',
+                headers=[('Host', 'x'), *headers.items()],
+            )
+        )
 
 
 class TestHTTPClientForwards:
