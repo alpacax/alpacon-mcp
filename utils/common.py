@@ -222,17 +222,20 @@ FILE_EXEC_INLINE_CREDENTIAL_HINT = (
     'unreviewed.'
 )
 
-#: The metrics workspace extension gate: metrics and alert-rule endpoints
+#: The workspace extension gates: endpoints owned by a workspace extension
+#: (metrics, and since alpacon-server#3559 also dns, proxy and private_ssl)
 #: return one of these two codes when the caller's workspace cannot use them.
 #: 402 means the plan itself excludes the extension; 403 means the plan
-#: allows it but a workspace admin has not turned it on yet.
+#: allows it but a workspace admin has not turned it on yet. The body does not
+#: name the extension, so the hint stays generic.
 WORKSPACE_EXTENSION_PLAN_REQUIRED_HINT = (
-    "This workspace's plan does not include the metrics extension; upgrading "
-    'the plan is required before metrics and alert rules are available.'
+    "This workspace's plan does not include the extension that owns this "
+    'endpoint; upgrading the plan is required before its endpoints are '
+    'available.'
 )
 WORKSPACE_EXTENSION_NOT_ENABLED_HINT = (
-    'The metrics extension is not enabled on this workspace; a workspace '
-    'admin can enable it in workspace settings.'
+    'The workspace extension that owns this endpoint is not enabled; a '
+    'workspace admin can enable it in workspace settings.'
 )
 
 #: work_session_extend's own required-field refusal (#294): reason is required
