@@ -58,3 +58,26 @@ jobs:
       run: uv run --no-sync pytest -m smoke tests/test_entry_point_smoke.py -v --tb=short
       env:
         PYTHONPATH: .
+
+  docker-build:
+    # docker.yml builds only after a merge to main, so a broken Dockerfile would land first
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v6
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v4
+
+    - name: Build image without pushing
+      uses: docker/build-push-action@v7
+      with:
+        context: .
+        push: false
+        load: true
+        platforms: linux/amd64
+        tags: alpacon-mcp:ci
+        cache-from: type=gha
+
+    - name: Check the image runs as uid 200
+      run: test "$(docker run --rm --entrypoint id alpacon-mcp:ci -u)" = 200
