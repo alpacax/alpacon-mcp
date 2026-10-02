@@ -12,6 +12,8 @@ from tests.conftest import VALID_SERVER_ID, http_client_fixture
 from tools.command_tools import (
     _SUDO_DENIAL_HINTS,
     FILE_CONTENT_MAX_BYTES,
+    FILE_REUSE_DAYS_MAX,
+    FILE_REUSE_DAYS_MIN,
     PURPOSE_MAX_LENGTH,
     _answer_purpose_demand,
     _submit_command,
@@ -53,6 +55,8 @@ _FILE_EXEC_CODES = frozenset(
         'file_exec_content_too_large',
         'file_exec_empty_content',
         'file_exec_line_too_long',
+        'file_exec_invalid_reuse_days',
+        'file_exec_reuse_exceeds_max',
     }
 )
 
@@ -2135,6 +2139,63 @@ class TestSubmitFileExecution:
             },
         )
 
+    @pytest.mark.asyncio
+    async def test_reuse_days_rides_inside_the_file_object(self, mock_http_client):
+        mock_http_client.post.return_value = {'id': 'cmd-705'}
+
+        await _submit_file_execution(
+            server_id=VALID_SERVER_ID,
+            path='/opt/deploy.sh',
+            content=_FILE_SCRIPT,
+            workspace='testworkspace',
+            reuse_days=30,
+            region='ap1',
+            token='test-token',
+        )
+
+        mock_http_client.post.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/events/commands/',
+            token='test-token',
+            data={
+                'server': VALID_SERVER_ID,
+                'groupname': 'alpacon',
+                'file': {
+                    'path': '/opt/deploy.sh',
+                    'interpreter': '/bin/bash',
+                    'args': [],
+                    'content': _FILE_SCRIPT,
+                    'reuse_days': 30,
+                },
+            },
+        )
+
+    @pytest.mark.asyncio
+    async def test_no_reuse_days_leaves_the_body_as_it_was(self, mock_http_client):
+        # A server older than alpacax/alpacon-server#3914 never sees the key, and a
+        # one-off run on a newer one proposes nothing rather than null.
+        mock_http_client.post.return_value = {'id': 'cmd-706'}
+
+        await _submit_file_execution(
+            server_id=VALID_SERVER_ID,
+            path='/opt/deploy.sh',
+            content=_FILE_SCRIPT,
+            workspace='testworkspace',
+            reuse_days=None,
+            region='ap1',
+            token='test-token',
+        )
+
+        sent = mock_http_client.post.call_args.kwargs['data']
+        assert sent['file'] == {
+            'path': '/opt/deploy.sh',
+            'interpreter': '/bin/bash',
+            'args': [],
+            'content': _FILE_SCRIPT,
+        }
+        assert 'reuse_days' not in sent
+
 
 class TestExecuteFileLocalValidation:
     """What execute_file refuses before spending a round trip."""
@@ -2278,6 +2339,59 @@ class TestExecuteFileLocalValidation:
         }
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        'reuse_days',
+        [
+            0,
+            -1,
+            FILE_REUSE_DAYS_MIN - 1,
+            FILE_REUSE_DAYS_MAX + 1,
+            1000,
+            1.5,
+            True,
+            '30',
+        ],
+    )
+    async def test_reuse_days_outside_the_contract_is_refused_locally(
+        self, mock_http_client, mock_token_manager, reuse_days
+    ):
+        result = await execute_file(
+            server_id=VALID_SERVER_ID,
+            path='/opt/deploy.sh',
+            content=_FILE_SCRIPT,
+            workspace='testworkspace',
+            reuse_days=reuse_days,
+            region='ap1',
+        )
+
+        assert result['status'] == 'error'
+        assert result['error_code'] == 'file_exec_invalid_reuse_days'
+        assert (
+            result['message'] == FILE_EXEC_REFUSAL_HINTS['file_exec_invalid_reuse_days']
+        )
+        assert result['file']['path'] == '/opt/deploy.sh'
+        mock_http_client.post.assert_not_called()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('reuse_days', [FILE_REUSE_DAYS_MIN, FILE_REUSE_DAYS_MAX])
+    async def test_reuse_days_at_the_bounds_goes_out(
+        self, mock_http_client, mock_token_manager, reuse_days
+    ):
+        with patch('tools.command_tools._submit_file_execution') as mock_submit:
+            mock_submit.return_value = _file_exec_envelope('file_exec_line_too_long')
+
+            await execute_file(
+                server_id=VALID_SERVER_ID,
+                path='/opt/deploy.sh',
+                content=_FILE_SCRIPT,
+                workspace='testworkspace',
+                reuse_days=reuse_days,
+                region='ap1',
+            )
+
+        assert mock_submit.call_args.kwargs['reuse_days'] == reuse_days
+
+    @pytest.mark.asyncio
     async def test_absolute_but_traversing_path_names_the_real_reason(
         self, mock_http_client, mock_token_manager
     ):
@@ -2308,6 +2422,8 @@ class TestExecuteFileRefusalRendering:
             ('file_exec_content_too_large', '64 KB'),
             ('file_exec_empty_content', 'empty'),
             ('file_exec_line_too_long', 'args'),
+            ('file_exec_invalid_reuse_days', '1 to 366'),
+            ('file_exec_reuse_exceeds_max', 'shorter duration'),
         ],
     )
     async def test_server_refusal_carries_its_code_and_hint(
@@ -2503,6 +2619,15 @@ class TestExecuteFileRegistration:
             assert shared in properties
 
     @pytest.mark.asyncio
+    async def test_reuse_days_is_published_as_optional(self):
+        tools = {t.name: t for t in await mcp.list_tools()}
+        schema = tools['execute_file'].input_schema
+
+        assert 'reuse_days' in schema['properties']
+        assert 'reuse_days' not in schema['required']
+        assert schema['properties']['reuse_days'].get('default') is None
+
+    @pytest.mark.asyncio
     async def test_description_states_the_lane_semantics(self):
         descriptions = {t.name: t.description for t in await mcp.list_tools()}
         text = descriptions['execute_file']
@@ -2515,6 +2640,11 @@ class TestExecuteFileRegistration:
         for code in _FILE_EXEC_CODES:
             assert code in text
         assert '2.6.0' in text
+        # reuse_days is a proposal the approver decides on, kept for a script
+        # that will be rerun unchanged and left out of a one-off run.
+        assert 'reuse_days' in text
+        assert 'proposal' in text
+        assert 'one-off' in text
 
     @pytest.mark.asyncio
     async def test_execute_command_points_scripts_at_execute_file(self):
