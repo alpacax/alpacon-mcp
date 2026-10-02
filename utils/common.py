@@ -201,6 +201,14 @@ FILE_EXEC_REFUSAL_HINTS: dict[str, str] = {
     ),
 }
 
+#: HTTP 503: alpacon-server could not check the credential (identity provider,
+#: cache or database outage). Unlike a 401 the credential was not refused.
+AUTH_VERIFICATION_UNAVAILABLE_HINT = (
+    'Alpacon could not verify the credential right now. The credential was '
+    'not rejected, so do not re-authenticate or re-run setup. Retry the call '
+    'in a moment.'
+)
+
 # Actionable hints for server error `code` values that are not WorkSession
 # gate codes (see _extract_error_code). Keyed by code so new hints can be
 # added without touching unwrap_http_result. Appended to the error message
@@ -305,6 +313,7 @@ AGENT_ROLLOUT_POLICY_REFUSAL_HINTS: dict[str, str] = {
 }
 
 _ERROR_CODE_HINT: dict[str, str] = {
+    'auth_verification_unavailable': AUTH_VERIFICATION_UNAVAILABLE_HINT,
     'command_inline_credential': INLINE_CREDENTIAL_HINT,
     **FILE_EXEC_REFUSAL_HINTS,
     **ALERT_RULE_PREVIEW_REFUSAL_HINTS,
