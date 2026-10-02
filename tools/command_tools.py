@@ -744,8 +744,11 @@ async def execute_file(
         return _file_exec_refusal('file_exec_content_too_large', **context)
     # Only the fixed bounds: the workspace ceiling is the server's to apply,
     # and it answers file_exec_reuse_exceeds_max through the same hint table.
-    if reuse_days is not None and not (
-        FILE_REUSE_DAYS_MIN <= reuse_days <= FILE_REUSE_DAYS_MAX
+    # A bool is an int subclass, so it is refused by name.
+    if reuse_days is not None and (
+        isinstance(reuse_days, bool)
+        or not isinstance(reuse_days, int)
+        or not FILE_REUSE_DAYS_MIN <= reuse_days <= FILE_REUSE_DAYS_MAX
     ):
         return _file_exec_refusal('file_exec_invalid_reuse_days', **context)
 
