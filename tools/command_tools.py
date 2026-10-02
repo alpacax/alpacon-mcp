@@ -32,6 +32,13 @@ PURPOSE_MAX_LENGTH = 2000
 #: 0053). Checked here too so an oversized script is refused before it travels.
 FILE_CONTENT_MAX_BYTES = 65536
 
+#: Bounds on a proposed reuse duration, in days (ADR 0053). The server refuses
+#: a value outside them; checked here too so a bad proposal is refused before
+#: the script travels. The workspace's own ceiling sits at or below them, or is
+#: absent, and only the server knows it.
+FILE_REUSE_DAYS_MIN = 1
+FILE_REUSE_DAYS_MAX = 366
+
 #: What runs the file when the caller names no interpreter. Absolute on purpose:
 #: the server refuses a bare name, because the host's PATH would then decide
 #: what actually executes.
@@ -290,6 +297,7 @@ async def _submit_file_execution(
     workspace: str,
     interpreter: str = DEFAULT_INTERPRETER,
     args: list[str] | None = None,
+    reuse_days: int | None = None,
     username: str | None = None,
     groupname: str = 'alpacon',
     run_after: list[str] | None = None,
@@ -311,6 +319,9 @@ async def _submit_file_execution(
     ``content`` goes out byte-for-byte—the agent hashes the file on the host's
     disk with no normalization, so a stripped trailing newline here would fail
     every execution closed.
+    ``reuse_days`` rides inside the ``file`` object only when given: a server
+    older than alpacax/alpacon-server#3914 ignores the key, and a one-off run
+    sends the same body it always did.
     """
     command_data: dict[str, Any] = {
         'server': server_id,
@@ -322,6 +333,8 @@ async def _submit_file_execution(
             'content': content,
         },
     }
+    if reuse_days is not None:
+        command_data['file']['reuse_days'] = reuse_days
     command_data.update(
         _requester_fields(
             username=username,
@@ -661,7 +674,7 @@ def _file_exec_refusal(code: str, **kwargs: Any) -> dict[str, Any]:
 
 
 @mcp_tool_handler(
-    description='Run a script that already exists on a server, as a verified file: the reviewer and the assessor judge the exact bytes you submit, and the agent executes the file only if the bytes on the host\'s disk hash to the same digest. Prefer this over execute_command for anything longer than a one-off line—a script, a heredoc, a "bash /tmp/deploy.sh" line. Why: once an approver marks a verified file standing, an unchanged re-run of it (same bytes, same server, same account, same args) is admitted without paging a human; a "bash /path" shell line never can be, because nothing about the path proves what runs. What approving means: it authorizes exactly these bytes, on this server, as this account, with these arguments—not "this file is safe". One changed byte re-queues human review. The environment, libraries, interpreter version, and anything the script fetches or executes at runtime are not verified and stay the executor\'s responsibility; only this first entrypoint is. How to use: the file must already exist at path on the target host (write it first, e.g. with webftp_upload_content); pass its full contents as content, byte-for-byte as they are on disk—do not strip a trailing newline or normalize line endings, because the agent hashes the on-disk file with no normalization and a mismatch fails closed. content is what the reviewer judges; it is never shipped to the host. path and interpreter must be absolute (/opt/deploy.sh, /bin/bash; a bare "bash" is refused). Put composition inside the script: pipes, redirection, &&, and environment variables are reviewed there. Free-text composition around a verified file (a pipe into it, an env prefix, extra shell) is not possible on this lane, by design—a one-off composition belongs on execute_command. content is capped at 64 KB and must be non-empty. Refusals to act on rather than retry, each returned as error_code: file_exec_unsupported_agent (the agent on that server cannot verify a digest; alpamon 2.6.0 or newer is required—upgrade it or use execute_command), file_exec_assessor_disabled (this deployment has the command assessor off, so the lane is unavailable—use execute_command), file_exec_invalid_path (path or interpreter is not absolute), file_exec_content_too_large, file_exec_empty_content, file_exec_line_too_long (interpreter + path + args exceed the command line ceiling—shorten args). None of these has a request waiting behind it, so do not wait on them. Otherwise the run follows the same rules as execute_command: sudo inside the script routes to human approval or is denied outright, a status of awaiting_approval means a human decides out-of-band, purpose_required is answered with state_command_purpose, and the result carries stdout, stderr, and exit code. Pass work_session_id to link the run to a Work Session, and purpose to say what this run is for. When to use: deploy or maintenance scripts, anything you would otherwise run as "bash file" or feed through a heredoc, and any script you expect to run again unchanged. Related: execute_command (one-off shell line), webftp_upload_content (put the file on the host first), state_command_purpose, list_commands. Note: Default timeout is 300 seconds (5 minutes).',
+    description='Run a script that already exists on a server, as a verified file: the reviewer and the assessor judge the exact bytes you submit, and the agent executes the file only if the bytes on the host\'s disk hash to the same digest. Prefer this over execute_command for anything longer than a one-off line—a script, a heredoc, a "bash /tmp/deploy.sh" line. Why: once an approver marks a verified file standing, an unchanged re-run of it (same bytes, same server, same account, same args) is admitted without paging a human; a "bash /path" shell line never can be, because nothing about the path proves what runs. What approving means: it authorizes exactly these bytes, on this server, as this account, with these arguments—not "this file is safe". One changed byte re-queues human review. The environment, libraries, interpreter version, and anything the script fetches or executes at runtime are not verified and stay the executor\'s responsibility; only this first entrypoint is. How to use: the file must already exist at path on the target host (write it first, e.g. with webftp_upload_content); pass its full contents as content, byte-for-byte as they are on disk—do not strip a trailing newline or normalize line endings, because the agent hashes the on-disk file with no normalization and a mismatch fails closed. content is what the reviewer judges; it is never shipped to the host. path and interpreter must be absolute (/opt/deploy.sh, /bin/bash; a bare "bash" is refused). Put composition inside the script: pipes, redirection, &&, and environment variables are reviewed there. Free-text composition around a verified file (a pipe into it, an env prefix, extra shell) is not possible on this lane, by design—a one-off composition belongs on execute_command. content is capped at 64 KB and must be non-empty. reuse_days (integer, 1 to 366) proposes how many days the approver should let this exact file be rerun without a new review. It is a proposal, not a grant: the approver may decline it or grant reuse for a different period, and the workspace may cap it—a proposal past the cap is refused, never shortened. Propose a duration only when you expect to rerun the same unchanged script (same bytes, server, account, args) within that window; omit it for a one-off run. With no proposal, an approver who opts in grants reuse up to the workspace ceiling, or standing when there is none. Refusals to act on rather than retry, each returned as error_code: file_exec_unsupported_agent (the agent on that server cannot verify a digest; alpamon 2.6.0 or newer is required—upgrade it or use execute_command), file_exec_assessor_disabled (this deployment has the command assessor off, so the lane is unavailable—use execute_command), file_exec_invalid_path (path or interpreter is not absolute), file_exec_content_too_large, file_exec_empty_content, file_exec_line_too_long (interpreter + path + args exceed the command line ceiling—shorten args), file_exec_invalid_reuse_days (reuse_days is outside 1 to 366—fix it or omit it), file_exec_reuse_exceeds_max (reuse_days is past the workspace\'s grant ceiling—resubmit with a shorter duration or none). None of these has a request waiting behind it, so do not wait on them. Otherwise the run follows the same rules as execute_command: sudo inside the script routes to human approval or is denied outright, a status of awaiting_approval means a human decides out-of-band, purpose_required is answered with state_command_purpose, and the result carries stdout, stderr, and exit code. Pass work_session_id to link the run to a Work Session, and purpose to say what this run is for. When to use: deploy or maintenance scripts, anything you would otherwise run as "bash file" or feed through a heredoc, and any script you expect to run again unchanged. Related: execute_command (one-off shell line), webftp_upload_content (put the file on the host first), state_command_purpose, list_commands. Note: Default timeout is 300 seconds (5 minutes).',
     annotations=ADDITIVE,
     meta={
         'anthropic/alwaysLoad': True,
@@ -675,6 +688,7 @@ async def execute_file(
     workspace: str,
     interpreter: str = DEFAULT_INTERPRETER,
     args: list[str] | None = None,
+    reuse_days: int | None = None,
     username: str | None = None,
     groupname: str = 'alpacon',
     run_after: list[str] | None = None,
@@ -728,6 +742,12 @@ async def execute_file(
         return _file_exec_refusal('file_exec_empty_content', **context)
     if len(content.encode('utf-8')) > FILE_CONTENT_MAX_BYTES:
         return _file_exec_refusal('file_exec_content_too_large', **context)
+    # Only the fixed bounds: the workspace ceiling is the server's to apply,
+    # and it answers file_exec_reuse_exceeds_max through the same hint table.
+    if reuse_days is not None and not (
+        FILE_REUSE_DAYS_MIN <= reuse_days <= FILE_REUSE_DAYS_MAX
+    ):
+        return _file_exec_refusal('file_exec_invalid_reuse_days', **context)
 
     exec_data = await _submit_file_execution(
         server_id=server_id,
@@ -736,6 +756,7 @@ async def execute_file(
         workspace=workspace,
         interpreter=interpreter,
         args=args,
+        reuse_days=reuse_days,
         username=username,
         groupname=groupname,
         run_after=run_after,

@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `execute_file` gained an optional `reuse_days` (integer, 1 to 366): a proposed number of days
+  for which the approver should let the same unchanged file be rerun without a new review
+  (#323, the client half of alpacax/alpacon-server#3914). It is sent as `file.reuse_days` only
+  when given, so an existing caller's request is unchanged and a server that predates #3914
+  ignores it. A client parsing errors sees two new `error_code` values, `file_exec_invalid_reuse_days`
+  (outside 1 to 366, also refused locally) and `file_exec_reuse_exceeds_max` (past the workspace
+  ceiling; the server refuses rather than shortens), each a plain `status: "error"` to act on.
 - `initialize` and `server/discover` now report the package version in `serverInfo.version`, which was previously an empty string (#144). A client that parsed the empty value as "unknown" will now see a real version string.
 - `preview_alert_rule` (`workspace`, `rule_id`, `servers`, `window_s`, and the `create_alert_rule`
   fields minus `name` and `is_default`, `region`): replay an alert rule, saved or not, over up to
