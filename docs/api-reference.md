@@ -825,11 +825,13 @@ The `command` and `path` a rule matches on must not be empty or whitespace-only.
 
 ## 📝 Audit tools
 
-- `list_activity_logs`: `workspace`, `region` (optional), `page`, `page_size`
+`list_activity_logs`, `list_server_logs`, and `list_webftp_logs` read Elasticsearch-backed endpoints that alpacon-server paginates by cursor, not by page number. Each call follows the cursor for up to 10 requests and merges the pages, so `data.results` spans all of them and `data.count` stays the server's total match count. A top-level `pagination` object reports the walk: `complete`, `stopped_because` (`end_of_list`, `page_bound`, `upstream_error`), `pages_read`, `max_pages`, `records_returned`, and `next_cursor`. Check `pagination.complete` before treating the result as the whole list, and pass `pagination.next_cursor` back as `cursor` to continue. A request that fails partway through returns an error carrying the same object with `records_discarded`; the partial list is not handed back as a success.
+
+- `list_activity_logs`: `workspace`, `region` (optional), `cursor`, `page_size`
 - `get_activity_log`: `log_id`, `workspace`, `region` (optional)
-- `list_server_logs`: command execution history; `workspace`, `server_id` (optional), `page`, `page_size`
+- `list_server_logs`: command execution history; `workspace`, `server_id` (optional), `cursor`, `page_size`
 - `list_webftp_logs`: file transfer history; same parameters
-- `list_session_analyses`: AI security analyses; `workspace`, `server_id`, `status`, `risk_score`, `page`, `page_size`
+- `list_session_analyses`: AI security analyses; a plain page-numbered list, so `page` applies here; `workspace`, `server_id`, `status`, `risk_score`, `page`, `page_size`
 - `get_session_analysis_detail`: `analysis_id`, `workspace`, `region` (optional). Includes MITRE ATT&CK mapping
 
 ---

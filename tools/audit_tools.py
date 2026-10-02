@@ -4,6 +4,7 @@ from typing import Any
 
 from utils.api_call import http_call_response
 from utils.common import build_list_params
+from utils.cursor_pagination import CURSOR_WALK_DESCRIPTION, cursor_list_response
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import READ_ONLY
@@ -14,33 +15,42 @@ from utils.tool_annotations import READ_ONLY
 
 
 @mcp_tool_handler(
-    description='List activity logs for auditing user and system actions. When to use: auditing who did what in the workspace. Related: get_activity_log (full details), list_server_logs (command history), list_webftp_logs (file transfer history).',
+    description=(
+        'List activity logs for auditing user and system actions. When to use: '
+        'auditing who did what in the workspace. '
+        f'{CURSOR_WALK_DESCRIPTION} '
+        'Related: get_activity_log (full details), list_server_logs (command '
+        'history), list_webftp_logs (file transfer history).'
+    ),
     annotations=READ_ONLY,
     meta={'anthropic/searchHint': 'audit activity logs user actions'},
 )
 async def list_activity_logs(
     workspace: str,
     region: str = '',
-    page: int | None = None,
+    cursor: str | None = None,
     page_size: int | None = None,
     **kwargs,
 ) -> dict[str, Any]:
-    """List activity logs.
+    """List activity logs, following the server's cursor up to the request bound.
 
     Args:
         workspace: Workspace name. Required parameter
         region: Region (ap1, us1). Auto-detected if not provided
-        page: Page number for pagination (optional)
-        page_size: Number of items per page (optional)
+        cursor: Opaque cursor from a previous call's `pagination.next_cursor`,
+            which resumes the walk where the bound stopped it (optional)
+        page_size: Items per request, max 100 (optional). The walk issues a
+            bounded number of requests, so this also sets how far it reaches
 
     Returns:
-        Activity logs list response
+        Merged activity logs, plus a `pagination` report saying whether the walk
+        read the list to its end
     """
     token = kwargs.get('token')
 
-    params = build_list_params(page=page, page_size=page_size)
+    params = build_list_params(page_size=page_size, cursor=cursor)
 
-    return await http_call_response(
+    return await cursor_list_response(
         http_client.get,
         region=region,
         workspace=workspace,
@@ -88,7 +98,13 @@ async def get_activity_log(
 
 
 @mcp_tool_handler(
-    description='List server command execution logs from history. When to use: reviewing command execution audit trail. Related: list_commands (recent commands with output), list_activity_logs (broader audit).',
+    description=(
+        'List server command execution logs from history. When to use: reviewing '
+        'command execution audit trail. '
+        f'{CURSOR_WALK_DESCRIPTION} '
+        'Related: list_commands (recent commands with output), list_activity_logs '
+        '(broader audit).'
+    ),
     annotations=READ_ONLY,
     meta={'anthropic/searchHint': 'server command execution logs history'},
 )
@@ -96,27 +112,30 @@ async def list_server_logs(
     workspace: str,
     server_id: str | None = None,
     region: str = '',
-    page: int | None = None,
+    cursor: str | None = None,
     page_size: int | None = None,
     **kwargs,
 ) -> dict[str, Any]:
-    """List server command execution logs.
+    """List server command execution logs, following the server's cursor.
 
     Args:
         workspace: Workspace name. Required parameter
         server_id: Filter by server ID (optional)
         region: Region (ap1, us1). Auto-detected if not provided
-        page: Page number for pagination (optional)
-        page_size: Number of items per page (optional)
+        cursor: Opaque cursor from a previous call's `pagination.next_cursor`,
+            which resumes the walk where the bound stopped it (optional)
+        page_size: Items per request, max 100 (optional). The walk issues a
+            bounded number of requests, so this also sets how far it reaches
 
     Returns:
-        Server logs list response
+        Merged server logs, plus a `pagination` report saying whether the walk
+        read the list to its end
     """
     token = kwargs.get('token')
 
-    params = build_list_params(page=page, page_size=page_size, server=server_id)
+    params = build_list_params(page_size=page_size, cursor=cursor, server=server_id)
 
-    return await http_call_response(
+    return await cursor_list_response(
         http_client.get,
         region=region,
         workspace=workspace,
@@ -129,7 +148,13 @@ async def list_server_logs(
 
 
 @mcp_tool_handler(
-    description='List WebFTP file transfer logs from history. When to use: reviewing file transfer audit trail. Related: webftp_uploads_list (upload status), webftp_downloads_list (download status).',
+    description=(
+        'List WebFTP file transfer logs from history. When to use: reviewing file '
+        'transfer audit trail. '
+        f'{CURSOR_WALK_DESCRIPTION} '
+        'Related: webftp_uploads_list (upload status), webftp_downloads_list '
+        '(download status).'
+    ),
     annotations=READ_ONLY,
     meta={'anthropic/searchHint': 'webftp file transfer logs history'},
 )
@@ -137,27 +162,30 @@ async def list_webftp_logs(
     workspace: str,
     server_id: str | None = None,
     region: str = '',
-    page: int | None = None,
+    cursor: str | None = None,
     page_size: int | None = None,
     **kwargs,
 ) -> dict[str, Any]:
-    """List WebFTP file transfer logs.
+    """List WebFTP file transfer logs, following the server's cursor.
 
     Args:
         workspace: Workspace name. Required parameter
         server_id: Filter by server ID (optional)
         region: Region (ap1, us1). Auto-detected if not provided
-        page: Page number for pagination (optional)
-        page_size: Number of items per page (optional)
+        cursor: Opaque cursor from a previous call's `pagination.next_cursor`,
+            which resumes the walk where the bound stopped it (optional)
+        page_size: Items per request, max 100 (optional). The walk issues a
+            bounded number of requests, so this also sets how far it reaches
 
     Returns:
-        WebFTP logs list response
+        Merged WebFTP logs, plus a `pagination` report saying whether the walk
+        read the list to its end
     """
     token = kwargs.get('token')
 
-    params = build_list_params(page=page, page_size=page_size, server=server_id)
+    params = build_list_params(page_size=page_size, cursor=cursor, server=server_id)
 
-    return await http_call_response(
+    return await cursor_list_response(
         http_client.get,
         region=region,
         workspace=workspace,
