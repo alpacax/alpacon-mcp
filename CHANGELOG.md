@@ -316,6 +316,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   correction is the first entry under Changed.
 
 ### Fixed
+- A 503 with `auth_verification_unavailable` from alpacon-server (it could not check the credential during an identity provider, cache or database outage) now reaches the agent as `error_code` with a hint to retry shortly and not to re-authenticate. The call was already retried; only the code was dropped once retries ran out. A 5xx result now carries `error_code` when the server sent one, never the raw response body, and `get_server_metrics_summary` reports it per section with the same hint.
 - The tool entry log no longer writes the command a call runs (#311). It writes an argument's value
   only for a reviewed set of identifiers, names, paths, enums, filters and timestamps
   (`_LOGGED_VERBATIM_KEYS`); every other argument, `command`, `commands`, `search` and
