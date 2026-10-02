@@ -19,7 +19,7 @@ from tools.iam_tools import (
     list_iam_users,
     update_iam_user,
 )
-from tools.metrics_tools import get_cpu_usage
+from tools.metrics_tools import get_cpu_usage, get_server_metrics_summary
 from tools.server_tools import (
     create_server_note,
     get_server,
@@ -360,6 +360,9 @@ class TestAuthVerificationUnavailable:
         assert result['error_code'] == 'auth_verification_unavailable'
         assert 'not rejected' in result['message']
         assert 'Retry the call' in result['message']
+        assert any(
+            'temporarily unavailable' in hint for hint in result['recovery_hints']
+        )
         assert signal == {}
 
     async def test_503_never_reaches_the_upstream_401_handler(
@@ -430,3 +433,25 @@ class TestAuthVerificationUnavailable:
         assert calls == 2
         assert result['status'] == 'success'
         assert result['data']['name'] == 'web-server-01'
+
+    async def test_metrics_summary_sections_carry_error_code_and_hint(
+        self, patched_http_client, mock_token_for_integration
+    ):
+        patched_http_client.set_handler(
+            lambda request: httpx.Response(
+                HTTPStatus.SERVICE_UNAVAILABLE,
+                json={'code': 'auth_verification_unavailable'},
+            )
+        )
+
+        result = await get_server_metrics_summary(
+            server_id=SERVER_ID, workspace='production', region='ap1'
+        )
+
+        metrics = result['data']['metrics']
+        for name in ('cpu', 'memory'):
+            section = metrics[name]
+            assert section['available'] is False
+            assert section['status_code'] == HTTPStatus.SERVICE_UNAVAILABLE
+            assert section['error_code'] == 'auth_verification_unavailable'
+            assert 'not rejected' in section['error']
