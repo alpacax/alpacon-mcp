@@ -388,25 +388,56 @@ class TestAuthVerificationUnavailable:
         handle_401.assert_not_called()
         signal.assert_not_called()
 
-    async def test_html_503_leaks_no_body_or_error_code(
-        self, patched_http_client, mock_token_for_integration
-    ):
-        patched_http_client.set_handler(
-            lambda request: httpx.Response(
+    @pytest.mark.parametrize(
+        'response',
+        [
+            httpx.Response(
                 HTTPStatus.SERVICE_UNAVAILABLE,
                 text='<html><body>503 Service Unavailable</body></html>',
-            )
+            ),
+            httpx.Response(HTTPStatus.SERVICE_UNAVAILABLE, json={'detail': 'boom'}),
+            httpx.Response(HTTPStatus.SERVICE_UNAVAILABLE, json=['boom']),
+            httpx.Response(HTTPStatus.SERVICE_UNAVAILABLE, json={'code': ''}),
+            httpx.Response(HTTPStatus.SERVICE_UNAVAILABLE, json={'code': 7}),
+            httpx.Response(HTTPStatus.SERVICE_UNAVAILABLE),
+        ],
+        ids=['html', 'json-no-code', 'json-array', 'empty-code', 'int-code', 'empty'],
+    )
+    async def test_uncoded_5xx_carries_neither_body_nor_error_code(
+        self, patched_http_client, response
+    ):
+        patched_http_client.set_handler(lambda request: response)
+
+        result = await http_client.get(
+            region='ap1',
+            workspace='production',
+            endpoint='/api/servers/',
+            token='test-token',
         )
 
-        result = await get_server(
-            server_id=SERVER_ID, workspace='production', region='ap1'
-        )
-
-        assert result['status'] == 'error'
         assert result['status_code'] == HTTPStatus.SERVICE_UNAVAILABLE
         assert 'error_code' not in result
         assert 'response' not in result
-        assert '<html>' not in str(result)
+
+    async def test_coded_5xx_carries_only_the_error_code(self, patched_http_client):
+        patched_http_client.set_handler(
+            lambda request: httpx.Response(
+                HTTPStatus.SERVICE_UNAVAILABLE,
+                json={'code': 'auth_verification_unavailable', 'detail': 'secret'},
+            )
+        )
+
+        result = await http_client.get(
+            region='ap1',
+            workspace='production',
+            endpoint='/api/servers/',
+            token='test-token',
+        )
+
+        assert result['status_code'] == HTTPStatus.SERVICE_UNAVAILABLE
+        assert result['error_code'] == 'auth_verification_unavailable'
+        assert 'response' not in result
+        assert 'secret' not in str(result)
 
     async def test_503_then_200_succeeds(
         self, patched_http_client, mock_token_for_integration, sample_api_responses
@@ -455,3 +486,24 @@ class TestAuthVerificationUnavailable:
             assert section['status_code'] == HTTPStatus.SERVICE_UNAVAILABLE
             assert section['error_code'] == 'auth_verification_unavailable'
             assert 'not rejected' in section['error']
+
+    async def test_metrics_summary_hides_the_body_of_an_uncoded_5xx(
+        self, patched_http_client, mock_token_for_integration
+    ):
+        patched_http_client.set_handler(
+            lambda request: httpx.Response(
+                HTTPStatus.INTERNAL_SERVER_ERROR,
+                json={'detail': 'Traceback: secret-internal-detail'},
+            )
+        )
+
+        result = await get_server_metrics_summary(
+            server_id=SERVER_ID, workspace='production', region='ap1'
+        )
+
+        section = result['data']['metrics']['cpu']
+        assert section['available'] is False
+        assert section['status_code'] == HTTPStatus.INTERNAL_SERVER_ERROR
+        assert 'error_code' not in section
+        assert 'secret-internal-detail' not in section['error']
+        assert section['error'] == 'Server error after 3 attempts'

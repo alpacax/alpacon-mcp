@@ -29,12 +29,14 @@ _ERR_UNEXPECTED = 'Unexpected Error'
 HTTP_VERBS = ('get', 'post', 'put', 'patch', 'delete')
 
 
-def _is_json_object(text: str) -> bool:
-    """Tell an API error body from a proxy's HTML page, which must not reach the agent."""
+def _error_code_of(text: str) -> str | None:
+    """The `code` of a JSON object error body; None for HTML, arrays or no code."""
     try:
-        return isinstance(json.loads(text), dict)
+        body = json.loads(text)
     except ValueError:
-        return False
+        return None
+    code = body.get('code') if isinstance(body, dict) else None
+    return code if isinstance(code, str) and code else None
 
 
 def _error_body_for_log(response: httpx.Response) -> Any:
@@ -268,8 +270,8 @@ class AlpaconHTTPClient:
                         'message': f'Server error after {self.max_retries} attempts',
                     }
                     logger.error(f'Server error after all retries: {error_response}')
-                    if _is_json_object(e.response.text):
-                        error_response['response'] = e.response.text
+                    if code := _error_code_of(e.response.text):
+                        error_response['error_code'] = code
                     return error_response
                 else:
                     # Client error - don't retry

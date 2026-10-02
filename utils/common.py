@@ -815,8 +815,12 @@ def _extract_error_code(result: dict[str, Any]) -> str | None:
 
     alpacon-server's exception handler returns 4xx bodies shaped as at least
     ``{"code": "<error_code>"}``. Returns None when the body is missing, not
-    JSON, not a JSON object, or lacks a string `code` field.
+    JSON, not a JSON object, or lacks a string `code` field. An explicit
+    string ``error_code`` on the envelope (a 5xx never carries its body) wins.
     """
+    explicit = result.get('error_code')
+    if isinstance(explicit, str):
+        return explicit
     body = _parse_error_body(result)
     if body is None:
         return None
