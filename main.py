@@ -1,5 +1,7 @@
 # main.py
 import argparse
+import os
+import sys
 from pathlib import Path
 
 from server import TOOLSETS_HELP, TRANSPORT_STDIO, ToolsetError, run
@@ -9,7 +11,19 @@ logger = get_logger('main')
 
 
 def check_token_exists() -> bool:
-    """Check if any token configuration exists."""
+    """Check if any token source the server reads is configured.
+
+    Mirrors TokenManager: ALPACON_MCP_CONFIG_FILE, any
+    ALPACON_MCP_<REGION>_<WORKSPACE>_TOKEN variable (read before any file),
+    and the global and local token files.
+    """
+    if os.getenv('ALPACON_MCP_CONFIG_FILE'):
+        return True
+    if any(
+        name.startswith('ALPACON_MCP_') and name.endswith('_TOKEN') and value
+        for name, value in os.environ.items()
+    ):
+        return True
     global_path = Path.home() / '.alpacon-mcp' / 'token.json'
     local_path = Path('config') / 'token.json'
     return global_path.exists() or local_path.exists()
@@ -97,6 +111,16 @@ Examples:
 
     # Check if tokens are configured
     if not check_token_exists() and not args.config_file and not args.token_file:
+        if not sys.stdin.isatty():
+            # An MCP client launched us: stdout is the JSON-RPC channel and stdin
+            # its pipe, so the wizard would corrupt the handshake and read
+            # protocol frames as answers. Say why on stderr and stop instead.
+            logger.error(
+                'No API tokens configured. Run `alpacon-mcp setup` in a terminal, '
+                'or set ALPACON_MCP_<REGION>_<WORKSPACE>_TOKEN.'
+            )
+            raise SystemExit(1)
+
         print('\n' + '=' * 60)
         print('⚠️  No API tokens configured')
         print('=' * 60)
