@@ -45,6 +45,21 @@ def test_unrelated_alpacon_variable_does_not_count(unconfigured, monkeypatch):
     assert main.check_token_exists() is False
 
 
+@pytest.mark.parametrize(
+    'name',
+    [
+        'ALPACON_MCP_TOKEN',
+        'ALPACON_MCP_LOG_TOKEN',
+        'ALPACON_MCP_AP1_TOKEN',
+        'ALPACON_MCP_EU1_PRODUCTION_TOKEN',
+    ],
+)
+def test_malformed_token_variable_does_not_count(unconfigured, monkeypatch, name):
+    """TokenManager only reads ALPACON_MCP_<REGION>_<WORKSPACE>_TOKEN."""
+    monkeypatch.setenv(name, 'alpat-x')
+    assert main.check_token_exists() is False
+
+
 def test_config_file_variable_counts(unconfigured, monkeypatch):
     monkeypatch.setenv('ALPACON_MCP_CONFIG_FILE', str(unconfigured / 'tokens.json'))
     assert main.check_token_exists() is True

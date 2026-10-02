@@ -5,9 +5,19 @@ import sys
 from pathlib import Path
 
 from server import TOOLSETS_HELP, TRANSPORT_STDIO, ToolsetError, run
+from utils.error_handler import VALID_REGIONS
 from utils.logger import get_logger
 
 logger = get_logger('main')
+
+
+def _is_workspace_token_variable(name: str) -> bool:
+    """Whether name has the ALPACON_MCP_<REGION>_<WORKSPACE>_TOKEN shape TokenManager reads."""
+    prefix, suffix = 'ALPACON_MCP_', '_TOKEN'
+    if not (name.startswith(prefix) and name.endswith(suffix)):
+        return False
+    region, _, workspace = name[len(prefix) : -len(suffix)].partition('_')
+    return region.lower() in VALID_REGIONS and bool(workspace)
 
 
 def check_token_exists() -> bool:
@@ -20,7 +30,7 @@ def check_token_exists() -> bool:
     if os.getenv('ALPACON_MCP_CONFIG_FILE'):
         return True
     if any(
-        name.startswith('ALPACON_MCP_') and name.endswith('_TOKEN') and value
+        _is_workspace_token_variable(name) and value
         for name, value in os.environ.items()
     ):
         return True
