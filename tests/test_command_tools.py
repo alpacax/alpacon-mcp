@@ -2173,7 +2173,7 @@ class TestSubmitFileExecution:
 
     @pytest.mark.asyncio
     async def test_no_reuse_days_leaves_the_body_as_it_was(self, mock_http_client):
-        # A server older than alpacon-server#3914 never sees the key, and a
+        # A server older than alpacax/alpacon-server#3914 never sees the key, and a
         # one-off run on a newer one proposes nothing rather than null.
         mock_http_client.post.return_value = {'id': 'cmd-706'}
 
@@ -2340,9 +2340,19 @@ class TestExecuteFileLocalValidation:
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
-        'reuse_days', [0, -1, FILE_REUSE_DAYS_MIN - 1, FILE_REUSE_DAYS_MAX + 1, 1000]
+        'reuse_days',
+        [
+            0,
+            -1,
+            FILE_REUSE_DAYS_MIN - 1,
+            FILE_REUSE_DAYS_MAX + 1,
+            1000,
+            1.5,
+            True,
+            '30',
+        ],
     )
-    async def test_reuse_days_outside_the_bounds_is_refused_locally(
+    async def test_reuse_days_outside_the_contract_is_refused_locally(
         self, mock_http_client, mock_token_manager, reuse_days
     ):
         result = await execute_file(

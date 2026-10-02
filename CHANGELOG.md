@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `execute_file` gained an optional `reuse_days` (integer, 1 to 366): a proposed number of days
   for which the approver should let the same unchanged file be rerun without a new review
   (#323, the client half of alpacax/alpacon-server#3914). It is sent as `file.reuse_days` only
-  when given, so an existing caller's request is unchanged and a server that predates #3914
+  when given, so an existing caller's request is unchanged and a server that predates that change
   ignores it. A client parsing errors sees two new `error_code` values, `file_exec_invalid_reuse_days`
   (outside 1 to 366, also refused locally) and `file_exec_reuse_exceeds_max` (past the workspace
   ceiling; the server refuses rather than shortens), each a plain `status: "error"` to act on.
