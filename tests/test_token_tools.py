@@ -751,7 +751,7 @@ class TestUpdateApiToken:
     async def test_update_api_token_clear_expires_at(
         self, mock_http_client, mock_token_manager
     ):
-        """Test clear_expires_at=True sends expires_at=null to remove the expiry."""
+        """Test clear_expires_at=True sends expires_at=null."""
         mock_http_client.patch.return_value = {
             'id': CLEAR_EXPIRES_TOKEN_ID,
             'expires_at': None,

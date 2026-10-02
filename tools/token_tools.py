@@ -175,7 +175,7 @@ async def create_api_token(
         workspace: Workspace name. Required parameter
         name: Name of the API token
         scopes: List of permission scopes for the token (optional)
-        expires_at: Expiration datetime in ISO 8601 format (optional)
+        expires_at: ISO 8601 expiry; the workspace maximum when omitted (optional)
         enabled: Whether the token is active. Defaults to True on the server (optional)
         presets: Preset scope keys resolved server-side. Merged with explicit
             scopes; stored as granular scope strings. Call
@@ -245,8 +245,8 @@ async def update_api_token(
         enabled: Toggle the token's enabled state (optional)
         expires_at: New expiration datetime in ISO 8601 format. Mutually
             exclusive with clear_expires_at (optional)
-        clear_expires_at: When True, remove the expiry so the token never
-            expires. Mutually exclusive with expires_at (optional)
+        clear_expires_at: When True, send a null expiry; the server resets it to
+            the workspace maximum lifetime. Mutually exclusive with expires_at (optional)
         scopes: Replacement scope list. Re-validated against the caller's
             RBAC ceiling (optional)
         region: Region (ap1, us1). Auto-detected if not provided

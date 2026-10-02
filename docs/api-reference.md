@@ -871,8 +871,8 @@ Webhook tools need an admin account, and creating or updating a webhook needs a 
 
 - `list_api_tokens`: `workspace`, `region` (optional), `page`, `page_size`, `name`, `enabled`, `search` (name only), `ordering` (`added_at`, `updated_at`, `last_used_at`)
 - `get_api_token`: `token_id`, `workspace`, `region` (optional)
-- `create_api_token`: `workspace`, `name`, `scopes`, `presets`, `expires_at`, `enabled`, `region` (optional)
-- `update_api_token`: `token_id`, `name`, `enabled`, `expires_at`, `clear_expires_at`, `scopes`
+- `create_api_token`: `workspace`, `name`, `scopes`, `presets`, `expires_at`, `enabled`, `region` (optional). An omitted `expires_at` is issued at the workspace maximum lifetime
+- `update_api_token`: `token_id`, `workspace`, `name`, `enabled`, `expires_at`, `clear_expires_at`, `scopes`, `region` (optional). `clear_expires_at` sends a null expiry, which the server resets to the workspace maximum lifetime; no token can be made non-expiring
 - `delete_api_token` / `duplicate_api_token`: by `token_id`
 - `rotate_api_token`: `token_id`, `workspace`, `region` (optional). Regenerates the secret in place; the old secret dies immediately, and the id, name, scopes and ACLs survive. A token that had no expiry comes back with the workspace maximum expiry, and one already past its expiry is refused with 400 `API_TOKEN_ALREADY_EXPIRED`. Paid plans only
 - `list_api_token_scopes` / `list_api_token_presets`: catalogs for building a token
