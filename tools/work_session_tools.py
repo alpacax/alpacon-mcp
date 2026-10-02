@@ -384,7 +384,15 @@ async def work_session_timeline(
     region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
-    """Get the unified timeline of a Work Session."""
+    """Get the unified timeline of a Work Session.
+
+    Unpaginated on purpose: the endpoint answers with the whole timeline as one
+    array today, so there is nothing to follow. alpacax/alpacon-server#3899 will
+    turn it into a cursor page and reshape `include_records` into per-chunk
+    items; neither envelope is settled, so this tool is deliberately left alone
+    until it is (alpacax/alpacon-mcp#325). `utils.cursor_pagination` is what it
+    will use when that lands.
+    """
     token = kwargs.get('token')
 
     return await http_call_response(
