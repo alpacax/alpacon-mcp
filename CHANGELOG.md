@@ -316,6 +316,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   correction is the first entry under Changed.
 
 ### Fixed
+- In JWT mode, a `workspace` argument that is a renamed URL slug is now resolved to the workspace's fixed `schema_name` through the account service lookup before it is matched against the token claims. An argument that already equals a claim's `schema_name` makes no network call; the lookup is skipped when `ALPACON_ACCOUNT_URL` is unset, and any lookup failure keeps the previous rejection. Tool responses keep their shape, so a client parsing them needs no change. `list_workspaces` still reports each domain from `schema_name`, since the token claims carry no slug.
 - A 503 with `auth_verification_unavailable` from alpacon-server (it could not check the credential during an identity provider, cache or database outage) now reaches the agent as `error_code` with a hint to retry shortly and not to re-authenticate. The call was already retried; only the code was dropped once retries ran out. A 5xx result now carries `error_code` when the server sent one, never the raw response body, and `get_server_metrics_summary` reports it per section with the same hint.
 - The tool entry log no longer writes the command a call runs (#311). It writes an argument's value
   only for a reviewed set of identifiers, names, paths, enums, filters and timestamps
