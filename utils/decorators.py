@@ -39,6 +39,7 @@ from utils.security_settings import (
     get_action_for_tool,
     security_cache,
 )
+from utils.workspace_resolver import resolve_workspace
 
 logger = get_logger('decorators')
 
@@ -220,6 +221,16 @@ def _validate_jwt_workspace(jwt_token: str, region: str, workspace: str) -> bool
     except Exception as e:
         logger.error(f'JWT workspace validation failed: {e}')
         return False
+
+
+async def _resolve_jwt_workspace(jwt_token: str, workspace: str) -> str:
+    """Resolve a renamed workspace slug to the schema_name the claims carry."""
+    try:
+        claim_workspaces = get_token_workspaces(jwt_token)
+    except Exception as e:
+        logger.error(f'JWT workspace resolution failed: {e}')
+        return workspace
+    return await resolve_workspace(workspace, claim_workspaces)
 
 
 def _resolve_region_from_jwt(
@@ -470,6 +481,13 @@ def with_token_validation(func: Callable, requires_workspace: bool = True) -> Ca
                 return error_response(
                     'Authentication required. No JWT token found in request context.'
                 )
+
+        if auth_enabled and requires_workspace:
+            # A renamed URL slug is not in the claims; map it to its schema_name.
+            resolved_workspace = await _resolve_jwt_workspace(jwt_token, workspace)
+            if resolved_workspace != workspace:
+                workspace = resolved_workspace
+                bound_args.arguments['workspace'] = workspace
 
         if not region and requires_workspace:  # workspace-less: empty means all
             if auth_enabled:
