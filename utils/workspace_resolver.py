@@ -5,10 +5,11 @@ and the JWT workspace claims only carry the ``schema_name``. When the
 ``workspace`` argument is not a claim's ``schema_name``, ask the account
 service's public lookup which workspace the segment belongs to.
 
-Every failure resolves to ``None`` so the caller keeps rejecting the argument.
+The lookup is skipped when ``ALPACON_ACCOUNT_URL`` is unset. Every failure resolves to ``None`` so the caller keeps rejecting the argument.
 """
 
 import os
+import re
 import time
 
 import httpx
@@ -18,14 +19,15 @@ from utils.logger import escape_for_log, get_logger
 
 logger = get_logger('workspace_resolver')
 
-ACCOUNT_BASE_URL = 'https://account.alpacax.com'
+_SLUG_PATTERN = re.compile(r'[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?')
 _LOOKUP_PATH = '/api/workspaces/organization/'
 _LOOKUP_TIMEOUT = 3.0
-_CACHE_TTL = 60.0
+_CACHE_TTL = 60.0  # matches the lookup's own max-age
 _CACHE_MAX_ENTRIES = 256
 
-# slug -> (schema_name, expiry); only successful lookups are stored.
-_cache: dict[str, tuple[str, float]] = {}
+# slug -> (schema_name or None for a 404, expiry). A 429, a network error and a
+# timeout are never stored.
+_cache: dict[str, tuple[str | None, float]] = {}
 
 
 def clear_cache() -> None:
@@ -33,12 +35,25 @@ def clear_cache() -> None:
 
 
 def _account_base_url() -> str:
-    # ALPACON_ACCOUNT_URL already points the MFA pre-check at the account service.
-    return (os.getenv('ALPACON_ACCOUNT_URL') or ACCOUNT_BASE_URL).rstrip('/')
+    # Same variable as the MFA pre-check; unset disables the lookup.
+    return os.getenv('ALPACON_ACCOUNT_URL', '').rstrip('/')
+
+
+def _store(slug: str, value: str | None, now: float) -> None:
+    if len(_cache) >= _CACHE_MAX_ENTRIES:
+        for key in [k for k, (_, exp) in _cache.items() if exp <= now]:
+            del _cache[key]
+        if len(_cache) >= _CACHE_MAX_ENTRIES:
+            _cache.clear()
+    _cache[slug] = (value, now + _CACHE_TTL)
 
 
 async def lookup_schema_name(slug: str) -> str | None:
     """Return the ``schema_name`` for a slug, or None on any failure."""
+    base_url = _account_base_url()
+    if not base_url or not _SLUG_PATTERN.fullmatch(slug):
+        return None
+
     now = time.monotonic()
     cached = _cache.get(slug)
     if cached and cached[1] > now:
@@ -47,8 +62,11 @@ async def lookup_schema_name(slug: str) -> str | None:
     try:
         async with httpx.AsyncClient(timeout=_LOOKUP_TIMEOUT) as client:
             response = await client.get(
-                f'{_account_base_url()}{_LOOKUP_PATH}', params={'slug': slug}
+                f'{base_url}{_LOOKUP_PATH}', params={'slug': slug}
             )
+        if response.status_code == 404:
+            _store(slug, None, now)
+            return None
         if response.status_code != 200:
             logger.info(
                 'Workspace slug lookup for %s returned %s',
@@ -67,12 +85,7 @@ async def lookup_schema_name(slug: str) -> str | None:
     if not isinstance(organization, str) or not validate_workspace_format(organization):
         return None
 
-    if len(_cache) >= _CACHE_MAX_ENTRIES:
-        for key in [k for k, (_, exp) in _cache.items() if exp <= now]:
-            del _cache[key]
-        if len(_cache) >= _CACHE_MAX_ENTRIES:
-            _cache.clear()
-    _cache[slug] = (organization, now + _CACHE_TTL)
+    _store(slug, organization, now)
     return organization
 
 
@@ -84,6 +97,8 @@ async def resolve_workspace(workspace: str, claim_workspaces: list[dict]) -> str
     workspace the token does not grant, so the usual rejection applies.
     """
     schema_names = {ws.get('schema_name') for ws in claim_workspaces}
+    if not schema_names:
+        return workspace
     if workspace in schema_names:
         return workspace
     resolved = await lookup_schema_name(workspace)
