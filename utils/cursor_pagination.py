@@ -21,7 +21,13 @@ Two properties the walk owes its caller:
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from utils.common import json_records, success_response, unwrap_http_result
+from utils.common import (
+    UnexpectedResponseShapeError,
+    error_response,
+    json_records,
+    success_response,
+    unwrap_http_result,
+)
 
 # Requests one walk may issue. ESCursorPagination defaults ``page_size`` to 15
 # and caps it at 100, so a call reads 150 records by default and 1000 at most;
@@ -58,7 +64,8 @@ _UPSTREAM_ERROR_NOTE = (
     'The walk failed partway through. The {records} record(s) read before the '
     'failure were discarded rather than handed back as a whole list, because a '
     'partial list reported as a success is the failure this walk exists to '
-    'avoid. Retry from `pagination.next_cursor`, or from the start when '
+    'avoid. `pagination.next_cursor` is where this walk started, so retrying it '
+    'reads those records again; retry from the start instead when '
     '`error_code` is `api_cursor_expired`.'
 )
 
@@ -117,9 +124,11 @@ async def cursor_list_response(
     to treat a merged list as its own first page. ``pagination.next_cursor`` is
     the one place a resume point lives.
 
-    Any failed request returns that request's error response instead, carrying
-    the same ``pagination`` report. Records read before the failure are
-    discarded rather than returned under ``status: "success"``.
+    Any failed request, or a page whose body is not a list of records, returns
+    an error response instead, carrying the same ``pagination`` report. Records
+    read before the failure are discarded rather than returned under
+    ``status: "success"``, so the report's ``next_cursor`` is the walk's own
+    starting cursor: retrying it reads the discarded pages again.
 
     Args:
         method: Bound http_client method, passed from the tool module so tests
@@ -139,7 +148,8 @@ async def cursor_list_response(
     base_params = {
         name: value for name, value in params.items() if name != _CURSOR_PARAM
     }
-    cursor = params.get(_CURSOR_PARAM)
+    start_cursor = params.get(_CURSOR_PARAM)
+    cursor = start_cursor
     records: list[Any] = []
     count: Any = None
     pages = 0
@@ -167,14 +177,22 @@ async def cursor_list_response(
             workspace=workspace,
             **id_context,
         )
+        if err is None:
+            try:
+                records.extend(json_records(result))
+            except UnexpectedResponseShapeError as e:
+                err = error_response(
+                    str(e), region=region, workspace=workspace, **id_context
+                )
         if err:
             report = _report(
                 pages=pages,
                 max_pages=max_pages,
                 stopped_because=UPSTREAM_ERROR,
-                # The cursor this request carried: retrying it is where a
-                # transient failure resumes, and None means from the start.
-                next_cursor=cursor,
+                # Where this walk started, not the failed request's cursor: the
+                # pages before it are discarded, so resuming there would skip
+                # them. None means from the start.
+                next_cursor=start_cursor,
             )
             report['records_discarded'] = len(records)
             report['note'] = _UPSTREAM_ERROR_NOTE.format(records=len(records))
@@ -182,7 +200,6 @@ async def cursor_list_response(
             return err
 
         pages += 1
-        records.extend(json_records(result))
         # A bare array is not a paginated body, so it carries nothing to follow.
         body = result if isinstance(result, dict) else {}
         count = body.get('count', count)

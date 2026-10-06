@@ -190,6 +190,34 @@ class TestWalkFailure:
         assert report['stopped_because'] == 'upstream_error'
         assert report['pages_read'] == 1
         assert report['records_discarded'] == 1
-        # The cursor the failed request carried: where a retry resumes.
-        assert report['next_cursor'] == 'c1'
+        # Where the walk started, not the failed request's 'c1': page one was
+        # discarded, so resuming at 'c1' would skip it.
+        assert report['next_cursor'] is None
         assert _sent_params(method) == [{}, {'cursor': 'c1'}]
+
+    @pytest.mark.asyncio
+    async def test_a_resumed_walk_that_fails_hands_back_its_starting_cursor(self):
+        result, _ = await _walk(
+            [_page([{'id': 'a'}], next_cursor='c1'), HTTP_ERROR_ENVELOPE],
+            params={'cursor': 'c0'},
+        )
+
+        assert result['pagination']['next_cursor'] == 'c0'
+
+    @pytest.mark.parametrize(
+        'malformed', ['unexpected', {'results': 'oops', 'next': None}]
+    )
+    @pytest.mark.asyncio
+    async def test_a_malformed_later_page_is_an_error_with_the_report(self, malformed):
+        result, _ = await _walk(
+            [_page([{'id': 'a'}], next_cursor='c1'), malformed],
+            params={'cursor': 'c0'},
+        )
+
+        assert result['status'] == 'error'
+        assert 'data' not in result
+        report = result['pagination']
+        assert report['stopped_because'] == 'upstream_error'
+        assert report['pages_read'] == 1
+        assert report['records_discarded'] == 1
+        assert report['next_cursor'] == 'c0'
