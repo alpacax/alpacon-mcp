@@ -2174,7 +2174,7 @@ class TestSubmitFileExecution:
     @pytest.mark.asyncio
     async def test_no_reuse_days_leaves_the_body_as_it_was(self, mock_http_client):
         # A server older than alpacax/alpacon-server#3914 never sees the key, and a
-        # one-off run on a newer one proposes nothing rather than null.
+        # run with no proposal sends nothing rather than null.
         mock_http_client.post.return_value = {'id': 'cmd-706'}
 
         await _submit_file_execution(
@@ -2640,11 +2640,12 @@ class TestExecuteFileRegistration:
         for code in _FILE_EXEC_CODES:
             assert code in text
         assert '2.6.0' in text
-        # reuse_days is a proposal the approver decides on, kept for a script
-        # that will be rerun unchanged and left out of a one-off run.
+        # The approver only opts in or not, and omitting reuse_days still lets
+        # an opted-in grant run to the ceiling, so neither may read otherwise.
         assert 'reuse_days' in text
         assert 'proposal' in text
-        assert 'one-off' in text
+        assert 'the approver cannot choose another period' in text
+        assert 'Omitting it does not make the run one-shot' in text
 
     @pytest.mark.asyncio
     async def test_execute_command_points_scripts_at_execute_file(self):
