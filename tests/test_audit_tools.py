@@ -39,7 +39,7 @@ SERVER_FILTER_TOOLS = [list_server_logs, list_webftp_logs, list_session_analyses
 async def test_list_sends_no_params_when_no_filter_given(
     func, endpoint, mock_http_client, mock_token_manager
 ):
-    mock_http_client.get.return_value = {'results': []}
+    mock_http_client.get.return_value = {'next': None, 'results': []}
 
     result = await func(workspace='test-ws', region='ap1')
 
@@ -96,7 +96,7 @@ class TestGetSessionAnalysisDetail:
 )
 @pytest.mark.asyncio
 async def test_server_id_is_sent_as_server(func, mock_http_client, mock_token_manager):
-    mock_http_client.get.return_value = {'results': []}
+    mock_http_client.get.return_value = {'next': None, 'results': []}
 
     result = await func(workspace='test-ws', region='ap1', server_id=SERVER_ID)
 
@@ -145,7 +145,7 @@ class TestListSessionAnalysesFilterRule:
         Dropping it here would silently widen the listing to every session
         instead of letting the server reject the value the caller passed.
         """
-        mock_http_client.get.return_value = {'results': []}
+        mock_http_client.get.return_value = {'next': None, 'results': []}
 
         result = await list_session_analyses(
             workspace='test-ws', region='ap1', status='', risk_score=''
@@ -224,7 +224,7 @@ class TestListSessionAnalysesStaysPageNumbered:
 
     @pytest.mark.asyncio
     async def test_page_is_forwarded(self, mock_http_client, mock_token_manager):
-        mock_http_client.get.return_value = {'count': 0, 'results': []}
+        mock_http_client.get.return_value = {'count': 0, 'next': None, 'results': []}
 
         result = await list_session_analyses(workspace='test-ws', region='ap1', page=2)
 

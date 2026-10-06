@@ -234,9 +234,10 @@ class TestWalkFailure:
             'unexpected',
             {'results': 'oops', 'next': None},
             {'count': 2, 'next': 'c2'},
+            {'count': 2, 'results': [{'id': 'b'}]},
             {'results': [{'id': 'b'}], 'next': ''},
         ],
-        ids=['scalar', 'non-list-results', 'no-results', 'empty-next'],
+        ids=['scalar', 'non-list-results', 'no-results', 'no-next', 'empty-next'],
     )
     @pytest.mark.asyncio
     async def test_a_malformed_later_page_is_an_error_with_the_report(self, malformed):

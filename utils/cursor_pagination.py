@@ -85,8 +85,9 @@ def _read_page(result: Any) -> tuple[list[Any], Any, str | None]:
     A bare array is one page with nothing to follow. An object must carry a
     ``results`` list and a ``next`` that is null or a non-empty string; anything
     else raises UnexpectedResponseShapeError rather than being read as the end
-    of the list. A missing ``results`` would otherwise merge as an empty page,
-    and an integer ``next``—what a page-number paginator answers with, and which
+    of the list. alpacon-server's schema requires both keys on every cursor
+    page. A missing ``results`` would otherwise merge as an empty page, a
+    missing ``next`` would read as the end, and an integer ``next``—what a page-number paginator answers with, and which
     the cursor paginator's signature check refuses—would end the walk as
     ``complete`` while upstream says another page exists.
     """
@@ -97,8 +98,12 @@ def _read_page(result: Any) -> tuple[list[Any], Any, str | None]:
         raise UnexpectedResponseShapeError(
             'Expected `results` in a cursor-paginated upstream page'
         )
+    if 'next' not in body:
+        raise UnexpectedResponseShapeError(
+            'Expected `next` in a cursor-paginated upstream page'
+        )
     records = json_records(body)
-    token = body.get('next')
+    token = body['next']
     if token is not None and not (isinstance(token, str) and token):
         raise UnexpectedResponseShapeError(
             f'Expected a cursor string or null in upstream `next`, got {token!r}'

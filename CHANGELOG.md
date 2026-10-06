@@ -167,7 +167,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `pagination.complete` before treating a result as the whole list, and pass
   `pagination.next_cursor` back as `cursor` to resume a walk that stopped at the bound; a resumed
   call is never `complete` on its own, since it holds only the records after its `cursor`. A request that fails partway through, or a page that is not a well-formed cursor
-  page (no `results` list, or a `next` that is neither null nor a cursor string), returns an error carrying the same `pagination` object with `records_discarded`, rather
+  page (no `results` list, no `next`, or a `next` that is neither null nor a cursor string), returns an error carrying the same `pagination` object with `records_discarded`, rather
   than handing back a partial list as a success; its `next_cursor` is where the walk started, so a
   retry reads the discarded records again. `list_session_analyses` and every other page-numbered list tool are unchanged.
 - The CPU, memory, disk, and network usage tools, the interface lookup behind `get_server_metrics_summary`, and `webftp_check_status` now return an error when upstream answers with a bare JSON scalar (#236), and all but `webftp_check_status` also when a paginated body's `results` is not a list; they used to report "no data", or a transfer still in progress. The WebFTP upload, download, and bulk tools already failed on such a body with a generic error and now name the unexpected body type instead. Object and list bodies behave as before; a client parsing these responses may now see an `error` status where it used to see an empty result.
