@@ -49,7 +49,9 @@ CURSOR_WALK_DESCRIPTION = (
     f'cursor for up to {MAX_CURSOR_PAGES} requests and merges the pages into one '
     'result. Check `pagination.complete` before concluding the list is whole, and '
     'pass `pagination.next_cursor` back as `cursor` to resume a walk that stopped '
-    'at the bound.'
+    'at the bound. A resumed call holds only the records after its `cursor`, so it '
+    'is never `complete` on its own; `stopped_because: end_of_list` says it read '
+    'to the end.'
 )
 
 _CURSOR_PARAM = 'cursor'
@@ -59,6 +61,12 @@ _PAGE_BOUND_NOTE = (
     'available, so this list is incomplete. Pass `pagination.next_cursor` back '
     'as `cursor` to continue, or raise `page_size` (max 100) to cover more '
     'ground per request.'
+)
+
+_RESUMED_END_NOTE = (
+    'Read to the end of the list, but this call started from a supplied '
+    '`cursor`, so `data.results` holds only the records after it. The whole '
+    'list is these records together with those of the calls before it.'
 )
 
 _UPSTREAM_ERROR_NOTE = (
@@ -99,15 +107,26 @@ def _read_page(result: Any) -> tuple[list[Any], Any, str | None]:
 
 
 def _report(
-    *, pages: int, max_pages: int, stopped_because: str, next_cursor: str | None
+    *,
+    pages: int,
+    max_pages: int,
+    stopped_because: str,
+    started_from_cursor: bool,
+    next_cursor: str | None,
 ) -> dict[str, Any]:
-    """Build the walk's own account of itself, minus the per-outcome record count."""
+    """Build the walk's own account of itself, minus the per-outcome record count.
+
+    ``complete`` means this response holds the whole list, not that the walk
+    reached the end: a walk resumed from a cursor reaches the end without the
+    records before that cursor.
+    """
     return {
         'mode': 'cursor',
         'pages_read': pages,
         'max_pages': max_pages,
-        'complete': stopped_because == END_OF_LIST,
+        'complete': stopped_because == END_OF_LIST and not started_from_cursor,
         'stopped_because': stopped_because,
+        'started_from_cursor': started_from_cursor,
         'next_cursor': next_cursor,
     }
 
@@ -206,6 +225,7 @@ async def cursor_list_response(
                 pages=pages,
                 max_pages=max_pages,
                 stopped_because=UPSTREAM_ERROR,
+                started_from_cursor=start_cursor is not None,
                 # Where this walk started, not the failed request's cursor: the
                 # pages before it are discarded, so resuming there would skip
                 # them. None means from the start.
@@ -229,11 +249,14 @@ async def cursor_list_response(
         pages=pages,
         max_pages=max_pages,
         stopped_because=stopped_because,
+        started_from_cursor=start_cursor is not None,
         next_cursor=cursor,
     )
     report['records_returned'] = len(records)
     if stopped_because == PAGE_BOUND:
         report['note'] = _PAGE_BOUND_NOTE.format(max_pages=max_pages)
+    elif start_cursor is not None:
+        report['note'] = _RESUMED_END_NOTE
 
     return success_response(
         data={'count': count, 'results': records},

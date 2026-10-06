@@ -162,10 +162,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `page` must switch to `cursor`. The response changes with it: `data` now carries `count` (the
   server's total match count) and `results` (every record the walk read) and no longer forwards the
   envelope's `next` or `previous`, and a new top-level `pagination` object reports the walk:
-  `complete`, `stopped_because` (`end_of_list`, `page_bound`, or `upstream_error`), `pages_read`,
-  `max_pages`, `records_returned`, and `next_cursor`. Check `pagination.complete` before treating a
-  result as the whole list, and pass `pagination.next_cursor` back as `cursor` to resume a walk that
-  stopped at the bound. A request that fails partway through, or a page that is not a well-formed cursor
+  `complete`, `stopped_because` (`end_of_list`, `page_bound`, or `upstream_error`),
+  `started_from_cursor`, `pages_read`, `max_pages`, `records_returned`, and `next_cursor`. Check
+  `pagination.complete` before treating a result as the whole list, and pass
+  `pagination.next_cursor` back as `cursor` to resume a walk that stopped at the bound; a resumed
+  call is never `complete` on its own, since it holds only the records after its `cursor`. A request that fails partway through, or a page that is not a well-formed cursor
   page (no `results` list, or a `next` that is neither null nor a cursor string), returns an error carrying the same `pagination` object with `records_discarded`, rather
   than handing back a partial list as a success; its `next_cursor` is where the walk started, so a
   retry reads the discarded records again. `list_session_analyses` and every other page-numbered list tool are unchanged.

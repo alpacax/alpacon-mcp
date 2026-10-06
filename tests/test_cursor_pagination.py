@@ -131,9 +131,27 @@ class TestWalkReport:
             'max_pages': MAX_CURSOR_PAGES,
             'complete': True,
             'stopped_because': 'end_of_list',
+            'started_from_cursor': False,
             'next_cursor': None,
             'records_returned': 2,
         }
+        assert 'note' not in result['pagination']
+
+    @pytest.mark.asyncio
+    async def test_a_resumed_walk_that_reaches_the_end_is_not_complete(self):
+        """Its results omit every record before the cursor it was handed."""
+        result, _ = await _walk(
+            [_page([{'id': 'y'}], next_cursor='c9'), _page([{'id': 'z'}])],
+            params={'cursor': 'resume-me'},
+        )
+
+        report = result['pagination']
+        assert result['status'] == 'success'
+        assert report['complete'] is False
+        assert report['stopped_because'] == 'end_of_list'
+        assert report['started_from_cursor'] is True
+        assert report['next_cursor'] is None
+        assert 'only the records after it' in report['note']
 
     @pytest.mark.asyncio
     async def test_the_page_bound_is_visible_in_the_payload(self):
