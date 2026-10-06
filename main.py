@@ -12,8 +12,14 @@ logger = get_logger('main')
 
 
 def _is_workspace_token_variable(name: str) -> bool:
-    """Whether name has the ALPACON_MCP_<REGION>_<WORKSPACE>_TOKEN shape TokenManager reads."""
+    """Whether name has the ALPACON_MCP_<REGION>_<WORKSPACE>_TOKEN shape TokenManager reads.
+
+    TokenManager builds the name from upper-cased region and workspace, so a name
+    with any lowercase letter is never read.
+    """
     prefix, suffix = 'ALPACON_MCP_', '_TOKEN'
+    if name != name.upper():
+        return False
     if not (name.startswith(prefix) and name.endswith(suffix)):
         return False
     region, _, workspace = name[len(prefix) : -len(suffix)].partition('_')

@@ -52,10 +52,12 @@ def test_unrelated_alpacon_variable_does_not_count(unconfigured, monkeypatch):
         'ALPACON_MCP_LOG_TOKEN',
         'ALPACON_MCP_AP1_TOKEN',
         'ALPACON_MCP_EU1_PRODUCTION_TOKEN',
+        'ALPACON_MCP_ap1_PRODUCTION_TOKEN',
+        'ALPACON_MCP_AP1_production_TOKEN',
     ],
 )
 def test_malformed_token_variable_does_not_count(unconfigured, monkeypatch, name):
-    """TokenManager only reads ALPACON_MCP_<REGION>_<WORKSPACE>_TOKEN."""
+    """TokenManager only reads the uppercase ALPACON_MCP_<REGION>_<WORKSPACE>_TOKEN."""
     monkeypatch.setenv(name, 'alpat-x')
     assert main.check_token_exists() is False
 
