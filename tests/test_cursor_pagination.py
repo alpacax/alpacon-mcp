@@ -94,14 +94,20 @@ class TestCursorFollowing:
         assert _sent_params(method) == [{'cursor': 'resume-me'}]
 
     @pytest.mark.asyncio
-    async def test_an_integer_next_is_not_followed_as_a_cursor(self):
+    async def test_an_integer_next_is_an_error_not_the_end_of_the_list(self):
         """A page-number body also carries `next`, as an int, which is not a cursor.
 
-        Feeding one back would fail the cursor paginator's signature check, so a
-        walk mis-wired to a page-number endpoint stops instead of sending it.
+        Feeding one back would fail the cursor paginator's signature check, and
+        stopping there would report `complete` while upstream says another page
+        exists, so a walk mis-wired to a page-number endpoint fails instead.
         """
-        _, method = await _walk([{'count': 30, 'next': 2, 'results': [{'id': 'a'}]}])
+        result, method = await _walk(
+            [{'count': 30, 'next': 2, 'results': [{'id': 'a'}]}]
+        )
 
+        assert result['status'] == 'error'
+        assert result['pagination']['complete'] is False
+        assert result['pagination']['stopped_because'] == 'upstream_error'
         assert _sent_params(method) == [{}]
 
     @pytest.mark.asyncio
@@ -205,7 +211,14 @@ class TestWalkFailure:
         assert result['pagination']['next_cursor'] == 'c0'
 
     @pytest.mark.parametrize(
-        'malformed', ['unexpected', {'results': 'oops', 'next': None}]
+        'malformed',
+        [
+            'unexpected',
+            {'results': 'oops', 'next': None},
+            {'count': 2, 'next': 'c2'},
+            {'results': [{'id': 'b'}], 'next': ''},
+        ],
+        ids=['scalar', 'non-list-results', 'no-results', 'empty-next'],
     )
     @pytest.mark.asyncio
     async def test_a_malformed_later_page_is_an_error_with_the_report(self, malformed):

@@ -24,6 +24,7 @@ from typing import Any
 from utils.common import (
     UnexpectedResponseShapeError,
     error_response,
+    expect_json_object,
     json_records,
     success_response,
     unwrap_http_result,
@@ -70,15 +71,31 @@ _UPSTREAM_ERROR_NOTE = (
 )
 
 
-def _next_cursor(body: dict[str, Any]) -> str | None:
-    """Return the body's ``next`` cursor, or None when there is no next page.
+def _read_page(result: Any) -> tuple[list[Any], Any, str | None]:
+    """Return a page's records, its ``count``, and its ``next`` cursor.
 
-    Strict about the type on purpose: a page-number paginator also answers with
-    ``next``, as an integer, and feeding that back as ``cursor`` would fail the
-    cursor paginator's signature check. Only a non-empty string is a cursor.
+    A bare array is one page with nothing to follow. An object must carry a
+    ``results`` list and a ``next`` that is null or a non-empty string; anything
+    else raises UnexpectedResponseShapeError rather than being read as the end
+    of the list. A missing ``results`` would otherwise merge as an empty page,
+    and an integer ``next``—what a page-number paginator answers with, and which
+    the cursor paginator's signature check refuses—would end the walk as
+    ``complete`` while upstream says another page exists.
     """
+    if isinstance(result, list):
+        return result, None, None
+    body = expect_json_object(result)
+    if 'results' not in body:
+        raise UnexpectedResponseShapeError(
+            'Expected `results` in a cursor-paginated upstream page'
+        )
+    records = json_records(body)
     token = body.get('next')
-    return token if isinstance(token, str) and token else None
+    if token is not None and not (isinstance(token, str) and token):
+        raise UnexpectedResponseShapeError(
+            f'Expected a cursor string or null in upstream `next`, got {token!r}'
+        )
+    return records, body.get('count'), token
 
 
 def _report(
@@ -124,7 +141,7 @@ async def cursor_list_response(
     to treat a merged list as its own first page. ``pagination.next_cursor`` is
     the one place a resume point lives.
 
-    Any failed request, or a page whose body is not a list of records, returns
+    Any failed request, or a page whose body ``_read_page`` refuses, returns
     an error response instead, carrying the same ``pagination`` report. Records
     read before the failure are discarded rather than returned under
     ``status: "success"``, so the report's ``next_cursor`` is the walk's own
@@ -179,7 +196,7 @@ async def cursor_list_response(
         )
         if err is None:
             try:
-                records.extend(json_records(result))
+                page_records, page_count, cursor_after = _read_page(result)
             except UnexpectedResponseShapeError as e:
                 err = error_response(
                     str(e), region=region, workspace=workspace, **id_context
@@ -200,10 +217,10 @@ async def cursor_list_response(
             return err
 
         pages += 1
-        # A bare array is not a paginated body, so it carries nothing to follow.
-        body = result if isinstance(result, dict) else {}
-        count = body.get('count', count)
-        cursor = _next_cursor(body)
+        records.extend(page_records)
+        if page_count is not None:
+            count = page_count
+        cursor = cursor_after
         if cursor is None:
             break
 
