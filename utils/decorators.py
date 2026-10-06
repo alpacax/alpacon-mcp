@@ -220,16 +220,6 @@ def _validate_jwt_workspace(
     return match_workspace(workspaces, region, workspace)
 
 
-async def _resolve_jwt_workspace(jwt_token: str, workspace: str) -> str:
-    """Resolve a renamed workspace slug to the schema_name the claims carry."""
-    try:
-        claim_workspaces = get_token_workspaces(jwt_token)
-    except Exception as e:
-        logger.error(f'JWT workspace resolution failed: {e}')
-        return workspace
-    return await resolve_workspace(workspace, claim_workspaces)
-
-
 def _resolve_region_from_jwt(
     workspaces: list[dict[str, str]], workspace: str | None = None
 ) -> str | None:
@@ -482,8 +472,9 @@ def with_token_validation(func: Callable, requires_workspace: bool = True) -> Ca
                 jwt_workspaces = get_token_workspaces(jwt_token)
 
         if auth_enabled and requires_workspace:
-            # A renamed URL slug is not in the claims; map it to its schema_name.
-            resolved_workspace = await _resolve_jwt_workspace(jwt_token, workspace)
+            # A renamed URL slug is not in the claims; map it to its schema_name,
+            # reading the claims decoded above rather than decoding again.
+            resolved_workspace = await resolve_workspace(workspace, jwt_workspaces)
             if resolved_workspace != workspace:
                 workspace = resolved_workspace
                 bound_args.arguments['workspace'] = workspace
