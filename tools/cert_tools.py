@@ -220,7 +220,9 @@ async def update_certificate_authority(
         'CA, its sign requests, issued certificates, and revoke requests. To stop '
         'using such a CA, remove the server it runs on with unregister_server; the '
         'CA then drops out of list_certificate_authorities and signs nothing more, '
-        'and its records remain. Requires manage access to the server the CA runs on.'
+        'and its records remain. The delete itself requires manage access to the '
+        'server the CA runs on, the same access unregister_server needs; CA '
+        'ownership alone does not grant it.'
     ),
     annotations=DESTRUCTIVE,
     meta={'anthropic/searchHint': 'certificate CA authority delete remove'},
