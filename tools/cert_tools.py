@@ -213,7 +213,15 @@ async def update_certificate_authority(
 
 
 @mcp_tool_handler(
-    description='Delete a certificate authority (CA) permanently. This is irreversible. All certificates issued by this CA will no longer be verifiable. Use with caution. Requires admin or CA owner privileges.',
+    description=(
+        'Delete a certificate authority (CA) that has never received a certificate '
+        'sign request. A CA that has received one cannot be deleted: the server '
+        'answers 400 with error_code cert_authority_cannot_be_deleted and keeps the '
+        'CA, its sign requests, issued certificates, and revoke requests. To stop '
+        'using such a CA, delete the server it runs on; the CA then drops out of '
+        'list_certificate_authorities and signs nothing more, and its records remain. '
+        'Requires admin or CA owner privileges.'
+    ),
     annotations=DESTRUCTIVE,
     meta={'anthropic/searchHint': 'certificate CA authority delete remove'},
 )
@@ -223,7 +231,10 @@ async def delete_certificate_authority(
     region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
-    """Delete a certificate authority.
+    """Delete a certificate authority that has never received a sign request.
+
+    A CA with sign request history is refused with
+    ``cert_authority_cannot_be_deleted`` and its records are kept.
 
     Args:
         ca_id: Certificate authority ID to delete
