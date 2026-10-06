@@ -160,14 +160,14 @@ class TokenManager:
         Returns:
             Token string if found, None otherwise
         """
-        logger.debug(f'Getting token for {workspace}.{region}')
+        logger.debug('Getting token for %s.%s', workspace, region)
 
         # First try environment variable: ALPACON_MCP_<REGION>_<WORKSPACE>_TOKEN
         env_var_name = f'ALPACON_MCP_{region.upper()}_{workspace.upper()}_TOKEN'
         env_token = os.getenv(env_var_name)
         if env_token:
-            logger.info(
-                f'Found token for {workspace}.{region} from environment variable'
+            logger.debug(
+                'Found token for %s.%s from environment variable', workspace, region
             )
             return env_token
 
@@ -176,7 +176,9 @@ class TokenManager:
         if region in self.tokens and workspace in self.tokens[region]:
             token = self._entry_token(self.tokens[region][workspace])
             if token:
-                logger.info(f'Found token for {workspace}.{region} from config file')
+                logger.debug(
+                    'Found token for %s.%s from config file', workspace, region
+                )
                 return token
 
         logger.warning(f'No token found for {workspace}.{region}')

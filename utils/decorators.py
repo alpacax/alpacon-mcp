@@ -213,14 +213,11 @@ def _get_jwt_token() -> str | None:
     return access_token.token if access_token is not None else None
 
 
-def _validate_jwt_workspace(jwt_token: str, region: str, workspace: str) -> bool:
-    """Validate that the JWT authorizes access to the given workspace/region."""
-    try:
-        workspaces = get_token_workspaces(jwt_token)
-        return match_workspace(workspaces, region, workspace)
-    except Exception as e:
-        logger.error(f'JWT workspace validation failed: {e}')
-        return False
+def _validate_jwt_workspace(
+    workspaces: list[dict[str, str]], region: str, workspace: str
+) -> bool:
+    """Validate that the JWT's workspaces authorize the given workspace/region."""
+    return match_workspace(workspaces, region, workspace)
 
 
 async def _resolve_jwt_workspace(jwt_token: str, workspace: str) -> str:
@@ -234,13 +231,12 @@ async def _resolve_jwt_workspace(jwt_token: str, workspace: str) -> str:
 
 
 def _resolve_region_from_jwt(
-    jwt_token: str, workspace: str | None = None
+    workspaces: list[dict[str, str]], workspace: str | None = None
 ) -> str | None:
-    """Resolve region from JWT claims.
+    """Resolve region from the JWT's workspaces.
 
     If workspace is given, find its region. Otherwise, return region if only one exists.
     """
-    workspaces = get_token_workspaces(jwt_token)
     if not workspaces:
         return None
 
@@ -259,19 +255,18 @@ def _resolve_region_from_jwt(
 
 
 def _resolve_region_jwt(
-    jwt_token: str, workspace: str | None
+    workspaces: list[dict[str, str]], workspace: str | None
 ) -> tuple[str | None, str | None]:
-    """Resolve region from JWT claims.
+    """Resolve region from the JWT's workspaces.
 
     Returns:
         (resolved_region, error_message) - one of them will be None
     """
-    region = _resolve_region_from_jwt(jwt_token, workspace)
+    region = _resolve_region_from_jwt(workspaces, workspace)
     if region:
         return region, None
 
-    ws_list = get_token_workspaces(jwt_token)
-    available_regions = sorted({ws['region'] for ws in ws_list})
+    available_regions = sorted({ws['region'] for ws in workspaces})
     if available_regions:
         return None, (
             f'Multiple regions available in token: {", ".join(available_regions)}. '
@@ -475,12 +470,16 @@ def with_token_validation(func: Callable, requires_workspace: bool = True) -> Ca
 
         # Retrieve JWT token once upfront in streamable-http mode
         jwt_token = None
+        jwt_workspaces: list[dict[str, str]] = []
         if auth_enabled:
             jwt_token = _get_jwt_token()
             if not jwt_token:
                 return error_response(
                     'Authentication required. No JWT token found in request context.'
                 )
+            # Decoded once: region resolution and authorization both read it.
+            if requires_workspace:
+                jwt_workspaces = get_token_workspaces(jwt_token)
 
         if auth_enabled and requires_workspace:
             # A renamed URL slug is not in the claims; map it to its schema_name.
@@ -491,7 +490,9 @@ def with_token_validation(func: Callable, requires_workspace: bool = True) -> Ca
 
         if not region and requires_workspace:  # workspace-less: empty means all
             if auth_enabled:
-                resolved_region, err_msg = _resolve_region_jwt(jwt_token, workspace)
+                resolved_region, err_msg = _resolve_region_jwt(
+                    jwt_workspaces, workspace
+                )
             else:
                 resolved_region, err_msg = _resolve_region_local(workspace)
 
@@ -553,7 +554,7 @@ def with_token_validation(func: Callable, requires_workspace: bool = True) -> Ca
         if auth_enabled:
             # Streamable-HTTP mode — JWT auth only
             if requires_workspace:
-                if not _validate_jwt_workspace(jwt_token, region, workspace):
+                if not _validate_jwt_workspace(jwt_workspaces, region, workspace):
                     return error_response(
                         f'Workspace {workspace}.{region} not authorized by JWT',
                         region=region,
