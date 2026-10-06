@@ -1,21 +1,9 @@
 """Bounded cursor-page traversal for alpacon-server's cursor-paginated lists.
 
-A handful of alpacon-server's list endpoints are Elasticsearch-backed and
-paginate with ``history.pagination.ESCursorPagination``, which reads ``cursor``
-and ``page_size`` from the query string and nothing else. ``page`` is not a
-parameter it has, and an unrecognized query parameter is ignored rather than
-refused, so a request carrying ``page=2`` is answered with the first page
-again. A caller stepping ``page=1,2,3`` receives the same rows three times with
-nothing in the response to say so—which is why those endpoints are walked here
-instead (alpacax/alpacon-mcp#325).
-
-Two properties the walk owes its caller:
-
-* It is bounded. A tool result large enough to fill the model's context window
-  is its own failure, so ``MAX_CURSOR_PAGES`` caps the requests one call makes.
-* It reports what it did, under ``pagination`` on the response. Completeness
-  that a reader has to infer from rows which are not there is the defect this
-  module exists to prevent, so a truncated walk and a failed walk each say so.
+alpacon-server's Elasticsearch-backed lists use ``ESCursorPagination``, which
+ignores ``page``: a caller stepping ``page=1,2,3`` gets the first page three
+times. Those endpoints are walked by cursor here instead (#325), with the walk
+bounded and its outcome reported under ``pagination``.
 """
 
 from collections.abc import Awaitable, Callable
@@ -30,11 +18,8 @@ from utils.common import (
     unwrap_http_result,
 )
 
-# Requests one walk may issue. ESCursorPagination defaults ``page_size`` to 15
-# and caps it at 100, so a call reads 150 records by default and 1000 at most;
-# the caller's own ``page_size`` is what moves it between the two. Nothing
-# becomes unreachable at the bound—the walk hands back a cursor instead of
-# reading further, so the rest costs another call.
+# Requests one walk may issue: 150 records at the server's default page size of
+# 15, 1000 at its cap of 100. A walk cut short hands back a cursor to resume.
 MAX_CURSOR_PAGES = 10
 
 # Why the walk stopped, reported as ``pagination.stopped_because``.
@@ -42,8 +27,7 @@ END_OF_LIST = 'end_of_list'
 PAGE_BOUND = 'page_bound'
 UPSTREAM_ERROR = 'upstream_error'
 
-# One sentence for the three tool descriptions, so what the agent is told about
-# the walk cannot drift between them.
+# Shared by the three tool descriptions so they cannot drift apart.
 CURSOR_WALK_DESCRIPTION = (
     'This endpoint is cursor-paginated, not page-numbered: the tool follows the '
     f'cursor for up to {MAX_CURSOR_PAGES} requests and merges the pages into one '
@@ -55,6 +39,9 @@ CURSOR_WALK_DESCRIPTION = (
 )
 
 _CURSOR_PARAM = 'cursor'
+
+# alpacon-server's codes for a cursor it will not read: retrying it fails again.
+_REFUSED_CURSOR_CODES = frozenset({'api_cursor_expired', 'api_invalid_cursor'})
 
 _PAGE_BOUND_NOTE = (
     'Stopped at the {max_pages}-request bound with more records still '
@@ -69,44 +56,51 @@ _RESUMED_END_NOTE = (
     'list is these records together with those of the calls before it.'
 )
 
-_UPSTREAM_ERROR_NOTE = (
-    'The walk failed partway through. The {records} record(s) read before the '
-    'failure were discarded rather than handed back as a whole list, because a '
-    'partial list reported as a success is the failure this walk exists to '
-    'avoid. `pagination.next_cursor` is where this walk started, so retrying it '
-    'reads those records again; retry from the start instead when '
-    '`error_code` is `api_cursor_expired`.'
+_FIRST_REQUEST_FAILED = 'The walk failed on its first request.'
+
+_RECORDS_DISCARDED = (
+    'The walk failed after reading {records} record(s), which were discarded '
+    'rather than returned as a partial list reported as a success.'
+)
+
+_RETRY_FROM_START_CURSOR = (
+    ' Retry from `pagination.next_cursor`, where this walk started; null means '
+    'from the start.'
+)
+
+_RETRY_FROM_THE_START = (
+    ' The server refused the cursor (`error_code`), so `pagination.next_cursor` '
+    'is null: retry from the start.'
 )
 
 
-def _read_page(result: Any) -> tuple[list[Any], Any, str | None]:
+def _read_page(
+    result: Any, sent_cursor: str | None
+) -> tuple[list[Any], Any, str | None]:
     """Return a page's records, its ``count``, and its ``next`` cursor.
 
-    A bare array is one page with nothing to follow. An object must carry a
-    ``results`` list and a ``next`` that is null or a non-empty string; anything
-    else raises UnexpectedResponseShapeError rather than being read as the end
-    of the list. alpacon-server's schema requires both keys on every cursor
-    page. A missing ``results`` would otherwise merge as an empty page, a
-    missing ``next`` would read as the end, and an integer ``next``—what a page-number paginator answers with, and which
-    the cursor paginator's signature check refuses—would end the walk as
-    ``complete`` while upstream says another page exists.
+    A bare array is one final page. An object must carry ``results`` and a
+    ``next`` that is null or a new non-empty string, as alpacon-server's schema
+    requires; anything else raises UnexpectedResponseShapeError instead of
+    being read as an empty page or the end of the list.
     """
     if isinstance(result, list):
         return result, None, None
     body = expect_json_object(result)
-    if 'results' not in body:
-        raise UnexpectedResponseShapeError(
-            'Expected `results` in a cursor-paginated upstream page'
-        )
-    if 'next' not in body:
-        raise UnexpectedResponseShapeError(
-            'Expected `next` in a cursor-paginated upstream page'
-        )
+    for key in ('results', 'next'):
+        if key not in body:
+            raise UnexpectedResponseShapeError(
+                f'Expected `{key}` in a cursor-paginated upstream page'
+            )
     records = json_records(body)
     token = body['next']
     if token is not None and not (isinstance(token, str) and token):
         raise UnexpectedResponseShapeError(
             f'Expected a cursor string or null in upstream `next`, got {token!r}'
+        )
+    if token is not None and token == sent_cursor:
+        raise UnexpectedResponseShapeError(
+            'Upstream `next` repeats the cursor this page was requested with'
         )
     return records, body.get('count'), token
 
@@ -114,21 +108,18 @@ def _read_page(result: Any) -> tuple[list[Any], Any, str | None]:
 def _report(
     *,
     pages: int,
-    max_pages: int,
     stopped_because: str,
     started_from_cursor: bool,
     next_cursor: str | None,
 ) -> dict[str, Any]:
-    """Build the walk's own account of itself, minus the per-outcome record count.
+    """Build the walk's own account of itself, minus the per-outcome fields.
 
-    ``complete`` means this response holds the whole list, not that the walk
-    reached the end: a walk resumed from a cursor reaches the end without the
-    records before that cursor.
+    ``complete`` means this response holds the whole list, so a walk resumed
+    from a cursor is never complete, even when it reaches the end.
     """
     return {
-        'mode': 'cursor',
         'pages_read': pages,
-        'max_pages': max_pages,
+        'max_pages': MAX_CURSOR_PAGES,
         'complete': stopped_because == END_OF_LIST and not started_from_cursor,
         'stopped_because': stopped_because,
         'started_from_cursor': started_from_cursor,
@@ -145,31 +136,19 @@ async def cursor_list_response(
     token: str | None,
     default_message: str,
     params: dict[str, Any],
-    max_pages: int = MAX_CURSOR_PAGES,
     **id_context: Any,
 ) -> dict[str, Any]:
-    """Walk a cursor-paginated list to its end or to ``max_pages``, as one response.
+    """Walk a cursor-paginated list, bounded by ``MAX_CURSOR_PAGES``, as one response.
 
-    ``params`` is re-sent verbatim on every request with only ``cursor``
-    rewritten, because the paginator rebuilds its query from the query string
-    each time: it re-reads ``page_size`` per request, and it refuses a cursor
-    whose recorded index set no longer matches the one the filters select. A
-    ``cursor`` already in ``params`` is where the walk starts, which is how a
-    caller resumes one the bound cut short.
+    ``params`` is re-sent on every request with only ``cursor`` rewritten,
+    since the server re-reads the filters and ``page_size`` each time. A
+    ``cursor`` in ``params`` is where the walk starts.
 
-    On success the merged page is a standard success response whose ``data``
-    carries ``count`` (the server's total match count, which exceeds
-    ``len(results)`` when the walk stopped early) and ``results``. The envelope's
-    ``next`` and ``previous`` are deliberately not forwarded: every ``next`` but
-    the last was already consumed, and leaving one on ``data`` invites a reader
-    to treat a merged list as its own first page. ``pagination.next_cursor`` is
-    the one place a resume point lives.
-
-    Any failed request, or a page whose body ``_read_page`` refuses, returns
-    an error response instead, carrying the same ``pagination`` report. Records
-    read before the failure are discarded rather than returned under
-    ``status: "success"``, so the report's ``next_cursor`` is the walk's own
-    starting cursor: retrying it reads the discarded pages again.
+    On success ``data`` carries the server's ``count`` and the merged
+    ``results``; the envelope's ``next`` and ``previous`` are dropped, leaving
+    ``pagination.next_cursor`` as the one resume point. On any failure, the
+    records read so far are discarded and the error response carries the
+    ``pagination`` report, whose ``next_cursor`` is the walk's own start.
 
     Args:
         method: Bound http_client method, passed from the tool module so tests
@@ -180,7 +159,6 @@ async def cursor_list_response(
         token: API token (injected by @mcp_tool_handler)
         default_message: Fallback message when the upstream response has none.
         params: Query parameters, including an optional starting ``cursor``.
-        max_pages: Requests this walk may issue.
         **id_context: Extra identifiers merged into the response.
 
     Returns:
@@ -189,16 +167,15 @@ async def cursor_list_response(
     base_params = {
         name: value for name, value in params.items() if name != _CURSOR_PARAM
     }
-    start_cursor = params.get(_CURSOR_PARAM)
+    # The server reads an empty cursor as the first page, and so does the walk.
+    start_cursor = params.get(_CURSOR_PARAM) or None
+    started_from_cursor = start_cursor is not None
     cursor = start_cursor
     records: list[Any] = []
     count: Any = None
     pages = 0
 
-    while pages < max_pages:
-        # A fresh dict per request rather than one mutated in place: the same
-        # object handed to every call would leave the caller holding a params
-        # dict that changes under it after the call returns.
+    while pages < MAX_CURSOR_PAGES:
         page_params = dict(base_params)
         if cursor is not None:
             page_params[_CURSOR_PARAM] = cursor
@@ -220,24 +197,25 @@ async def cursor_list_response(
         )
         if err is None:
             try:
-                page_records, page_count, cursor_after = _read_page(result)
+                page_records, page_count, cursor_after = _read_page(result, cursor)
             except UnexpectedResponseShapeError as e:
                 err = error_response(
                     str(e), region=region, workspace=workspace, **id_context
                 )
         if err:
+            refused = err.get('error_code') in _REFUSED_CURSOR_CODES
             report = _report(
                 pages=pages,
-                max_pages=max_pages,
                 stopped_because=UPSTREAM_ERROR,
-                started_from_cursor=start_cursor is not None,
-                # Where this walk started, not the failed request's cursor: the
-                # pages before it are discarded, so resuming there would skip
-                # them. None means from the start.
-                next_cursor=start_cursor,
+                started_from_cursor=started_from_cursor,
+                next_cursor=None if refused else start_cursor,
             )
             report['records_discarded'] = len(records)
-            report['note'] = _UPSTREAM_ERROR_NOTE.format(records=len(records))
+            report['note'] = (
+                _RECORDS_DISCARDED.format(records=len(records))
+                if pages
+                else _FIRST_REQUEST_FAILED
+            ) + (_RETRY_FROM_THE_START if refused else _RETRY_FROM_START_CURSOR)
             err['pagination'] = report
             return err
 
@@ -252,15 +230,14 @@ async def cursor_list_response(
     stopped_because = PAGE_BOUND if cursor is not None else END_OF_LIST
     report = _report(
         pages=pages,
-        max_pages=max_pages,
         stopped_because=stopped_because,
-        started_from_cursor=start_cursor is not None,
+        started_from_cursor=started_from_cursor,
         next_cursor=cursor,
     )
     report['records_returned'] = len(records)
     if stopped_because == PAGE_BOUND:
-        report['note'] = _PAGE_BOUND_NOTE.format(max_pages=max_pages)
-    elif start_cursor is not None:
+        report['note'] = _PAGE_BOUND_NOTE.format(max_pages=MAX_CURSOR_PAGES)
+    elif started_from_cursor:
         report['note'] = _RESUMED_END_NOTE
 
     return success_response(

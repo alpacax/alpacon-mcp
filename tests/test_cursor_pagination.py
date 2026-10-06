@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from tests.conftest import HTTP_ERROR_ENVELOPE
+from utils import cursor_pagination
 from utils.cursor_pagination import MAX_CURSOR_PAGES, cursor_list_response
 
 ENDPOINT = '/api/audit/activity/'
@@ -20,7 +21,7 @@ def _page(records, next_cursor=None, count=None):
     }
 
 
-async def _walk(bodies, *, params=None, max_pages=MAX_CURSOR_PAGES):
+async def _walk(bodies, *, params=None):
     """Run a walk over `bodies`, returning (response, the mock that served them)."""
     method = AsyncMock(side_effect=list(bodies))
     result = await cursor_list_response(
@@ -31,9 +32,14 @@ async def _walk(bodies, *, params=None, max_pages=MAX_CURSOR_PAGES):
         token='test-token',
         default_message='Failed to list',
         params={} if params is None else params,
-        max_pages=max_pages,
     )
     return result, method
+
+
+@pytest.fixture
+def max_pages(monkeypatch):
+    """Lower the request bound for one test: `max_pages(n)`."""
+    return lambda n: monkeypatch.setattr(cursor_pagination, 'MAX_CURSOR_PAGES', n)
 
 
 def _sent_params(method):
@@ -94,6 +100,28 @@ class TestCursorFollowing:
         assert _sent_params(method) == [{'cursor': 'resume-me'}]
 
     @pytest.mark.asyncio
+    async def test_an_empty_cursor_is_a_walk_from_the_start(self):
+        """The server reads `cursor=''` as the first page, so the walk does too."""
+        result, method = await _walk([_page([{'id': 'a'}])], params={'cursor': ''})
+
+        assert _sent_params(method) == [{}]
+        assert result['pagination']['started_from_cursor'] is False
+        assert result['pagination']['complete'] is True
+
+    @pytest.mark.asyncio
+    async def test_a_repeated_cursor_is_an_error_not_a_duplicate_page(self):
+        result, method = await _walk(
+            [
+                _page([{'id': 'a'}], next_cursor='c1'),
+                _page([{'id': 'a'}], next_cursor='c1'),
+            ]
+        )
+
+        assert result['status'] == 'error'
+        assert result['pagination']['stopped_because'] == 'upstream_error'
+        assert method.await_count == 2
+
+    @pytest.mark.asyncio
     async def test_an_integer_next_is_an_error_not_the_end_of_the_list(self):
         """A page-number body also carries `next`, as an int, which is not a cursor.
 
@@ -126,7 +154,6 @@ class TestWalkReport:
         )
 
         assert result['pagination'] == {
-            'mode': 'cursor',
             'pages_read': 2,
             'max_pages': MAX_CURSOR_PAGES,
             'complete': True,
@@ -154,14 +181,14 @@ class TestWalkReport:
         assert 'only the records after it' in report['note']
 
     @pytest.mark.asyncio
-    async def test_the_page_bound_is_visible_in_the_payload(self):
+    async def test_the_page_bound_is_visible_in_the_payload(self, max_pages):
         """Truncation has to be stated, not left to be inferred from absence."""
+        max_pages(2)
         result, method = await _walk(
             [
                 _page([{'id': 'a'}], next_cursor='c1', count=99),
                 _page([{'id': 'b'}], next_cursor='c2', count=99),
-            ],
-            max_pages=2,
+            ]
         )
 
         assert method.await_count == 2
@@ -174,18 +201,18 @@ class TestWalkReport:
         assert 'incomplete' in report['note']
 
     @pytest.mark.asyncio
-    async def test_count_is_the_servers_total_not_the_merged_length(self):
-        result, _ = await _walk(
-            [_page([{'id': 'a'}], next_cursor='c1', count=500)], max_pages=1
-        )
+    async def test_count_is_the_servers_total_not_the_merged_length(self, max_pages):
+        max_pages(1)
+        result, _ = await _walk([_page([{'id': 'a'}], next_cursor='c1', count=500)])
 
         assert result['data']['count'] == 500
         assert len(result['data']['results']) == 1
 
     @pytest.mark.asyncio
-    async def test_data_carries_no_next_or_previous(self):
+    async def test_data_carries_no_next_or_previous(self, max_pages):
         """Every `next` but the last was consumed; the resume point lives in one place."""
-        result, _ = await _walk([_page([{'id': 'a'}], next_cursor='c1')], max_pages=1)
+        max_pages(1)
+        result, _ = await _walk([_page([{'id': 'a'}], next_cursor='c1')])
 
         assert set(result['data']) == {'count', 'results'}
 
@@ -199,6 +226,8 @@ class TestWalkFailure:
         assert result['pagination']['pages_read'] == 0
         assert result['pagination']['records_discarded'] == 0
         assert result['pagination']['next_cursor'] is None
+        assert 'first request' in result['pagination']['note']
+        assert 'discarded' not in result['pagination']['note']
 
     @pytest.mark.asyncio
     async def test_a_failure_midway_is_an_error_not_a_partial_success(self):
@@ -253,3 +282,24 @@ class TestWalkFailure:
         assert report['pages_read'] == 1
         assert report['records_discarded'] == 1
         assert report['next_cursor'] == 'c0'
+
+
+def _refused_cursor(code):
+    """A 400 envelope carrying alpacon-server's cursor error code."""
+    return {
+        'error': 'HTTP Error',
+        'status_code': 400,
+        'message': 'Bad request',
+        'error_code': code,
+    }
+
+
+@pytest.mark.parametrize('code', ['api_cursor_expired', 'api_invalid_cursor'])
+@pytest.mark.asyncio
+async def test_a_refused_cursor_is_not_handed_back(code):
+    """Retrying a cursor the server refused only meets the same refusal."""
+    result, _ = await _walk([_refused_cursor(code)], params={'cursor': 'stale'})
+
+    assert result['error_code'] == code
+    assert result['pagination']['next_cursor'] is None
+    assert 'from the start' in result['pagination']['note']

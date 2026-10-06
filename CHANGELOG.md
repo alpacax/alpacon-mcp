@@ -155,21 +155,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - `list_activity_logs`, `list_server_logs`, and `list_webftp_logs` now take `cursor` instead of
-  `page`, and follow the server's cursor for up to 10 requests per call, merging the pages (#325).
-  Those three endpoints are paginated by alpacon-server's `ESCursorPagination`, which reads only
-  `cursor` and `page_size`; the `page` these tools used to send and document was ignored, so asking
-  for page two returned page one again with nothing in the response to say so. A client passing
-  `page` must switch to `cursor`. The response changes with it: `data` now carries `count` (the
-  server's total match count) and `results` (every record the walk read) and no longer forwards the
-  envelope's `next` or `previous`, and a new top-level `pagination` object reports the walk:
-  `complete`, `stopped_because` (`end_of_list`, `page_bound`, or `upstream_error`),
-  `started_from_cursor`, `pages_read`, `max_pages`, `records_returned`, and `next_cursor`. Check
-  `pagination.complete` before treating a result as the whole list, and pass
-  `pagination.next_cursor` back as `cursor` to resume a walk that stopped at the bound; a resumed
-  call is never `complete` on its own, since it holds only the records after its `cursor`. A request that fails partway through, or a page that is not a well-formed cursor
-  page (no `results` list, no `next`, or a `next` that is neither null nor a cursor string), returns an error carrying the same `pagination` object with `records_discarded`, rather
-  than handing back a partial list as a success; its `next_cursor` is where the walk started, so a
-  retry reads the discarded records again. `list_session_analyses` and every other page-numbered list tool are unchanged.
+  `page`, which alpacon-server's cursor paginator ignored, so page two used to return page one
+  again (#325). Each call follows the cursor for up to 10 requests and merges the pages; `data`
+  drops `next` and `previous`, and a new top-level `pagination` object reports the walk, so check
+  `pagination.complete` before treating a result as the whole list. A `page` argument is now
+  dropped without an error; see `docs/api-reference.md` for the `pagination` fields and resume.
 - The CPU, memory, disk, and network usage tools, the interface lookup behind `get_server_metrics_summary`, and `webftp_check_status` now return an error when upstream answers with a bare JSON scalar (#236), and all but `webftp_check_status` also when a paginated body's `results` is not a list; they used to report "no data", or a transfer still in progress. The WebFTP upload, download, and bulk tools already failed on such a body with a generic error and now name the unexpected body type instead. Object and list bodies behave as before; a client parsing these responses may now see an `error` status where it used to see an empty result.
 - `list_servers` error responses now carry the upstream `code` the way every other server tool does (#237): an ordinary coded 4xx adds `error_code`, a WorkSession gate code adds `code` and `next_action`, a code with a known hint appends that hint to `message`, and a 402 plan-limit response returns the plan-limit shape (`error_code`, `gate`, `axis`, `next`, `requires_human_approval`, `next_action`). The success response is unchanged; a client parsing `list_servers` errors may now see those fields.
 - Tool descriptions now match what the tools do. `work_session_create` names `work_session_id`, the parameter `execute_command` takes, and says a session that needs approval returns `pending_approval` until a human approves it; `webftp_upload_file`, `webftp_bulk_upload`, and `webftp_bulk_download` say they return `remote_mode_unsupported` in remote mode, where the MCP server cannot reach your local filesystem; `duplicate_api_token` says the copy drops scopes that can no longer be granted and caps expiry at the workspace maximum; and the pending-approval guidance lists `completed` among the states that mean stop polling. The `remote_mode_unsupported` error message now names the tools that work in remote mode; the codes are unchanged, so a client parsing responses needs no change.
