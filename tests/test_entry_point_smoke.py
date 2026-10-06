@@ -144,11 +144,11 @@ def _post_initialize_as_public_host(url: str) -> httpx.Response:
     )
 
 
-def test_main_answers_initialize_over_stdio(entry_env):
+def _initialize_over_stdio(argv: list[str], env: dict[str, str], cwd: str) -> dict:
     process = subprocess.Popen(  # noqa: S603
-        [sys.executable, 'main.py', '--config-file', entry_env['SMOKE_CONFIG_FILE']],
-        cwd=REPO_ROOT,
-        env=entry_env,
+        [sys.executable, *argv],
+        cwd=cwd,
+        env=env,
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,
@@ -172,6 +172,23 @@ def test_main_answers_initialize_over_stdio(entry_env):
         _stop(process)
         if process.stdout:
             process.stdout.close()
+    return reply
+
+
+def test_main_answers_initialize_over_stdio(entry_env):
+    argv = ['main.py', '--config-file', entry_env['SMOKE_CONFIG_FILE']]
+    reply = _initialize_over_stdio(argv, entry_env, REPO_ROOT)
+
+    assert reply['id'] == INITIALIZE['id']
+    assert reply['result']['serverInfo']['name'] == 'alpacon'
+
+
+def test_main_answers_initialize_with_an_env_var_token_only(entry_env, tmp_path):
+    """No token file anywhere: the setup wizard must not take over stdout."""
+    env = {**entry_env, 'ALPACON_MCP_AP1_SMOKE_TOKEN': 'dummy-token'}
+    reply = _initialize_over_stdio(
+        [str(Path(REPO_ROOT) / 'main.py')], env, str(tmp_path)
+    )
 
     assert reply['id'] == INITIALIZE['id']
     assert reply['result']['serverInfo']['name'] == 'alpacon'

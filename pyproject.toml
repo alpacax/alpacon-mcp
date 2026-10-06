@@ -67,7 +67,7 @@ dev = [
     "pytest-asyncio>=1.2.0",
     "pytest-cov>=6.0.0",
     "mypy>=1.15.0",
-    "ruff>=0.15.13",
+    "ruff>=0.16.5",
     "pre-commit>=4.0.0",
 ]
 
@@ -108,6 +108,7 @@ select = [
     "B",   # flake8-bugbear
     "S",   # flake8-bandit (security)
     "N",   # pep8-naming
+    "ISC", # flake8-implicit-str-concat
 ]
 
 ignore = [
@@ -119,6 +120,7 @@ ignore = [
     "S113",  # Request without timeout
     "S105",  # Possible hardcoded password (false positives in tests)
     "S110",  # try-except-pass detected
+    "ISC001", # single-line implicit concat (conflicts with the formatter)
     "UP007", # Use X | Y for type annotations (prefer Optional for compatibility)
 ]
 
