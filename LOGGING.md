@@ -43,15 +43,16 @@ python main.py
 
 ### API calls
 ```
-2024-01-20 10:30:20 - alpacon_mcp.server_tools - INFO - [server_tools.py:26] - list_servers called - workspace: production, region: ap1
-2024-01-20 10:30:20 - alpacon_mcp.http_client - INFO - [http_client.py:87] - HTTP GET request to https://production.ap1.alpacon.io/api/servers/servers/
-2024-01-20 10:30:21 - alpacon_mcp.http_client - INFO - [http_client.py:109] - HTTP GET success - Status: 200, Content-Length: 1024
+2024-01-20 10:30:20 - alpacon_mcp.decorators - INFO - [decorators.py:704] - list_servers called with: {'workspace': 'production', 'region': 'ap1', 'page': None, 'page_size': None}
+2024-01-20 10:30:20 - alpacon_mcp.http_client - INFO - [http_client.py:213] - HTTP GET request to https://production.ap1.alpacon.io/api/servers/servers/
+2024-01-20 10:30:21 - alpacon_mcp.http_client - INFO - [http_client.py:239] - HTTP GET success - Status: 200, Content-Length: 1024
+2024-01-20 10:30:21 - alpacon_mcp.decorators - INFO - [decorators.py:713] - list_servers completed successfully
 ```
 
 ### Error situations
 ```
-2024-01-20 10:30:25 - alpacon_mcp.token_manager - WARNING - [token_manager.py:133] - No token found for invalid.ap1
-2024-01-20 10:30:25 - alpacon_mcp.server_tools - ERROR - [server_tools.py:32] - No token found for invalid.ap1
+2024-01-20 10:30:25 - alpacon_mcp.token_manager - WARNING - [token_manager.py:185] - No token found for invalid.ap1
+2024-01-20 10:30:25 - alpacon_mcp.common - ERROR - [common.py:532] - No token found for invalid.ap1
 ```
 
 ## 🔧 Logging components
