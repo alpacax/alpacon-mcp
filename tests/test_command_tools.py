@@ -6,6 +6,7 @@ from typing import Any
 from unittest.mock import patch
 
 import pytest
+from mcp.server.mcpserver.exceptions import ToolError
 
 from server import mcp
 from tests.conftest import VALID_SERVER_ID, http_client_fixture
@@ -2347,9 +2348,6 @@ class TestExecuteFileLocalValidation:
             FILE_REUSE_DAYS_MIN - 1,
             FILE_REUSE_DAYS_MAX + 1,
             1000,
-            1.5,
-            True,
-            '30',
         ],
     )
     async def test_reuse_days_outside_the_contract_is_refused_locally(
@@ -2371,6 +2369,29 @@ class TestExecuteFileLocalValidation:
         )
         assert result['file']['path'] == '/opt/deploy.sh'
         mock_http_client.post.assert_not_called()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('reuse_days', [1.5, 30.0, True, '30'])
+    async def test_a_non_integer_reuse_days_is_refused_by_the_sdk(
+        self, mock_http_client, mock_token_manager, reuse_days
+    ):
+        # Through the SDK, as a client calls it: lax validation would coerce
+        # True to 1 and '30' to 30 before the tool body ever saw them.
+        with patch('tools.command_tools._submit_file_execution') as mock_submit:
+            with pytest.raises(ToolError):
+                await mcp.call_tool(
+                    'execute_file',
+                    {
+                        'server_id': VALID_SERVER_ID,
+                        'path': '/opt/deploy.sh',
+                        'content': _FILE_SCRIPT,
+                        'workspace': 'testworkspace',
+                        'reuse_days': reuse_days,
+                        'region': 'ap1',
+                    },
+                )
+
+        mock_submit.assert_not_called()
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize('reuse_days', [FILE_REUSE_DAYS_MIN, FILE_REUSE_DAYS_MAX])

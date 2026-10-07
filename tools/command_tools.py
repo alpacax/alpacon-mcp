@@ -3,7 +3,9 @@
 import asyncio
 import re
 from datetime import UTC, datetime
-from typing import Any, cast
+from typing import Annotated, Any, cast
+
+from pydantic import Strict
 
 from utils.common import (
     FILE_EXEC_INLINE_CREDENTIAL_HINT,
@@ -688,7 +690,7 @@ async def execute_file(
     workspace: str,
     interpreter: str = DEFAULT_INTERPRETER,
     args: list[str] | None = None,
-    reuse_days: int | None = None,
+    reuse_days: Annotated[int, Strict()] | None = None,
     username: str | None = None,
     groupname: str = 'alpacon',
     run_after: list[str] | None = None,
@@ -744,11 +746,10 @@ async def execute_file(
         return _file_exec_refusal('file_exec_content_too_large', **context)
     # Only the fixed bounds: the workspace ceiling is the server's to apply,
     # and it answers file_exec_reuse_exceeds_max through the same hint table.
-    # A bool is an int subclass, so it is refused by name.
-    if reuse_days is not None and (
-        isinstance(reuse_days, bool)
-        or not isinstance(reuse_days, int)
-        or not FILE_REUSE_DAYS_MIN <= reuse_days <= FILE_REUSE_DAYS_MAX
+    # The type is the SDK's to check: Strict refuses a bool, a float, or a
+    # string before this body runs.
+    if reuse_days is not None and not (
+        FILE_REUSE_DAYS_MIN <= reuse_days <= FILE_REUSE_DAYS_MAX
     ):
         return _file_exec_refusal('file_exec_invalid_reuse_days', **context)
 
