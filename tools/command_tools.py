@@ -32,7 +32,7 @@ PURPOSE_MAX_LENGTH = 2000
 #: 0053). Checked here too so an oversized script is refused before it travels.
 FILE_CONTENT_MAX_BYTES = 65536
 
-#: Bounds on a proposed reuse duration, in days (ADR 0053). The server refuses
+#: Bounds on a proposed reuse duration, in days. The server refuses
 #: a value outside them; checked here too so a bad proposal is refused before
 #: the script travels. The workspace's own ceiling sits at or below them, or is
 #: absent, and only the server knows it.
@@ -320,7 +320,7 @@ async def _submit_file_execution(
     disk with no normalization, so a stripped trailing newline here would fail
     every execution closed.
     ``reuse_days`` rides inside the ``file`` object only when given: a server
-    older than alpacax/alpacon-server#3914 ignores the key, and a run with no
+    that predates the field ignores the key, and a run with no
     proposal sends the same body it always did.
     """
     command_data: dict[str, Any] = {

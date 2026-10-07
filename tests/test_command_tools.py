@@ -2173,8 +2173,8 @@ class TestSubmitFileExecution:
 
     @pytest.mark.asyncio
     async def test_no_reuse_days_leaves_the_body_as_it_was(self, mock_http_client):
-        # A server older than alpacax/alpacon-server#3914 never sees the key, and a
-        # run with no proposal sends nothing rather than null.
+        # A server that predates the field never sees the key, and a run with no
+        # proposal sends nothing rather than null.
         mock_http_client.post.return_value = {'id': 'cmd-706'}
 
         await _submit_file_execution(
