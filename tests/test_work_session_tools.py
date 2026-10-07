@@ -806,13 +806,16 @@ class TestWorkSessionTimeline:
         assert 'unified chronological' not in text
 
     @pytest.mark.asyncio
-    async def test_an_unpaginated_body_is_an_error_not_a_whole_timeline(
+    async def test_a_server_that_does_not_paginate_answers_the_whole_session(
         self, mock_http_client, mock_token_manager
     ):
-        """A server too old to paginate answers `{"results": [...]}` with no `next`.
+        """Every alpacon-server released so far ignores `page_size` here.
 
-        Reading that as the end of the list would restore exactly the claim
-        this change removes, so it fails loudly instead.
+        It answers `{"results": [...]}` with no `next`, and that body really is
+        the whole session, so it is reported complete rather than refused. The
+        completeness claim only becomes false once the server paginates, and
+        erroring would leave this tool dead on today's servers until each user
+        upgrades both sides.
         """
         mock_http_client.get.return_value = {'results': [{'type': 'command'}]}
 
@@ -820,8 +823,46 @@ class TestWorkSessionTimeline:
             session_id=SESSION_ID, workspace='testworkspace', region='ap1'
         )
 
+        report = result['pagination']
+        assert result['status'] == 'success'
+        assert result['data']['results'] == [{'type': 'command'}]
+        assert report['complete'] is True
+        assert report['stopped_because'] == 'unpaginated_server'
+        assert report['next_cursor'] is None
+        assert 'incomplete' not in report['note']
+
+    @pytest.mark.asyncio
+    async def test_an_unpaginated_answer_is_told_apart_from_an_exhausted_walk(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Both are complete, but only one of them was ever paginated.
+
+        A reader that cannot tell them apart cannot tell whether the bound was
+        in play at all, which is the question `page_size` was sent to settle.
+        """
+        mock_http_client.get.return_value = {'next': None, 'results': []}
+
+        paginated = await work_session_timeline(
+            session_id=SESSION_ID, workspace='testworkspace', region='ap1'
+        )
+
+        assert paginated['pagination']['complete'] is True
+        assert paginated['pagination']['stopped_because'] == 'end_of_list'
+        assert 'note' not in paginated['pagination']
+
+    @pytest.mark.asyncio
+    async def test_a_body_with_no_results_is_still_an_error(
+        self, mock_http_client, mock_token_manager
+    ):
+        """The relaxation is `next` alone: an unreadable body stays unreadable."""
+        mock_http_client.get.return_value = {'next': None}
+
+        result = await work_session_timeline(
+            session_id=SESSION_ID, workspace='testworkspace', region='ap1'
+        )
+
         assert result['status'] == 'error'
-        assert 'next' in result['message']
+        assert 'results' in result['message']
         assert 'data' not in result
 
     @pytest.mark.asyncio

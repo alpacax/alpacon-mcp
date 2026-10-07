@@ -427,6 +427,12 @@ async def work_session_timeline(
         default_message='Failed to get Work Session timeline',
         params=params,
         max_page_size=_TIMELINE_MAX_PAGE_SIZE,
+        # An alpacon-server that predates the paged timeline ignores
+        # `page_size` and answers with the whole session, no `next` in sight.
+        # That body really is the whole list, so it is read as one—erroring on
+        # it would make this tool dead against every server released so far,
+        # and the MCP package is installed at each user's own pace.
+        unpaginated_is_whole_list=True,
         session_id=session_id,
     )
 

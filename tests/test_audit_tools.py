@@ -218,6 +218,29 @@ async def test_cursor_tool_resumes_from_a_supplied_cursor(
     )
 
 
+@pytest.mark.parametrize('func', CURSOR_TOOLS, ids=[f.__name__ for f in CURSOR_TOOLS])
+@pytest.mark.asyncio
+async def test_cursor_tool_refuses_a_page_with_no_next(
+    func, mock_http_client, mock_token_manager
+):
+    """`work_session_timeline` reads such a body as the whole list; these do not.
+
+    That tolerance is opt-in because its premise is the timeline's alone: that
+    endpoint paginates only when asked, so an unpaginated answer is a complete
+    one. ESCursorPagination always paginates, so here the same body is a page
+    of unknown extent, and reading it as the end would report a prefix as the
+    whole list. If this test starts passing a `success`, the opt-in has become
+    the default.
+    """
+    mock_http_client.get.return_value = {'count': 2, 'results': [{'id': 'a'}]}
+
+    result = await func(workspace='test-ws', region='ap1')
+
+    assert result['status'] == 'error'
+    assert 'next' in result['message']
+    assert 'data' not in result
+
+
 class TestListSessionAnalysesStaysPageNumbered:
     """/api/history/session-analyses/ is a plain model list on the default
     page-number paginator, so `page` is the parameter it does honor."""
