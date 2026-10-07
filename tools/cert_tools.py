@@ -218,9 +218,10 @@ async def update_certificate_authority(
         'sign request. A CA that has received one cannot be deleted: the server '
         'answers 400 with error_code cert_authority_cannot_be_deleted and keeps the '
         'CA, its sign requests, issued certificates, and revoke requests. To stop '
-        'using such a CA, remove the server it runs on with unregister_server; the '
-        'CA then drops out of list_certificate_authorities and signs nothing more, '
-        'and its records remain. The delete itself requires manage access to the '
+        'using such a CA, remove the server it runs on with unregister_server '
+        '(a still-connected host needs auto=True, which also removes its Alpamon '
+        'agent); the CA then drops out of list_certificate_authorities and signs '
+        'nothing more, and its records remain. The delete itself requires manage access to the '
         'server the CA runs on, the same access unregister_server needs; CA '
         'ownership alone does not grant it.'
     ),
