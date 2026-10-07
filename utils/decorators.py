@@ -472,8 +472,7 @@ def with_token_validation(func: Callable, requires_workspace: bool = True) -> Ca
                 jwt_workspaces = get_token_workspaces(jwt_token)
 
         if auth_enabled and requires_workspace:
-            # A renamed URL slug is not in the claims; map it to its schema_name,
-            # reading the claims decoded above rather than decoding again.
+            # A renamed URL slug is not in the claims; map it to its schema_name.
             resolved_workspace = await resolve_workspace(workspace, jwt_workspaces)
             if resolved_workspace != workspace:
                 workspace = resolved_workspace

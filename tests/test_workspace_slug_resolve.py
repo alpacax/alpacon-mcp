@@ -47,7 +47,7 @@ def _lookup_client(status=200, body=None, error=None):
     return client_cls, client
 
 
-def _jwt_mode(claims=None, mfa=None):
+def _jwt_mode(claims=None, mfa=None, decode=None):
     claims = CLAIMS if claims is None else claims
     return (
         patch.dict(
@@ -58,13 +58,16 @@ def _jwt_mode(claims=None, mfa=None):
             },
         ),
         patch('utils.decorators._get_jwt_token', return_value='jwt'),
-        patch('utils.decorators.get_token_workspaces', return_value=claims),
+        patch(
+            'utils.decorators.get_token_workspaces',
+            new=decode or MagicMock(return_value=claims),
+        ),
         patch('utils.decorators._check_mfa_requirement', new=mfa or AsyncMock()),
     )
 
 
-async def _call(workspace, client_cls, claims=None, region='', mfa=None):
-    patches = _jwt_mode(claims, mfa)
+async def _call(workspace, client_cls, claims=None, region='', mfa=None, decode=None):
+    patches = _jwt_mode(claims, mfa, decode)
     for p in patches:
         p.start()
     try:
@@ -78,14 +81,17 @@ async def _call(workspace, client_cls, claims=None, region='', mfa=None):
 @pytest.mark.asyncio
 async def test_renamed_slug_is_accepted_and_mapped():
     client_cls, client = _lookup_client(body={'organization': 'acme_internal'})
+    decode = MagicMock(return_value=CLAIMS)
 
-    result = await _call('acme-renamed', client_cls)
+    result = await _call('acme-renamed', client_cls, decode=decode)
 
     assert result['status'] == 'success'
     assert result['workspace'] == 'acme_internal'
     assert result['region'] == 'ap1'
     client.get.assert_awaited_once()
     assert client.get.await_args.kwargs['params'] == {'slug': 'acme-renamed'}
+    # Mapping the slug reads the claims the handler already decoded.
+    decode.assert_called_once_with('jwt')
 
 
 @pytest.mark.asyncio
