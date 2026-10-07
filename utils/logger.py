@@ -14,6 +14,10 @@ LOG_FORMAT = (
 )
 LOG_DATE_FORMAT = '%Y-%m-%d %H:%M:%S'
 
+# Caps the log file at about 60 MiB on disk: the live file plus five backups.
+LOG_MAX_BYTES = 10 * 1024 * 1024
+LOG_BACKUP_COUNT = 5
+
 # Caps a client-supplied value in a log line. Escaping expands a byte up to
 # sixfold, so an unbounded value on an unauthenticated route inflates log volume.
 LOG_VALUE_MAX_CHARS = 512
@@ -170,7 +174,6 @@ class AlpaconLogger:
     """Centralized logging configuration for Alpacon MCP Server."""
 
     def __init__(self):
-        self._loggers: dict[str, logging.LoggerAdapter] = {}
         self.listener: logging.handlers.QueueListener | None = None
         self._setup_logging()
 
@@ -189,7 +192,11 @@ class AlpaconLogger:
         )
 
         # Plain: the queue handler below has already escaped what reaches it.
-        file_handler = logging.FileHandler(log_dir / 'alpacon-mcp.log')
+        file_handler = logging.handlers.RotatingFileHandler(
+            log_dir / 'alpacon-mcp.log',
+            maxBytes=LOG_MAX_BYTES,
+            backupCount=LOG_BACKUP_COUNT,
+        )
         file_handler.setFormatter(
             logging.Formatter(fmt=LOG_FORMAT, datefmt=LOG_DATE_FORMAT)
         )
@@ -225,48 +232,16 @@ class AlpaconLogger:
             self.listener.stop()
             self.listener = None
 
-    def get_logger(self, name: str) -> logging.LoggerAdapter:
-        """Get logger for specific module.
-
-        Args:
-            name: Logger name (usually module name)
-
-        Returns:
-            Configured logger adapter instance
-        """
-        if name not in self._loggers:
-            base_logger = logging.getLogger(f'alpacon_mcp.{name}')
-            adapter = logging.LoggerAdapter(
-                base_logger, {'component': name, 'pid': os.getpid()}
-            )
-            self._loggers[name] = adapter
-
-        return self._loggers[name]
-
 
 # Singleton instance
 logger_manager = AlpaconLogger()
 
 
-def get_logger(name: str) -> logging.LoggerAdapter:
-    """Get logger for module.
-
-    Args:
-        name: Module name
-
-    Returns:
-        Configured logger adapter instance
-    """
-    return logger_manager.get_logger(name)
+def get_logger(name: str) -> logging.Logger:
+    """Get the ``alpacon_mcp.<name>`` logger for a module."""
+    return logging.getLogger(f'alpacon_mcp.{name}')
 
 
 def stop_log_listener() -> None:
     """Stop the log queue listener on shutdown."""
     logger_manager.stop_listener()
-
-
-# Pre-configured loggers for common modules
-server_logger = get_logger('server')
-http_logger = get_logger('http_client')
-token_logger = get_logger('token_manager')
-tools_logger = get_logger('tools')

@@ -13,21 +13,21 @@ from unittest.mock import ANY, AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
+from tests.conftest import HTTP_VERBS
 from utils import request_signal
 from utils.error_handler import UpstreamAuthError
-from utils.http_client import HTTP_VERBS, AlpaconHTTPClient, http_client
+from utils.http_client import AlpaconHTTPClient, http_client
 from utils.recovery_hints import _detect_error_domain, enrich_error_response
 
 SERVER_ID = '550e8400-e29b-41d4-a716-446655440123'
 
 
 @pytest.fixture
-def mock_httpx_client():
+def mock_httpx_client(monkeypatch):
     """Mock httpx AsyncClient for testing."""
+    # The pooled client is cached on the singleton; start and end without one.
+    monkeypatch.setattr(http_client, '_client', None)
     with patch('utils.http_client.httpx.AsyncClient') as mock_client_class:
-        # Disable connection pooling for all tests
-        http_client._disable_pooling = True
-
         # Create a mock client with AsyncMock methods
         mock_client = MagicMock()
         mock_client_class.return_value = mock_client
@@ -42,10 +42,6 @@ def mock_httpx_client():
         # HTTP methods should be AsyncMock so they can be awaited
         mock_client.request = AsyncMock()
         yield mock_client
-
-        # Clean up after tests
-        if hasattr(http_client, '_disable_pooling'):
-            delattr(http_client, '_disable_pooling')
 
 
 @pytest.fixture
@@ -294,29 +290,6 @@ class TestHTTPClientBodyShapes:
 
         assert result == body
         assert type(result) is type(body)
-
-    @pytest.mark.asyncio
-    async def test_batch_request_keeps_list_entries_beside_objects(
-        self, mock_httpx_client
-    ):
-        mock_httpx_client.request.side_effect = [
-            create_mock_response(status_code=HTTPStatus.OK, json_data={'a': 1}),
-            create_mock_response(status_code=HTTPStatus.OK, json_data=[1, 2]),
-        ]
-        requests = [
-            {
-                'method': 'GET',
-                'region': 'ap1',
-                'workspace': 'testworkspace',
-                'endpoint': f'/api/{name}/',
-                'token': 'test-token',
-            }
-            for name in ('one', 'two')
-        ]
-
-        results = await http_client.batch_request(requests)
-
-        assert results == [{'a': 1}, [1, 2]]
 
 
 class TestHTTPClientDelete:
@@ -639,16 +612,39 @@ class TestHandleUpstream401:
 
         assert holder == {}
 
-    def test_debug_instrumentation_logs_at_debug_level(self, caplog):
-        """[DEBUG-401] records are leftover instrumentation, so ALPACON_MCP_LOG_LEVEL must silence them."""
+    def test_upstream_401_decision_logs_at_debug_level(self, caplog):
+        """The signaling decision is diagnostic detail, so ALPACON_MCP_LOG_LEVEL must silence it."""
         exc = self._make_401_exc({'detail': 'Unauthorized'})
 
         with caplog.at_level(logging.DEBUG, logger='alpacon_mcp.http_client'):
             AlpaconHTTPClient._handle_upstream_401(exc)
 
-        records = [r for r in caplog.records if '[DEBUG-401]' in r.getMessage()]
-        assert records
+        records = [
+            r for r in caplog.records if r.getMessage().startswith('Upstream 401 -')
+        ]
+        assert len(records) == 1
+        assert 'signaling=False' in records[0].getMessage()
         assert all(r.levelno == logging.DEBUG for r in records)
+
+    @patch.dict('os.environ', {'ALPACON_MCP_AUTH_ENABLED': 'true'})
+    def test_upstream_401_that_signals_logs_the_decision_before_raising(self, caplog):
+        exc = self._make_401_exc({'detail': 'Unauthorized'})
+        request_signal.begin_request()
+
+        with (
+            caplog.at_level(logging.DEBUG, logger='alpacon_mcp.http_client'),
+            pytest.raises(UpstreamAuthError),
+        ):
+            AlpaconHTTPClient._handle_upstream_401(
+                exc, token='header.payload.signature'
+            )
+
+        records = [
+            r for r in caplog.records if r.getMessage().startswith('Upstream 401 -')
+        ]
+        assert len(records) == 1
+        assert 'signaling=True' in records[0].getMessage()
+        assert records[0].levelno == logging.DEBUG
 
 
 class TestNoResponseCache:
@@ -837,7 +833,7 @@ class TestUpstreamAuthErrorReachesTheClient:
 
 
 class TestHTTPVerbsConstant:
-    NON_VERB_ASYNC_METHODS = frozenset({'close', 'request', 'batch_request'})
+    NON_VERB_ASYNC_METHODS = frozenset({'close', 'request'})
 
     def test_covers_every_public_async_client_method(self):
         public_async = {

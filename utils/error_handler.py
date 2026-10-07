@@ -35,16 +35,6 @@ class UpstreamAuthError(ToolError):
         super().__init__(msg)
 
 
-class ValidationError(Exception):
-    """Custom exception for input validation errors."""
-
-    def __init__(self, field: str, value: Any, message: str):
-        self.field = field
-        self.value = value
-        self.message = message
-        super().__init__(f'Validation error in {field}: {message}')
-
-
 def validate_workspace_format(workspace: str) -> bool:
     """Validate workspace name format.
 

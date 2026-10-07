@@ -79,19 +79,20 @@ async def _fetch_jwks(jwks_url: str, *, force: bool = False) -> dict[str, Any]:
             if elapsed < _JWKS_FORCED_FETCH_COOLDOWN:
                 remaining = _JWKS_FORCED_FETCH_COOLDOWN - elapsed
                 logger.info(
-                    f'Skipping forced JWKS fetch: cooldown active ({remaining:.0f}s remaining)'
+                    'Skipping forced JWKS fetch: cooldown active (%.0fs remaining)',
+                    remaining,
                 )
                 return _jwks_cache
             _jwks_last_forced_fetch = now
 
-        logger.info(f'Fetching JWKS from {jwks_url}')
+        logger.info('Fetching JWKS from %s', jwks_url)
         async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.get(jwks_url)
             response.raise_for_status()
             _jwks_cache = response.json()
             _jwks_cache_expiry = now + _JWKS_CACHE_TTL
 
-        logger.info(f'JWKS fetched: {len(_jwks_cache.get("keys", []))} keys')
+        logger.info('JWKS fetched: %s keys', len(_jwks_cache.get('keys', [])))
         return _jwks_cache
 
 
@@ -244,7 +245,7 @@ def _partition_workspaces(
     claim_key = f'{namespace}workspaces'
     workspaces = claims.get(claim_key, [])
     if not isinstance(workspaces, list):
-        logger.warning(f'Invalid workspaces claim type: {type(workspaces)}')
+        logger.warning('Invalid workspaces claim type: %s', type(workspaces))
         return [], 0
 
     usable = []
@@ -252,8 +253,8 @@ def _partition_workspaces(
     for entry in workspaces:
         if not isinstance(entry, dict):
             logger.warning(
-                f'Dropping workspaces claim entry: expected an object, '
-                f'got {type(entry).__name__}'
+                'Dropping workspaces claim entry: expected an object, got %s',
+                type(entry).__name__,
             )
             dropped += 1
             continue
@@ -266,7 +267,7 @@ def _partition_workspaces(
         ]
         if blank:
             logger.warning(
-                f'Dropping workspaces claim entry: {", ".join(blank)} missing or blank'
+                'Dropping workspaces claim entry: %s missing or blank', ', '.join(blank)
             )
             dropped += 1
             continue
@@ -304,9 +305,9 @@ class Auth0TokenVerifier:
         """Initialize with Auth0 config from environment variables."""
         self._config = _get_auth0_config()
         logger.info(
-            f'Auth0TokenVerifier initialized - '
-            f'domain: {self._config["domain"]}, '
-            f'audience: {self._config["audience"]}'
+            'Auth0TokenVerifier initialized - domain: %s, audience: %s',
+            self._config['domain'],
+            self._config['audience'],
         )
 
     async def verify_token(self, token: str) -> AccessToken | None:
@@ -355,11 +356,11 @@ class Auth0TokenVerifier:
             )
 
         except ValueError as e:
-            logger.error(f'Auth0 configuration error: {e}')
+            logger.error('Auth0 configuration error: %s', e)
             return None
         except httpx.HTTPError as e:
-            logger.error(f'Failed to fetch JWKS: {e}')
+            logger.error('Failed to fetch JWKS: %s', e)
             return None
         except Exception as e:
-            logger.error(f'Unexpected error during token verification: {e}')
+            logger.error('Unexpected error during token verification: %s', e)
             return None

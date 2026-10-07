@@ -26,7 +26,7 @@ class TokenManager:
             # Use specific config file path, expand ~ to home directory
             expanded_path = os.path.expanduser(config_file)
             self.token_file = Path(expanded_path)
-            logger.info(f'Using specified config file: {self.token_file}')
+            logger.info('Using specified config file: %s', self.token_file)
         else:
             # Check environment variable first
             env_config_file = os.getenv('ALPACON_MCP_CONFIG_FILE')
@@ -34,7 +34,7 @@ class TokenManager:
                 # Expand ~ to home directory
                 expanded_path = os.path.expanduser(env_config_file)
                 self.token_file = Path(expanded_path)
-                logger.info(f'Using config file from environment: {self.token_file}')
+                logger.info('Using config file from environment: %s', self.token_file)
             else:
                 # Use global config by default, fall back to local
                 global_config = Path.home() / '.alpacon-mcp' / 'token.json'
@@ -42,22 +42,22 @@ class TokenManager:
 
                 if global_config.exists():
                     self.token_file = global_config
-                    logger.info(f'Using global config file: {self.token_file}')
+                    logger.info('Using global config file: %s', self.token_file)
                 elif local_config.exists():
                     self.token_file = local_config
-                    logger.info(f'Using local config file: {self.token_file}')
+                    logger.info('Using local config file: %s', self.token_file)
                 else:
                     # Default to global config location
                     self.token_file = global_config
                     logger.info(
-                        f'No config found, will use global location: {self.token_file}'
+                        'No config found, will use global location: %s', self.token_file
                     )
 
         self.config_dir = self.token_file.parent
 
         # Ensure config directory exists
         self.config_dir.mkdir(parents=True, exist_ok=True)
-        logger.debug(f'Config directory created/verified: {self.config_dir}')
+        logger.debug('Config directory created/verified: %s', self.config_dir)
 
         self.tokens = self._load_tokens()
 
@@ -69,7 +69,7 @@ class TokenManager:
         """
         if not self.token_file.exists():
             logger.warning(
-                f'No token file at {self.token_file}, starting with empty tokens'
+                'No token file at %s, starting with empty tokens', self.token_file
             )
             return {}
 
@@ -77,20 +77,21 @@ class TokenManager:
             with open(self.token_file) as f:
                 tokens = json.load(f)
         except json.JSONDecodeError as e:
-            logger.error(f'JSON decode error in {self.token_file}: {e}')
+            logger.error('JSON decode error in %s: %s', self.token_file, e)
             return {}
         except OSError as e:
-            logger.error(f'IO error reading {self.token_file}: {e}')
+            logger.error('IO error reading %s: %s', self.token_file, e)
             return {}
 
         if not isinstance(tokens, dict):  # an array or scalar parses too
             logger.error(
-                f'{self.token_file} must hold a JSON object of regions, '
-                f'found {type(tokens).__name__}'
+                '%s must hold a JSON object of regions, found %s',
+                self.token_file,
+                type(tokens).__name__,
             )
             return {}
 
-        logger.info(f'Loaded tokens from {self.token_file}: {len(tokens)} regions')
+        logger.info('Loaded tokens from %s: %s regions', self.token_file, len(tokens))
         return tokens
 
     def _save_tokens_to_file(self, tokens: dict[str, Any], file_path: Path) -> None:
@@ -181,7 +182,7 @@ class TokenManager:
                 )
                 return token
 
-        logger.warning(f'No token found for {workspace}.{region}')
+        logger.warning('No token found for %s.%s', workspace, region)
         return None
 
     @staticmethod

@@ -95,7 +95,7 @@ async def app_lifespan(app: MCPServer) -> AsyncIterator[None]:
             handler_installed = True
             logger.info('SIGTERM handler installed')
         except Exception as e:
-            logger.warning(f'Could not install SIGTERM handler: {e}')
+            logger.warning('Could not install SIGTERM handler: %s', e)
 
     logger.info('Application lifespan started')
     try:
@@ -105,13 +105,13 @@ async def app_lifespan(app: MCPServer) -> AsyncIterator[None]:
         try:
             await http_client.close()
         except Exception as e:
-            logger.error(f'Error during HTTP client cleanup: {e}')
+            logger.error('Error during HTTP client cleanup: %s', e)
 
         if handler_installed:
             try:
                 signal.signal(signal.SIGTERM, original_handler)
             except Exception as e:
-                logger.warning(f'Could not restore SIGTERM handler: {e}')
+                logger.warning('Could not restore SIGTERM handler: %s', e)
 
         logger.info('Graceful shutdown complete')
 
@@ -119,7 +119,7 @@ async def app_lifespan(app: MCPServer) -> AsyncIterator[None]:
         try:
             stop_log_listener()
         except Exception as e:
-            logger.warning(f'Could not stop log listener: {e}')
+            logger.warning('Could not stop log listener: %s', e)
 
 
 def _sigterm_handler(signum, frame):
@@ -195,7 +195,7 @@ def _create_mcp_server() -> MCPServer:
         )
         token_verifier = Auth0TokenVerifier()
 
-        logger.info(f'Creating MCP server with JWT auth - domain: {auth0_domain}')
+        logger.info('Creating MCP server with JWT auth - domain: %s', auth0_domain)
         return MCPServer(
             'alpacon',
             version=MCP_VERSION,
@@ -318,7 +318,7 @@ def prepare(
     toolsets: str | None = None,
 ) -> None:
     """Register OAuth routes, tool modules and resources for this transport."""
-    logger.info(f'Starting MCP server with transport: {transport}')
+    logger.info('Starting MCP server with transport: %s', transport)
 
     # Set transport type for health check reporting
     os.environ['ALPACON_MCP_TRANSPORT'] = transport
@@ -326,7 +326,7 @@ def prepare(
     # Set config file path as environment variable if provided (before tool imports
     # so that tools that read config at import time see the correct path)
     if config_file:
-        logger.info(f'Using config file: {config_file}')
+        logger.info('Using config file: %s', config_file)
         os.environ['ALPACON_MCP_CONFIG_FILE'] = config_file
     else:
         logger.info('No config file specified, using default config discovery')
@@ -400,5 +400,5 @@ def run(
                 'ASGI app with the upstream auth middleware.'
             )
     except Exception as e:
-        logger.error(f'MCP server failed to run: {e}', exc_info=True)
+        logger.exception('MCP server failed to run: %s', e)
         raise
