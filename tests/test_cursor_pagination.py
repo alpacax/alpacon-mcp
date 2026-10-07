@@ -285,12 +285,12 @@ class TestWalkFailure:
 
 
 def _refused_cursor(code):
-    """A 400 envelope carrying alpacon-server's cursor error code."""
+    """The envelope http_client returns for a 400 carrying a cursor error code."""
     return {
         'error': 'HTTP Error',
         'status_code': 400,
         'message': 'Bad request',
-        'error_code': code,
+        'response': f'{{"code": "{code}"}}',
     }
 
 
