@@ -213,7 +213,20 @@ async def update_certificate_authority(
 
 
 @mcp_tool_handler(
-    description='Delete a certificate authority (CA) permanently. This is irreversible. All certificates issued by this CA will no longer be verifiable. Use with caution. Requires admin or CA owner privileges.',
+    description=(
+        'Delete a certificate authority (CA) that has never received a certificate '
+        'sign request. A CA that has received one cannot be deleted: the server '
+        'answers 400 with error_code cert_authority_cannot_be_deleted and keeps the '
+        'CA, its sign requests, issued certificates, and revoke requests. Retiring '
+        'such a CA means removing its whole host with unregister_server, which '
+        'takes the host out of the workspace; do that only when the user asked to '
+        'retire the host. A still-connected host needs auto=True, which also '
+        'removes its Alpamon agent. Once the host is gone the CA leaves '
+        'list_certificate_authorities and takes no new sign requests; requests '
+        'already pending are not cancelled. The delete itself requires manage '
+        'access to the server the CA runs on, the same access unregister_server '
+        'needs; CA ownership alone does not grant it.'
+    ),
     annotations=DESTRUCTIVE,
     meta={'anthropic/searchHint': 'certificate CA authority delete remove'},
 )
@@ -223,7 +236,7 @@ async def delete_certificate_authority(
     region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
-    """Delete a certificate authority.
+    """Delete a certificate authority that has never received a sign request.
 
     Args:
         ca_id: Certificate authority ID to delete
