@@ -199,6 +199,16 @@ FILE_EXEC_REFUSAL_HINTS: dict[str, str] = {
         'ceiling. Shorten or drop args; move them into the script if it needs '
         'them.'
     ),
+    'file_exec_invalid_reuse_days': (
+        'reuse_days must be an integer from 1 to 366. Fix the value, or omit '
+        'it to propose no duration.'
+    ),
+    'file_exec_reuse_exceeds_max': (
+        "reuse_days is past this workspace's file execution grant ceiling, "
+        'and the server refuses rather than shortens it. Resubmit with a '
+        'shorter duration, or omit reuse_days so that a grant, if the '
+        'approver opts in, runs to the workspace ceiling.'
+    ),
 }
 
 #: HTTP 503: alpacon-server could not check the credential (identity provider,
