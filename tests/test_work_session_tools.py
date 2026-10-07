@@ -1,5 +1,6 @@
 """Unit tests for work_session_tools module."""
 
+import inspect
 from http import HTTPStatus
 
 import pytest
@@ -16,6 +17,7 @@ from tools.work_session_tools import (
     work_session_timeline,
     work_session_update,
 )
+from utils import cursor_pagination
 
 mock_http_client = http_client_fixture('tools.work_session_tools')
 
@@ -642,17 +644,39 @@ class TestWorkSessionExtend:
         assert 'reason must not be blank' in result['message']
 
 
+TIMELINE_ENDPOINT = f'/api/work-sessions/sessions/{SESSION_ID}/timeline/'
+
+
+def _timeline_page(items, next_cursor=None):
+    """The envelope the timeline paginator returns: `results` and `next`, no count."""
+    return {'next': next_cursor, 'results': items}
+
+
 class TestWorkSessionTimeline:
+    """The timeline is paginated only on request, and then only forward (#325).
+
+    Naming neither `cursor` nor `page_size` makes alpacon-server render the
+    whole session in one response, so the tool names `page_size` on every
+    request and walks the cursor from there, bounded and with the bound stated.
+    """
+
+    @pytest.fixture
+    def max_pages(self, monkeypatch):
+        """Lower the request bound for one test: `max_pages(n)`."""
+        return lambda n: monkeypatch.setattr(cursor_pagination, 'MAX_CURSOR_PAGES', n)
+
     @pytest.mark.asyncio
-    async def test_timeline_excludes_records_by_default(
+    async def test_every_request_names_page_size_so_the_server_paginates(
         self, mock_http_client, mock_token_manager
     ):
+        """Without it the server answers with the whole session, unbounded.
 
-        mock_http_client.get.return_value = {
-            'results': [
-                {'type': 'command', 'added_at': '2026-06-05T10:00:00+00:00'},
-            ],
-        }
+        That response also carries no `next`, so nothing downstream could tell
+        a complete timeline from a truncated one.
+        """
+        mock_http_client.get.return_value = _timeline_page(
+            [{'type': 'command', 'added_at': '2026-06-05T10:00:00+00:00'}]
+        )
 
         result = await work_session_timeline(
             session_id=SESSION_ID,
@@ -664,32 +688,141 @@ class TestWorkSessionTimeline:
         mock_http_client.get.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint=f'/api/work-sessions/sessions/{SESSION_ID}/timeline/',
+            endpoint=TIMELINE_ENDPOINT,
             token='test-token',
-            params={'include_records': 'false'},
+            params={'page_size': 100},
         )
 
     @pytest.mark.asyncio
-    async def test_timeline_with_records_when_opted_in(
+    async def test_follows_the_cursor_and_merges_the_pages(
         self, mock_http_client, mock_token_manager
     ):
+        mock_http_client.get.side_effect = [
+            _timeline_page([{'type': 'command'}], next_cursor='c1'),
+            _timeline_page([{'type': 'sudo_grant'}]),
+        ]
 
-        mock_http_client.get.return_value = {'results': []}
-
-        await work_session_timeline(
-            session_id=SESSION_ID,
-            workspace='testworkspace',
-            include_records=True,
-            region='ap1',
+        result = await work_session_timeline(
+            session_id=SESSION_ID, workspace='testworkspace', region='ap1'
         )
 
+        assert result['data']['results'] == [
+            {'type': 'command'},
+            {'type': 'sudo_grant'},
+        ]
+        assert result['pagination']['complete'] is True
+        sent = [call.kwargs['params'] for call in mock_http_client.get.await_args_list]
+        assert sent == [{'page_size': 100}, {'page_size': 100, 'cursor': 'c1'}]
+
+    @pytest.mark.asyncio
+    async def test_a_truncated_timeline_says_so_in_the_result(
+        self, mock_http_client, mock_token_manager, max_pages
+    ):
+        """The whole point of the walk: a cut timeline is never served silently.
+
+        A model reading this result has to be able to tell it from a short
+        session, so the bound is stated, not left to be inferred from absence.
+        """
+        max_pages(2)
+        mock_http_client.get.side_effect = [
+            _timeline_page([{'type': 'command'}], next_cursor='c1'),
+            _timeline_page([{'type': 'command'}], next_cursor='c2'),
+        ]
+
+        result = await work_session_timeline(
+            session_id=SESSION_ID, workspace='testworkspace', region='ap1'
+        )
+
+        report = result['pagination']
+        assert report['complete'] is False
+        assert report['stopped_because'] == 'page_bound'
+        assert report['next_cursor'] == 'c2'
+        assert report['pages_read'] == 2
+        assert 'incomplete' in report['note']
+
+    @pytest.mark.asyncio
+    async def test_the_bound_note_names_the_timelines_own_page_size_ceiling(
+        self, mock_http_client, mock_token_manager, max_pages
+    ):
+        """500, not the 100 the Elasticsearch-backed lists stop at.
+
+        The note tells a caller to raise `page_size` to reach further, and this
+        endpoint reaches five times as far as that advice would suggest.
+        """
+        max_pages(1)
+        mock_http_client.get.return_value = _timeline_page(
+            [{'type': 'command'}], next_cursor='c1'
+        )
+
+        result = await work_session_timeline(
+            session_id=SESSION_ID, workspace='testworkspace', region='ap1'
+        )
+
+        assert 'max 500' in result['pagination']['note']
+
+    @pytest.mark.asyncio
+    async def test_a_supplied_cursor_resumes_the_walk(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.get.return_value = _timeline_page([])
+
+        result = await work_session_timeline(
+            session_id=SESSION_ID,
+            workspace='testworkspace',
+            region='ap1',
+            cursor='resume-me',
+            page_size=500,
+        )
+
+        assert result['pagination']['started_from_cursor'] is True
         mock_http_client.get.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
-            endpoint=f'/api/work-sessions/sessions/{SESSION_ID}/timeline/',
+            endpoint=TIMELINE_ENDPOINT,
             token='test-token',
-            params={'include_records': 'true'},
+            params={'page_size': 500, 'cursor': 'resume-me'},
         )
+
+    def test_the_tool_offers_cursor_and_no_longer_include_records(self):
+        """`include_records` is read only by the shape this tool stopped asking for.
+
+        Keeping it would accept a request for terminal recordings and answer
+        without them, which is the same silent omission the bound exists to
+        avoid.
+        """
+        params = inspect.signature(work_session_timeline).parameters
+
+        assert 'cursor' in params
+        assert 'page_size' in params
+        assert 'include_records' not in params
+
+    @pytest.mark.asyncio
+    async def test_the_description_tells_the_model_to_check_completeness(self):
+        descriptions = {t.name: t.description for t in await mcp.list_tools()}
+
+        text = descriptions['work_session_timeline']
+
+        assert 'pagination.complete' in text
+        assert 'unified chronological' not in text
+
+    @pytest.mark.asyncio
+    async def test_an_unpaginated_body_is_an_error_not_a_whole_timeline(
+        self, mock_http_client, mock_token_manager
+    ):
+        """A server too old to paginate answers `{"results": [...]}` with no `next`.
+
+        Reading that as the end of the list would restore exactly the claim
+        this change removes, so it fails loudly instead.
+        """
+        mock_http_client.get.return_value = {'results': [{'type': 'command'}]}
+
+        result = await work_session_timeline(
+            session_id=SESSION_ID, workspace='testworkspace', region='ap1'
+        )
+
+        assert result['status'] == 'error'
+        assert 'next' in result['message']
+        assert 'data' not in result
 
     @pytest.mark.asyncio
     async def test_timeline_propagates_api_error(
@@ -710,6 +843,7 @@ class TestWorkSessionTimeline:
 
         assert result['status'] == 'error'
         assert 'not found' in result['message'].lower()
+        assert result['pagination']['pages_read'] == 0
 
 
 class TestWorkSessionAnalyze:

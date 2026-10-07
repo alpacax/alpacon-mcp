@@ -167,6 +167,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   drops `next` and `previous`, and a new top-level `pagination` object reports the walk, so check
   `pagination.complete` before treating a result as the whole list. A `page` argument is now
   dropped without an error; see `docs/api-reference.md` for the `pagination` fields and resume.
+- `work_session_timeline` now follows the server's timeline cursor instead of issuing one request
+  and presenting whatever came back as the whole session (#325). alpacon-server paginates that
+  endpoint as soon as a request names `cursor` or `page_size`, so the tool always sends
+  `page_size` (default 100, max 500), follows `next` for up to 10 requests, and reports the walk
+  in a new top-level `pagination` object, the one the audit tools already return: check
+  `pagination.complete` before treating a result as the whole session, and pass
+  `pagination.next_cursor` back as `cursor` to continue. The walk reads forward, so a result
+  stopped at the bound holds the start of the session and omits its most recent activity.
+  `include_records` is removed, because the paginated shape carries no websh terminal recordings
+  and the parameter could only have been accepted and ignored; recordings are read per websh
+  session through alpacon-server's own record route. A client passing `include_records` must drop
+  it, and `data` is now the walk's `{count, results}` envelope, with `count` null since the
+  timeline page carries no total.
 - `delete_certificate_authority`'s description now matches alpacon-server after alpacax/alpacon-server#4057 (#333): a CA that has received a certificate sign request can no longer be deleted, and the call surfaces `error_code` `cert_authority_cannot_be_deleted` with the CA and its records kept. The description points to `unregister_server` on the CA's server for retiring such a CA. A client that treated the delete as always succeeding must handle the new 400.
 - The CPU, memory, disk, and network usage tools, the interface lookup behind `get_server_metrics_summary`, and `webftp_check_status` now return an error when upstream answers with a bare JSON scalar (#236), and all but `webftp_check_status` also when a paginated body's `results` is not a list; they used to report "no data", or a transfer still in progress. The WebFTP upload, download, and bulk tools already failed on such a body with a generic error and now name the unexpected body type instead. Object and list bodies behave as before; a client parsing these responses may now see an `error` status where it used to see an empty result.
 - `list_servers` error responses now carry the upstream `code` the way every other server tool does (#237): an ordinary coded 4xx adds `error_code`, a WorkSession gate code adds `code` and `next_action`, a code with a known hint appends that hint to `message`, and a 402 plan-limit response returns the plan-limit shape (`error_code`, `gate`, `axis`, `next`, `requires_human_approval`, `next_action`). The success response is unchanged; a client parsing `list_servers` errors may now see those fields.

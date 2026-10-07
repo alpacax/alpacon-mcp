@@ -4,6 +4,12 @@ alpacon-server's Elasticsearch-backed lists use ``ESCursorPagination``, which
 ignores ``page``: a caller stepping ``page=1,2,3`` gets the first page three
 times. Those endpoints are walked by cursor here instead (#325), with the walk
 bounded and its outcome reported under ``pagination``.
+
+The work-session timeline is cursor-paginated too, by a paginator of its own
+rather than by Elasticsearch, and only when a request names ``cursor`` or
+``page_size``; named by neither, it renders the whole session in one response.
+``work_session_timeline`` always names ``page_size`` so that it is this walk,
+and not the session's length, that bounds what comes back.
 """
 
 from collections.abc import Awaitable, Callable
@@ -18,9 +24,15 @@ from utils.common import (
     unwrap_http_result,
 )
 
-# Requests one walk may issue: 150 records at the server's default page size of
-# 15, 1000 at its cap of 100. A walk cut short hands back a cursor to resume.
+# Requests one walk may issue: 150 records at an ES list's default page size of
+# 15, 1000 at its cap of 100, 5000 at the work-session timeline's cap of 500. A
+# walk cut short hands back a cursor to resume.
 MAX_CURSOR_PAGES = 10
+
+# The ceiling a walk names when it tells a caller to raise `page_size`. It is
+# per endpoint, not repo-wide: the ES-backed lists stop at 100, the work-session
+# timeline paginates its own way and stops at 500.
+DEFAULT_MAX_PAGE_SIZE = 100
 
 # Why the walk stopped, reported as ``pagination.stopped_because``.
 END_OF_LIST = 'end_of_list'
@@ -46,8 +58,8 @@ _REFUSED_CURSOR_CODES = frozenset({'api_cursor_expired', 'api_invalid_cursor'})
 _PAGE_BOUND_NOTE = (
     'Stopped at the {max_pages}-request bound with more records still '
     'available, so this list is incomplete. Pass `pagination.next_cursor` back '
-    'as `cursor` to continue, or raise `page_size` (max 100) to cover more '
-    'ground per request.'
+    'as `cursor` to continue, or raise `page_size` (max {max_page_size}) to '
+    'cover more ground per request.'
 )
 
 _RESUMED_END_NOTE = (
@@ -136,6 +148,7 @@ async def cursor_list_response(
     token: str | None,
     default_message: str,
     params: dict[str, Any],
+    max_page_size: int = DEFAULT_MAX_PAGE_SIZE,
     **id_context: Any,
 ) -> dict[str, Any]:
     """Walk a cursor-paginated list, bounded by ``MAX_CURSOR_PAGES``, as one response.
@@ -159,6 +172,8 @@ async def cursor_list_response(
         token: API token (injected by @mcp_tool_handler)
         default_message: Fallback message when the upstream response has none.
         params: Query parameters, including an optional starting ``cursor``.
+        max_page_size: This endpoint's ``page_size`` ceiling, which the bound's
+            note tells a caller it may raise ``page_size`` to.
         **id_context: Extra identifiers merged into the response.
 
     Returns:
@@ -236,7 +251,9 @@ async def cursor_list_response(
     )
     report['records_returned'] = len(records)
     if stopped_because == PAGE_BOUND:
-        report['note'] = _PAGE_BOUND_NOTE.format(max_pages=MAX_CURSOR_PAGES)
+        report['note'] = _PAGE_BOUND_NOTE.format(
+            max_pages=MAX_CURSOR_PAGES, max_page_size=max_page_size
+        )
     elif started_from_cursor:
         report['note'] = _RESUMED_END_NOTE
 

@@ -10,11 +10,19 @@ from utils.common import (
     success_response,
     unwrap_http_result,
 )
+from utils.cursor_pagination import CURSOR_WALK_DESCRIPTION, cursor_list_response
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ_ONLY
 
 _API_SESSIONS = '/api/work-sessions/sessions/'
+
+# The timeline paginates only when a request names `page_size` or `cursor`;
+# named by neither, the server renders the whole session in one response, which
+# is how a long session used to arrive whole and unannounced (#325). The tool
+# always names `page_size`, so the read is the bounded one.
+_TIMELINE_PAGE_SIZE = 100
+_TIMELINE_MAX_PAGE_SIZE = 500
 
 
 @mcp_tool_handler(
@@ -365,10 +373,13 @@ async def work_session_extend(
 
 @mcp_tool_handler(
     description=(
-        'Get the unified chronological timeline of a Work Session: commands, '
-        'file transfers, websh activity, and sudo grants in execution order. '
-        'Websh terminal records are excluded by default; set include_records=True to '
-        'include them, which can return a very large response that grows with session length. '
+        'Get the chronological timeline of a Work Session: commands, file '
+        'transfers, websh activity, and sudo grants in execution order, oldest '
+        f'first. {CURSOR_WALK_DESCRIPTION} The walk only reads forward, so a '
+        'result stopped at the bound covers the start of the session and omits '
+        'its most recent activity—do not read it as what the session ended up '
+        'doing. The timeline carries no websh terminal recordings: a '
+        'websh_session item names a session whose recording is read on its own. '
         'Related: work_session_get (session detail), list_session_analyses / '
         'get_session_analysis_detail (AI security analysis results).'
     ),
@@ -380,21 +391,42 @@ async def work_session_extend(
 async def work_session_timeline(
     session_id: str,
     workspace: str,
-    include_records: bool = False,
     region: str = '',
+    cursor: str | None = None,
+    page_size: int | None = None,
     **kwargs,
 ) -> dict[str, Any]:
-    """Get the unified timeline of a Work Session."""
+    """Get the timeline of a Work Session, following the server's cursor.
+
+    Args:
+        session_id: Work Session ID
+        workspace: Workspace name. Required parameter
+        region: Region (ap1, us1). Auto-detected if not provided
+        cursor: Opaque cursor from a previous call's `pagination.next_cursor`,
+            which resumes the walk where the bound stopped it (optional)
+        page_size: Items per request, max 500 (optional). The walk issues a
+            bounded number of requests, so this also sets how far it reaches
+
+    Returns:
+        The merged timeline, plus a `pagination` report saying whether the walk
+        read the session to its end
+    """
     token = kwargs.get('token')
 
-    return await http_call_response(
+    params = build_list_params(
+        page_size=_TIMELINE_PAGE_SIZE if page_size is None else page_size,
+        cursor=cursor,
+    )
+
+    return await cursor_list_response(
         http_client.get,
         region=region,
         workspace=workspace,
         endpoint=f'{_API_SESSIONS}{session_id}/timeline/',
         token=token,
         default_message='Failed to get Work Session timeline',
-        params={'include_records': 'true' if include_records else 'false'},
+        params=params,
+        max_page_size=_TIMELINE_MAX_PAGE_SIZE,
         session_id=session_id,
     )
 
