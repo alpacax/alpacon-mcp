@@ -14,7 +14,9 @@ import pytest
 
 from server import create_streamable_http_app
 from utils import request_signal
-from utils.http_client import HTTP_VERBS
+
+# The AlpaconHTTPClient methods a tool calls.
+HTTP_VERBS = ('get', 'post', 'put', 'patch', 'delete')
 
 # Canonical http_client error envelope (the shape utils/http_client returns on
 # 4xx/5xx). Shared across error-path tests so the envelope is defined once.

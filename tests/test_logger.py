@@ -7,11 +7,14 @@ call shares one event loop, and a FileHandler flushes to disk on every record.
 import logging
 import logging.handlers
 import sys
+from contextlib import contextmanager
 
 import pytest
 import uvicorn
 
 from utils.logger import (
+    LOG_BACKUP_COUNT,
+    LOG_MAX_BYTES,
     LOG_VALUE_MAX_CHARS,
     AlpaconLogger,
     describe_for_log,
@@ -20,10 +23,9 @@ from utils.logger import (
 )
 
 
-@pytest.fixture
-def manager(tmp_path, monkeypatch):
-    """Build a logger manager in a scratch cwd, restoring the root logger afterwards."""
-    monkeypatch.chdir(tmp_path)
+@contextmanager
+def _built_manager():
+    """Build a logger manager, restoring the root logger afterwards."""
     root = logging.getLogger()
     saved_handlers, saved_level = root.handlers[:], root.level
     # basicConfig does nothing when the root logger already has handlers, and
@@ -39,6 +41,53 @@ def manager(tmp_path, monkeypatch):
         for handler in saved_handlers:
             root.addHandler(handler)
         root.setLevel(saved_level)
+
+
+@pytest.fixture
+def manager(tmp_path, monkeypatch):
+    """Build a logger manager in a scratch cwd."""
+    monkeypatch.chdir(tmp_path)
+    with _built_manager() as built:
+        yield built
+
+
+def _queue_handler(handlers):
+    return next(h for h in handlers if isinstance(h, logging.handlers.QueueHandler))
+
+
+class TestRotatingFileSink:
+    """The log file is capped, so a long-running server cannot fill the disk."""
+
+    def test_the_listener_writes_through_a_rotating_file_handler(self, manager):
+        instance, _ = manager
+
+        (sink,) = instance.listener.handlers
+
+        assert isinstance(sink, logging.handlers.RotatingFileHandler)
+        assert sink.maxBytes == LOG_MAX_BYTES
+        assert sink.backupCount == LOG_BACKUP_COUNT
+
+    def test_a_full_log_file_rolls_over_and_keeps_only_the_backup_count(
+        self, tmp_path, monkeypatch
+    ):
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr('utils.logger.LOG_MAX_BYTES', 200)
+        monkeypatch.setattr('utils.logger.LOG_BACKUP_COUNT', 2)
+        with _built_manager() as (instance, handlers):
+            queue_handler = _queue_handler(handlers)
+
+            for i in range(20):
+                queue_handler.handle(_record('rotation record %s', i))
+            instance.stop_listener()
+
+        log_dir = tmp_path / 'logs'
+        assert sorted(p.name for p in log_dir.iterdir()) == [
+            'alpacon-mcp.log',
+            'alpacon-mcp.log.1',
+            'alpacon-mcp.log.2',
+        ]
+        assert all(p.stat().st_size <= 200 for p in log_dir.iterdir())
+        assert 'rotation record 19' in (log_dir / 'alpacon-mcp.log').read_text()
 
 
 class TestQueuedFileSink:

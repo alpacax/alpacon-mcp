@@ -150,7 +150,7 @@ Examples:
         print('Restart Claude Desktop and the MCP server will start automatically.')
         return
 
-    logger.info(f'Configuration: config_file={args.config_file}')
+    logger.info('Configuration: config_file=%s', args.config_file)
 
     try:
         run(TRANSPORT_STDIO, config_file=args.config_file, toolsets=args.toolsets)
@@ -158,10 +158,10 @@ Examples:
         # A toolsets typo is user error, not a crash: one clean line, no traceback.
         # Scoped to ToolsetError so an unrelated ValueError during tool import
         # (e.g. a bad numeric env var) still gets the full-traceback path below.
-        logger.error(f'Invalid --toolsets: {e}')
+        logger.error('Invalid --toolsets: %s', e)
         raise SystemExit(2)
     except Exception as e:
-        logger.error(f'Failed to start MCP server: {e}', exc_info=True)
+        logger.exception('Failed to start MCP server: %s', e)
         raise
 
 

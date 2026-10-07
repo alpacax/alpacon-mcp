@@ -22,11 +22,8 @@ _ERR_HTTP = 'HTTP Error'
 _ERR_MAX_RETRIES = 'Max retries exceeded'
 _ERR_MFA_REQUIRED = 'MFA Required'
 _ERR_REQUEST = 'Request Error'
-_ERR_REQUEST_EXCEPTION = 'Request Exception'
 _ERR_TIMEOUT = 'Timeout'
 _ERR_UNEXPECTED = 'Unexpected Error'
-
-HTTP_VERBS = ('get', 'post', 'put', 'patch', 'delete')
 
 
 def _error_code_of(text: str) -> str | None:
@@ -57,8 +54,12 @@ class AlpaconHTTPClient:
     would keep answering with access the caller has already lost.
     """
 
-    def __init__(self):
-        """Initialize HTTP client."""
+    def __init__(self, transport: httpx.AsyncBaseTransport | None = None):
+        """Initialize HTTP client.
+
+        ``transport`` replaces the network for the pooled client, as in tests.
+        """
+        self._transport = transport
         self.base_timeout = httpx.Timeout(10.0, connect=5.0)
         self.max_retries = 3
         self.retry_delay = 1.0
@@ -70,7 +71,9 @@ class AlpaconHTTPClient:
         self._client_lock = asyncio.Lock()
 
         logger.info(
-            f'AlpaconHTTPClient initialized - timeout: {self.base_timeout.read}s, max_retries: {self.max_retries}'
+            'AlpaconHTTPClient initialized - timeout: %ss, max_retries: %s',
+            self.base_timeout.read,
+            self.max_retries,
         )
 
     async def __aenter__(self):
@@ -195,7 +198,11 @@ class AlpaconHTTPClient:
                 # Check before the log: no retry follows, and the caller logs the exhaustion.
                 return False
             logger.warning(
-                f'{reason}, retrying ({retry_count}/{self.max_retries}) in {retry_delay}s'
+                '%s, retrying (%s/%s) in %ss',
+                reason,
+                retry_count,
+                self.max_retries,
+                retry_delay,
             )
             await asyncio.sleep(retry_delay)
             retry_delay = min(
@@ -252,7 +259,10 @@ class AlpaconHTTPClient:
             except httpx.HTTPStatusError as e:
                 # Handle HTTP errors (4xx, 5xx)
                 logger.error(
-                    f'HTTP {method} error - Status: {e.response.status_code}, URL: {url}'
+                    'HTTP %s error - Status: %s, URL: %s',
+                    method,
+                    e.response.status_code,
+                    url,
                 )
                 # Field names only, never the text: an upstream error can
                 # echo back what the request sent. A 401 logs nothing here.
@@ -269,7 +279,7 @@ class AlpaconHTTPClient:
                         'status_code': e.response.status_code,
                         'message': f'Server error after {self.max_retries} attempts',
                     }
-                    logger.error(f'Server error after all retries: {error_response}')
+                    logger.error('Server error after all retries: %s', error_response)
                     if code := _error_code_of(e.response.text):
                         error_response['error_code'] = code
                     return error_response
@@ -299,7 +309,7 @@ class AlpaconHTTPClient:
                     'error': _ERR_TIMEOUT,
                     'message': f'Request timed out after {self.max_retries} retries',
                 }
-                logger.error(f'Request timeout after all retries: {error_response}')
+                logger.error('Request timeout after all retries: %s', error_response)
                 return error_response
 
             except httpx.RequestError as e:
@@ -308,13 +318,13 @@ class AlpaconHTTPClient:
                     continue
 
                 error_response = {'error': _ERR_REQUEST, 'message': str(e)}
-                logger.error(f'Network error after all retries: {error_response}')
+                logger.error('Network error after all retries: %s', error_response)
                 return error_response
 
             except Exception as e:
                 # Unexpected error - don't retry
                 error_response = {'error': _ERR_UNEXPECTED, 'message': str(e)}
-                logger.error(f'Unexpected error: {error_response}', exc_info=True)
+                logger.exception('Unexpected error: %s', error_response)
                 return error_response
 
         # Every branch above returns, so this is only reached when max_retries <= 0
@@ -322,84 +332,8 @@ class AlpaconHTTPClient:
             'error': _ERR_MAX_RETRIES,
             'message': f'Failed after {self.max_retries} attempts',
         }
-        logger.error(f'Loop never ran - max_retries is {self.max_retries}')
+        logger.error('Loop never ran - max_retries is %s', self.max_retries)
         return error_response
-
-    async def batch_request(self, requests: list[dict[str, Any]]) -> list[JsonValue]:
-        """Execute multiple requests in parallel.
-
-        Args:
-            requests: List of request dictionaries with keys:
-                - method: HTTP method
-                - region: Region
-                - workspace: Workspace
-                - endpoint: API endpoint
-                - token: API token
-                - params: Optional query parameters
-                - data: Optional request body data
-
-        Returns:
-            Parsed bodies or error dicts, in the same order as requests
-        """
-        if not requests:
-            return []
-
-        logger.info(f'Executing {len(requests)} requests in parallel')
-
-        # Create tasks for parallel execution
-        tasks = []
-        for req in requests:
-            if req['method'].upper() == 'GET':
-                task = self.get(
-                    region=req['region'],
-                    workspace=req['workspace'],
-                    endpoint=req['endpoint'],
-                    token=req['token'],
-                    params=req.get('params'),
-                )
-            elif req['method'].upper() == 'POST':
-                task = self.post(
-                    region=req['region'],
-                    workspace=req['workspace'],
-                    endpoint=req['endpoint'],
-                    token=req['token'],
-                    data=req.get('data'),
-                    params=req.get('params'),
-                )
-            else:
-                # For other methods, use the generic request method
-                base_url = self.get_base_url(req['region'], req['workspace'])
-                full_url = urljoin(base_url, req['endpoint'])
-                task = self.request(
-                    method=req['method'],
-                    url=full_url,
-                    token=req['token'],
-                    json_data=req.get('data'),
-                    params=req.get('params'),
-                )
-            tasks.append(task)
-
-        # Execute all tasks in parallel
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-
-        # Convert exceptions to error dictionaries
-        processed_results: list[JsonValue] = []
-        for i, result in enumerate(results):
-            if isinstance(result, Exception):
-                processed_results.append(
-                    {
-                        'error': _ERR_REQUEST_EXCEPTION,
-                        'message': str(result),
-                        'request_index': i,
-                    }
-                )
-            elif isinstance(result, BaseException):
-                raise result  # Re-raise CancelledError, KeyboardInterrupt, etc.
-            else:
-                processed_results.append(result)
-
-        logger.info(f'Completed {len(requests)} parallel requests')
-        return processed_results
 
     async def get(
         self,
@@ -540,14 +474,11 @@ class AlpaconHTTPClient:
 
     async def _get_client(self) -> httpx.AsyncClient:
         """Get or create shared async client for connection pooling."""
-        # For testing compatibility, check if client pooling is disabled
-        if hasattr(self, '_disable_pooling') and self._disable_pooling:
-            return httpx.AsyncClient(timeout=self.base_timeout)
-
         async with self._client_lock:
             if self._client is None or self._client.is_closed:
                 self._client = httpx.AsyncClient(
                     timeout=self.base_timeout,
+                    transport=self._transport,
                     limits=httpx.Limits(
                         max_keepalive_connections=20,
                         max_connections=100,
@@ -591,25 +522,22 @@ class AlpaconHTTPClient:
 
         auth_enabled = is_auth_enabled()
         is_jwt = bool(token and AlpaconHTTPClient._is_jwt(token))
+        # Only a JWT-carrying request may signal: the middleware trusts that and
+        # checks the signal without knowing which credential produced it.
+        signals = bool(auth_enabled and is_jwt)
 
         logger.debug(
-            '[DEBUG-401] auth_enabled=%s, token_present=%s, is_jwt=%s, '
-            'mfa_required=%s, source=%s',
+            'Upstream 401 - auth_enabled=%s, token_present=%s, is_jwt=%s, '
+            'mfa_required=%s, source=%s, signaling=%s',
             auth_enabled,
             bool(token),
             is_jwt,
             mfa_required,
             source,
+            signals,
         )
 
-        # Only a JWT-carrying request may signal: the middleware trusts that and
-        # checks the signal without knowing which credential produced it.
-        if auth_enabled and token and is_jwt:
-            logger.debug(
-                '[DEBUG-401] Recording upstream auth signal (mfa_required=%s, source=%s)',
-                mfa_required,
-                source,
-            )
+        if signals:
             request_signal.signal_upstream_auth_error(
                 {
                     'mfa_required': mfa_required,
@@ -618,12 +546,6 @@ class AlpaconHTTPClient:
             )
             raise UpstreamAuthError(mfa_required=mfa_required, source=source)
 
-        logger.debug(
-            '[DEBUG-401] NOT signaling/raising — falling through to error dict. '
-            'auth_enabled=%s, is_jwt=%s',
-            auth_enabled,
-            is_jwt,
-        )
         error_msg = 'MFA verification required' if mfa_required else str(exc)
         error_response = {
             'error': _ERR_MFA_REQUIRED if mfa_required else _ERR_HTTP,

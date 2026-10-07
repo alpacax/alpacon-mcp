@@ -90,7 +90,7 @@ def main():
             )
         ).run()
     except Exception as e:
-        logger.error(f'Failed to start MCP server: {e}', exc_info=True)
+        logger.exception('Failed to start MCP server: %s', e)
         raise
 
 
