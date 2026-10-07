@@ -279,7 +279,7 @@ export AUTH0_NAMESPACE="https://alpacon.io/"    # Optional; custom claim namespa
 export ALPACON_MCP_RESOURCE_URL="https://mcp.example.com"  # Public https URL of this server
 export ALPACON_MCP_STATE_SECRET="$(openssl rand -hex 32)"  # Optional; derived from the client secret otherwise
 export ALPACON_MCP_GRANT_SECRET="$(openssl rand -hex 32)"  # Optional; seals codes and refresh tokens; rotating it logs every remote session out
-export ALPACON_ACCOUNT_URL="https://account.example.com"   # Optional; unset skips the security-settings prefetch
+export ALPACON_ACCOUNT_URL="https://account.example.com"   # Optional; unset skips the security-settings prefetch and renamed-slug resolution
 ```
 
 #### Configuration examples

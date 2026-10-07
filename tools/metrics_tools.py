@@ -1083,6 +1083,10 @@ async def get_server_metrics_summary(
                 status_code = result.get('status_code')
                 if status_code is not None:
                     error_info['status_code'] = status_code
+                unwrapped = unwrap_http_result(result, default_message='')
+                if unwrapped is not None and 'error_code' in unwrapped:
+                    error_info['error_code'] = unwrapped['error_code']
+                    error_info['error'] = unwrapped.get('message', error_info['error'])
                 return error_info
 
             # Return metadata only, not the full data points

@@ -112,6 +112,13 @@ _HINT_REGISTRY: dict[tuple[int, str], dict[str, list[str]]] = {
         ],
         'related_tools': [],
     },
+    (HTTPStatus.SERVICE_UNAVAILABLE, 'general'): {
+        'recovery_hints': [
+            'The server is temporarily unavailable. Try again in a moment.',
+            'If the issue persists, check server health.',
+        ],
+        'related_tools': [],
+    },
     (HTTPStatus.INTERNAL_SERVER_ERROR, 'general'): {
         'recovery_hints': [
             'The server encountered an internal error. Try again in a moment.',

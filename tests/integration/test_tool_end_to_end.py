@@ -7,6 +7,7 @@ payloads produce correct success/error responses.
 
 import json
 from http import HTTPStatus
+from unittest.mock import patch
 
 import httpx
 import pytest
@@ -18,13 +19,15 @@ from tools.iam_tools import (
     list_iam_users,
     update_iam_user,
 )
-from tools.metrics_tools import get_cpu_usage
+from tools.metrics_tools import get_cpu_usage, get_server_metrics_summary
 from tools.server_tools import (
     create_server_note,
     get_server,
     list_servers,
 )
 from tools.system_info_tools import get_server_overview
+from utils import request_signal
+from utils.http_client import http_client
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
@@ -323,3 +326,184 @@ class TestSystemInfoEndToEnd:
         ):
             assert 'error' not in sections[key], f'{key}: {sections[key]}'
         assert requested, 'no request reached the transport'
+
+
+class TestAuthVerificationUnavailable:
+    """A 503 auth_verification_unavailable is retried and never read as a 401."""
+
+    async def test_persistent_503_surfaces_error_code_and_hint(
+        self, patched_http_client, mock_token_for_integration
+    ):
+        calls = 0
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            nonlocal calls
+            calls += 1
+            return httpx.Response(
+                HTTPStatus.SERVICE_UNAVAILABLE,
+                json={'code': 'auth_verification_unavailable'},
+            )
+
+        patched_http_client.set_handler(handler)
+        signal = request_signal.begin_request()
+
+        try:
+            result = await get_server(
+                server_id=SERVER_ID, workspace='production', region='ap1'
+            )
+        finally:
+            request_signal.end_request()
+
+        assert calls == 3
+        assert result['status'] == 'error'
+        assert result['status_code'] == HTTPStatus.SERVICE_UNAVAILABLE
+        assert result['error_code'] == 'auth_verification_unavailable'
+        assert 'not rejected' in result['message']
+        assert 'Retry the call' in result['message']
+        assert any(
+            'temporarily unavailable' in hint for hint in result['recovery_hints']
+        )
+        assert signal == {}
+
+    async def test_503_never_reaches_the_upstream_401_handler(
+        self, patched_http_client, mock_token_for_integration
+    ):
+        patched_http_client.set_handler(
+            lambda request: httpx.Response(
+                HTTPStatus.SERVICE_UNAVAILABLE,
+                json={'code': 'auth_verification_unavailable'},
+            )
+        )
+
+        with (
+            patch.object(http_client, '_handle_upstream_401') as handle_401,
+            patch('utils.request_signal.signal_upstream_auth_error') as signal,
+        ):
+            result = await get_server(
+                server_id=SERVER_ID, workspace='production', region='ap1'
+            )
+
+        assert result['status_code'] == HTTPStatus.SERVICE_UNAVAILABLE
+        assert result['error_code'] == 'auth_verification_unavailable'
+        handle_401.assert_not_called()
+        signal.assert_not_called()
+
+    @pytest.mark.parametrize(
+        'response',
+        [
+            httpx.Response(
+                HTTPStatus.SERVICE_UNAVAILABLE,
+                text='<html><body>503 Service Unavailable</body></html>',
+            ),
+            httpx.Response(HTTPStatus.SERVICE_UNAVAILABLE, json={'detail': 'boom'}),
+            httpx.Response(HTTPStatus.SERVICE_UNAVAILABLE, json=['boom']),
+            httpx.Response(HTTPStatus.SERVICE_UNAVAILABLE, json={'code': ''}),
+            httpx.Response(HTTPStatus.SERVICE_UNAVAILABLE, json={'code': 7}),
+            httpx.Response(HTTPStatus.SERVICE_UNAVAILABLE),
+        ],
+        ids=['html', 'json-no-code', 'json-array', 'empty-code', 'int-code', 'empty'],
+    )
+    async def test_uncoded_5xx_carries_neither_body_nor_error_code(
+        self, patched_http_client, response
+    ):
+        patched_http_client.set_handler(lambda request: response)
+
+        result = await http_client.get(
+            region='ap1',
+            workspace='production',
+            endpoint='/api/servers/',
+            token='test-token',
+        )
+
+        assert result['status_code'] == HTTPStatus.SERVICE_UNAVAILABLE
+        assert 'error_code' not in result
+        assert 'response' not in result
+
+    async def test_coded_5xx_carries_only_the_error_code(self, patched_http_client):
+        patched_http_client.set_handler(
+            lambda request: httpx.Response(
+                HTTPStatus.SERVICE_UNAVAILABLE,
+                json={'code': 'auth_verification_unavailable', 'detail': 'secret'},
+            )
+        )
+
+        result = await http_client.get(
+            region='ap1',
+            workspace='production',
+            endpoint='/api/servers/',
+            token='test-token',
+        )
+
+        assert result['status_code'] == HTTPStatus.SERVICE_UNAVAILABLE
+        assert result['error_code'] == 'auth_verification_unavailable'
+        assert 'response' not in result
+        assert 'secret' not in str(result)
+
+    async def test_503_then_200_succeeds(
+        self, patched_http_client, mock_token_for_integration, sample_api_responses
+    ):
+        api_data = sample_api_responses()
+        calls = 0
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                return httpx.Response(
+                    HTTPStatus.SERVICE_UNAVAILABLE,
+                    json={'code': 'auth_verification_unavailable'},
+                )
+            return httpx.Response(HTTPStatus.OK, json=api_data['server_detail'])
+
+        patched_http_client.set_handler(handler)
+
+        result = await get_server(
+            server_id=SERVER_ID, workspace='production', region='ap1'
+        )
+
+        assert calls == 2
+        assert result['status'] == 'success'
+        assert result['data']['name'] == 'web-server-01'
+
+    async def test_metrics_summary_sections_carry_error_code_and_hint(
+        self, patched_http_client, mock_token_for_integration
+    ):
+        patched_http_client.set_handler(
+            lambda request: httpx.Response(
+                HTTPStatus.SERVICE_UNAVAILABLE,
+                json={'code': 'auth_verification_unavailable'},
+            )
+        )
+
+        result = await get_server_metrics_summary(
+            server_id=SERVER_ID, workspace='production', region='ap1'
+        )
+
+        metrics = result['data']['metrics']
+        for name in ('cpu', 'memory'):
+            section = metrics[name]
+            assert section['available'] is False
+            assert section['status_code'] == HTTPStatus.SERVICE_UNAVAILABLE
+            assert section['error_code'] == 'auth_verification_unavailable'
+            assert 'not rejected' in section['error']
+
+    async def test_metrics_summary_hides_the_body_of_an_uncoded_5xx(
+        self, patched_http_client, mock_token_for_integration
+    ):
+        patched_http_client.set_handler(
+            lambda request: httpx.Response(
+                HTTPStatus.INTERNAL_SERVER_ERROR,
+                json={'detail': 'Traceback: secret-internal-detail'},
+            )
+        )
+
+        result = await get_server_metrics_summary(
+            server_id=SERVER_ID, workspace='production', region='ap1'
+        )
+
+        section = result['data']['metrics']['cpu']
+        assert section['available'] is False
+        assert section['status_code'] == HTTPStatus.INTERNAL_SERVER_ERROR
+        assert 'error_code' not in section
+        assert 'secret-internal-detail' not in section['error']
+        assert section['error'] == 'Server error after 3 attempts'

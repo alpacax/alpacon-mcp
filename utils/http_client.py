@@ -1,6 +1,7 @@
 """HTTP client for Alpacon API interactions."""
 
 import asyncio
+import json
 import logging
 from http import HTTPStatus
 from typing import Any
@@ -26,6 +27,16 @@ _ERR_TIMEOUT = 'Timeout'
 _ERR_UNEXPECTED = 'Unexpected Error'
 
 HTTP_VERBS = ('get', 'post', 'put', 'patch', 'delete')
+
+
+def _error_code_of(text: str) -> str | None:
+    """The `code` of a JSON object error body; None for HTML, arrays or no code."""
+    try:
+        body = json.loads(text)
+    except ValueError:
+        return None
+    code = body.get('code') if isinstance(body, dict) else None
+    return code if isinstance(code, str) and code else None
 
 
 def _error_body_for_log(response: httpx.Response) -> Any:
@@ -228,7 +239,7 @@ class AlpaconHTTPClient:
                     logger.debug('Response headers: %s', sorted(response.headers))
 
                 # Return JSON response
-                if response.text:
+                if response.content:
                     result = response.json()
                     if logger.isEnabledFor(logging.DEBUG):
                         logger.debug('Response body: %s', redact_for_log(result))
@@ -259,6 +270,8 @@ class AlpaconHTTPClient:
                         'message': f'Server error after {self.max_retries} attempts',
                     }
                     logger.error(f'Server error after all retries: {error_response}')
+                    if code := _error_code_of(e.response.text):
+                        error_response['error_code'] = code
                     return error_response
                 else:
                     # Client error - don't retry

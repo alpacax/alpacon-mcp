@@ -160,6 +160,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `install_commands` list every other platform uses.
 
 ### Changed
+- `list_activity_logs`, `list_server_logs`, and `list_webftp_logs` now take `cursor` instead of
+  `page`, which alpacon-server's cursor paginator ignored, so page two used to return page one
+  again (#325). Each call follows the cursor for up to 10 requests and merges the pages; `data`
+  drops `next` and `previous`, and a new top-level `pagination` object reports the walk, so check
+  `pagination.complete` before treating a result as the whole list. A `page` argument is now
+  dropped without an error; see `docs/api-reference.md` for the `pagination` fields and resume.
 - The CPU, memory, disk, and network usage tools, the interface lookup behind `get_server_metrics_summary`, and `webftp_check_status` now return an error when upstream answers with a bare JSON scalar (#236), and all but `webftp_check_status` also when a paginated body's `results` is not a list; they used to report "no data", or a transfer still in progress. The WebFTP upload, download, and bulk tools already failed on such a body with a generic error and now name the unexpected body type instead. Object and list bodies behave as before; a client parsing these responses may now see an `error` status where it used to see an empty result.
 - `list_servers` error responses now carry the upstream `code` the way every other server tool does (#237): an ordinary coded 4xx adds `error_code`, a WorkSession gate code adds `code` and `next_action`, a code with a known hint appends that hint to `message`, and a 402 plan-limit response returns the plan-limit shape (`error_code`, `gate`, `axis`, `next`, `requires_human_approval`, `next_action`). The success response is unchanged; a client parsing `list_servers` errors may now see those fields.
 - Tool descriptions now match what the tools do. `work_session_create` names `work_session_id`, the parameter `execute_command` takes, and says a session that needs approval returns `pending_approval` until a human approves it; `webftp_upload_file`, `webftp_bulk_upload`, and `webftp_bulk_download` say they return `remote_mode_unsupported` in remote mode, where the MCP server cannot reach your local filesystem; `duplicate_api_token` says the copy drops scopes that can no longer be granted and caps expiry at the workspace maximum; and the pending-approval guidance lists `completed` among the states that mean stop polling. The `remote_mode_unsupported` error message now names the tools that work in remote mode; the codes are unchanged, so a client parsing responses needs no change.
@@ -322,6 +328,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   correction is the first entry under Changed.
 
 ### Fixed
+- In JWT mode, a `workspace` argument that is a renamed URL slug is now resolved to the workspace's fixed `schema_name` through the account service lookup before it is matched against the token claims. An argument that already equals a claim's `schema_name` makes no network call; the lookup is skipped when `ALPACON_ACCOUNT_URL` is unset, and any lookup failure keeps the previous rejection. Tool responses keep their shape, so a client parsing them needs no change. `list_workspaces` still reports each domain from `schema_name`, since the token claims carry no slug.
+- A 503 with `auth_verification_unavailable` from alpacon-server (it could not check the credential during an identity provider, cache or database outage) now reaches the agent as `error_code` with a hint to retry shortly and not to re-authenticate. The call was already retried; only the code was dropped once retries ran out. A 5xx result now carries `error_code` when the server sent one, never the raw response body, and `get_server_metrics_summary` reports it per section with the same hint.
 - The tool entry log no longer writes the command a call runs (#311). It writes an argument's value
   only for a reviewed set of identifiers, names, paths, enums, filters and timestamps
   (`_LOGGED_VERBATIM_KEYS`); every other argument, `command`, `commands`, `search` and

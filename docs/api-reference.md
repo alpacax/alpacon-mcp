@@ -829,11 +829,13 @@ The `command` and `path` a rule matches on must not be empty or whitespace-only.
 
 ## 📝 Audit tools
 
-- `list_activity_logs`: `workspace`, `region` (optional), `page`, `page_size`
+`list_activity_logs`, `list_server_logs`, and `list_webftp_logs` read Elasticsearch-backed endpoints that alpacon-server paginates by cursor, not by page number; they take no `page`, and one passed anyway is dropped without an error. Each call follows the cursor for up to 10 requests and merges the pages, so `data.results` spans all of them and `data.count` stays the server's total match count. A top-level `pagination` object reports the walk: `complete`, `stopped_because` (`end_of_list`, `page_bound`, `upstream_error`), `started_from_cursor`, `pages_read`, `max_pages`, `records_returned`, `next_cursor`, and, when there is something to explain, a `note`. Check `pagination.complete` before treating the result as the whole list, and pass `pagination.next_cursor` back as `cursor` to continue; an empty `cursor` starts from the beginning. A call resumed from `cursor` holds only the records after it, so it is never `complete` on its own: when it reads to the end it reports `stopped_because: end_of_list` with `complete: false`, and the whole list is its records together with those of the calls before it. A request that fails partway through, or a page that is not a well-formed cursor page (no `results` list, no `next`, a `next` that is neither null nor a cursor string, or a `next` repeating the cursor just sent), returns an error carrying the same object with `records_discarded`; the partial list is not handed back as a success, and `next_cursor` is where the walk started, so a retry reads the discarded records again. When the server refuses the cursor (`error_code` `api_cursor_expired` or `api_invalid_cursor`), `next_cursor` is null: retry from the start.
+
+- `list_activity_logs`: `workspace`, `region` (optional), `cursor`, `page_size`
 - `get_activity_log`: `log_id`, `workspace`, `region` (optional)
-- `list_server_logs`: command execution history; `workspace`, `server_id` (optional), `page`, `page_size`
+- `list_server_logs`: command execution history; `workspace`, `server_id` (optional), `cursor`, `page_size`
 - `list_webftp_logs`: file transfer history; same parameters
-- `list_session_analyses`: AI security analyses; `workspace`, `server_id`, `status`, `risk_score`, `page`, `page_size`
+- `list_session_analyses`: AI security analyses; a plain page-numbered list, so `page` applies here; `workspace`, `server_id`, `status`, `risk_score`, `page`, `page_size`
 - `get_session_analysis_detail`: `analysis_id`, `workspace`, `region` (optional). Includes MITRE ATT&CK mapping
 
 ---
