@@ -389,7 +389,10 @@ async def work_session_extend(
     description=(
         'Get the chronological timeline of a Work Session: commands, file '
         'transfers, websh activity, and sudo grants in execution order, oldest '
-        f'first. {CURSOR_WALK_DESCRIPTION} The walk only reads forward, so a '
+        f'first. {CURSOR_WALK_DESCRIPTION} An alpacon-server that predates the '
+        'paged timeline ignores `cursor` and returns the whole session: that '
+        'answer is `complete` with `stopped_because: unpaginated_server` even '
+        'when a cursor was passed. The walk only reads forward, so a '
         'result stopped at the bound covers the start of the session and omits '
         'its most recent activity—do not read it as what the session ended up '
         'doing. The timeline carries no websh terminal recordings: a '
