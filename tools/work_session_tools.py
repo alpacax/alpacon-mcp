@@ -12,6 +12,7 @@ from utils.common import (
 )
 from utils.cursor_pagination import CURSOR_WALK_DESCRIPTION, cursor_list_response
 from utils.decorators import mcp_tool_handler
+from utils.error_handler import format_validation_error
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ_ONLY
 
@@ -23,6 +24,19 @@ _API_SESSIONS = '/api/work-sessions/sessions/'
 # always names `page_size`, so the read is the bounded one.
 _TIMELINE_PAGE_SIZE = 100
 _TIMELINE_MAX_PAGE_SIZE = 500
+
+# `include_records` is declared so that it can be refused. The SDK validates a
+# call against the published signature and drops whatever that signature does
+# not name, so an undeclared argument never reaches the body—a caller asking
+# for recordings would be answered without them and told nothing, which is the
+# failure this tool was changed to stop making. Declaring it is the only
+# boundary that sees the request at all.
+_INCLUDE_RECORDS_REFUSED = (
+    'omit it. The paged timeline never carries websh recording bytes, so '
+    'include_records cannot be honoured, and it is refused rather than dropped '
+    "so that a caller asking for recordings is told. Read a session's "
+    'recording through its own record route instead.'
+)
 
 
 @mcp_tool_handler(
@@ -379,7 +393,9 @@ async def work_session_extend(
         'result stopped at the bound covers the start of the session and omits '
         'its most recent activity—do not read it as what the session ended up '
         'doing. The timeline carries no websh terminal recordings: a '
-        'websh_session item names a session whose recording is read on its own. '
+        'websh_session item names a session whose recording is read on its own, '
+        'and include_records is refused rather than quietly ignored—do not pass '
+        'it. '
         'Related: work_session_get (session detail), list_session_analyses / '
         'get_session_analysis_detail (AI security analysis results).'
     ),
@@ -394,6 +410,7 @@ async def work_session_timeline(
     region: str = '',
     cursor: str | None = None,
     page_size: int | None = None,
+    include_records: bool | None = None,
     **kwargs,
 ) -> dict[str, Any]:
     """Get the timeline of a Work Session, following the server's cursor.
@@ -406,11 +423,18 @@ async def work_session_timeline(
             which resumes the walk where the bound stopped it (optional)
         page_size: Items per request, max 500 (optional). The walk issues a
             bounded number of requests, so this also sets how far it reaches
+        include_records: Retired, and declared only to be refused. Any value,
+            true or false, is answered with a validation error
 
     Returns:
         The merged timeline, plus a `pagination` report saying whether the walk
         read the session to its end
     """
+    if include_records is not None:
+        return format_validation_error(
+            'include_records', include_records, _INCLUDE_RECORDS_REFUSED
+        )
+
     token = kwargs.get('token')
 
     params = build_list_params(

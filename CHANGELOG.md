@@ -175,11 +175,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `pagination.complete` before treating a result as the whole session, and pass
   `pagination.next_cursor` back as `cursor` to continue. The walk reads forward, so a result
   stopped at the bound holds the start of the session and omits its most recent activity.
-  `include_records` is removed, because the paginated shape carries no websh terminal recordings
-  and the parameter could only have been accepted and ignored; recordings are read per websh
-  session through alpacon-server's own record route. A client passing `include_records` must drop
-  it, and `data` is now the walk's `{count, results}` envelope, with `count` null since the
-  timeline page carries no total. An alpacon-server that predates the paged timeline ignores
+  `include_records` is retired, because the paginated shape carries no websh terminal recordings;
+  recordings are read per websh session through alpacon-server's own record route. It is still
+  declared, and any value now returns `error_code: "validation"` with `field: "include_records"`
+  before any request is made, rather than being dropped: the SDK discards an argument the
+  published schema does not name, so removing it outright would have answered a request for
+  recordings with a timeline that has none and said nothing. A client passing `include_records`
+  must drop it, and `data` is now the walk's `{count, results}` envelope, with `count` null since
+  the timeline page carries no total. An alpacon-server that predates the paged timeline ignores
   `page_size` and answers with the whole session, which the tool reads as exactly that:
   `stopped_because: unpaginated_server` with `complete: true`, a value no other tool returns, so
   the timeline keeps working on every server released so far.

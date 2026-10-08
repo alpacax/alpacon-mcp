@@ -783,18 +783,80 @@ class TestWorkSessionTimeline:
             params={'page_size': 500, 'cursor': 'resume-me'},
         )
 
-    def test_the_tool_offers_cursor_and_no_longer_include_records(self):
-        """`include_records` is read only by the shape this tool stopped asking for.
-
-        Keeping it would accept a request for terminal recordings and answer
-        without them, which is the same silent omission the bound exists to
-        avoid.
-        """
+    def test_the_tool_offers_cursor_and_page_size(self):
         params = inspect.signature(work_session_timeline).parameters
 
         assert 'cursor' in params
         assert 'page_size' in params
-        assert 'include_records' not in params
+
+    @pytest.mark.parametrize('value', [True, False])
+    @pytest.mark.asyncio
+    async def test_include_records_is_refused_not_dropped(
+        self, value, mock_http_client, mock_token_manager
+    ):
+        """Retired, and refused loudly, because dropping it reads as success.
+
+        The paged shape carries no recording bytes, so the argument cannot be
+        honoured. Answering a request for recordings with a timeline that has
+        none, and saying nothing, is the defect this tool was changed to stop
+        making—only moved up a layer. `False` is refused too: it is a caller
+        written against a contract that no longer exists, and one rule is
+        easier to rely on than an argument that behaves two ways.
+        """
+        result = await work_session_timeline(
+            session_id=SESSION_ID,
+            workspace='testworkspace',
+            region='ap1',
+            include_records=value,
+        )
+
+        assert result['status'] == 'error'
+        assert result['error_code'] == 'validation'
+        assert result['field'] == 'include_records'
+        assert 'record route' in result['suggestion']
+        mock_http_client.get.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_include_records_is_declared_so_the_sdk_cannot_drop_it(self):
+        """The refusal only works because the published schema names it.
+
+        The SDK validates a call against that schema and silently discards
+        whatever it does not name (pinned by
+        `test_call_tool_takes_the_documented_arguments_alone`), so an
+        undeclared `include_records` would never reach the body to be refused.
+        This asserts on the schema a client actually reads, not the Python
+        signature, since the schema is what decides whether the value survives
+        the trip.
+        """
+        schemas = {t.name: t.input_schema for t in await mcp.list_tools()}
+
+        assert 'include_records' in schemas['work_session_timeline']['properties']
+
+    @pytest.mark.asyncio
+    async def test_include_records_is_refused_through_the_sdk_too(
+        self, mock_http_client, mock_token_manager
+    ):
+        """The path a client takes, where the silent drop was invisible.
+
+        A direct Python call raised a TypeError on an unknown argument while
+        INFO was on, which made the hole look narrower than it was; through
+        the SDK it was dropped at every log level, so the composition is what
+        needs pinning, not the function.
+        """
+        result = await mcp.call_tool(
+            'work_session_timeline',
+            {
+                'session_id': SESSION_ID,
+                'workspace': 'testworkspace',
+                'region': 'ap1',
+                'include_records': True,
+            },
+        )
+
+        payload = result.structured_content
+        assert payload['status'] == 'error'
+        assert payload['field'] == 'include_records'
+        mock_http_client.get.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_the_description_tells_the_model_to_check_completeness(self):
