@@ -133,7 +133,7 @@ def security_audit(work_session_id: str = '', server_id: str = '') -> str:
     return f"""Audit privileged activity for {anchor}. Choose the lens that fits the question.
 
 - Lens 1—Session forensic ("what happened in this session?"):
-  `work_session_timeline` for the unified command/transfer/risk timeline.
+  `work_session_timeline` for one session's merged command/transfer/risk timeline.
 - Lens 2—Event forensic, cross-session ("every sudo / every `rm -rf` / every transfer
   of /etc/*"): `list_server_logs`, `list_webftp_logs`, `search_events`.
 - Lens 3—Decision audit ("why was access granted, who approved, when revoked?"):
@@ -142,6 +142,20 @@ def security_audit(work_session_id: str = '', server_id: str = '') -> str:
   `list_activity_logs`, `get_activity_log`.
 - Lens 5—AI-derived analysis (attack patterns, MITRE ATT&CK mapping, kill-chain):
   `list_session_analyses`, then `get_session_analysis_detail` for a specific session.
+
+Lenses 1, 2 and 4 read cursor-paginated lists—`work_session_timeline`,
+`list_server_logs`, `list_webftp_logs`, `list_activity_logs`. Each call follows the
+server's cursor for a bounded number of requests, so what you get back may be a prefix
+of the record rather than the record. Read `pagination.stopped_because` before you
+conclude anything: only `page_bound` means more remains, and you keep reading with
+`pagination.next_cursor` as `cursor` until it does not. `complete: false` on its own is
+not that signal—a call resumed from a `cursor` reports it with nothing left to read, and
+a failed walk reports it with `next_cursor` as a retry point.
+
+Never characterize activity from a prefix. The timeline walk in particular reads
+forward, so a result stopped at the bound holds the start of the session and omits how
+it ended—which is where an audit's answer usually is. Say what you could not read
+instead of answering from what you could.
 
 Start from the anchor above, then link findings back to the Work Session that contains
 each event—the session is the primary primitive for the audit story.
