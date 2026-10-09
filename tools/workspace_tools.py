@@ -166,9 +166,10 @@ def _saas_only_security_404(
 ) -> dict[str, Any] | None:
     """Translate a SaaS-only 404 into a clear "not available" error.
 
-    The SecuritySettingsViewSet routes (security settings and their mfa-methods
-    sub-route) are only registered under AUTH0_ENABLED, so on-premise
-    deployments return 404. Requires the http_client `error` key (matching
+    The server registers the security settings routes (security settings and
+    their mfa-methods sub-route) under `/api/workspaces/security/` only where
+    step-up MFA is available (cloud deployments). A 404 means the deployment
+    does not offer them. Requires the http_client `error` key (matching
     unwrap_http_result) so a success payload carrying status_code 404 is not
     misread. Returns an error_response when the result is a 404 error envelope,
     else None so the caller continues with normal unwrapping.
