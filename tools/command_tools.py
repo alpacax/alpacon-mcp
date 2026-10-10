@@ -203,6 +203,63 @@ def _attach_sudo_denial(
         target['sudo_denial'] = pending_approval_response(hint, category=code)
 
 
+#: What a finished file-lane command's ``error_phase`` means (ADR 0053). The
+#: agent refuses with exit 1 and a ``CODE: diagnostic`` line, and the server
+#: surfaces the code as one of these phases, so a caller can tell a refusal from
+#: the script's own exit 1. Keyed by the server's closed set of phases.
+_FILE_PHASE_HINTS: dict[str, str] = {
+    'file_hash_mismatch': (
+        'The file on the host changed after it was verified, so the agent '
+        'refused to run it. Re-run execute_file so the current file is '
+        'verified again; a standing approval only covers the unchanged file.'
+    ),
+    'file_payload_invalid': (
+        'The agent could not read the file execution request it was sent. '
+        'Re-run execute_file; if it fails the same way, the agent and server '
+        'versions may not match, so upgrade the agent (upgrade_agent).'
+    ),
+    'file_open_failed': (
+        'The agent could not open the file on the host. Check that the path '
+        'exists, is a regular file, and is readable by the account the command '
+        'runs as, then re-run execute_file.'
+    ),
+    'file_exec_unsupported': (
+        'This agent cannot run verified file executions. Upgrade the agent '
+        '(upgrade_agent), or run the work through execute_command instead. '
+        'Retrying as-is fails the same way.'
+    ),
+    'file_too_large': (
+        'The file on the host is over the size the agent will verify. Split the '
+        'script, or move bulk data out of the entrypoint into a file it reads.'
+    ),
+}
+
+#: Any other ``file_*`` phase, such as one a newer server adds, still says it
+#: came from the file lane rather than leaving the caller with a bare code.
+_FILE_PHASE_GENERIC_HINT = (
+    'The agent refused this file execution before running it. Check that the '
+    'file on the host is unchanged, then re-run execute_file; if it fails the '
+    'same way, report the error_phase value.'
+)
+
+
+def _file_phase_hint(result: dict[str, Any]) -> str | None:
+    """Hint for a file-lane ``error_phase``, or None for any other phase."""
+    phase = result.get('error_phase')
+    if not isinstance(phase, str) or not phase.startswith('file_'):
+        return None
+    return _FILE_PHASE_HINTS.get(phase, _FILE_PHASE_GENERIC_HINT)
+
+
+def _attach_file_phase_hint(
+    target: dict[str, Any], source: dict[str, Any] | None = None
+) -> None:
+    """Attach the file-lane hint for ``source``'s ``error_phase`` onto ``target``."""
+    hint = _file_phase_hint(target if source is None else source)
+    if hint:
+        target['error_phase_hint'] = hint
+
+
 def _requester_fields(
     *,
     username: str | None,
@@ -513,6 +570,7 @@ async def list_commands(
     for entry in entries if isinstance(entries, list) else ():
         if isinstance(entry, dict):
             _attach_sudo_denial(entry)
+            _attach_file_phase_hint(entry)
 
     return success_response(
         data=result,
@@ -865,6 +923,7 @@ async def _poll_command_result(
                     **echo,
                 )
                 _attach_sudo_denial(response, result)
+                _attach_file_phase_hint(response, result)
                 return response
 
             match status:

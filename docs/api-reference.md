@@ -457,6 +457,13 @@ with a shorter duration or none). The path, size, and `reuse_days` range rules a
 locally before any request is made, with the same `error_code` and wording; only the server knows the
 workspace ceiling.
 
+**File-lane refusals after submit:** when the agent refuses a verified file at run time, the result
+carries `error_phase` and the response adds `error_phase_hint` (what happened and what to do next).
+Phases: `file_hash_mismatch` (the file changed after it was verified; re-run `execute_file`),
+`file_payload_invalid`, `file_open_failed`, `file_exec_unsupported`, and `file_too_large`. Any other
+`file_*` phase gets a generic file-lane hint. The same field is attached to `list_commands` entries
+and to `execute_command` results; other phases carry no hint.
+
 ### `list_commands`
 List recent command history.
 
@@ -465,6 +472,8 @@ List recent command history.
 - `limit` (integer, default: 20): Maximum number of recent commands to return
 - `workspace` (string): Workspace name
 - `region` (string, optional): Region name; resolved from the workspace when omitted
+
+An entry whose `error_phase` starts with `file_` gains `error_phase_hint`, as on `execute_file`.
 
 ### `execute_command_multi_server`
 Execute a command on multiple servers simultaneously.
