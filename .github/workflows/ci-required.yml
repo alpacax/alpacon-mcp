@@ -55,8 +55,9 @@
 # from the workflow_run trigger, which runs from the default branch with a write
 # token after a listed CI workflow starts or completes for the fork's head
 # commit (the first run of a first-time contributor waits for a maintainer to
-# approve it under Actions settings, and counts as failure until then). If no
-# status appears, the PR cannot merge by the normal path. A maintainer unblocks
+# approve it under Actions settings; the script counts a run that is waiting
+# for approval as not finished, so the status stays pending until it runs).
+# If no status appears, the PR cannot merge by the normal path. A maintainer unblocks
 # it by pushing the contributor's branch to this repository and opening a
 # same-repo PR (the pull_request trigger then posts the status), or by an admin
 # merge. Do not use pull_request_target or check out PR code here.
