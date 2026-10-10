@@ -1,0 +1,233 @@
+# Copy of alpacax/shared-ci .github/workflows/report-ci-required.yml at v1.16.0
+# (6a911aa; unchanged in v2.0.0, da8b630), turned from a reusable workflow into
+# a regular one. Why a copy: this repo is public and shared-ci is internal, so
+# a public repo cannot `uses:` it (alpacon-mcp#93 reverted a wrapper for this
+# reason). A change to the shared-ci file must be mirrored here by hand. The
+# evaluation script below is kept identical to the source; what differs is the
+# trigger block, the fixed env values that were workflow_call inputs
+# (runs-on ubuntu-latest, no extra ignore patterns, events pull_request,
+# settle 30 seconds), job-level permissions (this repo keeps the workflow level
+# at contents: read), and the fork guard described below.
+#
+# Posts one commit status, context "ci / required", on a pull request's head
+# commit. It summarizes every GitHub Actions workflow that ran for that commit,
+# across all workflow files in this repository, so a ruleset can require this
+# one name while the CI workflows behind it keep their path filters.
+#
+#   failure  any counted workflow completed with a conclusion other than
+#            success, skipped or neutral (failure, timed_out, cancelled,
+#            action_required, startup_failure, stale, none, or anything new),
+#            or one of its jobs already did while the workflow still runs
+#   pending  a counted workflow is still queued or running
+#   success  every counted workflow passed (success, skipped, neutral), or none ran
+#
+# Two triggers, and the job reads which one from the event:
+#
+#   pull_request   Waits a settle delay so the workflows the same push started
+#                  have registered, looks twice, then posts. This is the only
+#                  evaluation when no CI runs for the commit.
+#   workflow_run   Fires when a listed CI workflow is requested, starts
+#                  (in_progress, which a re-run also emits) and completes,
+#                  and posts the current summary again. A re-run turns an
+#                  earlier result back to pending, and a failed workflow that
+#                  is re-run and passes turns the status green with no further
+#                  action.
+#
+# Counted: GitHub Actions workflow runs whose head commit is the PR head, whose
+# event is pull_request, latest run per workflow file. Not counted: this
+# workflow itself, runs with the `dynamic` event (CodeQL default setup, Copilot
+# code review, Dependabot updates), a workflow named exactly CodeQL (the
+# advanced-setup code scanning workflow), and anything that is not a GitHub
+# Actions workflow run (commit statuses such as walld/review, check runs from
+# other apps such as the code scanning "CodeQL" check). The Docker and Publish
+# to PyPI workflows never run on pull_request, so they are not listed below.
+#
+# Reads workflow runs and jobs through the API and writes a commit status.
+# Nothing here checks out or runs code from the pull request, and nothing here
+# interpolates a PR-controlled value into a script.
+#
+# Adding a CI workflow that runs on pull_request: add its name to
+# `workflow_run.workflows` below, or a re-run of it will not refresh the status.
+#
+# Fork pull requests. On a pull_request event from a fork GITHUB_TOKEN is
+# read-only, so the status write would fail; the pull_request job is skipped
+# for forks instead of failing. A fork PR therefore gets "ci / required" only
+# from the workflow_run trigger, which runs from the default branch with a write
+# token after a listed CI workflow starts or completes for the fork's head
+# commit (the first run of a first-time contributor waits for a maintainer to
+# approve it under Actions settings; the script counts a run that is waiting
+# for approval as not finished, so the status stays pending until it runs).
+# If no status appears, the PR cannot merge by the normal path. A maintainer unblocks
+# it by pushing the contributor's branch to this repository and opening a
+# same-repo PR (the pull_request trigger then posts the status), or by an admin
+# merge. Do not use pull_request_target or check out PR code here.
+
+name: CI required
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_run:
+    workflows: [Test]
+    types: [requested, in_progress, completed]
+
+permissions:
+  contents: read
+
+jobs:
+  evaluate:
+    name: evaluate
+    # pull_request: same-repo PRs only, see the fork note above. workflow_run:
+    # only for runs whose event is pull_request; the script filters again.
+    if: >-
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.head.repo.full_name == github.repository) ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.event == 'pull_request')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      statuses: write
+    # One evaluation per head commit at a time, so a slower evaluation that
+    # read older state cannot post after a newer one. A queued evaluation that
+    # is replaced by a newer one is cancelled; the newer one reads later state.
+    concurrency:
+      group: ci-required-${{ github.event.workflow_run.head_sha || github.event.pull_request.head.sha }}
+      cancel-in-progress: false
+    steps:
+      - name: Summarize CI for the head commit
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          IGNORE_WORKFLOWS: ''
+          COUNTED_EVENTS: pull_request
+          SETTLE_SECONDS: '30'
+        with:
+          # Retries a failed API call (5xx, rate limit) before the step fails.
+          retries: 3
+          script: |
+            const CONTEXT = 'ci / required';
+            // An allowlist: a completed run or job with any other conclusion,
+            // including null, stale or one GitHub adds later, counts as failed.
+            const PASSING = new Set(['success', 'skipped', 'neutral']);
+            const BUILTIN_IGNORES = ['CodeQL'];
+            const RECHECK_MS = 15000;
+
+            const { owner, repo } = context.repo;
+            const lines = (s) => (s || '').split('\n').map((l) => l.trim()).filter(Boolean);
+            const globToRegExp = (g) =>
+              new RegExp('^' + g.split('*').map((p) => p.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('.*') + '$', 'i');
+            const ignores = [...BUILTIN_IGNORES, ...lines(process.env.IGNORE_WORKFLOWS)].map(globToRegExp);
+            const events = new Set(lines(process.env.COUNTED_EVENTS));
+            const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+            // owner/repo/.github/workflows/x.yml@ref -> .github/workflows/x.yml
+            // In a called workflow this names the caller's file.
+            const ownPath = (process.env.GITHUB_WORKFLOW_REF || '').split('@')[0].split('/').slice(2).join('/');
+
+            let sha;
+            if (context.eventName === 'pull_request') {
+              sha = context.payload.pull_request.head.sha;
+            } else if (context.eventName === 'workflow_run') {
+              const wr = context.payload.workflow_run;
+              if (!events.has(wr.event)) {
+                core.info(`Triggering run ${wr.html_url} has event ${wr.event}, which does not count. Nothing to post.`);
+                return;
+              }
+              sha = wr.head_sha;
+              core.info(`Triggered by ${wr.name} (${wr.html_url}), ${wr.conclusion}, attempt ${wr.run_attempt}.`);
+            } else {
+              core.setFailed(`Unsupported event ${context.eventName}: call this from pull_request and workflow_run.`);
+              return;
+            }
+            core.info(`Head commit ${sha}; own workflow ${ownPath}; counted events: ${[...events].join(', ')}`);
+
+            async function evaluate() {
+              const runs = await github.paginate(github.rest.actions.listWorkflowRunsForRepo, {
+                owner, repo, head_sha: sha, per_page: 100,
+              });
+              const latest = new Map();
+              const skipped = [];
+              for (const r of runs) {
+                let why = null;
+                if (r.path === ownPath) why = 'own workflow';
+                else if (r.event === 'dynamic') why = 'dynamic (CodeQL default setup, Copilot, Dependabot)';
+                else if (!events.has(r.event)) why = `event ${r.event}`;
+                else if (ignores.some((re) => re.test(r.name) || re.test(r.path))) why = 'ignore pattern';
+                if (why) { skipped.push(`${r.name} [${r.event}]: ${why}`); continue; }
+                const prev = latest.get(r.path);
+                if (!prev || r.id > prev.id) latest.set(r.path, r);
+              }
+              const failed = [], pending = [], passed = [];
+              for (const r of latest.values()) {
+                if (r.status === 'completed') {
+                  (PASSING.has(r.conclusion) ? passed : failed).push({ run: r, detail: String(r.conclusion) });
+                  continue;
+                }
+                // Still running: a job that already failed decides the result now.
+                // A continue-on-error job reads as failed here until its workflow
+                // completes, and the workflow_run evaluation then corrects it.
+                const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRun, {
+                  owner, repo, run_id: r.id, filter: 'latest', per_page: 100,
+                });
+                const bad = jobs.filter((j) => j.status === 'completed' && !PASSING.has(j.conclusion));
+                if (bad.length) failed.push({ run: r, detail: `${bad.map((j) => j.name).join(', ')} ${String(bad[0].conclusion)}` });
+                else pending.push({ run: r, detail: r.status });
+              }
+              const ids = [...latest.values()].map((r) => r.id).sort((a, b) => a - b).join(',');
+              return { failed, pending, passed, skipped, ids };
+            }
+
+            let result;
+            if (context.eventName === 'pull_request') {
+              const settle = Number(process.env.SETTLE_SECONDS) * 1000;
+              core.info(`Waiting ${settle / 1000}s for workflows started by this push to register.`);
+              await sleep(settle);
+              let prevIds = null;
+              for (let look = 1; look <= 3; look++) {
+                result = await evaluate();
+                core.info(`Look ${look}: runs [${result.ids}]`);
+                if (result.ids === prevIds) break;
+                prevIds = result.ids;
+                if (look < 3) await sleep(RECHECK_MS);
+              }
+            } else {
+              result = await evaluate();
+            }
+
+            const names = (xs) => xs.map((x) => x.run.name).join(', ');
+            const thisRun = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+            let state, description, target_url;
+            if (result.failed.length) {
+              state = 'failure';
+              description = `Failed: ${names(result.failed)}`;
+              target_url = result.failed[0].run.html_url;
+            } else if (result.pending.length) {
+              state = 'pending';
+              description = `Waiting for: ${names(result.pending)}`;
+              target_url = result.pending[0].run.html_url;
+            } else if (result.passed.length) {
+              state = 'success';
+              description = `Passed: ${names(result.passed)}`;
+              target_url = thisRun;
+            } else {
+              state = 'success';
+              description = 'No CI workflow ran for this commit';
+              target_url = thisRun;
+            }
+            if (description.length > 140) description = description.slice(0, 137) + '...';
+
+            await github.rest.repos.createCommitStatus({ owner, repo, sha, state, context: CONTEXT, description, target_url });
+            core.info(`Posted ${CONTEXT} = ${state}: ${description}`);
+
+            const row = (x, verdict) => [x.run.name, x.run.event, verdict, x.detail, `<a href="${x.run.html_url}">run</a>`];
+            await core.summary
+              .addHeading(`${CONTEXT}: ${state}`, 3)
+              .addRaw(`Head commit <code>${sha}</code>. ${description}.`, true)
+              .addTable([
+                [{ data: 'Workflow', header: true }, { data: 'Event', header: true }, { data: 'Counted as', header: true },
+                 { data: 'Detail', header: true }, { data: 'Link', header: true }],
+                ...result.failed.map((x) => row(x, 'failed')),
+                ...result.pending.map((x) => row(x, 'pending')),
+                ...result.passed.map((x) => row(x, 'passed')),
+              ])
+              .addDetails('Not counted', result.skipped.length ? result.skipped.join('<br>') : 'none')
+              .write();
