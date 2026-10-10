@@ -429,7 +429,7 @@ class TestListCommands:
 class TestFilePhaseHints:
     """A file-lane refusal's error_phase gets a hint instead of a bare code."""
 
-    # The server's closed set (events/file_execution.py FILE_REFUSAL_PHASES).
+    # The closed set of file-lane phases the server emits for an agent refusal.
     SERVER_PHASES = (
         'file_hash_mismatch',
         'file_payload_invalid',
