@@ -539,7 +539,7 @@ def validate_token(region: str, workspace: str) -> str | None:
     """
     token = token_manager.get_token(region, workspace)
     if not token:
-        logger.error(f'No token found for {workspace}.{region}')
+        logger.error('No token found for %s.%s', workspace, region)
     return token
 
 

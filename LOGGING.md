@@ -43,15 +43,16 @@ python main.py
 
 ### API calls
 ```
-2024-01-20 10:30:20 - alpacon_mcp.server_tools - INFO - [server_tools.py:26] - list_servers called - workspace: production, region: ap1
-2024-01-20 10:30:20 - alpacon_mcp.http_client - INFO - [http_client.py:87] - HTTP GET request to https://production.ap1.alpacon.io/api/servers/servers/
-2024-01-20 10:30:21 - alpacon_mcp.http_client - INFO - [http_client.py:109] - HTTP GET success - Status: 200, Content-Length: 1024
+2024-01-20 10:30:20 - alpacon_mcp.decorators - INFO - [decorators.py:704] - list_servers called with: {'workspace': 'production', 'region': 'ap1', 'page': None, 'page_size': None}
+2024-01-20 10:30:20 - alpacon_mcp.http_client - INFO - [http_client.py:213] - HTTP GET request to https://production.ap1.alpacon.io/api/servers/servers/
+2024-01-20 10:30:21 - alpacon_mcp.http_client - INFO - [http_client.py:239] - HTTP GET success - Status: 200, Content-Length: 1024
+2024-01-20 10:30:21 - alpacon_mcp.decorators - INFO - [decorators.py:713] - list_servers completed successfully
 ```
 
 ### Error situations
 ```
-2024-01-20 10:30:25 - alpacon_mcp.token_manager - WARNING - [token_manager.py:133] - No token found for invalid.ap1
-2024-01-20 10:30:25 - alpacon_mcp.server_tools - ERROR - [server_tools.py:32] - No token found for invalid.ap1
+2024-01-20 10:30:25 - alpacon_mcp.token_manager - WARNING - [token_manager.py:185] - No token found for invalid.ap1
+2024-01-20 10:30:25 - alpacon_mcp.common - ERROR - [common.py:532] - No token found for invalid.ap1
 ```
 
 ## 🔧 Logging components
@@ -63,11 +64,13 @@ python main.py
 - `stop_log_listener()` drains the queue on shutdown—`app_lifespan` calls it last, after every other cleanup has logged
 
 ### 2. Module-specific loggers
-- `main`: Server startup/shutdown
+`get_logger('<name>')` returns the standard `logging.Logger` named `alpacon_mcp.<name>`. The main ones:
+- `main`, `main_sse`, `main_http`: Server startup for each transport
 - `server`: MCP server creation and application lifespan
+- `decorators`: The entry and completion line of every tool call
 - `http_client`: HTTP requests/responses
+- `auth`, `oauth`, `auth_error_middleware`: JWT verification, the OAuth routes, and the re-auth challenge
 - `token_manager`: Token management
-- `server_tools`: Server management tools
 
 ### 3. HTTP request logging
 - Request URL and method; at DEBUG, the names of the parameters, body fields and headers, with each value's type and size
@@ -102,8 +105,10 @@ WARNING - Network error: ..., retrying (1/3) in 1s
 - `logs/alpacon-mcp.log`: Main log file
 - Log directory is automatically created
 
-### Log rotation (future plan)
-Currently, logs accumulate in a single file. Log rotation functionality can be added if needed.
+### Log rotation
+The file rolls over at 10 MiB, keeping five backups (`alpacon-mcp.log.1` through `alpacon-mcp.log.5`, oldest last), so the log stays under about 60 MiB. The limits are `LOG_MAX_BYTES` and `LOG_BACKUP_COUNT` in `utils/logger.py`.
+
+Rotation assumes one process writes the file. Stdio servers started from the same working directory share `logs/`: once one of them rolls the file over, the others keep writing to the renamed file, and on Windows the rename fails while another process holds the file open.
 
 ## 🔒 What the entry log records
 

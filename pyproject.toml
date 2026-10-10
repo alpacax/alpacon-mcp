@@ -109,6 +109,7 @@ select = [
     "S",   # flake8-bandit (security)
     "N",   # pep8-naming
     "ISC", # flake8-implicit-str-concat
+    "G",   # flake8-logging-format
 ]
 
 ignore = [

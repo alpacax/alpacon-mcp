@@ -61,6 +61,8 @@ async def get_health_info() -> dict[str, Any]:
         },
     }
     logger.debug(
-        f'Health check: status={health_info["status"]}, uptime={health_info["uptime_seconds"]}s'
+        'Health check: status=%s, uptime=%ss',
+        health_info['status'],
+        health_info['uptime_seconds'],
     )
     return health_info

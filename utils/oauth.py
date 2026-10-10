@@ -1014,7 +1014,7 @@ def register_oauth_routes(mcp_server):
                 response_data = response.json()
             except Exception:
                 logger.warning(
-                    f'Auth0 returned non-JSON response: {response.status_code}'
+                    'Auth0 returned non-JSON response: %s', response.status_code
                 )
                 response_data = {
                     'error': 'server_error',
@@ -1074,7 +1074,7 @@ def register_oauth_routes(mcp_server):
                 },
             )
         except httpx.HTTPError as e:
-            logger.error(f'Auth0 token request failed: {e}')
+            logger.error('Auth0 token request failed: %s', e)
             return _oauth_error(
                 'server_error',
                 'Failed to communicate with Auth0',
@@ -1093,7 +1093,7 @@ def register_oauth_routes(mcp_server):
         try:
             config = _get_oauth_config()
         except ValueError as e:
-            logger.error(f'OAuth config error in /oauth/register: {e}')
+            logger.error('OAuth config error in /oauth/register: %s', e)
             return _oauth_error(
                 'server_error',
                 'OAuth configuration is incomplete',
@@ -1310,7 +1310,7 @@ def register_oauth_routes(mcp_server):
                     else:
                         logger.info('MFA token exchange succeeded (token discarded)')
             except httpx.HTTPError as e:
-                logger.warning(f'MFA token exchange failed (non-fatal): {e}')
+                logger.warning('MFA token exchange failed (non-fatal): %s', e)
 
             # Stage 2: redirect to Auth0 with regular audience.
             # The Auth0 SSO session will skip the login prompt since
