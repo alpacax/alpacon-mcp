@@ -428,7 +428,7 @@ human, which a `bash /path` line on `execute_command` never is.
 - `workspace` (string): Workspace name
 - `interpreter` (string, default: "/bin/bash"): Absolute path of the interpreter; a bare `bash` is refused
 - `args` (array, optional): Arguments appended after the path, default `[]`; may contain empty strings
-- `reuse_days` (integer, optional): Proposed number of days, 1 to 366, for which the approver should let this exact file be rerun without a new review. A proposal, not a grant: the approver may decline reuse, and a workspace ceiling lowered after submission can shorten it; the approver cannot choose another period. A proposal past the workspace ceiling is refused rather than shortened. Give it when the same unchanged script will be rerun within that window. Sent as `file.reuse_days` only when given, so an omitted value leaves the request unchanged and a server that predates the field never sees it. With no proposal, an approver who opts in grants reuse up to the workspace ceiling, or standing when there is none
+- `reuse_days` (integer, optional): Proposed number of days, 1 to 366, for which the approver should let this exact file be rerun without a new review. Standing approvals always expire: the workspace ceiling is 1 to 366 days (default 90), and a requester may propose a shorter period, never a longer one. A proposal, not a grant: the approver may decline reuse, and a workspace ceiling lowered after submission can shorten it; the approver cannot choose another period. A proposal above the ceiling is refused with `file_exec_reuse_exceeds_max` rather than shortened. Give it when the same unchanged script will be rerun within that window. Sent as `file.reuse_days` only when given, so an omitted value leaves the request unchanged and a server that predates the field never sees it. Omitting it proposes no duration; an approver who opts in may still grant reuse up to the workspace ceiling
 - `username` (string, optional): Username for execution
 - `groupname` (string, default: "alpacon"): Group name
 - `run_after` (array, optional): Command IDs to wait for before executing
@@ -452,7 +452,7 @@ has a request waiting behind it, so a client acts on them rather than waiting or
 is required), `file_exec_assessor_disabled` (the deployment has the command assessor off),
 `file_exec_invalid_path`, `file_exec_content_too_large`, `file_exec_empty_content`,
 `file_exec_line_too_long`, `file_exec_invalid_reuse_days` (`reuse_days` is outside 1 to 366; fix it or
-omit it), and `file_exec_reuse_exceeds_max` (`reuse_days` is past the workspace's grant ceiling; resubmit
+omit it), and `file_exec_reuse_exceeds_max` (`reuse_days` is above the workspace's ceiling; resubmit
 with a shorter duration or none). The path, size, and `reuse_days` range rules are also checked
 locally before any request is made, with the same `error_code` and wording; only the server knows the
 workspace ceiling.
