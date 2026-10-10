@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- `execute_file` and its `file_exec_reuse_exceeds_max` hint now state that standing approvals
+  always expire: the workspace ceiling is 1 to 366 days (default 90), a requester may propose a
+  shorter `reuse_days` but never a longer one, omitting it proposes no duration (the approver may
+  still grant reuse up to the ceiling), and a proposal above the ceiling is refused. The previous
+  wording said an omitted `reuse_days` could run with no expiry when the workspace had no ceiling.
+
 ### Added
 - A finished command whose `error_phase` starts with `file_` now carries an `error_phase_hint`
   in `execute_command`, `execute_file` and `list_commands`: one sentence on what happened and what

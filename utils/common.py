@@ -204,10 +204,10 @@ FILE_EXEC_REFUSAL_HINTS: dict[str, str] = {
         'it to propose no duration.'
     ),
     'file_exec_reuse_exceeds_max': (
-        "reuse_days is past this workspace's file execution grant ceiling, "
-        'and the server refuses rather than shortens it. Resubmit with a '
-        'shorter duration, or omit reuse_days so that a grant, if the '
-        'approver opts in, runs to the workspace ceiling.'
+        "reuse_days is above this workspace's ceiling for standing approvals "
+        '(1 to 366 days, default 90), and the server refuses rather than '
+        'shortens it. Resubmit with a shorter duration, or omit reuse_days to '
+        'propose none; the approver may still grant reuse up to the ceiling.'
     ),
 }
 

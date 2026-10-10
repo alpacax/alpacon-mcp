@@ -2754,11 +2754,15 @@ class TestExecuteFileRegistration:
             assert code in text
         assert '2.6.0' in text
         # The approver only opts in or not, and omitting reuse_days still lets
-        # an opted-in grant run to the ceiling, so neither may read otherwise.
+        # an opted-in grant reach the ceiling, so neither may read otherwise.
         assert 'reuse_days' in text
         assert 'proposal' in text
         assert 'the approver cannot choose another period' in text
-        assert 'Omitting it does not make the run one-shot' in text
+        assert 'Standing approvals always expire' in text
+        assert 'default 90' in text
+        assert 'never a longer one' in text
+        assert 'Omitting it proposes no duration' in text
+        assert 'never expires' not in text
 
     @pytest.mark.asyncio
     async def test_execute_command_points_scripts_at_execute_file(self):
