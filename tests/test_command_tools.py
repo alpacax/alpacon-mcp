@@ -11,12 +11,15 @@ from mcp.server.mcpserver.exceptions import ToolError
 from server import mcp
 from tests.conftest import VALID_SERVER_ID, http_client_fixture
 from tools.command_tools import (
+    _FILE_PHASE_GENERIC_HINT,
+    _FILE_PHASE_HINTS,
     _SUDO_DENIAL_HINTS,
     FILE_CONTENT_MAX_BYTES,
     FILE_REUSE_DAYS_MAX,
     FILE_REUSE_DAYS_MIN,
     PURPOSE_MAX_LENGTH,
     _answer_purpose_demand,
+    _file_phase_hint,
     _submit_command,
     _submit_file_execution,
     _sudo_denial,
@@ -421,6 +424,95 @@ class TestListCommands:
 
         assert result['status'] == 'error'
         assert 'Permission denied' in result['message']
+
+
+class TestFilePhaseHints:
+    """A file-lane refusal's error_phase gets a hint instead of a bare code."""
+
+    # The server's closed set (events/file_execution.py FILE_REFUSAL_PHASES).
+    SERVER_PHASES = (
+        'file_hash_mismatch',
+        'file_payload_invalid',
+        'file_open_failed',
+        'file_exec_unsupported',
+        'file_too_large',
+    )
+
+    def test_every_server_phase_has_a_specific_hint(self):
+        assert set(self.SERVER_PHASES) == set(_FILE_PHASE_HINTS)
+        for phase in self.SERVER_PHASES:
+            hint = _file_phase_hint({'error_phase': phase})
+            assert hint == _FILE_PHASE_HINTS[phase]
+            assert hint != _FILE_PHASE_GENERIC_HINT
+
+    def test_hash_mismatch_says_to_reverify(self):
+        hint = _file_phase_hint({'error_phase': 'file_hash_mismatch'})
+        assert hint is not None
+        assert 'execute_file' in hint
+        assert 'standing approval' in hint
+
+    def test_unknown_file_phase_gets_generic_hint(self):
+        hint = _file_phase_hint({'error_phase': 'file_something_new'})
+        assert hint == _FILE_PHASE_GENERIC_HINT
+
+    @pytest.mark.parametrize(
+        'result',
+        [
+            {'error_phase': 'agent_timeout'},
+            {'error_phase': 'remote_command_not_found'},
+            {'error_phase': None},
+            {'error_phase': 7},
+            {},
+        ],
+    )
+    def test_other_phases_are_unchanged(self, result):
+        assert _file_phase_hint(result) is None
+
+    @pytest.mark.asyncio
+    async def test_execute_file_poll_attaches_hint(self, mock_token_manager):
+        with (
+            patch('tools.command_tools._submit_file_execution') as mock_submit,
+            patch('tools.command_tools._get_command_result') as mock_poll,
+        ):
+            mock_submit.return_value = {'id': 'cmd-f1'}
+            mock_poll.return_value = {
+                'id': 'cmd-f1',
+                'status': 'failed',
+                'success': False,
+                'exit_code': 1,
+                'error_phase': 'file_hash_mismatch',
+                'result': 'FILE_HASH_MISMATCH: digest differs',
+                'handled_at': '2024-01-01T00:00:01Z',
+            }
+
+            result = await execute_file(
+                server_id=VALID_SERVER_ID,
+                path='/opt/run.sh',
+                interpreter='/bin/bash',
+                content='echo hi\n',
+                workspace='testworkspace',
+                timeout=10,
+            )
+
+        assert result['error_phase_hint'] == _FILE_PHASE_HINTS['file_hash_mismatch']
+
+    @pytest.mark.asyncio
+    async def test_list_commands_annotates_file_entries_only(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.get.return_value = {
+            'count': 2,
+            'results': [
+                {'id': 'a', 'error_phase': 'file_open_failed'},
+                {'id': 'b', 'error_phase': 'agent_timeout'},
+            ],
+        }
+
+        result = await list_commands(workspace='testworkspace')
+
+        first, second = result['data']['results']
+        assert first['error_phase_hint'] == _FILE_PHASE_HINTS['file_open_failed']
+        assert 'error_phase_hint' not in second
 
 
 class TestListCommandsSudoDenialAnnotation:

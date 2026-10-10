@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- A finished command whose `error_phase` starts with `file_` now carries an `error_phase_hint`
+  in `execute_command`, `execute_file` and `list_commands`: one sentence on what happened and what
+  to do next, for `file_hash_mismatch`, `file_payload_invalid`, `file_open_failed`,
+  `file_exec_unsupported` and `file_too_large`. An unrecognized `file_*` phase gets a generic
+  file-lane hint; every other phase is unchanged.
 - `execute_file` gained an optional `reuse_days` (integer, 1 to 366): a proposed number of days
   for which the approver should let the same unchanged file be rerun without a new review
   (#323). It is sent as `file.reuse_days` only when given, so an existing caller's request is
