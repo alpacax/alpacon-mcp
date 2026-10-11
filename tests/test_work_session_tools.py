@@ -82,6 +82,26 @@ class TestWorkSessionCreate:
         assert data['target_account_username'] == 'root'
 
     @pytest.mark.asyncio
+    async def test_create_positional_region_stays_region(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = {'id': SESSION_ID, 'status': 'active'}
+
+        await work_session_create(
+            'testworkspace',
+            ['command'],
+            [SERVER_ID],
+            '2026-05-19T13:00:00+00:00',
+            'Fix nginx config',
+            None,
+            'ap1',
+        )
+
+        kwargs = mock_http_client.post.call_args.kwargs
+        assert kwargs['region'] == 'ap1'
+        assert 'target_account_username' not in kwargs['data']
+
+    @pytest.mark.asyncio
     async def test_create_omits_target_account_by_default(
         self, mock_http_client, mock_token_manager
     ):

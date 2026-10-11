@@ -54,8 +54,8 @@ async def work_session_create(
     expires_at: str,
     description: str,
     title: str | None = None,
-    target_account_username: str | None = None,
     region: str = '',
+    target_account_username: str | None = None,
     **kwargs,
 ) -> dict[str, Any]:
     """Create a Work Session for auditable, approval-gated infrastructure access."""
