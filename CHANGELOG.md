@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   wording said an omitted `reuse_days` could run with no expiry when the workspace had no ceiling.
 
 ### Added
+- `work_session_create` gained an optional `target_account_username` (string), sent to the server
+  as `target_account_username` only when given, so an agent can have an account such as `root`
+  approved with the session (#343). An existing caller's request is unchanged.
 - A finished command whose `error_phase` starts with `file_` now carries an `error_phase_hint`
   in `execute_command`, `execute_file` and `list_commands`: one sentence on what happened and what
   to do next, for `file_hash_mismatch`, `file_payload_invalid`, `file_open_failed`,

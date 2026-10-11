@@ -38,6 +38,10 @@ _API_SESSIONS = '/api/work-sessions/sessions/'
         '"tunnel" (port forwarding), "sudo" (privilege elevation). '
         'servers is the list of target server UUIDs. '
         'expires_at is an ISO 8601 datetime string. '
+        'target_account_username (optional) is the single OS account the commands will run '
+        'as, such as "root". Set it whenever you intend to run commands as another account, '
+        'so that account is approved together with the session; omit it to run as the '
+        'default account. '
         'Related: work_session_close (end session), execute_command (pass work_session_id).'
     ),
     annotations=ADDITIVE,
@@ -50,6 +54,7 @@ async def work_session_create(
     expires_at: str,
     description: str,
     title: str | None = None,
+    target_account_username: str | None = None,
     region: str = '',
     **kwargs,
 ) -> dict[str, Any]:
@@ -65,6 +70,8 @@ async def work_session_create(
     }
     if title:
         data['title'] = title
+    if target_account_username:
+        data['target_account_username'] = target_account_username
 
     result = await http_client.post(
         region=region,

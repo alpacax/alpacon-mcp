@@ -63,6 +63,43 @@ class TestWorkSessionCreate:
         )
 
     @pytest.mark.asyncio
+    async def test_create_passes_target_account(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = {'id': SESSION_ID, 'status': 'active'}
+
+        await work_session_create(
+            workspace='testworkspace',
+            scopes=['command'],
+            servers=[SERVER_ID],
+            expires_at='2026-05-19T13:00:00+00:00',
+            description='Fix nginx config',
+            target_account_username='root',
+            region='ap1',
+        )
+
+        data = mock_http_client.post.call_args.kwargs['data']
+        assert data['target_account_username'] == 'root'
+
+    @pytest.mark.asyncio
+    async def test_create_omits_target_account_by_default(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = {'id': SESSION_ID, 'status': 'active'}
+
+        await work_session_create(
+            workspace='testworkspace',
+            scopes=['command'],
+            servers=[SERVER_ID],
+            expires_at='2026-05-19T13:00:00+00:00',
+            description='Fix nginx config',
+            region='ap1',
+        )
+
+        data = mock_http_client.post.call_args.kwargs['data']
+        assert 'target_account_username' not in data
+
+    @pytest.mark.asyncio
     async def test_create_pending_surfaces_approval_signal(
         self, mock_http_client, mock_token_manager
     ):
