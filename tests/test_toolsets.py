@@ -10,6 +10,7 @@ import pytest
 
 import server
 import tools.resources as res
+import utils.declared_agent as declared_agent
 
 ALL_MODULES = set(server.TOOLSET_REGISTRY.values())
 
@@ -198,6 +199,8 @@ class TestRunWiring:
         monkeypatch.setattr(server.mcp, 'run', lambda transport: None)
         monkeypatch.setenv('ALPACON_MCP_TRANSPORT', 'restored-on-teardown')
         monkeypatch.delenv('ALPACON_MCP_AUTH_ENABLED', raising=False)
+        # run('stdio') turns the declared-agent fallback on; restore it after.
+        monkeypatch.setattr(declared_agent, '_environment_fallback', False)
 
         server.run('stdio', toolsets='servers')
 

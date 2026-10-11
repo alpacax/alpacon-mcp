@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   wording said an omitted `reuse_days` could run with no expiry when the workspace had no ceiling.
 
 ### Added
+- Over stdio, when the client sends no `clientInfo` name, the agent is declared to the server from
+  the same environment markers the Alpacon CLI reads (`AI_AGENT`, `CLAUDE_CODE_CHILD_SESSION`,
+  `CODEX_THREAD_ID` and the rest of the CLI's table). A `clientInfo` name always wins, and the SSE
+  and streamable-HTTP transports never read the environment. Tool responses are unchanged.
 - `work_session_create` gained an optional `target_account_username` (string), sent to the server
   as `target_account_username` only when given, so an agent can have an account such as `root`
   approved with the session (#343). An existing caller's request is unchanged.

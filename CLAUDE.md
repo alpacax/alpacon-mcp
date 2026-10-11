@@ -118,6 +118,9 @@ Things the code will not tell you at a glance:
   `X-Alpacon-Declared-Agent-*` headers. It is self-reported, and the server
   composes and sanitizes it. A stateless streamable-http server never sees a
   pre-2026 client's handshake at tool time, so nothing is sent there (#317).
+  Over stdio only (`prepare()` turns it on), a request whose `clientInfo` names
+  no agent is declared from the CLI's environment markers instead
+  (`utils/agent_environment.py`).
 
 ## Language and writing style
 

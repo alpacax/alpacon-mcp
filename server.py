@@ -12,7 +12,7 @@ from starlette.applications import Starlette
 from starlette.responses import JSONResponse
 
 from utils.common import MCP_VERSION, is_auth_enabled
-from utils.declared_agent import capture_declared_agent
+from utils.declared_agent import capture_declared_agent, use_environment_fallback
 from utils.health import get_health_info
 from utils.http_client import http_client
 from utils.logger import get_logger, stop_log_listener
@@ -322,6 +322,8 @@ def prepare(
 
     # Set transport type for health check reporting
     os.environ['ALPACON_MCP_TRANSPORT'] = transport
+    # Only a stdio server is the agent's child and inherits its environment.
+    use_environment_fallback(transport == TRANSPORT_STDIO)
 
     # Set config file path as environment variable if provided (before tool imports
     # so that tools that read config at import time see the correct path)

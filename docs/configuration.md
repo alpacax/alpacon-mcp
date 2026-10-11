@@ -199,6 +199,7 @@ The `alpacon-mcp` CLI takes the same flags plus the `setup`, `test`, `list`, and
 - Standard MCP protocol transport
 - Bidirectional communication via stdin/stdout
 - Recommended for most MCP clients
+- Declares the calling agent to Alpacon from the client's `clientInfo`. When a client sends no `clientInfo` name, the server reads the same environment markers the Alpacon CLI reads, which the agent sets in the processes it launches: `AI_AGENT` (`name`, `name/version`, or Claude Code's `claude-code_2-1-120_agent`), `CLAUDE_CODE_CHILD_SESSION`, `CODEX_CI`, `CODEX_THREAD_ID`, `CODEX_SANDBOX`, `GEMINI_CLI`, `COPILOT_AGENT`, `COPILOT_CLI`, `CURSOR_AGENT`, `CLINE_ACTIVE`, `GOOSE_TERMINAL`, and `AGENT=goose`. The SSE and streamable-HTTP transports never read the environment for this
 
 ```bash
 python main.py
