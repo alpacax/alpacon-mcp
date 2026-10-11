@@ -40,8 +40,10 @@ _API_SESSIONS = '/api/work-sessions/sessions/'
         'expires_at is an ISO 8601 datetime string. '
         'target_account_username (optional) is the single OS account the commands will run '
         'as, such as "root". Set it whenever you intend to run commands as another account, '
-        'so that account is approved together with the session; omit it to run as the '
-        'default account. '
+        'so that account is approved together with the session, then pass the same '
+        'account as username to execute_command and execute_file; omit it to run as '
+        'the default account. Running directly as root is declared here; the "sudo" '
+        'scope is for elevation from another account. '
         'Related: work_session_close (end session), execute_command (pass work_session_id).'
     ),
     annotations=ADDITIVE,
