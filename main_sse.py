@@ -28,7 +28,7 @@ def main():
         # A toolsets typo is user error, not a crash: one clean line, no traceback.
         # Scoped to ToolsetError so an unrelated ValueError during tool import is
         # not mislabeled as an --toolsets problem.
-        logger.error(f'Invalid --toolsets: {e}')
+        logger.error('Invalid --toolsets: %s', e)
         raise SystemExit(2)
 
 

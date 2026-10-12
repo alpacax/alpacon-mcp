@@ -623,9 +623,7 @@ def with_error_handling(func: Callable) -> Callable:
             region = arguments.get('region', 'unknown')
 
             # Log the error with context
-            logger.error(
-                f'{func_name} failed for {workspace}.{region}: {e}', exc_info=True
-            )
+            logger.exception('%s failed for %s.%s: %s', func_name, workspace, region, e)
 
             # Return standardized error response with recovery hints
             resp = error_response(
@@ -712,7 +710,7 @@ def with_logging(func: Callable) -> Callable:
 
         # Log completion if successful
         if isinstance(result, dict) and result.get('status') == 'success':
-            logger.info(f'{func_name} completed successfully')
+            logger.info('%s completed successfully', func_name)
 
         return result
 

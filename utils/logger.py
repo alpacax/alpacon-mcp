@@ -5,7 +5,8 @@ import logging.handlers
 import os
 import queue
 import sys
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +14,10 @@ LOG_FORMAT = (
     '%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s'
 )
 LOG_DATE_FORMAT = '%Y-%m-%d %H:%M:%S'
+
+# Caps the log file at about 60 MiB on disk: the live file plus five backups.
+LOG_MAX_BYTES = 10 * 1024 * 1024
+LOG_BACKUP_COUNT = 5
 
 # Caps a client-supplied value in a log line. Escaping expands a byte up to
 # sixfold, so an unbounded value on an unauthenticated route inflates log volume.
@@ -161,6 +166,71 @@ class AccessLogQueryFilter(logging.Filter):
         return True
 
 
+if sys.platform == 'win32':
+    import msvcrt
+
+    def _lock_file(fd: int) -> None:
+        msvcrt.locking(fd, msvcrt.LK_LOCK, 1)
+
+    def _unlock_file(fd: int) -> None:
+        msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+
+else:
+    import fcntl
+
+    def _lock_file(fd: int) -> None:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+
+    def _unlock_file(fd: int) -> None:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+
+
+@contextmanager
+def _file_locked(fd: int) -> Iterator[None]:
+    _lock_file(fd)
+    try:
+        yield
+    finally:
+        _unlock_file(fd)
+
+
+class SharedRotatingFileHandler(logging.handlers.RotatingFileHandler):
+    """Rotate a log file several processes append to: each record is written under
+    a lock on a sidecar ``.lock`` file, through a stream opened for it alone."""
+
+    def __init__(self, filename: Path, max_bytes: int, backup_count: int) -> None:
+        super().__init__(
+            filename, maxBytes=max_bytes, backupCount=backup_count, delay=True
+        )
+        self._lock_path = self.baseFilename + '.lock'
+        self._lock_fd: int | None = None
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            if self._lock_fd is None:
+                self._lock_fd = os.open(self._lock_path, os.O_RDWR | os.O_CREAT, 0o666)
+            with _file_locked(self._lock_fd):
+                try:
+                    super().emit(record)
+                finally:
+                    self._close_stream()
+        except Exception:
+            self.handleError(record)
+
+    def _close_stream(self) -> None:
+        stream = self.stream
+        if stream is not None:
+            self.stream = None
+            stream.close()
+
+    def close(self) -> None:
+        with self.lock:
+            super().close()
+            if self._lock_fd is not None:
+                os.close(self._lock_fd)
+                self._lock_fd = None
+
+
 def _add_filter_once(logger: logging.Logger, kind: type[logging.Filter]) -> None:
     if not any(isinstance(f, kind) for f in logger.filters):
         logger.addFilter(kind())
@@ -170,7 +240,6 @@ class AlpaconLogger:
     """Centralized logging configuration for Alpacon MCP Server."""
 
     def __init__(self):
-        self._loggers: dict[str, logging.LoggerAdapter] = {}
         self.listener: logging.handlers.QueueListener | None = None
         self._setup_logging()
 
@@ -189,7 +258,11 @@ class AlpaconLogger:
         )
 
         # Plain: the queue handler below has already escaped what reaches it.
-        file_handler = logging.FileHandler(log_dir / 'alpacon-mcp.log')
+        file_handler = SharedRotatingFileHandler(
+            log_dir / 'alpacon-mcp.log',
+            max_bytes=LOG_MAX_BYTES,
+            backup_count=LOG_BACKUP_COUNT,
+        )
         file_handler.setFormatter(
             logging.Formatter(fmt=LOG_FORMAT, datefmt=LOG_DATE_FORMAT)
         )
@@ -225,48 +298,16 @@ class AlpaconLogger:
             self.listener.stop()
             self.listener = None
 
-    def get_logger(self, name: str) -> logging.LoggerAdapter:
-        """Get logger for specific module.
-
-        Args:
-            name: Logger name (usually module name)
-
-        Returns:
-            Configured logger adapter instance
-        """
-        if name not in self._loggers:
-            base_logger = logging.getLogger(f'alpacon_mcp.{name}')
-            adapter = logging.LoggerAdapter(
-                base_logger, {'component': name, 'pid': os.getpid()}
-            )
-            self._loggers[name] = adapter
-
-        return self._loggers[name]
-
 
 # Singleton instance
 logger_manager = AlpaconLogger()
 
 
-def get_logger(name: str) -> logging.LoggerAdapter:
-    """Get logger for module.
-
-    Args:
-        name: Module name
-
-    Returns:
-        Configured logger adapter instance
-    """
-    return logger_manager.get_logger(name)
+def get_logger(name: str) -> logging.Logger:
+    """Get the ``alpacon_mcp.<name>`` logger for a module."""
+    return logging.getLogger(f'alpacon_mcp.{name}')
 
 
 def stop_log_listener() -> None:
     """Stop the log queue listener on shutdown."""
     logger_manager.stop_listener()
-
-
-# Pre-configured loggers for common modules
-server_logger = get_logger('server')
-http_logger = get_logger('http_client')
-token_logger = get_logger('token_manager')
-tools_logger = get_logger('tools')

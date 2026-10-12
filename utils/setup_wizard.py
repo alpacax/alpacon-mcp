@@ -7,7 +7,6 @@ eliminating the need for manual JSON editing.
 
 import asyncio
 import json
-import os
 import sys
 from getpass import getpass
 from pathlib import Path
@@ -308,75 +307,3 @@ def test_credentials() -> None:
     else:
         print('❌ Connection failed. Please verify your credentials.')
         print('   You can update with: uvx alpacon-mcp setup')
-
-
-def show_config_info() -> None:
-    """Show configuration information and status."""
-    print('\n' + '=' * 60)
-    print('ℹ️  Configuration Information')
-    print('=' * 60)
-
-    # Check configuration files
-    global_config_path = get_global_config_path()
-    local_config_path = get_local_config_path()
-
-    global_exists = global_config_path.exists()
-    local_exists = local_config_path.exists()
-
-    print('\n📁 Configuration Files:')
-    print(f'\n  Global: {global_config_path}')
-    print(f'  Status: {"✅ Exists" if global_exists else "❌ Not found"}')
-
-    print(f'\n  Local:  {local_config_path}')
-    print(f'  Status: {"✅ Exists" if local_exists else "❌ Not found"}')
-
-    # Load and display workspaces
-    global_config = load_existing_config(global_config_path) if global_exists else {}
-    local_config = load_existing_config(local_config_path) if local_exists else {}
-
-    total_workspaces = 0
-
-    if global_config:
-        print('\n🌍 Global Workspaces:')
-        for region, workspaces in global_config.items():
-            count = len(workspaces)
-            total_workspaces += count
-            print(f'  {region}: {count} workspace(s)')
-            for workspace in workspaces.keys():
-                print(f'    - {workspace}')
-
-    if local_config:
-        print('\n📁 Local Workspaces:')
-        for region, workspaces in local_config.items():
-            count = len(workspaces)
-            total_workspaces += count
-            print(f'  {region}: {count} workspace(s)')
-            for workspace in workspaces.keys():
-                print(f'    - {workspace}')
-
-    # Environment variables
-    print('\n🔐 Environment Variables:')
-    env_vars = [key for key in os.environ.keys() if key.startswith('ALPACON_MCP_')]
-    if env_vars:
-        for var in env_vars:
-            if 'TOKEN' in var:
-                print(f'  ✅ {var}: configured')
-            else:
-                print(f'  ℹ️  {var}: {os.environ[var]}')
-    else:
-        print('  (none)')
-
-    # Summary
-    print('\n📊 Summary:')
-    print(f'  Total workspaces: {total_workspaces}')
-    print('  Configuration priority:')
-    print('    1. Environment variables')
-    print('    2. Local config (./config/token.json)')
-    print('    3. Global config (~/.alpacon-mcp/token.json)')
-
-    print('\n' + '=' * 60)
-
-    if total_workspaces == 0:
-        print(
-            "\n💡 No workspaces configured. Run 'uvx alpacon-mcp setup' to get started."
-        )

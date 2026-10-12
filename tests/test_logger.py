@@ -7,38 +7,167 @@ call shares one event loop, and a FileHandler flushes to disk on every record.
 import logging
 import logging.handlers
 import sys
+import threading
+from contextlib import contextmanager
 
 import pytest
 import uvicorn
 
 from utils.logger import (
+    LOG_BACKUP_COUNT,
+    LOG_MAX_BYTES,
     LOG_VALUE_MAX_CHARS,
     AlpaconLogger,
+    SharedRotatingFileHandler,
     describe_for_log,
     escape_for_log,
     redact_for_log,
 )
 
 
-@pytest.fixture
-def manager(tmp_path, monkeypatch):
-    """Build a logger manager in a scratch cwd, restoring the root logger afterwards."""
-    monkeypatch.chdir(tmp_path)
+@contextmanager
+def _built_manager():
+    """Build a logger manager, restoring the root logger afterwards."""
     root = logging.getLogger()
     saved_handlers, saved_level = root.handlers[:], root.level
     # basicConfig does nothing when the root logger already has handlers, and
     # pytest installs its own.
     root.handlers.clear()
     instance = AlpaconLogger()
+    file_sinks = instance.listener.handlers
     try:
         yield instance, root.handlers[:]
     finally:
         instance.stop_listener()
+        for sink in file_sinks:
+            sink.close()
         for handler in root.handlers[:]:
             root.removeHandler(handler)
         for handler in saved_handlers:
             root.addHandler(handler)
         root.setLevel(saved_level)
+
+
+@pytest.fixture
+def manager(tmp_path, monkeypatch):
+    """Build a logger manager in a scratch cwd."""
+    monkeypatch.chdir(tmp_path)
+    with _built_manager() as built:
+        yield built
+
+
+def _queue_handler(handlers):
+    return next(h for h in handlers if isinstance(h, logging.handlers.QueueHandler))
+
+
+class TestRotatingFileSink:
+    """The log file is capped, so a long-running server cannot fill the disk."""
+
+    def test_the_listener_writes_through_a_rotating_file_handler(self, manager):
+        instance, _ = manager
+
+        (sink,) = instance.listener.handlers
+
+        assert isinstance(sink, SharedRotatingFileHandler)
+        assert sink.maxBytes == LOG_MAX_BYTES
+        assert sink.backupCount == LOG_BACKUP_COUNT
+
+    def test_a_full_log_file_rolls_over_and_keeps_only_the_backup_count(
+        self, tmp_path, monkeypatch
+    ):
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr('utils.logger.LOG_MAX_BYTES', 200)
+        monkeypatch.setattr('utils.logger.LOG_BACKUP_COUNT', 2)
+        with _built_manager() as (instance, handlers):
+            queue_handler = _queue_handler(handlers)
+
+            for i in range(20):
+                queue_handler.handle(_record('rotation record %s', i))
+            instance.stop_listener()
+
+        log_dir = tmp_path / 'logs'
+        assert sorted(p.name for p in log_dir.iterdir()) == [
+            'alpacon-mcp.log',
+            'alpacon-mcp.log.1',
+            'alpacon-mcp.log.2',
+            'alpacon-mcp.log.lock',
+        ]
+        assert all(p.stat().st_size <= 200 for p in log_dir.iterdir())
+        assert 'rotation record 19' in (log_dir / 'alpacon-mcp.log').read_text()
+
+
+def _shared_sink(path, max_bytes, backup_count=1000):
+    handler = SharedRotatingFileHandler(
+        path, max_bytes=max_bytes, backup_count=backup_count
+    )
+    handler.setFormatter(logging.Formatter('%(message)s'))
+    return handler
+
+
+def _logged_lines(log_dir):
+    return [
+        line
+        for path in log_dir.iterdir()
+        if not path.name.endswith('.lock')
+        for line in path.read_text().splitlines()
+    ]
+
+
+class TestSharedFileSink:
+    """Each handler stands in for one stdio server: its own descriptors, and a lock
+    that conflicts the way another process's would."""
+
+    def test_a_record_after_another_writer_rolled_over_lands_in_the_live_file(
+        self, tmp_path
+    ):
+        log_file = tmp_path / 'alpacon-mcp.log'
+        first, second = _shared_sink(log_file, 200), _shared_sink(log_file, 200)
+        second.handle(_record('second writer opened the file'))
+
+        for i in range(10):
+            first.handle(_record('first writer record %s', i))
+        second.handle(_record('second writer after rollover'))
+        first.close()
+        second.close()
+
+        assert (tmp_path / 'alpacon-mcp.log.1').exists()
+        assert 'second writer after rollover' in log_file.read_text()
+
+    def test_concurrent_writers_lose_no_record_and_never_overfill_a_file(
+        self, tmp_path
+    ):
+        log_file = tmp_path / 'alpacon-mcp.log'
+        writers = [_shared_sink(log_file, 500) for _ in range(2)]
+
+        def write_all(index, handler):
+            for i in range(200):
+                handler.handle(_record('writer %s record %s', index, i))
+
+        threads = [
+            threading.Thread(target=write_all, args=(index, handler))
+            for index, handler in enumerate(writers)
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        for handler in writers:
+            handler.close()
+
+        expected = {f'writer {w} record {i}' for w in range(2) for i in range(200)}
+        lines = _logged_lines(tmp_path)
+        assert len(lines) == len(expected)
+        assert set(lines) == expected
+        assert all(p.stat().st_size <= 500 for p in tmp_path.iterdir())
+
+    def test_no_log_file_stays_open_between_records(self, tmp_path):
+        """On Windows a file another process holds open cannot be renamed."""
+        handler = _shared_sink(tmp_path / 'alpacon-mcp.log', 200)
+
+        handler.handle(_record('one record'))
+
+        assert handler.stream is None
+        handler.close()
 
 
 class TestQueuedFileSink:
