@@ -18,9 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `install_pam` (`server_id`, `workspace`, `region`): install the `alpamon-pam` package as root
   through the host's package manager, for a host provisioned with alpamon alone that needs the PAM
   module; a host already current is a no-op. Wraps the new `install_pam` value of
-  `POST /api/servers/servers/{id}/actions/` (alpacax/alpacon-server#4239) and **requires an
+  `POST /api/servers/servers/{id}/actions/` and **requires an
   alpacon-server release carrying that action**. It is not disruptive, so it takes no `force`, and
-  it needs the workspace's "Use sudo with MFA" setting on. A client parsing errors sees three new
+  it needs the workspace's "Use sudo with MFA" setting on. A client parsing these errors sees three new
   `error_code` values, each a plain `status: "error"` to act on: `server_pam_install_unsupported`
   (400: the host has no package path—macOS, Windows, or a package manager Alpacon does not drive),
   `server_pam_install_requires_sudo_with_mfa` (400: sudo with MFA is off or this deployment cannot
