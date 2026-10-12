@@ -73,7 +73,7 @@ _ALIASES = {
 # The "<name>_<version>_agent" form Claude Code puts in AI_AGENT, such as
 # claude-code_2-1-120_agent. The version starts with a digit, so
 # github_copilot_vscode_agent is not read as one.
-_VERSIONED_AGENT = re.compile(r'(.+?)_([0-9][^_]*)_agent')
+_VERSIONED_AGENT = re.compile(r'(.+?)_([0-9][^_]*)_agent', re.IGNORECASE)
 
 # A version written with dashes for dots (2-1-120).
 _DASHED_VERSION = re.compile(r'[0-9]+(-[0-9]+)+')
@@ -86,12 +86,15 @@ def _clean(value: str, limit: int) -> str:
 
 
 def _parse_ai_agent(value: str) -> tuple[str, str] | None:
-    """An AI_AGENT value as a canonical name and a version, which may be empty."""
-    value = _clean(value, len(value)).lower()
+    """An AI_AGENT value as a canonical name and a version, which may be empty.
+
+    Only the name is lowercased; the version keeps the case it was given.
+    """
+    value = _clean(value, len(value))
     if not value:
         return None
-    if value in _ALIASES:
-        return _ALIASES[value], ''
+    if value.lower() in _ALIASES:
+        return _ALIASES[value.lower()], ''
     version = ''
     if match := _VERSIONED_AGENT.fullmatch(value):
         name, version = match.group(1), match.group(2)
@@ -99,7 +102,7 @@ def _parse_ai_agent(value: str) -> tuple[str, str] | None:
         name, _, version = value.partition('/')
     if _DASHED_VERSION.fullmatch(version):
         version = version.replace('-', '.')
-    name = _clean(name, _NAME_MAX_LENGTH)
+    name = _clean(name, _NAME_MAX_LENGTH).lower()
     name = _ALIASES.get(name, name)
     if not name:
         return None
