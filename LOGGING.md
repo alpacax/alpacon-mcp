@@ -36,9 +36,9 @@ python main.py
 
 ### Server start
 ```
-2024-01-20 10:30:15 - alpacon_mcp.main - INFO - [main.py:96] - Starting Alpacon MCP Server
-2024-01-20 10:30:15 - alpacon_mcp.server - INFO - [server.py:206] - Creating MCP server without auth (stdio/SSE mode)
-2024-01-20 10:30:15 - alpacon_mcp.token_manager - INFO - [token_manager.py:37] - Using default config file: config/token.json
+2024-01-20 10:30:15 - alpacon_mcp.token_manager - INFO - [token_manager.py:48] - Using local config file: config/token.json
+2024-01-20 10:30:15 - alpacon_mcp.server - INFO - [server.py:208] - Creating MCP server without auth (stdio/SSE mode)
+2024-01-20 10:30:15 - alpacon_mcp.main - INFO - [main.py:126] - Starting Alpacon MCP Server
 ```
 
 ### API calls
@@ -52,7 +52,7 @@ python main.py
 ### Error situations
 ```
 2024-01-20 10:30:25 - alpacon_mcp.token_manager - WARNING - [token_manager.py:185] - No token found for invalid.ap1
-2024-01-20 10:30:25 - alpacon_mcp.common - ERROR - [common.py:532] - No token found for invalid.ap1
+2024-01-20 10:30:25 - alpacon_mcp.common - ERROR - [common.py:542] - No token found for invalid.ap1
 ```
 
 ## 🔧 Logging components
