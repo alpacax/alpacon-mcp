@@ -124,11 +124,18 @@ Pin or unpin a server for the calling user. A personal preference flag, not a fl
 Each takes `server_id`, `workspace`, and an optional `region`. This is the complete set of actions
 this endpoint accepts; an action outside this set returns 400. The two disruptive ones also take
 `force` (boolean, default `false`), which runs the action even while the host is busy with an open
-Websh or WebFTP session or an in-flight command, tearing that work down. `update_information` is
-not disruptive and takes no `force`.
+Websh or WebFTP session or an in-flight command, tearing that work down. `install_pam` and
+`update_information` are not disruptive and take no `force`.
 
 - `restart_agent`: Restart the Alpacon agent process
 - `upgrade_agent`: Upgrade the agent to the latest version
+- `install_pam`: Install the `alpamon-pam` package as root through the host's package manager; a
+  host already current is a no-op. Needs the workspace's "Use sudo with MFA" setting on. Refused
+  with `error_code` `server_pam_install_requires_sudo_with_mfa` (400: that setting is off, or the
+  deployment cannot complete its step-up), `server_pam_install_unsupported` (400: the host has no
+  package path—macOS, Windows, or a package manager Alpacon does not drive) or
+  `server_pam_install_in_progress` (409: an install is already pending). Requires an
+  alpacon-server release carrying alpacax/alpacon-server#4239
 - `update_information`: Re-collect hardware, OS, network, and package data
 
 Host-level power operations (an OS package upgrade, a reboot, a shutdown) are not one-click tools.

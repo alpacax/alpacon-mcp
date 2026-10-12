@@ -382,9 +382,10 @@ Install the MCP extension and add to settings:
 - **unregister_server**: Unregister a host from the workspace
 - **star_server**: Pin or unpin a server for yourself
 - **list_server_notes** / **get_server_note** / **create_server_note** / **update_server_note** / **delete_server_note**: Server documentation notes
-- **restart_agent** / **upgrade_agent** / **update_information**: Alpacon agent lifecycle. This is the
-  complete set of actions this endpoint accepts; a host-level power operation (OS package upgrade,
-  reboot, shutdown) goes through a Work Session and `execute_command` instead
+- **restart_agent** / **upgrade_agent** / **install_pam** / **update_information**: Alpacon agent
+  lifecycle, the agent's companion `alpamon-pam` package included. This is the complete set of
+  actions this endpoint accepts; a host-level power operation (OS package upgrade, reboot,
+  shutdown) goes through a Work Session and `execute_command` instead
 - **list_registration_tokens** / **create_registration_token** / **delete_registration_token** / **get_registration_guide**: Register new hosts with Alpamon
 
 ### 📊 Monitoring & metrics
