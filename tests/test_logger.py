@@ -7,6 +7,7 @@ call shares one event loop, and a FileHandler flushes to disk on every record.
 import logging
 import logging.handlers
 import sys
+import threading
 from contextlib import contextmanager
 
 import pytest
@@ -17,6 +18,7 @@ from utils.logger import (
     LOG_MAX_BYTES,
     LOG_VALUE_MAX_CHARS,
     AlpaconLogger,
+    SharedRotatingFileHandler,
     describe_for_log,
     escape_for_log,
     redact_for_log,
@@ -32,10 +34,13 @@ def _built_manager():
     # pytest installs its own.
     root.handlers.clear()
     instance = AlpaconLogger()
+    file_sinks = instance.listener.handlers
     try:
         yield instance, root.handlers[:]
     finally:
         instance.stop_listener()
+        for sink in file_sinks:
+            sink.close()
         for handler in root.handlers[:]:
             root.removeHandler(handler)
         for handler in saved_handlers:
@@ -63,7 +68,7 @@ class TestRotatingFileSink:
 
         (sink,) = instance.listener.handlers
 
-        assert isinstance(sink, logging.handlers.RotatingFileHandler)
+        assert isinstance(sink, SharedRotatingFileHandler)
         assert sink.maxBytes == LOG_MAX_BYTES
         assert sink.backupCount == LOG_BACKUP_COUNT
 
@@ -85,9 +90,84 @@ class TestRotatingFileSink:
             'alpacon-mcp.log',
             'alpacon-mcp.log.1',
             'alpacon-mcp.log.2',
+            'alpacon-mcp.log.lock',
         ]
         assert all(p.stat().st_size <= 200 for p in log_dir.iterdir())
         assert 'rotation record 19' in (log_dir / 'alpacon-mcp.log').read_text()
+
+
+def _shared_sink(path, max_bytes, backup_count=1000):
+    handler = SharedRotatingFileHandler(
+        path, max_bytes=max_bytes, backup_count=backup_count
+    )
+    handler.setFormatter(logging.Formatter('%(message)s'))
+    return handler
+
+
+def _logged_lines(log_dir):
+    return [
+        line
+        for path in log_dir.iterdir()
+        if not path.name.endswith('.lock')
+        for line in path.read_text().splitlines()
+    ]
+
+
+class TestSharedFileSink:
+    """Each handler stands in for one stdio server: its own descriptors, and a lock
+    that conflicts the way another process's would."""
+
+    def test_a_record_after_another_writer_rolled_over_lands_in_the_live_file(
+        self, tmp_path
+    ):
+        log_file = tmp_path / 'alpacon-mcp.log'
+        first, second = _shared_sink(log_file, 200), _shared_sink(log_file, 200)
+        second.handle(_record('second writer opened the file'))
+
+        for i in range(10):
+            first.handle(_record('first writer record %s', i))
+        second.handle(_record('second writer after rollover'))
+        first.close()
+        second.close()
+
+        assert (tmp_path / 'alpacon-mcp.log.1').exists()
+        assert 'second writer after rollover' in log_file.read_text()
+
+    def test_concurrent_writers_lose_no_record_and_never_overfill_a_file(
+        self, tmp_path
+    ):
+        log_file = tmp_path / 'alpacon-mcp.log'
+        writers = [_shared_sink(log_file, 500) for _ in range(2)]
+
+        def write_all(index, handler):
+            for i in range(200):
+                handler.handle(_record('writer %s record %s', index, i))
+
+        threads = [
+            threading.Thread(target=write_all, args=(index, handler))
+            for index, handler in enumerate(writers)
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        for handler in writers:
+            handler.close()
+
+        expected = {f'writer {w} record {i}' for w in range(2) for i in range(200)}
+        lines = _logged_lines(tmp_path)
+        assert len(lines) == len(expected)
+        assert set(lines) == expected
+        assert all(p.stat().st_size <= 500 for p in tmp_path.iterdir())
+
+    def test_no_log_file_stays_open_between_records(self, tmp_path):
+        """On Windows a file another process holds open cannot be renamed."""
+        handler = _shared_sink(tmp_path / 'alpacon-mcp.log', 200)
+
+        handler.handle(_record('one record'))
+
+        assert handler.stream is None
+        handler.close()
 
 
 class TestQueuedFileSink:

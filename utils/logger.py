@@ -5,7 +5,8 @@ import logging.handlers
 import os
 import queue
 import sys
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -165,6 +166,71 @@ class AccessLogQueryFilter(logging.Filter):
         return True
 
 
+if sys.platform == 'win32':
+    import msvcrt
+
+    def _lock_file(fd: int) -> None:
+        msvcrt.locking(fd, msvcrt.LK_LOCK, 1)
+
+    def _unlock_file(fd: int) -> None:
+        msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+
+else:
+    import fcntl
+
+    def _lock_file(fd: int) -> None:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+
+    def _unlock_file(fd: int) -> None:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+
+
+@contextmanager
+def _file_locked(fd: int) -> Iterator[None]:
+    _lock_file(fd)
+    try:
+        yield
+    finally:
+        _unlock_file(fd)
+
+
+class SharedRotatingFileHandler(logging.handlers.RotatingFileHandler):
+    """Rotate a log file several processes append to: each record is written under
+    a lock on a sidecar ``.lock`` file, through a stream opened for it alone."""
+
+    def __init__(self, filename: Path, max_bytes: int, backup_count: int) -> None:
+        super().__init__(
+            filename, maxBytes=max_bytes, backupCount=backup_count, delay=True
+        )
+        self._lock_path = self.baseFilename + '.lock'
+        self._lock_fd: int | None = None
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            if self._lock_fd is None:
+                self._lock_fd = os.open(self._lock_path, os.O_RDWR | os.O_CREAT, 0o666)
+            with _file_locked(self._lock_fd):
+                try:
+                    super().emit(record)
+                finally:
+                    self._close_stream()
+        except Exception:
+            self.handleError(record)
+
+    def _close_stream(self) -> None:
+        stream = self.stream
+        if stream is not None:
+            self.stream = None
+            stream.close()
+
+    def close(self) -> None:
+        with self.lock:
+            super().close()
+            if self._lock_fd is not None:
+                os.close(self._lock_fd)
+                self._lock_fd = None
+
+
 def _add_filter_once(logger: logging.Logger, kind: type[logging.Filter]) -> None:
     if not any(isinstance(f, kind) for f in logger.filters):
         logger.addFilter(kind())
@@ -192,10 +258,10 @@ class AlpaconLogger:
         )
 
         # Plain: the queue handler below has already escaped what reaches it.
-        file_handler = logging.handlers.RotatingFileHandler(
+        file_handler = SharedRotatingFileHandler(
             log_dir / 'alpacon-mcp.log',
-            maxBytes=LOG_MAX_BYTES,
-            backupCount=LOG_BACKUP_COUNT,
+            max_bytes=LOG_MAX_BYTES,
+            backup_count=LOG_BACKUP_COUNT,
         )
         file_handler.setFormatter(
             logging.Formatter(fmt=LOG_FORMAT, datefmt=LOG_DATE_FORMAT)

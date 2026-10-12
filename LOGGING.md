@@ -103,12 +103,13 @@ WARNING - Network error: ..., retrying (1/3) in 1s
 
 ### Log file location
 - `logs/alpacon-mcp.log`: Main log file
+- `logs/alpacon-mcp.log.lock`: Empty lock file the servers sharing `logs/` take before each write
 - Log directory is automatically created
 
 ### Log rotation
 The file rolls over at 10 MiB, keeping five backups (`alpacon-mcp.log.1` through `alpacon-mcp.log.5`, oldest last), so the log stays under about 60 MiB. The limits are `LOG_MAX_BYTES` and `LOG_BACKUP_COUNT` in `utils/logger.py`.
 
-Rotation assumes one process writes the file. Stdio servers started from the same working directory share `logs/`: once one of them rolls the file over, the others keep writing to the renamed file, and on Windows the rename fails while another process holds the file open.
+Stdio servers started from the same working directory share `logs/`, so their records interleave in one file. Each record is written under a lock on `logs/alpacon-mcp.log.lock`, and the file is opened for that record and closed after it. A server that rolls the file over therefore never leaves another writing to the renamed file, and on Windows no other server holds the file open to block the rename.
 
 ## 🔒 What the entry log records
 
