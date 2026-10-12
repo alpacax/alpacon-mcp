@@ -249,6 +249,18 @@ class TestEnvironmentFallback:
 
     @pytest.mark.asyncio
     @pytest.mark.usefixtures('stdio')
+    async def test_the_version_header_keeps_the_declared_case(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv('AI_AGENT', 'My-Agent/1.0.0-Beta.1')
+
+        assert await _headers_inside(_no_client_info()) == {
+            DECLARED_AGENT_NAME_HEADER: 'my-agent',
+            DECLARED_AGENT_VERSION_HEADER: '1.0.0-Beta.1',
+        }
+
+    @pytest.mark.asyncio
+    @pytest.mark.usefixtures('stdio')
     async def test_a_marker_without_a_version_sends_no_version_header(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -391,6 +403,11 @@ class TestAgentFromEnvironment:
             ('github-copilot-cli', ('github-copilot', '')),
             ('my-agent', ('my-agent', '')),
             ('my-agent/1.0/beta', ('my-agent', '1.0/beta')),
+            ('my-agent/1.0.0-Beta.1', ('my-agent', '1.0.0-Beta.1')),
+            ('My-Agent/2.0.0-RC1', ('my-agent', '2.0.0-RC1')),
+            ('Codex-MCP-Client/0.9.0-Alpha', ('codex', '0.9.0-Alpha')),
+            ('GITHUB_COPILOT_VSCODE_AGENT', ('github-copilot', '')),
+            ('Claude-Code_2-1-120_Agent', ('claude-code', '2.1.120')),
             (' aider\n', ('aider', '')),
         ],
     )
