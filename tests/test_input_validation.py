@@ -524,6 +524,7 @@ class TestPathIdentifierValidation:
         'authority_id',
         'service_token_id',
         'target_id',
+        'websh_session_id',
     ]
 
     TRAVERSAL_ID = f'../../servers/servers/{SERVER_ID}'

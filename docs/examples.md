@@ -110,8 +110,9 @@ A sudo escalation can also come back as `status="pending_approval"` with `SUDO_A
 > *"What actually happened in that session?"*
 
 1. `work_session_timeline(session_id, workspace)`—commands, transfers, and sudo grants in execution order, oldest first. It follows the server's cursor for up to 10 requests, so read `pagination.stopped_because`: only `page_bound` means timeline records remain, and `pagination.next_cursor` reads on from there. `complete: false` alone is not that signal—a call resumed from a `cursor` reports it with nothing left to read, and a failed walk reports it with `next_cursor` as a retry point rather than a continuation
-2. `work_session_close` triggers AI security analysis; `work_session_analyze(session_id, workspace, force=True)` re-runs it
-3. `list_session_analyses(workspace)` and `get_session_analysis_detail(analysis_id, workspace)` for the findings, mapped to MITRE ATT&CK
+2. `work_session_records(session_id, websh_session_id, workspace)`—what a websh terminal in the session actually printed, one page of chunks per call. `websh_session_id` is the `id` of a `websh_session` item from step 1; follow `data.next` as `cursor` until it is null, and do not read a page shorter than `page_size` as the end, since a byte budget cuts pages too
+3. `work_session_close` triggers AI security analysis; `work_session_analyze(session_id, workspace, force=True)` re-runs it
+4. `list_session_analyses(workspace)` and `get_session_analysis_detail(analysis_id, workspace)` for the findings, mapped to MITRE ATT&CK
 
 ---
 
@@ -305,6 +306,7 @@ Token management needs JWT/OAuth, a browser session, or a login-source token. Ca
 | What did the platform observe? | `list_events`, `search_events` |
 | What did the AI analysis find? | `list_session_analyses`, `get_session_analysis_detail` |
 | What happened inside one session? | `work_session_timeline` |
+| What did a terminal in that session print? | `work_session_records`, one page per call |
 
 The `security_audit` prompt helps pick between these lenses when the question is vague.
 

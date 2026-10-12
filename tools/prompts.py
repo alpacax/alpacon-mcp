@@ -133,7 +133,10 @@ def security_audit(work_session_id: str = '', server_id: str = '') -> str:
     return f"""Audit privileged activity for {anchor}. Choose the lens that fits the question.
 
 - Lens 1—Session forensic ("what happened in this session?"):
-  `work_session_timeline` for one session's merged command/transfer/risk timeline.
+  `work_session_timeline` for one session's merged command/transfer/risk timeline, then
+  `work_session_records` for what a websh terminal in it actually printed—one page per
+  call, keyed by the `id` of a `websh_session` item on that timeline, following
+  `data.next` as `cursor` until it is null.
 - Lens 2—Event forensic, cross-session ("every sudo / every `rm -rf` / every transfer
   of /etc/*"): `list_server_logs`, `list_webftp_logs`, `search_events`.
 - Lens 3—Decision audit ("why was access granted, who approved, when revoked?"):

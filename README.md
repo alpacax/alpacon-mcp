@@ -432,6 +432,7 @@ Install the MCP extension and add to settings:
 - **work_session_get** / **work_session_list**: Inspect sessions and their status
 - **work_session_update** / **work_session_extend**: Adjust scope, servers, or expiry
 - **work_session_timeline**: Chronological record of commands, transfers, and sudo grants, read by cursor over up to 10 requests; check `pagination.complete` before treating it as the whole session
+- **work_session_records**: One page of one websh terminal recording in the session, keyed by the `id` of a `websh_session` item on the timeline; follow `data.next` as `cursor`, since a short page is not the end
 - **work_session_close** / **work_session_analyze**: Close a session and run AI security analysis
 
 OAuth/browser callers must scope command execution and file transfers under an active Work Session; static API tokens bypass the gate.

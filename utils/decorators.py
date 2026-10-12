@@ -93,6 +93,7 @@ _LOGGED_VERBATIM_KEYS = frozenset(
         'token_id',
         'user_id',
         'webhook_id',
+        'websh_session_id',
         'work_session_id',
         # names and the permission context a call ran under
         'channel',
