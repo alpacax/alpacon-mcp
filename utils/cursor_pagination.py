@@ -108,14 +108,8 @@ def _read_page(
 ) -> _Page:
     """Return a page's records, its ``count``, and its ``next`` cursor.
 
-    An object must carry ``results`` and a ``next`` that is null or a new
-    non-empty string, as alpacon-server's schema requires; anything else raises
-    UnexpectedResponseShapeError instead of being read as an empty page or the
-    end of the list. On the ``first`` response of an ``opt_in`` walk a body
-    with no ``next`` at all, a bare array or an object without the key, is the
-    whole list from a server that did not page. A bare array on a later page
-    of such a walk is a shape error, since the server was paging by then; off
-    ``opt_in`` it stays one final page.
+    Raises UnexpectedResponseShapeError for a body alpacon-server's schema does
+    not allow, rather than reading it as an empty page or the end of the list.
     """
     whole_list_ok = opt_in and first
     if isinstance(result, list):

@@ -70,31 +70,19 @@ async def test_work_session_workflow_pending_approval_names_status_and_stop_stat
 
 @pytest.mark.asyncio
 async def test_security_audit_tells_the_model_to_check_walk_completeness():
-    """Lens 1 drives the one workflow #325 is about, over a bounded walk.
-
-    Without this instruction the prompt reproduces the defect the tool was
-    fixed for: a model answering "what happened in this session" from a prefix
-    it cannot tell from the whole. The tool reports the bound, but only the
-    prompt tells the model to look.
-    """
     result = await mcp.get_prompt('security_audit', {'work_session_id': 'sess-9'})
     text = result.messages[0].content.text
 
     assert 'pagination.stopped_because' in text
     assert 'page_bound' in text
     assert 'pagination.next_cursor' in text
-    # The promise the bound can violate. The tool description dropped it; the
-    # prompt kept it for three releases after the tool stopped keeping it.
+    # "unified" promises a whole timeline, which a bounded walk cannot.
     assert 'unified' not in text
 
 
 @pytest.mark.asyncio
 async def test_security_audit_does_not_read_complete_as_more_records():
-    """`complete: false` has three causes and only one of them means "read on".
-
-    A resumed call reports it with nothing left, and a failed walk reports it
-    with `next_cursor` pointing back at where the walk started.
-    """
+    """A resumed or failed walk also reports `complete: false`."""
     result = await mcp.get_prompt('security_audit', {'work_session_id': 'sess-9'})
     text = result.messages[0].content.text
 
@@ -104,11 +92,6 @@ async def test_security_audit_does_not_read_complete_as_more_records():
 
 @pytest.mark.asyncio
 async def test_security_audit_names_every_lens_that_walks_a_cursor():
-    """Three of the five lenses are bounded, not just the timeline.
-
-    Warning about lens 1 alone would leave the cross-session and mutation
-    trails to be read as whole, which is the same error in a wider scope.
-    """
     result = await mcp.get_prompt('security_audit', {'work_session_id': 'sess-9'})
     text = result.messages[0].content.text
 
@@ -124,11 +107,6 @@ async def test_security_audit_names_every_lens_that_walks_a_cursor():
 
 @pytest.mark.asyncio
 async def test_security_audit_says_a_bounded_timeline_omits_the_sessions_end():
-    """The walk reads forward, so the prefix is the beginning, not a sample.
-
-    That asymmetry is the whole reason a bounded timeline misleads: the part
-    an audit asks about is the part a cut result drops.
-    """
     result = await mcp.get_prompt('security_audit', {'work_session_id': 'sess-9'})
     text = result.messages[0].content.text
 
