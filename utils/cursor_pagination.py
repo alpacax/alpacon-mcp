@@ -103,17 +103,28 @@ class _Page(NamedTuple):
     unpaginated: bool = False
 
 
-def _read_page(result: Any, sent_cursor: str | None, whole_list_ok: bool) -> _Page:
+def _read_page(
+    result: Any, sent_cursor: str | None, *, opt_in: bool, first: bool
+) -> _Page:
     """Return a page's records, its ``count``, and its ``next`` cursor.
 
-    A bare array is one final page. An object must carry ``results`` and a
-    ``next`` that is null or a new non-empty string, as alpacon-server's schema
-    requires; anything else raises UnexpectedResponseShapeError instead of
-    being read as an empty page or the end of the list. ``whole_list_ok``
-    relaxes the ``next`` requirement alone: a body without it is the whole list.
+    An object must carry ``results`` and a ``next`` that is null or a new
+    non-empty string, as alpacon-server's schema requires; anything else raises
+    UnexpectedResponseShapeError instead of being read as an empty page or the
+    end of the list. On the ``first`` response of an ``opt_in`` walk a body
+    with no ``next`` at all, a bare array or an object without the key, is the
+    whole list from a server that did not page. A bare array on a later page
+    of such a walk is a shape error, since the server was paging by then; off
+    ``opt_in`` it stays one final page.
     """
+    whole_list_ok = opt_in and first
     if isinstance(result, list):
-        return _Page(result, None, None)
+        if opt_in and not first:
+            raise UnexpectedResponseShapeError(
+                'Expected a cursor-paginated object after the first page, got a '
+                'bare array'
+            )
+        return _Page(result, None, None, unpaginated=whole_list_ok)
     body = expect_json_object(result)
     if 'results' not in body:
         raise UnexpectedResponseShapeError(
@@ -249,7 +260,9 @@ async def cursor_list_response(
         )
         if err is None:
             try:
-                page = _read_page(result, cursor, opt_in_pagination and pages == 0)
+                page = _read_page(
+                    result, cursor, opt_in=opt_in_pagination, first=pages == 0
+                )
             except UnexpectedResponseShapeError as e:
                 err = error_response(
                     str(e), region=region, workspace=workspace, **id_context

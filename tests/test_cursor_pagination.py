@@ -343,6 +343,35 @@ class TestUnpaginatedServer:
         assert method.await_count == 2
 
     @pytest.mark.asyncio
+    async def test_a_bare_array_first_answer_is_the_whole_list_when_opted_in(self):
+        """No release answers this way; the rule keeps the two next-less shapes alike."""
+        result, _ = await _walk(
+            [[{'id': 'a'}, {'id': 'b'}]],
+            params={'cursor': 'resume-me'},
+            opt_in_pagination=True,
+        )
+
+        report = result['pagination']
+        assert result['status'] == 'success'
+        assert result['data']['results'] == [{'id': 'a'}, {'id': 'b'}]
+        assert report['complete'] is True
+        assert report['stopped_because'] == 'unpaginated_server'
+        assert 'ignored the `cursor`' in report['note']
+
+    @pytest.mark.asyncio
+    async def test_a_bare_array_later_page_is_a_shape_error_when_opted_in(self):
+        result, method = await _walk(
+            [_page([{'id': 'a'}], next_cursor='c1'), [{'id': 'b'}]],
+            opt_in_pagination=True,
+        )
+
+        assert result['status'] == 'error'
+        assert 'bare array' in result['message']
+        assert 'data' not in result
+        assert result['pagination']['records_discarded'] == 1
+        assert method.await_count == 2
+
+    @pytest.mark.asyncio
     async def test_a_cursor_the_server_ignored_is_said_to_have_been_ignored(self):
         result, _ = await _walk(
             [{'results': [{'id': 'a'}]}],

@@ -854,7 +854,7 @@ class TestWorkSessionTimeline:
         assert result['status'] == 'error'
         assert result['error_code'] == 'validation'
         assert result['field'] == 'include_records'
-        assert 'record route' in result['suggestion']
+        assert '#347' in result['suggestion']
         mock_http_client.get.assert_not_awaited()
 
     @pytest.mark.asyncio

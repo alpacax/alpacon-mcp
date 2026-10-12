@@ -24,10 +24,11 @@ _TIMELINE_MAX_PAGE_SIZE = 500
 # `include_records` stays declared because the SDK drops an argument the
 # published schema does not name before the call, where it could not be refused.
 _INCLUDE_RECORDS_REFUSED = (
-    'omit it. The paged timeline never carries websh recording bytes, so '
-    'include_records cannot be honoured, and it is refused rather than dropped '
-    "so that a caller asking for recordings is told. Read a session's "
-    'recording through its own record route instead.'
+    'omit it. Websh recordings are not readable through this MCP server yet: '
+    'the paged timeline carries none, so include_records cannot be honoured '
+    "and is refused rather than dropped. A work session's recording is read "
+    "through alpacon-server's per-session record route, which this server "
+    'will expose as a tool of its own (alpacax/alpacon-mcp#347).'
 )
 
 
@@ -396,10 +397,10 @@ async def work_session_extend(
         'when a cursor was passed. The walk only reads forward, so a '
         'result stopped at the bound covers the start of the session and omits '
         'its most recent activity—do not read it as what the session ended up '
-        'doing. The timeline carries no websh terminal recordings: a '
-        'websh_session item names a session whose recording is read on its own, '
-        'and include_records is refused rather than quietly ignored—do not pass '
-        'it. '
+        'doing. The timeline carries no websh terminal recordings, and none are '
+        'readable through this MCP server yet (the per-session record route is '
+        'tracked in issue #347); include_records is refused rather than quietly '
+        'ignored—do not pass it. '
         'Related: work_session_get (session detail), list_session_analyses / '
         'get_session_analysis_detail (AI security analysis results).'
     ),
