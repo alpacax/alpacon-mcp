@@ -1,7 +1,4 @@
-"""The pooled client path of AlpaconHTTPClient, driven through httpx.MockTransport.
-
-A real httpx.AsyncClient runs here; only the network is replaced.
-"""
+"""The pooled client path of AlpaconHTTPClient, driven through httpx.MockTransport."""
 
 import asyncio
 from http import HTTPStatus

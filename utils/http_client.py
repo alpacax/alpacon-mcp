@@ -55,10 +55,7 @@ class AlpaconHTTPClient:
     """
 
     def __init__(self, transport: httpx.AsyncBaseTransport | None = None):
-        """Initialize HTTP client.
-
-        ``transport`` replaces the network for the pooled client, as in tests.
-        """
+        """``transport`` replaces the network under the pooled client."""
         self._transport = transport
         self.base_timeout = httpx.Timeout(10.0, connect=5.0)
         self.max_retries = 3
