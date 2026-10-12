@@ -21,12 +21,22 @@ A stateless streamable-http server builds a fresh connection for each request,
 so a pre-2026 client's handshake does not reach the tool call there, and
 nothing is sent. Once that client speaks 2026-07-28, the value arrives on every
 request.
+
+Over stdio the server is a child of the agent and inherits its environment, so
+when a client sends no ``clientInfo`` name, the agent is declared from the same
+environment markers the Alpacon CLI reads (``utils.agent_environment``). Only
+the stdio transport turns this on: an HTTP server is not the agent's child, and
+its environment says nothing about who is calling. ``clientInfo`` always wins
+when it names the agent.
 """
 
+import os
 from contextvars import ContextVar
 from typing import Any
 
 from mcp.server.context import CallNext, HandlerResult, ServerRequestContext
+
+from utils.agent_environment import agent_from_environment
 
 DECLARED_AGENT_NAME_HEADER = 'X-Alpacon-Declared-Agent-Name'
 DECLARED_AGENT_VERSION_HEADER = 'X-Alpacon-Declared-Agent-Version'
@@ -40,6 +50,15 @@ _declared_agent: ContextVar[tuple[str, str] | None] = ContextVar(
     'declared_agent', default=None
 )
 
+# Set at startup from the transport; only stdio reads the environment.
+_environment_fallback = False
+
+
+def use_environment_fallback(enabled: bool) -> None:
+    """Declare the agent from the environment when clientInfo names none."""
+    global _environment_fallback
+    _environment_fallback = enabled
+
 
 async def capture_declared_agent(
     ctx: ServerRequestContext[Any, Any], call_next: CallNext
@@ -47,7 +66,10 @@ async def capture_declared_agent(
     """Bind the client's ``clientInfo`` for the rest of this request."""
     params = ctx.session.client_params
     info = params.client_info if params is not None else None
-    token = _declared_agent.set((info.name, info.version) if info else None)
+    declared = (info.name, info.version) if info else None
+    if _environment_fallback and (declared is None or not declared[0].strip()):
+        declared = agent_from_environment(os.environ) or declared
+    token = _declared_agent.set(declared)
     try:
         return await call_next(ctx)
     finally:
