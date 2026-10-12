@@ -4,10 +4,15 @@ alpacon-server's Elasticsearch-backed lists use ``ESCursorPagination``, which
 ignores ``page``: a caller stepping ``page=1,2,3`` gets the first page three
 times. Those endpoints are walked by cursor here instead (#325), with the walk
 bounded and its outcome reported under ``pagination``.
+
+The work-session timeline pages only when a request names ``cursor``; unasked,
+alpacon-server serves the whole session in one body, and a release that predates
+the paginator does so whatever the request names. ``opt_in_pagination`` is how a
+walk asks, and how it reads the answer of a server that cannot.
 """
 
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import Any, NamedTuple
 
 from utils.common import (
     UnexpectedResponseShapeError,
@@ -18,14 +23,16 @@ from utils.common import (
     unwrap_http_result,
 )
 
-# Requests one walk may issue: 150 records at the server's default page size of
-# 15, 1000 at its cap of 100. A walk cut short hands back a cursor to resume.
+# Requests one walk may issue. A walk cut short hands back a cursor to resume.
 MAX_CURSOR_PAGES = 10
 
 # Why the walk stopped, reported as ``pagination.stopped_because``.
 END_OF_LIST = 'end_of_list'
 PAGE_BOUND = 'page_bound'
 UPSTREAM_ERROR = 'upstream_error'
+# The first answer was the whole list, not a page: reachable only under
+# ``opt_in_pagination``, and only on the first request.
+UNPAGINATED_SERVER = 'unpaginated_server'
 
 # Shared by the three tool descriptions so they cannot drift apart.
 CURSOR_WALK_DESCRIPTION = (
@@ -46,8 +53,18 @@ _REFUSED_CURSOR_CODES = frozenset({'api_cursor_expired', 'api_invalid_cursor'})
 _PAGE_BOUND_NOTE = (
     'Stopped at the {max_pages}-request bound with more records still '
     'available, so this list is incomplete. Pass `pagination.next_cursor` back '
-    'as `cursor` to continue, or raise `page_size` (max 100) to cover more '
-    'ground per request.'
+    'as `cursor` to continue.'
+)
+
+_UNPAGINATED_NOTE = (
+    'The server answered with the whole list in one response carrying no '
+    '`next`, which is the shape it serves a client that did not ask for a '
+    'page. Nothing was cut: these are all the records there are.'
+)
+
+_UNPAGINATED_IGNORED_CURSOR_NOTE = (
+    ' It ignored the `cursor` sent with the request too, so these records '
+    'start at the beginning of the list rather than after that cursor.'
 )
 
 _RESUMED_END_NOTE = (
@@ -74,24 +91,45 @@ _RETRY_FROM_THE_START = (
 )
 
 
+class _Page(NamedTuple):
+    """One upstream page: its records, the server's total, and where to resume.
+
+    ``unpaginated`` marks a body with no ``next`` at all, read as the whole list.
+    """
+
+    records: list[Any]
+    count: Any
+    next_cursor: str | None
+    unpaginated: bool = False
+
+
 def _read_page(
-    result: Any, sent_cursor: str | None
-) -> tuple[list[Any], Any, str | None]:
+    result: Any, sent_cursor: str | None, *, opt_in: bool, first: bool
+) -> _Page:
     """Return a page's records, its ``count``, and its ``next`` cursor.
 
-    A bare array is one final page. An object must carry ``results`` and a
-    ``next`` that is null or a new non-empty string, as alpacon-server's schema
-    requires; anything else raises UnexpectedResponseShapeError instead of
-    being read as an empty page or the end of the list.
+    Raises UnexpectedResponseShapeError for a body alpacon-server's schema does
+    not allow, rather than reading it as an empty page or the end of the list.
     """
+    whole_list_ok = opt_in and first
     if isinstance(result, list):
-        return result, None, None
-    body = expect_json_object(result)
-    for key in ('results', 'next'):
-        if key not in body:
+        if opt_in and not first:
             raise UnexpectedResponseShapeError(
-                f'Expected `{key}` in a cursor-paginated upstream page'
+                'Expected a cursor-paginated object after the first page, got a '
+                'bare array'
             )
+        return _Page(result, None, None, unpaginated=whole_list_ok)
+    body = expect_json_object(result)
+    if 'results' not in body:
+        raise UnexpectedResponseShapeError(
+            'Expected `results` in a cursor-paginated upstream page'
+        )
+    if 'next' not in body:
+        if not whole_list_ok:
+            raise UnexpectedResponseShapeError(
+                'Expected `next` in a cursor-paginated upstream page'
+            )
+        return _Page(json_records(body), body.get('count'), None, unpaginated=True)
     records = json_records(body)
     token = body['next']
     if token is not None and not (isinstance(token, str) and token):
@@ -102,7 +140,7 @@ def _read_page(
         raise UnexpectedResponseShapeError(
             'Upstream `next` repeats the cursor this page was requested with'
         )
-    return records, body.get('count'), token
+    return _Page(records, body.get('count'), token)
 
 
 def _report(
@@ -115,12 +153,15 @@ def _report(
     """Build the walk's own account of itself, minus the per-outcome fields.
 
     ``complete`` means this response holds the whole list, so a walk resumed
-    from a cursor is never complete, even when it reaches the end.
+    from a cursor is never complete, even when it reaches the end. An
+    unpaginated answer is the exception: it carries the list entire whatever
+    cursor the request named, because the server ignored that too.
     """
     return {
         'pages_read': pages,
         'max_pages': MAX_CURSOR_PAGES,
-        'complete': stopped_because == END_OF_LIST and not started_from_cursor,
+        'complete': stopped_because == UNPAGINATED_SERVER
+        or (stopped_because == END_OF_LIST and not started_from_cursor),
         'stopped_because': stopped_because,
         'started_from_cursor': started_from_cursor,
         'next_cursor': next_cursor,
@@ -136,6 +177,7 @@ async def cursor_list_response(
     token: str | None,
     default_message: str,
     params: dict[str, Any],
+    opt_in_pagination: bool = False,
     **id_context: Any,
 ) -> dict[str, Any]:
     """Walk a cursor-paginated list, bounded by ``MAX_CURSOR_PAGES``, as one response.
@@ -143,6 +185,13 @@ async def cursor_list_response(
     ``params`` is re-sent on every request with only ``cursor`` rewritten,
     since the server re-reads the filters and ``page_size`` each time. A
     ``cursor`` in ``params`` is where the walk starts.
+
+    Under ``opt_in_pagination`` the first request names ``cursor``, empty when
+    there is nothing to resume from, which is what makes an opt-in endpoint
+    page. A first answer that still carries no ``next`` came from a server
+    that does not page and is the whole list, reported ``stopped_because:
+    unpaginated_server`` and ``complete: true``; a later answer without
+    ``next`` is a shape error, since by then the server was paging.
 
     On success ``data`` carries the server's ``count`` and the merged
     ``results``; the envelope's ``next`` and ``previous`` are dropped, leaving
@@ -159,6 +208,10 @@ async def cursor_list_response(
         token: API token (injected by @mcp_tool_handler)
         default_message: Fallback message when the upstream response has none.
         params: Query parameters, including an optional starting ``cursor``.
+        opt_in_pagination: The endpoint pages only when a request names
+            ``cursor`` and serves the whole list otherwise. Off by default: for
+            a list that always pages, a body with no ``next`` is a page of
+            unknown extent and stays a shape error.
         **id_context: Extra identifiers merged into the response.
 
     Returns:
@@ -174,11 +227,15 @@ async def cursor_list_response(
     records: list[Any] = []
     count: Any = None
     pages = 0
+    unpaginated = False
 
     while pages < MAX_CURSOR_PAGES:
         page_params = dict(base_params)
         if cursor is not None:
             page_params[_CURSOR_PARAM] = cursor
+        elif opt_in_pagination:
+            # Naming the key, even empty, is the request to page.
+            page_params[_CURSOR_PARAM] = ''
 
         result = await method(
             region=region,
@@ -197,7 +254,9 @@ async def cursor_list_response(
         )
         if err is None:
             try:
-                page_records, page_count, cursor_after = _read_page(result, cursor)
+                page = _read_page(
+                    result, cursor, opt_in=opt_in_pagination, first=pages == 0
+                )
             except UnexpectedResponseShapeError as e:
                 err = error_response(
                     str(e), region=region, workspace=workspace, **id_context
@@ -220,14 +279,20 @@ async def cursor_list_response(
             return err
 
         pages += 1
-        records.extend(page_records)
-        if page_count is not None:
-            count = page_count
-        cursor = cursor_after
+        records.extend(page.records)
+        if page.count is not None:
+            count = page.count
+        cursor = page.next_cursor
+        unpaginated = page.unpaginated
         if cursor is None:
             break
 
-    stopped_because = PAGE_BOUND if cursor is not None else END_OF_LIST
+    if unpaginated:
+        stopped_because = UNPAGINATED_SERVER
+    elif cursor is not None:
+        stopped_because = PAGE_BOUND
+    else:
+        stopped_because = END_OF_LIST
     report = _report(
         pages=pages,
         stopped_because=stopped_because,
@@ -237,6 +302,10 @@ async def cursor_list_response(
     report['records_returned'] = len(records)
     if stopped_because == PAGE_BOUND:
         report['note'] = _PAGE_BOUND_NOTE.format(max_pages=MAX_CURSOR_PAGES)
+    elif stopped_because == UNPAGINATED_SERVER:
+        report['note'] = _UNPAGINATED_NOTE + (
+            _UNPAGINATED_IGNORED_CURSOR_NOTE if started_from_cursor else ''
+        )
     elif started_from_cursor:
         report['note'] = _RESUMED_END_NOTE
 

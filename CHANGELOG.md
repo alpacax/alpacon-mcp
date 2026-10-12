@@ -27,6 +27,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   to do next, for `file_hash_mismatch`, `file_payload_invalid`, `file_open_failed`,
   `file_exec_unsupported` and `file_too_large`. An unrecognized `file_*` phase gets a generic
   file-lane hint; every other phase is unchanged.
+- `work_session_records` (`session_id`, `websh_session_id`, `workspace`, `cursor`, `page_size`,
+  `region`): read one page of a websh terminal recording captured inside a Work Session, as
+  `{added_at, record}` chunks oldest first (#347). Wraps
+  `GET /api/work-sessions/sessions/{id}/records/?session=<websh session id>`
+  (alpacax/alpacon-server#4142) and **requires alpacon-server 2.42.0 or later**. It closes the gap
+  `work_session_timeline` left when it stopped carrying recordings: the timeline names the sessions
+  that have one, as `websh_session` items whose `id` this tool reads. Unlike the timeline and the
+  audit lists it does not walk the cursor—one call is one request, and `data` is the server's page
+  as it stands (`count`, `next`, `previous`, `results`) with no `pagination` object, because one
+  page is already bounded at roughly 2 MiB of rendered chunks and merging ten would put tens of
+  MiB in one response. Pass `data.next` back as `cursor` and stop when it is null; a page holding
+  fewer items than `page_size` is not the end, since a byte budget cuts pages too. `page_size` is
+  1 to 16 (default 8), and a value outside that range is refused locally with
+  `error_code: "validation"` before any request. A 400 carries `error_code: invalid_input` for a
+  missing or malformed `session`, a 404 means the websh session is not in this Work Session, is a
+  tunnel, or is outside what the caller may see, and a 402 (`workspace_plan_update_required`)
+  means the workspace is on the Free plan, which cannot read a recording whole, or that the
+  session is older than the plan's audit window.
 - `execute_file` gained an optional `reuse_days` (integer, 1 to 366): a proposed number of days
   for which the approver should let the same unchanged file be rerun without a new review
   (#323). It is sent as `file.reuse_days` only when given, so an existing caller's request is
@@ -186,11 +204,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   drops `next` and `previous`, and a new top-level `pagination` object reports the walk, so check
   `pagination.complete` before treating a result as the whole list. A `page` argument is now
   dropped without an error; see `docs/api-reference.md` for the `pagination` fields and resume.
+- `work_session_timeline` now asks the server for a paged timeline, follows the cursor for up
+  to 10 requests, and reports the walk under a top-level `pagination` object as the audit tools
+  do (#325): check `pagination.complete` before treating a result as the whole session, since a
+  result stopped at the bound holds the start of the session and not its end. `data` is now the
+  walk's `{count, results}` envelope with `count` null, and a server that predates the paged
+  timeline is reported `stopped_because: unpaginated_server` with `complete: true`.
+  `include_records` is retired and any value is refused with `error_code: "validation"` rather
+  than dropped; the refusal and the tool description now point at `work_session_records`, which
+  reads a recording one page at a time (#347).
 - `delete_certificate_authority`'s description now matches alpacon-server after alpacax/alpacon-server#4057 (#333): a CA that has received a certificate sign request can no longer be deleted, and the call surfaces `error_code` `cert_authority_cannot_be_deleted` with the CA and its records kept. The description points to `unregister_server` on the CA's server for retiring such a CA. A client that treated the delete as always succeeding must handle the new 400.
 - The CPU, memory, disk, and network usage tools, the interface lookup behind `get_server_metrics_summary`, and `webftp_check_status` now return an error when upstream answers with a bare JSON scalar (#236), and all but `webftp_check_status` also when a paginated body's `results` is not a list; they used to report "no data", or a transfer still in progress. The WebFTP upload, download, and bulk tools already failed on such a body with a generic error and now name the unexpected body type instead. Object and list bodies behave as before; a client parsing these responses may now see an `error` status where it used to see an empty result.
 - `list_servers` error responses now carry the upstream `code` the way every other server tool does (#237): an ordinary coded 4xx adds `error_code`, a WorkSession gate code adds `code` and `next_action`, a code with a known hint appends that hint to `message`, and a 402 plan-limit response returns the plan-limit shape (`error_code`, `gate`, `axis`, `next`, `requires_human_approval`, `next_action`). The success response is unchanged; a client parsing `list_servers` errors may now see those fields.
 - Tool descriptions now match what the tools do. `work_session_create` names `work_session_id`, the parameter `execute_command` takes, and says a session that needs approval returns `pending_approval` until a human approves it; `webftp_upload_file`, `webftp_bulk_upload`, and `webftp_bulk_download` say they return `remote_mode_unsupported` in remote mode, where the MCP server cannot reach your local filesystem; `duplicate_api_token` says the copy drops scopes that can no longer be granted and caps expiry at the workspace maximum; and the pending-approval guidance lists `completed` among the states that mean stop polling. The `remote_mode_unsupported` error message now names the tools that work in remote mode; the codes are unchanged, so a client parsing responses needs no change.
-- `work_session_timeline` now defaults `include_records` to false, so websh terminal records are omitted unless requested (#286). A client that relied on the previous default must now pass `include_records=True` to keep seeing those records.
+- `work_session_timeline` now defaults `include_records` to false, so websh terminal records are omitted unless requested (#286). A client that relied on the previous default must now pass `include_records=True` to keep seeing those records. Superseded by #325: `include_records` is now refused, and a recording is read with `work_session_records`.
 - `webftp_upload_content` now rejects file content over 3 MiB decoded with a tool
   error naming the limit and the size sent, instead of relying on the transport
   to reject it (#144). The check only applies on streamable-http and SSE, the

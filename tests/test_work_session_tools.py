@@ -13,14 +13,17 @@ from tools.work_session_tools import (
     work_session_extend,
     work_session_get,
     work_session_list,
+    work_session_records,
     work_session_timeline,
     work_session_update,
 )
+from utils import cursor_pagination
 
 mock_http_client = http_client_fixture('tools.work_session_tools')
 
 SERVER_ID = '550e8400-e29b-41d4-a716-446655440001'
 SESSION_ID = '550e8400-e29b-41d4-a716-446655440020'
+WEBSH_SESSION_ID = '550e8400-e29b-41d4-a716-446655440030'
 UNKNOWN_SESSION_ID = '550e8400-e29b-41d4-a716-446655440099'
 
 
@@ -699,60 +702,265 @@ class TestWorkSessionExtend:
         assert 'reason must not be blank' in result['message']
 
 
+TIMELINE_ENDPOINT = f'/api/work-sessions/sessions/{SESSION_ID}/timeline/'
+
+# Every request the tool sends carries this, whatever else it carries.
+_ALWAYS = {'include_records': 'false'}
+
+
+def _timeline_server(pages):
+    """A fake alpacon-server 2.42+: the whole list without `cursor`, a page with it.
+
+    `pages` maps each cursor ('' is the first page) to `(items, next_cursor)`.
+    """
+    whole = [item for items, _ in pages.values() for item in items]
+
+    async def serve(**kwargs):
+        params = kwargs['params']
+        if 'cursor' not in params:
+            return {'results': whole}
+        items, next_cursor = pages[params['cursor']]
+        return {'next': next_cursor, 'results': items}
+
+    return serve
+
+
+def _sent(mock_http_client):
+    return [call.kwargs['params'] for call in mock_http_client.get.await_args_list]
+
+
 class TestWorkSessionTimeline:
+    """The timeline pages only when a request names `cursor` (#325)."""
+
+    @pytest.fixture
+    def max_pages(self, monkeypatch):
+        return lambda n: monkeypatch.setattr(cursor_pagination, 'MAX_CURSOR_PAGES', n)
+
     @pytest.mark.asyncio
-    async def test_timeline_excludes_records_by_default(
+    async def test_the_first_request_names_cursor_so_the_server_pages(
         self, mock_http_client, mock_token_manager
     ):
+        mock_http_client.get.side_effect = _timeline_server(
+            {'': ([{'type': 'command'}], 'c1'), 'c1': ([{'type': 'sudo_grant'}], None)}
+        )
 
-        mock_http_client.get.return_value = {
-            'results': [
-                {'type': 'command', 'added_at': '2026-06-05T10:00:00+00:00'},
-            ],
-        }
+        result = await work_session_timeline(
+            session_id=SESSION_ID, workspace='testworkspace', region='ap1'
+        )
+
+        assert result['status'] == 'success'
+        assert result['data']['results'] == [
+            {'type': 'command'},
+            {'type': 'sudo_grant'},
+        ]
+        assert result['pagination']['stopped_because'] == 'end_of_list'
+        assert result['pagination']['complete'] is True
+        assert _sent(mock_http_client) == [
+            {'cursor': '', **_ALWAYS},
+            {'cursor': 'c1', **_ALWAYS},
+        ]
+        mock_http_client.get.assert_any_call(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint=TIMELINE_ENDPOINT,
+            token='test-token',
+            params={'cursor': '', **_ALWAYS},
+        )
+
+    @pytest.mark.asyncio
+    async def test_a_truncated_timeline_says_so_in_the_result(
+        self, mock_http_client, mock_token_manager, max_pages
+    ):
+        max_pages(2)
+        mock_http_client.get.side_effect = _timeline_server(
+            {
+                '': ([{'type': 'command'}], 'c1'),
+                'c1': ([{'type': 'command'}], 'c2'),
+                'c2': ([{'type': 'command'}], None),
+            }
+        )
+
+        result = await work_session_timeline(
+            session_id=SESSION_ID, workspace='testworkspace', region='ap1'
+        )
+
+        report = result['pagination']
+        assert report['complete'] is False
+        assert report['stopped_because'] == 'page_bound'
+        assert report['next_cursor'] == 'c2'
+        assert report['pages_read'] == 2
+        assert 'incomplete' in report['note']
+
+    @pytest.mark.asyncio
+    async def test_a_supplied_cursor_and_page_size_are_forwarded(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.get.side_effect = _timeline_server({'resume-me': ([], None)})
 
         result = await work_session_timeline(
             session_id=SESSION_ID,
             workspace='testworkspace',
             region='ap1',
+            cursor='resume-me',
+            page_size=500,
         )
 
-        assert result['status'] == 'success'
-        mock_http_client.get.assert_called_once_with(
-            region='ap1',
-            workspace='testworkspace',
-            endpoint=f'/api/work-sessions/sessions/{SESSION_ID}/timeline/',
-            token='test-token',
-            params={'include_records': 'false'},
-        )
+        assert result['pagination']['started_from_cursor'] is True
+        assert _sent(mock_http_client) == [
+            {'page_size': 500, 'cursor': 'resume-me', **_ALWAYS}
+        ]
 
     @pytest.mark.asyncio
-    async def test_timeline_with_records_when_opted_in(
+    async def test_page_size_above_the_servers_ceiling_is_refused_locally(
         self, mock_http_client, mock_token_manager
     ):
+        """The server answers 501 with a 400, which would surface as upstream_error."""
+        result = await work_session_timeline(
+            session_id=SESSION_ID,
+            workspace='testworkspace',
+            region='ap1',
+            page_size=501,
+        )
 
+        assert result['status'] == 'error'
+        assert result['error_code'] == 'validation'
+        assert result['field'] == 'page_size'
+        mock_http_client.get.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_include_records_false_is_sent_for_the_whole_list_shape(
+        self, mock_http_client, mock_token_manager
+    ):
+        """A pre-paging server defaults it to true and embeds up to 2 MiB."""
         mock_http_client.get.return_value = {'results': []}
 
         await work_session_timeline(
-            session_id=SESSION_ID,
-            workspace='testworkspace',
-            include_records=True,
-            region='ap1',
+            session_id=SESSION_ID, workspace='testworkspace', region='ap1'
         )
 
-        mock_http_client.get.assert_called_once_with(
-            region='ap1',
+        assert all(p['include_records'] == 'false' for p in _sent(mock_http_client))
+
+    @pytest.mark.parametrize('value', [True, False])
+    @pytest.mark.asyncio
+    async def test_include_records_is_refused_not_dropped(
+        self, value, mock_http_client, mock_token_manager
+    ):
+        """`False` too: one rule beats an argument that behaves two ways."""
+        result = await work_session_timeline(
+            session_id=SESSION_ID,
             workspace='testworkspace',
-            endpoint=f'/api/work-sessions/sessions/{SESSION_ID}/timeline/',
-            token='test-token',
-            params={'include_records': 'true'},
+            region='ap1',
+            include_records=value,
         )
+
+        assert result['status'] == 'error'
+        assert result['error_code'] == 'validation'
+        assert result['field'] == 'include_records'
+        assert 'work_session_records' in result['suggestion']
+        mock_http_client.get.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_include_records_is_refused_through_the_sdk_too(
+        self, mock_http_client, mock_token_manager
+    ):
+        """The SDK drops an undeclared argument before the call; the schema
+        has to name it for the refusal to be reachable at all."""
+        result = await mcp.call_tool(
+            'work_session_timeline',
+            {
+                'session_id': SESSION_ID,
+                'workspace': 'testworkspace',
+                'region': 'ap1',
+                'include_records': True,
+            },
+        )
+
+        payload = result.structured_content
+        assert payload['status'] == 'error'
+        assert payload['field'] == 'include_records'
+        mock_http_client.get.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_the_description_tells_the_model_to_check_completeness(self):
+        descriptions = {t.name: t.description for t in await mcp.list_tools()}
+
+        text = descriptions['work_session_timeline']
+
+        assert 'pagination.complete' in text
+        assert 'work_session_records' in text
+        assert 'unified chronological' not in text
+
+    @pytest.mark.asyncio
+    async def test_a_server_that_does_not_paginate_answers_the_whole_session(
+        self, mock_http_client, mock_token_manager
+    ):
+        """alpacon-server 2.41.1 ignores `cursor` and serves the session whole."""
+        mock_http_client.get.return_value = {'results': [{'type': 'command'}]}
+
+        result = await work_session_timeline(
+            session_id=SESSION_ID, workspace='testworkspace', region='ap1'
+        )
+
+        report = result['pagination']
+        assert result['status'] == 'success'
+        assert result['data']['results'] == [{'type': 'command'}]
+        assert report['complete'] is True
+        assert report['stopped_because'] == 'unpaginated_server'
+        assert report['next_cursor'] is None
+        assert 'incomplete' not in report['note']
+        assert _sent(mock_http_client) == [{'cursor': '', **_ALWAYS}]
+
+    @pytest.mark.asyncio
+    async def test_an_unpaginated_answer_is_told_apart_from_an_exhausted_walk(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.get.return_value = {'next': None, 'results': []}
+
+        paginated = await work_session_timeline(
+            session_id=SESSION_ID, workspace='testworkspace', region='ap1'
+        )
+
+        assert paginated['pagination']['complete'] is True
+        assert paginated['pagination']['stopped_because'] == 'end_of_list'
+        assert 'note' not in paginated['pagination']
+
+    @pytest.mark.asyncio
+    async def test_a_later_page_without_next_is_an_error_not_a_whole_list(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Once the server has paged, a body with no `next` is a server defect."""
+        mock_http_client.get.side_effect = [
+            {'next': 'c1', 'results': [{'type': 'command'}]},
+            {'results': [{'type': 'command'}]},
+        ]
+
+        result = await work_session_timeline(
+            session_id=SESSION_ID, workspace='testworkspace', region='ap1'
+        )
+
+        assert result['status'] == 'error'
+        assert 'next' in result['message']
+        assert 'data' not in result
+        assert result['pagination']['records_discarded'] == 1
+
+    @pytest.mark.asyncio
+    async def test_a_body_with_no_results_is_still_an_error(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.get.return_value = {'next': None}
+
+        result = await work_session_timeline(
+            session_id=SESSION_ID, workspace='testworkspace', region='ap1'
+        )
+
+        assert result['status'] == 'error'
+        assert 'results' in result['message']
+        assert 'data' not in result
 
     @pytest.mark.asyncio
     async def test_timeline_propagates_api_error(
         self, mock_http_client, mock_token_manager
     ):
-
         mock_http_client.get.return_value = {
             'error': 'Not found',
             'message': 'Work Session not found',
@@ -767,6 +975,216 @@ class TestWorkSessionTimeline:
 
         assert result['status'] == 'error'
         assert 'not found' in result['message'].lower()
+        assert result['pagination']['pages_read'] == 0
+
+
+RECORDS_ENDPOINT = f'/api/work-sessions/sessions/{SESSION_ID}/records/'
+
+# One chunk of a recording, as the server serializes it.
+_CHUNK = {'added_at': '2026-10-01T09:00:00+00:00', 'record': 'ls -al\r\n'}
+
+
+def _record_page(items, next_cursor):
+    """The ES cursor envelope the record route answers with."""
+    return {'count': 42, 'next': next_cursor, 'previous': None, 'results': items}
+
+
+class TestWorkSessionRecords:
+    """One page per call over one websh session's recording (#347)."""
+
+    @pytest.mark.asyncio
+    async def test_one_call_is_one_request_carrying_what_it_was_given(
+        self, mock_http_client, mock_token_manager
+    ):
+        """No walk: the cursor is handed back to the caller, not followed."""
+        mock_http_client.get.return_value = _record_page([_CHUNK], 'page-3')
+
+        result = await work_session_records(
+            session_id=SESSION_ID,
+            websh_session_id=WEBSH_SESSION_ID,
+            workspace='testworkspace',
+            region='ap1',
+            cursor='page-2',
+            page_size=4,
+        )
+
+        assert result['status'] == 'success'
+        mock_http_client.get.assert_awaited_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint=RECORDS_ENDPOINT,
+            token='test-token',
+            params={
+                'page_size': 4,
+                'session': WEBSH_SESSION_ID,
+                'cursor': 'page-2',
+            },
+        )
+        assert result['data'] == _record_page([_CHUNK], 'page-3')
+        assert 'pagination' not in result
+        assert result['session_id'] == SESSION_ID
+        assert result['websh_session_id'] == WEBSH_SESSION_ID
+
+    @pytest.mark.asyncio
+    async def test_the_first_page_names_the_default_size_and_no_cursor(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Unlike the timeline, this route pages whether or not `cursor` is named."""
+        mock_http_client.get.return_value = _record_page([_CHUNK], None)
+
+        await work_session_records(
+            session_id=SESSION_ID,
+            websh_session_id=WEBSH_SESSION_ID,
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert _sent(mock_http_client) == [
+            {'page_size': 8, 'session': WEBSH_SESSION_ID}
+        ]
+
+    @pytest.mark.asyncio
+    async def test_a_short_page_is_not_read_as_the_end_of_the_recording(
+        self, mock_http_client, mock_token_manager
+    ):
+        """A byte budget cuts a page too, so only `next: null` is the end."""
+        mock_http_client.get.return_value = _record_page([_CHUNK, _CHUNK], 'page-2')
+
+        result = await work_session_records(
+            session_id=SESSION_ID,
+            websh_session_id=WEBSH_SESSION_ID,
+            workspace='testworkspace',
+            region='ap1',
+            page_size=16,
+        )
+
+        assert result['status'] == 'success'
+        assert len(result['data']['results']) == 2
+        assert result['data']['next'] == 'page-2'
+        mock_http_client.get.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_a_free_plan_402_surfaces_the_plan_gate_code(
+        self, mock_http_client, mock_token_manager
+    ):
+        """Reading a recording whole is paid-only, and a paywall is not a 403.
+
+        The server's own refusal is a feature lock—`gate: "plan"` with no
+        `axis`—so it keeps the generic coded-error shape rather than the
+        plan-limit one below.
+        """
+        mock_http_client.get.return_value = {
+            'error': 'HTTP Error',
+            'status_code': HTTPStatus.PAYMENT_REQUIRED,
+            'message': "Client error '402 Payment Required'",
+            'response': '{"code":"workspace_plan_update_required","gate":"plan"}',
+        }
+
+        result = await work_session_records(
+            session_id=SESSION_ID,
+            websh_session_id=WEBSH_SESSION_ID,
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert result['status'] == 'error'
+        assert result['status_code'] == HTTPStatus.PAYMENT_REQUIRED
+        assert result['error_code'] == 'workspace_plan_update_required'
+        assert 'axis' not in result
+
+    @pytest.mark.asyncio
+    async def test_a_402_carrying_an_axis_returns_the_plan_limit_shape(
+        self, mock_http_client, mock_token_manager
+    ):
+        """The 402 goes through the shared unwrap, not a mapping of its own."""
+        next_path = '/api/workspaces/workspaces/ws-1/entitlements/'
+        mock_http_client.get.return_value = {
+            'error': 'HTTP Error',
+            'status_code': HTTPStatus.PAYMENT_REQUIRED,
+            'message': "Client error '402 Payment Required'",
+            'response': (
+                '{"code":"workspace_plan_update_required","gate":"plan",'
+                f'"axis":"workspace","next":"{next_path}"}}'
+            ),
+        }
+
+        result = await work_session_records(
+            session_id=SESSION_ID,
+            websh_session_id=WEBSH_SESSION_ID,
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert result['status'] == 'error'
+        assert result['status_code'] == HTTPStatus.PAYMENT_REQUIRED
+        assert result['error_code'] == 'workspace_plan_update_required'
+        assert result['gate'] == 'plan'
+        assert result['axis'] == 'workspace'
+        assert result['next'] == next_path
+        assert result['requires_human_approval'] is False
+        assert result['next_action']
+
+    @pytest.mark.parametrize(
+        ('status_code', 'code'),
+        [
+            (HTTPStatus.BAD_REQUEST, 'invalid_input'),
+            (HTTPStatus.NOT_FOUND, 'not_found'),
+        ],
+    )
+    @pytest.mark.asyncio
+    async def test_a_refusal_surfaces_the_servers_own_code(
+        self, status_code, code, mock_http_client, mock_token_manager
+    ):
+        """400 for a `session` the route cannot read, 404 for one it will not."""
+        mock_http_client.get.return_value = {
+            'error': 'HTTP Error',
+            'status_code': status_code,
+            'message': f"Client error '{status_code}'",
+            'response': f'{{"code": "{code}"}}',
+        }
+
+        result = await work_session_records(
+            session_id=SESSION_ID,
+            websh_session_id=WEBSH_SESSION_ID,
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert result['status'] == 'error'
+        assert result['status_code'] == status_code
+        assert result['error_code'] == code
+        assert result['websh_session_id'] == WEBSH_SESSION_ID
+
+    @pytest.mark.parametrize('page_size', [0, 17])
+    @pytest.mark.asyncio
+    async def test_a_page_size_outside_the_routes_range_is_refused_locally(
+        self, page_size, mock_http_client, mock_token_manager
+    ):
+        """Upstream clamps an out-of-range size rather than refusing it, so an
+        unchecked value reads a page nobody asked for."""
+        result = await work_session_records(
+            session_id=SESSION_ID,
+            websh_session_id=WEBSH_SESSION_ID,
+            workspace='testworkspace',
+            region='ap1',
+            page_size=page_size,
+        )
+
+        assert result['status'] == 'error'
+        assert result['error_code'] == 'validation'
+        assert result['field'] == 'page_size'
+        mock_http_client.get.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_the_description_says_where_a_websh_session_id_comes_from(self):
+        """A model cannot guess the id, and the timeline is the only source."""
+        descriptions = {t.name: t.description for t in await mcp.list_tools()}
+
+        text = descriptions['work_session_records']
+
+        assert 'work_session_timeline' in text
+        assert 'websh_session' in text
+        assert 'next: null' in text
 
 
 class TestWorkSessionAnalyze:

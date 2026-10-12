@@ -66,3 +66,49 @@ async def test_work_session_workflow_pending_approval_names_status_and_stop_stat
     assert 'data.status' in text
     for state in ('rejected', 'cancelled', 'expired', 'revoked', 'completed'):
         assert state in text
+
+
+@pytest.mark.asyncio
+async def test_security_audit_tells_the_model_to_check_walk_completeness():
+    result = await mcp.get_prompt('security_audit', {'work_session_id': 'sess-9'})
+    text = result.messages[0].content.text
+
+    assert 'pagination.stopped_because' in text
+    assert 'page_bound' in text
+    assert 'pagination.next_cursor' in text
+    # "unified" promises a whole timeline, which a bounded walk cannot.
+    assert 'unified' not in text
+
+
+@pytest.mark.asyncio
+async def test_security_audit_does_not_read_complete_as_more_records():
+    """A resumed or failed walk also reports `complete: false`."""
+    result = await mcp.get_prompt('security_audit', {'work_session_id': 'sess-9'})
+    text = result.messages[0].content.text
+
+    assert 'complete: false' in text
+    assert 'retry point' in text
+
+
+@pytest.mark.asyncio
+async def test_security_audit_names_every_lens_that_walks_a_cursor():
+    result = await mcp.get_prompt('security_audit', {'work_session_id': 'sess-9'})
+    text = result.messages[0].content.text
+
+    bounded = text.split('Lenses 1, 2 and 4')[1]
+    for tool in (
+        'work_session_timeline',
+        'list_server_logs',
+        'list_webftp_logs',
+        'list_activity_logs',
+    ):
+        assert tool in bounded
+
+
+@pytest.mark.asyncio
+async def test_security_audit_says_a_bounded_timeline_omits_the_sessions_end():
+    result = await mcp.get_prompt('security_audit', {'work_session_id': 'sess-9'})
+    text = result.messages[0].content.text
+
+    assert 'reads' in text and 'forward' in text
+    assert 'start of the session' in text

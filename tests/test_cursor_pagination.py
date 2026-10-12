@@ -21,7 +21,7 @@ def _page(records, next_cursor=None, count=None):
     }
 
 
-async def _walk(bodies, *, params=None):
+async def _walk(bodies, *, params=None, **kwargs):
     """Run a walk over `bodies`, returning (response, the mock that served them)."""
     method = AsyncMock(side_effect=list(bodies))
     result = await cursor_list_response(
@@ -32,6 +32,7 @@ async def _walk(bodies, *, params=None):
         token='test-token',
         default_message='Failed to list',
         params={} if params is None else params,
+        **kwargs,
     )
     return result, method
 
@@ -282,6 +283,115 @@ class TestWalkFailure:
         assert report['pages_read'] == 1
         assert report['records_discarded'] == 1
         assert report['next_cursor'] == 'c0'
+
+
+class TestUnpaginatedServer:
+    """`opt_in_pagination`: the endpoint pages only when `cursor` is named."""
+
+    @pytest.mark.asyncio
+    async def test_the_first_request_names_an_empty_cursor_to_ask_for_a_page(self):
+        _, method = await _walk(
+            [_page([{'id': 'a'}], next_cursor='c1'), _page([{'id': 'b'}])],
+            opt_in_pagination=True,
+        )
+
+        assert _sent_params(method) == [{'cursor': ''}, {'cursor': 'c1'}]
+
+    @pytest.mark.asyncio
+    async def test_a_walk_that_did_not_opt_in_sends_no_cursor_key(self):
+        _, method = await _walk([_page([{'id': 'a'}])])
+
+        assert _sent_params(method) == [{}]
+
+    @pytest.mark.asyncio
+    async def test_a_next_less_body_is_a_shape_error_unless_the_caller_opted_in(self):
+        result, method = await _walk([{'results': [{'id': 'a'}]}])
+
+        assert result['status'] == 'error'
+        assert 'next' in result['message']
+        assert 'data' not in result
+        assert method.await_count == 1
+
+    @pytest.mark.asyncio
+    async def test_opted_in_a_next_less_first_answer_is_the_whole_list(self):
+        result, method = await _walk(
+            [{'results': [{'id': 'a'}, {'id': 'b'}]}], opt_in_pagination=True
+        )
+
+        report = result['pagination']
+        assert result['status'] == 'success'
+        assert result['data']['results'] == [{'id': 'a'}, {'id': 'b'}]
+        assert method.await_count == 1
+        assert report['complete'] is True
+        assert report['stopped_because'] == 'unpaginated_server'
+        assert report['next_cursor'] is None
+        assert report['pages_read'] == 1
+        assert 'incomplete' not in report['note']
+
+    @pytest.mark.asyncio
+    async def test_a_next_less_later_page_is_a_shape_error_even_when_opted_in(self):
+        """By page two the server was paging, so a missing `next` is a defect."""
+        result, method = await _walk(
+            [_page([{'id': 'a'}], next_cursor='c1'), {'results': [{'id': 'b'}]}],
+            opt_in_pagination=True,
+        )
+
+        assert result['status'] == 'error'
+        assert 'next' in result['message']
+        assert 'data' not in result
+        assert result['pagination']['records_discarded'] == 1
+        assert method.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_a_bare_array_first_answer_is_the_whole_list_when_opted_in(self):
+        """No release answers this way; the rule keeps the two next-less shapes alike."""
+        result, _ = await _walk(
+            [[{'id': 'a'}, {'id': 'b'}]],
+            params={'cursor': 'resume-me'},
+            opt_in_pagination=True,
+        )
+
+        report = result['pagination']
+        assert result['status'] == 'success'
+        assert result['data']['results'] == [{'id': 'a'}, {'id': 'b'}]
+        assert report['complete'] is True
+        assert report['stopped_because'] == 'unpaginated_server'
+        assert 'ignored the `cursor`' in report['note']
+
+    @pytest.mark.asyncio
+    async def test_a_bare_array_later_page_is_a_shape_error_when_opted_in(self):
+        result, method = await _walk(
+            [_page([{'id': 'a'}], next_cursor='c1'), [{'id': 'b'}]],
+            opt_in_pagination=True,
+        )
+
+        assert result['status'] == 'error'
+        assert 'bare array' in result['message']
+        assert 'data' not in result
+        assert result['pagination']['records_discarded'] == 1
+        assert method.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_a_cursor_the_server_ignored_is_said_to_have_been_ignored(self):
+        result, _ = await _walk(
+            [{'results': [{'id': 'a'}]}],
+            params={'cursor': 'resume-me'},
+            opt_in_pagination=True,
+        )
+
+        report = result['pagination']
+        assert report['complete'] is True
+        assert report['started_from_cursor'] is True
+        assert 'ignored the `cursor`' in report['note']
+
+    @pytest.mark.asyncio
+    async def test_the_relaxation_covers_next_alone(self):
+        malformed = await _walk([{'count': 2}], opt_in_pagination=True)
+        bad_next = await _walk([{'results': [], 'next': 7}], opt_in_pagination=True)
+
+        assert malformed[0]['status'] == 'error'
+        assert 'results' in malformed[0]['message']
+        assert bad_next[0]['status'] == 'error'
 
 
 def _refused_cursor(code):

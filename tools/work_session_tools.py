@@ -10,11 +10,30 @@ from utils.common import (
     success_response,
     unwrap_http_result,
 )
+from utils.cursor_pagination import CURSOR_WALK_DESCRIPTION, cursor_list_response
 from utils.decorators import mcp_tool_handler
+from utils.error_handler import format_validation_error
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ_ONLY
 
 _API_SESSIONS = '/api/work-sessions/sessions/'
+
+# The paged timeline refuses a `page_size` above this with a 400.
+_TIMELINE_MAX_PAGE_SIZE = 500
+
+# `include_records` stays declared because the SDK drops an argument the
+# published schema does not name before the call, where it could not be refused.
+_INCLUDE_RECORDS_REFUSED = (
+    'omit it. The paged timeline carries no recordings, so include_records '
+    'cannot be honoured and is refused rather than dropped. Read a recording '
+    'with work_session_records instead, which pages one websh session of this '
+    'work session, named by the `id` of a `websh_session` item here.'
+)
+
+# The record page's own bounds. The server reads a page of recording chunks,
+# each up to 128 KiB raw, so these are far below the timeline's.
+_RECORD_MAX_PAGE_SIZE = 16
+_RECORD_DEFAULT_PAGE_SIZE = 8
 
 
 @mcp_tool_handler(
@@ -374,11 +393,20 @@ async def work_session_extend(
 
 @mcp_tool_handler(
     description=(
-        'Get the unified chronological timeline of a Work Session: commands, '
-        'file transfers, websh activity, and sudo grants in execution order. '
-        'Websh terminal records are excluded by default; set include_records=True to '
-        'include them, which can return a very large response that grows with session length. '
-        'Related: work_session_get (session detail), list_session_analyses / '
+        'Get the chronological timeline of a Work Session: commands, file '
+        'transfers, websh activity, and sudo grants in execution order, oldest '
+        f'first. {CURSOR_WALK_DESCRIPTION} An alpacon-server that predates the '
+        'paged timeline ignores `cursor` and returns the whole session: that '
+        'answer is `complete` with `stopped_because: unpaginated_server` even '
+        'when a cursor was passed. The walk only reads forward, so a '
+        'result stopped at the bound covers the start of the session and omits '
+        'its most recent activity—do not read it as what the session ended up '
+        'doing. The timeline carries no websh terminal recordings: it names the '
+        'sessions that have one, as `websh_session` items whose `id` '
+        'work_session_records then reads the recording of, and include_records '
+        'is refused rather than quietly ignored—do not pass it. '
+        'Related: work_session_get (session detail), work_session_records (one '
+        "websh session's recording), list_session_analyses / "
         'get_session_analysis_detail (AI security analysis results).'
     ),
     annotations=READ_ONLY,
@@ -389,22 +417,133 @@ async def work_session_extend(
 async def work_session_timeline(
     session_id: str,
     workspace: str,
-    include_records: bool = False,
     region: str = '',
+    cursor: str | None = None,
+    page_size: int | None = None,
+    include_records: bool | None = None,
     **kwargs,
 ) -> dict[str, Any]:
-    """Get the unified timeline of a Work Session."""
+    """Get the timeline of a Work Session, following the server's cursor.
+
+    Args:
+        session_id: Work Session ID
+        workspace: Workspace name. Required parameter
+        region: Region (ap1, us1). Auto-detected if not provided
+        cursor: Opaque cursor from a previous call's `pagination.next_cursor`,
+            which resumes the walk where the bound stopped it (optional)
+        page_size: Items per request, 1 to 500 (optional); the server's
+            default is 100
+        include_records: Retired, and declared only to be refused. Any value,
+            true or false, is answered with a validation error
+
+    Returns:
+        The merged timeline, plus a `pagination` report saying whether the walk
+        read the session to its end
+    """
+    if include_records is not None:
+        return format_validation_error(
+            'include_records', include_records, _INCLUDE_RECORDS_REFUSED
+        )
+    if page_size is not None and page_size > _TIMELINE_MAX_PAGE_SIZE:
+        return format_validation_error(
+            'page_size', page_size, f'An integer from 1 to {_TIMELINE_MAX_PAGE_SIZE}.'
+        )
+
     token = kwargs.get('token')
 
-    return await http_call_response(
+    # The paged shape ignores `include_records`; the whole-session shape a
+    # pre-paging server answers with defaults it to true, up to 2 MiB of it.
+    params = build_list_params(
+        page_size=page_size, cursor=cursor, include_records='false'
+    )
+
+    return await cursor_list_response(
         http_client.get,
         region=region,
         workspace=workspace,
         endpoint=f'{_API_SESSIONS}{session_id}/timeline/',
         token=token,
         default_message='Failed to get Work Session timeline',
-        params={'include_records': 'true' if include_records else 'false'},
+        params=params,
+        opt_in_pagination=True,
         session_id=session_id,
+    )
+
+
+@mcp_tool_handler(
+    description=(
+        'Read one page of a websh terminal recording captured inside a Work '
+        "Session: the terminal's output in chunks, oldest first, as "
+        '`{added_at, record}` items. websh_session_id names the websh session '
+        'to read, and is the `id` of a `websh_session` item on '
+        'work_session_timeline—call that first to learn which sessions a Work '
+        'Session recorded. The session must belong to this Work Session and '
+        'must not be a tunnel, which records no terminal. '
+        'One call reads one page and never pages on by itself: pass '
+        '`data.next` back as `cursor` to read the page after it, and stop when '
+        '`next` is null. A page is cut by a byte budget as well as by '
+        'page_size, so a page holding fewer items than asked for is not the '
+        'end of the recording—only `next: null` is. page_size is 1 to 16 and '
+        'defaults to 8; a value outside that is refused before any request. A '
+        'cursor is bound to the websh session it was minted for, so keep '
+        'sending the same websh_session_id while paging one recording. '
+        'Reading a recording is a paid-plan feature: a Free workspace, and a '
+        "session older than the plan's audit window, is answered 402. "
+        'Related: work_session_timeline (which sessions have a recording, and '
+        'everything else that happened in the session), '
+        'get_session_analysis_detail (the AI analysis of a session).'
+    ),
+    annotations=READ_ONLY,
+    meta={
+        'anthropic/searchHint': 'work session websh recording record terminal replay'
+    },
+)
+async def work_session_records(
+    session_id: str,
+    websh_session_id: str,
+    workspace: str,
+    region: str = '',
+    cursor: str | None = None,
+    page_size: int = _RECORD_DEFAULT_PAGE_SIZE,
+    **kwargs,
+) -> dict[str, Any]:
+    """Read one page of one websh session's recording in a Work Session.
+
+    Args:
+        session_id: Work Session ID
+        websh_session_id: The websh session whose recording to read, as the
+            `id` of a `websh_session` item on work_session_timeline
+        workspace: Workspace name. Required parameter
+        region: Region (ap1, us1). Auto-detected if not provided
+        cursor: Opaque cursor from the previous page's `next` (optional);
+            omitted, the page starts at the beginning of the recording
+        page_size: Chunks asked for, 1 to 16 (optional, default 8); a byte
+            budget can still cut the page shorter
+
+    Returns:
+        The server's page as it answered it—`count`, `next`, `previous` and
+        the `results` chunks—where `next` is the cursor of the page after
+        this one and null only at the end of the recording
+    """
+    if not 1 <= page_size <= _RECORD_MAX_PAGE_SIZE:
+        return format_validation_error(
+            'page_size', page_size, f'An integer from 1 to {_RECORD_MAX_PAGE_SIZE}.'
+        )
+
+    token = kwargs.get('token')
+
+    return await http_call_response(
+        http_client.get,
+        region=region,
+        workspace=workspace,
+        endpoint=f'{_API_SESSIONS}{session_id}/records/',
+        token=token,
+        default_message='Failed to read the Work Session recording',
+        params=build_list_params(
+            page_size=page_size, session=websh_session_id, cursor=cursor
+        ),
+        session_id=session_id,
+        websh_session_id=websh_session_id,
     )
 
 
