@@ -286,17 +286,25 @@ class TestWalkFailure:
 
 
 class TestUnpaginatedServer:
-    """A body with no `next` at all, which only an opt-in endpoint can send.
-
-    alpacon-server paginates the work-session timeline only when a request
-    names `cursor` or `page_size`, and a release that predates those parameters
-    ignores them and answers with the whole list. The lists walked by default
-    are always paginated, so for them the same body is a page of unknown extent
-    and still a shape error.
-    """
+    """`opt_in_pagination`: the endpoint pages only when `cursor` is named."""
 
     @pytest.mark.asyncio
-    async def test_it_is_a_shape_error_unless_the_caller_allowed_it(self):
+    async def test_the_first_request_names_an_empty_cursor_to_ask_for_a_page(self):
+        _, method = await _walk(
+            [_page([{'id': 'a'}], next_cursor='c1'), _page([{'id': 'b'}])],
+            opt_in_pagination=True,
+        )
+
+        assert _sent_params(method) == [{'cursor': ''}, {'cursor': 'c1'}]
+
+    @pytest.mark.asyncio
+    async def test_a_walk_that_did_not_opt_in_sends_no_cursor_key(self):
+        _, method = await _walk([_page([{'id': 'a'}])])
+
+        assert _sent_params(method) == [{}]
+
+    @pytest.mark.asyncio
+    async def test_a_next_less_body_is_a_shape_error_unless_the_caller_opted_in(self):
         result, method = await _walk([{'results': [{'id': 'a'}]}])
 
         assert result['status'] == 'error'
@@ -305,46 +313,41 @@ class TestUnpaginatedServer:
         assert method.await_count == 1
 
     @pytest.mark.asyncio
-    async def test_allowed_it_is_the_whole_list_and_the_walk_stops(self):
+    async def test_opted_in_a_next_less_first_answer_is_the_whole_list(self):
         result, method = await _walk(
-            [{'results': [{'id': 'a'}, {'id': 'b'}]}],
-            unpaginated_is_whole_list=True,
-        )
-
-        assert result['status'] == 'success'
-        assert result['data']['results'] == [{'id': 'a'}, {'id': 'b'}]
-        assert method.await_count == 1
-
-    @pytest.mark.asyncio
-    async def test_it_reports_complete_under_a_reason_of_its_own(self):
-        """`complete` is the accurate reading, and the reason says why.
-
-        Nothing was cut, so there is nothing to resume; a reader still has to
-        be able to tell this from a walk that paginated and ran to the end.
-        """
-        result, _ = await _walk(
-            [{'results': [{'id': 'a'}]}], unpaginated_is_whole_list=True
+            [{'results': [{'id': 'a'}, {'id': 'b'}]}], opt_in_pagination=True
         )
 
         report = result['pagination']
+        assert result['status'] == 'success'
+        assert result['data']['results'] == [{'id': 'a'}, {'id': 'b'}]
+        assert method.await_count == 1
         assert report['complete'] is True
         assert report['stopped_because'] == 'unpaginated_server'
         assert report['next_cursor'] is None
         assert report['pages_read'] == 1
-        assert report['records_returned'] == 1
         assert 'incomplete' not in report['note']
 
     @pytest.mark.asyncio
-    async def test_a_cursor_the_server_ignored_is_said_to_have_been_ignored(self):
-        """The same release that cannot paginate cannot read a cursor either.
+    async def test_a_next_less_later_page_is_a_shape_error_even_when_opted_in(self):
+        """By page two the server was paging, so a missing `next` is a defect."""
+        result, method = await _walk(
+            [_page([{'id': 'a'}], next_cursor='c1'), {'results': [{'id': 'b'}]}],
+            opt_in_pagination=True,
+        )
 
-        It answers from the beginning of the list, so a caller resuming from
-        one would otherwise take records it already has for the next stretch.
-        """
+        assert result['status'] == 'error'
+        assert 'next' in result['message']
+        assert 'data' not in result
+        assert result['pagination']['records_discarded'] == 1
+        assert method.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_a_cursor_the_server_ignored_is_said_to_have_been_ignored(self):
         result, _ = await _walk(
             [{'results': [{'id': 'a'}]}],
             params={'cursor': 'resume-me'},
-            unpaginated_is_whole_list=True,
+            opt_in_pagination=True,
         )
 
         report = result['pagination']
@@ -354,11 +357,8 @@ class TestUnpaginatedServer:
 
     @pytest.mark.asyncio
     async def test_the_relaxation_covers_next_alone(self):
-        """A body missing `results`, or carrying a bad `next`, still fails."""
-        malformed = await _walk([{'count': 2}], unpaginated_is_whole_list=True)
-        bad_next = await _walk(
-            [{'results': [], 'next': 7}], unpaginated_is_whole_list=True
-        )
+        malformed = await _walk([{'count': 2}], opt_in_pagination=True)
+        bad_next = await _walk([{'results': [], 'next': 7}], opt_in_pagination=True)
 
         assert malformed[0]['status'] == 'error'
         assert 'results' in malformed[0]['message']

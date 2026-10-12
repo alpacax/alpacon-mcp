@@ -18,19 +18,11 @@ from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ
 
 _API_SESSIONS = '/api/work-sessions/sessions/'
 
-# The timeline paginates only when a request names `page_size` or `cursor`;
-# named by neither, the server renders the whole session in one response, which
-# is how a long session used to arrive whole and unannounced (#325). The tool
-# always names `page_size`, so the read is the bounded one.
-_TIMELINE_PAGE_SIZE = 100
+# The paged timeline refuses a `page_size` above this with a 400.
 _TIMELINE_MAX_PAGE_SIZE = 500
 
-# `include_records` is declared so that it can be refused. The SDK validates a
-# call against the published signature and drops whatever that signature does
-# not name, so an undeclared argument never reaches the body—a caller asking
-# for recordings would be answered without them and told nothing, which is the
-# failure this tool was changed to stop making. Declaring it is the only
-# boundary that sees the request at all.
+# `include_records` stays declared because the SDK drops an argument the
+# published schema does not name before the call, where it could not be refused.
 _INCLUDE_RECORDS_REFUSED = (
     'omit it. The paged timeline never carries websh recording bytes, so '
     'include_records cannot be honoured, and it is refused rather than dropped '
@@ -433,8 +425,8 @@ async def work_session_timeline(
         region: Region (ap1, us1). Auto-detected if not provided
         cursor: Opaque cursor from a previous call's `pagination.next_cursor`,
             which resumes the walk where the bound stopped it (optional)
-        page_size: Items per request, max 500 (optional). The walk issues a
-            bounded number of requests, so this also sets how far it reaches
+        page_size: Items per request, 1 to 500 (optional); the server's
+            default is 100
         include_records: Retired, and declared only to be refused. Any value,
             true or false, is answered with a validation error
 
@@ -446,12 +438,17 @@ async def work_session_timeline(
         return format_validation_error(
             'include_records', include_records, _INCLUDE_RECORDS_REFUSED
         )
+    if page_size is not None and page_size > _TIMELINE_MAX_PAGE_SIZE:
+        return format_validation_error(
+            'page_size', page_size, f'An integer from 1 to {_TIMELINE_MAX_PAGE_SIZE}.'
+        )
 
     token = kwargs.get('token')
 
+    # The paged shape ignores `include_records`; the whole-session shape a
+    # pre-paging server answers with defaults it to true, up to 2 MiB of it.
     params = build_list_params(
-        page_size=_TIMELINE_PAGE_SIZE if page_size is None else page_size,
-        cursor=cursor,
+        page_size=page_size, cursor=cursor, include_records='false'
     )
 
     return await cursor_list_response(
@@ -462,13 +459,7 @@ async def work_session_timeline(
         token=token,
         default_message='Failed to get Work Session timeline',
         params=params,
-        max_page_size=_TIMELINE_MAX_PAGE_SIZE,
-        # An alpacon-server that predates the paged timeline ignores
-        # `page_size` and answers with the whole session, no `next` in sight.
-        # That body really is the whole list, so it is read as one—erroring on
-        # it would make this tool dead against every server released so far,
-        # and the MCP package is installed at each user's own pace.
-        unpaginated_is_whole_list=True,
+        opt_in_pagination=True,
         session_id=session_id,
     )
 
