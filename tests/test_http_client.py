@@ -572,6 +572,17 @@ class TestHandleUpstream401:
         assert result['mfa_required'] is True
         assert result['status_code'] == HTTPStatus.UNAUTHORIZED
         assert result['error'] == 'MFA Required'
+        assert result['message'] == 'MFA verification required'
+
+    def test_non_string_code_is_not_mfa_required(self, caplog):
+        """An unhashable code is a plain 401, not a body that failed to parse."""
+        exc = self._make_401_exc({'code': ['auth_token_mfa_missing']})
+
+        with caplog.at_level(logging.DEBUG, logger='alpacon_mcp.http_client'):
+            result = AlpaconHTTPClient._handle_upstream_401(exc)
+
+        assert result['mfa_required'] is False
+        assert not any('Failed to parse' in r.getMessage() for r in caplog.records)
 
     def test_missing_token_401_is_not_mfa_required(self):
         """A plain token refusal starts an ordinary re-auth, not an MFA one."""
