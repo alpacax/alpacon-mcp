@@ -6,6 +6,8 @@ This document describes how the MCP server handles workspace-level MFA requireme
 
 Some Alpacon workspaces require MFA for sensitive actions (websh, webftp, command). The MCP server proactively detects this by caching workspace security settings from the account service, and triggers a two-stage OAuth flow when MFA is needed.
 
+In remote mode (`ALPACON_MCP_AUTH_ENABLED=true`, a JWT caller), the flow also starts when the Alpacon API answers 401 with `auth_mfa_required` (an action asked for a fresh MFA) or `auth_token_mfa_missing` (the token lacks the workspace's sign-in MFA, which a refresh never adds).
+
 ## Flow diagrams
 
 ### Case 1: MFA not required
@@ -104,6 +106,7 @@ One id per grant means one MFA record per MCP client installation: a step-up in 
 |-----------|------|------|
 | Security settings cache | `utils/security_settings.py` | Caches workspace MFA settings from account service |
 | MFA pre-check | `utils/decorators.py` | Checks MFA before API call, signals 401 if needed |
+| Upstream 401 detection | `utils/http_client.py` | Signals MFA re-auth when the API answers `auth_mfa_required` or `auth_token_mfa_missing` |
 | Auth error middleware | `utils/auth_error_middleware.py` | Adds `mfa` scope to WWW-Authenticate on 401 |
 | OAuth proxy (authorize) | `utils/oauth.py` | Routes to MFA or regular audience based on scope |
 | OAuth proxy (callback) | `utils/oauth.py` | Handles two-stage callback (MFA → regular) |

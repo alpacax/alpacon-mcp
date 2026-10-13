@@ -25,6 +25,10 @@ _ERR_REQUEST = 'Request Error'
 _ERR_TIMEOUT = 'Timeout'
 _ERR_UNEXPECTED = 'Unexpected Error'
 
+# 401 codes a new sign-in through Auth0 MFA clears: a step-up an action asked for,
+# or the workspace's sign-in MFA the token never carried (a refresh keeps that).
+_MFA_REAUTH_CODES = frozenset({'auth_mfa_required', 'auth_token_mfa_missing'})
+
 
 def _error_code_of(text: str) -> str | None:
     """The `code` of a JSON object error body; None for HTML, arrays or no code."""
@@ -511,7 +515,7 @@ class AlpaconHTTPClient:
 
         try:
             body = exc.response.json()
-            if isinstance(body, dict) and body.get('code') == 'auth_mfa_required':
+            if isinstance(body, dict) and body.get('code') in _MFA_REAUTH_CODES:
                 mfa_required = True
                 source = body.get('source', '')
         except Exception as parse_exc:

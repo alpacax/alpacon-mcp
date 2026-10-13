@@ -388,6 +388,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   correction is the first entry under Changed.
 
 ### Fixed
+- In remote mode, a 401 with `auth_token_mfa_missing` from alpacon-server (the token was issued without the workspace's sign-in MFA) now starts the browser MFA re-authentication, as `auth_mfa_required` already did. A refresh keeps the token's MFA state, so the ordinary re-authentication this code used to start could never succeed. In stdio and SSE mode, which have no browser re-authentication, the tool now answers this code with `message: "MFA verification required"` instead of the raw HTTP error; the response keeps its `status: "error"` shape, so a client parsing it needs no change.
 - An `AI_AGENT` version now reaches the server in the case it was given: `my-agent/1.0.0-Beta.1`
   is declared as version `1.0.0-Beta.1`, not `1.0.0-beta.1`. Only the agent name is lowercased.
 - In JWT mode, a `workspace` argument that is a renamed URL slug is now resolved to the workspace's fixed `schema_name` through the account service lookup before it is matched against the token claims. An argument that already equals a claim's `schema_name` makes no network call; the lookup is skipped when `ALPACON_ACCOUNT_URL` is unset, and any lookup failure keeps the previous rejection. Tool responses keep their shape, so a client parsing them needs no change. `list_workspaces` still reports each domain from `schema_name`, since the token claims carry no slug.
