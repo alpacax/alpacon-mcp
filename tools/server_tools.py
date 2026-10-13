@@ -498,6 +498,48 @@ async def upgrade_agent(
 
 @mcp_tool_handler(
     description=(
+        "Install the alpamon-pam package on a server as root through the host's package manager; "
+        'a host already current is a no-op, never a reinstall. '
+        'Use this on a host provisioned with alpamon alone that needs the PAM module for sudo with MFA. '
+        'Returns a command object tracking the install. '
+        'Not disruptive: live Websh/WebFTP sessions and in-flight commands are left alone, so there is no force. '
+        'Precondition: the workspace setting "Use sudo with MFA" must be on. '
+        'Refusals to act on rather than retry, each returned as error_code: '
+        'server_pam_install_requires_sudo_with_mfa (sudo with MFA is off—turn the setting on; or this deployment cannot complete its step-up—the workspace cannot fix this, report it to the operator), '
+        'server_pam_install_unsupported (the host has no package path: macOS, Windows, or a package manager Alpacon does not drive), '
+        'server_pam_install_in_progress (an install is already pending on this server; try again after it finishes). '
+        'Related: upgrade_agent, restart_agent.'
+    ),
+    annotations=IDEMPOTENT_WRITE,
+    meta={'anthropic/searchHint': 'alpamon-pam install pam module sudo mfa'},
+)
+async def install_pam(
+    server_id: str, workspace: str, region: str = '', **kwargs
+) -> dict[str, Any]:
+    """Install alpamon-pam on a server.
+
+    Args:
+        server_id: Server ID
+        workspace: Workspace name. Required parameter
+        region: Region (ap1, us1). Auto-detected if not provided
+
+    Returns:
+        PAM install response
+    """
+    token = kwargs.get('token')
+
+    return await _server_action(
+        server_id=server_id,
+        workspace=workspace,
+        region=region,
+        action='install_pam',
+        default_message='Failed to install alpamon-pam',
+        token=token,
+    )
+
+
+@mcp_tool_handler(
+    description=(
         'Refresh system information for a server by triggering the agent to re-collect hardware, OS, network, and package data. '
         'Use this after hardware changes or OS updates to ensure the dashboard reflects the current state. '
         'Returns a command object tracking the operation.'

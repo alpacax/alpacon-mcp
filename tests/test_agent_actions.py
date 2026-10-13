@@ -1,12 +1,14 @@
 """Unit tests for agent action tools in server_tools module."""
 
 import inspect
+from http import HTTPStatus
 
 import pytest
 
 from server import mcp
 from tests.conftest import HTTP_ERROR_ENVELOPE, http_client_fixture
 from tools.server_tools import (
+    install_pam,
     restart_agent,
     update_information,
     upgrade_agent,
@@ -24,6 +26,7 @@ SERVER_ID = '550e8400-e29b-41d4-a716-446655440123'
     [
         (restart_agent, 'restart_agent'),
         (upgrade_agent, 'upgrade_agent'),
+        (install_pam, 'install_pam'),
         (update_information, 'update_information'),
     ],
 )
@@ -106,6 +109,69 @@ class TestUpgradeAgent:
         assert result['status'] == 'error'
         assert 'No token found' in result['message']
         mock_http_client.post.assert_not_called()
+
+
+class TestInstallPam:
+    """Test alpamon-pam install functionality."""
+
+    @pytest.mark.asyncio
+    async def test_install_pam_success(self, mock_http_client, mock_token_manager):
+        """Test successful alpamon-pam install."""
+        mock_http_client.post.return_value = {'id': 'cmd-1'}
+
+        result = await install_pam(
+            server_id=SERVER_ID, workspace='testworkspace', region='ap1'
+        )
+
+        assert result['status'] == 'success'
+        assert result['server_id'] == SERVER_ID
+        mock_http_client.post.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint=f'/api/servers/servers/{SERVER_ID}/actions/',
+            token='test-token',
+            data={'action': 'install_pam', 'force': False},
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ('status_code', 'code'),
+        [
+            (HTTPStatus.BAD_REQUEST, 'server_pam_install_unsupported'),
+            (HTTPStatus.BAD_REQUEST, 'server_pam_install_requires_sudo_with_mfa'),
+            (HTTPStatus.CONFLICT, 'server_pam_install_in_progress'),
+        ],
+    )
+    async def test_install_pam_refusal_surfaces_error_code(
+        self, status_code, code, mock_http_client, mock_token_manager
+    ):
+        """Each refusal is a plain error carrying its code, as the changelog promises."""
+        mock_http_client.post.return_value = {
+            'error': 'HTTP Error',
+            'status_code': status_code,
+            'message': f"Client error '{status_code.value} {status_code.phrase}'",
+            'response': f'{{"code":"{code}"}}',
+        }
+
+        result = await install_pam(
+            server_id=SERVER_ID, workspace='testworkspace', region='ap1'
+        )
+
+        assert result['status'] == 'error'
+        assert result['status_code'] == status_code
+        assert result['error_code'] == code
+
+    @pytest.mark.asyncio
+    async def test_install_pam_description_names_every_refusal(self):
+        """An agent explains a refusal from the description, so each code is in it."""
+        descriptions = {t.name: t.description for t in await mcp.list_tools()}
+
+        for code in (
+            'server_pam_install_requires_sudo_with_mfa',
+            'server_pam_install_unsupported',
+            'server_pam_install_in_progress',
+        ):
+            assert code in descriptions['install_pam']
 
 
 class TestUpdateInformation:
@@ -195,6 +261,10 @@ class TestDisruptiveActionForce:
         """update_information is not disruptive server-side, so it offers no force."""
         assert 'force' not in inspect.signature(update_information).parameters
 
+    def test_install_pam_has_no_force(self):
+        """install_pam leaves live sessions alone server-side, so it offers no force."""
+        assert 'force' not in inspect.signature(install_pam).parameters
+
     @pytest.mark.asyncio
     async def test_every_disruptive_description_carries_the_force_note(self):
         """The note lives in one constant; a client must still read it on both tools."""
@@ -206,6 +276,7 @@ class TestDisruptiveActionForce:
                 in descriptions[action]
             )
         assert 'force=True' not in descriptions['update_information']
+        assert 'force=True' not in descriptions['install_pam']
 
     @pytest.mark.asyncio
     async def test_removed_tools_are_not_registered(self):
