@@ -1,6 +1,7 @@
 """Unit tests for agent action tools in server_tools module."""
 
 import inspect
+from http import HTTPStatus
 
 import pytest
 
@@ -131,6 +132,34 @@ class TestInstallPam:
             token='test-token',
             data={'action': 'install_pam', 'force': False},
         )
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ('status_code', 'code'),
+        [
+            (HTTPStatus.BAD_REQUEST, 'server_pam_install_unsupported'),
+            (HTTPStatus.BAD_REQUEST, 'server_pam_install_requires_sudo_with_mfa'),
+            (HTTPStatus.CONFLICT, 'server_pam_install_in_progress'),
+        ],
+    )
+    async def test_install_pam_refusal_surfaces_error_code(
+        self, status_code, code, mock_http_client, mock_token_manager
+    ):
+        """Each refusal is a plain error carrying its code, as the changelog promises."""
+        mock_http_client.post.return_value = {
+            'error': 'HTTP Error',
+            'status_code': status_code,
+            'message': f"Client error '{status_code.value} {status_code.phrase}'",
+            'response': f'{{"code":"{code}"}}',
+        }
+
+        result = await install_pam(
+            server_id=SERVER_ID, workspace='testworkspace', region='ap1'
+        )
+
+        assert result['status'] == 'error'
+        assert result['status_code'] == status_code
+        assert result['error_code'] == code
 
     @pytest.mark.asyncio
     async def test_install_pam_description_names_every_refusal(self):
