@@ -176,14 +176,20 @@ async def test_flag_triggers_401():
 
 
 @pytest.mark.asyncio
-async def test_mfa_flag_includes_mfa_scope():
-    """MFA flag adds 'mfa' to WWW-Authenticate scope."""
+async def test_mfa_flag_answers_insufficient_scope_with_mfa_scope():
+    """An MFA signal is a 403 step-up challenge, not a 401.
+
+    Clients refresh on a 401 and drop its scope while the refresh succeeds, so
+    only insufficient_scope sends them back through /authorize with 'mfa'.
+    """
     mw = _make(error_value={'mfa_required': True, 'source': 'websh'})
     sent = await _run(mw)
     status, headers, body = await _collect_response(sent)
 
-    assert status == HTTPStatus.UNAUTHORIZED
+    assert status == HTTPStatus.FORBIDDEN
+    assert 'error="insufficient_scope"' in headers['www-authenticate']
     assert 'offline_access mfa' in headers['www-authenticate']
+    assert json.loads(body)['error'] == 'insufficient_scope'
     assert 'MFA' in json.loads(body)['error_description']
 
 
@@ -421,15 +427,15 @@ class _RaisingApp:
 
 
 @pytest.mark.asyncio
-async def test_exception_triggers_401():
-    """UpstreamAuthError exception should trigger HTTP 401."""
+async def test_mfa_exception_triggers_insufficient_scope():
+    """An MFA UpstreamAuthError answers with the 403 step-up challenge."""
     app = _RaisingApp(mfa_required=True, source='websh')
     mw = UpstreamAuthErrorMiddleware(app)
 
     sent = await _run(mw)
     status, headers, _ = await _collect_response(sent)
 
-    assert status == HTTPStatus.UNAUTHORIZED
+    assert status == HTTPStatus.FORBIDDEN
     assert 'www-authenticate' in headers
     assert 'mfa' in headers['www-authenticate']
 
@@ -487,7 +493,7 @@ async def test_normal_return_signal_does_not_leak_into_the_next_request():
     scope = _http_scope(f'Bearer {token}')
 
     sent1 = await _run(mw, scope=scope)
-    assert (await _collect_response(sent1))[0] == HTTPStatus.UNAUTHORIZED
+    assert (await _collect_response(sent1))[0] == HTTPStatus.FORBIDDEN
 
     mw.app = _MockApp(body={'ok': True})
     sent2 = await _run(mw, scope=scope)
@@ -503,10 +509,10 @@ async def test_exception_respects_cooldown():
     app = _RaisingApp(mfa_required=True)
     mw = UpstreamAuthErrorMiddleware(app, cooldown_seconds=60)
 
-    # First call: should get 401
+    # First call: should get the MFA challenge
     sent1 = await _run(mw)
     status1, _, _ = await _collect_response(sent1)
-    assert status1 == HTTPStatus.UNAUTHORIZED
+    assert status1 == HTTPStatus.FORBIDDEN
 
     # Second call within cooldown: should get 500 fallback (no buffered response
     # because _RaisingApp raises before writing any response)
@@ -539,7 +545,7 @@ async def test_same_token_concurrent_requests_do_not_steal_each_others_signal():
     failing_status, _, _ = await _collect_response(results[0])
     passing_status, _, _ = await _collect_response(results[1])
 
-    assert failing_status == HTTPStatus.UNAUTHORIZED
+    assert failing_status == HTTPStatus.FORBIDDEN
     assert passing_status == HTTPStatus.OK
 
 
@@ -648,7 +654,7 @@ async def test_a_late_signal_does_not_send_a_second_response_start(caplog):
 
 
 @pytest.mark.asyncio
-async def test_signalled_request_gets_the_full_401_not_the_original_body():
+async def test_signalled_request_gets_the_full_challenge_not_the_original_body():
     """Given a signalled request, When the response is replaced, Then the client
     receives the OAuth error body and WWW-Authenticate, not the app's own body."""
     app = _MockApp(
@@ -663,10 +669,10 @@ async def test_signalled_request_gets_the_full_401_not_the_original_body():
     sent = await _run(mw)
     status, headers, body = await _collect_response(sent)
 
-    assert status == HTTPStatus.UNAUTHORIZED
+    assert status == HTTPStatus.FORBIDDEN
     assert 'mfa' in headers['www-authenticate']
     assert 'resource_metadata=' in headers['www-authenticate']
-    assert json.loads(body)['error'] == 'invalid_token'
+    assert json.loads(body)['error'] == 'insufficient_scope'
     assert 'jsonrpc' not in body
 
 
@@ -702,7 +708,7 @@ class _StartOnlyApp:
 
 
 @pytest.mark.asyncio
-async def test_a_bodyless_signalled_response_is_still_replaced_with_a_401():
+async def test_a_bodyless_signalled_response_is_still_replaced_with_the_challenge():
     """Given an app that sends a start and no body, When it signalled an upstream
     401, Then the held start is dropped and the client gets the 401 instead."""
     app = _StartOnlyApp({'mfa_required': True, 'source': 'exec'})
@@ -713,6 +719,6 @@ async def test_a_bodyless_signalled_response_is_still_replaced_with_a_401():
 
     starts = [msg for msg in sent if msg['type'] == 'http.response.start']
     assert len(starts) == 1
-    assert status == HTTPStatus.UNAUTHORIZED
+    assert status == HTTPStatus.FORBIDDEN
     assert 'mfa' in headers['www-authenticate']
-    assert json.loads(body)['error'] == 'invalid_token'
+    assert json.loads(body)['error'] == 'insufficient_scope'

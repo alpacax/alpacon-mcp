@@ -1,8 +1,9 @@
-"""ASGI middleware to propagate upstream API 401 as MCP transport 401.
+"""ASGI middleware to turn an upstream API 401 into an MCP transport challenge.
 
-When the Alpacon API returns 401 (e.g., MFA timeout), this middleware
-intercepts the error and returns HTTP 401 + WWW-Authenticate header,
-triggering the MCP client's automatic OAuth re-authentication flow.
+When the Alpacon API returns 401, this middleware intercepts the error and
+answers with a WWW-Authenticate challenge that starts the MCP client's OAuth
+re-authentication: 401 for an expired credential, 403 insufficient_scope when
+the API wants MFA (see ``_send_challenge``).
 
 The middleware plants an empty signal dict in a ContextVar at the start of
 each request; ``http_client`` and the MFA pre-check mutate that same object
@@ -44,12 +45,12 @@ class _Decision(Enum):
 
 
 class UpstreamAuthErrorMiddleware:
-    """Replace HTTP 200 with 401 when upstream API requires re-authentication.
+    """Replace HTTP 200 with a challenge when upstream API requires re-authentication.
 
     Uses a per-client cooldown timer to prevent infinite re-auth loops:
-    after emitting a 401 for a given client, subsequent upstream auth errors
+    after emitting a challenge for a given client, subsequent upstream auth errors
     from that client within the cooldown period leave the app's own response
-    alone instead of raising a second 401. Cooldown is tracked per client (by
+    alone instead of raising a second one. Cooldown is tracked per client (by
     JWT token hash) so one client's re-auth does not suppress another's.
     """
 
@@ -147,7 +148,7 @@ class UpstreamAuthErrorMiddleware:
 
             if decision is _Decision.PENDING:
                 if signal:
-                    if await self._replace_with_401(send, signal, cooldown_key):
+                    if await self._replace_with_challenge(send, signal, cooldown_key):
                         decision = _Decision.REPLACED
                         return
                     decision = _Decision.FORWARDED_COOLDOWN
@@ -165,7 +166,7 @@ class UpstreamAuthErrorMiddleware:
             # Unreachable through the SDK, which turns handler exceptions into
             # a wire response. Kept for a caller that invokes this app directly.
             if decision is _Decision.PENDING:
-                sent_401 = await self._replace_with_401(
+                sent_401 = await self._replace_with_challenge(
                     send,
                     {'mfa_required': e.mfa_required, 'source': e.source},
                     cooldown_key,
@@ -194,7 +195,7 @@ class UpstreamAuthErrorMiddleware:
 
         if decision is _Decision.PENDING:
             if signal:
-                if await self._replace_with_401(send, signal, cooldown_key):
+                if await self._replace_with_challenge(send, signal, cooldown_key):
                     return
         elif decision is _Decision.FORWARDED and signal:
             logger.warning(
@@ -204,13 +205,13 @@ class UpstreamAuthErrorMiddleware:
         if pending_start is not None:
             await send(pending_start)
 
-    async def _replace_with_401(
+    async def _replace_with_challenge(
         self,
         send: Send,
         signal: request_signal.AuthSignal,
         cooldown_key: str | None,
     ) -> bool:
-        """Answer with 401, unless this client was told to re-authenticate already.
+        """Answer with the challenge, unless this client was told to re-authenticate already.
 
         The cooldown stops a client from looping on a challenge it cannot satisfy.
         Returns False without sending anything when the cooldown is active, leaving
@@ -234,12 +235,12 @@ class UpstreamAuthErrorMiddleware:
 
         self._client_cooldowns[client_key] = now
         logger.info(
-            'Upstream 401 detected (mfa_required=%s, source=%s), returning HTTP '
-            '401 to trigger re-auth',
+            'Upstream 401 detected (mfa_required=%s, source=%s), returning a '
+            're-auth challenge',
             mfa_required,
             source,
         )
-        await self._send_401(send, mfa_required=mfa_required)
+        await self._send_challenge(send, mfa_required=mfa_required)
         return True
 
     async def _send_error(
@@ -268,18 +269,24 @@ class UpstreamAuthErrorMiddleware:
             }
         )
 
-    async def _send_401(self, send: Send, *, mfa_required: bool = False) -> None:
-        """Send HTTP 401 with WWW-Authenticate header.
+    async def _send_challenge(self, send: Send, *, mfa_required: bool = False) -> None:
+        """Send the re-authentication challenge.
 
-        When mfa_required is True, includes 'mfa' in the scope parameter.
-        The MCP client reads this scope and passes it to /oauth/authorize,
-        where our proxy converts it to Auth0 acr_values to force MFA.
+        An MFA signal answers 403 insufficient_scope with 'mfa' in the scope: MCP
+        clients refresh on a 401 and drop its scope while the refresh succeeds,
+        and a refreshed token still lacks MFA. On insufficient_scope they skip
+        the refresh and run /oauth/authorize with the union of scopes, where the
+        proxy turns 'mfa' into the two-stage MFA flow. Anything else is a 401.
         """
         scopes = 'openid profile email offline_access'
+        error = 'invalid_token'
+        status = HTTPStatus.UNAUTHORIZED
         if mfa_required:
             scopes += ' mfa'
+            error = 'insufficient_scope'
+            status = HTTPStatus.FORBIDDEN
 
-        www_auth_parts = ['error="invalid_token"', f'scope="{scopes}"']
+        www_auth_parts = [f'error="{error}"', f'scope="{scopes}"']
         if self.resource_metadata_url:
             www_auth_parts.append(f'resource_metadata="{self.resource_metadata_url}"')
 
@@ -292,7 +299,7 @@ class UpstreamAuthErrorMiddleware:
         )
         body = json.dumps(
             {
-                'error': 'invalid_token',
+                'error': error,
                 'error_description': description,
             }
         ).encode()
@@ -300,7 +307,7 @@ class UpstreamAuthErrorMiddleware:
         await send(
             {
                 'type': 'http.response.start',
-                'status': HTTPStatus.UNAUTHORIZED,
+                'status': status,
                 'headers': [
                     (b'content-type', b'application/json'),
                     (b'content-length', str(len(body)).encode()),
