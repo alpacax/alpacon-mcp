@@ -316,6 +316,12 @@ An OAuth/browser caller must run infrastructure actions inside an active Work Se
 
 A command that escalates privileges can come back as `status="pending_approval"` with `SUDO_APPROVAL_REQUIRED` or `SUDO_INTENT_DEVIATION`. An agent cannot approve its own request—that is deliberate. Surface it to a human, who approves out of band, then retry the call.
 
+### 5b. A tool returns `mfa_url`
+
+An action the workspace protects with MFA comes back as an error with `mfa_required: true` and an `mfa_url`. Open the link in a browser, complete MFA, then call the same tool again with the same arguments. The second call waits up to 60 seconds for the MFA and resends the request. The link is also at the end of the error message. A link is remembered for ten minutes per workspace host, so a retry within that time does not mint a second one. A second refusal inside the same tool call returns the same link at once; only a later call waits. When the refusal comes while a command tool (`execute_command`, `execute_file`, `state_command_purpose`) polls for a result, the error tells you the command was already submitted: complete MFA and check it with `list_commands` instead of running it again. A result without `mfa_url` and the message `MFA was just completed` means MFA is already done: call again.
+
+If the client instead reports `Insufficient scope` or asks you to sign in again, there are two causes. The token may lack the workspace's sign-in MFA, or the server could not issue a step-up link for an action MFA (for example no workspace was known for the call, or the link request failed). In both cases, reconnect the Alpacon MCP server to sign in again.
+
 ---
 
 ### 6. File upload/download issues

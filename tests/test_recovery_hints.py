@@ -324,3 +324,75 @@ def test_a_404_from_attach_alert_rule_points_at_list_servers():
 
     assert 'list_servers' in hints['related_tools']
     assert any('attach_alert_rule' in h for h in hints['recovery_hints'])
+
+
+def test_an_mfa_error_with_a_link_tells_the_agent_to_open_it_and_call_again():
+    # Given a step-up error that carries a link
+    error = {
+        'status': 'error',
+        'status_code': 401,
+        'message': 'MFA is required for this action.',
+        'mfa_required': True,
+        'mfa_url': 'https://auth/link-1',
+    }
+
+    # When the error is enriched
+    result = enrich_error_response(error, tool_name='webftp_session_create')
+
+    # Then the hints send the agent to the link and then back to the tool
+    hints = ' '.join(result['recovery_hints'])
+    assert 'https://auth/link-1' in hints
+    assert 'browser' in hints
+    assert 'call the tool again' in hints.lower()
+
+    # And nothing suggests an expired token or re-running setup
+    assert 'expired' not in hints
+    assert 'setup' not in hints
+    assert 'related_tools' not in result
+
+
+def test_an_mfa_error_without_a_link_tells_the_agent_to_call_again():
+    # Given a step-up error with no link
+    error = {
+        'status': 'error',
+        'status_code': 401,
+        'message': 'MFA was just completed.',
+        'mfa_required': True,
+    }
+
+    # When the error is enriched
+    result = enrich_error_response(error)
+
+    # Then the only advice is to call the tool again
+    assert result['recovery_hints'] == ['Call the tool again.']
+    assert 'related_tools' not in result
+
+
+def test_a_plain_401_keeps_the_token_expired_hint():
+    # Given a 401 that is not an MFA refusal
+    error = {'status': 'error', 'status_code': 401, 'message': 'Unauthorized'}
+
+    # When the error is enriched
+    result = enrich_error_response(error)
+
+    # Then it still points at an expired token and setup
+    assert 'API token may be expired or invalid.' in result['recovery_hints']
+    assert 'uvx alpacon-mcp setup' in ' '.join(result['recovery_hints'])
+
+
+def test_a_sign_in_mfa_error_points_at_signing_in_again():
+    # Given a stdio-mode refusal of a token that lacks the sign-in MFA
+    error = {
+        'status': 'error',
+        'status_code': 401,
+        'message': 'MFA verification required',
+        'mfa_required': True,
+        'error_code': 'auth_token_mfa_missing',
+    }
+
+    # When the error is enriched
+    result = enrich_error_response(error)
+
+    # Then the advice is to sign in again through setup, not to call the tool again
+    assert 'Call the tool again.' not in result['recovery_hints']
+    assert 'uvx alpacon-mcp setup' in ' '.join(result['recovery_hints'])

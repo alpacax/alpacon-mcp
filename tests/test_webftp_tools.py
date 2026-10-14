@@ -149,6 +149,97 @@ class TestWebFtpSessionCreate:
         )
 
     @pytest.mark.asyncio
+    async def test_session_create_carries_the_step_up_link_to_the_caller(
+        self, mock_http_client, mock_token_manager
+    ):
+        # Given the HTTP client answers the action with a step-up link
+        mock_http_client.post.return_value = {
+            'error': 'MFA Required',
+            'status_code': 401,
+            'message': 'MFA is required for this action. Open this link in a '
+            'browser, complete MFA, then call this tool again with the same '
+            'arguments: https://auth/link-1',
+            'mfa_required': True,
+            'mfa_url': 'https://auth/link-1',
+        }
+
+        # When the tool runs
+        result = await webftp_session_create(
+            server_id=VALID_SERVER_ID, workspace='testworkspace', region='ap1'
+        )
+
+        # Then the link is a top-level field and is in the message
+        assert result['status'] == _STATUS_ERROR
+        assert result['mfa_url'] == 'https://auth/link-1'
+        assert result['mfa_required'] is True
+        assert 'https://auth/link-1' in result['message']
+
+    @pytest.mark.asyncio
+    async def test_session_create_keeps_mfa_required_without_a_link(
+        self, mock_http_client, mock_token_manager
+    ):
+        # Given the HTTP client answers with an MFA refusal that has no link
+        mock_http_client.post.return_value = {
+            'error': 'MFA Required',
+            'status_code': 401,
+            'message': 'MFA was just completed.',
+            'mfa_required': True,
+        }
+
+        # When the tool runs
+        result = await webftp_session_create(
+            server_id=VALID_SERVER_ID, workspace='testworkspace', region='ap1'
+        )
+
+        # Then MFA is still marked required, with the original message and no link
+        assert result['mfa_required'] is True
+        assert 'MFA was just completed.' in result['message']
+        assert 'mfa_url' not in result
+
+    @pytest.mark.asyncio
+    async def test_session_create_mfa_error_drops_the_token_expired_hint(
+        self, mock_http_client, mock_token_manager
+    ):
+        # Given the HTTP client answers with a step-up link
+        mock_http_client.post.return_value = {
+            'error': 'MFA Required',
+            'status_code': 401,
+            'message': 'MFA is required for this action.',
+            'mfa_required': True,
+            'mfa_url': 'https://auth/link-1',
+        }
+
+        # When the tool runs
+        result = await webftp_session_create(
+            server_id=VALID_SERVER_ID, workspace='testworkspace', region='ap1'
+        )
+
+        # Then the hints name the link and never the expired token or setup
+        hints = ' '.join(result['recovery_hints'])
+        assert 'https://auth/link-1' in hints
+        assert 'expired' not in hints
+        assert 'setup' not in hints
+
+    @pytest.mark.asyncio
+    async def test_session_create_plain_401_keeps_the_token_expired_hint(
+        self, mock_http_client, mock_token_manager
+    ):
+        # Given the HTTP client answers with a plain 401
+        mock_http_client.post.return_value = {
+            'error': 'HTTP Error',
+            'status_code': 401,
+            'message': 'Unauthorized',
+        }
+
+        # When the tool runs
+        result = await webftp_session_create(
+            server_id=VALID_SERVER_ID, workspace='testworkspace', region='ap1'
+        )
+
+        # Then the token-expired hint is still attached
+        assert 'API token may be expired or invalid.' in result['recovery_hints']
+
+    @pytest.mark.asyncio
     async def test_session_create_no_token(self, mock_http_client, mock_token_manager):
         """Test session creation when no token is available."""
 

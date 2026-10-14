@@ -6,8 +6,8 @@ re-authentication: 401 for an expired credential, 403 insufficient_scope when
 the API wants MFA (see ``_send_challenge``).
 
 The middleware plants an empty signal dict in a ContextVar at the start of
-each request; ``http_client`` and the MFA pre-check mutate that same object
-from the tool handler's task. The signal is read when the first body chunk
+each request; ``http_client`` mutates that same object from the tool
+handler's task. The signal is read when the first body chunk
 arrives, while the start message is still held; a response with no body
 falls back to a check after ``self.app()`` returns. SDK 2.x turns a handler
 exception into a wire response, so ``UpstreamAuthError`` only reaches the
@@ -26,12 +26,16 @@ from http import HTTPStatus
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from utils import request_signal
-from utils.error_handler import UpstreamAuthError
+from utils.error_handler import SIGN_IN_MFA_CODE, UpstreamAuthError
 from utils.logger import get_logger
 
 AsgiMessage = MutableMapping[str, object]
 
 logger = get_logger('auth_error_middleware')
+
+_SIGN_IN_MFA_DESCRIPTION = (
+    'Sign-in MFA is required. Reconnect the Alpacon MCP server to sign in again.'
+)
 
 
 class _Decision(Enum):
@@ -168,7 +172,7 @@ class UpstreamAuthErrorMiddleware:
             if decision is _Decision.PENDING:
                 sent_401 = await self._replace_with_challenge(
                     send,
-                    {'mfa_required': e.mfa_required, 'source': e.source},
+                    {**signal, 'mfa_required': e.mfa_required, 'source': e.source},
                     cooldown_key,
                 )
                 if not sent_401:
@@ -223,6 +227,7 @@ class UpstreamAuthErrorMiddleware:
         last_401 = self._client_cooldowns.get(client_key)
         mfa_required = bool(signal.get('mfa_required', False))
         source = str(signal.get('source', ''))
+        sign_in_mfa = str(signal.get('code', '')) == SIGN_IN_MFA_CODE
 
         if last_401 is not None and (now - last_401) <= self._cooldown_seconds:
             remaining = self._cooldown_seconds - (now - last_401)
@@ -240,7 +245,9 @@ class UpstreamAuthErrorMiddleware:
             mfa_required,
             source,
         )
-        await self._send_challenge(send, mfa_required=mfa_required)
+        await self._send_challenge(
+            send, mfa_required=mfa_required, sign_in_mfa=sign_in_mfa
+        )
         return True
 
     async def _send_error(
@@ -269,7 +276,9 @@ class UpstreamAuthErrorMiddleware:
             }
         )
 
-    async def _send_challenge(self, send: Send, *, mfa_required: bool = False) -> None:
+    async def _send_challenge(
+        self, send: Send, *, mfa_required: bool = False, sign_in_mfa: bool = False
+    ) -> None:
         """Send the re-authentication challenge.
 
         An MFA signal answers 403 insufficient_scope with 'mfa' in the scope: MCP
@@ -287,16 +296,19 @@ class UpstreamAuthErrorMiddleware:
             status = HTTPStatus.FORBIDDEN
 
         www_auth_parts = [f'error="{error}"', f'scope="{scopes}"']
+        if sign_in_mfa:
+            www_auth_parts.append(f'error_description="{_SIGN_IN_MFA_DESCRIPTION}"')
         if self.resource_metadata_url:
             www_auth_parts.append(f'resource_metadata="{self.resource_metadata_url}"')
 
         www_authenticate = f'Bearer {", ".join(www_auth_parts)}'
 
-        description = (
-            'MFA verification required. Re-authentication needed.'
-            if mfa_required
-            else 'Authentication expired. Re-authentication needed.'
-        )
+        if sign_in_mfa:
+            description = _SIGN_IN_MFA_DESCRIPTION
+        elif mfa_required:
+            description = 'MFA verification required. Re-authentication needed.'
+        else:
+            description = 'Authentication expired. Re-authentication needed.'
         body = json.dumps(
             {
                 'error': error,

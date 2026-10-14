@@ -14,6 +14,7 @@ from tools.command_tools import (
     _FILE_PHASE_GENERIC_HINT,
     _FILE_PHASE_HINTS,
     _SUDO_DENIAL_HINTS,
+    DO_NOT_RESUBMIT,
     FILE_CONTENT_MAX_BYTES,
     FILE_REUSE_DAYS_MAX,
     FILE_REUSE_DAYS_MIN,
@@ -705,6 +706,96 @@ class TestExecuteCommand:
             assert result['status'] == 'error'
             assert result['error_type'] == 'timeout'
             assert 'timed out' in result['message']
+
+    @pytest.mark.asyncio
+    async def test_poll_refused_for_mfa_returns_the_step_up_link(
+        self, mock_http_client, mock_token_manager
+    ):
+        # Given a submitted command whose poll is answered with a step-up link
+        with (
+            patch('tools.command_tools._submit_command') as mock_submit,
+            patch('tools.command_tools._get_command_result') as mock_poll,
+        ):
+            mock_submit.return_value = {'id': 'cmd-123'}
+            mock_poll.return_value = {
+                'error': 'MFA Required',
+                'status_code': 401,
+                'message': 'MFA is required for this action. Open this link in a '
+                'browser, complete MFA, then call this tool again with the same '
+                'arguments: https://auth/link-1',
+                'mfa_required': True,
+                'mfa_url': 'https://auth/link-1',
+            }
+
+            # When the tool runs
+            result = await execute_command(
+                server_id=VALID_SERVER_ID,
+                command='echo test',
+                workspace='testworkspace',
+                timeout=10,
+            )
+
+        # Then it reads as an MFA step with the link, not as a poll failure
+        assert result['status'] == 'error'
+        assert result['mfa_url'] == 'https://auth/link-1'
+        assert result['mfa_required'] is True
+        assert 'https://auth/link-1' in result['message']
+        assert 'Failed to poll' not in result['message']
+        assert result['command_id'] == 'cmd-123'
+
+        # And it says the command was submitted, so it is checked, not run again
+        assert 'list_commands' in result['message']
+        assert 'already submitted' in result['message']
+        assert DO_NOT_RESUBMIT in result['message']
+        assert 'call this tool again' not in result['message']
+
+        # And the recovery hints send the agent to list_commands, not a re-call
+        hints = ' '.join(result['recovery_hints'])
+        assert 'https://auth/link-1' in hints
+        assert 'list_commands' in hints
+        assert DO_NOT_RESUBMIT in hints
+        assert 'call the tool again' not in hints.lower()
+
+    @pytest.mark.asyncio
+    async def test_poll_refused_for_mfa_without_a_link_says_the_command_was_submitted(
+        self, mock_http_client, mock_token_manager
+    ):
+        # Given a submitted command whose poll is refused for MFA with no link
+        with (
+            patch('tools.command_tools._submit_command') as mock_submit,
+            patch('tools.command_tools._get_command_result') as mock_poll,
+        ):
+            mock_submit.return_value = {'id': 'cmd-123'}
+            mock_poll.return_value = {
+                'error': 'MFA Required',
+                'status_code': 401,
+                'message': 'MFA was just completed.',
+                'mfa_required': True,
+            }
+
+            # When the tool runs
+            result = await execute_command(
+                server_id=VALID_SERVER_ID,
+                command='echo test',
+                workspace='testworkspace',
+                timeout=10,
+            )
+
+        # Then it is an MFA step with the original message, not a poll failure
+        assert result['status'] == 'error'
+        assert 'list_commands' in result['message']
+        assert DO_NOT_RESUBMIT in result['message']
+        assert 'call this tool again' not in result['message']
+        assert result['mfa_required'] is True
+        assert 'mfa_url' not in result
+        assert 'details' not in result
+        assert result['command_id'] == 'cmd-123'
+
+        # And the recovery hints send the agent to list_commands, not a re-call
+        hints = ' '.join(result['recovery_hints'])
+        assert 'list_commands' in hints
+        assert DO_NOT_RESUBMIT in hints
+        assert 'call the tool again' not in hints.lower()
 
     @pytest.mark.asyncio
     async def test_acl_error(self, mock_http_client, mock_token_manager):

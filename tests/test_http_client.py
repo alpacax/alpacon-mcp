@@ -16,7 +16,7 @@ import pytest
 from tests.conftest import HTTP_VERBS
 from utils import request_signal
 from utils.error_handler import UpstreamAuthError
-from utils.http_client import AlpaconHTTPClient, http_client
+from utils.http_client import ActionMfaRequired, AlpaconHTTPClient, http_client
 from utils.recovery_hints import _detect_error_domain, enrich_error_response
 
 SERVER_ID = '550e8400-e29b-41d4-a716-446655440123'
@@ -573,6 +573,7 @@ class TestHandleUpstream401:
         assert result['status_code'] == HTTPStatus.UNAUTHORIZED
         assert result['error'] == 'MFA Required'
         assert result['message'] == 'MFA verification required'
+        assert result['error_code'] == 'auth_token_mfa_missing'
 
     def test_non_string_code_is_not_mfa_required(self, caplog):
         """An unhashable code is a plain 401, not a body that failed to parse."""
@@ -612,20 +613,17 @@ class TestHandleUpstream401:
         assert 'response' not in result
 
     @patch.dict('os.environ', {'ALPACON_MCP_AUTH_ENABLED': 'true'})
-    def test_raises_and_signals_in_remote_mode(self):
-        """Raises UpstreamAuthError and records the request signal in remote mode."""
+    def test_action_mfa_of_a_jwt_raises_for_a_step_up_link_without_a_signal(self):
+        """Action MFA goes to request() for a link; no 403 signal is recorded."""
         token = 'header.payload.signature'  # Must pass _is_jwt() check
         exc = self._make_401_exc({'code': 'auth_mfa_required', 'source': 'websh'})
         holder = request_signal.begin_request()
 
-        with pytest.raises(UpstreamAuthError) as exc_info:
+        with pytest.raises(ActionMfaRequired) as exc_info:
             AlpaconHTTPClient._handle_upstream_401(exc, token=token)
 
-        assert exc_info.value.mfa_required is True
         assert exc_info.value.source == 'websh'
-
-        assert holder['mfa_required'] is True
-        assert holder['source'] == 'websh'
+        assert holder == {}
 
     @patch.dict('os.environ', {'ALPACON_MCP_AUTH_ENABLED': 'true'})
     def test_sign_in_mfa_missing_signals_mfa_in_remote_mode(self):
@@ -639,16 +637,33 @@ class TestHandleUpstream401:
             )
 
         assert exc_info.value.mfa_required is True
-        assert holder == {'mfa_required': True, 'source': ''}
+        assert holder == {
+            'mfa_required': True,
+            'source': '',
+            'code': 'auth_token_mfa_missing',
+        }
 
     @patch.dict('os.environ', {'ALPACON_MCP_AUTH_ENABLED': 'false'})
     def test_no_signal_in_stdio_mode(self):
         """Does NOT record a signal when auth is disabled (stdio mode)."""
         token = 'header.payload.signature'
-        exc = self._make_401_exc({'code': 'auth_mfa_required', 'source': 'websh'})
+        exc = self._make_401_exc({'detail': 'Unauthorized'})
         holder = request_signal.begin_request()
 
         AlpaconHTTPClient._handle_upstream_401(exc, token=token)
+
+        assert holder == {}
+
+    @patch.dict('os.environ', {'ALPACON_MCP_AUTH_ENABLED': 'false'})
+    def test_action_mfa_of_a_jwt_raises_for_a_step_up_link_in_stdio_mode(self):
+        """Action MFA is answered with a link in every mode, stdio included."""
+        exc = self._make_401_exc({'code': 'auth_mfa_required', 'source': 'websh'})
+        holder = request_signal.begin_request()
+
+        with pytest.raises(ActionMfaRequired):
+            AlpaconHTTPClient._handle_upstream_401(
+                exc, token='header.payload.signature'
+            )
 
         assert holder == {}
 

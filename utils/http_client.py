@@ -9,25 +9,29 @@ from urllib.parse import urljoin
 
 import httpx
 
-from utils import request_signal
 from utils.common import MCP_USER_AGENT, JsonValue, is_auth_enabled
 from utils.declared_agent import declared_agent_headers
-from utils.error_handler import UpstreamAuthError
+from utils.error_handler import ACTION_MFA_CODE, SIGN_IN_MFA_CODE
 from utils.logger import get_logger, redact_for_log
+from utils.step_up import (
+    ERR_MFA_REQUIRED,
+    ActionMfaRequired,
+    StepUp,
+    signal_reauth,
+)
 
 logger = get_logger('http_client')
 
 # Pinned values: tests assert these verbatim; callers only check that 'error' exists.
 _ERR_HTTP = 'HTTP Error'
 _ERR_MAX_RETRIES = 'Max retries exceeded'
-_ERR_MFA_REQUIRED = 'MFA Required'
 _ERR_REQUEST = 'Request Error'
 _ERR_TIMEOUT = 'Timeout'
 _ERR_UNEXPECTED = 'Unexpected Error'
 
-# 401 codes that only a new sign-in through Auth0 MFA clears: the fresh MFA an action
-# demands, or the workspace's sign-in MFA the token lacks (a refresh keeps it lacking).
-_MFA_REAUTH_CODES = frozenset({'auth_mfa_required', 'auth_token_mfa_missing'})
+# 401 codes that signal MFA. A missing sign-in MFA is cleared only by a new sign-in
+# (a refresh keeps it missing); a fresh action MFA is answered with a step-up link.
+_MFA_REAUTH_CODES = frozenset({ACTION_MFA_CODE, SIGN_IN_MFA_CODE})
 
 
 def _error_code_of(text: str) -> str | None:
@@ -58,9 +62,14 @@ class AlpaconHTTPClient:
     would keep answering with access the caller has already lost.
     """
 
-    def __init__(self, transport: httpx.AsyncBaseTransport | None = None):
+    def __init__(
+        self,
+        transport: httpx.AsyncBaseTransport | None = None,
+        step_up: StepUp | None = None,
+    ):
         """``transport`` replaces the network under the pooled client."""
         self._transport = transport
+        self._step_up = step_up or StepUp()
         self.base_timeout = httpx.Timeout(10.0, connect=5.0)
         self.max_retries = 3
         self.retry_delay = 1.0
@@ -166,6 +175,36 @@ class AlpaconHTTPClient:
         Raises:
             httpx.HTTPError: If request fails after retries
         """
+
+        async def send() -> JsonValue:
+            return await self._send(
+                method,
+                url,
+                token=token,
+                headers=headers,
+                json_data=json_data,
+                params=params,
+                timeout=timeout,
+            )
+
+        try:
+            return await send()
+        except ActionMfaRequired as refusal:
+            return await self._step_up.answer(
+                url, token or '', refusal.source, send, self._raw_get
+            )
+
+    async def _send(
+        self,
+        method: str,
+        url: str,
+        token: str | None = None,
+        headers: dict[str, str] | None = None,
+        json_data: dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
+        timeout: float | None = None,
+    ) -> JsonValue:
+        """One attempt sequence with retries; see request()."""
         # Prepare headers
         request_headers = {
             'Content-Type': 'application/json',
@@ -507,23 +546,29 @@ class AlpaconHTTPClient:
         response before any middleware sees it, so UpstreamAuthError only cuts
         this call short—it does not carry the signal across layers.
 
-        In stdio/SSE mode (auth not enabled), only returns an error dict without
-        recording or raising.
+        Raises ActionMfaRequired in every mode, no signal.
+
+        Otherwise, in stdio/SSE mode (auth not enabled), only returns an error dict
+        without recording or raising.
         """
         mfa_required = False
         source = ''
+        code: str | None = None
 
         try:
             body = exc.response.json()
-            code = body.get('code') if isinstance(body, dict) else None
-            if isinstance(code, str) and code in _MFA_REAUTH_CODES:
+            raw_code = body.get('code') if isinstance(body, dict) else None
+            if isinstance(raw_code, str) and raw_code in _MFA_REAUTH_CODES:
                 mfa_required = True
+                code = raw_code
                 source = body.get('source', '')
         except Exception as parse_exc:
             logger.debug('Failed to parse 401 response body as JSON: %s', parse_exc)
 
         auth_enabled = is_auth_enabled()
         is_jwt = bool(token and AlpaconHTTPClient._is_jwt(token))
+        if code == ACTION_MFA_CODE and is_jwt:
+            raise ActionMfaRequired(source)
         # Only a JWT-carrying request may signal: the middleware trusts that and
         # checks the signal without knowing which credential produced it.
         signals = bool(auth_enabled and is_jwt)
@@ -540,27 +585,27 @@ class AlpaconHTTPClient:
         )
 
         if signals:
-            request_signal.signal_upstream_auth_error(
-                {
-                    'mfa_required': mfa_required,
-                    'source': source,
-                },
-            )
-            raise UpstreamAuthError(mfa_required=mfa_required, source=source)
+            signal_reauth(source, mfa_required=mfa_required, code=code or '')
 
         error_msg = 'MFA verification required' if mfa_required else str(exc)
         error_response = {
-            'error': _ERR_MFA_REQUIRED if mfa_required else _ERR_HTTP,
+            'error': ERR_MFA_REQUIRED if mfa_required else _ERR_HTTP,
             'status_code': HTTPStatus.UNAUTHORIZED,
             'message': error_msg,
             'mfa_required': mfa_required,
         }
+        if code:
+            error_response['error_code'] = code
         logger.error(
             'Upstream 401 (mfa_required=%s, source=%s), not retrying',
             mfa_required,
             source,
         )
         return error_response
+
+    async def _raw_get(self, url: str, **kwargs: Any) -> httpx.Response:
+        client = await self._get_client()
+        return await client.get(url, **kwargs)
 
 
 # Singleton instance

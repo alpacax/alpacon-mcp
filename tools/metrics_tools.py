@@ -11,6 +11,7 @@ from utils.common import (
     error_response,
     expect_json_object,
     json_records,
+    mfa_fields,
     resolve_time_window,
     success_response,
     unwrap_http_result,
@@ -1059,6 +1060,8 @@ async def get_server_metrics_summary(
 
     metric_results = dict(zip(tasks, gathered, strict=True))
 
+    mfa_refusals: list[dict] = []
+
     # Helper function to extract summary from metric result (from http_client directly)
     def extract_summary(result, metric_type):
         # Handle exceptions first
@@ -1087,6 +1090,9 @@ async def get_server_metrics_summary(
                 if unwrapped is not None and 'error_code' in unwrapped:
                     error_info['error_code'] = unwrapped['error_code']
                     error_info['error'] = unwrapped.get('message', error_info['error'])
+                if mfa := mfa_fields(result):
+                    error_info.update(mfa)
+                    mfa_refusals.append(result)
                 return error_info
 
             # Return metadata only, not the full data points
@@ -1157,7 +1163,12 @@ async def get_server_metrics_summary(
         'workspace': workspace,
     }
 
-    return success_response(data=summary)
+    refusal_fields: dict[str, Any] = {}
+    if mfa_refusals:
+        first = next((r for r in mfa_refusals if 'mfa_url' in r), mfa_refusals[0])
+        refusal_fields = mfa_fields(first, with_message=True)
+
+    return success_response(data=summary, **refusal_fields)
 
 
 @mcp_tool_handler(

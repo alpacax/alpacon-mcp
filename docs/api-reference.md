@@ -44,6 +44,23 @@ All MCP tools follow a consistent response structure:
 
 > **Note**: `"status": "success"` indicates successful HTTP communication. Check the `data.error` field for API-level errors like ACL permission issues (403/404).
 
+### HTTP request refused for MFA
+When the Alpacon API refuses an action for MFA, the error carries `mfa_url`, a step-up link to open in a browser:
+```json
+{
+  "status": "success",
+  "data": {
+    "error": "MFA Required",
+    "status_code": 401,
+    "message": "MFA is required for this action. Open this link in a browser, complete MFA, then call this tool again with the same arguments: https://auth.example.com/authorize?...",
+    "mfa_required": true,
+    "mfa_url": "https://auth.example.com/authorize?..."
+  }
+}
+```
+
+The link is both the `mfa_url` field and the end of `message`, so a client that keeps only the message still carries it. `get_server_metrics_summary` carries the same fields at the top of its result (and in each refused section), and `execute_command` polling returns them in its error, whose message says the command was already submitted: complete MFA, then check its result with `list_commands` and do not resubmit it (`execute_file` and `state_command_purpose` poll the same way). A refusal without a link keeps `mfa_required` and its own message. Open the link, complete MFA, then call the tool again with the same arguments. The retry waits up to 60 seconds for the MFA and resends the refused request. A reply of `MFA was just completed. Call this tool again with the same arguments.` carries no `mfa_url`: MFA is already done, so call again. When no link can be issued (including a token without a client instance), the error carries no `mfa_url`. MFA errors carry their own `recovery_hints` (open the link, then call the tool again), not the expired-token hint. A second refusal within the same tool call returns the link that call already minted without waiting.
+
 ## 🖥️ Server management tools
 
 ### `list_servers`
@@ -951,7 +968,7 @@ Get the workspace authentication/security settings: `mfa_required`, `allowed_mfa
 **Note:** This route is also SaaS-only. On-premise deployments return 404 from the upstream API; this tool reports that the settings are not available on this deployment instead of a generic error.
 
 ### `list_workspace_mfa_methods`
-List the MFA methods allowed for the workspace (`allowed_mfa_methods`, `passkey_as_mfa`). Useful when guiding a user through the remote/streamable-http MFA re-authentication flow.
+List the MFA methods allowed for the workspace (`allowed_mfa_methods`, `passkey_as_mfa`). Useful when guiding a user through MFA.
 
 **Parameters:**
 - `workspace` (string): Workspace name

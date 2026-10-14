@@ -58,11 +58,11 @@ Things the code will not tell you at a glance:
   `validate_file_path()` inline in any tool taking a path.
   `requires_workspace=False` is for a tool that answers before a workspace is
   known: it drops the workspace checks, the workspace-keyed region resolution,
-  the JWT workspace authorization, the MFA pre-check, and the stdio token
-  injection. `list_workspaces` is the only tool using it. The decorator also
-  rewrites the published signature, dropping the `**kwargs` it injects the token
-  into: the SDK reads that catch-all as an ordinary required field and would
-  publish it to clients. Two rules follow: a tool must declare `**kwargs`
+  the JWT workspace authorization, and the stdio token injection.
+  `list_workspaces` is the only tool using it. The decorator also rewrites the
+  published signature, dropping the `**kwargs` it injects the token into: the
+  SDK reads that catch-all as an ordinary required field and would publish it
+  to clients. Two rules follow: a tool must declare `**kwargs`
   or decoration raises, and no tool may forward its own `**kwargs` on to another
   tool, because by then it holds the resolved credential. `with_logging` binds
   the published signature strictly, so a forwarded catch-all raises a
@@ -78,9 +78,8 @@ Things the code will not tell you at a glance:
   by the calling token's permissions, and nothing in this process sees a grant
   revoked in the web console, in Slack, or by another MCP process. Do not
   reintroduce a response cache in the shared client: a hit would answer with
-  access the caller has lost. The auth-path caches stay: the JWKS keys in
-  `utils/auth.py` and the workspace security settings in
-  `utils/security_settings.py` are not permission-filtered tool data.
+  access the caller has lost. The auth-path cache stays: the JWKS keys in
+  `utils/auth.py` are not permission-filtered tool data.
 - **The WorkSession gate applies to OAuth/browser callers only.** Static API and
   service tokens bypass it, so a flow that works in stdio mode can be blocked in
   remote mode. `ALPACON_WORK_SESSION` supplies a default session id; an explicit
@@ -89,7 +88,11 @@ Things the code will not tell you at a glance:
   `source='api'` tokens, so list/get/create/update/delete/duplicate need
   JWT/OAuth, a browser session, or a `source='login'` token. The scopes and
   presets catalogs are exempt.
-- **MFA re-authentication exists only in remote/streamable-http mode**, with a
+- **Action MFA answers with a step-up link in every mode; sign-in MFA
+  re-authenticates only in remote/streamable-http mode.** A JWT request refused
+  with `auth_mfa_required` gets a tool error carrying `mfa_url`
+  (`utils/step_up.py`); a retry within ten minutes waits up to 60 seconds for
+  that MFA and resends. `auth_token_mfa_missing` still answers 403 with the
   60-second cooldown against re-auth loops.
 - **The code and refresh token a remote client holds are sealed by this
   server**, carrying the device id minted for that grant. Rotating
