@@ -817,6 +817,8 @@ def mfa_fields(result: dict[str, Any], *, with_message: bool = False) -> dict[st
     fields: dict[str, Any] = {'mfa_required': True}
     if mfa_url is not None:
         fields['mfa_url'] = mfa_url
+    if isinstance(result.get('error_code'), str):  # tells sign-in MFA from action MFA
+        fields['error_code'] = result['error_code']
     if with_message and isinstance(result.get('message'), str):
         fields['message'] = result['message']
     return fields

@@ -757,6 +757,38 @@ class TestExecuteCommand:
         assert 'call the tool again' not in hints.lower()
 
     @pytest.mark.asyncio
+    async def test_poll_refused_for_sign_in_mfa_points_at_signing_in_again(
+        self, mock_http_client, mock_token_manager
+    ):
+        # Given a submitted command whose poll is refused for missing sign-in MFA
+        with (
+            patch('tools.command_tools._submit_command') as mock_submit,
+            patch('tools.command_tools._get_command_result') as mock_poll,
+        ):
+            mock_submit.return_value = {'id': 'cmd-123'}
+            mock_poll.return_value = {
+                'error': 'MFA Required',
+                'status_code': 401,
+                'message': 'MFA verification required',
+                'mfa_required': True,
+                'error_code': 'auth_token_mfa_missing',
+            }
+
+            # When the tool runs
+            result = await execute_command(
+                server_id=VALID_SERVER_ID,
+                command='echo test',
+                workspace='testworkspace',
+                timeout=10,
+            )
+
+        # Then it keeps the sign-in code and points at setup, not at a step-up link
+        assert result['status'] == 'error'
+        assert result['error_code'] == 'auth_token_mfa_missing'
+        assert result['command_id'] == 'cmd-123'
+        assert 'uvx alpacon-mcp setup' in ' '.join(result['recovery_hints'])
+
+    @pytest.mark.asyncio
     async def test_poll_refused_for_mfa_without_a_link_says_the_command_was_submitted(
         self, mock_http_client, mock_token_manager
     ):

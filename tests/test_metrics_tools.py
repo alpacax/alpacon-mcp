@@ -695,6 +695,30 @@ class TestGetServerMetricsSummary:
         assert 'mfa_url' not in result['data']['metrics']['cpu']
 
     @pytest.mark.asyncio
+    async def test_metrics_summary_keeps_the_sign_in_mfa_code(
+        self, mock_http_client, mock_token_manager
+    ):
+        # Given every metrics request is refused for missing sign-in MFA
+        mock_http_client.get.return_value = {
+            'error': 'MFA Required',
+            'status_code': 401,
+            'message': 'MFA verification required',
+            'mfa_required': True,
+            'error_code': 'auth_token_mfa_missing',
+        }
+
+        # When the summary runs
+        result = await get_server_metrics_summary(
+            server_id=SERVER_ID, workspace='testworkspace', region='ap1'
+        )
+
+        # Then the sign-in code survives at the top level and in each section
+        assert result['error_code'] == 'auth_token_mfa_missing'
+        assert (
+            result['data']['metrics']['cpu']['error_code'] == 'auth_token_mfa_missing'
+        )
+
+    @pytest.mark.asyncio
     async def test_metrics_summary_custom_hours(
         self, mock_http_client, mock_token_manager
     ):

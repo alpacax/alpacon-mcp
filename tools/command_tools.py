@@ -22,7 +22,7 @@ from utils.common import (
     unwrap_http_result,
 )
 from utils.decorators import mcp_tool_handler
-from utils.error_handler import validate_file_path
+from utils.error_handler import SIGN_IN_MFA_CODE, validate_file_path
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, READ_ONLY
 
@@ -925,7 +925,18 @@ async def _poll_command_result(
             token=token,
         )
 
-        if isinstance(result, dict) and (mfa := mfa_fields(result)):
+        mfa = mfa_fields(result) if isinstance(result, dict) else {}
+        if isinstance(result, dict) and mfa.get('error_code') == SIGN_IN_MFA_CODE:
+            return error_response(
+                result.get('message', 'MFA verification required'),
+                command_id=command_id,
+                region=region,
+                workspace=workspace,
+                status_code=result.get('status_code'),
+                **mfa,
+                **echo,
+            )
+        if isinstance(result, dict) and mfa:
             return error_response(
                 _poll_mfa_message(mfa.get('mfa_url')),
                 command_id=command_id,
