@@ -15,13 +15,14 @@ from utils.common import (
     build_list_params,
     empty_value_error,
     error_response,
+    mfa_fields,
     pending_approval_response,
     resolve_work_session_id,
     success_response,
     unwrap_http_result,
 )
 from utils.decorators import mcp_tool_handler
-from utils.error_handler import validate_file_path
+from utils.error_handler import SIGN_IN_MFA_CODE, validate_file_path
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, READ_ONLY
 
@@ -50,6 +51,31 @@ DEFAULT_INTERPRETER = '/bin/bash'
 #: its own reason—double execution here, a second approval request there—but the
 #: instruction itself lives in one place so one copy cannot be reworded alone.
 DO_NOT_RESUBMIT = 'Do not resubmit the command'
+
+
+def _poll_mfa_message(mfa_url: str | None) -> str:
+    """The poll was refused for MFA; the command itself is already submitted."""
+    step = (
+        f'Open this link in a browser, complete MFA: {mfa_url}'
+        if mfa_url
+        else 'Complete MFA'
+    )
+    return (
+        f"MFA is required to read this command's result. {step}, then check "
+        f'its result with list_commands. The command was already submitted. '
+        f'{DO_NOT_RESUBMIT}.'
+    )
+
+
+def _poll_mfa_hints(mfa_url: str | None) -> list[str]:
+    """Hints for a refused poll: check with list_commands, never resubmit."""
+    first = (
+        f'Open this link in a browser and complete MFA: {mfa_url}'
+        if mfa_url
+        else 'Complete MFA.'
+    )
+    return [first, f'Then check the result with list_commands. {DO_NOT_RESUBMIT}.']
+
 
 # Non-interactive sudo denial codes, as they reach the command output via
 # alpacon_approval.c's [A-Z0-9_] sanitizer (UPPERCASE). Kept in sync with
@@ -898,6 +924,29 @@ async def _poll_command_result(
             workspace=workspace,
             token=token,
         )
+
+        mfa = mfa_fields(result) if isinstance(result, dict) else {}
+        if isinstance(result, dict) and mfa.get('error_code') == SIGN_IN_MFA_CODE:
+            return error_response(
+                result.get('message', 'MFA verification required'),
+                command_id=command_id,
+                region=region,
+                workspace=workspace,
+                status_code=result.get('status_code'),
+                **mfa,
+                **echo,
+            )
+        if isinstance(result, dict) and mfa:
+            return error_response(
+                _poll_mfa_message(mfa.get('mfa_url')),
+                command_id=command_id,
+                region=region,
+                workspace=workspace,
+                status_code=result.get('status_code'),
+                recovery_hints=_poll_mfa_hints(mfa.get('mfa_url')),
+                **mfa,
+                **echo,
+            )
 
         if isinstance(result, dict) and 'error' in result:
             return error_response(

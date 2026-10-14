@@ -193,6 +193,66 @@ async def test_mfa_flag_answers_insufficient_scope_with_mfa_scope():
     assert 'MFA' in json.loads(body)['error_description']
 
 
+SIGN_IN_MFA_DESCRIPTION = (
+    'Sign-in MFA is required. Reconnect the Alpacon MCP server to sign in again.'
+)
+
+
+@pytest.mark.asyncio
+async def test_sign_in_mfa_challenge_carries_the_reconnect_description():
+    # Given a request whose upstream refused the token for missing sign-in MFA
+    signal = {'mfa_required': True, 'source': '', 'code': 'auth_token_mfa_missing'}
+    # When the middleware answers it
+    sent = await _run(_make(error_value=signal))
+    status, headers, body = await _collect_response(sent)
+    # Then the 403 tells the person to reconnect, in the header and the body
+    assert status == HTTPStatus.FORBIDDEN
+    assert (
+        f'error_description="{SIGN_IN_MFA_DESCRIPTION}"' in headers['www-authenticate']
+    )
+    assert json.loads(body)['error_description'] == SIGN_IN_MFA_DESCRIPTION
+
+
+@pytest.mark.asyncio
+async def test_action_mfa_fallback_challenge_keeps_the_existing_description():
+    # Given the step-up link could not be had for an action refused for MFA
+    signal = {'mfa_required': True, 'source': 'webftp', 'code': 'auth_mfa_required'}
+    # When the middleware answers it
+    sent = await _run(_make(error_value=signal))
+    status, headers, body = await _collect_response(sent)
+    # Then the 403 keeps the existing body and adds no header description
+    assert status == HTTPStatus.FORBIDDEN
+    assert 'error_description' not in headers['www-authenticate']
+    assert json.loads(body)['error_description'] == (
+        'MFA verification required. Re-authentication needed.'
+    )
+
+
+@pytest.mark.asyncio
+async def test_sign_in_mfa_exception_path_carries_the_reconnect_description():
+    # Given an app that records a sign-in MFA signal and raises
+    class _SignInMfaApp:
+        async def __call__(self, scope, receive, send):
+            request_signal.signal_upstream_auth_error(
+                {
+                    'mfa_required': True,
+                    'source': '',
+                    'code': 'auth_token_mfa_missing',
+                }
+            )
+            raise UpstreamAuthError(mfa_required=True)
+
+    # When the middleware answers the raised error
+    sent = await _run(UpstreamAuthErrorMiddleware(_SignInMfaApp()))
+    status, headers, body = await _collect_response(sent)
+    # Then the 403 still names the reconnect fix
+    assert status == HTTPStatus.FORBIDDEN
+    assert (
+        f'error_description="{SIGN_IN_MFA_DESCRIPTION}"' in headers['www-authenticate']
+    )
+    assert json.loads(body)['error_description'] == SIGN_IN_MFA_DESCRIPTION
+
+
 @pytest.mark.asyncio
 async def test_non_mfa_flag_excludes_mfa_scope():
     """Non-MFA flag does NOT add 'mfa' to scope."""

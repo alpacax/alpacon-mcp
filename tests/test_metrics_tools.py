@@ -635,6 +635,90 @@ class TestGetServerMetricsSummary:
         assert 'network' in metrics
 
     @pytest.mark.asyncio
+    async def test_metrics_summary_carries_the_step_up_link_per_section(
+        self, mock_http_client, mock_token_manager
+    ):
+        # Given every metrics request is answered with a step-up link
+        mock_http_client.get.return_value = {
+            'error': 'MFA Required',
+            'status_code': 401,
+            'message': 'MFA is required for this action. Open this link in a '
+            'browser, complete MFA, then call this tool again with the same '
+            'arguments: https://auth/link-1',
+            'mfa_required': True,
+            'mfa_url': 'https://auth/link-1',
+        }
+
+        # When the summary runs
+        result = await get_server_metrics_summary(
+            server_id=SERVER_ID, workspace='testworkspace', region='ap1'
+        )
+
+        # Then each section carries the link as a field and in its error text
+        cpu = result['data']['metrics']['cpu']
+        assert cpu['available'] is False
+        assert cpu['mfa_url'] == 'https://auth/link-1'
+        assert cpu['mfa_required'] is True
+        assert 'https://auth/link-1' in cpu['error']
+
+        # And the result itself carries the link, including for the lookups
+        assert result['mfa_url'] == 'https://auth/link-1'
+        assert result['mfa_required'] is True
+        assert 'https://auth/link-1' in result['message']
+        for section in ('memory', 'disk', 'network'):
+            assert result['data']['metrics'][section]['mfa_url'] == (
+                'https://auth/link-1'
+            )
+
+    @pytest.mark.asyncio
+    async def test_metrics_summary_keeps_mfa_required_without_a_link(
+        self, mock_http_client, mock_token_manager
+    ):
+        # Given every metrics request is answered with an MFA refusal without a link
+        mock_http_client.get.return_value = {
+            'error': 'MFA Required',
+            'status_code': 401,
+            'message': 'MFA was just completed.',
+            'mfa_required': True,
+        }
+
+        # When the summary runs
+        result = await get_server_metrics_summary(
+            server_id=SERVER_ID, workspace='testworkspace', region='ap1'
+        )
+
+        # Then the result and sections say MFA is required, with no link
+        assert result['mfa_required'] is True
+        assert result['message'] == 'MFA was just completed.'
+        assert 'mfa_url' not in result
+        assert result['data']['metrics']['cpu']['mfa_required'] is True
+        assert 'mfa_url' not in result['data']['metrics']['cpu']
+
+    @pytest.mark.asyncio
+    async def test_metrics_summary_keeps_the_sign_in_mfa_code(
+        self, mock_http_client, mock_token_manager
+    ):
+        # Given every metrics request is refused for missing sign-in MFA
+        mock_http_client.get.return_value = {
+            'error': 'MFA Required',
+            'status_code': 401,
+            'message': 'MFA verification required',
+            'mfa_required': True,
+            'error_code': 'auth_token_mfa_missing',
+        }
+
+        # When the summary runs
+        result = await get_server_metrics_summary(
+            server_id=SERVER_ID, workspace='testworkspace', region='ap1'
+        )
+
+        # Then the sign-in code survives at the top level and in each section
+        assert result['error_code'] == 'auth_token_mfa_missing'
+        assert (
+            result['data']['metrics']['cpu']['error_code'] == 'auth_token_mfa_missing'
+        )
+
+    @pytest.mark.asyncio
     async def test_metrics_summary_custom_hours(
         self, mock_http_client, mock_token_manager
     ):

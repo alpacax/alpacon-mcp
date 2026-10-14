@@ -10,6 +10,9 @@ from mcp.server.mcpserver.exceptions import ToolError
 SERVED_REGIONS = ('ap1', 'us1')
 VALID_REGIONS = (*SERVED_REGIONS, 'dev')
 
+ACTION_MFA_CODE = 'auth_mfa_required'
+SIGN_IN_MFA_CODE = 'auth_token_mfa_missing'
+
 
 class UpstreamAuthError(ToolError):
     """Raised when re-authentication is required for the Alpacon API.
@@ -18,10 +21,9 @@ class UpstreamAuthError(ToolError):
     requires OAuth re-authentication. As a ``ToolError``, the SDK logs it
     at INFO without a traceback and keeps the message intact for the client.
 
-    Typically raised when the upstream Alpacon API returns 401 or when
-    local checks (such as MFA pre-checks) determine that the current
-    session requires re-authentication. The ``mfa_required`` flag
-    indicates whether multi-factor verification is specifically needed.
+    Typically raised when the upstream Alpacon API returns 401 and the call
+    cannot be answered any other way. The ``mfa_required`` flag indicates
+    whether multi-factor verification is specifically needed.
 
     Raising this only cuts the current call short; the signal the
     middleware reads is recorded separately via

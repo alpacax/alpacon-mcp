@@ -794,6 +794,8 @@ def unwrap_http_result(
                 error_code=code, axis=axis, next_value=next_value, **error_kwargs
             )
 
+    error_kwargs.update(mfa_fields(result))
+
     message = result.get('message', default_message)
     if code is not None:
         error_kwargs['error_code'] = code
@@ -802,6 +804,24 @@ def unwrap_http_result(
             message = f'{message} {hint}'
 
     return error_response(message, **error_kwargs)
+
+
+def mfa_fields(result: dict[str, Any], *, with_message: bool = False) -> dict[str, Any]:
+    """The MFA fields a refused result carries, so a step-up link reaches the caller
+    as a field and not only inside the message. Empty when MFA was not the refusal."""
+    mfa_url = result.get('mfa_url')
+    if not isinstance(mfa_url, str):
+        mfa_url = None
+    if result.get('mfa_required') is not True and mfa_url is None:
+        return {}
+    fields: dict[str, Any] = {'mfa_required': True}
+    if mfa_url is not None:
+        fields['mfa_url'] = mfa_url
+    if isinstance(result.get('error_code'), str):  # tells sign-in MFA from action MFA
+        fields['error_code'] = result['error_code']
+    if with_message and isinstance(result.get('message'), str):
+        fields['message'] = result['message']
+    return fields
 
 
 def _parse_error_body(result: dict[str, Any]) -> dict[str, Any] | None:

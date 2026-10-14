@@ -399,8 +399,8 @@ async def get_workspace_security(
     description=(
         'List the MFA methods allowed for this workspace. Returns allowed_mfa_methods and '
         'whether a passkey can satisfy MFA (passkey_as_mfa). Useful when a tool call fails '
-        'with an MFA re-authentication requirement (remote/streamable-http mode) and you need '
-        'to tell the user which methods they can use to complete the browser re-auth step. '
+        'with an MFA requirement (a tool error carrying mfa_url) and you need to tell the '
+        'user which methods they can use to complete MFA in the browser. '
         'Note: like get_workspace_security, the upstream route authenticates JWT (OAuth/SSO) '
         'sessions only; a static API token (stdio mode) is rejected before any request is '
         'sent, and the route is SaaS-only (on-premise returns a clear not-available message). '

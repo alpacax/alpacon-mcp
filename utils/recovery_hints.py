@@ -3,6 +3,8 @@
 from http import HTTPStatus
 from typing import Any
 
+from utils.error_handler import SIGN_IN_MFA_CODE
+
 # Closing advice every plan gate shares: the call is settled, only a plan change moves it.
 _PLAN_HINTS = [
     'Retrying will not change the answer.',
@@ -127,6 +129,21 @@ _HINT_REGISTRY: dict[tuple[int, str], dict[str, list[str]]] = {
         'related_tools': [],
     },
 }
+
+
+def _mfa_hints(mfa_url: object, error_code: object) -> dict[str, list[str]]:
+    """Hints for an MFA step-up error: the link when there is one, else just retry."""
+    if error_code == SIGN_IN_MFA_CODE:  # only a new sign-in clears it
+        return _copy_hints(_HINT_REGISTRY[(HTTPStatus.UNAUTHORIZED, 'general')])
+    if isinstance(mfa_url, str) and mfa_url:
+        return {
+            'recovery_hints': [
+                f'Open this link in a browser and complete MFA: {mfa_url}',
+                'Then call the tool again.',
+            ],
+            'related_tools': [],
+        }
+    return {'recovery_hints': ['Call the tool again.'], 'related_tools': []}
 
 
 def _detect_error_domain(
@@ -262,15 +279,15 @@ def enrich_error_response(
     if 'recovery_hints' in response:
         return response
 
-    status_code = response.get('status_code') or response.get('error_code')
-    message = response.get('message', '')
-
-    hints = get_recovery_hints(
-        status_code=status_code,
-        message=message,
-        tool_name=tool_name,
-        endpoint=endpoint,
-    )
+    if response.get('mfa_required') is True:
+        hints = _mfa_hints(response.get('mfa_url'), response.get('error_code'))
+    else:
+        hints = get_recovery_hints(
+            status_code=response.get('status_code') or response.get('error_code'),
+            message=response.get('message', ''),
+            tool_name=tool_name,
+            endpoint=endpoint,
+        )
 
     if hints['recovery_hints']:
         response['recovery_hints'] = hints['recovery_hints']

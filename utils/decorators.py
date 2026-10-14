@@ -12,9 +12,8 @@ from typing import Any
 from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.types import ToolAnnotations
 
-from utils import request_signal, token_manager
+from utils import request_workspace, token_manager
 from utils.auth import (
-    decode_claims_unverified,
     get_token_workspaces,
     match_workspace,
 )
@@ -34,11 +33,6 @@ from utils.error_handler import (
 from utils.http_client import AlpaconHTTPClient
 from utils.logger import describe_for_log, get_logger
 from utils.recovery_hints import enrich_error_response
-from utils.security_settings import (
-    check_mfa_completed,
-    get_action_for_tool,
-    security_cache,
-)
 from utils.workspace_resolver import resolve_workspace
 
 logger = get_logger('decorators')
@@ -292,55 +286,6 @@ def _resolve_region_local(workspace: str | None) -> tuple[str | None, str | None
     return None, 'No regions configured. Please run setup first.'
 
 
-async def _check_mfa_requirement(
-    tool_name: str, jwt_token: str, workspace: str
-) -> None:
-    """Check if MFA is required for this tool call and raise if needed.
-
-    Fetches workspace security settings, checks the JWT's MFA completion
-    claims, and raises UpstreamAuthError if MFA is required but
-    expired/missing. Before raising, it signals request_signal, which the
-    ASGI middleware reads to return HTTP 401 with MFA scope.
-
-    Fails open on errors — the upstream API will catch it as a fallback.
-
-    Raises:
-        UpstreamAuthError: If MFA is required but not completed.
-    """
-    action = get_action_for_tool(tool_name)
-    if not action:
-        return
-
-    try:
-        settings = await security_cache.get_settings(jwt_token, workspace)
-        if not settings or not settings.is_action_mfa_required(action):
-            return
-
-        claims = decode_claims_unverified(jwt_token)
-        if not claims:
-            return
-
-        if check_mfa_completed(claims, settings):
-            return
-
-        # MFA required but not completed
-        request_signal.signal_upstream_auth_error(
-            {'mfa_required': True, 'source': action},
-        )
-        logger.info(
-            'MFA pre-check: %s requires MFA for workspace %s, raising UpstreamAuthError',
-            action,
-            workspace,
-        )
-        raise UpstreamAuthError(mfa_required=True, source=action)
-    except UpstreamAuthError:
-        raise
-    except Exception as e:
-        # Fail-open: if pre-check fails, let the API call proceed.
-        # The upstream API's own MFA check will catch it as a fallback.
-        logger.debug('MFA pre-check failed (non-fatal): %s', e)
-
-
 def _validate_path_identifier(field: str, value: Any) -> dict[str, Any] | None:
     """Returns an error response, or None if valid."""
     # A non-str never matches the pattern, but the f-string that builds the
@@ -408,7 +353,7 @@ def with_token_validation(func: Callable, requires_workspace: bool = True) -> Ca
     ``requires_workspace=False`` is for a tool that answers before a workspace
     is known—``list_workspaces`` is the one today. It skips the workspace
     checks, the workspace-keyed region resolution, the JWT workspace
-    authorization, the MFA pre-check, and the stdio token injection, and reads
+    authorization, and the stdio token injection, and reads
     an empty ``region`` as "all regions" rather than one to resolve. A region
     that is given is still validated. A tool that reaches any workspace-scoped
     resource must not set it, read-only or not.
@@ -552,10 +497,6 @@ def with_token_validation(func: Callable, requires_workspace: bool = True) -> Ca
                         workspace=workspace,
                     )
 
-                # Signals request_signal and raises when MFA is required but
-                # not done; the ASGI middleware reads the signal for HTTP 401.
-                await _check_mfa_requirement(func.__name__, jwt_token, workspace)
-
             extra_kwargs['token'] = jwt_token
         elif requires_workspace:
             # stdio mode — token.json only
@@ -565,10 +506,17 @@ def with_token_validation(func: Callable, requires_workspace: bool = True) -> Ca
             extra_kwargs['token'] = token
 
         bound_args.arguments[catch_all] = extra_kwargs
-
-        # Call the original function using bound_args to handle
-        # both positional and keyword region correctly
-        return await func(*bound_args.args, **bound_args.kwargs)
+        workspace_token = request_workspace.bind_workspace(
+            workspace if requires_workspace else None
+        )
+        minted_token = request_workspace.bind_minted()
+        try:
+            # Call the original function using bound_args to handle
+            # both positional and keyword region correctly
+            return await func(*bound_args.args, **bound_args.kwargs)
+        finally:
+            request_workspace.reset_minted(minted_token)
+            request_workspace.reset_workspace(workspace_token)
 
     # The SDK publishes a VAR_KEYWORD as a required field, not a catch-all.
     new_params = [p for p in original_sig.parameters.values() if p.name != catch_all]
