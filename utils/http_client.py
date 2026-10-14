@@ -187,11 +187,24 @@ class AlpaconHTTPClient:
                 timeout=timeout,
             )
 
+        async def resend() -> JsonValue:
+            # One attempt: the MFA wait already spent most of the client's timeout.
+            return await self._send(
+                method,
+                url,
+                token=token,
+                headers=headers,
+                json_data=json_data,
+                params=params,
+                timeout=timeout,
+                attempts=1,
+            )
+
         try:
             return await send()
         except ActionMfaRequired as refusal:
             return await self._step_up.answer(
-                url, token or '', refusal.source, send, self._raw_get
+                url, token or '', refusal.source, resend, self._raw_get
             )
 
     async def _send(
@@ -203,8 +216,10 @@ class AlpaconHTTPClient:
         json_data: dict[str, Any] | None = None,
         params: dict[str, Any] | None = None,
         timeout: float | None = None,
+        attempts: int | None = None,
     ) -> JsonValue:
         """One attempt sequence with retries; see request()."""
+        max_attempts = attempts or self.max_retries
         # Prepare headers
         request_headers = {
             'Content-Type': 'application/json',
@@ -234,14 +249,14 @@ class AlpaconHTTPClient:
             """False once retries are exhausted."""
             nonlocal retry_count, retry_delay
             retry_count += 1
-            if retry_count >= self.max_retries:
+            if retry_count >= max_attempts:
                 # Check before the log: no retry follows, and the caller logs the exhaustion.
                 return False
             logger.warning(
                 '%s, retrying (%s/%s) in %ss',
                 reason,
                 retry_count,
-                self.max_retries,
+                max_attempts,
                 retry_delay,
             )
             await asyncio.sleep(retry_delay)
@@ -260,7 +275,7 @@ class AlpaconHTTPClient:
             if json_data:
                 logger.debug('Request body: %s', redact_for_log(json_data))
 
-        while retry_count < self.max_retries:
+        while retry_count < max_attempts:
             try:
                 client = await self._get_client()
                 response = await client.request(
@@ -317,7 +332,7 @@ class AlpaconHTTPClient:
                     error_response = {
                         'error': _ERR_MAX_RETRIES,
                         'status_code': e.response.status_code,
-                        'message': f'Server error after {self.max_retries} attempts',
+                        'message': f'Server error after {max_attempts} attempts',
                     }
                     logger.error('Server error after all retries: %s', error_response)
                     if code := _error_code_of(e.response.text):
@@ -347,7 +362,7 @@ class AlpaconHTTPClient:
 
                 error_response = {
                     'error': _ERR_TIMEOUT,
-                    'message': f'Request timed out after {self.max_retries} retries',
+                    'message': f'Request timed out after {max_attempts} retries',
                 }
                 logger.error('Request timeout after all retries: %s', error_response)
                 return error_response
@@ -370,9 +385,9 @@ class AlpaconHTTPClient:
         # Every branch above returns, so this is only reached when max_retries <= 0
         error_response = {
             'error': _ERR_MAX_RETRIES,
-            'message': f'Failed after {self.max_retries} attempts',
+            'message': f'Failed after {max_attempts} attempts',
         }
-        logger.error('Loop never ran - max_retries is %s', self.max_retries)
+        logger.error('Loop never ran - max_retries is %s', max_attempts)
         return error_response
 
     async def get(

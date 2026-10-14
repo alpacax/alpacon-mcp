@@ -23,7 +23,8 @@ from utils.request_workspace import current_workspace, minted_in_call
 logger = get_logger('step_up')
 
 STEP_UP_LINK_TTL = 600.0  # The server's step-up ticket lives this long.
-STEP_UP_WAIT_SECONDS = 60.0  # The alpacon CLI waits as long for a step-up.
+# With one resend after it, this stays under the 60 s request timeout MCP clients default to.
+STEP_UP_WAIT_SECONDS = 40.0
 STEP_UP_POLL_INTERVAL = 2.0
 _MAX_LINKS = 1024
 _REQUEST_TIMEOUT = httpx.Timeout(10.0, connect=5.0)

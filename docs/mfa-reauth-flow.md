@@ -37,7 +37,7 @@ sequenceDiagram
     C->>S: Tool Call (same arguments)
     S->>A: API call
     A-->>S: 401 auth_mfa_required
-    loop Every 2 seconds, up to 60 seconds
+    loop Every 2 seconds, up to 40 seconds
         S->>A: GET /api/auth0/mfa/completion/
         A-->>S: completed
     end
@@ -46,7 +46,7 @@ sequenceDiagram
     S-->>C: Tool Result
 ```
 
-If the MFA is not complete after 60 seconds, or the resent request is refused again, the server returns the remembered link again instead of minting a new one; a refused resend does not extend the link's ten minutes. A reply that says MFA is complete is accepted even if it arrives just after the 60 seconds. The link is in the error's `message` as well as in `mfa_url`. If the link endpoint answers that MFA is already done, the error asks the person to call again. A second refusal within the same tool call (for example the two stages of `get_server_metrics_summary`, or a sequential `execute_command_multi_server`) returns the link that call just minted at once: it neither waits nor resends, because the person has not seen the link yet. A refusal in a later tool call waits and resends as above. The error's recovery hints tell the agent to open the link and call the tool again; they never suggest re-running setup. If the link cannot be had at all (a failed request, a token without a client instance, or no workspace bound to the call), the server falls back to the 403 challenge in remote mode and to a plain MFA error in stdio mode.
+If the MFA is not complete after 40 seconds, or the resent request is refused again, the server returns the remembered link again instead of minting a new one; a refused resend does not extend the link's ten minutes. A reply that says MFA is complete is accepted even if it arrives just after the 40 seconds. The resend is tried once, without retries, so the wait and the resend together stay under the 60-second request timeout MCP clients default to. The link is in the error's `message` as well as in `mfa_url`. If the link endpoint answers that MFA is already done, the error asks the person to call again. A second refusal within the same tool call (for example the two stages of `get_server_metrics_summary`, or a sequential `execute_command_multi_server`) returns the link that call just minted at once: it neither waits nor resends, because the person has not seen the link yet. A refusal in a later tool call waits and resends as above. The error's recovery hints tell the agent to open the link and call the tool again; they never suggest re-running setup. If the link cannot be had at all (a failed request, a token without a client instance, or no workspace bound to the call), the server falls back to the 403 challenge in remote mode and to a plain MFA error in stdio mode.
 
 The link is remembered per person, client instance and origin (the token's `sub` and `client_instance` claim, and the scheme and host of the refused request), so a link for one workspace is never reused for another; a token without a client instance gets no link at all: the server issues no step-up ticket for it, so MFA done through a link would be credited to the browser and could not unlock the action.
 

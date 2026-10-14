@@ -91,8 +91,8 @@ Things the code will not tell you at a glance:
 - **Action MFA answers with a step-up link in every mode; sign-in MFA
   re-authenticates only in remote/streamable-http mode.** A JWT request refused
   with `auth_mfa_required` gets a tool error carrying `mfa_url`
-  (`utils/step_up.py`); a retry within ten minutes waits up to 60 seconds for
-  that MFA and resends. `auth_token_mfa_missing` still answers 403 with the
+  (`utils/step_up.py`); a retry within ten minutes waits up to 40 seconds for
+  that MFA and resends once. `auth_token_mfa_missing` still answers 403 with the
   60-second cooldown against re-auth loops.
 - **The code and refresh token a remote client holds are sealed by this
   server**, carrying the device id minted for that grant. Rotating

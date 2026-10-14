@@ -220,7 +220,7 @@ async def test_retry_after_mfa_resends_the_refused_request_once(fake_time, links
     assert links.get(KEY) is None
 
 
-async def test_unfinished_mfa_returns_the_same_link_after_sixty_seconds(
+async def test_unfinished_mfa_returns_the_same_link_after_forty_seconds(
     fake_time, links
 ):
     # Given a link already issued and MFA never completed
@@ -234,9 +234,9 @@ async def test_unfinished_mfa_returns_the_same_link_after_sixty_seconds(
     # When the tool is called again
     result = await post(client)
 
-    # Then after exactly 60 seconds the remembered link comes back, and no new link is minted
+    # Then after exactly 40 seconds the remembered link comes back, and no new link is minted
     assert result['mfa_url'] == LINK
-    assert fake_time.now == 60.0
+    assert fake_time.now == 40.0
     assert '/api/auth0/mfa/' not in upstream.paths()
     assert len(upstream.action_calls()) == 1
 
@@ -253,9 +253,9 @@ async def test_failing_completion_checks_count_as_not_done(fake_time, links):
     # When the tool is called again
     result = await post(client)
 
-    # Then the remembered link comes back after exactly 60 seconds, with nothing resent
+    # Then the remembered link comes back after exactly 40 seconds, with nothing resent
     assert result['mfa_url'] == LINK
-    assert fake_time.now == 60.0
+    assert fake_time.now == 40.0
     assert len(upstream.action_calls()) == 1
 
 
@@ -588,8 +588,8 @@ async def test_a_check_still_running_at_the_deadline_is_cancelled(fake_time, lin
 
     # Then the in-flight check was cancelled at the deadline and the same link returns
     assert cancelled == ['/api/auth0/mfa/completion/']
-    assert limits == [60.0]
-    assert fake_time.now == 60.0
+    assert limits == [40.0]
+    assert fake_time.now == 40.0
     assert result['mfa_url'] == LINK
     assert len(action_calls) == 1
     assert links.get(KEY) == LINK
@@ -732,9 +732,9 @@ async def test_completion_check_transport_failure_counts_as_not_done(fake_time, 
     # When the tool is called again
     result = await post(client)
 
-    # Then the remembered link comes back after exactly 60 seconds, with nothing resent
+    # Then the remembered link comes back after exactly 40 seconds, with nothing resent
     assert result['mfa_url'] == LINK
-    assert fake_time.now == 60.0
+    assert fake_time.now == 40.0
     assert len(upstream.action_calls()) == 1
 
 
@@ -750,9 +750,9 @@ async def test_non_json_completion_response_counts_as_not_done(fake_time, links)
     # When the tool is called again
     result = await post(client)
 
-    # Then the remembered link comes back after exactly 60 seconds, with nothing resent
+    # Then the remembered link comes back after exactly 40 seconds, with nothing resent
     assert result['mfa_url'] == LINK
-    assert fake_time.now == 60.0
+    assert fake_time.now == 40.0
     assert len(upstream.action_calls()) == 1
 
 
@@ -807,3 +807,23 @@ async def test_refusal_in_the_next_call_waits_and_resends(fake_time, links):
     assert upstream.paths().count('/api/auth0/mfa/') == 1
     assert upstream.paths().count('/api/auth0/mfa/completion/') == 1
     assert len(upstream.action_calls()) == 3
+
+
+async def test_a_resend_that_times_out_is_not_retried(fake_time, links):
+    # Given a remembered link, MFA completed, and a resend that times out
+    links.remember(KEY, LINK)
+    timeout = httpx.ReadTimeout('read timed out')
+    upstream = Upstream(
+        action=[(HTTPStatus.UNAUTHORIZED, MFA_REFUSAL)]
+        + [(HTTPStatus.OK, timeout)] * 3,
+        completion=[(HTTPStatus.OK, {'completed': True})],
+    )
+    client = make_client(upstream, fake_time, links)
+    client.retry_delay = 0
+
+    # When the tool is called again
+    result = await post(client)
+
+    # Then the resend is tried once, so the wait and the resend fit one client timeout
+    assert len(upstream.action_calls()) == 2
+    assert result['error'] == 'Timeout'
