@@ -6,6 +6,10 @@ This document describes how the MCP server handles workspace-level MFA requireme
 
 Some Alpacon workspaces require MFA for sensitive actions (websh, webftp, command). The MCP server proactively detects this by caching workspace security settings from the account service, and triggers a two-stage OAuth flow when MFA is needed.
 
+In remote mode (`ALPACON_MCP_AUTH_ENABLED=true`, a JWT caller), the flow also starts when the Alpacon API answers 401 with `auth_mfa_required` (an action asked for a fresh MFA) or `auth_token_mfa_missing` (the token lacks the workspace's sign-in MFA, which a refresh never adds).
+
+The challenge is a 403 `insufficient_scope`, not a 401. MCP clients answer a 401 by refreshing the token first and drop the challenge's scope while the refresh succeeds, so a 401 never reaches `/oauth/authorize` and the refreshed token still lacks MFA. On `insufficient_scope` the TypeScript SDK and Claude's clients skip the refresh and authorize with the union of the granted and challenged scopes.
+
 ## Flow diagrams
 
 ### Case 1: MFA not required
@@ -36,9 +40,9 @@ sequenceDiagram
     S->>S: security_cache check<br/>mfa_required=true<br/>JWT MFA expired
 
     S->>S: signal_upstream_auth_error<br/>(mfa_required=true)
-    S-->>C: HTTP 401<br/>WWW-Authenticate: scope="...mfa"
+    S-->>C: HTTP 403<br/>WWW-Authenticate: error="insufficient_scope", scope="...mfa"
 
-    Note over C: SDK starts full OAuth re-auth
+    Note over C: SDK skips the refresh and starts full OAuth re-auth
 
     C->>S: GET /oauth/authorize?scope=...+mfa
     S->>S: Mint device id, park it in state<br/>Detect 'mfa' in scope
@@ -103,8 +107,9 @@ One id per grant means one MFA record per MCP client installation: a step-up in 
 | Component | File | Role |
 |-----------|------|------|
 | Security settings cache | `utils/security_settings.py` | Caches workspace MFA settings from account service |
-| MFA pre-check | `utils/decorators.py` | Checks MFA before API call, signals 401 if needed |
-| Auth error middleware | `utils/auth_error_middleware.py` | Adds `mfa` scope to WWW-Authenticate on 401 |
+| MFA pre-check | `utils/decorators.py` | Checks MFA before API call, signals MFA re-auth if needed |
+| Upstream 401 detection | `utils/http_client.py` | Signals MFA re-auth when the API answers `auth_mfa_required` or `auth_token_mfa_missing` |
+| Auth error middleware | `utils/auth_error_middleware.py` | Answers an MFA signal with 403 `insufficient_scope` and `mfa` in the scope |
 | OAuth proxy (authorize) | `utils/oauth.py` | Routes to MFA or regular audience based on scope |
 | OAuth proxy (callback) | `utils/oauth.py` | Handles two-stage callback (MFA → regular) |
 

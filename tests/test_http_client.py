@@ -565,6 +565,32 @@ class TestHandleUpstream401:
         assert result['status_code'] == HTTPStatus.UNAUTHORIZED
         assert result['error'] == 'MFA Required'
 
+    def test_sign_in_mfa_missing_is_detected_as_mfa_required(self):
+        """A token without the workspace's sign-in MFA needs the same browser MFA."""
+        exc = self._make_401_exc({'code': 'auth_token_mfa_missing'})
+        result = AlpaconHTTPClient._handle_upstream_401(exc)
+        assert result['mfa_required'] is True
+        assert result['status_code'] == HTTPStatus.UNAUTHORIZED
+        assert result['error'] == 'MFA Required'
+        assert result['message'] == 'MFA verification required'
+
+    def test_non_string_code_is_not_mfa_required(self, caplog):
+        """An unhashable code is a plain 401, not a body that failed to parse."""
+        exc = self._make_401_exc({'code': ['auth_token_mfa_missing']})
+
+        with caplog.at_level(logging.DEBUG, logger='alpacon_mcp.http_client'):
+            result = AlpaconHTTPClient._handle_upstream_401(exc)
+
+        assert result['mfa_required'] is False
+        assert not any('Failed to parse' in r.getMessage() for r in caplog.records)
+
+    def test_missing_token_401_is_not_mfa_required(self):
+        """A plain token refusal starts an ordinary re-auth, not an MFA one."""
+        exc = self._make_401_exc({'code': 'auth_token_missing'})
+        result = AlpaconHTTPClient._handle_upstream_401(exc)
+        assert result['mfa_required'] is False
+        assert result['error'] == 'HTTP Error'
+
     def test_non_mfa_401(self):
         """Regular 401 without MFA code."""
         exc = self._make_401_exc({'detail': 'Unauthorized'})
@@ -600,6 +626,20 @@ class TestHandleUpstream401:
 
         assert holder['mfa_required'] is True
         assert holder['source'] == 'websh'
+
+    @patch.dict('os.environ', {'ALPACON_MCP_AUTH_ENABLED': 'true'})
+    def test_sign_in_mfa_missing_signals_mfa_in_remote_mode(self):
+        """The middleware reads this signal to put 'mfa' in the re-auth scope."""
+        exc = self._make_401_exc({'code': 'auth_token_mfa_missing'})
+        holder = request_signal.begin_request()
+
+        with pytest.raises(UpstreamAuthError) as exc_info:
+            AlpaconHTTPClient._handle_upstream_401(
+                exc, token='header.payload.signature'
+            )
+
+        assert exc_info.value.mfa_required is True
+        assert holder == {'mfa_required': True, 'source': ''}
 
     @patch.dict('os.environ', {'ALPACON_MCP_AUTH_ENABLED': 'false'})
     def test_no_signal_in_stdio_mode(self):
