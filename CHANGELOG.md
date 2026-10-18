@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- Work Session and sudo-policy tools now explain `sudo_policy_console_only` refusals: ask a
+  workspace admin to add the MFA-bypass policy from the web console, or request the session without
+  an MFA bypass. Response fields are unchanged; clients receive the next step in the error message.
 - `execute_file` and its `file_exec_reuse_exceeds_max` hint now state that standing approvals
   always expire: the workspace ceiling is 1 to 366 days (default 90), a requester may propose a
   shorter `reuse_days` but never a longer one, omitting it proposes no duration (the approver may

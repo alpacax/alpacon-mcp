@@ -267,6 +267,12 @@ WORK_SESSION_EXTENSION_REASON_REQUIRED_HINT = (
     'judge the extension request by. Retry with reason set.'
 )
 
+SUDO_POLICY_CONSOLE_ONLY_HINT = (
+    'MFA-bypass sudo policies are added from the web console only. '
+    'Ask a workspace admin to add the policy from the console, or '
+    'request the session without an MFA bypass.'
+)
+
 #: The alert rule evaluation preview's own limits (preview_alert_rule). Each
 #: is settled by the request itself, so the hint names what to narrow.
 ALERT_RULE_PREVIEW_REFUSAL_HINTS: dict[str, str] = {
@@ -331,6 +337,7 @@ _ERROR_CODE_HINT: dict[str, str] = {
     'workspace_extension_plan_required': WORKSPACE_EXTENSION_PLAN_REQUIRED_HINT,
     'workspace_extension_not_enabled': WORKSPACE_EXTENSION_NOT_ENABLED_HINT,
     'work_session_extension_reason_required': WORK_SESSION_EXTENSION_REASON_REQUIRED_HINT,
+    'sudo_policy_console_only': SUDO_POLICY_CONSOLE_ONLY_HINT,
 }
 
 # A plan-limit 402 (#296) is distinct from every other _ERROR_CODE_HINT entry

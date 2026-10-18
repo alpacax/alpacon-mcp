@@ -264,6 +264,32 @@ class TestRequestSudoPolicy:
     """Tests for request_sudo_policy tool."""
 
     @pytest.mark.asyncio
+    async def test_request_sudo_policy_console_only_hint(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = {
+            'error': 'Forbidden',
+            'response': '{"code": "sudo_policy_console_only"}',
+            'status_code': HTTPStatus.FORBIDDEN,
+        }
+
+        result = await request_sudo_policy(
+            workspace='testworkspace',
+            servers=[SERVER_ID],
+            commands=['/usr/bin/systemctl restart nginx'],
+            reason='Deploy window for the nginx config rollout',
+            region='ap1',
+        )
+
+        assert result['status'] == 'error'
+        assert result['error_code'] == 'sudo_policy_console_only'
+        assert (
+            'MFA-bypass sudo policies are added from the web console only. '
+            'Ask a workspace admin to add the policy from the console, or '
+            'request the session without an MFA bypass.'
+        ) in result['message']
+
+    @pytest.mark.asyncio
     async def test_request_sudo_policy_posts_required_fields(
         self, mock_http_client, mock_token_manager
     ):

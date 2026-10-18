@@ -29,6 +29,33 @@ UNKNOWN_SESSION_ID = '550e8400-e29b-41d4-a716-446655440099'
 
 class TestWorkSessionCreate:
     @pytest.mark.asyncio
+    async def test_create_sudo_policy_console_only_hint(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = {
+            'error': 'Forbidden',
+            'response': '{"code": "sudo_policy_console_only"}',
+            'status_code': HTTPStatus.FORBIDDEN,
+        }
+
+        result = await work_session_create(
+            workspace='testworkspace',
+            scopes=['command'],
+            servers=[SERVER_ID],
+            expires_at='2026-05-19T13:00:00+00:00',
+            description='Fix nginx config',
+            region='ap1',
+        )
+
+        assert result['status'] == 'error'
+        assert result['error_code'] == 'sudo_policy_console_only'
+        assert (
+            'MFA-bypass sudo policies are added from the web console only. '
+            'Ask a workspace admin to add the policy from the console, or '
+            'request the session without an MFA bypass.'
+        ) in result['message']
+
+    @pytest.mark.asyncio
     async def test_create_success(self, mock_http_client, mock_token_manager):
 
         # Verifies the request payload sent to the server. Use an active session
