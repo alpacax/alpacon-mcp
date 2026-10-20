@@ -12,7 +12,7 @@ import subprocess
 import sys
 import threading
 import time
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -93,7 +93,9 @@ def _stop(process: subprocess.Popen) -> None:
 
 
 @contextmanager
-def _serve_http(argv: list[str], env: dict[str, str]) -> Iterator[str]:
+def _serve_http(
+    argv: list[str], env: dict[str, str], output: dict[str, str] | None = None
+) -> Generator[str]:
     """Run an HTTP entry point on a free port; yield its base URL once /health answers."""
     port = _free_port()
     entry = ' '.join(argv)
@@ -101,7 +103,7 @@ def _serve_http(argv: list[str], env: dict[str, str]) -> Iterator[str]:
         [sys.executable, *argv],
         cwd=REPO_ROOT,
         env={**env, 'ALPACON_MCP_PORT': str(port)},
-        stdout=subprocess.DEVNULL,
+        stdout=subprocess.PIPE if output is not None else subprocess.DEVNULL,
         stderr=subprocess.PIPE,
         text=True,
     )
@@ -126,6 +128,11 @@ def _serve_http(argv: list[str], env: dict[str, str]) -> Iterator[str]:
         yield url
     finally:
         _stop(process)
+        if output is not None:
+            stdout, stderr = process.communicate()
+            output.update(stdout=stdout, stderr=stderr)
+        if process.stdout:
+            process.stdout.close()
         if process.stderr:
             process.stderr.close()
 
@@ -175,9 +182,10 @@ def _initialize_over_stdio(argv: list[str], env: dict[str, str], cwd: str) -> di
     return reply
 
 
-def test_main_answers_initialize_over_stdio(entry_env):
+def test_main_answers_initialize_over_stdio_even_with_log_format_json(entry_env):
+    env = {**entry_env, 'LOG_FORMAT': 'json'}
     argv = ['main.py', '--config-file', entry_env['SMOKE_CONFIG_FILE']]
-    reply = _initialize_over_stdio(argv, entry_env, REPO_ROOT)
+    reply = _initialize_over_stdio(argv, env, REPO_ROOT)
 
     assert reply['id'] == INITIALIZE['id']
     assert reply['result']['serverInfo']['name'] == 'alpacon'
@@ -210,6 +218,71 @@ def test_main_http_serves_health_on_the_port_it_binds(entry_env):
 
     assert response.status_code == 200, response.text
     assert response.json()['transport'] == 'streamable-http'
+
+
+def test_main_http_writes_json_logs_to_stdout(entry_env):
+    env = {**entry_env, 'LOG_FORMAT': 'json'}
+    output: dict[str, str] = {}
+    launch = """
+import runpy
+
+try:
+    runpy.run_path('main_http.py', run_name='__main__')
+except KeyboardInterrupt:
+    pass
+"""
+
+    with _serve_http(['-c', launch], env, output) as url:
+        response = httpx.get(f'{url}/health', trust_env=False)
+
+    assert response.status_code == 200, response.text
+    assert response.json()['transport'] == 'streamable-http'
+    lines = [line for line in output['stdout'].splitlines() if line.strip()]
+    assert lines
+    assert all('level' in json.loads(line) for line in lines)
+    assert output['stderr'] == ''
+
+
+def _run_main_http_without_auth0(
+    env: dict[str, str], cwd: Path
+) -> subprocess.CompletedProcess:
+    env = {k: v for k, v in env.items() if not k.startswith('AUTH0_')}
+    return subprocess.run(  # noqa: S603
+        [sys.executable, str(Path(REPO_ROOT) / 'main_http.py')],
+        cwd=cwd,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=BOOT_TIMEOUT,
+        check=False,
+    )
+
+
+def test_main_http_reports_missing_auth0_vars_as_one_json_error_record(
+    entry_env, tmp_path
+):
+    env = {**entry_env, 'LOG_FORMAT': 'json'}
+
+    result = _run_main_http_without_auth0(env, tmp_path)
+
+    assert result.returncode == 1
+    records = [json.loads(line) for line in result.stdout.splitlines()]
+    assert len(records) == 1
+    assert records[0]['level'] == 'ERROR'
+    assert records[0]['name'] == 'alpacon_mcp.main_http'
+    assert 'AUTH0_DOMAIN, AUTH0_CLIENT_ID' in records[0]['message']
+    assert result.stderr == ''
+
+
+def test_main_http_reports_missing_auth0_vars_on_stderr_in_text_mode(
+    entry_env, tmp_path
+):
+    result = _run_main_http_without_auth0(entry_env, tmp_path)
+
+    assert result.returncode == 1
+    assert result.stdout == ''
+    assert ' - ERROR - ' in result.stderr
+    assert 'AUTH0_DOMAIN, AUTH0_CLIENT_ID' in result.stderr
 
 
 def test_main_http_does_not_reject_a_public_host_header(entry_env):

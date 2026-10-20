@@ -16,31 +16,32 @@ Usage:
 import os
 import sys
 
-from utils.logger import get_logger
+import uvicorn
+
+from utils.auth_error_middleware import UpstreamAuthErrorMiddleware
+from utils.logger import get_logger, json_logs_requested, logger_manager
 
 logger = get_logger('main_http')
 
 
 def main():
     """Main entry point for HTTP transport mode."""
+    json_logs = json_logs_requested()
+    if json_logs:
+        logger_manager.use_json_stdout()
+
     # Validate required Auth0 configuration (fail fast on missing env vars)
     missing = [
         var for var in ('AUTH0_DOMAIN', 'AUTH0_CLIENT_ID') if not os.getenv(var, '')
     ]
 
     if missing:
-        print(
-            f'\nError: Required environment variable(s) not set: {", ".join(missing)}'
-        )
-        print('\nRequired environment variables:')
-        print('  AUTH0_DOMAIN        - Auth0 tenant domain')
-        print('  AUTH0_CLIENT_ID     - Auth0 application client ID')
-        print('\nOptional environment variables:')
-        print(
-            '  AUTH0_AUDIENCE      - Auth0 API audience (default: https://alpacon.io/access/)'
-        )
-        print(
-            '  AUTH0_CLIENT_SECRET - Auth0 client secret (only for confidential clients)'
+        # One record, not print(): JSON mode owns stdout, and Datadog reads the level.
+        logger.error(
+            'Required environment variable(s) not set: %s. AUTH0_DOMAIN is the '
+            'Auth0 tenant domain and AUTH0_CLIENT_ID the application client ID; '
+            'see docs/configuration.md',
+            ', '.join(missing),
         )
         sys.exit(1)
 
@@ -54,10 +55,6 @@ def main():
 
     logger.info('Starting Alpacon MCP Server (HTTP Streamable transport)')
 
-    # Deferred with the block below: keeps the HTTP-only dependency off the
-    # import path of non-HTTP entry points (stdio, SSE).
-    import uvicorn
-
     from server import (
         TRANSPORT_STREAMABLE_HTTP,
         create_streamable_http_app,
@@ -66,7 +63,6 @@ def main():
         resolve_port,
         resource_metadata_url,
     )
-    from utils.auth_error_middleware import UpstreamAuthErrorMiddleware
 
     try:
         prepare(TRANSPORT_STREAMABLE_HTTP)
@@ -86,6 +82,7 @@ def main():
                 host=host,
                 port=port,
                 log_level='info',
+                log_config=None if json_logs else uvicorn.config.LOGGING_CONFIG,
                 server_header=False,
             )
         ).run()
