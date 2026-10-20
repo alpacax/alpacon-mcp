@@ -569,7 +569,7 @@ When reporting issues, include:
 Before seeking help, verify:
 
 - [ ] Virtual environment is activated
-- [ ] All dependencies in `pyproject.toml` are installed (`uv sync`)
+- [ ] Runtime dependencies in `pyproject.toml` are installed (`uv sync`; add `--extra dev` to run the tests)
 - [ ] Token configuration file exists and is properly formatted
 - [ ] Absolute paths are used in MCP client configuration
 - [ ] Server can be started manually with `python main.py`
