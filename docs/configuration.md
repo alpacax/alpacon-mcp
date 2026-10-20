@@ -388,7 +388,7 @@ export ALPACON_MCP_LOG_LEVEL=INFO
 export ALPACON_MCP_LOG_LEVEL=ERROR
 ```
 
-`ALPACON_MCP_LOG_LEVEL` is the only logging knob the server reads. See [LOGGING.md](../LOGGING.md) for where the log output goes and why stdio mode never writes to stdout.
+`ALPACON_MCP_LOG_LEVEL` is the only logging knob stdio and SSE read. The streamable-http entry point also reads `LOG_FORMAT`: `json` writes one JSON record per line to stdout for Datadog. See [LOGGING.md](../LOGGING.md) for where the log output goes and why stdio mode never writes to stdout.
 
 ---
 

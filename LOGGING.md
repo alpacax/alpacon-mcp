@@ -11,8 +11,8 @@ A comprehensive logging system has been added to the MCP server. Debugging and m
 - **ERROR**: Error situations (API failures, exceptions, etc.)
 
 ### Log output destinations
-- **stderr**: Real-time logs on the console. Never stdout—in stdio mode stdout carries the MCP protocol itself
-- **File**: All logs saved to `logs/alpacon-mcp.log`, relative to the working directory. The file sink runs on a `QueueListener` thread, so a log call never puts a disk write on the event loop the request path shares
+- **Console**: Text mode writes real-time logs to stderr; streamable-http with `LOG_FORMAT=json` writes JSON to stdout. Stdio always keeps stdout for the MCP protocol
+- **File**: All logs saved to `logs/alpacon-mcp.log`, relative to the working directory, except in streamable-http with `LOG_FORMAT=json`, which writes no file. The file sink runs on a `QueueListener` thread, so a log call never puts a disk write on the event loop the request path shares
 
 ## 🚀 Usage
 
@@ -59,7 +59,7 @@ python main.py
 
 ### 1. Centralized Logger (`utils/logger.py`)
 - Consistent logging format across all modules
-- Simultaneous output to file and console: stderr directly, the file through a `QueueHandler`
+- Simultaneous output to file and console: text directly to stderr, or JSON to stdout in streamable-http with `LOG_FORMAT=json`; the file through a `QueueHandler`, which JSON mode removes
 - Log level control via environment variables
 - `stop_log_listener()` drains the queue on shutdown—`app_lifespan` calls it last, after every other cleanup has logged
 
@@ -123,14 +123,29 @@ Every tool call behind `@mcp_tool_handler` writes one `called with` line at INFO
 ## 🧱 One record per line
 
 - A client-supplied value such as an OAuth `error_description`, a `client_id`, a JWT `kid`, or a claim is escaped and bounded at the call site (`escape_for_log` in `utils/logger.py`).
-- Both sinks escape every control character in a message, so no value can start a second line. A traceback keeps its line breaks, and each of its lines is indented under the record line, so none starts where a record would.
+- No value can start a second line. In text mode, both sinks escape every control character in a message, and traceback lines are indented under the record line. In streamable-http with `LOG_FORMAT=json`, console JSON on stdout escapes line breaks and puts the traceback in `error.stack`.
+
+## 🧾 JSON records in an HTTP deployment
+
+`main_http.py` (streamable-http) reads `LOG_FORMAT`, the same switch alpacon-server reads. With `LOG_FORMAT=json` the console sink writes one JSON object per line to stdout, the envelope the [observability standard](https://handbook.alpacax.com/teams/engineering/standards/observability) asks every service for:
+
+```json
+{"timestamp": "2026-10-20T01:43:55.066Z", "level": "INFO", "message": "172.17.0.1:61240 - \"GET /mcp HTTP/1.1\" 401", "name": "uvicorn.access"}
+```
+
+- Datadog takes the status from `level`. A plain-text line has no level it can read, so it falls back to the stream: every stderr line becomes an error.
+- A record with a traceback carries it as `error.kind`, `error.message` and `error.stack` on the same line.
+- uvicorn's records, access log included, go through the same handler in this mode, so they come out as JSON too.
+- No log file is written: stdout is the only sink, as in alpacon-server.
+- Any other value, or none, keeps the text format on stderr.
+- stdio and SSE never read the switch. In stdio, stdout carries the MCP protocol itself.
 
 ## 🔌 Libraries
 
 - `httpx` and `httpcore` write warnings and errors only: at INFO httpx writes each request URL with its query string, and at DEBUG httpcore writes the response headers.
 - The MCP SDK (`mcp`) never writes below INFO, even with `ALPACON_MCP_LOG_LEVEL=DEBUG`: at DEBUG it writes each client message, tool arguments included.
 - The uvicorn access log records the request path without its query string, which on `/oauth/callback` carries the authorization code.
-- uvicorn's own records, which go to stderr through uvicorn's handler, get the same escaping and traceback indentation as this server's.
+- In text mode, uvicorn's own records go to stderr through its handler with the same escaping and traceback indentation as this server's. In streamable-http with `LOG_FORMAT=json`, uvicorn records propagate to the root handler as console JSON on stdout, with tracebacks in `error.stack`, and skip the escaping filter, which JSON makes redundant.
 
 ## 🎯 Performance considerations
 

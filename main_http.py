@@ -16,13 +16,20 @@ Usage:
 import os
 import sys
 
-from utils.logger import get_logger
+import uvicorn
+
+from utils.auth_error_middleware import UpstreamAuthErrorMiddleware
+from utils.logger import get_logger, json_logs_requested, logger_manager
 
 logger = get_logger('main_http')
 
 
 def main():
     """Main entry point for HTTP transport mode."""
+    json_logs = json_logs_requested()
+    if json_logs:
+        logger_manager.use_json_stdout()
+
     # Validate required Auth0 configuration (fail fast on missing env vars)
     missing = [
         var for var in ('AUTH0_DOMAIN', 'AUTH0_CLIENT_ID') if not os.getenv(var, '')
@@ -54,10 +61,6 @@ def main():
 
     logger.info('Starting Alpacon MCP Server (HTTP Streamable transport)')
 
-    # Deferred with the block below: keeps the HTTP-only dependency off the
-    # import path of non-HTTP entry points (stdio, SSE).
-    import uvicorn
-
     from server import (
         TRANSPORT_STREAMABLE_HTTP,
         create_streamable_http_app,
@@ -66,7 +69,6 @@ def main():
         resolve_port,
         resource_metadata_url,
     )
-    from utils.auth_error_middleware import UpstreamAuthErrorMiddleware
 
     try:
         prepare(TRANSPORT_STREAMABLE_HTTP)
@@ -86,6 +88,7 @@ def main():
                 host=host,
                 port=port,
                 log_level='info',
+                log_config=None if json_logs else uvicorn.config.LOGGING_CONFIG,
                 server_header=False,
             )
         ).run()

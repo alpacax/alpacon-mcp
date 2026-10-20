@@ -4,6 +4,8 @@ The file sink must not run on the caller's thread: in remote mode every tool
 call shares one event loop, and a FileHandler flushes to disk on every record.
 """
 
+import io
+import json
 import logging
 import logging.handlers
 import sys
@@ -18,9 +20,12 @@ from utils.logger import (
     LOG_MAX_BYTES,
     LOG_VALUE_MAX_CHARS,
     AlpaconLogger,
+    JsonFormatter,
     SharedRotatingFileHandler,
+    SingleLineFormatter,
     describe_for_log,
     escape_for_log,
+    json_logs_requested,
     redact_for_log,
 )
 
@@ -240,22 +245,14 @@ def _record(msg, *args, exc_info=None):
     )
 
 
-def _stderr_handler(handlers):
-    return next(
-        h
-        for h in handlers
-        if isinstance(h, logging.StreamHandler) and h.stream is sys.stderr
-    )
-
-
 class TestOneRecordOneLine:
     """No value inside a record can make a sink print a line a reader takes
     for a record of its own."""
 
     def test_a_line_break_in_a_value_stays_on_the_record_line(self, manager):
-        _, handlers = manager
+        instance, _ = manager
 
-        output = _stderr_handler(handlers).format(
+        output = instance.stream_handler.format(
             _record('Rejected value: %s', FORGED_LINE)
         )
 
@@ -268,13 +265,13 @@ class TestOneRecordOneLine:
 
     def test_no_traceback_line_starts_where_a_record_would(self, manager):
         """A traceback keeps its lines, each indented under the record line."""
-        _, handlers = manager
+        instance, _ = manager
         try:
             raise ValueError(f'bad value {FORGED_LINE}')
         except ValueError:
             exc_info = sys.exc_info()
 
-        output = _stderr_handler(handlers).format(_record('failed', exc_info=exc_info))
+        output = instance.stream_handler.format(_record('failed', exc_info=exc_info))
         first, *rest = output.split('\n')
 
         assert first.endswith('failed')
@@ -320,6 +317,140 @@ class TestUvicornRecords:
         logging.getLogger('uvicorn.error').warning('value: %s', FORGED_LINE)
 
         assert capsys.readouterr().err.count('\n') == 1
+
+
+@pytest.fixture
+def http_json_manager(manager, monkeypatch):
+    monkeypatch.setenv('LOG_FORMAT', 'json')
+    instance, _ = manager
+    instance.use_json_stdout()
+    return manager
+
+
+@pytest.fixture
+def uvicorn_loggers_as_log_config_none(monkeypatch):
+    for name in ('uvicorn', 'uvicorn.error', 'uvicorn.access'):
+        monkeypatch.setattr(logging.getLogger(name), 'handlers', [])
+        monkeypatch.setattr(logging.getLogger(name), 'propagate', True)
+
+
+class TestHttpJsonFormat:
+    def test_a_record_carries_the_standard_envelope(self, http_json_manager):
+        instance, _ = http_json_manager
+
+        record = _record('token %s', 'expired')
+        record.created = 0.0123
+        record.msecs = 12.3
+
+        output = instance.stream_handler.format(record)
+
+        entry = json.loads(output)
+        assert entry['level'] == 'WARNING'
+        assert entry['message'] == 'token expired'
+        assert entry['name'] == 'alpacon_mcp.test'
+        assert entry['timestamp'] == '1970-01-01T00:00:00.012Z'
+
+    def test_records_go_to_stdout(self, http_json_manager):
+        instance, _ = http_json_manager
+
+        assert instance.stream_handler.stream is sys.stdout
+        assert isinstance(instance.stream_handler.formatter, JsonFormatter)
+
+    def test_a_line_break_in_a_value_stays_on_the_record_line(self, http_json_manager):
+        instance, _ = http_json_manager
+
+        output = instance.stream_handler.format(
+            _record('Rejected value: %s', FORGED_LINE)
+        )
+
+        assert '\n' not in output
+        assert json.loads(output)['message'] == f'Rejected value: {FORGED_LINE}'
+
+    def test_a_traceback_goes_into_the_error_fields_on_one_line(
+        self, http_json_manager
+    ):
+        instance, _ = http_json_manager
+        try:
+            raise ValueError('bad value')
+        except ValueError:
+            exc_info = sys.exc_info()
+
+        output = instance.stream_handler.format(_record('failed', exc_info=exc_info))
+
+        assert '\n' not in output
+        entry = json.loads(output)
+        assert entry['error.kind'] == 'ValueError'
+        assert entry['error.message'] == 'bad value'
+        assert entry['error.stack'].endswith('ValueError: bad value')
+
+    def test_no_log_file_is_written(self, http_json_manager, tmp_path):
+        instance, _ = http_json_manager
+
+        logging.getLogger('alpacon_mcp.test').warning('stdout only')
+
+        assert instance.queue_handler not in logging.getLogger().handlers
+        assert instance.listener is None
+        assert not (tmp_path / 'logs' / 'alpacon-mcp.log').exists()
+
+    def test_uvicorn_records_come_out_as_json(
+        self, http_json_manager, uvicorn_loggers_as_log_config_none, monkeypatch
+    ):
+        instance, _ = http_json_manager
+        stdout = io.StringIO()
+        monkeypatch.setattr(instance.stream_handler, 'stream', stdout)
+        uvicorn.Config(app=None, log_level='info', log_config=None)
+
+        logging.getLogger('uvicorn.error').warning('value: %s', FORGED_LINE)
+        logging.getLogger('uvicorn.access').info(
+            '%s - "%s %s HTTP/%s" %d', '10.0.0.1:5000', 'GET', '/mcp?code=x', '1.1', 401
+        )
+
+        entries = [json.loads(line) for line in stdout.getvalue().splitlines()]
+        assert [e['level'] for e in entries] == ['WARNING', 'INFO']
+        assert entries[0]['message'] == f'value: {FORGED_LINE}'
+        assert entries[1]['message'] == '10.0.0.1:5000 - "GET /mcp HTTP/1.1" 401'
+
+    @pytest.mark.parametrize(
+        ('value', 'expected'),
+        [
+            ('json', True),
+            ('JSON', True),
+            (' json\n', True),
+            (None, False),
+            ('', False),
+            ('console', False),
+            ('yaml', False),
+        ],
+    )
+    def test_json_logs_are_requested_only_for_json(self, monkeypatch, value, expected):
+        if value is None:
+            monkeypatch.delenv('LOG_FORMAT', raising=False)
+        else:
+            monkeypatch.setenv('LOG_FORMAT', value)
+
+        requested = json_logs_requested()
+
+        assert requested is expected
+
+    def test_an_empty_exception_tuple_adds_no_error_fields(self, http_json_manager):
+        instance, _ = http_json_manager
+        record = _record('no exception', exc_info=(None, None, None))
+
+        entry = json.loads(instance.stream_handler.format(record))
+
+        assert not any(key.startswith('error.') for key in entry)
+
+    def test_stdio_keeps_text_on_stderr_even_with_log_format_json(
+        self, tmp_path, monkeypatch
+    ):
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv('LOG_FORMAT', 'json')
+
+        with _built_manager() as (instance, _):
+            handler = instance.stream_handler
+
+        assert handler.stream is sys.stderr
+        assert isinstance(handler.formatter, SingleLineFormatter)
 
 
 class TestThirdPartyLoggers:

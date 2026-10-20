@@ -1,10 +1,12 @@
 """Logging configuration for Alpacon MCP Server."""
 
+import json
 import logging
 import logging.handlers
 import os
 import queue
 import sys
+import time
 from collections.abc import Generator, Mapping
 from contextlib import contextmanager
 from pathlib import Path
@@ -124,6 +126,26 @@ class SingleLineFormatter(logging.Formatter):
         return output
 
 
+class JsonFormatter(logging.Formatter):
+    converter = staticmethod(time.gmtime)
+    default_time_format = '%Y-%m-%dT%H:%M:%S'
+    default_msec_format = '%s.%03dZ'
+
+    def format(self, record: logging.LogRecord) -> str:
+        entry: dict[str, Any] = {
+            'timestamp': self.formatTime(record),
+            'level': record.levelname,
+            'message': record.getMessage(),
+            'name': record.name,
+        }
+        if record.exc_info and record.exc_info[0] is not None:
+            exc_type, exc_value, _ = record.exc_info
+            entry['error.kind'] = getattr(exc_type, '__name__', None)
+            entry['error.message'] = str(exc_value)
+            entry['error.stack'] = self.formatException(record.exc_info)
+        return json.dumps(entry)
+
+
 class SingleLineRecordFilter(logging.Filter):
     """Give a record the escaping SingleLineFormatter applies, before any handler.
 
@@ -241,6 +263,8 @@ class AlpaconLogger:
 
     def __init__(self):
         self.listener: logging.handlers.QueueListener | None = None
+        self.stream_handler: logging.StreamHandler
+        self.queue_handler: logging.handlers.QueueHandler
         self._setup_logging()
 
     def _setup_logging(self):
@@ -256,6 +280,7 @@ class AlpaconLogger:
         stream_handler.setFormatter(
             SingleLineFormatter(fmt=LOG_FORMAT, datefmt=LOG_DATE_FORMAT)
         )
+        self.stream_handler = stream_handler
 
         # Plain: the queue handler below has already escaped what reaches it.
         file_handler = SharedRotatingFileHandler(
@@ -273,6 +298,7 @@ class AlpaconLogger:
         queue_handler = logging.handlers.QueueHandler(log_queue)
         # Prefix comes from the file handler; formatting here would repeat it.
         queue_handler.setFormatter(SingleLineFormatter('%(message)s'))
+        self.queue_handler = queue_handler
         self.listener = logging.handlers.QueueListener(log_queue, file_handler)
         self.listener.start()
 
@@ -291,6 +317,20 @@ class AlpaconLogger:
         # propagating through it, so both names uvicorn writes under need one.
         for name in ('uvicorn', 'uvicorn.error'):
             _add_filter_once(logging.getLogger(name), SingleLineRecordFilter)
+
+    def use_json_stdout(self) -> None:
+        self.stream_handler.setStream(sys.stdout)
+        self.stream_handler.setFormatter(JsonFormatter())
+        logging.getLogger().removeHandler(self.queue_handler)
+        file_sinks = self.listener.handlers if self.listener else ()
+        self.stop_listener()
+        for sink in file_sinks:
+            sink.close()
+        for name in ('uvicorn', 'uvicorn.error'):
+            uvicorn_logger = logging.getLogger(name)
+            for f in uvicorn_logger.filters[:]:
+                if isinstance(f, SingleLineRecordFilter):
+                    uvicorn_logger.removeFilter(f)
 
     def stop_listener(self) -> None:
         """Stop the queue listener, draining pending records to the log file."""
@@ -311,3 +351,7 @@ def get_logger(name: str) -> logging.Logger:
 def stop_log_listener() -> None:
     """Stop the log queue listener on shutdown."""
     logger_manager.stop_listener()
+
+
+def json_logs_requested() -> bool:
+    return os.getenv('LOG_FORMAT', '').strip().lower() == 'json'
