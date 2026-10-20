@@ -8,7 +8,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-COPY --from=ghcr.io/astral-sh/uv:0.12.17 /uv /usr/local/bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.13.2 /uv /usr/local/bin/uv
 
 # --locked fails the build if uv.lock and pyproject.toml disagree, so the image
 # never resolves a dependency the test run did not see.

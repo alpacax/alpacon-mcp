@@ -71,10 +71,13 @@ dev = [
     "pytest>=8.4.2",
     "pytest-asyncio>=1.2.0",
     "pytest-cov>=6.0.0",
-    "mypy>=1.15.0",
-    "ruff>=0.16.5",
+    "mypy>=2.4",
+    "ruff>=0.17.1",
     "pre-commit>=4.0.0",
 ]
+
+[tool.uv]
+required-version = ">=0.13,<0.14"  # keep in step with the uv image in Dockerfile
 
 [tool.hatch.version]
 source = "vcs"
