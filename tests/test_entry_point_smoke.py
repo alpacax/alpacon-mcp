@@ -12,7 +12,7 @@ import subprocess
 import sys
 import threading
 import time
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -93,7 +93,7 @@ def _stop(process: subprocess.Popen) -> None:
 
 
 @contextmanager
-def _serve_http(argv: list[str], env: dict[str, str]) -> Iterator[str]:
+def _serve_http(argv: list[str], env: dict[str, str]) -> Generator[str]:
     """Run an HTTP entry point on a free port; yield its base URL once /health answers."""
     port = _free_port()
     entry = ' '.join(argv)

@@ -5,7 +5,7 @@ import logging.handlers
 import os
 import queue
 import sys
-from collections.abc import Iterator, Mapping
+from collections.abc import Generator, Mapping
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
@@ -186,7 +186,7 @@ else:
 
 
 @contextmanager
-def _file_locked(fd: int) -> Iterator[None]:
+def _file_locked(fd: int) -> Generator[None]:
     _lock_file(fd)
     try:
         yield
