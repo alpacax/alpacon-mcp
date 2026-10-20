@@ -137,6 +137,7 @@ Every tool call behind `@mcp_tool_handler` writes one `called with` line at INFO
 - A record with a traceback carries it as `error.kind`, `error.message` and `error.stack` on the same line.
 - uvicorn's records, access log included, go through the same handler in this mode, so they come out as JSON too.
 - No log file is written: stdout is the only sink, as in alpacon-server.
+- A startup that fails because `AUTH0_DOMAIN` or `AUTH0_CLIENT_ID` is unset writes one `ERROR` record naming the missing variables, then exits with status 1.
 - Any other value, or none, keeps the text format on stderr.
 - stdio and SSE never read the switch. In stdio, stdout carries the MCP protocol itself.
 

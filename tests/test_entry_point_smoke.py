@@ -243,6 +243,48 @@ except KeyboardInterrupt:
     assert output['stderr'] == ''
 
 
+def _run_main_http_without_auth0(
+    env: dict[str, str], cwd: Path
+) -> subprocess.CompletedProcess:
+    env = {k: v for k, v in env.items() if not k.startswith('AUTH0_')}
+    return subprocess.run(  # noqa: S603
+        [sys.executable, str(Path(REPO_ROOT) / 'main_http.py')],
+        cwd=cwd,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=BOOT_TIMEOUT,
+        check=False,
+    )
+
+
+def test_main_http_reports_missing_auth0_vars_as_one_json_error_record(
+    entry_env, tmp_path
+):
+    env = {**entry_env, 'LOG_FORMAT': 'json'}
+
+    result = _run_main_http_without_auth0(env, tmp_path)
+
+    assert result.returncode == 1
+    records = [json.loads(line) for line in result.stdout.splitlines()]
+    assert len(records) == 1
+    assert records[0]['level'] == 'ERROR'
+    assert records[0]['name'] == 'alpacon_mcp.main_http'
+    assert 'AUTH0_DOMAIN, AUTH0_CLIENT_ID' in records[0]['message']
+    assert result.stderr == ''
+
+
+def test_main_http_reports_missing_auth0_vars_on_stderr_in_text_mode(
+    entry_env, tmp_path
+):
+    result = _run_main_http_without_auth0(entry_env, tmp_path)
+
+    assert result.returncode == 1
+    assert result.stdout == ''
+    assert ' - ERROR - ' in result.stderr
+    assert 'AUTH0_DOMAIN, AUTH0_CLIENT_ID' in result.stderr
+
+
 def test_main_http_does_not_reject_a_public_host_header(entry_env):
     """main_http.py binds 0.0.0.0 when ALPACON_MCP_HOST is unset; the token check is stubbed."""
     with _serve_http(['-c', STUBBED_AUTH_LAUNCH], entry_env) as url:

@@ -36,18 +36,12 @@ def main():
     ]
 
     if missing:
-        print(
-            f'\nError: Required environment variable(s) not set: {", ".join(missing)}'
-        )
-        print('\nRequired environment variables:')
-        print('  AUTH0_DOMAIN        - Auth0 tenant domain')
-        print('  AUTH0_CLIENT_ID     - Auth0 application client ID')
-        print('\nOptional environment variables:')
-        print(
-            '  AUTH0_AUDIENCE      - Auth0 API audience (default: https://alpacon.io/access/)'
-        )
-        print(
-            '  AUTH0_CLIENT_SECRET - Auth0 client secret (only for confidential clients)'
+        # One record, not print(): JSON mode owns stdout, and Datadog reads the level.
+        logger.error(
+            'Required environment variable(s) not set: %s. AUTH0_DOMAIN is the '
+            'Auth0 tenant domain and AUTH0_CLIENT_ID the application client ID; '
+            'see docs/configuration.md',
+            ', '.join(missing),
         )
         sys.exit(1)
 
