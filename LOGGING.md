@@ -127,7 +127,7 @@ Every tool call behind `@mcp_tool_handler` writes one `called with` line at INFO
 
 ## 🧾 JSON records in an HTTP deployment
 
-`main_http.py` (streamable-http) reads `LOG_FORMAT`, the same switch alpacon-server reads. With `LOG_FORMAT=json` the console sink writes one JSON object per line to stdout, the envelope the [observability standard](https://handbook.alpacax.com/teams/engineering/standards/observability) asks every service for:
+`main_http.py` (streamable-http) reads `LOG_FORMAT`, the same switch alpacon-server reads. With `LOG_FORMAT=json` the console sink writes one JSON object per line to stdout, carrying `timestamp` (UTC), `level`, `message` and `name`:
 
 ```json
 {"timestamp": "2026-10-20T01:43:55.066Z", "level": "INFO", "message": "172.17.0.1:61240 - \"GET /mcp HTTP/1.1\" 401", "name": "uvicorn.access"}
