@@ -147,7 +147,7 @@ execute_file(
 )
 ```
 
-The write replaces any file already at `path`, and the file is owned by `username`, the account the script runs as. Without `write_file`, the file must already be on the host with exactly these bytes.
+The write refuses a file already at `path` unless you pass `overwrite=True`; to run that file again, use `read_from_server=True` below. A new file is owned by `username`, the account the script runs as, and its own group; an existing file replaced with `overwrite=True` keeps its owner and mode and must be writable by `username`. Without `write_file`, the file must already be on the host with exactly these bytes.
 
 When the script already exists on the host—the usual `bash /opt/deploy.sh`—you need not have its bytes. `read_from_server=True` reads the file as `username` and submits exactly what is on disk:
 

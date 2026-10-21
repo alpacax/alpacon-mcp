@@ -447,9 +447,10 @@ human, which a `bash /path` line on `execute_command` never is.
 - `args` (array, optional): Arguments appended after the path, default `[]`; may contain empty strings
 - `reuse_days` (integer, optional): Proposed number of days, 1 to 366, for which the approver should let this exact file be rerun without a new review. Standing approvals always expire: the workspace ceiling is 1 to 366 days (default 90), and a requester may propose a shorter period, never a longer one. A proposal, not a grant: the approver may decline reuse, and a workspace ceiling lowered after submission can shorten it; the approver cannot choose another period. A proposal above the ceiling is refused with `file_exec_reuse_exceeds_max` rather than shortened. Give it when the same unchanged script will be rerun within that window. Sent as `file.reuse_days` only when given, so an omitted value leaves the request unchanged and a server that predates the field never sees it. Omitting it proposes no duration; an approver who opts in may still grant reuse up to the workspace ceiling
 - `write_file` (boolean, default: false): Write `content` to `path` on the host through WebFTP before submitting, in the same call. See "Writing the file" below
+- `overwrite` (boolean, default: false): With `write_file`, replace a file already at `path`. Refused with `file_exec_invalid_options` without `write_file`
 - `read_from_server` (boolean, default: false): Read the file at `path` from the host through WebFTP and submit those bytes as `content`. Excludes `write_file` and `content`. See "Reading the file" below
 - `username` (string, optional): Username for execution; with `write_file`, also the account the file is written as, and with `read_from_server`, the account it is read as
-- `groupname` (string, default: "alpacon"): Group name
+- `groupname` (string, default: "alpacon"): Group name; with `write_file`, a value other than the default is also the group a new file is written with
 - `run_after` (array, optional): Command IDs to wait for before executing
 - `scheduled_at` (string, optional): ISO 8601 datetime for scheduled execution
 - `timeout` (integer, default: 300): Timeout in seconds
@@ -461,12 +462,16 @@ human, which a `bash /path` line on `execute_command` never is.
 normalization, to `path`, waits until the host reports the file written, and only then submits the
 same bytes for review. The guarantee is unchanged: the agent hashes the on-disk file at execution and
 refuses a mismatch, so a file changed between the write and the run fails closed.
-- Overwrite: the write always replaces whatever is at `path`. Refusing an existing file would fail
-  every re-run of an unchanged script, so do not point it at a file you do not mean to replace.
-- Ownership: the file is written as `username`, so that account and its default group own it, and
-  the account needs write access to the directory. Pass `username` whenever ownership matters: an
-  omitted one leaves the writing account to the server's WebFTP default, which `groupname` does not
-  change. No execute bit is needed; the interpreter runs the file.
+- Overwrite: an existing file at `path` is refused, as the CLI's upload refuses it, unless
+  `overwrite: true` is passed. The refusal is `file_write_failed`, and its message says the file
+  already exists. To re-run a script already on the host, use `read_from_server` instead of writing
+  it again.
+- Ownership: the file is written as `username`. A new file is owned by that account and its own
+  group, or by `groupname` when one other than the default `alpacon` is passed, and the account
+  needs write access to the directory. An existing file replaced with `overwrite` keeps its owner
+  and mode, and must be writable by `username`. Pass `username` whenever ownership matters: an
+  omitted one leaves the writing account to the server's WebFTP default. No execute bit is needed;
+  the interpreter runs the file.
 - Timing: the write happens before the run is reviewed, exactly as a `webftp_upload_content` call
   would, so a run that is later denied leaves the new file in place. The wait for the write, up to
   about 60 seconds, comes before and on top of `timeout`.

@@ -16,9 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - `execute_file` gained an optional `write_file` (boolean, default `false`): the call writes
-  `content` to `path` on the host through WebFTP, overwriting any file there and owned by `username`,
-  then submits the same bytes once the host reports the file written; the on-disk hash check at
-  execution is unchanged (#360). A client parsing errors sees two new `error_code` values,
+  `content` to `path` on the host through WebFTP as `username`, then submits the same bytes once
+  the host reports the file written; the on-disk hash check at execution is unchanged (#360). An
+  existing file at `path` is refused unless the new `overwrite` (boolean, default `false`) is also
+  passed, as the CLI's upload does, and `overwrite` without `write_file` is refused with
+  `file_exec_invalid_options`. A `groupname` other than the default is forwarded to the write. A client parsing errors sees two new `error_code` values,
   `file_write_failed` and `file_write_timeout`, neither of which has submitted anything; a server
   refusal of the write that names its own code, Work Session gates included, keeps that code. The
   `execute_command` and

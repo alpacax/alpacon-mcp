@@ -2797,7 +2797,7 @@ class TestExecuteFileWriteFile:
             'server': VALID_SERVER_ID,
             'name': 'deploy.sh',
             'path': '/opt/deploy.sh',
-            'allow_overwrite': True,
+            'allow_overwrite': False,
             'username': 'deploy',
             'work_session': 'ws-1',
         }
@@ -3018,6 +3018,100 @@ class TestExecuteFileWriteFile:
         assert 'write_file' in text
         assert 'overwrite' in text
         assert 'write_file' in tools['execute_command'].description
+
+    @pytest.mark.asyncio
+    async def test_overwrite_and_a_named_group_reach_the_upload(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = _UPLOAD_ROW
+        mock_http_client.get.side_effect = _route_get()
+        with (
+            patch('tools.command_tools._submit_file_execution') as mock_submit,
+            patch('tools.command_tools._put_to_s3', return_value=None),
+        ):
+            mock_submit.return_value = _file_exec_envelope('file_exec_empty_content')
+            await execute_file(
+                server_id=VALID_SERVER_ID,
+                path='/opt/deploy.sh',
+                content=_FILE_SCRIPT,
+                write_file=True,
+                overwrite=True,
+                username='deploy',
+                groupname='ops',
+                workspace='testworkspace',
+                region='ap1',
+            )
+
+        upload = mock_http_client.post.call_args.kwargs['data']
+        assert upload['allow_overwrite'] is True
+        assert upload['groupname'] == 'ops'
+
+    @pytest.mark.asyncio
+    async def test_default_group_stays_off_the_upload(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = _UPLOAD_ROW
+        mock_http_client.get.side_effect = _route_get()
+        with (
+            patch('tools.command_tools._submit_file_execution') as mock_submit,
+            patch('tools.command_tools._put_to_s3', return_value=None),
+        ):
+            mock_submit.return_value = _file_exec_envelope('file_exec_empty_content')
+            await execute_file(
+                server_id=VALID_SERVER_ID,
+                path='/opt/deploy.sh',
+                content=_FILE_SCRIPT,
+                write_file=True,
+                workspace='testworkspace',
+                region='ap1',
+            )
+
+        assert 'groupname' not in mock_http_client.post.call_args.kwargs['data']
+        # The run itself still carries the group it executes as.
+        assert mock_submit.call_args.kwargs['groupname'] == 'alpacon'
+
+    @pytest.mark.asyncio
+    async def test_existing_file_refusal_names_both_ways_out(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = _UPLOAD_ROW
+        mock_http_client.get.side_effect = _route_get(
+            status={'success': False, 'message': '/opt/deploy.sh already exists.'}
+        )
+        with (
+            patch('tools.command_tools._submit_file_execution') as mock_submit,
+            patch('tools.command_tools._put_to_s3', return_value=None),
+        ):
+            result = await execute_file(
+                server_id=VALID_SERVER_ID,
+                path='/opt/deploy.sh',
+                content=_FILE_SCRIPT,
+                write_file=True,
+                workspace='testworkspace',
+                region='ap1',
+            )
+
+        assert result['error_code'] == 'file_write_failed'
+        assert '/opt/deploy.sh already exists.' in result['message']
+        assert 'overwrite=true' in result['message']
+        assert 'read_from_server=true' in result['message']
+        mock_submit.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_overwrite_without_write_file_is_refused(
+        self, mock_http_client, mock_token_manager
+    ):
+        result = await execute_file(
+            server_id=VALID_SERVER_ID,
+            path='/opt/deploy.sh',
+            content=_FILE_SCRIPT,
+            overwrite=True,
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert result['error_code'] == 'file_exec_invalid_options'
+        mock_http_client.post.assert_not_called()
 
 
 _DOWNLOAD_ROW = {'id': 'down-1'}
