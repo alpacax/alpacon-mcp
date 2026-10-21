@@ -453,12 +453,17 @@ same bytes for review. The guarantee is unchanged: the agent hashes the on-disk 
 refuses a mismatch, so a file changed between the write and the run fails closed.
 - Overwrite: the write always replaces whatever is at `path`. Refusing an existing file would fail
   every re-run of an unchanged script, so do not point it at a file you do not mean to replace.
-- Ownership: the file is written as `username`, the account the run uses, so that account owns it
-  and needs write access to the directory. No execute bit is needed; the interpreter runs the file.
+- Ownership: the file is written as `username`, so that account and its default group own it, and
+  the account needs write access to the directory. Pass `username` whenever ownership matters: an
+  omitted one leaves the writing account to the server's WebFTP default, which `groupname` does not
+  change. No execute bit is needed; the interpreter runs the file.
+- Timing: the write happens before the run is reviewed, exactly as a `webftp_upload_content` call
+  would, so a run that is later denied leaves the new file in place. The wait for the write, up to
+  about 60 seconds, comes before and on top of `timeout`.
 - Failure: nothing is submitted. `error_code` is `file_write_failed` when the upload is refused or
   the host reports the write failed (a Work Session gate refusal keeps its own code), and
   `file_write_timeout`, with `upload_id`, when the host does not report the file written within
-  about 60 seconds; check it with `webftp_check_status` before re-running.
+  about 60 seconds.
 - The local path, size, and `reuse_days` checks run before the write, so a run refused locally
   never touches the host.
 

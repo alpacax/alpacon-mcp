@@ -2873,6 +2873,7 @@ class TestExecuteFileWriteFile:
                 None,
                 id='upload_refused',
             ),
+            pytest.param({'id': 'up-1'}, None, None, id='no_upload_url'),
             pytest.param(_UPLOAD_ROW, 'Failed to upload to S3: 500', None, id='s3_put'),
             pytest.param(
                 _UPLOAD_ROW,
