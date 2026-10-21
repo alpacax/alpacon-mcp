@@ -461,7 +461,8 @@ refuses a mismatch, so a file changed between the write and the run fails closed
   would, so a run that is later denied leaves the new file in place. The wait for the write, up to
   about 60 seconds, comes before and on top of `timeout`.
 - Failure: nothing is submitted. `error_code` is `file_write_failed` when the upload is refused or
-  the host reports the write failed (a Work Session gate refusal keeps its own code), and
+  the host reports the write failed (a server refusal that names its own code, such as a Work
+  Session gate, keeps that code), and
   `file_write_timeout`, with `upload_id`, when the host does not report the file written within
   about 60 seconds.
 - The local path, size, and `reuse_days` checks run before the write, so a run refused locally

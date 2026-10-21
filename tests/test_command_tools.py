@@ -2955,6 +2955,57 @@ class TestExecuteFileWriteFile:
         mock_submit.assert_not_called()
 
     @pytest.mark.asyncio
+    async def test_coded_refusal_of_the_write_keeps_the_server_code(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = {
+            'error': 'HTTP Error',
+            'status_code': HTTPStatus.FORBIDDEN,
+            'response': '{"code":"permission_denied"}',
+        }
+        with patch('tools.command_tools._submit_file_execution') as mock_submit:
+            result = await execute_file(
+                server_id=VALID_SERVER_ID,
+                path='/opt/deploy.sh',
+                content=_FILE_SCRIPT,
+                write_file=True,
+                workspace='testworkspace',
+                region='ap1',
+            )
+
+        assert result['status'] == 'error'
+        assert result['error_code'] == 'permission_denied'
+        assert result['message'].startswith('Could not write /opt/deploy.sh')
+        mock_submit.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_plan_limit_refusal_of_the_write_keeps_its_shape(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = {
+            'error': 'HTTP Error',
+            'status_code': HTTPStatus.PAYMENT_REQUIRED,
+            'response': (
+                '{"code":"webftp_limit_exceeded","gate":"plan","axis":"webftp"}'
+            ),
+        }
+        with patch('tools.command_tools._submit_file_execution') as mock_submit:
+            result = await execute_file(
+                server_id=VALID_SERVER_ID,
+                path='/opt/deploy.sh',
+                content=_FILE_SCRIPT,
+                write_file=True,
+                workspace='testworkspace',
+                region='ap1',
+            )
+
+        assert result['error_code'] == 'webftp_limit_exceeded'
+        assert result['axis'] == 'webftp'
+        assert 'testworkspace/settings/billing' in result['next_action']
+        assert result['message'].startswith('Could not write /opt/deploy.sh')
+        mock_submit.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_schema_publishes_write_file_off_by_default(self):
         tools = {t.name: t for t in await mcp.list_tools()}
         schema = tools['execute_file'].input_schema
