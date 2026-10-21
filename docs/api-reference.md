@@ -421,8 +421,9 @@ approval: answer it with `state_command_purpose`.
 "COMMAND_AWAITING_APPROVAL"` says in its `message` that a script already on the host can move to
 `execute_file` with `read_from_server: true`. When the server names the script the held line runs, the
 response also carries `execute_file_suggestion`: `{"tool": "execute_file", "arguments": {...}}` with
-`server_id`, `path`, `interpreter`, `args`, `read_from_server: true`, `workspace`, and `region`, ready to
-pass as they are on the next run. A suggestion with a malformed field is dropped, never patched, so
+`server_id`, `path`, `interpreter`, `args`, `read_from_server: true`, `workspace`, and `region`, plus
+the held call's `username`, `groupname` and `work_session_id` when it passed them, ready to pass as
+they are on the next run. A suggestion with a malformed field is dropped, never patched, so
 the field is either absent or complete.
 
 ### `execute_file`

@@ -3487,7 +3487,9 @@ class TestGetCapped:
 class TestHeldCommandSuggestsTheFileLane:
     """A held shell line is pointed at execute_file with read_from_server."""
 
-    async def _held(self, row_extra: dict[str, Any]) -> dict[str, Any]:
+    async def _held(
+        self, row_extra: dict[str, Any], **call_extra: Any
+    ) -> dict[str, Any]:
         with (
             patch(
                 'tools.command_tools._submit_command',
@@ -3509,6 +3511,7 @@ class TestHeldCommandSuggestsTheFileLane:
                 workspace='testworkspace',
                 region='ap1',
                 timeout=10,
+                **call_extra,
             )
 
     @pytest.mark.asyncio
@@ -3563,6 +3566,8 @@ class TestHeldCommandSuggestsTheFileLane:
             {'path': '/opt/deploy.sh', 'interpreter': 'bash'},
             {'path': '/opt/deploy.sh', 'args': '--fast'},
             {'path': '/opt/deploy.sh', 'args': [1]},
+            {'path': '/opt/deploy.sh', 'interpreter': ''},
+            {'path': '/opt/deploy.sh', 'args': False},
         ],
     )
     async def test_a_malformed_suggestion_is_dropped_whole(
@@ -3585,6 +3590,23 @@ class TestHeldCommandSuggestsTheFileLane:
         arguments = result['execute_file_suggestion']['arguments']
         assert arguments['interpreter'] == '/bin/bash'
         assert arguments['args'] == []
+
+    @pytest.mark.asyncio
+    async def test_the_held_run_identity_carries_into_the_call(
+        self, mock_http_client, mock_token_manager
+    ):
+        work_session_id = '660e8400-e29b-41d4-a716-446655440000'
+        result = await self._held(
+            {'file_execution_suggestion': {'path': '/opt/deploy.sh'}},
+            username='deploy',
+            groupname='ops',
+            work_session_id=work_session_id,
+        )
+
+        arguments = result['execute_file_suggestion']['arguments']
+        assert arguments['username'] == 'deploy'
+        assert arguments['groupname'] == 'ops'
+        assert arguments['work_session_id'] == work_session_id
 
 
 class TestExecuteFileRegistration:

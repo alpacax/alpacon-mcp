@@ -658,7 +658,7 @@ async def execute_command(
         token=token,
     )
 
-    return await _settle_submission(
+    response = await _settle_submission(
         exec_data,
         server_id=server_id,
         command=command,
@@ -669,6 +669,17 @@ async def execute_command(
         region=region,
         token=token,
     )
+    # The suggested run must keep the held command's account and Work Session,
+    # or following it would submit a run other than the one held.
+    if suggested := response.get('execute_file_suggestion'):
+        arguments = suggested['arguments']
+        if username is not None:
+            arguments['username'] = username
+        if groupname != 'alpacon':
+            arguments['groupname'] = groupname
+        if work_session_id is not None:
+            arguments['work_session_id'] = work_session_id
+    return response
 
 
 async def _settle_submission(
@@ -1276,8 +1287,14 @@ def _attach_file_execution_suggestion(
     if not isinstance(suggestion, dict):
         suggestion = {}
     path = suggestion.get('path')
-    interpreter = suggestion.get('interpreter') or DEFAULT_INTERPRETER
-    args = suggestion.get('args') or []
+    # Only an absent or null field takes the default; a falsy value of the
+    # wrong type, such as "" or false, must fail the check below.
+    interpreter = suggestion.get('interpreter')
+    if interpreter is None:
+        interpreter = DEFAULT_INTERPRETER
+    args = suggestion.get('args')
+    if args is None:
+        args = []
     well_formed = (
         isinstance(path, str)
         and validate_file_path(path)
