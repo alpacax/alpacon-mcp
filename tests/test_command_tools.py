@@ -2713,6 +2713,235 @@ class TestExecuteFileRun:
         assert result['purpose_truncated'] is True
 
 
+_UPLOAD_ROW = {'id': 'up-1', 'upload_url': 'https://s3.example/put'}
+
+
+def _route_get(trigger: Any = None, status: Any = None):
+    """Answer the WebFTP trigger and status GETs the write path makes."""
+
+    async def _get(*, endpoint: str, **_: Any) -> Any:
+        if endpoint.endswith('/status/'):
+            return {'success': True} if status is None else status
+        return {} if trigger is None else trigger
+
+    return _get
+
+
+class TestExecuteFileWriteFile:
+    """write_file puts the submitted bytes on the host before the run is submitted."""
+
+    @pytest.fixture(autouse=True)
+    def _no_poll_wait(self):
+        with patch('tools.command_tools._FILE_WRITE_POLL_INTERVAL', 0):
+            yield
+
+    @pytest.mark.asyncio
+    async def test_off_by_default_writes_nothing(
+        self, mock_http_client, mock_token_manager
+    ):
+        with (
+            patch('tools.command_tools._submit_file_execution') as mock_submit,
+            patch('tools.command_tools._put_to_s3') as mock_put,
+        ):
+            mock_submit.return_value = _file_exec_envelope('file_exec_empty_content')
+
+            await execute_file(
+                server_id=VALID_SERVER_ID,
+                path='/opt/deploy.sh',
+                content=_FILE_SCRIPT,
+                workspace='testworkspace',
+                region='ap1',
+            )
+
+        mock_http_client.post.assert_not_called()
+        mock_put.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_writes_the_same_bytes_then_submits(
+        self, mock_http_client, mock_token_manager
+    ):
+        calls: list[str] = []
+        mock_http_client.post.side_effect = lambda **kw: (
+            calls.append('upload') or _UPLOAD_ROW
+        )
+        mock_http_client.get.side_effect = _route_get()
+        script = '#!/bin/bash\r\necho é\n'
+
+        async def _submit(**kw: Any) -> Any:
+            calls.append('submit')
+            return _file_exec_envelope('file_exec_empty_content')
+
+        with (
+            patch(
+                'tools.command_tools._submit_file_execution', side_effect=_submit
+            ) as mock_submit,
+            patch('tools.command_tools._put_to_s3', return_value=None) as mock_put,
+        ):
+            await execute_file(
+                server_id=VALID_SERVER_ID,
+                path='/opt/deploy.sh',
+                content=script,
+                write_file=True,
+                username='deploy',
+                work_session_id='ws-1',
+                workspace='testworkspace',
+                region='ap1',
+            )
+
+        assert calls == ['upload', 'submit']
+        upload = mock_http_client.post.call_args.kwargs
+        assert upload['endpoint'] == '/api/webftp/uploads/'
+        assert upload['data'] == {
+            'server': VALID_SERVER_ID,
+            'name': 'deploy.sh',
+            'path': '/opt/deploy.sh',
+            'allow_overwrite': True,
+            'username': 'deploy',
+            'work_session': 'ws-1',
+        }
+        # The bytes on disk are the bytes under review: no normalization.
+        mock_put.assert_awaited_once_with(
+            'https://s3.example/put', script.encode('utf-8')
+        )
+        assert mock_submit.call_args.kwargs['content'] == script
+        endpoints = [c.kwargs['endpoint'] for c in mock_http_client.get.call_args_list]
+        assert endpoints[0] == '/api/webftp/uploads/up-1/upload/'
+        assert endpoints[-1] == '/api/webftp/uploads/up-1/status/'
+
+    @pytest.mark.asyncio
+    async def test_success_reports_the_write(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = _UPLOAD_ROW
+        mock_http_client.get.side_effect = _route_get()
+        with (
+            patch('tools.command_tools._submit_file_execution') as mock_submit,
+            patch('tools.command_tools._get_command_result') as mock_poll,
+            patch('tools.command_tools._put_to_s3', return_value=None),
+        ):
+            mock_submit.return_value = {'id': 'cmd-720'}
+            mock_poll.return_value = {
+                'id': 'cmd-720',
+                'status': 'success',
+                'exit_code': 0,
+                'handled_at': '2026-09-09T00:00:01Z',
+            }
+
+            result = await execute_file(
+                server_id=VALID_SERVER_ID,
+                path='/opt/deploy.sh',
+                content=_FILE_SCRIPT,
+                write_file=True,
+                workspace='testworkspace',
+                region='ap1',
+                timeout=10,
+            )
+
+        assert result['status'] == 'success'
+        assert result['file_written'] is True
+        assert result['file'] == {
+            'path': '/opt/deploy.sh',
+            'interpreter': '/bin/bash',
+            'args': [],
+        }
+
+    @pytest.mark.asyncio
+    async def test_local_refusal_writes_nothing(
+        self, mock_http_client, mock_token_manager
+    ):
+        with patch('tools.command_tools._put_to_s3') as mock_put:
+            result = await execute_file(
+                server_id=VALID_SERVER_ID,
+                path='/opt/deploy.sh',
+                content='',
+                write_file=True,
+                workspace='testworkspace',
+                region='ap1',
+            )
+
+        assert result['error_code'] == 'file_exec_empty_content'
+        mock_http_client.post.assert_not_called()
+        mock_put.assert_not_called()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        'post, put, status',
+        [
+            pytest.param(
+                {'error': 'HTTP Error', 'status_code': 403, 'response': 'denied'},
+                None,
+                None,
+                id='upload_refused',
+            ),
+            pytest.param(_UPLOAD_ROW, 'Failed to upload to S3: 500', None, id='s3_put'),
+            pytest.param(
+                _UPLOAD_ROW,
+                None,
+                {'success': False, 'message': 'Permission denied'},
+                id='host_write',
+            ),
+        ],
+    )
+    async def test_failed_write_submits_nothing(
+        self, mock_http_client, mock_token_manager, post, put, status
+    ):
+        mock_http_client.post.return_value = post
+        mock_http_client.get.side_effect = _route_get(status=status)
+        with (
+            patch('tools.command_tools._submit_file_execution') as mock_submit,
+            patch('tools.command_tools._put_to_s3', return_value=put),
+        ):
+            result = await execute_file(
+                server_id=VALID_SERVER_ID,
+                path='/opt/deploy.sh',
+                content=_FILE_SCRIPT,
+                write_file=True,
+                workspace='testworkspace',
+                region='ap1',
+            )
+
+        assert result['status'] == 'error'
+        assert result['error_code'] == 'file_write_failed'
+        assert result['file']['path'] == '/opt/deploy.sh'
+        mock_submit.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_write_that_never_lands_times_out(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = _UPLOAD_ROW
+        mock_http_client.get.side_effect = _route_get(status={'success': None})
+        with (
+            patch('tools.command_tools._submit_file_execution') as mock_submit,
+            patch('tools.command_tools._put_to_s3', return_value=None),
+            patch('tools.command_tools._FILE_WRITE_POLL_ATTEMPTS', 3),
+        ):
+            result = await execute_file(
+                server_id=VALID_SERVER_ID,
+                path='/opt/deploy.sh',
+                content=_FILE_SCRIPT,
+                write_file=True,
+                workspace='testworkspace',
+                region='ap1',
+            )
+
+        assert result['error_code'] == 'file_write_timeout'
+        assert result['upload_id'] == 'up-1'
+        mock_submit.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_schema_publishes_write_file_off_by_default(self):
+        tools = {t.name: t for t in await mcp.list_tools()}
+        schema = tools['execute_file'].input_schema
+
+        assert schema['properties']['write_file']['default'] is False
+        assert 'write_file' not in schema['required']
+        text = tools['execute_file'].description
+        assert 'write_file' in text
+        assert 'overwrite' in text
+        assert 'write_file' in tools['execute_command'].description
+
+
 class TestExecuteFileRegistration:
     """The published tool is what teaches a model to take this lane."""
 
