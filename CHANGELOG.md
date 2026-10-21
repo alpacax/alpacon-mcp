@@ -18,9 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `execute_file` gained an optional `write_file` (boolean, default `false`): the call writes
   `content` to `path` on the host through WebFTP, overwriting any file there and owned by `username`,
   then submits the same bytes once the host reports the file written; the on-disk hash check at
-  execution is unchanged (#360). A successful response adds `file_written: true`, and a client
-  parsing errors sees two new `error_code` values, `file_write_failed` and `file_write_timeout`
-  (with `upload_id`), neither of which has submitted anything. The `execute_command` and
+  execution is unchanged (#360). A client parsing errors sees two new `error_code` values,
+  `file_write_failed` and `file_write_timeout`, neither of which has submitted anything; a Work
+  Session gate refusal of the write keeps its own code. The `execute_command` and
   `execute_file` descriptions now point scripts and heredocs at this one-step form.
 - `install_pam` (`server_id`, `workspace`, `region`): install the `alpamon-pam` package as root
   through the host's package manager on a host provisioned with alpamon alone, a no-op when the host

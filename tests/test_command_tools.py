@@ -2716,13 +2716,13 @@ class TestExecuteFileRun:
 _UPLOAD_ROW = {'id': 'up-1', 'upload_url': 'https://s3.example/put'}
 
 
-def _route_get(trigger: Any = None, status: Any = None):
+def _route_get(status: Any = None):
     """Answer the WebFTP trigger and status GETs the write path makes."""
 
     async def _get(*, endpoint: str, **_: Any) -> Any:
         if endpoint.endswith('/status/'):
             return {'success': True} if status is None else status
-        return {} if trigger is None else trigger
+        return {}
 
     return _get
 
@@ -2809,9 +2809,7 @@ class TestExecuteFileWriteFile:
         assert endpoints[-1] == '/api/webftp/uploads/up-1/status/'
 
     @pytest.mark.asyncio
-    async def test_success_reports_the_write(
-        self, mock_http_client, mock_token_manager
-    ):
+    async def test_success_echoes_the_file(self, mock_http_client, mock_token_manager):
         mock_http_client.post.return_value = _UPLOAD_ROW
         mock_http_client.get.side_effect = _route_get()
         with (
@@ -2838,7 +2836,6 @@ class TestExecuteFileWriteFile:
             )
 
         assert result['status'] == 'success'
-        assert result['file_written'] is True
         assert result['file'] == {
             'path': '/opt/deploy.sh',
             'interpreter': '/bin/bash',
@@ -2928,6 +2925,33 @@ class TestExecuteFileWriteFile:
 
         assert result['error_code'] == 'file_write_timeout'
         assert result['upload_id'] == 'up-1'
+        mock_submit.assert_not_called()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ('envelope', 'status'),
+        [
+            pytest.param(_GATE_ENVELOPE_REQUIRED, 'error', id='required'),
+            pytest.param(_GATE_ENVELOPE_NOT_ACTIVE, 'pending_approval', id='pending'),
+        ],
+    )
+    async def test_gate_refusal_of_the_write_keeps_its_own_shape(
+        self, mock_http_client, mock_token_manager, envelope, status
+    ):
+        mock_http_client.post.return_value = envelope
+        with patch('tools.command_tools._submit_file_execution') as mock_submit:
+            result = await execute_file(
+                server_id=VALID_SERVER_ID,
+                path='/opt/deploy.sh',
+                content=_FILE_SCRIPT,
+                write_file=True,
+                workspace='testworkspace',
+                region='ap1',
+            )
+
+        assert result['status'] == status
+        assert 'error_code' not in result
+        assert result['message'].startswith('Could not write /opt/deploy.sh')
         mock_submit.assert_not_called()
 
     @pytest.mark.asyncio

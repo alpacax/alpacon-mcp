@@ -472,7 +472,7 @@ script, where it is reviewed with it. A one-off composition around a file belong
 
 **Response:** the same shape as `execute_command`—`awaiting_approval`, `purpose_required`, sudo
 denials, and the result all follow the same rules—plus a `file` object echoing `path`, `interpreter`,
-and `args` (never `content`), and `file_written: true` when `write_file` wrote it. `command` and `shell` are not echoed; the polled command row carries the
+and `args` (never `content`). `command` and `shell` are not echoed; the polled command row carries the
 server-rendered line.
 
 **Refusals** come back as `status: "error"` with `error_code` set, and a message stating the fix. None
