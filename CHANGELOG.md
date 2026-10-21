@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- The `file_exec_unsupported_agent` hint and the `execute_file` description now name alpamon 2.8.3,
+  the first release that reports its capabilities, instead of 2.6.0, and separate two cases: an agent
+  older than 2.8.3 reports no capabilities (upgrade it), while one already on 2.8.3 or newer has no
+  file lane on that platform, such as Windows (upgrading does not help; use `execute_command`). The
+  `error_code` is unchanged, so a client parsing the response has nothing new to handle.
 - `execute_file` and its `file_exec_reuse_exceeds_max` hint now state that standing approvals
   always expire: the workspace ceiling is 1 to 366 days (default 90), a requester may propose a
   shorter `reuse_days` but never a longer one, omitting it proposes no duration (the approver may
