@@ -23,6 +23,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   refusal of the write that names its own code, Work Session gates included, keeps that code. The
   `execute_command` and
   `execute_file` descriptions now point scripts and heredocs at this one-step form.
+- `execute_file` gained an optional `read_from_server` (boolean, default `false`) for a script that
+  already exists on the host: the call reads the file at `path` as `username` through WebFTP and
+  submits its exact bytes as `content`, and the on-disk hash check at execution is unchanged (#360).
+  `content` is no longer a required argument, and `read_from_server` is refused alongside
+  `write_file` or `content`. A client parsing errors sees three new `error_code` values,
+  `file_exec_invalid_options`, `file_read_failed` and `file_read_timeout`, none of which has
+  submitted anything. A held `execute_command` response now suggests this form, and carries a
+  ready-to-call `execute_file_suggestion` object when the server names the script the held line runs.
 - `install_pam` (`server_id`, `workspace`, `region`): install the `alpamon-pam` package as root
   through the host's package manager on a host provisioned with alpamon alone, a no-op when the host
   is already current; it wraps the new `install_pam` value of

@@ -149,6 +149,21 @@ execute_file(
 
 The write replaces any file already at `path`, and the file is owned by `username`, the account the script runs as. Without `write_file`, the file must already be on the host with exactly these bytes.
 
+When the script already exists on the host—the usual `bash /opt/deploy.sh`—you need not have its bytes. `read_from_server=True` reads the file as `username` and submits exactly what is on disk:
+
+```
+execute_file(
+    server_id="7e3984de-49ab-4cc6-bcdf-21fbd35858b8",
+    path="/opt/deploy.sh",
+    read_from_server=True,
+    username="deploy",
+    args=["--fast"],
+    workspace="production",
+)
+```
+
+A held `execute_command` line that runs such a script carries `execute_file_suggestion` when the server names the script; its `arguments` are this call.
+
 An approver can mark the run standing; an unchanged re-run then needs no human. One changed byte re-queues review. Pipes, redirection and variables go inside the script, where they are reviewed with it.
 
 ### Many servers
