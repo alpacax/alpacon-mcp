@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- `create_command_acl`, `update_command_acl` and `delete_command_acl` now explain the 405
+  `command_acl_moved` that the Alpacon API answers on every command-ACL write since command
+  pre-approvals moved to the command pre-approval ledger: the error says a ledger admin must make the
+  change in the web console and that the call should not be retried, instead of a bare 405.
+
 ### Changed
 - `execute_file` and its `file_exec_reuse_exceeds_max` hint now state that standing approvals
   always expire: the workspace ceiling is 1 to 366 days (default 90), a requester may propose a

@@ -322,8 +322,19 @@ AGENT_ROLLOUT_POLICY_REFUSAL_HINTS: dict[str, str] = {
     ),
 }
 
+#: A 405 on every command-ACL write (create, update, delete): command
+#: pre-approvals moved to the command pre-approval ledger, and this server has
+#: no ledger tool yet. Reads still work.
+COMMAND_ACL_MOVED_HINT = (
+    'Command ACLs are now managed on the command pre-approval ledger, so this '
+    'endpoint no longer accepts writes. For now a ledger admin must add, change '
+    "or remove the rule in the web console (the token's ACL page, or the "
+    'workspace Command ACL settings). Do not retry this call.'
+)
+
 _ERROR_CODE_HINT: dict[str, str] = {
     'auth_verification_unavailable': AUTH_VERIFICATION_UNAVAILABLE_HINT,
+    'command_acl_moved': COMMAND_ACL_MOVED_HINT,
     'command_inline_credential': INLINE_CREDENTIAL_HINT,
     **FILE_EXEC_REFUSAL_HINTS,
     **ALERT_RULE_PREVIEW_REFUSAL_HINTS,
