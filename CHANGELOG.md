@@ -29,6 +29,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   wording said an omitted `reuse_days` could run with no expiry when the workspace had no ceiling.
 
 ### Added
+- `execute_file` gained an optional `write_file` (boolean, default `false`) that writes `content`
+  to `path` on the host through WebFTP, then submits the same bytes once the host reports the file
+  written, and an `overwrite` that lets it replace an existing file (#360). A client parsing errors
+  sees two new `error_code` values, `file_write_failed` and `file_write_timeout`, neither of which
+  has submitted anything; the API reference has the ownership and refusal rules. With this and
+  `read_from_server`, `commands` alone reaches WebFTP, so leaving `webftp` out of `--toolsets` no
+  longer keeps file transfers from the agent.
+- `execute_file` gained an optional `read_from_server` (boolean, default `false`) that reads the
+  script already at `path` on the host and submits its exact bytes, so `content` is no longer
+  required (#360). A client parsing errors sees three new `error_code` values,
+  `file_exec_invalid_options`, `file_read_failed` and `file_read_timeout`, none of which has
+  submitted anything. A held `execute_command` response may now carry an `execute_file_suggestion`
+  object, whose `arguments.interpreter` is `null` with an added `interpreter_name` and `instruction`
+  when the held line names a bare interpreter.
 - `install_pam` (`server_id`, `workspace`, `region`): install the `alpamon-pam` package as root
   through the host's package manager on a host provisioned with alpamon alone, a no-op when the host
   is already current; it wraps the new `install_pam` value of

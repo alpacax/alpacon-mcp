@@ -133,26 +133,36 @@ The call waits for the result—up to `timeout` seconds (default 300). `list_com
 
 ### A script, verified by digest
 
-Anything longer than a one-off line goes as a file (ADR 0053). Put it on the host first, then submit the same bytes; the agent runs the on-disk file only if it hashes to what the reviewer saw.
+Anything longer than a one-off line goes as a file. `write_file=True` writes the script to the host and submits the same bytes in one call; the agent runs the on-disk file only if it hashes to what the reviewer saw.
 
 ```
-script = "#!/bin/bash\nset -euo pipefail\nsystemctl restart app\n"
-
-webftp_upload_content(
-    server_id="7e3984de-49ab-4cc6-bcdf-21fbd35858b8",
-    remote_file_path="/opt/deploy.sh",
-    file_content=script,
-    workspace="production",
-)
-
 execute_file(
     server_id="7e3984de-49ab-4cc6-bcdf-21fbd35858b8",
     path="/opt/deploy.sh",
-    content=script,
+    content="#!/bin/bash\nset -euo pipefail\nsystemctl restart app\n",
+    write_file=True,
+    username="deploy",
     args=["--fast"],
     workspace="production",
 )
 ```
+
+The write refuses a file already at `path` unless you pass `overwrite=True`; to run that file again, use `read_from_server=True` below. A new file is owned by `username`, the account the script runs as, and its own group; an existing file replaced with `overwrite=True` keeps its owner and mode and must be writable by `username`. Without `write_file`, the file must already be on the host with exactly these bytes.
+
+When the script already exists on the host—the usual `bash /opt/deploy.sh`—you need not have its bytes. `read_from_server=True` reads the file as `username` and submits exactly what is on disk:
+
+```
+execute_file(
+    server_id="7e3984de-49ab-4cc6-bcdf-21fbd35858b8",
+    path="/opt/deploy.sh",
+    read_from_server=True,
+    username="deploy",
+    args=["--fast"],
+    workspace="production",
+)
+```
+
+A held `execute_command` line that runs such a script carries `execute_file_suggestion` when the server names the script; its `arguments` are this call. The held command stays queued and runs if approved, so have a human cancel it in the Alpacon console (Commands) before switching, or the script waits on two approval requests.
 
 An approver can mark the run standing; an unchanged re-run then needs no human. One changed byte re-queues review. Pipes, redirection and variables go inside the script, where they are reviewed with it.
 

@@ -417,8 +417,28 @@ Execute a command on a server and wait for the result.
 `deadline_seconds`, the number of seconds left. No approval request exists at that point, so a client must not treat it as a pending
 approval: answer it with `state_command_purpose`.
 
+**Held for approval:** a `status: "pending_approval"` response with `category:
+"COMMAND_AWAITING_APPROVAL"` says in its `message` that a script already on the host can move to
+`execute_file` with `read_from_server: true`. When the server names the script the held line runs, the
+response also carries `execute_file_suggestion`: `{"tool": "execute_file", "arguments": {...}}` with
+`server_id`, `path`, `interpreter`, `args`, `read_from_server: true`, `workspace`, and `region`, plus
+the held command's `username`, `groupname` and `work_session_id` (from the held call, else from the
+polled command row, so a run answered through `state_command_purpose` keeps them too), ready to pass
+as they are on the next run. A held command that was fed `data` gets no suggestion, only the hint in
+`message`: `execute_file` takes no stdin. When the held line names a bare interpreter such as `bash`, the server
+does not resolve it and neither does this one: `arguments.interpreter` is `null`, and the suggestion
+adds `interpreter_name` (the bare name) and an `instruction` to set `interpreter` to that name's
+absolute path on the host, for example from `command -v bash` there, before calling. A suggestion
+with a malformed field is dropped, never patched, so the field is either absent or complete apart
+from that one interpreter path. The held command stays queued and runs if approved, and the
+`message` says so: to switch to `execute_file` now, have a human cancel the held command in the
+Alpacon console (Commands) first, or the script waits on two approval requests. No MCP tool cancels
+it.
+
 ### `execute_file`
-Run a script that already exists on a server as a verified file (ADR 0053), and wait for the result.
+Run a script on a server as a verified file, and wait for the result. With `write_file`,
+the same call writes the script to the host first; with `read_from_server`, it reads the script
+already on the host and submits those bytes.
 
 The reviewer and the assessor judge the exact bytes submitted as `content`; the agent hashes the file at
 `path` on the target host's disk and executes it only if those bytes match. Approving it authorizes
@@ -430,20 +450,67 @@ human, which a `bash /path` line on `execute_command` never is.
 
 **Parameters:**
 - `server_id` (string): Server ID
-- `path` (string): Absolute path of the file on the target host. It must already exist there; the agent reads it from disk, and `content` is never shipped to the host
-- `content` (string): The file's contents, byte-for-byte as they are on disk. Never stripped, trimmed, or normalized—the agent hashes the on-disk file with no normalization, so a dropped trailing newline fails closed. Non-empty, at most 64 KB (65536 UTF-8 bytes)
+- `path` (string): Absolute path of the file on the target host. Without `write_file` it must already exist there; the agent reads it from disk, and `content` is never shipped to the host
 - `workspace` (string): Workspace name
+- `content` (string, optional): The file's contents, byte-for-byte as they are on disk. Never stripped, trimmed, or normalized—the agent hashes the on-disk file with no normalization, so a dropped trailing newline fails closed. Non-empty, at most 64 KB (65536 UTF-8 bytes). Required unless `read_from_server` is true, and refused alongside it
 - `interpreter` (string, default: "/bin/bash"): Absolute path of the interpreter; a bare `bash` is refused
 - `args` (array, optional): Arguments appended after the path, default `[]`; may contain empty strings
 - `reuse_days` (integer, optional): Proposed number of days, 1 to 366, for which the approver should let this exact file be rerun without a new review. Standing approvals always expire: the workspace ceiling is 1 to 366 days (default 90), and a requester may propose a shorter period, never a longer one. A proposal, not a grant: the approver may decline reuse, and a workspace ceiling lowered after submission can shorten it; the approver cannot choose another period. A proposal above the ceiling is refused with `file_exec_reuse_exceeds_max` rather than shortened. Give it when the same unchanged script will be rerun within that window. Sent as `file.reuse_days` only when given, so an omitted value leaves the request unchanged and a server that predates the field never sees it. Omitting it proposes no duration; an approver who opts in may still grant reuse up to the workspace ceiling
-- `username` (string, optional): Username for execution
-- `groupname` (string, default: "alpacon"): Group name
+- `write_file` (boolean, default: false): Write `content` to `path` on the host through WebFTP before submitting, in the same call. See "Writing the file" below
+- `overwrite` (boolean, default: false): With `write_file`, replace a file already at `path`. Refused with `file_exec_invalid_options` without `write_file`
+- `read_from_server` (boolean, default: false): Read the file at `path` from the host through WebFTP and submit those bytes as `content`. Excludes `write_file` and `content`. See "Reading the file" below
+- `username` (string, optional): Username for execution; with `write_file`, also the account the file is written as, and with `read_from_server`, the account it is read as
+- `groupname` (string, default: "alpacon"): Group name; with `write_file`, a value other than the default is also the group a new file is written with
 - `run_after` (array, optional): Command IDs to wait for before executing
 - `scheduled_at` (string, optional): ISO 8601 datetime for scheduled execution
 - `timeout` (integer, default: 300): Timeout in seconds
-- `work_session_id` (string, optional): Work Session to run under; falls back to `ALPACON_WORK_SESSION`
+- `work_session_id` (string, optional): Work Session to run under; falls back to `ALPACON_WORK_SESSION`. With `write_file` or `read_from_server`, the transfer is linked to it too
 - `purpose` (string, optional): Same semantics as on `execute_command`
 - `region` (string, optional): Region name; resolved from the workspace when omitted
+
+**Writing the file:** with `write_file: true`, the call uploads `content`, encoded as UTF-8 with no
+normalization, to `path`, waits until the host reports the file written, and only then submits the
+same bytes for review. The guarantee is unchanged: the agent hashes the on-disk file at execution and
+refuses a mismatch, so a file changed between the write and the run fails closed.
+- Overwrite: an existing file at `path` is refused, as the CLI's upload refuses it, unless
+  `overwrite: true` is passed. The refusal is `file_write_failed`, and its message says the file
+  already exists. To re-run a script already on the host, use `read_from_server` instead of writing
+  it again.
+- Ownership: the file is written as `username`. A new file is owned by that account and its own
+  group, or by `groupname` when one other than the default `alpacon` is passed, and the account
+  needs write access to the directory. An existing file replaced with `overwrite` keeps its owner
+  and mode, and must be writable by `username`. Pass `username` whenever ownership matters: an
+  omitted one leaves the writing account to the server's WebFTP default. No execute bit is needed;
+  the interpreter runs the file.
+- Timing: the write happens before the run is reviewed, exactly as a `webftp_upload_content` call
+  would, so a run that is later denied leaves the new file in place. The wait for the write, up to
+  about 60 seconds, comes before and on top of `timeout`.
+- Failure: nothing is submitted. `error_code` is `file_write_failed` when the upload is refused or
+  the host reports the write failed (a server refusal that names its own code, such as a Work
+  Session gate, keeps that code), and
+  `file_write_timeout`, with `upload_id`, when the host does not report the file written within
+  about 60 seconds.
+- The local path, size, and `reuse_days` checks run before the write, so a run refused locally
+  never touches the host.
+
+**Reading the file:** for a script that already exists on the host, such as the one a held
+`bash /opt/deploy.sh` line runs, pass `read_from_server: true` and omit `content`. The call downloads
+the file at `path` as `username` through WebFTP and submits its exact bytes, so the requester never
+copies the script by hand. The trust model does not change: the requester still submits the content
+the reviewer judges, and the agent still hashes the on-disk file at execution and refuses a mismatch,
+so a file changed after the read fails closed.
+- Exclusive: `read_from_server` with `write_file` or with a non-empty `content` is refused locally
+  with `file_exec_invalid_options`, before anything reaches the host.
+- Unusable file: nothing is submitted. An empty file is refused with `file_exec_empty_content` and one
+  over 64 KB with `file_exec_content_too_large`, each naming `path`. A file that is not UTF-8 text
+  cannot travel as `content` unchanged and is refused with `file_read_failed`.
+- Failure: nothing is submitted. `error_code` is `file_read_failed` when the download is refused, the
+  host reports the read failed (a missing file, or an account that cannot read it), or the transfer
+  breaks (a server refusal that names its own code, such as a Work Session gate, keeps that code),
+  and `file_read_timeout`, with `download_id`, when the host does not hand the file over within about
+  60 seconds. That wait comes before and on top of `timeout`.
+- A call with neither `content` nor `read_from_server` is refused with `file_exec_empty_content`, and
+  the message names `read_from_server` as the way to run a file already on the host.
 
 There is no `env`, `data`, or `shell`: composition (pipes, redirection, `&&`, variables) goes inside the
 script, where it is reviewed with it. A one-off composition around a file belongs on `execute_command`.
@@ -461,7 +528,8 @@ through `execute_command`; an alpamon already on 2.8.3 or newer has no file lane
 such as Windows, so upgrading does not help and the work runs through `execute_command` there),
 `file_exec_assessor_disabled` (the deployment has the command assessor off), `file_exec_invalid_path`,
 `file_exec_content_too_large`, `file_exec_empty_content`,
-`file_exec_line_too_long`, `file_exec_invalid_reuse_days` (`reuse_days` is outside 1 to 366; fix it or
+`file_exec_line_too_long`, `file_exec_invalid_options` (local only: `read_from_server` combined with
+`write_file` or `content`, or `overwrite` without `write_file`), `file_exec_invalid_reuse_days` (`reuse_days` is outside 1 to 366; fix it or
 omit it), and `file_exec_reuse_exceeds_max` (`reuse_days` is above the workspace's ceiling; resubmit
 with a shorter duration or none). The path, size, and `reuse_days` range rules are also checked
 locally before any request is made, with the same `error_code` and wording; only the server knows the

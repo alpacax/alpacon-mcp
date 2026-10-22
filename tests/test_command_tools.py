@@ -5,6 +5,7 @@ from http import HTTPStatus
 from typing import Any
 from unittest.mock import patch
 
+import httpx
 import pytest
 from mcp.server.mcpserver.exceptions import ToolError
 
@@ -20,6 +21,7 @@ from tools.command_tools import (
     PURPOSE_MAX_LENGTH,
     _answer_purpose_demand,
     _file_phase_hint,
+    _get_capped,
     _submit_command,
     _submit_file_execution,
     _sudo_denial,
@@ -2724,6 +2726,1114 @@ class TestExecuteFileRun:
         assert result['purpose_truncated'] is True
 
 
+_UPLOAD_ROW = {'id': 'up-1', 'upload_url': 'https://s3.example/put'}
+
+
+def _route_get(status: Any = None):
+    """Answer the WebFTP trigger and status GETs the write path makes."""
+
+    async def _get(*, endpoint: str, **_: Any) -> Any:
+        if endpoint.endswith('/status/'):
+            return {'success': True} if status is None else status
+        return {}
+
+    return _get
+
+
+class TestExecuteFileWriteFile:
+    """write_file puts the submitted bytes on the host before the run is submitted."""
+
+    @pytest.fixture(autouse=True)
+    def _no_poll_wait(self):
+        with patch('tools.command_tools._FILE_WRITE_POLL_INTERVAL', 0):
+            yield
+
+    @pytest.mark.asyncio
+    async def test_off_by_default_writes_nothing(
+        self, mock_http_client, mock_token_manager
+    ):
+        with (
+            patch('tools.command_tools._submit_file_execution') as mock_submit,
+            patch('tools.command_tools._put_to_s3') as mock_put,
+        ):
+            mock_submit.return_value = _file_exec_envelope('file_exec_empty_content')
+
+            await execute_file(
+                server_id=VALID_SERVER_ID,
+                path='/opt/deploy.sh',
+                content=_FILE_SCRIPT,
+                workspace='testworkspace',
+                region='ap1',
+            )
+
+        mock_http_client.post.assert_not_called()
+        mock_put.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_writes_the_same_bytes_then_submits(
+        self, mock_http_client, mock_token_manager
+    ):
+        calls: list[str] = []
+        mock_http_client.post.side_effect = lambda **kw: (
+            calls.append('upload') or _UPLOAD_ROW
+        )
+        route = _route_get()
+
+        async def _get(*, endpoint: str, **kw: Any) -> Any:
+            calls.append('status' if endpoint.endswith('/status/') else 'trigger')
+            return await route(endpoint=endpoint, **kw)
+
+        async def _put(*_: Any) -> None:
+            calls.append('put')
+
+        mock_http_client.get.side_effect = _get
+        script = '#!/bin/bash\r\necho é\n'
+
+        async def _submit(**kw: Any) -> Any:
+            calls.append('submit')
+            return _file_exec_envelope('file_exec_empty_content')
+
+        with (
+            patch(
+                'tools.command_tools._submit_file_execution', side_effect=_submit
+            ) as mock_submit,
+            patch('tools.command_tools._put_to_s3', side_effect=_put) as mock_put,
+        ):
+            await execute_file(
+                server_id=VALID_SERVER_ID,
+                path='/opt/deploy.sh',
+                content=script,
+                write_file=True,
+                username='deploy',
+                work_session_id='ws-1',
+                workspace='testworkspace',
+                region='ap1',
+            )
+
+        assert calls == ['upload', 'put', 'trigger', 'status', 'submit']
+        upload = mock_http_client.post.call_args.kwargs
+        assert upload['endpoint'] == '/api/webftp/uploads/'
+        assert upload['data'] == {
+            'server': VALID_SERVER_ID,
+            'name': 'deploy.sh',
+            'path': '/opt/deploy.sh',
+            'allow_overwrite': False,
+            'username': 'deploy',
+            'work_session': 'ws-1',
+        }
+        # The bytes on disk are the bytes under review: no normalization.
+        mock_put.assert_awaited_once_with(
+            'https://s3.example/put', script.encode('utf-8')
+        )
+        assert mock_submit.call_args.kwargs['content'] == script
+        endpoints = [c.kwargs['endpoint'] for c in mock_http_client.get.call_args_list]
+        assert endpoints[0] == '/api/webftp/uploads/up-1/upload/'
+        assert endpoints[-1] == '/api/webftp/uploads/up-1/status/'
+
+    @pytest.mark.asyncio
+    async def test_success_echoes_the_file(self, mock_http_client, mock_token_manager):
+        mock_http_client.post.return_value = _UPLOAD_ROW
+        mock_http_client.get.side_effect = _route_get()
+        with (
+            patch('tools.command_tools._submit_file_execution') as mock_submit,
+            patch('tools.command_tools._get_command_result') as mock_poll,
+            patch('tools.command_tools._put_to_s3', return_value=None),
+        ):
+            mock_submit.return_value = {'id': 'cmd-720'}
+            mock_poll.return_value = {
+                'id': 'cmd-720',
+                'status': 'success',
+                'exit_code': 0,
+                'handled_at': '2026-09-09T00:00:01Z',
+            }
+
+            result = await execute_file(
+                server_id=VALID_SERVER_ID,
+                path='/opt/deploy.sh',
+                content=_FILE_SCRIPT,
+                write_file=True,
+                workspace='testworkspace',
+                region='ap1',
+                timeout=10,
+            )
+
+        assert result['status'] == 'success'
+        assert result['file'] == {
+            'path': '/opt/deploy.sh',
+            'interpreter': '/bin/bash',
+            'args': [],
+        }
+
+    @pytest.mark.asyncio
+    async def test_local_refusal_writes_nothing(
+        self, mock_http_client, mock_token_manager
+    ):
+        with patch('tools.command_tools._put_to_s3') as mock_put:
+            result = await execute_file(
+                server_id=VALID_SERVER_ID,
+                path='/opt/deploy.sh',
+                content='',
+                write_file=True,
+                workspace='testworkspace',
+                region='ap1',
+            )
+
+        assert result['error_code'] == 'file_exec_empty_content'
+        mock_http_client.post.assert_not_called()
+        mock_put.assert_not_called()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        'post, put, status',
+        [
+            pytest.param(
+                {'error': 'HTTP Error', 'status_code': 403, 'response': 'denied'},
+                None,
+                None,
+                id='upload_refused',
+            ),
+            pytest.param({'id': 'up-1'}, None, None, id='no_upload_url'),
+            pytest.param(_UPLOAD_ROW, 'Failed to upload to S3: 500', None, id='s3_put'),
+            pytest.param(
+                _UPLOAD_ROW,
+                None,
+                {'success': False, 'message': 'Permission denied'},
+                id='host_write',
+            ),
+        ],
+    )
+    async def test_failed_write_submits_nothing(
+        self, mock_http_client, mock_token_manager, post, put, status
+    ):
+        mock_http_client.post.return_value = post
+        mock_http_client.get.side_effect = _route_get(status=status)
+        with (
+            patch('tools.command_tools._submit_file_execution') as mock_submit,
+            patch('tools.command_tools._put_to_s3', return_value=put),
+        ):
+            result = await execute_file(
+                server_id=VALID_SERVER_ID,
+                path='/opt/deploy.sh',
+                content=_FILE_SCRIPT,
+                write_file=True,
+                workspace='testworkspace',
+                region='ap1',
+            )
+
+        assert result['status'] == 'error'
+        assert result['error_code'] == 'file_write_failed'
+        assert result['file']['path'] == '/opt/deploy.sh'
+        mock_submit.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_write_that_never_lands_times_out(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = _UPLOAD_ROW
+        mock_http_client.get.side_effect = _route_get(status={'success': None})
+        with (
+            patch('tools.command_tools._submit_file_execution') as mock_submit,
+            patch('tools.command_tools._put_to_s3', return_value=None),
+            patch('tools.command_tools._FILE_WRITE_POLL_ATTEMPTS', 3),
+        ):
+            result = await execute_file(
+                server_id=VALID_SERVER_ID,
+                path='/opt/deploy.sh',
+                content=_FILE_SCRIPT,
+                write_file=True,
+                workspace='testworkspace',
+                region='ap1',
+            )
+
+        assert result['error_code'] == 'file_write_timeout'
+        assert result['upload_id'] == 'up-1'
+        mock_submit.assert_not_called()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ('envelope', 'status'),
+        [
+            pytest.param(_GATE_ENVELOPE_REQUIRED, 'error', id='required'),
+            pytest.param(_GATE_ENVELOPE_NOT_ACTIVE, 'pending_approval', id='pending'),
+        ],
+    )
+    async def test_gate_refusal_of_the_write_keeps_its_own_shape(
+        self, mock_http_client, mock_token_manager, envelope, status
+    ):
+        mock_http_client.post.return_value = envelope
+        with patch('tools.command_tools._submit_file_execution') as mock_submit:
+            result = await execute_file(
+                server_id=VALID_SERVER_ID,
+                path='/opt/deploy.sh',
+                content=_FILE_SCRIPT,
+                write_file=True,
+                workspace='testworkspace',
+                region='ap1',
+            )
+
+        assert result['status'] == status
+        assert 'error_code' not in result
+        assert result['message'].startswith('Could not write /opt/deploy.sh')
+        mock_submit.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_coded_refusal_of_the_write_keeps_the_server_code(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = {
+            'error': 'HTTP Error',
+            'status_code': HTTPStatus.FORBIDDEN,
+            'response': '{"code":"permission_denied"}',
+        }
+        with patch('tools.command_tools._submit_file_execution') as mock_submit:
+            result = await execute_file(
+                server_id=VALID_SERVER_ID,
+                path='/opt/deploy.sh',
+                content=_FILE_SCRIPT,
+                write_file=True,
+                workspace='testworkspace',
+                region='ap1',
+            )
+
+        assert result['status'] == 'error'
+        assert result['error_code'] == 'permission_denied'
+        assert result['message'].startswith('Could not write /opt/deploy.sh')
+        mock_submit.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_plan_limit_refusal_of_the_write_keeps_its_shape(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = {
+            'error': 'HTTP Error',
+            'status_code': HTTPStatus.PAYMENT_REQUIRED,
+            'response': (
+                '{"code":"webftp_limit_exceeded","gate":"plan","axis":"webftp"}'
+            ),
+        }
+        with patch('tools.command_tools._submit_file_execution') as mock_submit:
+            result = await execute_file(
+                server_id=VALID_SERVER_ID,
+                path='/opt/deploy.sh',
+                content=_FILE_SCRIPT,
+                write_file=True,
+                workspace='testworkspace',
+                region='ap1',
+            )
+
+        assert result['error_code'] == 'webftp_limit_exceeded'
+        assert result['axis'] == 'webftp'
+        assert 'testworkspace/settings/billing' in result['next_action']
+        assert result['message'].startswith('Could not write /opt/deploy.sh')
+        mock_submit.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_schema_publishes_write_file_off_by_default(self):
+        tools = {t.name: t for t in await mcp.list_tools()}
+        schema = tools['execute_file'].input_schema
+
+        assert schema['properties']['write_file']['default'] is False
+        assert 'write_file' not in schema['required']
+        text = tools['execute_file'].description
+        assert 'write_file' in text
+        assert 'overwrite' in text
+        assert 'write_file' in tools['execute_command'].description
+
+    @pytest.mark.asyncio
+    async def test_overwrite_and_a_named_group_reach_the_upload(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = _UPLOAD_ROW
+        mock_http_client.get.side_effect = _route_get()
+        with (
+            patch('tools.command_tools._submit_file_execution') as mock_submit,
+            patch('tools.command_tools._put_to_s3', return_value=None),
+        ):
+            mock_submit.return_value = _file_exec_envelope('file_exec_empty_content')
+            await execute_file(
+                server_id=VALID_SERVER_ID,
+                path='/opt/deploy.sh',
+                content=_FILE_SCRIPT,
+                write_file=True,
+                overwrite=True,
+                username='deploy',
+                groupname='ops',
+                workspace='testworkspace',
+                region='ap1',
+            )
+
+        upload = mock_http_client.post.call_args.kwargs['data']
+        assert upload['allow_overwrite'] is True
+        assert upload['groupname'] == 'ops'
+
+    @pytest.mark.asyncio
+    async def test_default_group_stays_off_the_upload(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = _UPLOAD_ROW
+        mock_http_client.get.side_effect = _route_get()
+        with (
+            patch('tools.command_tools._submit_file_execution') as mock_submit,
+            patch('tools.command_tools._put_to_s3', return_value=None),
+        ):
+            mock_submit.return_value = _file_exec_envelope('file_exec_empty_content')
+            await execute_file(
+                server_id=VALID_SERVER_ID,
+                path='/opt/deploy.sh',
+                content=_FILE_SCRIPT,
+                write_file=True,
+                workspace='testworkspace',
+                region='ap1',
+            )
+
+        assert 'groupname' not in mock_http_client.post.call_args.kwargs['data']
+        # The run itself still carries the group it executes as.
+        assert mock_submit.call_args.kwargs['groupname'] == 'alpacon'
+
+    @pytest.mark.asyncio
+    async def test_existing_file_refusal_names_both_ways_out(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = _UPLOAD_ROW
+        mock_http_client.get.side_effect = _route_get(
+            status={'success': False, 'message': '/opt/deploy.sh already exists.'}
+        )
+        with (
+            patch('tools.command_tools._submit_file_execution') as mock_submit,
+            patch('tools.command_tools._put_to_s3', return_value=None),
+        ):
+            result = await execute_file(
+                server_id=VALID_SERVER_ID,
+                path='/opt/deploy.sh',
+                content=_FILE_SCRIPT,
+                write_file=True,
+                workspace='testworkspace',
+                region='ap1',
+            )
+
+        assert result['error_code'] == 'file_write_failed'
+        assert '/opt/deploy.sh already exists.' in result['message']
+        assert 'overwrite=true' in result['message']
+        assert 'read_from_server=true' in result['message']
+        mock_submit.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_overwrite_without_write_file_is_refused(
+        self, mock_http_client, mock_token_manager
+    ):
+        result = await execute_file(
+            server_id=VALID_SERVER_ID,
+            path='/opt/deploy.sh',
+            content=_FILE_SCRIPT,
+            overwrite=True,
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert result['error_code'] == 'file_exec_invalid_options'
+        mock_http_client.post.assert_not_called()
+
+
+# The server's real shapes: the create answers with the URL and the transfer
+# command at once, and the status carries only `success` and `message`.
+_DOWNLOAD_ROW = {
+    'id': 'down-1',
+    'download_url': 'https://s3.example/get',
+    'command': 'cmd-d1',
+}
+_DOWNLOAD_COMMAND_DONE = {
+    'id': 'cmd-d1',
+    'status': 'success',
+    'success': True,
+    'handled_at': '2026-09-09T00:00:01Z',
+}
+
+
+def _route_download_status(status: Any = None, command: Any = None):
+    """Answer the transfer command and download status GETs the read path makes."""
+
+    async def _get(*, endpoint: str, **_: Any) -> Any:
+        if endpoint == '/api/events/commands/cmd-d1/':
+            return _DOWNLOAD_COMMAND_DONE if command is None else command
+        assert endpoint == '/api/webftp/downloads/down-1/status/'
+        return {'success': True, 'message': None} if status is None else status
+
+    return _get
+
+
+class TestExecuteFileReadFromServer:
+    """read_from_server submits the bytes already on the host as content."""
+
+    @pytest.fixture(autouse=True)
+    def _no_poll_wait(self):
+        with patch('tools.command_tools._FILE_READ_POLL_INTERVAL', 0):
+            yield
+
+    @pytest.mark.asyncio
+    async def test_reads_the_file_then_submits_its_exact_bytes(
+        self, mock_http_client, mock_token_manager
+    ):
+        script = '#!/bin/bash\r\necho é\n'
+        mock_http_client.post.return_value = _DOWNLOAD_ROW
+        mock_http_client.get.side_effect = _route_download_status()
+
+        with (
+            patch(
+                'tools.command_tools._submit_file_execution',
+                return_value=_file_exec_envelope('file_exec_empty_content'),
+            ) as mock_submit,
+            patch(
+                'tools.command_tools._get_capped',
+                return_value=script.encode('utf-8'),
+            ) as mock_get,
+            patch('tools.command_tools._put_to_s3') as mock_put,
+        ):
+            await execute_file(
+                server_id=VALID_SERVER_ID,
+                path='/opt/deploy.sh',
+                read_from_server=True,
+                username='deploy',
+                work_session_id='ws-1',
+                workspace='testworkspace',
+                region='ap1',
+            )
+
+        download = mock_http_client.post.call_args.kwargs
+        assert download['endpoint'] == '/api/webftp/downloads/'
+        # Read as the account the script runs as.
+        assert download['data'] == {
+            'server': VALID_SERVER_ID,
+            'name': 'deploy.sh',
+            'path': '/opt/deploy.sh',
+            'resource_type': 'file',
+            'username': 'deploy',
+            'work_session': 'ws-1',
+        }
+        mock_get.assert_awaited_once_with(
+            'https://s3.example/get', FILE_CONTENT_MAX_BYTES
+        )
+        # No normalization between the host's bytes and the reviewed content.
+        assert mock_submit.call_args.kwargs['content'] == script
+        assert mock_submit.call_args.kwargs['path'] == '/opt/deploy.sh'
+        # Nothing is written back.
+        mock_put.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_the_url_is_fetched_only_after_the_host_sends_the_file(
+        self, mock_http_client, mock_token_manager
+    ):
+        calls: list[str] = []
+        mock_http_client.post.return_value = _DOWNLOAD_ROW
+        answers = iter([{'status': 'running', 'handled_at': None}])
+        route = _route_download_status()
+
+        async def _get(*, endpoint: str, **kw: Any) -> Any:
+            if endpoint.startswith('/api/events/commands/'):
+                calls.append('command')
+                if (answer := next(answers, None)) is not None:
+                    return answer
+            else:
+                calls.append('status')
+            return await route(endpoint=endpoint, **kw)
+
+        async def _fetch(*_: Any) -> bytes:
+            calls.append('fetch')
+            return b'echo hi\n'
+
+        async def _submit(**kw: Any) -> Any:
+            calls.append('submit')
+            return _file_exec_envelope('file_exec_empty_content')
+
+        mock_http_client.get.side_effect = _get
+        with (
+            patch(
+                'tools.command_tools._submit_file_execution', side_effect=_submit
+            ) as mock_submit,
+            patch('tools.command_tools._get_capped', side_effect=_fetch),
+        ):
+            await execute_file(
+                server_id=VALID_SERVER_ID,
+                path='/opt/deploy.sh',
+                read_from_server=True,
+                workspace='testworkspace',
+                region='ap1',
+            )
+
+        assert calls == ['command', 'command', 'fetch', 'status', 'submit']
+        assert mock_submit.call_args.kwargs['content'] == 'echo hi\n'
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        'overrides',
+        [
+            {'write_file': True},
+            {'content': _FILE_SCRIPT},
+            {'write_file': True, 'content': _FILE_SCRIPT},
+        ],
+    )
+    async def test_cannot_be_combined_with_write_file_or_content(
+        self, mock_http_client, mock_token_manager, overrides
+    ):
+        result = await execute_file(
+            server_id=VALID_SERVER_ID,
+            path='/opt/deploy.sh',
+            read_from_server=True,
+            workspace='testworkspace',
+            region='ap1',
+            **overrides,
+        )
+
+        assert result['status'] == 'error'
+        assert result['error_code'] == 'file_exec_invalid_options'
+        assert 'read_from_server' in result['message']
+        mock_http_client.post.assert_not_called()
+        mock_http_client.get.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_neither_content_nor_read_from_server_is_refused_locally(
+        self, mock_http_client, mock_token_manager
+    ):
+        result = await execute_file(
+            server_id=VALID_SERVER_ID,
+            path='/opt/deploy.sh',
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert result['status'] == 'error'
+        assert result['error_code'] == 'file_exec_empty_content'
+        # The refusal names the way out for a script already on the host.
+        assert 'read_from_server=true' in result['message']
+        mock_http_client.post.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_a_local_refusal_reads_nothing(
+        self, mock_http_client, mock_token_manager
+    ):
+        result = await execute_file(
+            server_id=VALID_SERVER_ID,
+            path='opt/deploy.sh',
+            read_from_server=True,
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert result['error_code'] == 'file_exec_invalid_path'
+        mock_http_client.post.assert_not_called()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        'body, code, phrase',
+        [
+            (b'', 'file_exec_empty_content', 'is empty on the host'),
+            (
+                b'x' * (FILE_CONTENT_MAX_BYTES + 1),
+                'file_exec_content_too_large',
+                '64 KB',
+            ),
+            (b'\xff\xfe', 'file_read_failed', 'not UTF-8'),
+            ('Failed to download from S3: 404 - gone', 'file_read_failed', '404'),
+        ],
+    )
+    async def test_an_unusable_file_submits_nothing(
+        self, mock_http_client, mock_token_manager, body, code, phrase
+    ):
+        mock_http_client.post.return_value = _DOWNLOAD_ROW
+        mock_http_client.get.side_effect = _route_download_status()
+
+        with (
+            patch('tools.command_tools._submit_file_execution') as mock_submit,
+            patch('tools.command_tools._get_capped', return_value=body),
+        ):
+            result = await execute_file(
+                server_id=VALID_SERVER_ID,
+                path='/opt/deploy.sh',
+                read_from_server=True,
+                workspace='testworkspace',
+                region='ap1',
+            )
+
+        assert result['status'] == 'error'
+        assert result['error_code'] == code
+        assert phrase in result['message']
+        assert '/opt/deploy.sh' in result['message']
+        assert result['file']['path'] == '/opt/deploy.sh'
+        mock_submit.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_a_file_exactly_at_the_ceiling_goes_out(
+        self, mock_http_client, mock_token_manager
+    ):
+        body = b'x' * FILE_CONTENT_MAX_BYTES
+        mock_http_client.post.return_value = _DOWNLOAD_ROW
+        mock_http_client.get.side_effect = _route_download_status()
+
+        with (
+            patch(
+                'tools.command_tools._submit_file_execution',
+                return_value=_file_exec_envelope('file_exec_empty_content'),
+            ) as mock_submit,
+            patch('tools.command_tools._get_capped', return_value=body),
+        ):
+            await execute_file(
+                server_id=VALID_SERVER_ID,
+                path='/opt/deploy.sh',
+                read_from_server=True,
+                workspace='testworkspace',
+                region='ap1',
+            )
+
+        assert mock_submit.call_args.kwargs['content'] == body.decode()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        'post, status, command',
+        [
+            # The download request itself is refused.
+            (
+                {
+                    'error': 'HTTP Error',
+                    'status_code': HTTPStatus.BAD_REQUEST,
+                    'response': '{"detail":"No such file"}',
+                },
+                None,
+                None,
+            ),
+            # The host's transfer command fails.
+            (
+                _DOWNLOAD_ROW,
+                None,
+                {
+                    'status': 'failed',
+                    'success': False,
+                    'result': 'Permission denied',
+                    'handled_at': '2026-09-09T00:00:01Z',
+                },
+            ),
+            # The request answers without the transfer command to wait on.
+            ({**_DOWNLOAD_ROW, 'command': None}, None, None),
+            # The request answers with neither id nor URL.
+            ({}, None, None),
+        ],
+    )
+    async def test_a_failed_read_submits_nothing(
+        self, mock_http_client, mock_token_manager, post, status, command
+    ):
+        mock_http_client.post.return_value = post
+        mock_http_client.get.side_effect = _route_download_status(
+            status=status, command=command
+        )
+
+        with (
+            patch('tools.command_tools._submit_file_execution') as mock_submit,
+            patch('tools.command_tools._get_capped') as mock_get,
+        ):
+            result = await execute_file(
+                server_id=VALID_SERVER_ID,
+                path='/opt/deploy.sh',
+                read_from_server=True,
+                workspace='testworkspace',
+                region='ap1',
+            )
+
+        assert result['status'] == 'error'
+        assert result['error_code'] == 'file_read_failed'
+        assert result['message'].startswith('Could not read /opt/deploy.sh')
+        mock_get.assert_not_called()
+        mock_submit.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_a_transfer_the_host_reports_failed_submits_nothing(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = _DOWNLOAD_ROW
+        mock_http_client.get.side_effect = _route_download_status(
+            status={'success': False, 'message': 'Permission denied'}
+        )
+
+        with (
+            patch('tools.command_tools._submit_file_execution') as mock_submit,
+            patch('tools.command_tools._get_capped', return_value=b'echo hi\n'),
+        ):
+            result = await execute_file(
+                server_id=VALID_SERVER_ID,
+                path='/opt/deploy.sh',
+                read_from_server=True,
+                workspace='testworkspace',
+                region='ap1',
+            )
+
+        assert result['error_code'] == 'file_read_failed'
+        assert 'Permission denied' in result['message']
+        mock_submit.assert_not_called()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        'command, status, gets',
+        [
+            # The host never finishes sending the file.
+            ({'status': 'running', 'handled_at': None}, None, 3),
+            # The host sent it but never reports the transfer.
+            (None, {'success': None}, 3),
+        ],
+    )
+    async def test_a_read_that_never_lands_times_out(
+        self, mock_http_client, mock_token_manager, command, status, gets
+    ):
+        mock_http_client.post.return_value = _DOWNLOAD_ROW
+        mock_http_client.get.side_effect = _route_download_status(
+            status=status, command=command
+        )
+
+        with (
+            patch('tools.command_tools._submit_file_execution') as mock_submit,
+            patch('tools.command_tools._get_capped', return_value=b'echo hi\n'),
+            patch('tools.command_tools._FILE_READ_POLL_ATTEMPTS', 3),
+        ):
+            result = await execute_file(
+                server_id=VALID_SERVER_ID,
+                path='/opt/deploy.sh',
+                read_from_server=True,
+                workspace='testworkspace',
+                region='ap1',
+            )
+
+        assert result['error_code'] == 'file_read_timeout'
+        assert result['download_id'] == 'down-1'
+        assert mock_http_client.get.call_count == gets
+        mock_submit.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_gate_refusal_of_the_read_keeps_its_own_code(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = {
+            'error': 'HTTP Error',
+            'status_code': HTTPStatus.FORBIDDEN,
+            'response': '{"code":"work_session_required"}',
+        }
+
+        with patch('tools.command_tools._submit_file_execution') as mock_submit:
+            result = await execute_file(
+                server_id=VALID_SERVER_ID,
+                path='/opt/deploy.sh',
+                read_from_server=True,
+                workspace='testworkspace',
+                region='ap1',
+            )
+
+        assert result['code'] == 'work_session_required'
+        assert 'error_code' not in result
+        assert result['message'].startswith('Could not read /opt/deploy.sh')
+        mock_submit.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_schema_publishes_read_from_server_off_by_default(self):
+        tools = {t.name: t for t in await mcp.list_tools()}
+        schema = tools['execute_file'].input_schema
+
+        assert schema['properties']['read_from_server']['default'] is False
+        assert 'read_from_server' not in schema['required']
+        assert 'content' not in schema['required']
+        assert 'read_from_server' in tools['execute_file'].description
+        assert 'read_from_server' in tools['execute_command'].description
+
+
+class TestGetCapped:
+    """The presigned GET stops one byte past the ceiling."""
+
+    @staticmethod
+    def _client(handler):
+        transport = httpx.MockTransport(handler)
+        real = httpx.AsyncClient
+        return patch(
+            'tools.command_tools.httpx.AsyncClient',
+            lambda *a, **kw: real(transport=transport),
+        )
+
+    @pytest.mark.asyncio
+    async def test_returns_the_body_unchanged(self):
+        with self._client(lambda req: httpx.Response(200, content=b'a\r\nb')):
+            assert await _get_capped('https://s3.example/get', 10) == b'a\r\nb'
+
+    @pytest.mark.asyncio
+    async def test_stops_one_byte_past_the_limit(self):
+        with self._client(lambda req: httpx.Response(200, content=b'x' * 100)):
+            assert await _get_capped('https://s3.example/get', 10) == b'x' * 11
+
+    @pytest.mark.asyncio
+    async def test_an_error_status_is_a_message(self):
+        with self._client(lambda req: httpx.Response(403, content=b'denied')):
+            result = await _get_capped('https://s3.example/get', 10)
+        assert isinstance(result, str)
+        assert '403' in result
+
+    @pytest.mark.asyncio
+    async def test_a_transport_error_is_a_message(self):
+        def _boom(req):
+            raise httpx.ConnectError('down')
+
+        with self._client(_boom):
+            result = await _get_capped('https://s3.example/get', 10)
+        assert isinstance(result, str)
+        assert 'down' in result
+
+
+class TestHeldCommandSuggestsTheFileLane:
+    """A held shell line is pointed at execute_file with read_from_server."""
+
+    async def _held(
+        self, row_extra: dict[str, Any], **call_extra: Any
+    ) -> dict[str, Any]:
+        with (
+            patch(
+                'tools.command_tools._submit_command',
+                return_value={'id': 'cmd-910'},
+            ),
+            patch(
+                'tools.command_tools._get_command_result',
+                return_value={
+                    'id': 'cmd-910',
+                    'status': 'awaiting_approval',
+                    'handled_at': None,
+                    **row_extra,
+                },
+            ),
+        ):
+            return await execute_command(
+                server_id=VALID_SERVER_ID,
+                command='bash /opt/deploy.sh --fast',
+                workspace='testworkspace',
+                region='ap1',
+                timeout=10,
+                **call_extra,
+            )
+
+    @pytest.mark.asyncio
+    async def test_a_named_script_becomes_a_ready_call(
+        self, mock_http_client, mock_token_manager
+    ):
+        result = await self._held(
+            {
+                'file_execution_suggestion': {
+                    'path': '/opt/deploy.sh',
+                    'interpreter': '/bin/bash',
+                    'args': ['--fast'],
+                }
+            }
+        )
+
+        assert result['status'] == 'pending_approval'
+        assert result['category'] == 'COMMAND_AWAITING_APPROVAL'
+        assert result['execute_file_suggestion'] == {
+            'tool': 'execute_file',
+            'arguments': {
+                'server_id': VALID_SERVER_ID,
+                'path': '/opt/deploy.sh',
+                'interpreter': '/bin/bash',
+                'args': ['--fast'],
+                'read_from_server': True,
+                'workspace': 'testworkspace',
+                'region': 'ap1',
+            },
+        }
+        assert 'read_from_server=true' in result['message']
+
+    @pytest.mark.asyncio
+    async def test_without_the_field_only_the_prose_hint_is_added(
+        self, mock_http_client, mock_token_manager
+    ):
+        result = await self._held({})
+
+        assert result['status'] == 'pending_approval'
+        assert 'execute_file_suggestion' not in result
+        assert 'read_from_server=true' in result['message']
+        # The hold itself still reads as before.
+        assert 'Do not resubmit the command' in result['message']
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        'suggestion',
+        [
+            'bash /opt/deploy.sh',
+            {'path': 'opt/deploy.sh'},
+            {'path': '/opt/../etc/deploy.sh'},
+            {'path': '/opt/deploy.sh', 'interpreter': 'bash'},
+            {'path': '/opt/deploy.sh', 'args': '--fast'},
+            {'path': '/opt/deploy.sh', 'args': [1]},
+            {'path': '/opt/deploy.sh', 'interpreter': ''},
+            {'path': '/opt/deploy.sh', 'args': False},
+            # Nothing names the interpreter, so nothing is guessed.
+            {'path': '/opt/deploy.sh'},
+            {'path': '/opt/deploy.sh', 'interpreter_name': '/bin/bash'},
+            {'path': '/opt/deploy.sh', 'interpreter_name': 'ba sh'},
+            {'path': '/opt/deploy.sh', 'interpreter_name': ''},
+            {
+                'path': '/opt/deploy.sh',
+                'interpreter': '/bin/bash',
+                'interpreter_name': 'bash',
+            },
+        ],
+    )
+    async def test_a_malformed_suggestion_is_dropped_whole(
+        self, mock_http_client, mock_token_manager, suggestion
+    ):
+        result = await self._held({'file_execution_suggestion': suggestion})
+
+        assert result['status'] == 'pending_approval'
+        assert 'execute_file_suggestion' not in result
+        assert 'read_from_server=true' in result['message']
+
+    @pytest.mark.asyncio
+    async def test_missing_args_take_an_empty_list(
+        self, mock_http_client, mock_token_manager
+    ):
+        result = await self._held(
+            {
+                'file_execution_suggestion': {
+                    'path': '/opt/deploy.sh',
+                    'interpreter': '/bin/bash',
+                }
+            }
+        )
+
+        arguments = result['execute_file_suggestion']['arguments']
+        assert arguments['interpreter'] == '/bin/bash'
+        assert arguments['args'] == []
+        assert 'interpreter_name' not in result['execute_file_suggestion']
+        assert 'instruction' not in result['execute_file_suggestion']
+
+    @pytest.mark.asyncio
+    async def test_a_bare_interpreter_is_left_for_the_caller(
+        self, mock_http_client, mock_token_manager
+    ):
+        result = await self._held(
+            {
+                'file_execution_suggestion': {
+                    'path': '/opt/deploy.sh',
+                    'interpreter': None,
+                    'interpreter_name': 'bash',
+                    'args': ['--fast'],
+                }
+            }
+        )
+
+        suggestion = result['execute_file_suggestion']
+        assert suggestion['tool'] == 'execute_file'
+        assert suggestion['interpreter_name'] == 'bash'
+        assert 'command -v bash' in suggestion['instruction']
+        assert suggestion['arguments'] == {
+            'server_id': VALID_SERVER_ID,
+            'path': '/opt/deploy.sh',
+            'interpreter': None,
+            'args': ['--fast'],
+            'read_from_server': True,
+            'workspace': 'testworkspace',
+            'region': 'ap1',
+        }
+        assert 'read_from_server=true' in result['message']
+
+    @pytest.mark.asyncio
+    async def test_the_held_run_identity_carries_into_the_call(
+        self, mock_http_client, mock_token_manager
+    ):
+        work_session_id = '660e8400-e29b-41d4-a716-446655440000'
+        result = await self._held(
+            {
+                'file_execution_suggestion': {
+                    'path': '/opt/deploy.sh',
+                    'interpreter': '/bin/bash',
+                }
+            },
+            username='deploy',
+            groupname='ops',
+            work_session_id=work_session_id,
+        )
+
+        arguments = result['execute_file_suggestion']['arguments']
+        assert arguments['username'] == 'deploy'
+        assert arguments['groupname'] == 'ops'
+        assert arguments['work_session_id'] == work_session_id
+
+    @pytest.mark.asyncio
+    async def test_after_a_stated_purpose_the_call_comes_off_the_row(
+        self, mock_http_client, mock_token_manager
+    ):
+        # state_command_purpose knows neither the server nor the account, and
+        # the row renders the server and the Work Session as nested objects.
+        work_session_id = '660e8400-e29b-41d4-a716-446655440000'
+        with (
+            patch(
+                'tools.command_tools._answer_purpose_demand',
+                return_value={'status': 'success', 'status_code': 202},
+            ),
+            patch(
+                'tools.command_tools._get_command_result',
+                return_value={
+                    'id': 'cmd-911',
+                    'status': 'awaiting_approval',
+                    'handled_at': None,
+                    'line': 'bash /opt/deploy.sh',
+                    'server': {'id': VALID_SERVER_ID, 'name': 'web-1'},
+                    'username': 'deploy',
+                    'groupname': 'ops',
+                    'work_session': {'id': work_session_id, 'title': 'deploy'},
+                    'file_execution_suggestion': {
+                        'path': '/opt/deploy.sh',
+                        'interpreter': '/bin/bash',
+                    },
+                },
+            ),
+        ):
+            result = await state_command_purpose(
+                command_id='cmd-911',
+                purpose='Deploys the release staged in /opt.',
+                workspace='testworkspace',
+                region='ap1',
+                timeout=10,
+            )
+
+        assert result['execute_file_suggestion']['arguments'] == {
+            'server_id': VALID_SERVER_ID,
+            'path': '/opt/deploy.sh',
+            'interpreter': '/bin/bash',
+            'args': [],
+            'read_from_server': True,
+            'workspace': 'testworkspace',
+            'region': 'ap1',
+            'username': 'deploy',
+            'groupname': 'ops',
+            'work_session_id': work_session_id,
+        }
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        'row_extra, call_extra',
+        [
+            ({}, {'data': 'yes\n'}),
+            # A caller other than the submitter learns it from the row.
+            ({'data': 'yes\n'}, {}),
+        ],
+    )
+    async def test_a_run_fed_stdin_gets_only_the_prose_hint(
+        self, mock_http_client, mock_token_manager, row_extra, call_extra
+    ):
+        result = await self._held(
+            {
+                'file_execution_suggestion': {
+                    'path': '/opt/deploy.sh',
+                    'interpreter': '/bin/bash',
+                },
+                **row_extra,
+            },
+            **call_extra,
+        )
+
+        assert result['status'] == 'pending_approval'
+        assert 'execute_file_suggestion' not in result
+        assert 'read_from_server=true' in result['message']
+
+
 class TestExecuteFileRegistration:
     """The published tool is what teaches a model to take this lane."""
 
@@ -2735,7 +3845,7 @@ class TestExecuteFileRegistration:
         properties = schema['properties']
         for forbidden in ('line', 'command', 'data', 'env', 'shell', 'kwargs'):
             assert forbidden not in properties
-        assert set(schema['required']) == {'server_id', 'path', 'content', 'workspace'}
+        assert set(schema['required']) == {'server_id', 'path', 'workspace'}
         assert properties['interpreter']['default'] == '/bin/bash'
         for shared in ('username', 'groupname', 'run_after', 'scheduled_at'):
             assert shared in properties
