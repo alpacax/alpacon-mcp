@@ -235,9 +235,6 @@ class TestEnrichErrorResponse:
         enriched = enrich_error_response(resp, tool_name='list_servers')
         assert 'recovery_hints' not in enriched
 
-    def test_skips_non_dict(self):
-        assert enrich_error_response('not a dict') == 'not a dict'
-
     def test_does_not_overwrite_existing_hints(self):
         resp = {
             'status': 'error',

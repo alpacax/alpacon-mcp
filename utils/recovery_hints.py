@@ -251,9 +251,6 @@ def enrich_error_response(
     Returns:
         The response dict, potentially with recovery_hints and related_tools added
     """
-    if not isinstance(response, dict):
-        return response
-
     is_error = response.get('status') == 'error' or 'error' in response
     if not is_error:
         return response

@@ -218,7 +218,7 @@ async def list_workspaces(region: str = '', **kwargs) -> dict[str, Any]:
     """
     # Use explicit transport mode check, not JWT presence
     if is_auth_enabled():
-        token = kwargs.get('token')  # never None: the decorator rejected that
+        token = kwargs['token']  # always set: the decorator rejected a missing one
         jwt_workspaces, unusable_entries = get_token_workspaces_with_dropped(token)
         workspaces = []
         for ws in jwt_workspaces:

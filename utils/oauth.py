@@ -1386,9 +1386,9 @@ def register_oauth_routes(mcp_server):
         result = {'code': code}
         if original_state:
             result['state'] = original_state
-        response = JSONResponse(result)
-        _clear_nonce_cookie(response)
-        return response
+        json_response = JSONResponse(result)
+        _clear_nonce_cookie(json_response)
+        return json_response
 
     @mcp_server.custom_route('/token', methods=['POST', 'OPTIONS'])
     async def oauth_token_fallback(request):

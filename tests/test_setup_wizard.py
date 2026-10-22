@@ -1,10 +1,11 @@
 """Tests for the setup wizard's region validation."""
 
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from utils.setup_wizard import add_workspace, run_setup_wizard
+from utils.setup_wizard import test_connection as run_test_connection
 from utils.setup_wizard import test_credentials as run_test_credentials
 
 
@@ -72,3 +73,25 @@ class TestWizardRegionValidation:
     ):
         run_setup_wizard()
         mock_save.assert_called_once()
+
+
+class TestConnectionResponseShape:
+    """None and dicts carrying `error` fail the connection test; other shapes pass."""
+
+    def test_connection_result_follows_response_shape(self, subtests):
+        cases = [
+            ({'error': 'unauthorized'}, False),
+            ({'results': []}, True),
+            ([{'id': 'srv'}], True),
+            (None, False),
+            (0, True),  # a scalar once raised TypeError on `in` and read as failure
+        ]
+        for response, expected in cases:
+            with (
+                subtests.test(response=response),
+                patch(
+                    'utils.setup_wizard.AlpaconHTTPClient.get',
+                    new=AsyncMock(return_value=response),
+                ),
+            ):
+                assert run_test_connection('ap1', 'myws', 'tok') is expected

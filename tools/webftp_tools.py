@@ -654,7 +654,7 @@ async def webftp_download_file(
     if result.get('download_url'):
         try:
             file_size = await _stream_s3_to_file(
-                result['download_url'], cast(str, local_file_path)
+                result['download_url'], local_file_path
             )
         except _S3DownloadError as e:
             return error_response(
