@@ -29,10 +29,10 @@ _TOKEN_REQUIRED_ERROR = 'Either api_token_id or service_token_id must be provide
 # ACLs to the pre-approval ledger refuses every write; one without it does not.
 _COMMAND_ACL_MOVED_NOTE = (
     ' On a server that manages command ACLs on the command pre-approval '
-    'ledger, this write is refused with 405 command_acl_moved; a ledger admin '
-    "must then issue or revoke the entry on the service token's command ACL "
-    'card in the web console, and a personal API token has no command list on '
-    'this path. Do not retry it.'
+    'ledger, this write is refused with 405 command_acl_moved; a Command ACL '
+    'admin must then issue or revoke the entry under Pre-approved commands on '
+    "the service token's page in the web console, and a personal API token has "
+    'no command list on the ledger. Do not retry it.'
 )
 
 

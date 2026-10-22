@@ -10,9 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - `create_command_acl`, `update_command_acl` and `delete_command_acl` now explain the 405
   `command_acl_moved` that a server managing command pre-approvals on the command pre-approval
-  ledger answers on every command-ACL write: the error says a ledger admin must issue or revoke the
-  entry on the service token's command ACL card in the web console, that a personal API token has no
-  command list on this path, and that the call should not be retried, instead of a bare 405. The
+  ledger answers on every command-ACL write: the error says a Command ACL admin must issue or revoke
+  the entry under Pre-approved commands on the service token's page in the web console, that a
+  personal API token has no command list on the ledger, and that the call should not be retried, instead of a bare 405. The
   three tool descriptions, `docs/api-reference.md` and `docs/examples.md` say the same; a server
   without the ledger still accepts these writes.
 
