@@ -2,13 +2,15 @@
 
 import re
 import uuid
-from typing import Any
+from typing import Any, Literal, TypeGuard
 
 from mcp.server.mcpserver.exceptions import ToolError
 
 # 'dev' is internal-only: the validator accepts it, but it is never advertised.
-SERVED_REGIONS = ('ap1', 'us1')
-VALID_REGIONS = (*SERVED_REGIONS, 'dev')
+type ServedRegion = Literal['ap1', 'us1']
+type Region = ServedRegion | Literal['dev']
+SERVED_REGIONS: tuple[ServedRegion, ...] = ('ap1', 'us1')
+VALID_REGIONS: tuple[Region, ...] = (*SERVED_REGIONS, 'dev')
 
 
 class UpstreamAuthError(ToolError):
@@ -52,14 +54,14 @@ def validate_workspace_format(workspace: str) -> bool:
     return bool(re.match(pattern, workspace)) and len(workspace) <= 63
 
 
-def validate_region_format(region: str) -> bool:
+def validate_region_format(region: object) -> TypeGuard[Region]:
     """Validate region format.
 
     Args:
         region: Region to validate
 
     Returns:
-        True if valid, False otherwise
+        True if valid, False otherwise; True narrows ``region`` to ``Region``
     """
     if not region or not isinstance(region, str):
         return False
