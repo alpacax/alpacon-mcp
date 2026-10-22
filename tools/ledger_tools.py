@@ -54,9 +54,14 @@ _REMOTE_MODE_MESSAGE = (
 
 
 class LedgerEntryInput(TypedDict):
-    """One pre-approval to issue."""
+    """One pre-approval to issue.
 
-    principal_type: Literal['service_token', 'api_token']
+    Only a service token may be given a new entry. `api_token` entries remain
+    on the ledger for tokens that already had them, so the list and revoke
+    tools still reach them, but a personal API token gets no new command list.
+    """
+
+    principal_type: Literal['service_token']
     principal_id: str
     command_pattern: str
     username: str
@@ -309,7 +314,9 @@ async def list_ledger_entries(
     Args:
         workspace: Workspace name. Required parameter
         region: Region (ap1, us1). Auto-detected if not provided
-        principal_type: Only entries for this kind of token (optional)
+        principal_type: Only entries for this kind of token (optional).
+            'api_token' lists entries a personal API token kept from before;
+            none can be issued
         principal_id: Only entries for this token's UUID (optional)
         page: Page number (optional)
         page_size: Entries per page, at most 200 (optional)
@@ -361,7 +368,7 @@ async def issue_ledger_entries(
     Args:
         workspace: Workspace name. Required parameter
         entries: 1 to 200 entries. Each takes `principal_type`
-            ('service_token' or 'api_token'), `principal_id` (the token's UUID),
+            ('service_token' only), `principal_id` (the service token's UUID),
             `command_pattern`, and `username` ('*' for any user). Optional:
             `groupname`, `server_ids` (UUIDs; omit to apply on every server),
             `expires_at` (ISO 8601) and `enabled`
@@ -376,6 +383,19 @@ async def issue_ledger_entries(
         return error_response(
             f'entries holds {len(entries)} items; at most {_BULK_MAX_ENTRIES} '
             'may be issued in one call'
+        )
+    refused = [
+        index
+        for index, entry in enumerate(entries)
+        if entry.get('principal_type') != 'service_token'
+    ]
+    if refused:
+        return error_response(
+            'Only a service token can be given a command pre-approval; a '
+            'personal API token has no command list on the ledger. Entries '
+            f'at index {refused} name another principal_type.',
+            region=region,
+            workspace=workspace,
         )
 
     return await _ledger_call(

@@ -14,7 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ledger` toolset. They manage Pre-approved commands and Command ACL admins on a workspace whose
   `command_acl_surface` is `ai`, from a local (stdio) server only. The first call returns a new
   `status` value, `authorization_required`, carrying a sign-in link a person must open before the
-  call is retried, so a client branching on `status` has to handle it.
+  call is retried, so a client branching on `status` has to handle it. `issue_ledger_entries` takes
+  `service_token` entries only: a personal API token has no command list on the ledger, and
+  `api_token` stays a `list_ledger_entries` filter so entries such a token already has can still be
+  listed and revoked.
 
 ### Fixed
 - `create_command_acl`, `update_command_acl` and `delete_command_acl` now explain the 405

@@ -31,7 +31,8 @@ _COMMAND_ACL_MOVED_NOTE = (
     ' On a server that manages command ACLs on the command pre-approval '
     'ledger (get_ledger_capability reports command_acl_surface "ai"), this '
     'write is refused with 405 command_acl_moved; use issue_ledger_entries, '
-    'revoke_ledger_entry and their siblings instead. Do not retry it.'
+    'revoke_ledger_entry and their siblings instead, for a service token; a '
+    'personal API token has no command list on the ledger. Do not retry it.'
 )
 
 

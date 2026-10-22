@@ -363,6 +363,41 @@ class TestEntries:
         assert result['status'] == 'success'
 
     @pytest.mark.asyncio
+    async def test_issue_refuses_an_api_token_entry_before_any_request(self, ledger):
+        client, authorizer = ledger
+        service_entry = {
+            'principal_type': 'service_token',
+            'principal_id': SERVICE_TOKEN_ID,
+            'command_pattern': 'uptime',
+            'username': '*',
+        }
+        api_token_entry = {**service_entry, 'principal_type': 'api_token'}
+
+        result = await issue_ledger_entries(
+            workspace='testworkspace',
+            region='ap1',
+            entries=[service_entry, api_token_entry],
+        )
+
+        assert result['status'] == 'error'
+        assert 'personal API token has no command list' in result['message']
+        assert '[1]' in result['message']
+        client.get.assert_not_called()
+        client.request.assert_not_called()
+        authorizer.token_for.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_list_still_filters_by_api_token(self, ledger):
+        client, _ = ledger
+
+        result = await list_ledger_entries(
+            workspace='testworkspace', region='ap1', principal_type='api_token'
+        )
+
+        assert result['status'] == 'success'
+        assert _request(client)[2]['params']['principal_type'] == 'api_token'
+
+    @pytest.mark.asyncio
     async def test_issue_refuses_an_empty_batch(self, ledger):
         client, _ = ledger
 
