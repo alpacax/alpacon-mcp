@@ -68,7 +68,7 @@ alpacon-mcp-http = "main_http:main"
 [project.optional-dependencies]
 dev = [
     # Floors only: uv.lock pins the version every environment installs.
-    "pytest>=8.4.2",
+    "pytest>=9.0",
     "pytest-asyncio>=1.2.0",
     "pytest-cov>=6.0.0",
     "mypy>=2.4",
