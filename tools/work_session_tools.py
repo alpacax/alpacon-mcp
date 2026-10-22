@@ -76,7 +76,7 @@ async def work_session_create(
     title: str | None = None,
     region: str = '',
     target_account_username: str | None = None,
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Create a Work Session for auditable, approval-gated infrastructure access."""
     token = kwargs.get('token')
@@ -145,7 +145,7 @@ async def work_session_close(
     session_id: str,
     workspace: str,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Complete a Work Session."""
     token = kwargs.get('token')
@@ -175,7 +175,7 @@ async def work_session_get(
     session_id: str,
     workspace: str,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Get detailed information about a specific Work Session."""
     token = kwargs.get('token')
@@ -208,7 +208,7 @@ async def work_session_list(
     requester_type: str | None = None,
     limit: int = 20,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """List Work Sessions with optional status and requester_type filtering."""
     token = kwargs.get('token')
@@ -258,7 +258,7 @@ async def work_session_update(
     servers: list[str] | None = None,
     expires_at: str | None = None,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Partially update a Work Session."""
     token = kwargs.get('token')
@@ -347,7 +347,7 @@ async def work_session_extend(
     expires_at: str,
     reason: str,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Extend a Work Session's expiry time."""
     token = kwargs.get('token')
@@ -420,7 +420,7 @@ async def work_session_timeline(
     cursor: str | None = None,
     page_size: int | None = None,
     include_records: bool | None = None,
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Get the timeline of a Work Session, following the server's cursor.
 
@@ -504,7 +504,7 @@ async def work_session_records(
     region: str = '',
     cursor: str | None = None,
     page_size: int = _RECORD_DEFAULT_PAGE_SIZE,
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Read one page of one websh session's recording in a Work Session.
 
@@ -566,7 +566,7 @@ async def work_session_analyze(
     workspace: str,
     force: bool = False,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Manually trigger AI analysis for a terminal Work Session."""
     token = kwargs.get('token')

@@ -154,12 +154,18 @@ line-ending = "auto"
 
 [tool.mypy]
 python_version = "3.12"
-ignore_missing_imports = true
 namespace_packages = true
 explicit_package_bases = true
 check_untyped_defs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
 strict_equality = true
 extra_checks = true
 warn_redundant_casts = true
 warn_unused_ignores = true
 warn_unreachable = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false  # test functions take pytest fixtures untyped
+disallow_incomplete_defs = false

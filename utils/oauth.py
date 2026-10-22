@@ -17,9 +17,10 @@ import os
 import re
 import secrets
 import time
+from collections.abc import Awaitable, Callable
 from functools import wraps
 from http import HTTPStatus
-from typing import Literal, TypedDict
+from typing import Literal, Protocol, TypedDict
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 import httpx
@@ -167,7 +168,18 @@ _DEFAULT_REDIRECT_DOMAINS = tuple(
 )
 
 
-def _get_server_url(request) -> str:
+type _RouteHandler = Callable[[Request], Awaitable[Response]]
+
+
+class _RouteRegistry(Protocol):
+    """The one MCPServer method route registration needs; tests pass a stand-in."""
+
+    def custom_route(
+        self, path: str, methods: list[str]
+    ) -> Callable[[_RouteHandler], _RouteHandler]: ...
+
+
+def _get_server_url(request: Request) -> str:
     """Build the MCP server's base URL from config or request.
 
     Prefers ALPACON_MCP_RESOURCE_URL env var to avoid relying on
@@ -298,7 +310,9 @@ def _is_registrable_uri_list(value: object) -> bool:
     )
 
 
-def _allow_browser_clients(handler):
+def _allow_browser_clients(
+    handler: _RouteHandler,
+) -> _RouteHandler:
     """Answer the CORS preflight and mark the response readable cross-origin.
 
     Only for endpoints a browser-based client reaches with fetch: /oauth/authorize
@@ -480,7 +494,7 @@ def _verify_state(state: str) -> dict[str, object] | None:
     return payload
 
 
-def _build_state(redirect_uri: str, state: str, **extra) -> str:
+def _build_state(redirect_uri: str, state: str, **extra: object) -> str:
     """Pack everything the callback needs to recover into one signed state value."""
     return _sign_state({'redirect_uri': redirect_uri, 'state': state, **extra})
 
@@ -649,7 +663,7 @@ def _clear_nonce_cookie(response: Response) -> None:
     response.delete_cookie(_NONCE_COOKIE_NAME, **_NONCE_COOKIE_ATTRS)
 
 
-def register_oauth_routes(mcp_server):
+def register_oauth_routes(mcp_server: _RouteRegistry) -> None:
     """Register OAuth proxy routes on the MCP server.
 
     Args:
@@ -672,7 +686,7 @@ def register_oauth_routes(mcp_server):
     # the 500 path too, so a misconfiguration is readable rather than a CORS error.
     @mcp_server.custom_route('/.well-known/oauth-authorization-server', methods=['GET'])
     @_allow_browser_clients
-    async def oauth_metadata(request):
+    async def oauth_metadata(request: Request) -> Response:
         """OAuth 2.0 Authorization Server Metadata (RFC 8414).
 
         Returns metadata advertising this MCP server as the OAuth
@@ -712,7 +726,7 @@ def register_oauth_routes(mcp_server):
         )
 
     @mcp_server.custom_route('/oauth/authorize', methods=['GET'])
-    async def oauth_authorize(request):
+    async def oauth_authorize(request: Request) -> Response:
         """Redirect to Auth0's authorization endpoint.
 
         Proxies the OAuth authorize request to Auth0, adding the
@@ -878,7 +892,7 @@ def register_oauth_routes(mcp_server):
 
     @mcp_server.custom_route('/oauth/token', methods=['POST', 'OPTIONS'])
     @_allow_browser_clients
-    async def oauth_token(request):
+    async def oauth_token(request: Request) -> Response:
         """Proxy token exchange to Auth0.
 
         Forwards the token request to Auth0's /oauth/token endpoint.
@@ -1089,7 +1103,7 @@ def register_oauth_routes(mcp_server):
 
     @mcp_server.custom_route('/oauth/register', methods=['POST', 'OPTIONS'])
     @_allow_browser_clients
-    async def oauth_register(request):
+    async def oauth_register(request: Request) -> Response:
         """Dynamic Client Registration endpoint (RFC 7591).
 
         Auth0 does not support Dynamic Client Registration on non-Enterprise
@@ -1180,7 +1194,7 @@ def register_oauth_routes(mcp_server):
         )
 
     @mcp_server.custom_route('/oauth/callback', methods=['GET'])
-    async def oauth_callback(request):
+    async def oauth_callback(request: Request) -> Response:
         """Handle Auth0 callback after authorization.
 
         Supports two-stage MFA flow:
@@ -1192,7 +1206,7 @@ def register_oauth_routes(mcp_server):
         code = request.query_params.get('code')
         composite_state = request.query_params.get('state')
         error = request.query_params.get('error')
-        error_description = request.query_params.get('error_description')
+        error_description = request.query_params.get('error_description', '')
 
         # Decode the composite state to get client's redirect_uri and original state
         client_redirect_uri = ''
@@ -1257,10 +1271,10 @@ def register_oauth_routes(mcp_server):
             logger.warning(
                 'Auth0 callback error: %s - %s',
                 escape_for_log(error),
-                escape_for_log(error_description or ''),
+                escape_for_log(error_description),
             )
             if client_redirect_uri:
-                params = {'error': error, 'error_description': error_description or ''}
+                params = {'error': error, 'error_description': error_description}
                 if original_state:
                     params['state'] = original_state
                 return RedirectResponse(
@@ -1396,7 +1410,7 @@ def register_oauth_routes(mcp_server):
         return json_response
 
     @mcp_server.custom_route('/token', methods=['POST', 'OPTIONS'])
-    async def oauth_token_fallback(request):
+    async def oauth_token_fallback(request: Request) -> Response:
         """Fallback token endpoint at /token.
 
         MCP SDK clients fall back to /token (instead of /oauth/token) when
@@ -1409,7 +1423,7 @@ def register_oauth_routes(mcp_server):
         return await oauth_token(request)
 
     @mcp_server.custom_route('/authorize', methods=['GET'])
-    async def oauth_authorize_fallback(request):
+    async def oauth_authorize_fallback(request: Request) -> Response:
         """Fallback authorize endpoint at /authorize.
 
         MCP SDK clients fall back to /authorize when oauth_metadata
@@ -1419,7 +1433,7 @@ def register_oauth_routes(mcp_server):
         return await oauth_authorize(request)
 
     @mcp_server.custom_route('/register', methods=['POST', 'OPTIONS'])
-    async def oauth_register_fallback(request):
+    async def oauth_register_fallback(request: Request) -> Response:
         """Fallback register endpoint at /register.
 
         MCP SDK clients fall back to /register when oauth_metadata

@@ -562,7 +562,7 @@ async def list_commands(
     server_id: str | None = None,
     limit: int = 20,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """List recent commands executed on servers."""
     token = kwargs.get('token')
@@ -625,7 +625,7 @@ async def execute_command(
     work_session_id: str | None = None,
     purpose: str | None = None,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Execute a command on a server and wait for the result (requires ACL permission)."""
     if not command.strip():
@@ -1144,7 +1144,7 @@ async def execute_file(
     work_session_id: str | None = None,
     purpose: str | None = None,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Run a file on the host as a verified execution and wait for the result (ADR 0053)."""
     token = kwargs.get('token')
@@ -1563,7 +1563,7 @@ async def state_command_purpose(
     workspace: str,
     timeout: int = 300,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Answer a parked command's purpose demand and wait for the re-judgment."""
     token = kwargs.get('token')
@@ -1637,7 +1637,7 @@ async def execute_command_multi_server(
     parallel: bool = True,
     work_session_id: str | None = None,
     purpose: str | None = None,
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Execute a command on multiple servers using Command API (requires ACL permission)."""
     token = kwargs.get('token')

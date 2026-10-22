@@ -45,7 +45,7 @@ async def list_iam_users(
     region: str = '',
     page: int | None = None,
     page_size: int | None = None,
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """List all IAM users in workspace.
 
@@ -79,7 +79,7 @@ async def list_iam_users(
     meta={'anthropic/searchHint': 'iam user detail profile'},
 )
 async def get_iam_user(
-    user_id: str, workspace: str, region: str = '', **kwargs
+    user_id: str, workspace: str, region: str = '', **kwargs: str
 ) -> ToolResponse:
     """Get detailed information about a specific IAM user.
 
@@ -125,7 +125,7 @@ async def create_iam_user(
     last_name: str | None = None,
     is_active: bool = True,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Create a new IAM user.
 
@@ -178,7 +178,7 @@ async def update_iam_user(
     last_name: str | None = None,
     is_active: bool | None = None,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Update an existing IAM user.
 
@@ -234,7 +234,7 @@ async def update_iam_user(
     meta={'anthropic/searchHint': 'iam user delete remove'},
 )
 async def delete_iam_user(
-    user_id: str, workspace: str, region: str = '', **kwargs
+    user_id: str, workspace: str, region: str = '', **kwargs: str
 ) -> ToolResponse:
     """Delete an IAM user.
 
@@ -278,7 +278,7 @@ async def list_iam_groups(
     region: str = '',
     page: int | None = None,
     page_size: int | None = None,
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """List all IAM groups in workspace.
 
@@ -317,7 +317,7 @@ async def create_iam_group(
     display_name: str | None = None,
     description: str | None = None,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Create a new IAM group.
 
@@ -381,7 +381,7 @@ async def get_iam_group(
     group_id: str,
     workspace: str,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Get IAM group details.
 
@@ -420,7 +420,7 @@ async def update_iam_group(
     display_name: str | None = None,
     description: str | None = None,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Update an existing IAM group.
 
@@ -473,7 +473,7 @@ async def delete_iam_group(
     group_id: str,
     workspace: str,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Delete an IAM group.
 
@@ -517,7 +517,7 @@ async def list_iam_memberships(
     region: str = '',
     page: int | None = None,
     page_size: int | None = None,
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """List IAM group memberships.
 
@@ -562,7 +562,7 @@ async def add_iam_member(
     workspace: str,
     role: str = 'member',
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Add a user to an IAM group.
 
@@ -607,7 +607,7 @@ async def remove_iam_member(
     membership_id: str,
     workspace: str,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Remove a user from an IAM group.
 
@@ -649,7 +649,7 @@ async def invite_workspace_user(
     email: str,
     workspace: str,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Invite a user to the workspace by email.
 
@@ -692,7 +692,7 @@ async def list_iam_applications(
     region: str = '',
     page: int | None = None,
     page_size: int | None = None,
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """List all IAM applications in the workspace.
 
@@ -731,7 +731,7 @@ async def create_iam_application(
     description: str | None = None,
     service_type: str | None = None,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Create a new IAM application.
 
@@ -782,7 +782,7 @@ async def get_iam_application(
     app_id: str,
     workspace: str,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Get IAM application details.
 
@@ -821,7 +821,7 @@ async def update_iam_application(
     name: str | None = None,
     description: str | None = None,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Update an existing IAM application.
 
@@ -871,7 +871,7 @@ async def delete_iam_application(
     app_id: str,
     workspace: str,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Delete an IAM application.
 
@@ -911,7 +911,7 @@ async def assign_application_system_users(
     system_user_ids: list[str],
     workspace: str,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Assign system users to an IAM application.
 
@@ -963,7 +963,7 @@ async def unassign_application_system_users(
     system_user_ids: list[str],
     workspace: str,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Unassign system users from an IAM application.
 

@@ -24,7 +24,7 @@ async def list_system_package_entries(
     region: str = '',
     page: int | None = None,
     page_size: int | None = None,
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """List system package entries on a server.
 
@@ -65,7 +65,7 @@ async def install_system_package(
     workspace: str,
     version: str | None = None,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Install a system package on a server.
 
@@ -107,7 +107,7 @@ async def install_system_package(
     meta={'anthropic/searchHint': 'system package remove uninstall delete'},
 )
 async def remove_system_package(
-    entry_id: str, workspace: str, region: str = '', **kwargs
+    entry_id: str, workspace: str, region: str = '', **kwargs: str
 ) -> ToolResponse:
     """Remove a system package entry.
 
@@ -148,7 +148,7 @@ async def list_python_packages(
     region: str = '',
     page: int | None = None,
     page_size: int | None = None,
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """List Python packages on a server.
 
@@ -189,7 +189,7 @@ async def install_python_package(
     workspace: str,
     version: str | None = None,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Install a Python package on a server.
 
@@ -231,7 +231,7 @@ async def install_python_package(
     meta={'anthropic/searchHint': 'python package pip remove uninstall'},
 )
 async def remove_python_package(
-    entry_id: str, workspace: str, region: str = '', **kwargs
+    entry_id: str, workspace: str, region: str = '', **kwargs: str
 ) -> ToolResponse:
     """Remove a Python package entry.
 

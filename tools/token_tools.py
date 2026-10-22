@@ -69,7 +69,7 @@ async def list_api_tokens(
     enabled: bool | None = None,
     search: str | None = None,
     ordering: str | None = None,
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """List API tokens.
 
@@ -124,7 +124,7 @@ async def get_api_token(
     token_id: str,
     workspace: str,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Get a single API token.
 
@@ -172,7 +172,7 @@ async def create_api_token(
     enabled: bool | None = None,
     presets: list[str] | None = None,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Create a new API token.
 
@@ -235,7 +235,7 @@ async def update_api_token(
     clear_expires_at: bool = False,
     scopes: list[str] | None = None,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Update an API token via PATCH.
 
@@ -309,7 +309,7 @@ async def delete_api_token(
     token_id: str,
     workspace: str,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Delete an API token.
 
@@ -358,7 +358,7 @@ async def duplicate_api_token(
     workspace: str,
     name: str | None = None,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Duplicate an API token.
 
@@ -417,7 +417,7 @@ async def duplicate_api_token(
 )
 @require_jwt_auth
 async def rotate_api_token(
-    token_id: str, workspace: str, region: str = '', **kwargs
+    token_id: str, workspace: str, region: str = '', **kwargs: str
 ) -> ToolResponse:
     """Rotate an API token's secret in place.
 
@@ -457,7 +457,7 @@ async def rotate_api_token(
 async def list_api_token_scopes(
     workspace: str,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """List available API token scopes.
 
@@ -488,7 +488,7 @@ async def list_api_token_scopes(
 async def list_api_token_presets(
     workspace: str,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """List available API token scope presets.
 

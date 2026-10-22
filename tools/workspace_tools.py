@@ -199,7 +199,7 @@ def _saas_only_security_404(
     },
     requires_workspace=False,
 )
-async def list_workspaces(region: str = '', **kwargs) -> ToolResponse:
+async def list_workspaces(region: str = '', **kwargs: str) -> ToolResponse:
     """Get list of available workspaces.
 
     In local (stdio/SSE) mode, reads from token.json. If region is not specified,
@@ -273,7 +273,9 @@ async def list_workspaces(region: str = '', **kwargs) -> ToolResponse:
         'anthropic/searchHint': 'whoami current user identity me authenticated principal',
     },
 )
-async def get_current_user(workspace: str, region: str = '', **kwargs) -> ToolResponse:
+async def get_current_user(
+    workspace: str, region: str = '', **kwargs: str
+) -> ToolResponse:
     """Get the currently authenticated user.
 
     Args:
@@ -313,7 +315,7 @@ async def get_current_user(workspace: str, region: str = '', **kwargs) -> ToolRe
     },
 )
 async def get_workspace_access_control(
-    workspace: str, region: str = '', **kwargs
+    workspace: str, region: str = '', **kwargs: str
 ) -> ToolResponse:
     """Get the workspace access control settings.
 
@@ -355,7 +357,7 @@ async def get_workspace_access_control(
 )
 @require_jwt_auth
 async def get_workspace_security(
-    workspace: str, region: str = '', **kwargs
+    workspace: str, region: str = '', **kwargs: str
 ) -> ToolResponse:
     """Get the workspace authentication/security settings.
 
@@ -412,7 +414,7 @@ async def get_workspace_security(
 )
 @require_jwt_auth
 async def list_workspace_mfa_methods(
-    workspace: str, region: str = '', **kwargs
+    workspace: str, region: str = '', **kwargs: str
 ) -> ToolResponse:
     """List MFA methods allowed for the workspace.
 
@@ -470,7 +472,7 @@ async def list_workspace_mfa_methods(
     },
 )
 async def get_workspace_preferences(
-    workspace: str, region: str = '', **kwargs
+    workspace: str, region: str = '', **kwargs: str
 ) -> ToolResponse:
     """Get the workspace-wide preferences.
 
@@ -548,7 +550,7 @@ async def update_workspace_preferences(
     # `region`) must keep landing on the same ones.
     agent_rollout_policy: dict[str, Any] | None = None,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Update the workspace-wide preferences (partial update).
 

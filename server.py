@@ -4,11 +4,13 @@ import signal
 import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import Final, Literal
+from types import FrameType
+from typing import Final, Literal, NoReturn
 from urllib.parse import urlparse
 
 from mcp.server import MCPServer
 from starlette.applications import Starlette
+from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from utils.common import MCP_VERSION, is_auth_enabled
@@ -122,7 +124,7 @@ async def app_lifespan(app: MCPServer) -> AsyncIterator[None]:
             logger.warning('Could not stop log listener: %s', e)
 
 
-def _sigterm_handler(signum, frame):
+def _sigterm_handler(signum: int, frame: FrameType | None) -> NoReturn:
     """Handle SIGTERM by raising KeyboardInterrupt for anyio's shutdown path."""
     raise KeyboardInterrupt
 
@@ -292,7 +294,7 @@ def resource_metadata_url() -> str:
     return f'{resource_url.rstrip("/")}/.well-known/oauth-protected-resource'
 
 
-def _register_http_health_endpoint():
+def _register_http_health_endpoint() -> None:
     """Register HTTP /health endpoint for HTTP transports (SSE, streamable-http).
 
     Bypasses auth for unauthenticated health probes
@@ -300,7 +302,7 @@ def _register_http_health_endpoint():
     """
 
     @mcp.custom_route('/health', methods=['GET'])
-    async def health_endpoint(request):
+    async def health_endpoint(request: Request) -> JSONResponse:
         health = await get_health_info()
         return JSONResponse(
             health,
@@ -373,7 +375,7 @@ def run(
     toolsets: str | None = None,
     host: str | None = None,
     port: int | None = None,
-):
+) -> None:
     """Run the MCP server on the given transport.
 
     host and port are ignored for stdio. They default to the ALPACON_MCP_HOST

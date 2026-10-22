@@ -42,7 +42,7 @@ async def list_servers(
     region: str = '',
     page: int | None = None,
     page_size: int | None = None,
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Get list of servers.
 
@@ -84,7 +84,7 @@ async def list_servers(
     },
 )
 async def get_server(
-    server_id: str, workspace: str, region: str = '', **kwargs
+    server_id: str, workspace: str, region: str = '', **kwargs: str
 ) -> ToolResponse:
     """Get detailed information about a specific server.
 
@@ -132,7 +132,7 @@ async def get_server(
     },
 )
 async def get_collection_profile(
-    server_id: str, workspace: str, region: str = '', **kwargs
+    server_id: str, workspace: str, region: str = '', **kwargs: str
 ) -> ToolResponse:
     """Get a server's collection profile.
 
@@ -173,7 +173,7 @@ async def get_collection_profile(
     meta={'anthropic/searchHint': 'server notes documentation'},
 )
 async def list_server_notes(
-    server_id: str, workspace: str, region: str = '', **kwargs
+    server_id: str, workspace: str, region: str = '', **kwargs: str
 ) -> ToolResponse:
     """Get list of notes for a specific server.
 
@@ -217,7 +217,7 @@ async def create_server_note(
     pinned: bool | None = None,
     mentioned_users: list[str] | None = None,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Create a new note for a specific server.
 
@@ -270,7 +270,7 @@ async def create_server_note(
     meta={'anthropic/searchHint': 'server note detail describe single get'},
 )
 async def get_server_note(
-    note_id: str, workspace: str, region: str = '', **kwargs
+    note_id: str, workspace: str, region: str = '', **kwargs: str
 ) -> ToolResponse:
     """Get a single server note by ID.
 
@@ -311,7 +311,7 @@ async def update_server_note(
     private: bool | None = None,
     pinned: bool | None = None,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Update an existing server note.
 
@@ -371,7 +371,7 @@ async def update_server_note(
     meta={'anthropic/searchHint': 'server note delete remove'},
 )
 async def delete_server_note(
-    note_id: str, workspace: str, region: str = '', **kwargs
+    note_id: str, workspace: str, region: str = '', **kwargs: str
 ) -> ToolResponse:
     """Delete a server note.
 
@@ -429,7 +429,7 @@ async def _server_action(
     meta={'anthropic/searchHint': 'agent restart alpacon process'},
 )
 async def restart_agent(
-    server_id: str, workspace: str, region: str = '', force: bool = False, **kwargs
+    server_id: str, workspace: str, region: str = '', force: bool = False, **kwargs: str
 ) -> ToolResponse:
     """Restart the Alpacon agent on a server.
 
@@ -468,7 +468,7 @@ async def restart_agent(
     meta={'anthropic/searchHint': 'agent upgrade update version'},
 )
 async def upgrade_agent(
-    server_id: str, workspace: str, region: str = '', force: bool = False, **kwargs
+    server_id: str, workspace: str, region: str = '', force: bool = False, **kwargs: str
 ) -> ToolResponse:
     """Upgrade the Alpacon agent on a server to the latest version.
 
@@ -514,7 +514,7 @@ async def upgrade_agent(
     meta={'anthropic/searchHint': 'alpamon-pam install pam module sudo mfa'},
 )
 async def install_pam(
-    server_id: str, workspace: str, region: str = '', **kwargs
+    server_id: str, workspace: str, region: str = '', **kwargs: str
 ) -> ToolResponse:
     """Install alpamon-pam on a server.
 
@@ -548,7 +548,7 @@ async def install_pam(
     meta={'anthropic/searchHint': 'refresh system info hardware OS rescan'},
 )
 async def update_information(
-    server_id: str, workspace: str, region: str = '', **kwargs
+    server_id: str, workspace: str, region: str = '', **kwargs: str
 ) -> ToolResponse:
     """Trigger system information update on a server.
 
@@ -595,7 +595,7 @@ async def update_server(
     description: str | None = None,
     region: str = '',
     offline_alert_enabled: bool | None = None,
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Update an existing server record.
 
@@ -664,7 +664,7 @@ async def unregister_server(
     region: str = '',
     auto: bool = False,
     purge_provisioned_accounts: bool = False,
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Unregister a server from the workspace.
 
@@ -707,7 +707,7 @@ async def unregister_server(
     meta={'anthropic/searchHint': 'server star pin favorite bookmark personalization'},
 )
 async def star_server(
-    server_id: str, status: bool, workspace: str, region: str = '', **kwargs
+    server_id: str, status: bool, workspace: str, region: str = '', **kwargs: str
 ) -> ToolResponse:
     """Set star status on a server.
 
@@ -750,7 +750,7 @@ async def list_registration_tokens(
     region: str = '',
     page: int | None = None,
     page_size: int | None = None,
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """List server registration tokens.
 
@@ -796,7 +796,7 @@ async def create_registration_token(
     name: str,
     description: str | None = None,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Create a server registration token.
 
@@ -837,7 +837,7 @@ async def create_registration_token(
     meta={'anthropic/searchHint': 'registration token delete revoke rotate invalidate'},
 )
 async def delete_registration_token(
-    token_id: str, workspace: str, region: str = '', **kwargs
+    token_id: str, workspace: str, region: str = '', **kwargs: str
 ) -> ToolResponse:
     """Delete a server registration token.
 
@@ -886,7 +886,7 @@ async def get_registration_guide(
     platform: str,
     server_name: str | None = None,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Get agent installation guide for a platform and registration token.
 

@@ -2590,6 +2590,17 @@ class TestOAuthCallback:
         assert response.status_code == HTTPStatus.BAD_REQUEST
         assert response.json()['error'] == 'access_denied'
 
+    def test_callback_error_without_description_answers_an_empty_string(
+        self, oauth_app
+    ):
+        response = oauth_app.get('/oauth/callback', params={'error': 'access_denied'})
+
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        assert response.json() == {
+            'error': 'access_denied',
+            'error_description': '',
+        }
+
     def test_callback_rejects_opaque_state(self, oauth_app):
         """A state that is not one of ours is rejected, not echoed back."""
         response = oauth_app.get(

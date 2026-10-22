@@ -23,7 +23,7 @@ async def list_certificate_authorities(
     region: str = '',
     page: int | None = None,
     page_size: int | None = None,
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """List certificate authorities.
 
@@ -70,7 +70,7 @@ async def create_certificate_authority(
     key_size: int | None = None,
     install: bool | None = None,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Create a certificate authority.
 
@@ -135,7 +135,7 @@ async def get_certificate_authority(
     ca_id: str,
     workspace: str,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Get certificate authority details.
 
@@ -172,7 +172,7 @@ async def update_certificate_authority(
     max_valid_days: int | None = None,
     owner: str | None = None,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Update a certificate authority (partial update).
 
@@ -234,7 +234,7 @@ async def delete_certificate_authority(
     ca_id: str,
     workspace: str,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Delete a certificate authority that has never received a sign request.
 
@@ -274,7 +274,7 @@ async def list_sign_requests(
     region: str = '',
     page: int | None = None,
     page_size: int | None = None,
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """List certificate signing requests.
 
@@ -313,7 +313,7 @@ async def create_sign_request(
     ip_list: list[str] | None = None,
     valid_days: int | None = None,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Create a certificate signing request.
 
@@ -364,7 +364,7 @@ async def get_sign_request(
     csr_id: str,
     workspace: str,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Get certificate signing request details.
 
@@ -398,7 +398,7 @@ async def delete_sign_request(
     csr_id: str,
     workspace: str,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Cancel a certificate signing request.
 
@@ -432,7 +432,7 @@ async def approve_sign_request(
     csr_id: str,
     workspace: str,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Approve a certificate signing request.
 
@@ -467,7 +467,7 @@ async def deny_sign_request(
     csr_id: str,
     workspace: str,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Deny a certificate signing request.
 
@@ -504,7 +504,7 @@ async def retry_sign_request(
     csr_id: str,
     workspace: str,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Retry a certificate signing request stuck in the signing state.
 
@@ -546,7 +546,7 @@ async def list_certificates(
     region: str = '',
     page: int | None = None,
     page_size: int | None = None,
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """List issued certificates.
 
@@ -588,7 +588,7 @@ async def get_certificate(
     certificate_id: str,
     workspace: str,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Get certificate details.
 
@@ -624,7 +624,7 @@ async def revoke_certificate(
     reason: int | None = None,
     requested_reason: str | None = None,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Create a certificate revocation request.
 
@@ -679,7 +679,7 @@ async def list_revoke_requests(
     region: str = '',
     page: int | None = None,
     page_size: int | None = None,
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """List certificate revocation requests.
 
@@ -716,7 +716,7 @@ async def get_revoke_request(
     revoke_id: str,
     workspace: str,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Get certificate revocation request details.
 
@@ -750,7 +750,7 @@ async def approve_revoke_request(
     revoke_id: str,
     workspace: str,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Approve a certificate revocation request.
 
@@ -785,7 +785,7 @@ async def deny_revoke_request(
     revoke_id: str,
     workspace: str,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Deny a certificate revocation request.
 
@@ -822,7 +822,7 @@ async def retry_revoke_request(
     revoke_id: str,
     workspace: str,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Retry a certificate revocation request stuck in the revoking state.
 
@@ -857,7 +857,7 @@ async def cancel_revoke_request(
     revoke_id: str,
     workspace: str,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Cancel a pending certificate revocation request.
 

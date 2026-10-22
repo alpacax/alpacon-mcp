@@ -301,7 +301,7 @@ class Auth0TokenVerifier:
     workspace claims for authorization.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize with Auth0 config from environment variables."""
         self._config = _get_auth0_config()
         logger.info(
