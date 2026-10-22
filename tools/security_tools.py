@@ -25,6 +25,14 @@ _BULK_MAX_SERVERS = 100
 _BOTH_TOKENS_ERROR = 'Provide either api_token_id or service_token_id, not both'
 _TOKEN_REQUIRED_ERROR = 'Either api_token_id or service_token_id must be provided'
 
+# Shared by the three command-ACL write tools. A deployment that moved command
+# ACLs to the pre-approval ledger refuses every write; one without it does not.
+_COMMAND_ACL_MOVED_NOTE = (
+    ' Note: on a server that manages command ACLs on the command pre-approval '
+    'ledger, this write is refused with 405 command_acl_moved; a ledger admin '
+    'must then make the change in the web console. Do not retry it.'
+)
+
 
 @mcp_tool_handler(
     description='List command ACL rules that control which commands can be executed. When to use: checking command execution permissions or debugging 403 errors from execute_command. Related: create_command_acl (add rules), list_server_acls (server access rules), list_file_acls (file access rules).',
@@ -77,7 +85,8 @@ async def list_command_acls(
 
 
 @mcp_tool_handler(
-    description='Create a command ACL rule to allow a token to execute specific commands. When to use: granting command execution permissions to an API or service token. Related: list_command_acls (view existing), update_command_acl (modify), delete_command_acl (remove).',
+    description='Create a command ACL rule to allow a token to execute specific commands. When to use: granting command execution permissions to an API or service token. Related: list_command_acls (view existing), update_command_acl (modify), delete_command_acl (remove).'
+    + _COMMAND_ACL_MOVED_NOTE,
     annotations=ADDITIVE,
     meta={'anthropic/searchHint': 'command acl create permission allow deny'},
 )
@@ -138,7 +147,8 @@ async def create_command_acl(
 
 
 @mcp_tool_handler(
-    description='Update an existing command ACL rule. Related: list_command_acls (find rule ID), delete_command_acl (remove rule).',
+    description='Update an existing command ACL rule. Related: list_command_acls (find rule ID), delete_command_acl (remove rule).'
+    + _COMMAND_ACL_MOVED_NOTE,
     annotations=IDEMPOTENT_WRITE,
     meta={'anthropic/searchHint': 'command acl update modify'},
 )
@@ -195,7 +205,8 @@ async def update_command_acl(
 
 
 @mcp_tool_handler(
-    description='Delete a command ACL rule permanently. Related: list_command_acls (find rule ID), update_command_acl (modify instead). Note: Cannot be undone.',
+    description='Delete a command ACL rule permanently. Related: list_command_acls (find rule ID), update_command_acl (modify instead). Note: Cannot be undone.'
+    + _COMMAND_ACL_MOVED_NOTE,
     annotations=DESTRUCTIVE,
     meta={'anthropic/searchHint': 'command acl delete remove'},
 )
