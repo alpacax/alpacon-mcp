@@ -191,7 +191,7 @@ python main_sse.py
 python main.py --help
 ```
 
-The `alpacon-mcp` CLI takes the same flags plus the `setup`, `test`, `list`, and `add` subcommands. `--toolsets` is also accepted by `main_sse.py`; the `ALPACON_MCP_TOOLSETS` environment variable is the equivalent, and the flag wins when both are set. Available toolsets: `servers`, `commands`, `webftp`, `metrics`, `alerts`, `events`, `system-info`, `iam`, `security`, `audit`, `approvals`, `webhooks`, `packages`, `certs`, `tokens`. Workspace, health, Work Session tools, and prompts are always registered. Remote mode ignores the setting. A few resources cross module boundaries—`alpacon://servers/.../overview` is backed by `system_info_tools`, so `--toolsets servers` alone silently drops it; add `system-info` to keep it. `commands` alone still writes and reads files through WebFTP when `execute_file` is called with `write_file` or `read_from_server`, so leaving out `webftp` does not keep file transfers away from the agent.
+The `alpacon-mcp` CLI takes the same flags plus the `setup`, `test`, `list`, and `add` subcommands. `--toolsets` is also accepted by `main_sse.py`; the `ALPACON_MCP_TOOLSETS` environment variable is the equivalent, and the flag wins when both are set. Available toolsets: `servers`, `commands`, `webftp`, `metrics`, `alerts`, `events`, `system-info`, `iam`, `security`, `audit`, `approvals`, `webhooks`, `packages`, `certs`, `tokens`, `ledger`. Workspace, health, Work Session tools, and prompts are always registered. Remote mode ignores the setting. A few resources cross module boundaries—`alpacon://servers/.../overview` is backed by `system_info_tools`, so `--toolsets servers` alone silently drops it; add `system-info` to keep it. `commands` alone still writes and reads files through WebFTP when `execute_file` is called with `write_file` or `read_from_server`, so leaving out `webftp` does not keep file transfers away from the agent.
 
 ### Transport modes
 
@@ -252,6 +252,10 @@ export ALPACON_MCP_TOOLSETS="servers,commands,webftp"
 
 # Default Work Session for tools called without work_session_id
 export ALPACON_WORK_SESSION="<work-session-uuid>"
+
+# Command pre-approval ledger host and audience (local mode only; defaults shown)
+export ALPACON_MCP_LEDGER_URL="https://alpacon.ai"
+export ALPACON_MCP_LEDGER_AUDIENCE="https://alpacon.ai/"  # Matched verbatim; keep the slash
 
 # Transport binding (SSE and streamable-http)
 export ALPACON_MCP_HOST=127.0.0.1

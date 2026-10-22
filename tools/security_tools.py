@@ -25,19 +25,18 @@ _BULK_MAX_SERVERS = 100
 _BOTH_TOKENS_ERROR = 'Provide either api_token_id or service_token_id, not both'
 _TOKEN_REQUIRED_ERROR = 'Either api_token_id or service_token_id must be provided'
 
-# Shared by the three command-ACL write tools. A deployment that moved command
-# ACLs to the pre-approval ledger refuses every write; one without it does not.
+# Shared by the command-ACL tools. A deployment that moved command ACLs to the
+# pre-approval ledger refuses every write; one without it does not.
 _COMMAND_ACL_MOVED_NOTE = (
     ' On a server that manages command ACLs on the command pre-approval '
-    'ledger, this write is refused with 405 command_acl_moved; a Command ACL '
-    'admin must then issue or revoke the entry under Pre-approved commands on '
-    "the service token's page in the web console, and a personal API token has "
-    'no command list on the ledger. Do not retry it.'
+    'ledger (get_ledger_capability reports command_acl_surface "ai"), this '
+    'write is refused with 405 command_acl_moved; use issue_ledger_entries, '
+    'revoke_ledger_entry and their siblings instead. Do not retry it.'
 )
 
 
 @mcp_tool_handler(
-    description='List command ACL rules that control which commands can be executed. When to use: checking command execution permissions or debugging 403 errors from execute_command. Related: create_command_acl (add rules), list_server_acls (server access rules), list_file_acls (file access rules).',
+    description='List command ACL rules that control which commands can be executed. When to use: checking command execution permissions or debugging 403 errors from execute_command. Related: create_command_acl (add rules), list_server_acls (server access rules), list_file_acls (file access rules). On a server whose command_acl_surface is "ai" these rules no longer decide anything; use list_ledger_entries.',
     annotations=READ_ONLY,
     meta={'anthropic/searchHint': 'command acl permission rules security'},
 )

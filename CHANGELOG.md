@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Command pre-approval ledger tools (#362): `get_ledger_capability`, `list_ledger_entries`,
+  `issue_ledger_entries`, `revoke_ledger_entry`, `revoke_ledger_entries`, `disable_ledger_entry`,
+  `enable_ledger_entry`, `list_ledger_admins`, `grant_ledger_admin` and `revoke_ledger_admin`, in a new
+  `ledger` toolset. They manage Pre-approved commands and Command ACL admins on a workspace whose
+  `command_acl_surface` is `ai`, from a local (stdio) server only. The first call returns a new
+  `status` value, `authorization_required`, carrying a sign-in link a person must open before the
+  call is retried, so a client branching on `status` has to handle it.
+
 ### Fixed
 - `create_command_acl`, `update_command_acl` and `delete_command_acl` now explain the 405
   `command_acl_moved` that a server managing command pre-approvals on the command pre-approval
@@ -17,6 +26,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   without the ledger still accepts these writes.
 
 ### Changed
+- The `command_acl_moved` hint, the command ACL tool descriptions and the 403 command recovery hint
+  now name the ledger tools alongside the web console.
+
 - The `file_exec_unsupported_agent` hint and the `execute_file` description now name alpamon 2.8.3,
   the first release that reports its capabilities, instead of 2.6.0, and separate two cases: an agent
   older than 2.8.3 reports no capabilities (upgrade it), while one already on 2.8.3 or newer has no

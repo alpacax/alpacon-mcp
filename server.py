@@ -63,6 +63,7 @@ TOOLSET_REGISTRY: dict[str, str] = {
     'packages': 'package_tools',
     'certs': 'cert_tools',
     'tokens': 'token_tools',
+    'ledger': 'ledger_tools',
 }
 ALL_TOOL_MODULES: frozenset[str] = frozenset(TOOLSET_REGISTRY.values())
 

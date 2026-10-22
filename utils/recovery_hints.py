@@ -46,8 +46,17 @@ _HINT_REGISTRY: dict[tuple[int, str], dict[str, list[str]]] = {
             "Check if the API token has 'command_execute' ACL permission.",
             'Use list_command_acls to view current permissions.',
             'Ask a workspace admin to grant command ACL via create_command_acl.',
+            (
+                'If get_ledger_capability reports command_acl_surface "ai", a '
+                'Command ACL admin grants it with issue_ledger_entries instead.'
+            ),
         ],
-        'related_tools': ['list_command_acls', 'create_command_acl'],
+        'related_tools': [
+            'list_command_acls',
+            'create_command_acl',
+            'get_ledger_capability',
+            'issue_ledger_entries',
+        ],
     },
     (HTTPStatus.FORBIDDEN, 'server'): {
         'recovery_hints': [

@@ -327,13 +327,13 @@ AGENT_ROLLOUT_POLICY_REFUSAL_HINTS: dict[str, str] = {
 }
 
 #: 405 on every command-ACL write once the server moved command pre-approvals
-#: to the ledger; this MCP has no ledger tool, hence the web console.
+#: to the ledger. The ledger tools reach it from a local MCP server only.
 COMMAND_ACL_MOVED_HINT = (
     'Command ACLs are now managed on the command pre-approval ledger, so this '
-    'endpoint no longer accepts writes. For now a Command ACL admin must issue '
-    "or revoke the entry under Pre-approved commands on the service token's "
-    'page in the web console; a personal API token has no command list on the '
-    'ledger. Do not retry this call.'
+    'endpoint no longer accepts writes. A Command ACL admin can issue or revoke '
+    'the entry with issue_ledger_entries and revoke_ledger_entry on a local MCP '
+    "server, or under Pre-approved commands on the service token's page in the "
+    'web console. Do not retry this call.'
 )
 
 _ERROR_CODE_HINT: dict[str, str] = {
