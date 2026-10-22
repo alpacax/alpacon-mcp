@@ -456,10 +456,11 @@ server-rendered line.
 **Refusals** come back as `status: "error"` with `error_code` set, and a message stating the fix. None
 has a request waiting behind it, so a client acts on them rather than waiting or retrying as-is:
 `file_exec_unsupported_agent` (the agent on that server did not report support for this lane: an
-alpamon older than 2.8.3 reports no capabilities, so upgrade it to 2.8.3 or newer; an alpamon already
-on 2.8.3 or newer has no file lane on that platform, such as Windows, so upgrading does not help and
-the work runs through `execute_command` there), `file_exec_assessor_disabled` (the deployment has the
-command assessor off), `file_exec_invalid_path`, `file_exec_content_too_large`, `file_exec_empty_content`,
+alpamon older than 2.8.3 reports no capabilities, so upgrade it to 2.8.3 or newer or run the work
+through `execute_command`; an alpamon already on 2.8.3 or newer has no file lane on that platform,
+such as Windows, so upgrading does not help and the work runs through `execute_command` there),
+`file_exec_assessor_disabled` (the deployment has the command assessor off), `file_exec_invalid_path`,
+`file_exec_content_too_large`, `file_exec_empty_content`,
 `file_exec_line_too_long`, `file_exec_invalid_reuse_days` (`reuse_days` is outside 1 to 366; fix it or
 omit it), and `file_exec_reuse_exceeds_max` (`reuse_days` is above the workspace's ceiling; resubmit
 with a shorter duration or none). The path, size, and `reuse_days` range rules are also checked

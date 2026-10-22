@@ -2764,6 +2764,7 @@ class TestExecuteFileRegistration:
         for code in _FILE_EXEC_CODES:
             assert code in text
         assert '2.8.3' in text
+        assert 'Windows' in text
         # The approver only opts in or not, and omitting reuse_days still lets
         # an opted-in grant reach the ceiling, so neither may read otherwise.
         assert 'reuse_days' in text

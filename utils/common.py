@@ -174,7 +174,8 @@ FILE_EXEC_REFUSAL_HINTS: dict[str, str] = {
     'file_exec_unsupported_agent': (
         'The agent on this server did not report support for verified file '
         'execution. If it runs alpamon older than 2.8.3, which reports no '
-        'capabilities, upgrade it to 2.8.3 or newer (upgrade_agent), then retry. '
+        'capabilities, upgrade it to 2.8.3 or newer (upgrade_agent) and retry, '
+        'or run the work through execute_command. '
         'If it already runs 2.8.3 or newer, its build has no file lane on that '
         'platform, such as Windows: upgrading does not help, so run the work '
         'through execute_command instead. Retrying as-is fails the same way.'
