@@ -1,12 +1,15 @@
 """Unit tests for the command pre-approval ledger tools, against a stubbed ledger."""
 
+import importlib
 import json
 from http import HTTPStatus
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+import server
 from tests.conftest import http_client_fixture
+from tools import resources as res
 from tools.ledger_tools import (
     disable_ledger_entry,
     enable_ledger_entry,
@@ -19,7 +22,13 @@ from tools.ledger_tools import (
     revoke_ledger_entries,
     revoke_ledger_entry,
 )
-from utils.ledger_auth import AUTHORIZATION_REQUIRED, LedgerTarget
+from utils import declared_agent
+from utils.ledger_auth import (
+    AUTHORIZATION_REQUIRED,
+    LedgerAuthorizer,
+    LedgerTarget,
+    _CachedToken,
+)
 
 WORKSPACE_ID = '11111111-2222-3333-4444-555555555555'
 ENTRY_ID = '7e3984de-49ab-4cc6-bcdf-21fbd35858b8'
@@ -57,6 +66,7 @@ mock_http_client = http_client_fixture('tools.ledger_tools')
 def ledger(mock_http_client, mock_token_manager, monkeypatch):
     """A workspace on the `ai` surface whose ledger token is already authorized."""
     monkeypatch.delenv('ALPACON_MCP_LEDGER_URL', raising=False)
+    monkeypatch.setenv('ALPACON_MCP_TRANSPORT', 'stdio')
     mock_http_client.get.return_value = AI_ENV
     mock_http_client.request = AsyncMock(return_value={'ok': True})
     authorizer = MagicMock()
@@ -135,7 +145,7 @@ class TestSurface:
             )
 
         assert result['status'] == 'error'
-        assert 'local (stdio)' in result['message']
+        assert 'stdio MCP server' in result['message']
         assert 'Pre-approved commands' in result['message']
         authorizer.token_for.assert_not_called()
 
@@ -179,6 +189,79 @@ class TestSurface:
         assert result['status'] == 'error'
         assert result['status_code'] == HTTPStatus.NOT_FOUND
         client.request.assert_not_called()
+
+
+TARGET = LedgerTarget(
+    domain='auth.example.com',
+    client_id='cli-client',
+    org_name='testworkspace',
+    workspace_id=WORKSPACE_ID,
+)
+
+
+class TestStdioOnly:
+    """A network transport may share one process, and so one sign-in cache,
+    between callers; the ledger tools must refuse there before touching it."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('cached', [True, False])
+    @pytest.mark.parametrize('transport', ['sse', 'streamable-http', None])
+    async def test_a_network_or_unknown_transport_never_reaches_the_cache(
+        self, mock_http_client, mock_token_manager, monkeypatch, cached, transport
+    ):
+        monkeypatch.delenv('ALPACON_MCP_AUTH_ENABLED', raising=False)
+        if transport is None:
+            monkeypatch.delenv('ALPACON_MCP_TRANSPORT', raising=False)
+        else:
+            monkeypatch.setenv('ALPACON_MCP_TRANSPORT', transport)
+        mock_http_client.get.return_value = AI_ENV
+        mock_http_client.request = AsyncMock()
+        authorizer = LedgerAuthorizer()
+        if cached:
+            # Another caller of the same process signed in first.
+            authorizer._tokens[TARGET.key] = _CachedToken('first-person', 1e12)
+        spy = AsyncMock(wraps=authorizer.token_for)
+
+        with (
+            patch('tools.ledger_tools.ledger_authorizer', authorizer),
+            patch.object(authorizer, 'token_for', spy),
+        ):
+            listed = await list_ledger_entries(workspace='testworkspace', region='ap1')
+            capability = await get_ledger_capability(
+                workspace='testworkspace', region='ap1'
+            )
+
+        for result in (listed, capability):
+            assert result['status'] == 'error'
+            assert 'stdio MCP server' in result['message']
+            assert 'Pre-approved commands' in result['message']
+        spy.assert_not_called()
+        mock_http_client.request.assert_not_called()
+
+    @pytest.mark.parametrize(
+        ('transport', 'registered'), [('sse', False), ('stdio', True)]
+    )
+    def test_the_toolset_is_registered_on_stdio_only(
+        self, monkeypatch, transport, registered
+    ):
+        imported: list[str] = []
+        real_import = importlib.import_module
+        handed: dict = {}
+
+        def spy(name, *args, **kwargs):
+            imported.append(name)
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(server.importlib, 'import_module', spy)
+        monkeypatch.setattr(res, 'register_resources', lambda m: handed.update(m=m))
+        monkeypatch.setenv('ALPACON_MCP_TRANSPORT', 'restored-on-teardown')
+        monkeypatch.delenv('ALPACON_MCP_AUTH_ENABLED', raising=False)
+        monkeypatch.setattr(declared_agent, '_environment_fallback', False)
+
+        server.prepare(transport, toolsets='ledger')
+
+        assert ('tools.ledger_tools' in imported) is registered
+        assert ('ledger_tools' in handed['m']) is registered
 
 
 class TestAuthorization:

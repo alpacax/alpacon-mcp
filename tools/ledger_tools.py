@@ -8,13 +8,17 @@ its own audience, never an API or service token, and only a Command ACL admin
 of the workspace may change it. `utils.ledger_auth` obtains that token.
 
 A workspace whose surface is `upstream` keeps using the command ACL tools in
-`security_tools`; every tool here refuses it and says so.
+`security_tools`; every tool here refuses it and says so. Any transport other
+than stdio is refused too, before the sign-in cache is touched: that cache is
+per process, and a network transport may share a process between callers.
 """
 
 import json
+import os
 from http import HTTPStatus
 from typing import Any, Literal, NotRequired, TypedDict
 
+from server import TRANSPORT_STDIO
 from utils.common import (
     error_response,
     is_auth_enabled,
@@ -45,11 +49,13 @@ _UPSTREAM_SURFACE_MESSAGE = (
     'list_command_acls, create_command_acl, update_command_acl and '
     'delete_command_acl instead.'
 )
-_REMOTE_MODE_MESSAGE = (
-    'Managing the command pre-approval ledger needs a local (stdio) MCP server '
-    'for now: the ledger accepts only a sign-in made for it, and remote mode '
-    'has no way to obtain one. A Command ACL admin can manage the entries under '
-    "Pre-approved commands on the service token's page in the web console."
+_STDIO_ONLY_MESSAGE = (
+    'Managing the command pre-approval ledger needs a local stdio MCP server: '
+    "the ledger accepts only a person's own sign-in, and a network transport "
+    '(SSE or streamable-http) may share one process between several callers, '
+    "so it could hand one person's sign-in to another. A Command ACL admin "
+    "can manage the entries under Pre-approved commands on the service token's "
+    'page in the web console.'
 )
 
 
@@ -103,9 +109,11 @@ async def _ledger_target(
             workspace=workspace,
         )
 
-    if is_auth_enabled():
+    # An unset transport means a caller outside prepare(), and fails closed.
+    transport = os.environ.get('ALPACON_MCP_TRANSPORT', '')
+    if is_auth_enabled() or transport != TRANSPORT_STDIO:
         return error_response(
-            _REMOTE_MODE_MESSAGE,
+            _STDIO_ONLY_MESSAGE,
             command_acl_surface=surface,
             region=region,
             workspace=workspace,
@@ -350,7 +358,10 @@ async def list_ledger_entries(
     description=(
         'Issue one or more command pre-approvals on the command pre-approval '
         'ledger, so a service token may run a matching command without a human '
-        'approval. All or nothing: one rejected entry refuses the batch. An '
+        'approval. Service tokens only: a personal API token has no command '
+        'list on the ledger, so an api_token entry cannot be issued; the ones a '
+        "token already has are listed with list_ledger_entries(principal_type='api_token') "
+        'and revoked with revoke_ledger_entry. All or nothing: one rejected entry refuses the batch. An '
         'entry is never edited; revoke it and issue a new one. Requires a '
         'Command ACL admin. Related: list_ledger_entries, revoke_ledger_entry.'
     ),

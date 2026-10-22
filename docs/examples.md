@@ -185,7 +185,7 @@ A command outside the token's ACL comes back as an API error inside a successful
 
 ### Pre-approve a command on the ledger
 
-On a workspace whose command ACLs live on the command pre-approval ledger, a Command ACL admin lets a service token run a command without a human approval. This needs a local (stdio) server.
+On a workspace whose command ACLs live on the command pre-approval ledger, a Command ACL admin lets a service token run a command without a human approval. This needs a stdio server; SSE and streamable-http do not serve the ledger tools.
 
 1. `get_ledger_capability(workspace)`. `command_acl_surface: "upstream"` means the workspace still uses `create_command_acl`; stop here. On the ledger the first call returns `status: "authorization_required"` with `verification_uri_complete` and `user_code`: give the link to the user, wait until they have signed in, and call it again. `administers_workspace: true` means they may change this workspace's entries.
 2. `list_ledger_entries(workspace, principal_type="service_token", principal_id="<service token uuid>")` to see what the token already has

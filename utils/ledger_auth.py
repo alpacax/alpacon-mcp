@@ -14,8 +14,9 @@ audience only, and keeps the result in memory:
   verification link for a person to open; a later call polls once and, when
   the person has approved, proceeds with the token.
 
-Only the stdio (local) mode uses this: remote mode has no place to run a
-second authorization for the person behind the remote session.
+Only a stdio server uses this. The cache is process-global and keyed by
+workspace, not by caller, which is safe only where the process serves one
+person; SSE and streamable-http may serve several from one process.
 """
 
 import asyncio

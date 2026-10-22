@@ -12,7 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `issue_ledger_entries`, `revoke_ledger_entry`, `revoke_ledger_entries`, `disable_ledger_entry`,
   `enable_ledger_entry`, `list_ledger_admins`, `grant_ledger_admin` and `revoke_ledger_admin`, in a new
   `ledger` toolset. They manage Pre-approved commands and Command ACL admins on a workspace whose
-  `command_acl_surface` is `ai`, from a local (stdio) server only. The first call returns a new
+  `command_acl_surface` is `ai`. They are served over stdio only: SSE and streamable-http do not
+  register them, and a call that reaches one there is refused before any sign-in is read. The first call returns a new
   `status` value, `authorization_required`, carrying a sign-in link a person must open before the
   call is retried, so a client branching on `status` has to handle it. `issue_ledger_entries` takes
   `service_token` entries only: a personal API token has no command list on the ledger, and

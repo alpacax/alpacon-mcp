@@ -218,7 +218,8 @@ argument wins when both are set. Default: `all` (register everything).
 
 Available toolsets (1:1 with tool modules): `servers`, `commands`, `webftp`,
 `metrics`, `alerts`, `events`, `system-info`, `iam`, `security`, `audit`,
-`approvals`, `webhooks`, `packages`, `certs`, `tokens`. Workspace, health,
+`approvals`, `webhooks`, `packages`, `certs`, `tokens`, `ledger` (stdio
+only). Workspace, health,
 and Work Session tools are always registered regardless of selection, as are
 the MCP prompts; their names (`workspace`, `health`, `work-sessions`,
 `prompts`) are accepted in `--toolsets` but have no effect. Any other
@@ -463,7 +464,7 @@ OAuth/browser callers must scope command execution and file transfers under an a
 - **revoke_ledger_entry** / **revoke_ledger_entries** / **disable_ledger_entry** / **enable_ledger_entry**: Withdraw or pause an entry
 - **list_ledger_admins** / **grant_ledger_admin** / **revoke_ledger_admin**: Who may change the ledger
 
-These need a local (stdio) server and a separate browser sign-in on first use; see `docs/api-reference.md`.
+These are served over stdio only and need a separate browser sign-in on first use; see `docs/api-reference.md`.
 
 ### ✅ Approvals & sudo
 - **list_approval_requests** / **get_approval_request**: Pending and historical approval requests
