@@ -1,6 +1,7 @@
 """Tests for MCP prompts (agent workflow guides)."""
 
 import pytest
+from mcp.types import GetPromptResult, TextContent
 
 import tools.prompts  # noqa: F401  (registers prompts on import)
 from server import mcp
@@ -13,6 +14,15 @@ EXPECTED = {
 }
 
 
+async def _render(name: str, args: dict[str, str]) -> str:
+    """Render prompt `name` and return the text of its first message."""
+    result = await mcp.get_prompt(name, args)
+    assert isinstance(result, GetPromptResult)
+    content = result.messages[0].content
+    assert isinstance(content, TextContent)
+    return content.text
+
+
 @pytest.mark.asyncio
 async def test_all_four_prompts_registered():
     names = {p.name for p in await mcp.list_prompts()}
@@ -22,8 +32,7 @@ async def test_all_four_prompts_registered():
 @pytest.mark.asyncio
 @pytest.mark.parametrize('name, args', EXPECTED.items())
 async def test_prompt_renders_nonempty_text(name, args):
-    result = await mcp.get_prompt(name, args)
-    text = result.messages[0].content.text
+    text = await _render(name, args)
     assert text.strip()
     for arg_value in args.values():
         assert arg_value in text  # argument is interpolated into the guidance
@@ -33,8 +42,7 @@ async def test_prompt_renders_nonempty_text(name, args):
 async def test_guarded_execution_covers_intent_deviation():
     # Assert on the code, not on work_session_update alone—that verb also
     # serves the scope case, so a deleted sentence would still pass.
-    result = await mcp.get_prompt('guarded_execution', {'work_session_id': 'sess-123'})
-    text = result.messages[0].content.text
+    text = await _render('guarded_execution', {'work_session_id': 'sess-123'})
     assert 'SUDO_INTENT_DEVIATION' in text
     assert 'work_session_update(description=...)' in text
 
@@ -43,26 +51,23 @@ async def test_guarded_execution_covers_intent_deviation():
 async def test_guarded_execution_names_both_denial_fields():
     # pending_approval_response carries `category`, gate errors carry `code`.
     # Naming only one sends the agent looking for a field that is not there.
-    result = await mcp.get_prompt('guarded_execution', {'work_session_id': 'sess-123'})
-    text = result.messages[0].content.text
+    text = await _render('guarded_execution', {'work_session_id': 'sess-123'})
     assert '`code`' in text
     assert '`category`' in text
 
 
 @pytest.mark.asyncio
 async def test_work_session_workflow_renders_servers():
-    result = await mcp.get_prompt(
+    text = await _render(
         'work_session_workflow',
         {'intent': 'restart nginx', 'servers': 'uuid-a, uuid-b'},
     )
-    text = result.messages[0].content.text
     assert 'Target servers (UUIDs): uuid-a, uuid-b' in text
 
 
 @pytest.mark.asyncio
 async def test_work_session_workflow_pending_approval_names_status_and_stop_states():
-    result = await mcp.get_prompt('work_session_workflow', {'intent': 'restart nginx'})
-    text = result.messages[0].content.text
+    text = await _render('work_session_workflow', {'intent': 'restart nginx'})
     assert 'data.status' in text
     for state in ('rejected', 'cancelled', 'expired', 'revoked', 'completed'):
         assert state in text
@@ -70,8 +75,7 @@ async def test_work_session_workflow_pending_approval_names_status_and_stop_stat
 
 @pytest.mark.asyncio
 async def test_security_audit_tells_the_model_to_check_walk_completeness():
-    result = await mcp.get_prompt('security_audit', {'work_session_id': 'sess-9'})
-    text = result.messages[0].content.text
+    text = await _render('security_audit', {'work_session_id': 'sess-9'})
 
     assert 'pagination.stopped_because' in text
     assert 'page_bound' in text
@@ -83,8 +87,7 @@ async def test_security_audit_tells_the_model_to_check_walk_completeness():
 @pytest.mark.asyncio
 async def test_security_audit_does_not_read_complete_as_more_records():
     """A resumed or failed walk also reports `complete: false`."""
-    result = await mcp.get_prompt('security_audit', {'work_session_id': 'sess-9'})
-    text = result.messages[0].content.text
+    text = await _render('security_audit', {'work_session_id': 'sess-9'})
 
     assert 'complete: false' in text
     assert 'retry point' in text
@@ -92,8 +95,7 @@ async def test_security_audit_does_not_read_complete_as_more_records():
 
 @pytest.mark.asyncio
 async def test_security_audit_names_every_lens_that_walks_a_cursor():
-    result = await mcp.get_prompt('security_audit', {'work_session_id': 'sess-9'})
-    text = result.messages[0].content.text
+    text = await _render('security_audit', {'work_session_id': 'sess-9'})
 
     bounded = text.split('Lenses 1, 2 and 4')[1]
     for tool in (
@@ -107,8 +109,7 @@ async def test_security_audit_names_every_lens_that_walks_a_cursor():
 
 @pytest.mark.asyncio
 async def test_security_audit_says_a_bounded_timeline_omits_the_sessions_end():
-    result = await mcp.get_prompt('security_audit', {'work_session_id': 'sess-9'})
-    text = result.messages[0].content.text
+    text = await _render('security_audit', {'work_session_id': 'sess-9'})
 
     assert 'reads' in text and 'forward' in text
     assert 'start of the session' in text

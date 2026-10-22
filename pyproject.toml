@@ -162,7 +162,3 @@ extra_checks = true
 warn_redundant_casts = true
 warn_unused_ignores = true
 warn_unreachable = true
-
-[[tool.mypy.overrides]]
-module = "tests.*"
-check_untyped_defs = false

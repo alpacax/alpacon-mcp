@@ -5,8 +5,10 @@ Tests metrics and monitoring functionality including CPU, memory, disk,
 network traffic monitoring and server performance analytics.
 """
 
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -1144,7 +1146,7 @@ class TestParseCpuMetrics:
 
     def test_parse_cpu_metrics_none(self):
         """Test CPU metrics parsing with None."""
-        parsed = parse_cpu_metrics(None)
+        parsed = parse_cpu_metrics(None)  # type: ignore[arg-type]
 
         assert parsed['available'] is False
 
@@ -1853,7 +1855,9 @@ if __name__ == '__main__':
 class TestMetricsToolsBodyShapes:
     """The four usage tools read a list or a paginated object alike, and refuse a scalar."""
 
-    CALLS = {
+    CALLS: dict[
+        str, tuple[Callable[..., Awaitable[dict[str, Any]]], dict[str, str]]
+    ] = {
         'cpu': (get_cpu_usage, {}),
         'memory': (get_memory_usage, {}),
         'disk': (get_disk_usage, {'device': '/dev/sda1', 'partition': '/'}),

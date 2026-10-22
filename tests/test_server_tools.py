@@ -1402,10 +1402,11 @@ class TestGetRegistrationGuide:
         """A client reading only the tool schema must see every platform."""
         descriptions = {t.name: t.description for t in await mcp.list_tools()}
 
+        description = descriptions['get_registration_guide']
+        assert description is not None
         assert (
             'The `platform` must be one of: '
-            '"darwin", "debian", "rhel", "suse", "windows".'
-            in descriptions['get_registration_guide']
+            '"darwin", "debian", "rhel", "suse", "windows".' in description
         )
 
     @pytest.mark.asyncio

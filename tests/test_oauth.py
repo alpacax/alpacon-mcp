@@ -192,6 +192,7 @@ def _authorize_device_id(response):
     assert len(scope_ids) == 1, scope_ids
     query = parse_qs(urlparse(response.headers['location']).query)
     state_data = _verify_state(query['state'][0])
+    assert state_data is not None
     assert state_data.get('device_id') == scope_ids[0]
     return scope_ids[0]
 
@@ -604,11 +605,13 @@ class TestStateEnvelope:
     def test_round_trip_preserves_payload(self):
         signed = _sign_state({'redirect_uri': TRUSTED_REDIRECT_URI, 'state': 'xyz'})
         payload = _verify_state(signed)
+        assert payload is not None
         assert payload['redirect_uri'] == TRUSTED_REDIRECT_URI
         assert payload['state'] == 'xyz'
 
     def test_sign_adds_expiry(self):
         payload = _verify_state(_sign_state({'state': 'xyz'}))
+        assert payload is not None
         assert payload['exp'] <= int(time.time()) + _STATE_TTL_SECONDS
 
     def test_tampered_payload_is_rejected(self):
@@ -644,6 +647,7 @@ class TestBuildState:
 
     def test_carries_redirect_uri_and_client_state(self):
         decoded = _verify_state(_build_state(TRUSTED_REDIRECT_URI, 'xyz'))
+        assert decoded is not None
         assert decoded['redirect_uri'] == TRUSTED_REDIRECT_URI
         assert decoded['state'] == 'xyz'
 
@@ -651,6 +655,7 @@ class TestBuildState:
         decoded = _verify_state(
             _build_state('', '', stage='mfa', original_scope='openid')
         )
+        assert decoded is not None
         assert decoded['stage'] == 'mfa'
         assert decoded['original_scope'] == 'openid'
 
@@ -751,6 +756,7 @@ class TestOAuthAuthorize:
         params = parse_qs(parsed.query)
         composite_state = params['state'][0]
         state_data = _verify_state(composite_state)
+        assert state_data is not None
         assert state_data['redirect_uri'] == client_uri
         assert state_data['state'] == 'original-state'
 
@@ -1016,8 +1022,10 @@ class TestOAuthAuthorize:
         assert response.status_code == HTTPStatus.FOUND
         query = parse_qs(urlparse(response.headers['location']).query)
         state_data = _verify_state(query['state'][0])
+        assert state_data is not None
         assert state_data.get('stage') == 'mfa'
         device_id = state_data.get('device_id')
+        assert isinstance(device_id, str)
         assert re.fullmatch(r'[A-Za-z0-9-]{8,64}', device_id)
         assert f'device:{device_id}' in state_data.get('original_scope', '').split()
 
@@ -1046,6 +1054,7 @@ class TestOAuthAuthorize:
         # State should contain stage='mfa'
         state = params.get('state', [''])[0]
         state_data = _verify_state(state)
+        assert state_data is not None
         assert state_data.get('stage') == 'mfa'
 
     def test_authorize_without_mfa_scope_uses_regular_audience(self, oauth_app):
@@ -1092,6 +1101,7 @@ class TestOAuthAuthorize:
         nonce = response.cookies[_NONCE_COOKIE_NAME]
         state = parse_qs(urlparse(response.headers['location']).query)['state'][0]
         payload = _verify_state(state)
+        assert payload is not None
         assert payload['nonce_hash'] == _hash_nonce(nonce)
         assert nonce not in state
 
@@ -1109,6 +1119,7 @@ class TestOAuthAuthorize:
         nonce = response.cookies[_NONCE_COOKIE_NAME]
         state = parse_qs(urlparse(response.headers['location']).query)['state'][0]
         payload = _verify_state(state)
+        assert payload is not None
         assert payload['stage'] == 'mfa'
         assert payload['nonce_hash'] == _hash_nonce(nonce)
 
@@ -1121,7 +1132,9 @@ class TestOAuthAuthorize:
         )
         assert TEST_NONCE not in response.headers['set-cookie']
         state = parse_qs(urlparse(response.headers['location']).query)['state'][0]
-        assert _verify_state(state)['nonce_hash'] != _hash_nonce(TEST_NONCE)
+        payload = _verify_state(state)
+        assert payload is not None
+        assert payload['nonce_hash'] != _hash_nonce(TEST_NONCE)
 
 
 class TestAuthorizePkce:
@@ -2348,7 +2361,9 @@ class TestMfaPkceReplay:
         stage1 = parse_qs(urlparse(response.headers['location']).query)
         assert 'code_challenge' not in stage1
 
-        stashed = _verify_state(stage1['state'][0]).get('authorize_params', {})
+        payload = _verify_state(stage1['state'][0])
+        assert payload is not None
+        stashed = payload.get('authorize_params', {})
         assert stashed.get('code_challenge') == PKCE_PARAMS['code_challenge']
         assert (
             stashed.get('code_challenge_method') == PKCE_PARAMS['code_challenge_method']
@@ -2396,7 +2411,9 @@ class TestMfaPkceReplay:
         assert response.status_code == HTTPStatus.FOUND
         stage2 = parse_qs(urlparse(response.headers['location']).query)
         assert f'device:{DEVICE_ID}' in stage2['scope'][0].split()
-        assert _verify_state(stage2['state'][0]).get('device_id') == DEVICE_ID
+        payload = _verify_state(stage2['state'][0])
+        assert payload is not None
+        assert payload.get('device_id') == DEVICE_ID
 
     def test_stage2_replays_only_the_allowlisted_keys(self, oauth_app):
         """A key outside the replay allowlist cannot ride the state into stage 2."""
@@ -2636,6 +2653,7 @@ class TestOAuthCallback:
         # State should contain stage='regular'
         state = params.get('state', [''])[0]
         state_data = _verify_state(state)
+        assert state_data is not None
         assert state_data.get('stage') == 'regular'
         assert state_data.get('redirect_uri') == 'http://localhost:8080/callback'
         assert state_data.get('state') == 'orig-state'
@@ -2695,7 +2713,9 @@ class TestOAuthCallback:
                 follow_redirects=False,
             )
         state = parse_qs(urlparse(response.headers['location']).query)['state'][0]
-        assert _verify_state(state)['nonce_hash'] == _hash_nonce(TEST_NONCE)
+        payload = _verify_state(state)
+        assert payload is not None
+        assert payload['nonce_hash'] == _hash_nonce(TEST_NONCE)
 
     def test_mfa_stage2_refreshes_the_cookie_lifetime(self, oauth_app):
         """Stage 2 mints a fresh state expiry, so the cookie is re-set to match."""

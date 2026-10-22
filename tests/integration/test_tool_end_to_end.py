@@ -415,6 +415,7 @@ class TestAuthVerificationUnavailable:
             token='test-token',
         )
 
+        assert isinstance(result, dict)
         assert result['status_code'] == HTTPStatus.SERVICE_UNAVAILABLE
         assert 'error_code' not in result
         assert 'response' not in result
@@ -434,6 +435,7 @@ class TestAuthVerificationUnavailable:
             token='test-token',
         )
 
+        assert isinstance(result, dict)
         assert result['status_code'] == HTTPStatus.SERVICE_UNAVAILABLE
         assert result['error_code'] == 'auth_verification_unavailable'
         assert 'response' not in result

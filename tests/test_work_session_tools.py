@@ -3,6 +3,7 @@
 from http import HTTPStatus
 
 import pytest
+from mcp.types import CallToolResult
 
 from server import mcp
 from tests.conftest import http_client_fixture
@@ -604,7 +605,7 @@ class TestWorkSessionExtend:
     ):
         """reason is a required parameter; omitting it never reaches the server."""
         with pytest.raises(TypeError):
-            await work_session_extend(
+            await work_session_extend(  # type: ignore[call-arg]
                 session_id=SESSION_ID,
                 workspace='testworkspace',
                 expires_at='2026-06-06T18:00:00+00:00',
@@ -875,7 +876,9 @@ class TestWorkSessionTimeline:
             },
         )
 
+        assert isinstance(result, CallToolResult)
         payload = result.structured_content
+        assert payload is not None
         assert payload['status'] == 'error'
         assert payload['field'] == 'include_records'
         mock_http_client.get.assert_not_awaited()
@@ -885,6 +888,7 @@ class TestWorkSessionTimeline:
         descriptions = {t.name: t.description for t in await mcp.list_tools()}
 
         text = descriptions['work_session_timeline']
+        assert text is not None
 
         assert 'pagination.complete' in text
         assert 'work_session_records' in text
@@ -1181,6 +1185,7 @@ class TestWorkSessionRecords:
         descriptions = {t.name: t.description for t in await mcp.list_tools()}
 
         text = descriptions['work_session_records']
+        assert text is not None
 
         assert 'work_session_timeline' in text
         assert 'websh_session' in text
@@ -1268,6 +1273,7 @@ class TestDescriptionIsNotAnExecutionChannel:
     async def test_description_field_is_declared_non_executable(self, tool_name):
         descriptions = {t.name: t.description for t in await mcp.list_tools()}
         text = descriptions[tool_name]
+        assert text is not None
         assert 'NOT a command list' in text
         assert 'nothing in it is executed' in text
 
@@ -1278,6 +1284,7 @@ class TestDescriptionIsNotAnExecutionChannel:
         descriptions = {t.name: t.description for t in await mcp.list_tools()}
 
         text = descriptions['work_session_create']
+        assert text is not None
 
         assert 'work_session_id' in text
         assert 'pending_approval' in text

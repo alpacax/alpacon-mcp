@@ -124,6 +124,7 @@ class TestUnwrapHttpResultGate:
             default_message='failed',
             region='ap1',
         )
+        assert out is not None
         assert out['code'] == 'work_session_required'
         assert out['next_action']
         assert out['region'] == 'ap1'
@@ -133,12 +134,14 @@ class TestUnwrapHttpResultGate:
         out = unwrap_http_result(
             self._envelope('work_session_not_active'), default_message='failed'
         )
+        assert out is not None
         assert out['status'] == 'pending_approval'
 
     def test_non_gate_code_is_generic_error(self):
         out = unwrap_http_result(
             self._envelope('some_other_error'), default_message='failed'
         )
+        assert out is not None
         assert out['status'] == 'error'
         # Generic path does not route through the gate-response shape...
         assert 'code' not in out
@@ -153,6 +156,7 @@ class TestUnwrapHttpResultGate:
             'response': '<html>500</html>',
         }
         out = unwrap_http_result(env, default_message='failed')
+        assert out is not None
         assert out['status'] == 'error'
         assert 'error_code' not in out
 
@@ -163,6 +167,7 @@ class TestUnwrapHttpResultGate:
             'message': 'boom',
         }
         out = unwrap_http_result(env, default_message='failed')
+        assert out is not None
         assert out['status'] == 'error'
         assert 'error_code' not in out
         assert out['message'] == 'boom'
@@ -174,6 +179,7 @@ class TestUnwrapHttpResultGate:
         out = unwrap_http_result(
             self._envelope('command_inline_credential'), default_message='failed'
         )
+        assert out is not None
         assert out['status'] == 'error'
         assert out['error_code'] == 'command_inline_credential'
         assert 'env' in out['message']
@@ -183,6 +189,7 @@ class TestUnwrapHttpResultGate:
         out = unwrap_http_result(
             self._envelope('some_other_error'), default_message='failed'
         )
+        assert out is not None
         # No entry in _ERROR_CODE_HINT for this code: message is untouched.
         assert out['message'] == 'HTTP 400'
 
@@ -191,6 +198,7 @@ class TestUnwrapHttpResultGate:
             self._envelope('workspace_extension_plan_required'),
             default_message='failed',
         )
+        assert out is not None
         assert out['status'] == 'error'
         assert out['error_code'] == 'workspace_extension_plan_required'
         assert 'plan' in out['message']
@@ -201,6 +209,7 @@ class TestUnwrapHttpResultGate:
             self._envelope('workspace_extension_not_enabled'),
             default_message='failed',
         )
+        assert out is not None
         assert out['status'] == 'error'
         assert out['error_code'] == 'workspace_extension_not_enabled'
         assert 'workspace admin' in out['message']
@@ -231,6 +240,7 @@ class TestUnwrapHttpResultGate:
         self, code, expected_snippet
     ):
         out = unwrap_http_result(self._envelope(code), default_message='failed')
+        assert out is not None
         assert out['status'] == 'error'
         assert out['error_code'] == code
         assert expected_snippet in out['message']
@@ -473,6 +483,7 @@ class TestUnwrapHttpResultPlanLimit:
             region='us1',
             workspace='acme',
         )
+        assert out is not None
         assert out['status'] == 'error'
         assert out['error_code'] == 'server_limit_exceeded'
         assert out['gate'] == 'plan'
@@ -498,6 +509,7 @@ class TestUnwrapHttpResultPlanLimit:
             region='ap1',
             workspace='corp',
         )
+        assert out is not None
         assert out['status'] == 'error'
         assert out['error_code'] == 'user_limit_exceeded'
         assert out['gate'] == 'plan'
@@ -516,6 +528,7 @@ class TestUnwrapHttpResultPlanLimit:
             self._envelope(code='workspace_enterprise_plan_required'),
             default_message='failed',
         )
+        assert out is not None
         assert out['status'] == 'error'
         assert out['error_code'] == 'workspace_enterprise_plan_required'
         assert 'axis' not in out
@@ -531,6 +544,7 @@ class TestUnwrapHttpResultPlanLimit:
             self._envelope(code='workspace_extension_plan_required'),
             default_message='failed',
         )
+        assert out is not None
         assert 'axis' not in out
         assert 'plan' in out['message']
         assert 'upgrading' in out['message']
@@ -540,6 +554,7 @@ class TestUnwrapHttpResultPlanLimit:
             self._envelope(code='application_limit_exceeded', axis='application'),
             default_message='failed',
         )
+        assert out is not None
         assert out['next'] is None
         assert 'applications plan limit was reached' in out['next_action']
         assert 'remove one no longer used or upgrade' in out['next_action']
@@ -550,6 +565,7 @@ class TestUnwrapHttpResultPlanLimit:
         out = unwrap_http_result(
             self._envelope(code=code, axis=axis), default_message='failed'
         )
+        assert out is not None
         assert 'resets at the end of the month' in out['next_action']
         # No fabricated day count: utils.http_client's error dict never
         # carries the Retry-After header.
@@ -565,6 +581,7 @@ class TestUnwrapHttpResultPlanLimit:
             region='ap1',
             workspace='onprem',
         )
+        assert out is not None
         assert 'alpacon.io' not in out['next_action']
         assert 'Settings → Billing in your Alpacon console' in out['next_action']
 
@@ -573,6 +590,7 @@ class TestUnwrapHttpResultPlanLimit:
             self._envelope(code='server_limit_exceeded', axis='server'),
             default_message='failed',
         )
+        assert out is not None
         assert 'alpacon.io' not in out['next_action']
         assert 'Settings → Billing in your Alpacon console' in out['next_action']
 
@@ -588,6 +606,7 @@ class TestUnwrapHttpResultPlanLimit:
             ),
             default_message='failed',
         )
+        assert out is not None
         assert out['status'] == 'error'
         assert out['error_code'] == 'server_limit_exceeded'
         assert 'axis' not in out
@@ -601,6 +620,7 @@ class TestUnwrapHttpResultPlanLimit:
             self._envelope(code='workspace_free_limit_exceeded', axis='workspace'),
             default_message='failed',
         )
+        assert out is not None
         assert out['axis'] == 'workspace'
         assert 'Free workspaces plan limit was reached' in out['next_action']
 
@@ -627,6 +647,7 @@ class TestPlanLimitDoesNotTouchOtherPaths:
             },
             default_message='failed',
         )
+        assert out is not None
         assert out['code'] == 'work_session_required'
         assert 'axis' not in out
 

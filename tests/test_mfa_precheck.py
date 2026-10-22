@@ -83,12 +83,14 @@ class TestCheckMfaCompleted:
         assert check_mfa_completed(claims, settings) is False
 
     def test_empty_claims(self):
-        claims = {}
+        claims: dict[str, object] = {}
         settings = self._make_settings()
         assert check_mfa_completed(claims, settings) is False
 
     def test_empty_mfa_methods(self):
-        claims = {'https://alpacon.io/completed_mfa_methods': {}}
+        claims: dict[str, dict[str, object]] = {
+            'https://alpacon.io/completed_mfa_methods': {}
+        }
         settings = self._make_settings()
         assert check_mfa_completed(claims, settings) is False
 
@@ -339,13 +341,12 @@ class TestSecuritySettingsCache:
             await asyncio.sleep(0.05)
             return {'ws1': WorkspaceSecuritySettings({'mfa_required': True})}
 
-        cache.fetch_and_cache = counting_fetch
-
-        results = await asyncio.gather(
-            cache.get_settings('same-token', 'ws1'),
-            cache.get_settings('same-token', 'ws1'),
-            cache.get_settings('same-token', 'ws1'),
-        )
+        with patch.object(cache, 'fetch_and_cache', counting_fetch):
+            results = await asyncio.gather(
+                cache.get_settings('same-token', 'ws1'),
+                cache.get_settings('same-token', 'ws1'),
+                cache.get_settings('same-token', 'ws1'),
+            )
 
         assert fetch_count == 1
         assert all(r is not None for r in results)

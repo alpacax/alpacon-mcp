@@ -37,6 +37,7 @@ class TestTimeoutScenarios:
         )
 
         assert call_count == 3
+        assert isinstance(result, dict)
         assert result['error'] == 'Timeout'
         assert 'timed out' in result['message']
 
@@ -67,6 +68,7 @@ class TestMalformedResponses:
         # The response has text content, so response.text is truthy,
         # and response.json() will raise an exception caught by the
         # generic except handler
+        assert isinstance(result, dict)
         assert result['error'] == 'Unexpected Error'
 
     async def test_empty_body_response(self, patched_http_client):
@@ -83,6 +85,7 @@ class TestMalformedResponses:
             token='test-token',
         )
 
+        assert isinstance(result, dict)
         assert result['status'] == 'success'
         assert result['status_code'] == HTTPStatus.NO_CONTENT
 
@@ -110,6 +113,7 @@ class TestConnectionErrors:
         )
 
         assert call_count == 3
+        assert isinstance(result, dict)
         assert result['error'] == 'Request Error'
         assert 'Connection refused' in result['message']
 
@@ -139,6 +143,7 @@ class TestHTTPStatusErrorHandling:
         )
 
         assert call_count == 1
+        assert isinstance(result, dict)
         assert result['error'] == 'HTTP Error'
         assert result['status_code'] == HTTPStatus.BAD_REQUEST
 
@@ -162,6 +167,7 @@ class TestHTTPStatusErrorHandling:
         )
 
         assert call_count == 1
+        assert isinstance(result, dict)
         assert result['error'] == 'HTTP Error'
         assert result['status_code'] == HTTPStatus.FORBIDDEN
 

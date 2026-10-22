@@ -223,6 +223,7 @@ class TestSubmitCommand:
             token='test-token',
         )
 
+        assert isinstance(result, dict)
         assert result['id'] == 'cmd-123'
         mock_http_client.post.assert_called_once_with(
             region='ap1',
@@ -1290,6 +1291,7 @@ class TestSudoGuidanceInToolDescriptions:
     async def test_description_states_the_sudo_cost(self, tool_name):
         descriptions = {t.name: t.description for t in await mcp.list_tools()}
         text = descriptions[tool_name]
+        assert text is not None
         assert 'Do not prefix the command with sudo by default' in text
         assert 'human-in-the-loop' in text
         # The carve-out and the hard-denial path are the reason the rule is
@@ -1648,12 +1650,14 @@ class TestPurposeDemand:
         descriptions = {t.name: t.description for t in await mcp.list_tools()}
 
         exec_text = descriptions['execute_command']
+        assert exec_text is not None
         assert 'purpose_required' in exec_text
         assert 'state_command_purpose' in exec_text
         # What makes a purpose useful, not just that the field exists.
         assert 'local to this host' in exec_text
 
         answer_text = descriptions['state_command_purpose']
+        assert answer_text is not None
         assert 'one demand per command' in answer_text
         assert 'cannot lower' in answer_text
 
@@ -2676,7 +2680,8 @@ class TestExecuteFileRun:
                 workspace='testworkspace',
                 region='ap1',
             )
-            assert mock_submit.call_args.kwargs['purpose_demand_supported'] is True
+            supported = mock_submit.call_args.kwargs['purpose_demand_supported']
+            assert supported is True
 
             await execute_file(
                 server_id=VALID_SERVER_ID,
@@ -2686,7 +2691,8 @@ class TestExecuteFileRun:
                 scheduled_at='2026-09-10T03:00:00Z',
                 region='ap1',
             )
-            assert mock_submit.call_args.kwargs['purpose_demand_supported'] is False
+            supported = mock_submit.call_args.kwargs['purpose_demand_supported']
+            assert supported is False
 
             await execute_file(
                 server_id=VALID_SERVER_ID,
@@ -2696,7 +2702,8 @@ class TestExecuteFileRun:
                 run_after=['cmd-700'],
                 region='ap1',
             )
-            assert mock_submit.call_args.kwargs['purpose_demand_supported'] is False
+            supported = mock_submit.call_args.kwargs['purpose_demand_supported']
+            assert supported is False
 
     @pytest.mark.asyncio
     async def test_truncated_purpose_is_reported(
@@ -2774,9 +2781,12 @@ class TestExecuteFileWriteFile:
         self, mock_http_client, mock_token_manager
     ):
         calls: list[str] = []
-        mock_http_client.post.side_effect = lambda **kw: (
-            calls.append('upload') or _UPLOAD_ROW
-        )
+
+        def _post(**kw: Any) -> Any:
+            calls.append('upload')
+            return _UPLOAD_ROW
+
+        mock_http_client.post.side_effect = _post
         route = _route_get()
 
         async def _get(*, endpoint: str, **kw: Any) -> Any:
@@ -3035,9 +3045,11 @@ class TestExecuteFileWriteFile:
         assert schema['properties']['write_file']['default'] is False
         assert 'write_file' not in schema['required']
         text = tools['execute_file'].description
+        command_text = tools['execute_command'].description
+        assert text is not None and command_text is not None
         assert 'write_file' in text
         assert 'overwrite' in text
-        assert 'write_file' in tools['execute_command'].description
+        assert 'write_file' in command_text
 
     @pytest.mark.asyncio
     async def test_overwrite_and_a_named_group_reach_the_upload(
@@ -3535,8 +3547,11 @@ class TestExecuteFileReadFromServer:
         assert schema['properties']['read_from_server']['default'] is False
         assert 'read_from_server' not in schema['required']
         assert 'content' not in schema['required']
-        assert 'read_from_server' in tools['execute_file'].description
-        assert 'read_from_server' in tools['execute_command'].description
+        file_text = tools['execute_file'].description
+        command_text = tools['execute_command'].description
+        assert file_text is not None and command_text is not None
+        assert 'read_from_server' in file_text
+        assert 'read_from_server' in command_text
 
 
 class TestGetCapped:
@@ -3865,6 +3880,7 @@ class TestExecuteFileRegistration:
     async def test_description_states_the_lane_semantics(self):
         descriptions = {t.name: t.description for t in await mcp.list_tools()}
         text = descriptions['execute_file']
+        assert text is not None
 
         # Only what a client depends on: the on-disk contract, the cross-
         # reference, the codes and the agent floor. Wording is free to move.
@@ -3890,6 +3906,7 @@ class TestExecuteFileRegistration:
     async def test_execute_command_points_scripts_at_execute_file(self):
         descriptions = {t.name: t.description for t in await mcp.list_tools()}
         text = descriptions['execute_command']
+        assert text is not None
 
         assert 'execute_file' in text
         assert 'heredoc' in text

@@ -800,7 +800,10 @@ class TestPreviewAlertRule:
         }
 
         await preview_alert_rule(
-            workspace='testworkspace', region='ap1', rule_id=RULE_ID, **fields
+            workspace='testworkspace',
+            region='ap1',
+            rule_id=RULE_ID,
+            **fields,  # type: ignore[arg-type]
         )
 
         assert mock_http_client.post.call_args.kwargs['data']['rule'] == fields

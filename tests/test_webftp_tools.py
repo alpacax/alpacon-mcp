@@ -982,25 +982,24 @@ class TestWebFtpBulkUpload:
         assert statuses.count('uploaded') == 2
         assert statuses.count('failed') == 1
 
-    @staticmethod
-    def _fake_gather(return_value):
-        """Build a gather replacement that closes incoming coroutines.
+    class _FakeGather:
+        """A gather replacement that closes incoming coroutines.
 
         Closing them avoids 'coroutine was never awaited' warnings since the
         test bypasses the real gather and never awaits the supplied tasks.
         """
-        captured: dict = {}
 
-        async def fake(*coros, **kwargs):
-            captured['kwargs'] = kwargs
+        def __init__(self, return_value):
+            self.return_value = return_value
+            self.captured: dict[str, dict[str, object]] = {}
+
+        async def __call__(self, *coros, **kwargs):
+            self.captured['kwargs'] = kwargs
             for coro in coros:
                 close = getattr(coro, 'close', None)
                 if callable(close):
                     close()
-            return return_value
-
-        fake.captured = captured
-        return fake
+            return self.return_value
 
     @pytest.mark.asyncio
     async def test_bulk_upload_uses_return_exceptions(
@@ -1011,7 +1010,7 @@ class TestWebFtpBulkUpload:
         mock_http_client.post.side_effect = [self._bulk_create_response(2), None]
 
         is_file, os_access, os_stat = self._patch_local_file_checks()
-        fake = self._fake_gather(
+        fake = self._FakeGather(
             [
                 {
                     'file': 'a.txt',
@@ -1064,7 +1063,7 @@ class TestWebFtpBulkUpload:
             patch('httpx.AsyncClient'),
             patch(
                 'tools.webftp_tools.asyncio.gather',
-                new=self._fake_gather(mixed_results),
+                new=self._FakeGather(mixed_results),
             ),
         ):
             result = await webftp_bulk_upload(
@@ -1097,7 +1096,7 @@ class TestWebFtpBulkUpload:
             patch('httpx.AsyncClient'),
             patch(
                 'tools.webftp_tools.asyncio.gather',
-                new=self._fake_gather([KeyboardInterrupt(), {'file': 'b.txt'}]),
+                new=self._FakeGather([KeyboardInterrupt(), {'file': 'b.txt'}]),
             ),
             pytest.raises(KeyboardInterrupt),
         ):
@@ -1567,8 +1566,10 @@ class TestRemoteModeUnsupported:
     ):
         descriptions = {t.name: t.description for t in await mcp.list_tools()}
 
-        assert 'remote_mode_unsupported' in descriptions[tool_name]
-        assert 'ALPACON_MCP_AUTH_ENABLED=true' in descriptions[tool_name]
+        description = descriptions[tool_name]
+        assert description is not None
+        assert 'remote_mode_unsupported' in description
+        assert 'ALPACON_MCP_AUTH_ENABLED=true' in description
 
 
 class TestRemoteModeDownload:

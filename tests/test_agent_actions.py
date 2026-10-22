@@ -166,12 +166,14 @@ class TestInstallPam:
         """An agent explains a refusal from the description, so each code is in it."""
         descriptions = {t.name: t.description for t in await mcp.list_tools()}
 
+        description = descriptions['install_pam']
+        assert description is not None
         for code in (
             'server_pam_install_requires_sudo_with_mfa',
             'server_pam_install_unsupported',
             'server_pam_install_in_progress',
         ):
-            assert code in descriptions['install_pam']
+            assert code in description
 
 
 class TestUpdateInformation:
@@ -271,12 +273,17 @@ class TestDisruptiveActionForce:
         descriptions = {t.name: t.description for t in await mcp.list_tools()}
 
         for _, action in self.DISRUPTIVE:
+            description = descriptions[action]
+            assert description is not None
             assert (
                 'pass force=True to run anyway, which tears that live work down.'
-                in descriptions[action]
+                in description
             )
-        assert 'force=True' not in descriptions['update_information']
-        assert 'force=True' not in descriptions['install_pam']
+        update_description = descriptions['update_information']
+        pam_description = descriptions['install_pam']
+        assert update_description is not None and pam_description is not None
+        assert 'force=True' not in update_description
+        assert 'force=True' not in pam_description
 
     @pytest.mark.asyncio
     async def test_removed_tools_are_not_registered(self):
