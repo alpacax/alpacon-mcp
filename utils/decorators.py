@@ -448,7 +448,7 @@ def with_token_validation(func: Callable, requires_workspace: bool = True) -> Ca
 
         # Extract region and workspace
         region = arguments.get('region', '')
-        workspace = arguments.get('workspace')
+        workspace: str = arguments.get('workspace') or ''
 
         if requires_workspace:
             if not workspace:
@@ -460,10 +460,10 @@ def with_token_validation(func: Callable, requires_workspace: bool = True) -> Ca
         auth_enabled = is_auth_enabled()
 
         # Retrieve JWT token once upfront in streamable-http mode
-        jwt_token = None
+        jwt_token = ''
         jwt_workspaces: list[dict[str, str]] = []
         if auth_enabled:
-            jwt_token = _get_jwt_token()
+            jwt_token = _get_jwt_token() or ''
             if not jwt_token:
                 return error_response(
                     'Authentication required. No JWT token found in request context.'

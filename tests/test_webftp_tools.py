@@ -999,7 +999,7 @@ class TestWebFtpBulkUpload:
                     close()
             return return_value
 
-        fake.captured = captured  # type: ignore[attr-defined]
+        fake.captured = captured
         return fake
 
     @pytest.mark.asyncio

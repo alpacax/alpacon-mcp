@@ -246,11 +246,14 @@ class SharedRotatingFileHandler(logging.handlers.RotatingFileHandler):
             stream.close()
 
     def close(self) -> None:
-        with self.lock:
+        self.acquire()
+        try:
             super().close()
             if self._lock_fd is not None:
                 os.close(self._lock_fd)
                 self._lock_fd = None
+        finally:
+            self.release()
 
 
 def _add_filter_once(logger: logging.Logger, kind: type[logging.Filter]) -> None:

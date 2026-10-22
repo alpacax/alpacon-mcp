@@ -74,7 +74,9 @@ def test_connection(region: str, workspace: str, token: str) -> bool:
                 token=token,
             )
             # Check if result contains error
-            return result is not None and 'error' not in result
+            return result is not None and not (
+                isinstance(result, dict) and 'error' in result
+            )
 
         return asyncio.run(_test())
     except Exception:
