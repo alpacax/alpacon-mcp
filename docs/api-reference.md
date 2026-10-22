@@ -522,9 +522,12 @@ server-rendered line.
 
 **Refusals** come back as `status: "error"` with `error_code` set, and a message stating the fix. None
 has a request waiting behind it, so a client acts on them rather than waiting or retrying as-is:
-`file_exec_unsupported_agent` (the agent on that server cannot verify a digest; alpamon 2.6.0 or newer
-is required), `file_exec_assessor_disabled` (the deployment has the command assessor off),
-`file_exec_invalid_path`, `file_exec_content_too_large`, `file_exec_empty_content`,
+`file_exec_unsupported_agent` (the agent on that server did not report support for this lane: an
+alpamon older than 2.8.3 reports no capabilities, so upgrade it to 2.8.3 or newer or run the work
+through `execute_command`; an alpamon already on 2.8.3 or newer has no file lane on that platform,
+such as Windows, so upgrading does not help and the work runs through `execute_command` there),
+`file_exec_assessor_disabled` (the deployment has the command assessor off), `file_exec_invalid_path`,
+`file_exec_content_too_large`, `file_exec_empty_content`,
 `file_exec_line_too_long`, `file_exec_invalid_options` (local only: `read_from_server` combined with
 `write_file` or `content`, or `overwrite` without `write_file`), `file_exec_invalid_reuse_days` (`reuse_days` is outside 1 to 366; fix it or
 omit it), and `file_exec_reuse_exceeds_max` (`reuse_days` is above the workspace's ceiling; resubmit
@@ -915,6 +918,8 @@ The `command` and `path` a rule matches on must not be empty or whitespace-only.
 - `list_server_acls` / `create_server_acl` (`server_id` + token id) / `update_server_acl` / `delete_server_acl`
 - `bulk_server_acl`: `workspace`, `action` (add or remove), `server_ids` (array), token id, `region` (optional)
 - `list_file_acls` / `create_file_acl` (`path`, `action`) / `update_file_acl` / `delete_file_acl`
+
+On a server that manages command ACLs on the command pre-approval ledger, `create_command_acl`, `update_command_acl`, and `delete_command_acl` are refused with 405 and `error_code` `command_acl_moved`; retrying the call does not help. A Command ACL admin then issues or revokes the entry under Pre-approved commands on the service token's page in the web console. A personal API token has no command list on the ledger. `list_command_acls` still works there, and a server without the ledger keeps accepting all four.
 
 ---
 

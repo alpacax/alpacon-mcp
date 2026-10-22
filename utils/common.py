@@ -172,8 +172,12 @@ _WORK_SESSION_GATE_CODES: frozenset[str] = frozenset(_WORK_SESSION_GATE_NEXT_ACT
 #: never carries line, data or env cannot draw.
 FILE_EXEC_REFUSAL_HINTS: dict[str, str] = {
     'file_exec_unsupported_agent': (
-        'The agent on this server cannot verify a file digest; alpamon 2.6.0 or '
-        'newer is required. Upgrade the agent (upgrade_agent) or run the work '
+        'The agent on this server did not report support for verified file '
+        'execution. If it runs alpamon older than 2.8.3, which reports no '
+        'capabilities, upgrade it to 2.8.3 or newer (upgrade_agent) and retry, '
+        'or run the work through execute_command. '
+        'If it already runs 2.8.3 or newer, its build has no file lane on that '
+        'platform, such as Windows: upgrading does not help, so run the work '
         'through execute_command instead. Retrying as-is fails the same way.'
     ),
     'file_exec_assessor_disabled': (
@@ -322,8 +326,19 @@ AGENT_ROLLOUT_POLICY_REFUSAL_HINTS: dict[str, str] = {
     ),
 }
 
+#: 405 on every command-ACL write once the server moved command pre-approvals
+#: to the ledger; this MCP has no ledger tool, hence the web console.
+COMMAND_ACL_MOVED_HINT = (
+    'Command ACLs are now managed on the command pre-approval ledger, so this '
+    'endpoint no longer accepts writes. For now a Command ACL admin must issue '
+    "or revoke the entry under Pre-approved commands on the service token's "
+    'page in the web console; a personal API token has no command list on the '
+    'ledger. Do not retry this call.'
+)
+
 _ERROR_CODE_HINT: dict[str, str] = {
     'auth_verification_unavailable': AUTH_VERIFICATION_UNAVAILABLE_HINT,
+    'command_acl_moved': COMMAND_ACL_MOVED_HINT,
     'command_inline_credential': INLINE_CREDENTIAL_HINT,
     **FILE_EXEC_REFUSAL_HINTS,
     **ALERT_RULE_PREVIEW_REFUSAL_HINTS,

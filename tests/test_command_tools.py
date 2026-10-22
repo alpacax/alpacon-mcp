@@ -2531,7 +2531,7 @@ class TestExecuteFileRefusalRendering:
     @pytest.mark.parametrize(
         'code, keyword',
         [
-            ('file_exec_unsupported_agent', '2.6.0'),
+            ('file_exec_unsupported_agent', '2.8.3'),
             ('file_exec_assessor_disabled', 'assessor'),
             ('file_exec_invalid_path', 'absolute'),
             ('file_exec_content_too_large', '64 KB'),
@@ -2565,6 +2565,17 @@ class TestExecuteFileRefusalRendering:
 
     def test_every_refusal_code_has_a_hint(self):
         assert set(FILE_EXEC_REFUSAL_HINTS) == _FILE_EXEC_CODES
+
+    def test_unsupported_agent_hint_separates_old_agent_from_platform(self):
+        # One code covers two cases with different fixes: an old agent is
+        # upgraded, a platform build without the lane is not helped by one.
+        hint = FILE_EXEC_REFUSAL_HINTS['file_exec_unsupported_agent']
+
+        assert 'older than 2.8.3' in hint
+        assert 'upgrade_agent' in hint
+        assert 'already runs 2.8.3 or newer' in hint
+        assert 'upgrading does not help' in hint
+        assert 'execute_command' in hint
 
     @pytest.mark.asyncio
     async def test_inline_credential_hint_keeps_the_caller_on_the_file_lane(
@@ -3862,7 +3873,8 @@ class TestExecuteFileRegistration:
         assert 'execute_command' in text
         for code in _FILE_EXEC_CODES:
             assert code in text
-        assert '2.6.0' in text
+        assert '2.8.3' in text
+        assert 'Windows' in text
         # The approver only opts in or not, and omitting reuse_days still lets
         # an opted-in grant reach the ceiling, so neither may read otherwise.
         assert 'reuse_days' in text

@@ -181,7 +181,7 @@ Set `parallel=False` to walk the list one host at a time—useful for a rolling 
 
 ### When a command is refused
 
-A command outside the token's ACL comes back as an API error inside a successful HTTP response—`data.status_code` 403 or 404. That is a permission answer, not a bug: add the command to the token's ACL in the web console (`create_command_acl` does the same thing through the API), or ask an administrator to.
+A command outside the token's ACL comes back as an API error inside a successful HTTP response—`data.status_code` 403 or 404. That is a permission answer, not a bug: add the command to the token's ACL in the web console (`create_command_acl` does the same thing through the API), or ask an administrator to. On a server that manages command ACLs on the command pre-approval ledger, `create_command_acl` is refused with `error_code` `command_acl_moved`: a Command ACL admin has to issue the entry under Pre-approved commands on the service token's page in the web console instead, and retrying the call does not help. A personal API token has no command list on the ledger.
 
 ---
 
@@ -299,7 +299,7 @@ There is no writable `groups` field on a user—membership is its own record, wh
 
 1. `list_api_token_scopes(workspace)` and `list_api_token_presets(workspace)` to see what is available
 2. `create_api_token(workspace, name="deploy-bot", scopes=[...], expires_at="2026-12-31T00:00:00Z")`
-3. `create_command_acl(workspace, command="systemctl restart nginx", api_token_id=...)` and `create_server_acl(workspace, server_id=..., api_token_id=...)` to bound it further
+3. `create_command_acl(workspace, command="systemctl restart nginx", api_token_id=...)` and `create_server_acl(workspace, server_id=..., api_token_id=...)` to bound it further (where command ACLs live on the pre-approval ledger, `create_command_acl` returns `command_acl_moved`; a Command ACL admin issues the entry under Pre-approved commands on a service token's page in the web console, and a personal API token has no command list there)
 4. `bulk_server_acl(workspace, action="add", server_ids=[...], api_token_id=...)` when the list is long
 
 Token management needs JWT/OAuth, a browser session, or a login-source token. Called with an API token from `token.json`, these return 403—by the server's design, not a misconfiguration.
