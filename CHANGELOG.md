@@ -25,6 +25,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   refusal of the write that names its own code, Work Session gates included, keeps that code. The
   `execute_command` and
   `execute_file` descriptions now point scripts and heredocs at this one-step form.
+  An operator who leaves `webftp` out of `--toolsets` to keep file transfers from the agent should
+  note that `commands` alone now writes and reads files through WebFTP via `write_file` and
+  `read_from_server`; server-side WebFTP permissions and Work Session gates still apply.
 - `execute_file` gained an optional `read_from_server` (boolean, default `false`) for a script that
   already exists on the host: the call reads the file at `path` as `username` through WebFTP and
   submits its exact bytes as `content`, and the on-disk hash check at execution is unchanged (#360).
