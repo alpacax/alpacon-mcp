@@ -670,8 +670,12 @@ async def execute_command(
         token=token,
     )
     # The suggested run must keep the held command's account and Work Session,
-    # or following it would submit a run other than the one held.
-    if suggested := response.get('execute_file_suggestion'):
+    # or following it would submit a run other than the one held. The values
+    # this call sent win over the row's; data is withheld on some rows, so it
+    # is checked here too.
+    if data:
+        response.pop('execute_file_suggestion', None)
+    elif suggested := response.get('execute_file_suggestion'):
         arguments = suggested['arguments']
         if username is not None:
             arguments['username'] = username
@@ -883,11 +887,58 @@ async def _read_file_from_host(
     download = expect_json_object(download)
     download_id = download.get('id')
     download_url = download.get('download_url')
-    if not download_url and not download_id:
-        return _failed('the download request returned no download id or URL')
-    # The server leaves `success` null until the host reports the read either
-    # way; a request answered with its URL right away skips the wait.
-    for _ in range(0 if download_url else _FILE_READ_POLL_ATTEMPTS):
+    command_id = download.get('command')
+    if not download_id or not download_url or not command_id:
+        return _failed(
+            'the download request returned no download id, URL or command',
+            download_id=download_id,
+        )
+    timed_out = error_response(
+        f'{path} was not read from the host in time, so nothing was '
+        'submitted. Re-run execute_file with read_from_server once the '
+        'host is reachable.',
+        error_code='file_read_timeout',
+        download_id=download_id,
+    )
+
+    # Both waits below share one budget, so the read waits about a minute in all.
+    polls = iter(range(_FILE_READ_POLL_ATTEMPTS))
+
+    # The URL is minted before the host has put the file behind it, so the
+    # GET waits for the transfer command the server sent the host, as the
+    # CLI's download does.
+    for _ in polls:
+        command = await _get_command_result(
+            command_id=command_id, workspace=workspace, region=region, token=token
+        )
+        if refused := _refused(
+            command, 'Failed to poll the download command', download_id=download_id
+        ):
+            return refused
+        command = expect_json_object(command)
+        if command.get('status') in ('denied', 'rejected', 'stuck'):
+            return _failed(
+                f'the download command ended as {command["status"]}',
+                download_id=download_id,
+            )
+        if command.get('handled_at') is not None:
+            if command.get('success') is False:
+                return _failed(
+                    str(command.get('result') or 'the host refused the read'),
+                    download_id=download_id,
+                )
+            break
+        await asyncio.sleep(_FILE_READ_POLL_INTERVAL)
+    else:
+        return timed_out
+
+    body = await _get_capped(download_url, FILE_CONTENT_MAX_BYTES)
+    if isinstance(body, str):
+        return _failed(body, download_id=download_id)
+
+    # The server leaves `success` null until the host reports the transfer
+    # either way; only a reported success lets the bytes go to review.
+    for _ in polls:
         status = await http_client.get(
             region=region,
             workspace=workspace,
@@ -900,12 +951,6 @@ async def _read_file_from_host(
             return refused
         status = expect_json_object(status)
         if status.get('success') is True:
-            download_url = status.get('download_url')
-            if not download_url:
-                return _failed(
-                    'the host reported the file read but returned no download URL',
-                    download_id=download_id,
-                )
             break
         if status.get('success') is False:
             return _failed(
@@ -913,18 +958,9 @@ async def _read_file_from_host(
                 download_id=download_id,
             )
         await asyncio.sleep(_FILE_READ_POLL_INTERVAL)
-    if not download_url:
-        return error_response(
-            f'{path} was not read from the host in time, so nothing was '
-            'submitted. Re-run execute_file with read_from_server once the '
-            'host is reachable.',
-            error_code='file_read_timeout',
-            download_id=download_id,
-        )
+    else:
+        return timed_out
 
-    body = await _get_capped(download_url, FILE_CONTENT_MAX_BYTES)
-    if isinstance(body, str):
-        return _failed(body, download_id=download_id)
     if not body:
         return error_response(
             f'{path} is empty on the host, so nothing was submitted: an empty '
@@ -1081,7 +1117,7 @@ def _file_exec_refusal(code: str, **kwargs: Any) -> dict[str, Any]:
 
 
 @mcp_tool_handler(
-    description='Run a script on a server as a verified file, writing it there first in the same call when write_file is true, or reading its bytes from there when read_from_server is true: the reviewer and the assessor judge the exact bytes you submit, and the agent executes the file only if the bytes on the host\'s disk hash to the same digest. Prefer this over execute_command for anything longer than a one-off line—a script, a heredoc, a "bash /tmp/deploy.sh" line. Why: once an approver marks a verified file standing, an unchanged re-run of it (same bytes, same server, same account, same args) is admitted without paging a human; a "bash /path" shell line never can be, because nothing about the path proves what runs. What approving means: it authorizes exactly these bytes, on this server, as this account, with these arguments—not "this file is safe". One changed byte re-queues human review. The environment, libraries, interpreter version, and anything the script fetches or executes at runtime are not verified and stay the executor\'s responsibility; only this first entrypoint is. How to use: for any script or heredoc, pass write_file=true with the script as content—the one-step form. This call then writes content to path on the host through WebFTP and submits those same bytes for review only once the host reports the file written. An existing file at path is refused (error_code file_write_failed, saying the file already exists) unless you also pass overwrite=true; to re-run a script already on the host, use read_from_server instead of writing it again. overwrite requires write_file (error_code file_exec_invalid_options otherwise). A new file is owned by username and that account\'s own group, or by groupname when you pass one other than the default; an existing file replaced with overwrite keeps its owner and mode, and must be writable by username. The account also needs write access to the directory for a new file; pass username whenever ownership matters, since an omitted one leaves the writing account to the server\'s WebFTP default. No execute bit is needed, because the interpreter runs the file. The write happens before the run is reviewed, as a webftp_upload_content call would, so a run that is later denied leaves the new file in place. Waiting for the write (up to about a minute) comes before, and on top of, timeout. If the write fails, nothing is submitted: error_code file_write_failed (fix the cause, such as the path or the account\'s permissions, and re-run; a server refusal that names its own code, such as a Work Session gate, keeps that code instead) or file_write_timeout (the host did not report the file written within about a minute; re-run once the host is reachable). For a script that already exists on the host—the usual "bash /opt/deploy.sh"—pass read_from_server=true and omit content: the call downloads the file at path as username through WebFTP and submits those exact bytes, so you never copy the script by hand. read_from_server cannot be combined with write_file or content (error_code file_exec_invalid_options). If the read fails, nothing is submitted: error_code file_read_failed (the file is missing, the account cannot read it, or it is not UTF-8 text; a server refusal that names its own code keeps that code) or file_read_timeout; an empty file is refused with file_exec_empty_content and one over 64 KB with file_exec_content_too_large. Waiting for the read (up to about a minute) also comes before timeout. The agent still hashes the on-disk file at execution, so a file changed after the read fails closed. write_file and read_from_server both default to false: then the file must already exist at path on the target host, and content is what the reviewer judges; it is never shipped to the host. Whenever you pass content yourself, pass the full contents, byte-for-byte as they are on disk—do not strip a trailing newline or normalize line endings, because the agent hashes the on-disk file with no normalization and a mismatch fails closed. path and interpreter must be absolute (/opt/deploy.sh, /bin/bash; a bare "bash" is refused). Put composition inside the script: pipes, redirection, &&, and environment variables are reviewed there. Free-text composition around a verified file (a pipe into it, an env prefix, extra shell) is not possible on this lane, by design—a one-off composition belongs on execute_command. content is capped at 64 KB and must be non-empty. reuse_days (integer, 1 to 366) proposes how many days the approver should let this exact file be rerun without a new review. Standing approvals always expire: the workspace sets a ceiling of 1 to 366 days (default 90), and you may propose a shorter period than that, never a longer one. It is a proposal, not a grant: the approver may decline reuse, and a workspace ceiling lowered after submission can shorten it; the approver cannot choose another period for you. A proposal above the workspace ceiling is refused with file_exec_reuse_exceeds_max, never shortened. Propose a duration when you expect to rerun the same unchanged script (same bytes, server, account, args) within that window, sized to how long you expect to need it. Omitting it proposes no duration and does not make the run one-shot: if the approver opts in, they may still grant reuse up to the workspace ceiling. Refusals to act on rather than retry, each returned as error_code: file_exec_unsupported_agent (the agent on that server cannot verify a digest; alpamon 2.6.0 or newer is required—upgrade it or use execute_command), file_exec_assessor_disabled (this deployment has the command assessor off, so the lane is unavailable—use execute_command), file_exec_invalid_path (path or interpreter is not absolute), file_exec_content_too_large, file_exec_empty_content, file_exec_line_too_long (interpreter + path + args exceed the command line ceiling—shorten args), file_exec_invalid_reuse_days (reuse_days is outside 1 to 366—fix it or omit it), file_exec_reuse_exceeds_max (reuse_days is above the workspace\'s ceiling—resubmit with a shorter duration or none). None of these has a request waiting behind it, so do not wait on them. Otherwise the run follows the same rules as execute_command: sudo inside the script routes to human approval or is denied outright, a status of awaiting_approval means a human decides out-of-band, purpose_required is answered with state_command_purpose, and the result carries stdout, stderr, and exit code. Pass work_session_id to link the run to a Work Session, and purpose to say what this run is for. When to use: deploy or maintenance scripts, anything you would otherwise run as "bash file" or feed through a heredoc, a script already on the host whose "bash /path" line was held for approval, and any script you expect to run again unchanged. Related: execute_command (one-off shell line), webftp_upload_content (put a file on the host without running it), state_command_purpose, list_commands. Note: Default timeout is 300 seconds (5 minutes).',
+    description='Run a script on a server as a verified file, writing it there first in the same call when write_file is true, or reading its bytes from there when read_from_server is true: the reviewer and the assessor judge the exact bytes you submit, and the agent executes the file only if the bytes on the host\'s disk hash to the same digest. Prefer this over execute_command for anything longer than a one-off line—a script, a heredoc, a "bash /tmp/deploy.sh" line. Why: once an approver marks a verified file standing, an unchanged re-run of it (same bytes, same server, same account, same args) is admitted without paging a human; a "bash /path" shell line never can be, because nothing about the path proves what runs. What approving means: it authorizes exactly these bytes, on this server, as this account, with these arguments—not "this file is safe". One changed byte re-queues human review. The environment, libraries, interpreter version, and anything the script fetches or executes at runtime are not verified and stay the executor\'s responsibility; only this first entrypoint is. How to use: for any script or heredoc, pass write_file=true with the script as content—the one-step form. This call then writes content to path on the host through WebFTP and submits those same bytes for review only once the host reports the file written. An existing file at path is refused (error_code file_write_failed, saying the file already exists) unless you also pass overwrite=true; to re-run a script already on the host, use read_from_server instead of writing it again. overwrite requires write_file (error_code file_exec_invalid_options otherwise). A new file is owned by username and that account\'s own group, or by groupname when you pass one other than the default; an existing file replaced with overwrite keeps its owner and mode, and must be writable by username. The account also needs write access to the directory for a new file; pass username whenever ownership matters, since an omitted one leaves the writing account to the server\'s WebFTP default. No execute bit is needed, because the interpreter runs the file. The write happens before the run is reviewed, as a webftp_upload_content call would, so a run that is later denied leaves the new file in place. Waiting for the write (up to about a minute) comes before, and on top of, timeout. If the write fails, nothing is submitted: error_code file_write_failed (fix the cause, such as the path or the account\'s permissions, and re-run; a server refusal that names its own code, such as a Work Session gate, keeps that code instead) or file_write_timeout (the host did not report the file written within about a minute; re-run once the host is reachable). For a script that already exists on the host—the usual "bash /opt/deploy.sh"—pass read_from_server=true and omit content: the call downloads the file at path as username through WebFTP and submits those exact bytes, so you never copy the script by hand. read_from_server cannot be combined with write_file or content (error_code file_exec_invalid_options). If the read fails, nothing is submitted: error_code file_read_failed (the file is missing, the account cannot read it, or it is not UTF-8 text; a server refusal that names its own code keeps that code) or file_read_timeout; an empty file is refused with file_exec_empty_content and one over 64 KB with file_exec_content_too_large. Waiting for the read (up to about a minute) also comes before timeout. The agent still hashes the on-disk file at execution, so a file changed after the read fails closed. write_file and read_from_server both default to false: then the file must already exist at path on the target host, and content is what the reviewer judges; it is never shipped to the host. Whenever you pass content yourself, pass the full contents, byte-for-byte as they are on disk—do not strip a trailing newline or normalize line endings, because the agent hashes the on-disk file with no normalization and a mismatch fails closed. path and interpreter must be absolute (/opt/deploy.sh, /bin/bash; a bare "bash" is refused). Put composition inside the script: pipes, redirection, &&, and environment variables are reviewed there. Free-text composition around a verified file (a pipe into it, an env prefix, extra shell) is not possible on this lane, by design—a one-off composition belongs on execute_command. content, passed or read from the host, is capped at 64 KB and must be non-empty. reuse_days (integer, 1 to 366) proposes how many days the approver should let this exact file be rerun without a new review. Standing approvals always expire: the workspace sets a ceiling of 1 to 366 days (default 90), and you may propose a shorter period than that, never a longer one. It is a proposal, not a grant: the approver may decline reuse, and a workspace ceiling lowered after submission can shorten it; the approver cannot choose another period for you. A proposal above the workspace ceiling is refused with file_exec_reuse_exceeds_max, never shortened. Propose a duration when you expect to rerun the same unchanged script (same bytes, server, account, args) within that window, sized to how long you expect to need it. Omitting it proposes no duration and does not make the run one-shot: if the approver opts in, they may still grant reuse up to the workspace ceiling. Refusals to act on rather than retry, each returned as error_code: file_exec_unsupported_agent (the agent on that server cannot verify a digest; alpamon 2.6.0 or newer is required—upgrade it or use execute_command), file_exec_assessor_disabled (this deployment has the command assessor off, so the lane is unavailable—use execute_command), file_exec_invalid_path (path or interpreter is not absolute), file_exec_content_too_large, file_exec_empty_content, file_exec_line_too_long (interpreter + path + args exceed the command line ceiling—shorten args), file_exec_invalid_reuse_days (reuse_days is outside 1 to 366—fix it or omit it), file_exec_reuse_exceeds_max (reuse_days is above the workspace\'s ceiling—resubmit with a shorter duration or none). None of these has a request waiting behind it, so do not wait on them. Otherwise the run follows the same rules as execute_command: sudo inside the script routes to human approval or is denied outright, a status of awaiting_approval means a human decides out-of-band, purpose_required is answered with state_command_purpose, and the result carries stdout, stderr, and exit code. Pass work_session_id to link the run to a Work Session, and purpose to say what this run is for. When to use: deploy or maintenance scripts, anything you would otherwise run as "bash file" or feed through a heredoc, a script already on the host whose "bash /path" line was held for approval, and any script you expect to run again unchanged. Related: execute_command (one-off shell line), webftp_upload_content (put a file on the host without running it), state_command_purpose, list_commands. Note: Default timeout is 300 seconds (5 minutes).',
     annotations=ADDITIVE,
     meta={
         'anthropic/alwaysLoad': True,
@@ -1325,20 +1361,30 @@ def _attach_file_execution_suggestion(
     )
     if shell_lane or well_formed:
         response['message'] += _FILE_LANE_HINT
-    if not well_formed:
+    # execute_file has no stdin, so a run fed data cannot be suggested as one.
+    if not well_formed or result.get('data'):
         return
-    call: dict[str, Any] = {
-        'tool': 'execute_file',
-        'arguments': {
-            'server_id': server_id or result.get('server'),
-            'path': path,
-            'interpreter': interpreter,
-            'args': args,
-            'read_from_server': True,
-            'workspace': workspace,
-            'region': region,
-        },
+    # The rest of the call comes off the polled row, so a caller that did not
+    # submit the command (state_command_purpose) still suggests the run held.
+    server = result.get('server')
+    work_session = result.get('work_session')
+    arguments: dict[str, Any] = {
+        'server_id': server_id
+        or (server.get('id') if isinstance(server, dict) else server),
+        'path': path,
+        'interpreter': interpreter,
+        'args': args,
+        'read_from_server': True,
+        'workspace': workspace,
+        'region': region,
     }
+    if username := result.get('username'):
+        arguments['username'] = username
+    if (groupname := result.get('groupname')) and groupname != 'alpacon':
+        arguments['groupname'] = groupname
+    if isinstance(work_session, dict) and work_session.get('id'):
+        arguments['work_session_id'] = work_session['id']
+    call: dict[str, Any] = {'tool': 'execute_file', 'arguments': arguments}
     if interpreter is None:
         call['interpreter_name'] = interpreter_name
         call['instruction'] = (

@@ -15,32 +15,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   wording said an omitted `reuse_days` could run with no expiry when the workspace had no ceiling.
 
 ### Added
-- `execute_file` gained an optional `write_file` (boolean, default `false`): the call writes
-  `content` to `path` on the host through WebFTP as `username`, then submits the same bytes once
-  the host reports the file written; the on-disk hash check at execution is unchanged (#360). An
-  existing file at `path` is refused unless the new `overwrite` (boolean, default `false`) is also
-  passed, as the CLI's upload does, and `overwrite` without `write_file` is refused with
-  `file_exec_invalid_options`. A `groupname` other than the default is forwarded to the write. A client parsing errors sees two new `error_code` values,
-  `file_write_failed` and `file_write_timeout`, neither of which has submitted anything; a server
-  refusal of the write that names its own code, Work Session gates included, keeps that code. The
-  `execute_command` and
-  `execute_file` descriptions now point scripts and heredocs at this one-step form.
-  An operator who leaves `webftp` out of `--toolsets` to keep file transfers from the agent should
-  note that `commands` alone now writes and reads files through WebFTP via `write_file` and
-  `read_from_server`; server-side WebFTP permissions and Work Session gates still apply.
-- `execute_file` gained an optional `read_from_server` (boolean, default `false`) for a script that
-  already exists on the host: the call reads the file at `path` as `username` through WebFTP and
-  submits its exact bytes as `content`, and the on-disk hash check at execution is unchanged (#360).
-  `content` is no longer a required argument, and `read_from_server` is refused alongside
-  `write_file` or `content`. A client parsing errors sees three new `error_code` values,
+- `execute_file` gained an optional `write_file` (boolean, default `false`) that writes `content`
+  to `path` on the host through WebFTP, then submits the same bytes once the host reports the file
+  written, and an `overwrite` that lets it replace an existing file (#360). A client parsing errors
+  sees two new `error_code` values, `file_write_failed` and `file_write_timeout`, neither of which
+  has submitted anything; the API reference has the ownership and refusal rules. With this and
+  `read_from_server`, `commands` alone reaches WebFTP, so leaving `webftp` out of `--toolsets` no
+  longer keeps file transfers from the agent.
+- `execute_file` gained an optional `read_from_server` (boolean, default `false`) that reads the
+  script already at `path` on the host and submits its exact bytes, so `content` is no longer
+  required (#360). A client parsing errors sees three new `error_code` values,
   `file_exec_invalid_options`, `file_read_failed` and `file_read_timeout`, none of which has
-  submitted anything. A held `execute_command` response now suggests this form, and carries a
-  `execute_file_suggestion` object when the server names the script the held line runs; its
-  arguments keep the held call's `username`, `groupname` and `work_session_id`. When the line names
-  a bare interpreter, `arguments.interpreter` is `null` and the object adds `interpreter_name` and an
-  `instruction`: a client must fill in the interpreter's absolute path on the host before calling.
-  The held command stays queued and runs if approved; the guidance says a human must cancel it in
-  the Alpacon console (Commands) before switching, or the script waits on two approval requests.
+  submitted anything. A held `execute_command` response may now carry an `execute_file_suggestion`
+  object, whose `arguments.interpreter` is `null` with an added `interpreter_name` and `instruction`
+  when the held line names a bare interpreter.
 - `install_pam` (`server_id`, `workspace`, `region`): install the `alpamon-pam` package as root
   through the host's package manager on a host provisioned with alpamon alone, a no-op when the host
   is already current; it wraps the new `install_pam` value of

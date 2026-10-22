@@ -422,8 +422,10 @@ approval: answer it with `state_command_purpose`.
 `execute_file` with `read_from_server: true`. When the server names the script the held line runs, the
 response also carries `execute_file_suggestion`: `{"tool": "execute_file", "arguments": {...}}` with
 `server_id`, `path`, `interpreter`, `args`, `read_from_server: true`, `workspace`, and `region`, plus
-the held call's `username`, `groupname` and `work_session_id` when it passed them, ready to pass as
-they are on the next run. When the held line names a bare interpreter such as `bash`, the server
+the held command's `username`, `groupname` and `work_session_id` (from the held call, else from the
+polled command row, so a run answered through `state_command_purpose` keeps them too), ready to pass
+as they are on the next run. A held command that was fed `data` gets no suggestion, only the hint in
+`message`: `execute_file` takes no stdin. When the held line names a bare interpreter such as `bash`, the server
 does not resolve it and neither does this one: `arguments.interpreter` is `null`, and the suggestion
 adds `interpreter_name` (the bare name) and an `instruction` to set `interpreter` to that name's
 absolute path on the host, for example from `command -v bash` there, before calling. A suggestion
@@ -524,7 +526,7 @@ has a request waiting behind it, so a client acts on them rather than waiting or
 is required), `file_exec_assessor_disabled` (the deployment has the command assessor off),
 `file_exec_invalid_path`, `file_exec_content_too_large`, `file_exec_empty_content`,
 `file_exec_line_too_long`, `file_exec_invalid_options` (local only: `read_from_server` combined with
-`write_file` or `content`), `file_exec_invalid_reuse_days` (`reuse_days` is outside 1 to 366; fix it or
+`write_file` or `content`, or `overwrite` without `write_file`), `file_exec_invalid_reuse_days` (`reuse_days` is outside 1 to 366; fix it or
 omit it), and `file_exec_reuse_exceeds_max` (`reuse_days` is above the workspace's ceiling; resubmit
 with a shorter duration or none). The path, size, and `reuse_days` range rules are also checked
 locally before any request is made, with the same `error_code` and wording; only the server knows the
