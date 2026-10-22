@@ -5,9 +5,9 @@ from __future__ import annotations
 import inspect
 import logging
 import re
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from functools import wraps
-from typing import Any
+from typing import Any, Protocol
 
 from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.types import ToolAnnotations
@@ -394,7 +394,9 @@ def _validate_uuid_list(field: str, value: Any) -> dict[str, Any] | None:
     return None
 
 
-def with_token_validation(func: Callable, requires_workspace: bool = True) -> Callable:
+def with_token_validation[**P, R](
+    func: Callable[P, Awaitable[R]], requires_workspace: bool = True
+) -> Callable[P, Awaitable[R | dict[str, Any]]]:
     """Validate a tool's inputs, then resolve and inject its auth token.
 
     Despite the name, this is the single validation gate for MCP tools:
@@ -440,8 +442,10 @@ def with_token_validation(func: Callable, requires_workspace: bool = True) -> Ca
             'the token'
         )
 
+    call: Callable[..., Awaitable[R]] = func  # bound_args no longer carries P
+
     @wraps(func)
-    async def wrapper(*args, **kwargs):
+    async def wrapper(*args: P.args, **kwargs: P.kwargs) -> R | dict[str, Any]:
         bound_args = original_sig.bind_partial(*args, **kwargs)
         bound_args.apply_defaults()
         arguments = bound_args.arguments
@@ -568,7 +572,7 @@ def with_token_validation(func: Callable, requires_workspace: bool = True) -> Ca
 
         # Call the original function using bound_args to handle
         # both positional and keyword region correctly
-        return await func(*bound_args.args, **bound_args.kwargs)
+        return await call(*bound_args.args, **bound_args.kwargs)
 
     # The SDK publishes a VAR_KEYWORD as a required field, not a catch-all.
     new_params = [p for p in original_sig.parameters.values() if p.name != catch_all]
@@ -577,7 +581,9 @@ def with_token_validation(func: Callable, requires_workspace: bool = True) -> Ca
     return wrapper
 
 
-def with_error_handling(func: Callable) -> Callable:
+def with_error_handling[**P, R](
+    func: Callable[P, Awaitable[R]],
+) -> Callable[P, Awaitable[R | dict[str, Any]]]:
     """Decorator to add consistent error handling to MCP tools.
 
     This decorator:
@@ -594,7 +600,7 @@ def with_error_handling(func: Callable) -> Callable:
     """
 
     @wraps(func)
-    async def wrapper(*args, **kwargs):
+    async def wrapper(*args: P.args, **kwargs: P.kwargs) -> R | dict[str, Any]:
         # Extract function name for logging
         func_name = func.__name__
 
@@ -604,7 +610,7 @@ def with_error_handling(func: Callable) -> Callable:
 
             # Enrich error responses with recovery hints
             if isinstance(result, dict):
-                result = enrich_error_response(result, tool_name=func_name)
+                return enrich_error_response(result, tool_name=func_name)
 
             return result
 
@@ -672,7 +678,7 @@ def _log_arguments(arguments: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def with_logging(func: Callable) -> Callable:
+def with_logging[**P, R](func: Callable[P, Awaitable[R]]) -> Callable[P, Awaitable[R]]:
     """Decorator to add automatic logging to MCP tools.
 
     This decorator:
@@ -693,7 +699,7 @@ def with_logging(func: Callable) -> Callable:
     sig = inspect.signature(func)
 
     @wraps(func)
-    async def wrapper(*args, **kwargs):
+    async def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
         func_name = func.__name__
 
         # Guarded, not merely lazy: %s defers the formatting but not the bind
@@ -718,7 +724,9 @@ def with_logging(func: Callable) -> Callable:
     return wrapper
 
 
-def require_jwt_auth(func: Callable) -> Callable:
+def require_jwt_auth[**P, R](
+    func: Callable[P, Awaitable[R]],
+) -> Callable[P, Awaitable[R | dict[str, Any]]]:
     """Reject non-JWT (API) tokens before any upstream call.
 
     Stack INSIDE ``@mcp_tool_handler`` so the resolved token is already
@@ -738,9 +746,9 @@ def require_jwt_auth(func: Callable) -> Callable:
     """
 
     @wraps(func)
-    async def wrapper(*args, **kwargs):
+    async def wrapper(*args: P.args, **kwargs: P.kwargs) -> R | dict[str, Any]:
         token = kwargs.get('token')
-        if token and not AlpaconHTTPClient._is_jwt(token):
+        if isinstance(token, str) and token and not AlpaconHTTPClient._is_jwt(token):
             return error_response(
                 f'{func.__name__} requires JWT (OAuth/SSO) authentication and '
                 'cannot be performed with a static API token. '
@@ -751,12 +759,18 @@ def require_jwt_auth(func: Callable) -> Callable:
     return wrapper
 
 
+class _ToolDecorator(Protocol):
+    def __call__[**P, R](
+        self, func: Callable[P, Awaitable[R]], /
+    ) -> Callable[P, Awaitable[R | dict[str, Any]]]: ...
+
+
 def mcp_tool_handler(
     description: str,
     annotations: ToolAnnotations | None = None,
     meta: dict[str, Any] | None = None,
     requires_workspace: bool = True,
-):
+) -> _ToolDecorator:
     """Combined decorator for MCP tools that adds all common functionality.
 
     This decorator combines:
@@ -778,11 +792,15 @@ def mcp_tool_handler(
         Decorator function
     """
 
-    def decorator(func: Callable) -> Callable:
+    def decorator[**P, R](
+        func: Callable[P, Awaitable[R]],
+    ) -> Callable[P, Awaitable[R | dict[str, Any]]]:
         # Apply decorators in order (innermost first)
-        func = with_error_handling(func)
-        func = with_token_validation(func, requires_workspace=requires_workspace)
-        func = with_logging(func)
+        handled = with_error_handling(func)
+        validated = with_token_validation(
+            handled, requires_workspace=requires_workspace
+        )
+        logged = with_logging(validated)
 
         # Deliberately local: server.py builds the MCP server at module
         # level from ALPACON_MCP_AUTH_ENABLED, which main_http.py sets just
@@ -794,6 +812,6 @@ def mcp_tool_handler(
             description=description,
             annotations=annotations,
             meta=meta,
-        )(func)
+        )(logged)
 
     return decorator
