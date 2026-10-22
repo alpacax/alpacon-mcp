@@ -1,5 +1,7 @@
 """Unit tests for security ACL tools."""
 
+from http import HTTPStatus
+
 import pytest
 
 from tests.conftest import HTTP_ERROR_ENVELOPE, http_client_fixture
@@ -205,6 +207,31 @@ class TestCreateCommandAcl:
         )
 
         assert result['status'] == 'error'
+
+    @pytest.mark.asyncio
+    async def test_create_command_acl_moved_explains_the_ledger(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = {
+            'error': 'HTTP Error',
+            'status_code': HTTPStatus.METHOD_NOT_ALLOWED,
+            'message': "Client error '405 Method Not Allowed'",
+            'response': '{"code": "command_acl_moved"}',
+        }
+
+        result = await create_command_acl(
+            workspace='testworkspace',
+            command='docker *',
+            api_token_id='token-uuid',
+            region='ap1',
+        )
+
+        assert result['status'] == 'error'
+        assert result['status_code'] == HTTPStatus.METHOD_NOT_ALLOWED
+        assert result['error_code'] == 'command_acl_moved'
+        assert 'pre-approval ledger' in result['message']
+        assert 'web console' in result['message']
+        assert 'Do not retry' in result['message']
 
     @pytest.mark.asyncio
     async def test_create_empty_command_returns_error(
