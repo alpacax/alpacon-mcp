@@ -327,9 +327,10 @@ AGENT_ROLLOUT_POLICY_REFUSAL_HINTS: dict[str, str] = {
 #: no ledger tool yet. Reads still work.
 COMMAND_ACL_MOVED_HINT = (
     'Command ACLs are now managed on the command pre-approval ledger, so this '
-    'endpoint no longer accepts writes. For now a ledger admin must add, change '
-    "or remove the rule in the web console (the token's ACL page, or the "
-    'workspace Command ACL settings). Do not retry this call.'
+    'endpoint no longer accepts writes. For now a ledger admin must issue or '
+    "revoke the entry in the web console, on the service token's command ACL "
+    'card; a personal API token has no command list on this path. Do not retry '
+    'this call.'
 )
 
 _ERROR_CODE_HINT: dict[str, str] = {

@@ -845,10 +845,11 @@ The `command` and `path` a rule matches on must not be empty or whitespace-only.
 - `create_command_acl`: `workspace`, `command`, `api_token_id` or `service_token_id`, `username`, `groupname`, `region` (optional)
 - `update_command_acl` / `delete_command_acl`: by `acl_id`
 
-On a server that manages command ACLs on the command pre-approval ledger, `create_command_acl`, `update_command_acl`, and `delete_command_acl` are refused with 405 and `error_code` `command_acl_moved`. A ledger admin then makes the change in the web console (the token's ACL page or the workspace Command ACL settings); retrying the call does not help. `list_command_acls` still works there, and a server without the ledger keeps accepting all four.
 - `list_server_acls` / `create_server_acl` (`server_id` + token id) / `update_server_acl` / `delete_server_acl`
 - `bulk_server_acl`: `workspace`, `action` (add or remove), `server_ids` (array), token id, `region` (optional)
 - `list_file_acls` / `create_file_acl` (`path`, `action`) / `update_file_acl` / `delete_file_acl`
+
+On a server that manages command ACLs on the command pre-approval ledger, `create_command_acl`, `update_command_acl`, and `delete_command_acl` are refused with 405 and `error_code` `command_acl_moved`; retrying the call does not help. A ledger admin then issues or revokes the entry in the web console, on the service token's command ACL card. A personal API token has no command list on this path. `list_command_acls` still works there, and a server without the ledger keeps accepting all four.
 
 ---
 
