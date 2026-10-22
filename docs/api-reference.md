@@ -428,7 +428,10 @@ does not resolve it and neither does this one: `arguments.interpreter` is `null`
 adds `interpreter_name` (the bare name) and an `instruction` to set `interpreter` to that name's
 absolute path on the host, for example from `command -v bash` there, before calling. A suggestion
 with a malformed field is dropped, never patched, so the field is either absent or complete apart
-from that one interpreter path.
+from that one interpreter path. The held command stays queued and runs if approved, and the
+`message` says so: to switch to `execute_file` now, have a human cancel the held command in the
+Alpacon console (Commands) first, or the script waits on two approval requests. No MCP tool cancels
+it.
 
 ### `execute_file`
 Run a script on a server as a verified file, and wait for the result. With `write_file`,

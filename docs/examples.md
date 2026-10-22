@@ -162,7 +162,7 @@ execute_file(
 )
 ```
 
-A held `execute_command` line that runs such a script carries `execute_file_suggestion` when the server names the script; its `arguments` are this call.
+A held `execute_command` line that runs such a script carries `execute_file_suggestion` when the server names the script; its `arguments` are this call. The held command stays queued and runs if approved, so have a human cancel it in the Alpacon console (Commands) before switching, or the script waits on two approval requests.
 
 An approver can mark the run standing; an unchanged re-run then needs no human. One changed byte re-queues review. Pipes, redirection and variables go inside the script, where they are reviewed with it.
 

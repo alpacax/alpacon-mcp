@@ -39,6 +39,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   arguments keep the held call's `username`, `groupname` and `work_session_id`. When the line names
   a bare interpreter, `arguments.interpreter` is `null` and the object adds `interpreter_name` and an
   `instruction`: a client must fill in the interpreter's absolute path on the host before calling.
+  The held command stays queued and runs if approved; the guidance says a human must cancel it in
+  the Alpacon console (Commands) before switching, or the script waits on two approval requests.
 - `install_pam` (`server_id`, `workspace`, `region`): install the `alpamon-pam` package as root
   through the host's package manager on a host provisioned with alpamon alone, a no-op when the host
   is already current; it wraps the new `install_pam` value of

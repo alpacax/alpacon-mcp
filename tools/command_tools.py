@@ -1262,7 +1262,10 @@ _FILE_LANE_HINT = (
     ' If this command runs a script that already exists on the host, run it '
     "next time with execute_file and read_from_server=true: the file's exact "
     'bytes are reviewed, and an approver can mark that file standing so an '
-    'unchanged re-run needs no human.'
+    'unchanged re-run needs no human. This held command stays queued and runs '
+    'if approved: to switch to execute_file now, have a human cancel it in the '
+    'Alpacon console (Commands) first, or the script waits on two approval '
+    'requests. No MCP tool cancels it.'
 )
 
 #: A bare interpreter basename such as bash or python3. Kept narrow because it
@@ -1342,7 +1345,9 @@ def _attach_file_execution_suggestion(
             f'The held line names {interpreter_name} without a path. Set '
             f'arguments.interpreter to the absolute path of {interpreter_name} '
             f"on the host (for example, run 'command -v {interpreter_name}' "
-            'there) before calling execute_file.'
+            'there) before calling execute_file. Until a human cancels the '
+            'held command in the Alpacon console (Commands), it stays queued, '
+            'and calling execute_file files a second approval request.'
         )
     response['execute_file_suggestion'] = call
 
