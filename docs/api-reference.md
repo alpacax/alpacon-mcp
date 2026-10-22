@@ -423,8 +423,12 @@ approval: answer it with `state_command_purpose`.
 response also carries `execute_file_suggestion`: `{"tool": "execute_file", "arguments": {...}}` with
 `server_id`, `path`, `interpreter`, `args`, `read_from_server: true`, `workspace`, and `region`, plus
 the held call's `username`, `groupname` and `work_session_id` when it passed them, ready to pass as
-they are on the next run. A suggestion with a malformed field is dropped, never patched, so
-the field is either absent or complete.
+they are on the next run. When the held line names a bare interpreter such as `bash`, the server
+does not resolve it and neither does this one: `arguments.interpreter` is `null`, and the suggestion
+adds `interpreter_name` (the bare name) and an `instruction` to set `interpreter` to that name's
+absolute path on the host, for example from `command -v bash` there, before calling. A suggestion
+with a malformed field is dropped, never patched, so the field is either absent or complete apart
+from that one interpreter path.
 
 ### `execute_file`
 Run a script on a server as a verified file, and wait for the result. With `write_file`,

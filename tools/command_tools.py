@@ -1265,6 +1265,10 @@ _FILE_LANE_HINT = (
     'unchanged re-run needs no human.'
 )
 
+#: A bare interpreter basename such as bash or python3. Kept narrow because it
+#: is echoed into the suggestion's instruction text.
+_BARE_INTERPRETER_RE = re.compile(r'[A-Za-z0-9][A-Za-z0-9._+-]{0,63}')
+
 
 def _attach_file_execution_suggestion(
     response: dict[str, Any],
@@ -1278,28 +1282,41 @@ def _attach_file_execution_suggestion(
     """Point a held shell-lane command at execute_file with read_from_server.
 
     When the server names the script the line runs, in
-    ``file_execution_suggestion``, the response carries a ready-to-call
-    ``execute_file`` call. Without it, a caller that submitted a shell line
-    still gets the hint in prose. A malformed suggestion is dropped whole:
-    patching one field would suggest a run other than the one held.
+    ``file_execution_suggestion``, the response carries an ``execute_file``
+    call. It is ready to call when the line named an absolute interpreter.
+    When the line named a bare one, ``interpreter`` is left null with an
+    instruction to fill in its absolute path on the host: the host's PATH
+    decides what a bare name runs, so nothing is guessed. Without the field,
+    a caller that submitted a shell line still gets the hint in prose. A
+    malformed suggestion is dropped whole: patching one field would suggest
+    a run other than the one held.
     """
     suggestion = result.get('file_execution_suggestion')
     if not isinstance(suggestion, dict):
         suggestion = {}
     path = suggestion.get('path')
+    interpreter = suggestion.get('interpreter')
+    interpreter_name = suggestion.get('interpreter_name')
     # Only an absent or null field takes the default; a falsy value of the
     # wrong type, such as "" or false, must fail the check below.
-    interpreter = suggestion.get('interpreter')
-    if interpreter is None:
-        interpreter = DEFAULT_INTERPRETER
     args = suggestion.get('args')
     if args is None:
         args = []
+    # Exactly one of the two names the interpreter: an absolute path, or a
+    # bare basename the caller still has to resolve on the host.
+    if interpreter_name is None:
+        interpreter_ok = isinstance(interpreter, str) and validate_file_path(
+            interpreter
+        )
+    else:
+        interpreter_ok = interpreter is None and (
+            isinstance(interpreter_name, str)
+            and _BARE_INTERPRETER_RE.fullmatch(interpreter_name) is not None
+        )
     well_formed = (
         isinstance(path, str)
         and validate_file_path(path)
-        and isinstance(interpreter, str)
-        and validate_file_path(interpreter)
+        and interpreter_ok
         and isinstance(args, list)
         and all(isinstance(a, str) for a in args)
     )
@@ -1307,7 +1324,7 @@ def _attach_file_execution_suggestion(
         response['message'] += _FILE_LANE_HINT
     if not well_formed:
         return
-    response['execute_file_suggestion'] = {
+    call: dict[str, Any] = {
         'tool': 'execute_file',
         'arguments': {
             'server_id': server_id or result.get('server'),
@@ -1319,6 +1336,15 @@ def _attach_file_execution_suggestion(
             'region': region,
         },
     }
+    if interpreter is None:
+        call['interpreter_name'] = interpreter_name
+        call['instruction'] = (
+            f'The held line names {interpreter_name} without a path. Set '
+            f'arguments.interpreter to the absolute path of {interpreter_name} '
+            f"on the host (for example, run 'command -v {interpreter_name}' "
+            'there) before calling execute_file.'
+        )
+    response['execute_file_suggestion'] = call
 
 
 async def _poll_command_result(

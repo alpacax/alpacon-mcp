@@ -32,8 +32,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `write_file` or `content`. A client parsing errors sees three new `error_code` values,
   `file_exec_invalid_options`, `file_read_failed` and `file_read_timeout`, none of which has
   submitted anything. A held `execute_command` response now suggests this form, and carries a
-  ready-to-call `execute_file_suggestion` object when the server names the script the held line runs;
-  its arguments keep the held call's `username`, `groupname` and `work_session_id`.
+  `execute_file_suggestion` object when the server names the script the held line runs; its
+  arguments keep the held call's `username`, `groupname` and `work_session_id`. When the line names
+  a bare interpreter, `arguments.interpreter` is `null` and the object adds `interpreter_name` and an
+  `instruction`: a client must fill in the interpreter's absolute path on the host before calling.
 - `install_pam` (`server_id`, `workspace`, `region`): install the `alpamon-pam` package as root
   through the host's package manager on a host provisioned with alpamon alone, a no-op when the host
   is already current; it wraps the new `install_pam` value of

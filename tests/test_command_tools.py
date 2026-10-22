@@ -3568,6 +3568,16 @@ class TestHeldCommandSuggestsTheFileLane:
             {'path': '/opt/deploy.sh', 'args': [1]},
             {'path': '/opt/deploy.sh', 'interpreter': ''},
             {'path': '/opt/deploy.sh', 'args': False},
+            # Nothing names the interpreter, so nothing is guessed.
+            {'path': '/opt/deploy.sh'},
+            {'path': '/opt/deploy.sh', 'interpreter_name': '/bin/bash'},
+            {'path': '/opt/deploy.sh', 'interpreter_name': 'ba sh'},
+            {'path': '/opt/deploy.sh', 'interpreter_name': ''},
+            {
+                'path': '/opt/deploy.sh',
+                'interpreter': '/bin/bash',
+                'interpreter_name': 'bash',
+            },
         ],
     )
     async def test_a_malformed_suggestion_is_dropped_whole(
@@ -3580,16 +3590,53 @@ class TestHeldCommandSuggestsTheFileLane:
         assert 'read_from_server=true' in result['message']
 
     @pytest.mark.asyncio
-    async def test_missing_interpreter_and_args_take_the_defaults(
+    async def test_missing_args_take_an_empty_list(
         self, mock_http_client, mock_token_manager
     ):
         result = await self._held(
-            {'file_execution_suggestion': {'path': '/opt/deploy.sh'}}
+            {
+                'file_execution_suggestion': {
+                    'path': '/opt/deploy.sh',
+                    'interpreter': '/bin/bash',
+                }
+            }
         )
 
         arguments = result['execute_file_suggestion']['arguments']
         assert arguments['interpreter'] == '/bin/bash'
         assert arguments['args'] == []
+        assert 'interpreter_name' not in result['execute_file_suggestion']
+        assert 'instruction' not in result['execute_file_suggestion']
+
+    @pytest.mark.asyncio
+    async def test_a_bare_interpreter_is_left_for_the_caller(
+        self, mock_http_client, mock_token_manager
+    ):
+        result = await self._held(
+            {
+                'file_execution_suggestion': {
+                    'path': '/opt/deploy.sh',
+                    'interpreter': None,
+                    'interpreter_name': 'bash',
+                    'args': ['--fast'],
+                }
+            }
+        )
+
+        suggestion = result['execute_file_suggestion']
+        assert suggestion['tool'] == 'execute_file'
+        assert suggestion['interpreter_name'] == 'bash'
+        assert 'command -v bash' in suggestion['instruction']
+        assert suggestion['arguments'] == {
+            'server_id': VALID_SERVER_ID,
+            'path': '/opt/deploy.sh',
+            'interpreter': None,
+            'args': ['--fast'],
+            'read_from_server': True,
+            'workspace': 'testworkspace',
+            'region': 'ap1',
+        }
+        assert 'read_from_server=true' in result['message']
 
     @pytest.mark.asyncio
     async def test_the_held_run_identity_carries_into_the_call(
@@ -3597,7 +3644,12 @@ class TestHeldCommandSuggestsTheFileLane:
     ):
         work_session_id = '660e8400-e29b-41d4-a716-446655440000'
         result = await self._held(
-            {'file_execution_suggestion': {'path': '/opt/deploy.sh'}},
+            {
+                'file_execution_suggestion': {
+                    'path': '/opt/deploy.sh',
+                    'interpreter': '/bin/bash',
+                }
+            },
             username='deploy',
             groupname='ops',
             work_session_id=work_session_id,
