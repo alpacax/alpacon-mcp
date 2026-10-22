@@ -76,7 +76,7 @@ class TestWizardRegionValidation:
 
 
 class TestConnectionResponseShape:
-    """Only a dict carrying `error` fails the connection test; other shapes pass."""
+    """None and dicts carrying `error` fail the connection test; other shapes pass."""
 
     def test_connection_result_follows_response_shape(self, subtests):
         cases = [
