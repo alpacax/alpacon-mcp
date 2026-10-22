@@ -844,7 +844,6 @@ The `command` and `path` a rule matches on must not be empty or whitespace-only.
 - `list_command_acls`: `workspace`, `api_token_id`/`service_token_id` filters, `region` (optional), `page`, `page_size`
 - `create_command_acl`: `workspace`, `command`, `api_token_id` or `service_token_id`, `username`, `groupname`, `region` (optional)
 - `update_command_acl` / `delete_command_acl`: by `acl_id`
-
 - `list_server_acls` / `create_server_acl` (`server_id` + token id) / `update_server_acl` / `delete_server_acl`
 - `bulk_server_acl`: `workspace`, `action` (add or remove), `server_ids` (array), token id, `region` (optional)
 - `list_file_acls` / `create_file_acl` (`path`, `action`) / `update_file_acl` / `delete_file_acl`

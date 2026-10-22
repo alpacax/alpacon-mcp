@@ -322,9 +322,8 @@ AGENT_ROLLOUT_POLICY_REFUSAL_HINTS: dict[str, str] = {
     ),
 }
 
-#: A 405 on every command-ACL write (create, update, delete): command
-#: pre-approvals moved to the command pre-approval ledger, and this server has
-#: no ledger tool yet. Reads still work.
+#: 405 on every command-ACL write once the server moved command pre-approvals
+#: to the ledger; this MCP has no ledger tool, hence the web console.
 COMMAND_ACL_MOVED_HINT = (
     'Command ACLs are now managed on the command pre-approval ledger, so this '
     'endpoint no longer accepts writes. For now a ledger admin must issue or '
