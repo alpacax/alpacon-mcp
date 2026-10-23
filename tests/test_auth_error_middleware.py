@@ -328,8 +328,14 @@ async def test_non_http_scope_passes_through():
         nonlocal call_count
         call_count += 1
 
+    async def receive():
+        return {}
+
+    async def send(message):
+        pass
+
     mw = UpstreamAuthErrorMiddleware(mock_app)
-    await mw({'type': 'websocket'}, lambda: {}, lambda msg: None)
+    await mw({'type': 'websocket'}, receive, send)
     assert call_count == 1
 
 

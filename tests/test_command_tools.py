@@ -10,7 +10,7 @@ import pytest
 from mcp.server.mcpserver.exceptions import ToolError
 
 from server import mcp
-from tests.conftest import VALID_SERVER_ID, http_client_fixture
+from tests.conftest import VALID_SERVER_ID, http_client_fixture, tool_descriptions
 from tools.command_tools import (
     _FILE_PHASE_GENERIC_HINT,
     _FILE_PHASE_HINTS,
@@ -223,6 +223,7 @@ class TestSubmitCommand:
             token='test-token',
         )
 
+        assert isinstance(result, dict)
         assert result['id'] == 'cmd-123'
         mock_http_client.post.assert_called_once_with(
             region='ap1',
@@ -1288,7 +1289,7 @@ class TestSudoGuidanceInToolDescriptions:
         'tool_name', ['execute_command', 'execute_command_multi_server']
     )
     async def test_description_states_the_sudo_cost(self, tool_name):
-        descriptions = {t.name: t.description for t in await mcp.list_tools()}
+        descriptions = await tool_descriptions()
         text = descriptions[tool_name]
         assert 'Do not prefix the command with sudo by default' in text
         assert 'human-in-the-loop' in text
@@ -1645,7 +1646,7 @@ class TestPurposeDemand:
 
     @pytest.mark.asyncio
     async def test_tool_descriptions_teach_the_demand(self):
-        descriptions = {t.name: t.description for t in await mcp.list_tools()}
+        descriptions = await tool_descriptions()
 
         exec_text = descriptions['execute_command']
         assert 'purpose_required' in exec_text
@@ -2676,7 +2677,9 @@ class TestExecuteFileRun:
                 workspace='testworkspace',
                 region='ap1',
             )
-            assert mock_submit.call_args.kwargs['purpose_demand_supported'] is True
+            # Rebound each time: mypy keeps the narrowed literal across the await.
+            supported = mock_submit.call_args.kwargs['purpose_demand_supported']
+            assert supported is True
 
             await execute_file(
                 server_id=VALID_SERVER_ID,
@@ -2686,7 +2689,8 @@ class TestExecuteFileRun:
                 scheduled_at='2026-09-10T03:00:00Z',
                 region='ap1',
             )
-            assert mock_submit.call_args.kwargs['purpose_demand_supported'] is False
+            supported = mock_submit.call_args.kwargs['purpose_demand_supported']
+            assert supported is False
 
             await execute_file(
                 server_id=VALID_SERVER_ID,
@@ -2696,7 +2700,8 @@ class TestExecuteFileRun:
                 run_after=['cmd-700'],
                 region='ap1',
             )
-            assert mock_submit.call_args.kwargs['purpose_demand_supported'] is False
+            supported = mock_submit.call_args.kwargs['purpose_demand_supported']
+            assert supported is False
 
     @pytest.mark.asyncio
     async def test_truncated_purpose_is_reported(
@@ -2774,9 +2779,12 @@ class TestExecuteFileWriteFile:
         self, mock_http_client, mock_token_manager
     ):
         calls: list[str] = []
-        mock_http_client.post.side_effect = lambda **kw: (
-            calls.append('upload') or _UPLOAD_ROW
-        )
+
+        def _post(**kw: object) -> dict[str, str]:
+            calls.append('upload')
+            return _UPLOAD_ROW
+
+        mock_http_client.post.side_effect = _post
         route = _route_get()
 
         async def _get(*, endpoint: str, **kw: Any) -> Any:
@@ -3030,14 +3038,16 @@ class TestExecuteFileWriteFile:
     @pytest.mark.asyncio
     async def test_schema_publishes_write_file_off_by_default(self):
         tools = {t.name: t for t in await mcp.list_tools()}
+        descriptions = await tool_descriptions()
         schema = tools['execute_file'].input_schema
 
         assert schema['properties']['write_file']['default'] is False
         assert 'write_file' not in schema['required']
-        text = tools['execute_file'].description
+        text = descriptions['execute_file']
+        command_text = descriptions['execute_command']
         assert 'write_file' in text
         assert 'overwrite' in text
-        assert 'write_file' in tools['execute_command'].description
+        assert 'write_file' in command_text
 
     @pytest.mark.asyncio
     async def test_overwrite_and_a_named_group_reach_the_upload(
@@ -3530,13 +3540,16 @@ class TestExecuteFileReadFromServer:
     @pytest.mark.asyncio
     async def test_schema_publishes_read_from_server_off_by_default(self):
         tools = {t.name: t for t in await mcp.list_tools()}
+        descriptions = await tool_descriptions()
         schema = tools['execute_file'].input_schema
 
         assert schema['properties']['read_from_server']['default'] is False
         assert 'read_from_server' not in schema['required']
         assert 'content' not in schema['required']
-        assert 'read_from_server' in tools['execute_file'].description
-        assert 'read_from_server' in tools['execute_command'].description
+        file_text = descriptions['execute_file']
+        command_text = descriptions['execute_command']
+        assert 'read_from_server' in file_text
+        assert 'read_from_server' in command_text
 
 
 class TestGetCapped:
@@ -3863,7 +3876,7 @@ class TestExecuteFileRegistration:
 
     @pytest.mark.asyncio
     async def test_description_states_the_lane_semantics(self):
-        descriptions = {t.name: t.description for t in await mcp.list_tools()}
+        descriptions = await tool_descriptions()
         text = descriptions['execute_file']
 
         # Only what a client depends on: the on-disk contract, the cross-
@@ -3888,7 +3901,7 @@ class TestExecuteFileRegistration:
 
     @pytest.mark.asyncio
     async def test_execute_command_points_scripts_at_execute_file(self):
-        descriptions = {t.name: t.description for t in await mcp.list_tools()}
+        descriptions = await tool_descriptions()
         text = descriptions['execute_command']
 
         assert 'execute_file' in text

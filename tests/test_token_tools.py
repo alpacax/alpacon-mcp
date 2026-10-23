@@ -1111,5 +1111,6 @@ class TestRotateApiToken:
         tools = {t.name: t for t in await mcp.list_tools()}
 
         annotations = tools['rotate_api_token'].annotations
+        assert annotations is not None
         assert annotations.destructive_hint is True
         assert annotations.idempotent_hint is not True

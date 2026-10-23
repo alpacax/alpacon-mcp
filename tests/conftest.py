@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from server import create_streamable_http_app
+from server import create_streamable_http_app, mcp
 from utils import request_signal
 
 # The AlpaconHTTPClient methods a tool calls.
@@ -42,6 +42,15 @@ async def streamable_http_client(
             transport=httpx.ASGITransport(app=app), base_url='http://testserver'
         ) as client:
             yield client
+
+
+async def tool_descriptions() -> dict[str, str]:
+    """Every registered tool's description, by name; each must be set."""
+    tools = await mcp.list_tools()
+    descriptions = {t.name: t.description for t in tools if t.description}
+    if len(descriptions) != len(tools):
+        raise AssertionError('a tool is registered without a description')
+    return descriptions
 
 
 @pytest.fixture(autouse=True)

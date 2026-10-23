@@ -33,7 +33,7 @@ _SIGNAL_TOKEN = 'test-jwt-signalled'  # noqa: S105
 _SIGNAL_TOKEN_2025 = 'test-jwt-signalled-2025'  # noqa: S105
 _PROTOCOL_VERSION = '2026-07-28'
 _STATELESS_PROTOCOL_VERSION = '2025-06-18'
-_LISTEN = {'notifications': {'toolsListChanged': True}}
+_LISTEN: JsonObject = {'notifications': {'toolsListChanged': True}}
 _SIGNALLING_TOOL = 'raise_upstream_401'
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -188,7 +188,9 @@ async def test_an_authenticated_subscription_connects_stays_idle_and_cancels(bas
             lines = response.aiter_lines()
             acknowledged = await _next_sse_payload(lines)
             assert acknowledged['method'] == 'notifications/subscriptions/acknowledged'
-            assert acknowledged['params']['notifications'] == _LISTEN['notifications']
+            params = acknowledged['params']
+            assert isinstance(params, dict)
+            assert params['notifications'] == _LISTEN['notifications']
 
             await asyncio.sleep(2)  # idle, short of the transport's 15s ping
 

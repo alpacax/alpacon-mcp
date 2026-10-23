@@ -30,6 +30,13 @@ from utils.common import (
 )
 
 
+def _unwrap_error(result: object, **kwargs: Any) -> dict[str, Any]:
+    """unwrap_http_result on an envelope the test expects to be an error."""
+    out = unwrap_http_result(result, **kwargs)
+    assert out is not None
+    return out
+
+
 class TestSudoDenialNextActions:
     """Falling through to _DEFAULT_NEXT_ACTION would tell the agent to wait on an
     approval request that, for some of these codes, does not exist.
@@ -119,7 +126,7 @@ class TestUnwrapHttpResultGate:
         }
 
     def test_gate_code_becomes_gate_response(self):
-        out = unwrap_http_result(
+        out = _unwrap_error(
             self._envelope('work_session_required'),
             default_message='failed',
             region='ap1',
@@ -130,13 +137,13 @@ class TestUnwrapHttpResultGate:
         assert out['status_code'] == HTTPStatus.BAD_REQUEST
 
     def test_not_active_becomes_pending(self):
-        out = unwrap_http_result(
+        out = _unwrap_error(
             self._envelope('work_session_not_active'), default_message='failed'
         )
         assert out['status'] == 'pending_approval'
 
     def test_non_gate_code_is_generic_error(self):
-        out = unwrap_http_result(
+        out = _unwrap_error(
             self._envelope('some_other_error'), default_message='failed'
         )
         assert out['status'] == 'error'
@@ -152,7 +159,7 @@ class TestUnwrapHttpResultGate:
             'status_code': HTTPStatus.BAD_REQUEST,
             'response': '<html>500</html>',
         }
-        out = unwrap_http_result(env, default_message='failed')
+        out = _unwrap_error(env, default_message='failed')
         assert out['status'] == 'error'
         assert 'error_code' not in out
 
@@ -162,7 +169,7 @@ class TestUnwrapHttpResultGate:
             'status_code': HTTPStatus.INTERNAL_SERVER_ERROR,
             'message': 'boom',
         }
-        out = unwrap_http_result(env, default_message='failed')
+        out = _unwrap_error(env, default_message='failed')
         assert out['status'] == 'error'
         assert 'error_code' not in out
         assert out['message'] == 'boom'
@@ -171,7 +178,7 @@ class TestUnwrapHttpResultGate:
         assert unwrap_http_result({'status': 'success'}, default_message='x') is None
 
     def test_command_inline_credential_gets_actionable_hint(self):
-        out = unwrap_http_result(
+        out = _unwrap_error(
             self._envelope('command_inline_credential'), default_message='failed'
         )
         assert out['status'] == 'error'
@@ -180,14 +187,14 @@ class TestUnwrapHttpResultGate:
         assert 'audit log' in out['message']
 
     def test_unhinted_code_has_no_hint_text_appended(self):
-        out = unwrap_http_result(
+        out = _unwrap_error(
             self._envelope('some_other_error'), default_message='failed'
         )
         # No entry in _ERROR_CODE_HINT for this code: message is untouched.
         assert out['message'] == 'HTTP 400'
 
     def test_workspace_extension_plan_required_gets_actionable_hint(self):
-        out = unwrap_http_result(
+        out = _unwrap_error(
             self._envelope('workspace_extension_plan_required'),
             default_message='failed',
         )
@@ -197,7 +204,7 @@ class TestUnwrapHttpResultGate:
         assert 'upgrading' in out['message']
 
     def test_workspace_extension_not_enabled_gets_actionable_hint(self):
-        out = unwrap_http_result(
+        out = _unwrap_error(
             self._envelope('workspace_extension_not_enabled'),
             default_message='failed',
         )
@@ -230,7 +237,7 @@ class TestUnwrapHttpResultGate:
     def test_agent_rollout_policy_codes_get_actionable_hints(
         self, code, expected_snippet
     ):
-        out = unwrap_http_result(self._envelope(code), default_message='failed')
+        out = _unwrap_error(self._envelope(code), default_message='failed')
         assert out['status'] == 'error'
         assert out['error_code'] == code
         assert expected_snippet in out['message']
@@ -463,7 +470,7 @@ class TestUnwrapHttpResultPlanLimit:
         self, mock_token_manager
     ):
         mock_token_manager.get_base_url_override.return_value = None
-        out = unwrap_http_result(
+        out = _unwrap_error(
             self._envelope(
                 code='server_limit_exceeded',
                 axis='server',
@@ -492,7 +499,7 @@ class TestUnwrapHttpResultPlanLimit:
 
     def test_gate_less_legacy_code_becomes_the_same_shape(self, mock_token_manager):
         mock_token_manager.get_base_url_override.return_value = None
-        out = unwrap_http_result(
+        out = _unwrap_error(
             self._envelope(code='user_limit_exceeded', gate=None),
             default_message='failed',
             region='ap1',
@@ -512,7 +519,7 @@ class TestUnwrapHttpResultPlanLimit:
         # gate:"plan" with no axis is a feature lock, not a plan limit: the
         # existing (402, "general") recovery-hint path (utils/recovery_hints.py,
         # applied by the decorator, not here) is what handles it.
-        out = unwrap_http_result(
+        out = _unwrap_error(
             self._envelope(code='workspace_enterprise_plan_required'),
             default_message='failed',
         )
@@ -527,7 +534,7 @@ class TestUnwrapHttpResultPlanLimit:
     def test_feature_lock_keeps_its_existing_error_code_hint(self):
         # workspace_extension_plan_required already had a curated hint before
         # this change (a different, older feature lock); it must be unaffected.
-        out = unwrap_http_result(
+        out = _unwrap_error(
             self._envelope(code='workspace_extension_plan_required'),
             default_message='failed',
         )
@@ -536,7 +543,7 @@ class TestUnwrapHttpResultPlanLimit:
         assert 'upgrading' in out['message']
 
     def test_no_next_in_body_is_still_fine(self):
-        out = unwrap_http_result(
+        out = _unwrap_error(
             self._envelope(code='application_limit_exceeded', axis='application'),
             default_message='failed',
         )
@@ -547,7 +554,7 @@ class TestUnwrapHttpResultPlanLimit:
     @pytest.mark.parametrize('axis', sorted(_MONTHLY_PLAN_LIMIT_AXES))
     def test_monthly_axis_remedy_names_the_reset_not_a_day_count(self, axis):
         code = next(c for c, a in _LIMIT_EXCEEDED_CODE_TO_AXIS.items() if a == axis)
-        out = unwrap_http_result(
+        out = _unwrap_error(
             self._envelope(code=code, axis=axis), default_message='failed'
         )
         assert 'resets at the end of the month' in out['next_action']
@@ -559,7 +566,7 @@ class TestUnwrapHttpResultPlanLimit:
         mock_token_manager.get_base_url_override.return_value = (
             'https://onprem.acme-corp.internal'
         )
-        out = unwrap_http_result(
+        out = _unwrap_error(
             self._envelope(code='server_limit_exceeded', axis='server'),
             default_message='failed',
             region='ap1',
@@ -569,7 +576,7 @@ class TestUnwrapHttpResultPlanLimit:
         assert 'Settings → Billing in your Alpacon console' in out['next_action']
 
     def test_missing_region_or_workspace_gets_words_not_a_url(self):
-        out = unwrap_http_result(
+        out = _unwrap_error(
             self._envelope(code='server_limit_exceeded', axis='server'),
             default_message='failed',
         )
@@ -580,7 +587,7 @@ class TestUnwrapHttpResultPlanLimit:
         # The plan-limit contract is 402-specific; a different status that
         # happens to carry a similarly shaped body (gate/axis) must stay on
         # the generic error path, not be misread as a plan limit.
-        out = unwrap_http_result(
+        out = _unwrap_error(
             self._envelope(
                 code='server_limit_exceeded',
                 axis='server',
@@ -597,7 +604,7 @@ class TestUnwrapHttpResultPlanLimit:
     def test_workspace_axis_does_not_crash(self):
         # workspace_free_limit_exceeded is not one of the six legacy codes
         # (rule 2), but a current server still sends gate:"plan"+axis (rule 1).
-        out = unwrap_http_result(
+        out = _unwrap_error(
             self._envelope(code='workspace_free_limit_exceeded', axis='workspace'),
             default_message='failed',
         )
@@ -619,7 +626,7 @@ class TestPlanLimitDoesNotTouchOtherPaths:
     def test_work_session_gate_check_still_runs_first(self):
         # A WorkSession gate code takes that path even though it is unrelated
         # to plan limits, confirming the new check was inserted after it.
-        out = unwrap_http_result(
+        out = _unwrap_error(
             {
                 'error': 'HTTP Error',
                 'status_code': HTTPStatus.BAD_REQUEST,

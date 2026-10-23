@@ -664,7 +664,7 @@ class TestPathIdentifierValidation:
             mock_client.get = AsyncMock(return_value={})
 
             result = await get_certificate_authority(
-                ca_id=['../../iam/users'],
+                ca_id=['../../iam/users'],  # type: ignore[arg-type]
                 workspace='demo',
                 region='ap1',
             )
@@ -765,19 +765,20 @@ class TestPathIdentifierValidation:
             return None
 
         tools_dir = Path(__file__).resolve().parent.parent / 'tools'
-        unchecked = set()
+        unchecked: set[str] = set()
 
         for module in sorted(tools_dir.glob('*.py')):
             tree = ast.parse(module.read_text(encoding='utf-8'), str(module))
 
             # Anything assigned at module level is fixed at import, so it is
             # never a value the client sent. Only the strings can be resolved.
-            module_names, constants = set(), {}
-            for node in tree.body:
-                if not isinstance(node, ast.Assign):
+            module_names: set[str] = set()
+            constants: dict[str, str] = {}
+            for statement in tree.body:
+                if not isinstance(statement, ast.Assign):
                     continue
-                resolved = fold(node.value, constants)
-                for target in node.targets:
+                resolved = fold(statement.value, constants)
+                for target in statement.targets:
                     if isinstance(target, ast.Name):
                         module_names.add(target.id)
                         if resolved is not None:

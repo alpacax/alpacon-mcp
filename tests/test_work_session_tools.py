@@ -3,9 +3,10 @@
 from http import HTTPStatus
 
 import pytest
+from mcp.types import CallToolResult
 
 from server import mcp
-from tests.conftest import http_client_fixture
+from tests.conftest import http_client_fixture, tool_descriptions
 from tools.work_session_tools import (
     work_session_analyze,
     work_session_close,
@@ -604,7 +605,7 @@ class TestWorkSessionExtend:
     ):
         """reason is a required parameter; omitting it never reaches the server."""
         with pytest.raises(TypeError):
-            await work_session_extend(
+            await work_session_extend(  # type: ignore[call-arg]
                 session_id=SESSION_ID,
                 workspace='testworkspace',
                 expires_at='2026-06-06T18:00:00+00:00',
@@ -875,14 +876,16 @@ class TestWorkSessionTimeline:
             },
         )
 
+        assert isinstance(result, CallToolResult)
         payload = result.structured_content
+        assert payload is not None
         assert payload['status'] == 'error'
         assert payload['field'] == 'include_records'
         mock_http_client.get.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_the_description_tells_the_model_to_check_completeness(self):
-        descriptions = {t.name: t.description for t in await mcp.list_tools()}
+        descriptions = await tool_descriptions()
 
         text = descriptions['work_session_timeline']
 
@@ -1178,7 +1181,7 @@ class TestWorkSessionRecords:
     @pytest.mark.asyncio
     async def test_the_description_says_where_a_websh_session_id_comes_from(self):
         """A model cannot guess the id, and the timeline is the only source."""
-        descriptions = {t.name: t.description for t in await mcp.list_tools()}
+        descriptions = await tool_descriptions()
 
         text = descriptions['work_session_records']
 
@@ -1266,7 +1269,7 @@ class TestDescriptionIsNotAnExecutionChannel:
         'tool_name', ['work_session_create', 'work_session_update']
     )
     async def test_description_field_is_declared_non_executable(self, tool_name):
-        descriptions = {t.name: t.description for t in await mcp.list_tools()}
+        descriptions = await tool_descriptions()
         text = descriptions[tool_name]
         assert 'NOT a command list' in text
         assert 'nothing in it is executed' in text
@@ -1275,7 +1278,7 @@ class TestDescriptionIsNotAnExecutionChannel:
     async def test_create_description_names_work_session_id_pending_approval_and_stop_states(
         self,
     ):
-        descriptions = {t.name: t.description for t in await mcp.list_tools()}
+        descriptions = await tool_descriptions()
 
         text = descriptions['work_session_create']
 

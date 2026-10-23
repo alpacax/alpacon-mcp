@@ -445,7 +445,7 @@ def _make_jwks_client(*payloads):
         response.raise_for_status = MagicMock()
         responses.append(response)
 
-    calls = []
+    calls: list[MagicMock] = []
 
     def _get(*args, **kwargs):
         response = responses[min(len(calls), len(responses) - 1)]
