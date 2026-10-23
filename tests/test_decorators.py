@@ -106,8 +106,11 @@ async def test_registered_tool_includes_exception_handling(
         ('', True),
         ('static-api-token', False),
         (MagicMock(), False),
+        (0, False),
+        (False, False),
+        (b'', False),
     ],
-    ids=['jwt', 'absent', 'empty', 'static', 'non-str'],
+    ids=['jwt', 'absent', 'empty', 'static', 'non-str', 'zero', 'false', 'bytes'],
 )
 @pytest.mark.asyncio
 async def test_require_jwt_auth_passes_only_a_jwt_or_no_token(token, allowed):

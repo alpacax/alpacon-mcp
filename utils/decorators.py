@@ -730,7 +730,9 @@ def require_jwt_auth[**P, R](
     @wraps(func)
     async def wrapper(*args: P.args, **kwargs: P.kwargs) -> ToolResult[R]:
         token = kwargs.get('token')
-        if token and not (isinstance(token, str) and AlpaconHTTPClient._is_jwt(token)):
+        if token not in (None, '') and not (
+            isinstance(token, str) and AlpaconHTTPClient._is_jwt(token)
+        ):
             return error_response(
                 f'{func.__name__} requires JWT (OAuth/SSO) authentication and '
                 'cannot be performed with a static API token. '
