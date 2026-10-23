@@ -2,6 +2,7 @@
 
 import ast
 from pathlib import Path
+from types import FunctionType
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -45,9 +46,11 @@ def _make_decorated_func(extra_params=None):
     sig = ', '.join(param_parts)
 
     func_code = f"async def _inner({sig}):\n    return {{'status': 'success', 'token': kwargs.get('token')}}"
-    namespace: dict = {}
+    namespace: dict[str, object] = {}
     exec(func_code, namespace)  # noqa: S102
-    return with_token_validation(namespace['_inner'])
+    inner = namespace['_inner']
+    assert isinstance(inner, FunctionType)
+    return with_token_validation(inner)
 
 
 # ---------------------------------------------------------------------------

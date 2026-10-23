@@ -34,6 +34,7 @@ from utils import request_signal  # noqa: E402
 from utils.auth import Auth0TokenVerifier  # noqa: E402
 from utils.auth_error_middleware import UpstreamAuthErrorMiddleware  # noqa: E402
 from utils.error_handler import UpstreamAuthError  # noqa: E402
+from utils.routes import RouteRegistry  # noqa: E402
 
 TOKEN_PREFIX = 'test-jwt'  # noqa: S105
 SIGNALLING_TOOL = 'raise_upstream_401'
@@ -58,7 +59,9 @@ async def _accept_test_token(self, token: str) -> AccessToken | None:
 
 
 def _register_test_endpoints() -> None:
-    @server.mcp.custom_route('/_test/subscriptions', methods=['GET'])
+    routes: RouteRegistry = server.mcp
+
+    @routes.custom_route('/_test/subscriptions', methods=['GET'])
     async def subscription_count(request: Request) -> JSONResponse:
         # The bus listener set is the only place a live listen stream is
         # counted; ListenHandler subscribes on entry and unsubscribes in its

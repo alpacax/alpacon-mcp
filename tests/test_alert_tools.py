@@ -741,7 +741,7 @@ PREVIEW_RESPONSE = {
 }
 
 
-def _coded_envelope(status_code: HTTPStatus, code: str) -> dict:
+def _coded_envelope(status_code: HTTPStatus, code: str) -> dict[str, object]:
     """The http_client error envelope for a coded alpacon-server refusal."""
     return {
         'error': 'HTTP Error',

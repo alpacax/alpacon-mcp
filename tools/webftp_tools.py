@@ -64,6 +64,7 @@ _UNKNOWN_FILE = 'unknown'
 
 # Type aliases
 type _UploadResult = dict[str, str | int | None]
+type _UploadSlot = dict[str, Any]  # one bulk-create entry (id, upload_url)
 
 
 class _S3DownloadError(Exception):
@@ -812,7 +813,7 @@ async def webftp_bulk_upload(
     async def _upload_one(
         client: httpx.AsyncClient,
         idx: int,
-        item: dict,
+        item: _UploadSlot,
     ) -> dict[str, Any]:
         upload_url = item.get('upload_url')
         file_id = item.get('id')

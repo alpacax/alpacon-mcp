@@ -18,6 +18,7 @@ from utils.declared_agent import capture_declared_agent, use_environment_fallbac
 from utils.health import get_health_info
 from utils.http_client import http_client
 from utils.logger import get_logger, stop_log_listener
+from utils.routes import RouteRegistry
 
 logger = get_logger('server')
 
@@ -300,8 +301,9 @@ def _register_http_health_endpoint() -> None:
     Bypasses auth for unauthenticated health probes
     (e.g., Kubernetes liveness/readiness checks, docker-compose).
     """
+    routes: RouteRegistry = mcp
 
-    @mcp.custom_route('/health', methods=['GET'])
+    @routes.custom_route('/health', methods=['GET'])
     async def health_endpoint(request: Request) -> JSONResponse:
         health = await get_health_info()
         return JSONResponse(

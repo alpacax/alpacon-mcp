@@ -20,7 +20,7 @@ from utils.common import MCP_VERSION
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
-def _run_import(entry: str, env: dict[str, str]) -> subprocess.CompletedProcess:
+def _run_import(entry: str, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
     full_env = {**os.environ, 'PYTHONPATH': REPO_ROOT, **env}
     return subprocess.run(  # noqa: S603
         [sys.executable, '-c', f'import {entry}'],

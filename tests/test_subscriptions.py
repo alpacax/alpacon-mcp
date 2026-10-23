@@ -43,7 +43,8 @@ _HARNESS = os.path.join(REPO_ROOT, 'tests', 'subscription_harness.py')
 def _free_port() -> int:
     with socket.socket() as s:
         s.bind(('127.0.0.1', 0))
-        return s.getsockname()[1]
+        port: int = s.getsockname()[1]
+    return port
 
 
 @pytest.fixture(scope='module')
@@ -123,7 +124,8 @@ async def _next_sse_payload(lines: AsyncIterator[str]) -> JsonObject:
     async def read() -> JsonObject:
         async for line in lines:
             if line.startswith('data: '):
-                return json.loads(line[len('data: ') :])
+                frame: JsonObject = json.loads(line[len('data: ') :])
+                return frame
         raise AssertionError('stream ended before a data frame arrived')
 
     return await asyncio.wait_for(read(), timeout=10)
@@ -132,7 +134,8 @@ async def _next_sse_payload(lines: AsyncIterator[str]) -> JsonObject:
 async def _live_subscriptions(base_url: str) -> int:
     async with httpx.AsyncClient(base_url=base_url, timeout=10) as client:
         response = await client.get('/_test/subscriptions')
-        return response.json()['listeners']
+    listeners: int = response.json()['listeners']
+    return listeners
 
 
 async def _wait_for_subscriptions(base_url: str, expected: int) -> int:

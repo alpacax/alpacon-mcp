@@ -42,7 +42,7 @@ _LONG_ID = 'a' * 300
 ToolPayload = dict[str, object]
 
 
-def _entry_log(caplog, tool: str) -> str:
+def _entry_log(caplog: pytest.LogCaptureFixture, tool: str) -> str:
     """The tool's one ``called with`` line. Raises if it was never emitted."""
     return next(r.message for r in caplog.records if f'{tool} called with' in r.message)
 
@@ -380,9 +380,9 @@ def _tool_modules() -> list[ModuleType]:
     ]
 
 
-def _tool_functions() -> dict[str, Callable]:
+def _tool_functions() -> dict[str, Callable[..., object]]:
     """Every decorated tool on the surface, by name."""
-    functions: dict[str, Callable] = {}
+    functions: dict[str, Callable[..., object]] = {}
     for imported in _tool_modules():
         for name, attr in vars(imported).items():
             if inspect.iscoroutinefunction(attr) and hasattr(attr, '__wrapped__'):
@@ -398,7 +398,9 @@ def _structured(result: CallToolResult | InputRequiredResult) -> ToolPayload:
     which none of these tools do.
     """
     assert isinstance(result, CallToolResult), f'unexpected result type: {type(result)}'
-    assert result.structured_content is not None, 'tool returned no structured content'
+    assert isinstance(result.structured_content, dict), (
+        f'tool returned no structured content object: {type(result.structured_content)}'
+    )
     return result.structured_content
 
 

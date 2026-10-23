@@ -865,7 +865,7 @@ class TestWebFtpBulkUpload:
         )
 
     @staticmethod
-    def _bulk_create_response(count: int) -> list[dict]:
+    def _bulk_create_response(count: int) -> list[dict[str, str]]:
         return [
             {'id': f'upload-{i}', 'upload_url': f'https://s3.example.com/p{i}'}
             for i in range(count)

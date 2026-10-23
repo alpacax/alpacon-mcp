@@ -18,7 +18,7 @@ from utils.token_manager import TokenManager
 def token_file(tmp_path):
     """Return a path factory that writes token.json content and builds a TokenManager."""
 
-    def _make(config: dict) -> TokenManager:
+    def _make(config: dict[str, object]) -> TokenManager:
         path = tmp_path / 'token.json'
         path.write_text(json.dumps(config))
         return TokenManager(config_file=str(path))

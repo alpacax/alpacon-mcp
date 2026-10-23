@@ -10,7 +10,7 @@ import time
 from collections.abc import Generator, Mapping
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, TextIO
 
 LOG_FORMAT = (
     '%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s'
@@ -266,7 +266,7 @@ class AlpaconLogger:
 
     def __init__(self) -> None:
         self.listener: logging.handlers.QueueListener | None = None
-        self.stream_handler: logging.StreamHandler
+        self.stream_handler: logging.StreamHandler[TextIO]
         self.queue_handler: logging.handlers.QueueHandler
         self._setup_logging()
 
@@ -297,7 +297,7 @@ class AlpaconLogger:
 
         # The file sink flushes on every record, so a direct FileHandler would put
         # that disk write on the event loop shared by every in-flight tool call.
-        log_queue: queue.SimpleQueue = queue.SimpleQueue()
+        log_queue: queue.SimpleQueue[logging.LogRecord] = queue.SimpleQueue()
         queue_handler = logging.handlers.QueueHandler(log_queue)
         # Prefix comes from the file handler; formatting here would repeat it.
         queue_handler.setFormatter(SingleLineFormatter('%(message)s'))

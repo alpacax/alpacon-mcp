@@ -185,7 +185,10 @@ _SUDO_HUMAN_APPROVAL_CODES = frozenset(
 )
 
 
-def _sudo_denial(result: dict[str, Any]) -> tuple[str, str] | None:
+type _CommandRecord = dict[str, Any]  # one command result row (result, status, ...)
+
+
+def _sudo_denial(result: _CommandRecord) -> tuple[str, str] | None:
     """Detect a non-interactive sudo denial in the command output.
 
     Returns ``(code, hint)`` for the matched denial category so the caller can
