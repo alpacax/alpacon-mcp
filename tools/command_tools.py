@@ -304,7 +304,35 @@ _ONLY_REFUSED_SERVERS = (
 )
 
 
-def _use_file_execution_refusal(result: dict[str, Any]) -> dict[str, Any] | None:
+def _rerun_coordinates(result: dict[str, Any]) -> dict[str, str]:
+    """The polled row's server, account and Work Session, keyed as tool arguments.
+
+    A rerun has to keep the held or refused command's account and Work Session,
+    or following the hint would submit a run other than the one the server saw.
+    """
+    server = result.get('server')
+    work_session = result.get('work_session')
+    groupname = result.get('groupname')
+    candidates = (
+        ('server_id', server.get('id') if isinstance(server, dict) else server),
+        ('username', result.get('username')),
+        ('groupname', groupname if groupname != 'alpacon' else None),
+        (
+            'work_session_id',
+            work_session.get('id') if isinstance(work_session, dict) else work_session,
+        ),
+    )
+    return {key: value for key, value in candidates if isinstance(value, str) and value}
+
+
+def _stdin_was_fed(result: dict[str, Any], stdin_fed: bool) -> bool:
+    """Data is withheld on some rows, so the submitting call's word counts too."""
+    return stdin_fed or bool(result.get('data'))
+
+
+def _use_file_execution_refusal(
+    result: dict[str, Any], stdin_fed: bool = False
+) -> dict[str, Any] | None:
     """message, error_code and next_action for this refusal; None otherwise."""
     if result.get('rejection_cause') != USE_FILE_EXECUTION:
         return None
@@ -312,27 +340,10 @@ def _use_file_execution_refusal(result: dict[str, Any]) -> dict[str, Any] | None
     message = _USE_FILE_EXECUTION_HINT
     if isinstance(guidance, str) and guidance.strip():
         message = f'{guidance.strip()} {message}'
-    server = result.get('server')
-    work_session = result.get('work_session')
-    groupname = result.get('groupname')
-    # The same run keeps the refused command's account and Work Session, as
-    # _attach_file_execution_suggestion does for a held one.
     where = ', '.join(
-        f'{key}={value}'
-        for key, value in (
-            ('server_id', server.get('id') if isinstance(server, dict) else server),
-            ('username', result.get('username')),
-            ('groupname', groupname if groupname != 'alpacon' else None),
-            (
-                'work_session_id',
-                work_session.get('id')
-                if isinstance(work_session, dict)
-                else work_session,
-            ),
-        )
-        if isinstance(value, str) and value
+        f'{key}={value}' for key, value in _rerun_coordinates(result).items()
     )
-    stdin = _STDIN_NOT_CARRIED if result.get('data') else ''
+    stdin = _STDIN_NOT_CARRIED if _stdin_was_fed(result, stdin_fed) else ''
     return {
         'message': message,
         'error_code': USE_FILE_EXECUTION,
@@ -743,21 +754,12 @@ async def execute_command(
         purpose=purpose,
         region=region,
         token=token,
+        stdin_fed=bool(data),
     )
     # The suggested run must keep the held command's account and Work Session,
     # or following it would submit a run other than the one held. The values
-    # this call sent win over the row's; data is withheld on some rows, so it
-    # is checked here too, and a refusal still warns that stdin cannot follow.
-    if data:
-        response.pop('execute_file_suggestion', None)
-        next_action = response.get('next_action')
-        if (
-            response.get('error_code') == USE_FILE_EXECUTION
-            and isinstance(next_action, str)
-            and _STDIN_NOT_CARRIED not in next_action
-        ):
-            response['next_action'] = next_action + _STDIN_NOT_CARRIED
-    elif suggested := response.get('execute_file_suggestion'):
+    # this call sent win over the row's.
+    if suggested := response.get('execute_file_suggestion'):
         arguments = suggested['arguments']
         if username is not None:
             arguments['username'] = username
@@ -779,6 +781,7 @@ async def _settle_submission(
     token: str | None,
     command: str = '',
     shell: str = '',
+    stdin_fed: bool = False,
 ) -> dict[str, Any]:
     """Turn a submit response into the tool's answer: refusal, id, then the wait.
 
@@ -834,6 +837,7 @@ async def _settle_submission(
         timeout=timeout,
         region=region,
         token=token,
+        stdin_fed=stdin_fed,
     )
     if _purpose_was_truncated(purpose):
         response['purpose_truncated'] = True
@@ -1399,6 +1403,7 @@ def _attach_file_execution_suggestion(
     workspace: str,
     region: str,
     shell_lane: bool,
+    stdin_fed: bool = False,
 ) -> None:
     """Point a held shell-lane command at execute_file with read_from_server.
 
@@ -1444,15 +1449,13 @@ def _attach_file_execution_suggestion(
     if shell_lane or well_formed:
         response['message'] += _FILE_LANE_HINT
     # execute_file has no stdin, so a run fed data cannot be suggested as one.
-    if not well_formed or result.get('data'):
+    if not well_formed or _stdin_was_fed(result, stdin_fed):
         return
     # The rest of the call comes off the polled row, so a caller that did not
     # submit the command (state_command_purpose) still suggests the run held.
-    server = result.get('server')
-    work_session = result.get('work_session')
+    coordinates = _rerun_coordinates(result)
     arguments: dict[str, Any] = {
-        'server_id': server_id
-        or (server.get('id') if isinstance(server, dict) else server),
+        'server_id': server_id or coordinates.get('server_id'),
         'path': path,
         'interpreter': interpreter,
         'args': args,
@@ -1460,12 +1463,9 @@ def _attach_file_execution_suggestion(
         'workspace': workspace,
         'region': region,
     }
-    if username := result.get('username'):
-        arguments['username'] = username
-    if (groupname := result.get('groupname')) and groupname != 'alpacon':
-        arguments['groupname'] = groupname
-    if isinstance(work_session, dict) and work_session.get('id'):
-        arguments['work_session_id'] = work_session['id']
+    arguments.update(
+        (key, value) for key, value in coordinates.items() if key != 'server_id'
+    )
     call: dict[str, Any] = {'tool': 'execute_file', 'arguments': arguments}
     if interpreter is None:
         call['interpreter_name'] = interpreter_name
@@ -1492,6 +1492,8 @@ async def _poll_command_result(
     # gets echoed back, and reporting a shell the command may not have run under
     # is the misleading metadata this echo exists to avoid.
     shell: str = '',
+    # Whether the submitting call fed stdin, which some rows do not echo back.
+    stdin_fed: bool = False,
 ) -> dict[str, Any]:
     """Wait for a submitted command to reach a state worth reporting.
 
@@ -1541,7 +1543,7 @@ async def _poll_command_result(
 
             # Checked ahead of the status match so the refusal keeps its own
             # error_code instead of reading as a bare 'rejected'.
-            if refusal := _use_file_execution_refusal(result):
+            if refusal := _use_file_execution_refusal(result, stdin_fed):
                 return error_response(
                     refusal['message'],
                     error_code=refusal['error_code'],
@@ -1607,6 +1609,7 @@ async def _poll_command_result(
                         workspace=workspace,
                         region=region,
                         shell_lane=bool(command),
+                        stdin_fed=stdin_fed,
                     )
                     return response
 
