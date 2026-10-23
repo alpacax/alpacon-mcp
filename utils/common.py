@@ -16,6 +16,10 @@ from utils.token_manager import get_token_manager
 # Every value response.json() can produce; AlpaconHTTPClient methods return it.
 JsonValue = dict[str, Any] | list[Any] | str | int | float | bool | None
 
+# The {'status': 'error', ...} envelope any decorated tool may return instead.
+ToolErrorResponse = dict[str, Any]
+type ToolResult[R] = R | ToolErrorResponse
+
 # Initialize shared instances
 token_manager = get_token_manager()
 logger = get_logger('common')
@@ -450,7 +454,7 @@ def resolve_time_window(
     return start, end_date
 
 
-def error_response(message: str, **kwargs) -> dict[str, Any]:
+def error_response(message: str, **kwargs) -> ToolErrorResponse:
     """Create standardized error response.
 
     Args:

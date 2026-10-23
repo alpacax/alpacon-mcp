@@ -19,6 +19,7 @@ from utils.auth import (
     match_workspace,
 )
 from utils.common import (
+    ToolResult,
     error_response,
     is_auth_enabled,
     token_error_response,
@@ -396,7 +397,7 @@ def _validate_uuid_list(field: str, value: Any) -> dict[str, Any] | None:
 
 def with_token_validation[**P, R](
     func: Callable[P, Awaitable[R]], requires_workspace: bool = True
-) -> Callable[P, Awaitable[R | dict[str, Any]]]:
+) -> Callable[P, Awaitable[ToolResult[R]]]:
     """Validate a tool's inputs, then resolve and inject its auth token.
 
     Despite the name, this is the single validation gate for MCP tools:
@@ -442,10 +443,10 @@ def with_token_validation[**P, R](
             'the token'
         )
 
-    call: Callable[..., Awaitable[R]] = func  # bound_args no longer carries P
+    unchecked_func: Callable[..., Awaitable[R]] = func  # bound_args no longer carries P
 
     @wraps(func)
-    async def wrapper(*args: P.args, **kwargs: P.kwargs) -> R | dict[str, Any]:
+    async def wrapper(*args: P.args, **kwargs: P.kwargs) -> ToolResult[R]:
         bound_args = original_sig.bind_partial(*args, **kwargs)
         bound_args.apply_defaults()
         arguments = bound_args.arguments
@@ -570,9 +571,8 @@ def with_token_validation[**P, R](
 
         bound_args.arguments[catch_all] = extra_kwargs
 
-        # Call the original function using bound_args to handle
-        # both positional and keyword region correctly
-        return await call(*bound_args.args, **bound_args.kwargs)
+        # bound_args carries a positional or keyword region alike
+        return await unchecked_func(*bound_args.args, **bound_args.kwargs)
 
     # The SDK publishes a VAR_KEYWORD as a required field, not a catch-all.
     new_params = [p for p in original_sig.parameters.values() if p.name != catch_all]
@@ -583,7 +583,7 @@ def with_token_validation[**P, R](
 
 def with_error_handling[**P, R](
     func: Callable[P, Awaitable[R]],
-) -> Callable[P, Awaitable[R | dict[str, Any]]]:
+) -> Callable[P, Awaitable[ToolResult[R]]]:
     """Decorator to add consistent error handling to MCP tools.
 
     This decorator:
@@ -591,24 +591,15 @@ def with_error_handling[**P, R](
     2. Logs errors with context
     3. Returns standardized error responses
     4. Enriches error responses with recovery hints for LLM self-recovery
-
-    Args:
-        func: The async function to decorate
-
-    Returns:
-        Decorated async function
     """
 
     @wraps(func)
-    async def wrapper(*args: P.args, **kwargs: P.kwargs) -> R | dict[str, Any]:
-        # Extract function name for logging
+    async def wrapper(*args: P.args, **kwargs: P.kwargs) -> ToolResult[R]:
         func_name = func.__name__
 
         try:
-            # Call the original function
             result = await func(*args, **kwargs)
 
-            # Enrich error responses with recovery hints
             if isinstance(result, dict):
                 return enrich_error_response(result, tool_name=func_name)
 
@@ -684,14 +675,7 @@ def with_logging[**P, R](func: Callable[P, Awaitable[R]]) -> Callable[P, Awaitab
     This decorator:
     1. Logs function entry: `_LOGGED_VERBATIM_KEYS` are written bounded by
        `_summarize_log_value`, every other argument by type and size alone
-    2. Logs successful completion
-    3. Logs errors (works with with_error_handling)
-
-    Args:
-        func: The async function to decorate
-
-    Returns:
-        Decorated async function
+    2. Logs completion when the result is a dict with status 'success'
     """
     # with_token_validation has already published the catch-all-free signature
     # this binds against, and nothing assigns __signature__ afterwards, so the
@@ -712,10 +696,8 @@ def with_logging[**P, R](func: Callable[P, Awaitable[R]]) -> Callable[P, Awaitab
                 '%s called with: %s', func_name, _log_arguments(bound_args.arguments)
             )
 
-        # Call the original function
         result = await func(*args, **kwargs)
 
-        # Log completion if successful
         if isinstance(result, dict) and result.get('status') == 'success':
             logger.info('%s completed successfully', func_name)
 
@@ -726,13 +708,13 @@ def with_logging[**P, R](func: Callable[P, Awaitable[R]]) -> Callable[P, Awaitab
 
 def require_jwt_auth[**P, R](
     func: Callable[P, Awaitable[R]],
-) -> Callable[P, Awaitable[R | dict[str, Any]]]:
+) -> Callable[P, Awaitable[ToolResult[R]]]:
     """Reject non-JWT (API) tokens before any upstream call.
 
     Stack INSIDE ``@mcp_tool_handler`` so the resolved token is already
     in the wrapped function's ``**kwargs`` when this guard runs. Used on
     tools whose endpoint authentication accepts only JWT (OAuth/SSO)
-    sessions — e.g. ``APITokenObjectPermission`` 403s ``source='api'``
+    sessions—e.g. ``APITokenObjectPermission`` 403s ``source='api'``
     requests, and viewsets whose ``authentication_classes`` omit
     ``APITokenAuthentication`` return 403 (AnonymousUser) for static API
     tokens. Short-circuiting here skips the wasted round-trip and returns
@@ -746,9 +728,9 @@ def require_jwt_auth[**P, R](
     """
 
     @wraps(func)
-    async def wrapper(*args: P.args, **kwargs: P.kwargs) -> R | dict[str, Any]:
+    async def wrapper(*args: P.args, **kwargs: P.kwargs) -> ToolResult[R]:
         token = kwargs.get('token')
-        if isinstance(token, str) and token and not AlpaconHTTPClient._is_jwt(token):
+        if token and not (isinstance(token, str) and AlpaconHTTPClient._is_jwt(token)):
             return error_response(
                 f'{func.__name__} requires JWT (OAuth/SSO) authentication and '
                 'cannot be performed with a static API token. '
@@ -762,7 +744,7 @@ def require_jwt_auth[**P, R](
 class _ToolDecorator(Protocol):
     def __call__[**P, R](
         self, func: Callable[P, Awaitable[R]], /
-    ) -> Callable[P, Awaitable[R | dict[str, Any]]]: ...
+    ) -> Callable[P, Awaitable[ToolResult[R]]]: ...
 
 
 def mcp_tool_handler(
@@ -787,15 +769,11 @@ def mcp_tool_handler(
             for a tool that answers before any workspace is known and reaches
             no workspace-scoped resource; see ``with_token_validation`` for
             what that turns off.
-
-    Returns:
-        Decorator function
     """
 
     def decorator[**P, R](
         func: Callable[P, Awaitable[R]],
-    ) -> Callable[P, Awaitable[R | dict[str, Any]]]:
-        # Apply decorators in order (innermost first)
+    ) -> Callable[P, Awaitable[ToolResult[R]]]:
         handled = with_error_handling(func)
         validated = with_token_validation(
             handled, requires_workspace=requires_workspace

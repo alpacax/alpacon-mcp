@@ -182,6 +182,13 @@ def _authorize_scope_parts(response):
     return query.get('scope', [''])[0].split()
 
 
+def _state_payload(state: str) -> dict:
+    """_verify_state on a state the test expects to verify."""
+    payload = _verify_state(state)
+    assert payload is not None
+    return payload
+
+
 def _authorize_device_id(response):
     """The one device id in the redirect's scope, checked against its state."""
     scope_ids = [
@@ -191,8 +198,7 @@ def _authorize_device_id(response):
     ]
     assert len(scope_ids) == 1, scope_ids
     query = parse_qs(urlparse(response.headers['location']).query)
-    state_data = _verify_state(query['state'][0])
-    assert state_data is not None
+    state_data = _state_payload(query['state'][0])
     assert state_data.get('device_id') == scope_ids[0]
     return scope_ids[0]
 
@@ -755,8 +761,7 @@ class TestOAuthAuthorize:
         parsed = urlparse(location)
         params = parse_qs(parsed.query)
         composite_state = params['state'][0]
-        state_data = _verify_state(composite_state)
-        assert state_data is not None
+        state_data = _state_payload(composite_state)
         assert state_data['redirect_uri'] == client_uri
         assert state_data['state'] == 'original-state'
 
@@ -1021,8 +1026,7 @@ class TestOAuthAuthorize:
         response = _authorize(oauth_app, 'openid profile mfa')
         assert response.status_code == HTTPStatus.FOUND
         query = parse_qs(urlparse(response.headers['location']).query)
-        state_data = _verify_state(query['state'][0])
-        assert state_data is not None
+        state_data = _state_payload(query['state'][0])
         assert state_data.get('stage') == 'mfa'
         device_id = state_data.get('device_id')
         assert isinstance(device_id, str)
@@ -1053,8 +1057,7 @@ class TestOAuthAuthorize:
         assert 'read:authenticators' in scope_value
         # State should contain stage='mfa'
         state = params.get('state', [''])[0]
-        state_data = _verify_state(state)
-        assert state_data is not None
+        state_data = _state_payload(state)
         assert state_data.get('stage') == 'mfa'
 
     def test_authorize_without_mfa_scope_uses_regular_audience(self, oauth_app):
@@ -1100,8 +1103,7 @@ class TestOAuthAuthorize:
         )
         nonce = response.cookies[_NONCE_COOKIE_NAME]
         state = parse_qs(urlparse(response.headers['location']).query)['state'][0]
-        payload = _verify_state(state)
-        assert payload is not None
+        payload = _state_payload(state)
         assert payload['nonce_hash'] == _hash_nonce(nonce)
         assert nonce not in state
 
@@ -1118,8 +1120,7 @@ class TestOAuthAuthorize:
         )
         nonce = response.cookies[_NONCE_COOKIE_NAME]
         state = parse_qs(urlparse(response.headers['location']).query)['state'][0]
-        payload = _verify_state(state)
-        assert payload is not None
+        payload = _state_payload(state)
         assert payload['stage'] == 'mfa'
         assert payload['nonce_hash'] == _hash_nonce(nonce)
 
@@ -1132,8 +1133,7 @@ class TestOAuthAuthorize:
         )
         assert TEST_NONCE not in response.headers['set-cookie']
         state = parse_qs(urlparse(response.headers['location']).query)['state'][0]
-        payload = _verify_state(state)
-        assert payload is not None
+        payload = _state_payload(state)
         assert payload['nonce_hash'] != _hash_nonce(TEST_NONCE)
 
 
@@ -2361,8 +2361,7 @@ class TestMfaPkceReplay:
         stage1 = parse_qs(urlparse(response.headers['location']).query)
         assert 'code_challenge' not in stage1
 
-        payload = _verify_state(stage1['state'][0])
-        assert payload is not None
+        payload = _state_payload(stage1['state'][0])
         stashed = payload.get('authorize_params', {})
         assert stashed.get('code_challenge') == PKCE_PARAMS['code_challenge']
         assert (
@@ -2411,8 +2410,7 @@ class TestMfaPkceReplay:
         assert response.status_code == HTTPStatus.FOUND
         stage2 = parse_qs(urlparse(response.headers['location']).query)
         assert f'device:{DEVICE_ID}' in stage2['scope'][0].split()
-        payload = _verify_state(stage2['state'][0])
-        assert payload is not None
+        payload = _state_payload(stage2['state'][0])
         assert payload.get('device_id') == DEVICE_ID
 
     def test_stage2_replays_only_the_allowlisted_keys(self, oauth_app):
@@ -2652,8 +2650,7 @@ class TestOAuthCallback:
 
         # State should contain stage='regular'
         state = params.get('state', [''])[0]
-        state_data = _verify_state(state)
-        assert state_data is not None
+        state_data = _state_payload(state)
         assert state_data.get('stage') == 'regular'
         assert state_data.get('redirect_uri') == 'http://localhost:8080/callback'
         assert state_data.get('state') == 'orig-state'
@@ -2713,8 +2710,7 @@ class TestOAuthCallback:
                 follow_redirects=False,
             )
         state = parse_qs(urlparse(response.headers['location']).query)['state'][0]
-        payload = _verify_state(state)
-        assert payload is not None
+        payload = _state_payload(state)
         assert payload['nonce_hash'] == _hash_nonce(TEST_NONCE)
 
     def test_mfa_stage2_refreshes_the_cookie_lifetime(self, oauth_app):

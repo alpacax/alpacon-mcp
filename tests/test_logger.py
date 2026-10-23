@@ -31,7 +31,7 @@ from utils.logger import (
 
 
 async def _unserved_app(scope, receive, send) -> None:
-    """Stand-in ASGI app: these tests build a uvicorn Config only for its logging setup."""
+    """Stand-in ASGI app: these tests build a uvicorn Config only for its logging."""
 
 
 @contextmanager

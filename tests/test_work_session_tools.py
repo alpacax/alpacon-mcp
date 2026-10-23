@@ -6,7 +6,7 @@ import pytest
 from mcp.types import CallToolResult
 
 from server import mcp
-from tests.conftest import http_client_fixture
+from tests.conftest import http_client_fixture, tool_descriptions
 from tools.work_session_tools import (
     work_session_analyze,
     work_session_close,
@@ -885,10 +885,9 @@ class TestWorkSessionTimeline:
 
     @pytest.mark.asyncio
     async def test_the_description_tells_the_model_to_check_completeness(self):
-        descriptions = {t.name: t.description for t in await mcp.list_tools()}
+        descriptions = await tool_descriptions()
 
         text = descriptions['work_session_timeline']
-        assert text is not None
 
         assert 'pagination.complete' in text
         assert 'work_session_records' in text
@@ -1182,10 +1181,9 @@ class TestWorkSessionRecords:
     @pytest.mark.asyncio
     async def test_the_description_says_where_a_websh_session_id_comes_from(self):
         """A model cannot guess the id, and the timeline is the only source."""
-        descriptions = {t.name: t.description for t in await mcp.list_tools()}
+        descriptions = await tool_descriptions()
 
         text = descriptions['work_session_records']
-        assert text is not None
 
         assert 'work_session_timeline' in text
         assert 'websh_session' in text
@@ -1271,9 +1269,8 @@ class TestDescriptionIsNotAnExecutionChannel:
         'tool_name', ['work_session_create', 'work_session_update']
     )
     async def test_description_field_is_declared_non_executable(self, tool_name):
-        descriptions = {t.name: t.description for t in await mcp.list_tools()}
+        descriptions = await tool_descriptions()
         text = descriptions[tool_name]
-        assert text is not None
         assert 'NOT a command list' in text
         assert 'nothing in it is executed' in text
 
@@ -1281,10 +1278,9 @@ class TestDescriptionIsNotAnExecutionChannel:
     async def test_create_description_names_work_session_id_pending_approval_and_stop_states(
         self,
     ):
-        descriptions = {t.name: t.description for t in await mcp.list_tools()}
+        descriptions = await tool_descriptions()
 
         text = descriptions['work_session_create']
-        assert text is not None
 
         assert 'work_session_id' in text
         assert 'pending_approval' in text

@@ -14,6 +14,7 @@ import server
 from utils.decorators import (
     ERROR_HANDLING_MARKER,
     mcp_tool_handler,
+    require_jwt_auth,
     with_error_handling,
 )
 from utils.error_handler import UpstreamAuthError
@@ -95,6 +96,28 @@ async def test_registered_tool_includes_exception_handling(
     register.assert_called_once_with(
         description='Error handling probe', annotations=None, meta=None
     )
+
+
+@pytest.mark.parametrize(
+    'token, allowed',
+    [
+        ('header.payload.signature', True),
+        (None, True),
+        ('', True),
+        ('static-api-token', False),
+        (MagicMock(), False),
+    ],
+    ids=['jwt', 'absent', 'empty', 'static', 'non-str'],
+)
+@pytest.mark.asyncio
+async def test_require_jwt_auth_passes_only_a_jwt_or_no_token(token, allowed):
+    @require_jwt_auth
+    async def jwt_only_tool(**kwargs):
+        return {'status': 'success'}
+
+    result = await jwt_only_tool(token=token)
+
+    assert (result['status'] == 'success') is allowed
 
 
 def _registered_tools():

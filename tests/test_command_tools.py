@@ -10,7 +10,7 @@ import pytest
 from mcp.server.mcpserver.exceptions import ToolError
 
 from server import mcp
-from tests.conftest import VALID_SERVER_ID, http_client_fixture
+from tests.conftest import VALID_SERVER_ID, http_client_fixture, tool_descriptions
 from tools.command_tools import (
     _FILE_PHASE_GENERIC_HINT,
     _FILE_PHASE_HINTS,
@@ -1289,9 +1289,8 @@ class TestSudoGuidanceInToolDescriptions:
         'tool_name', ['execute_command', 'execute_command_multi_server']
     )
     async def test_description_states_the_sudo_cost(self, tool_name):
-        descriptions = {t.name: t.description for t in await mcp.list_tools()}
+        descriptions = await tool_descriptions()
         text = descriptions[tool_name]
-        assert text is not None
         assert 'Do not prefix the command with sudo by default' in text
         assert 'human-in-the-loop' in text
         # The carve-out and the hard-denial path are the reason the rule is
@@ -1647,17 +1646,15 @@ class TestPurposeDemand:
 
     @pytest.mark.asyncio
     async def test_tool_descriptions_teach_the_demand(self):
-        descriptions = {t.name: t.description for t in await mcp.list_tools()}
+        descriptions = await tool_descriptions()
 
         exec_text = descriptions['execute_command']
-        assert exec_text is not None
         assert 'purpose_required' in exec_text
         assert 'state_command_purpose' in exec_text
         # What makes a purpose useful, not just that the field exists.
         assert 'local to this host' in exec_text
 
         answer_text = descriptions['state_command_purpose']
-        assert answer_text is not None
         assert 'one demand per command' in answer_text
         assert 'cannot lower' in answer_text
 
@@ -2680,6 +2677,7 @@ class TestExecuteFileRun:
                 workspace='testworkspace',
                 region='ap1',
             )
+            # Rebound each time: mypy keeps the narrowed literal across the await.
             supported = mock_submit.call_args.kwargs['purpose_demand_supported']
             assert supported is True
 
@@ -2782,7 +2780,7 @@ class TestExecuteFileWriteFile:
     ):
         calls: list[str] = []
 
-        def _post(**kw: Any) -> Any:
+        def _post(**kw: object) -> dict[str, str]:
             calls.append('upload')
             return _UPLOAD_ROW
 
@@ -3040,13 +3038,13 @@ class TestExecuteFileWriteFile:
     @pytest.mark.asyncio
     async def test_schema_publishes_write_file_off_by_default(self):
         tools = {t.name: t for t in await mcp.list_tools()}
+        descriptions = await tool_descriptions()
         schema = tools['execute_file'].input_schema
 
         assert schema['properties']['write_file']['default'] is False
         assert 'write_file' not in schema['required']
-        text = tools['execute_file'].description
-        command_text = tools['execute_command'].description
-        assert text is not None and command_text is not None
+        text = descriptions['execute_file']
+        command_text = descriptions['execute_command']
         assert 'write_file' in text
         assert 'overwrite' in text
         assert 'write_file' in command_text
@@ -3542,14 +3540,14 @@ class TestExecuteFileReadFromServer:
     @pytest.mark.asyncio
     async def test_schema_publishes_read_from_server_off_by_default(self):
         tools = {t.name: t for t in await mcp.list_tools()}
+        descriptions = await tool_descriptions()
         schema = tools['execute_file'].input_schema
 
         assert schema['properties']['read_from_server']['default'] is False
         assert 'read_from_server' not in schema['required']
         assert 'content' not in schema['required']
-        file_text = tools['execute_file'].description
-        command_text = tools['execute_command'].description
-        assert file_text is not None and command_text is not None
+        file_text = descriptions['execute_file']
+        command_text = descriptions['execute_command']
         assert 'read_from_server' in file_text
         assert 'read_from_server' in command_text
 
@@ -3878,9 +3876,8 @@ class TestExecuteFileRegistration:
 
     @pytest.mark.asyncio
     async def test_description_states_the_lane_semantics(self):
-        descriptions = {t.name: t.description for t in await mcp.list_tools()}
+        descriptions = await tool_descriptions()
         text = descriptions['execute_file']
-        assert text is not None
 
         # Only what a client depends on: the on-disk contract, the cross-
         # reference, the codes and the agent floor. Wording is free to move.
@@ -3904,9 +3901,8 @@ class TestExecuteFileRegistration:
 
     @pytest.mark.asyncio
     async def test_execute_command_points_scripts_at_execute_file(self):
-        descriptions = {t.name: t.description for t in await mcp.list_tools()}
+        descriptions = await tool_descriptions()
         text = descriptions['execute_command']
-        assert text is not None
 
         assert 'execute_file' in text
         assert 'heredoc' in text

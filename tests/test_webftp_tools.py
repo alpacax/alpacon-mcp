@@ -18,8 +18,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pybase64
 import pytest
 
-from server import MAX_REQUEST_BODY_SIZE, mcp
-from tests.conftest import VALID_SERVER_ID, http_client_fixture
+from server import MAX_REQUEST_BODY_SIZE
+from tests.conftest import VALID_SERVER_ID, http_client_fixture, tool_descriptions
 from tools.webftp_tools import (
     _MAX_UPLOAD_CONTENT_BYTES,
     _STATUS_ERROR,
@@ -983,18 +983,14 @@ class TestWebFtpBulkUpload:
         assert statuses.count('failed') == 1
 
     class _FakeGather:
-        """A gather replacement that closes incoming coroutines.
-
-        Closing them avoids 'coroutine was never awaited' warnings since the
-        test bypasses the real gather and never awaits the supplied tasks.
-        """
+        """Close each coroutine in place of asyncio.gather, so none warns unawaited."""
 
         def __init__(self, return_value):
             self.return_value = return_value
-            self.captured: dict[str, dict[str, object]] = {}
+            self.kwargs: dict[str, object] = {}
 
         async def __call__(self, *coros, **kwargs):
-            self.captured['kwargs'] = kwargs
+            self.kwargs = kwargs
             for coro in coros:
                 close = getattr(coro, 'close', None)
                 if callable(close):
@@ -1040,7 +1036,7 @@ class TestWebFtpBulkUpload:
                 workspace='ws',
             )
 
-        assert fake.captured['kwargs'].get('return_exceptions') is True
+        assert fake.kwargs.get('return_exceptions') is True
 
     @pytest.mark.asyncio
     async def test_bulk_upload_normalizes_exception_to_error_dict(
@@ -1564,10 +1560,9 @@ class TestRemoteModeUnsupported:
     async def test_local_file_tool_description_advertises_remote_mode_unsupported(
         self, tool_name
     ):
-        descriptions = {t.name: t.description for t in await mcp.list_tools()}
+        descriptions = await tool_descriptions()
 
         description = descriptions[tool_name]
-        assert description is not None
         assert 'remote_mode_unsupported' in description
         assert 'ALPACON_MCP_AUTH_ENABLED=true' in description
 

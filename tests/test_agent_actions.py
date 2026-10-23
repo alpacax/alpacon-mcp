@@ -6,7 +6,7 @@ from http import HTTPStatus
 import pytest
 
 from server import mcp
-from tests.conftest import HTTP_ERROR_ENVELOPE, http_client_fixture
+from tests.conftest import HTTP_ERROR_ENVELOPE, http_client_fixture, tool_descriptions
 from tools.server_tools import (
     install_pam,
     restart_agent,
@@ -164,10 +164,9 @@ class TestInstallPam:
     @pytest.mark.asyncio
     async def test_install_pam_description_names_every_refusal(self):
         """An agent explains a refusal from the description, so each code is in it."""
-        descriptions = {t.name: t.description for t in await mcp.list_tools()}
+        descriptions = await tool_descriptions()
 
         description = descriptions['install_pam']
-        assert description is not None
         for code in (
             'server_pam_install_requires_sudo_with_mfa',
             'server_pam_install_unsupported',
@@ -270,18 +269,16 @@ class TestDisruptiveActionForce:
     @pytest.mark.asyncio
     async def test_every_disruptive_description_carries_the_force_note(self):
         """The note lives in one constant; a client must still read it on both tools."""
-        descriptions = {t.name: t.description for t in await mcp.list_tools()}
+        descriptions = await tool_descriptions()
 
         for _, action in self.DISRUPTIVE:
             description = descriptions[action]
-            assert description is not None
             assert (
                 'pass force=True to run anyway, which tears that live work down.'
                 in description
             )
         update_description = descriptions['update_information']
         pam_description = descriptions['install_pam']
-        assert update_description is not None and pam_description is not None
         assert 'force=True' not in update_description
         assert 'force=True' not in pam_description
 
