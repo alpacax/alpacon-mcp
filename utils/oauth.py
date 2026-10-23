@@ -436,7 +436,7 @@ async def _read_bounded_body(request: Request) -> bytes | None:
     return b''.join(chunks)
 
 
-def _sign_state(payload: dict) -> str:
+def _sign_state(payload: dict[str, object]) -> str:
     """Serialise a state payload with an expiry and an HMAC signature."""
     body = {**payload, 'exp': int(time.time()) + _STATE_TTL_SECONDS}
     encoded = base64.urlsafe_b64encode(
@@ -448,7 +448,7 @@ def _sign_state(payload: dict) -> str:
     return f'{encoded}.{signature}'
 
 
-def _verify_state(state: str) -> dict | None:
+def _verify_state(state: str) -> dict[str, object] | None:
     """Return the state payload, or None when it is forged or expired.
 
     The signature covers the encoded payload rather than the raw JSON so it can
@@ -629,11 +629,17 @@ def _set_nonce_cookie(response: Response, nonce: str) -> None:
     )
 
 
-def _nonce_cookie_matches(request: Request, state_data: dict) -> bool:
+def _state_str(state_data: dict[str, object], key: str) -> str:
+    """A string field of a verified state; any other type reads as absent."""
+    value = state_data.get(key)
+    return value if isinstance(value, str) else ''
+
+
+def _nonce_cookie_matches(request: Request, state_data: dict[str, object]) -> bool:
     """Fail closed: a state with no binding, or a browser with no cookie, is a no."""
-    expected = state_data.get('nonce_hash')
+    expected = _state_str(state_data, 'nonce_hash')
     nonce = request.cookies.get(_NONCE_COOKIE_NAME, '')
-    if not isinstance(expected, str) or not expected or not nonce:
+    if not expected or not nonce:
         return False
     # Compare bytes: compare_digest raises TypeError on non-ASCII str input.
     return hmac.compare_digest(expected.encode(), _hash_nonce(nonce).encode())
@@ -1195,7 +1201,7 @@ def register_oauth_routes(mcp_server):
         original_scope = ''
         nonce_hash = ''
         device_id = ''
-        authorize_params: dict = {}
+        authorize_params: dict[str, object] = {}
         # An absent state is not rejected: Auth0 error callbacks can arrive
         # without one, and it names no redirect target a forgery could steer.
         if composite_state:
@@ -1220,16 +1226,18 @@ def register_oauth_routes(mcp_server):
                 return _oauth_error(
                     'invalid_request', 'Invalid or expired state parameter'
                 )
-            client_redirect_uri = state_data.get('redirect_uri', '')
-            original_state = state_data.get('state', '')
-            stage = state_data.get('stage', '')
-            original_scope = state_data.get('original_scope', '')
-            nonce_hash = state_data.get('nonce_hash', '')
-            authorize_params = state_data.get('authorize_params', {})
+            client_redirect_uri = _state_str(state_data, 'redirect_uri')
+            original_state = _state_str(state_data, 'state')
+            stage = _state_str(state_data, 'stage')
+            original_scope = _state_str(state_data, 'original_scope')
+            nonce_hash = _state_str(state_data, 'nonce_hash')
+            stored_params = state_data.get('authorize_params')
+            if isinstance(stored_params, dict):
+                authorize_params = stored_params
             # Every state this server mints carries an id; without one the
             # code could not be sealed and the exchange would refuse it anyway.
-            device_id = state_data.get('device_id', '')
-            if not isinstance(device_id, str) or not _is_device_id(device_id):
+            device_id = _state_str(state_data, 'device_id')
+            if not _is_device_id(device_id):
                 logger.warning('Callback rejected a state without a device id')
                 return _oauth_error(
                     'invalid_request', 'Invalid or expired state parameter'
@@ -1329,20 +1337,17 @@ def register_oauth_routes(mcp_server):
                     device_id=device_id,
                 ),
             }
-            # Replay PKCE and other client params preserved from Stage 1
-            # so the final code exchange succeeds with the client's verifier.
-            # Validate authorize_params is a dict with only expected keys
-            # to prevent forged state from injecting arbitrary params.
+            # Replay only the expected PKCE/client params from Stage 1, so a forged state
+            # cannot inject arbitrary ones into the final code exchange.
             _ALLOWED_REPLAY_KEYS = {
                 'code_challenge',
                 'code_challenge_method',
                 'nonce',
                 'resource',
             }
-            if isinstance(authorize_params, dict):
-                for key, value in authorize_params.items():
-                    if key in _ALLOWED_REPLAY_KEYS and isinstance(value, str):
-                        stage2_params[key] = value
+            for key, value in authorize_params.items():
+                if key in _ALLOWED_REPLAY_KEYS and isinstance(value, str):
+                    stage2_params[key] = value
 
             auth0_url = (
                 f'{config["auth0_base_url"]}/authorize?{urlencode(stage2_params)}'

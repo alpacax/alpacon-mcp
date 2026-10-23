@@ -3,7 +3,7 @@
 from typing import Any
 
 from utils.api_call import http_call_response
-from utils.common import build_list_params
+from utils.common import ToolResponse, build_list_params
 from utils.decorators import mcp_tool_handler
 from utils.error_handler import format_validation_error, validate_uuid_format
 from utils.http_client import http_client
@@ -36,7 +36,7 @@ async def list_event_subscriptions(
     page: int | None = None,
     page_size: int | None = None,
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """List event subscriptions.
 
     Args:
@@ -75,7 +75,7 @@ async def create_event_subscription(
     target_id: str | None = None,
     region: str = '',
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Create an event subscription.
 
     Args:
@@ -124,7 +124,7 @@ async def create_event_subscription(
 )
 async def delete_event_subscription(
     subscription_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Delete an event subscription.
 
     Args:
@@ -170,7 +170,7 @@ async def list_webhooks(
     page: int | None = None,
     page_size: int | None = None,
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """List webhooks.
 
     Args:
@@ -218,7 +218,7 @@ async def list_webhooks(
 )
 async def get_webhook(
     webhook_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Get a single webhook by ID.
 
     Args:
@@ -262,7 +262,7 @@ async def create_webhook(
     enabled: bool = True,
     region: str = '',
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Create a webhook.
 
     Args:
@@ -321,7 +321,7 @@ async def update_webhook(
     enabled: bool | None = None,
     region: str = '',
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Update an existing webhook.
 
     Args:
@@ -374,7 +374,7 @@ async def update_webhook(
 )
 async def delete_webhook(
     webhook_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Delete a webhook.
 
     Args:

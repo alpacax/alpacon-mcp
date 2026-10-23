@@ -14,6 +14,7 @@ from tools.cert_tools import (
 from tools.server_tools import list_servers
 from tools.webftp_tools import webftp_download_file, webftp_upload_file
 from utils.decorators import _PAGINATION_FIELDS, with_token_validation
+from utils.error_handler import validate_region_format
 
 SERVER_ID = '550e8400-e29b-41d4-a716-446655440000'
 SECOND_SERVER_ID = '660e8400-e29b-41d4-a716-446655440001'
@@ -1125,3 +1126,24 @@ class TestCatchAllRequirement:
 
         with pytest.raises(TypeError, match=r'declares no \*\*kwargs'):
             with_token_validation(_inner)
+
+
+# ---------------------------------------------------------------------------
+# Region format
+# ---------------------------------------------------------------------------
+
+
+class TestRegionFormat:
+    """validate_region_format takes any object, since it guards untyped input."""
+
+    @pytest.mark.parametrize('region', ['ap1', 'us1', 'dev'])
+    def test_known_region_is_accepted(self, region):
+        assert validate_region_format(region) is True
+
+    @pytest.mark.parametrize('region', ['', 'eu1', 'AP1', ' ap1'])
+    def test_unknown_region_string_is_rejected(self, region):
+        assert validate_region_format(region) is False
+
+    @pytest.mark.parametrize('region', [None, 0, 1, True, ['ap1'], b'ap1'])
+    def test_non_string_region_is_rejected(self, region):
+        assert validate_region_format(region) is False

@@ -1,9 +1,8 @@
 """Work Session management tools for Alpacon MCP server."""
 
-from typing import Any
-
 from utils.api_call import http_call_response
 from utils.common import (
+    ToolResponse,
     build_list_params,
     error_response,
     pending_approval_response,
@@ -78,7 +77,7 @@ async def work_session_create(
     region: str = '',
     target_account_username: str | None = None,
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Create a Work Session for auditable, approval-gated infrastructure access."""
     token = kwargs.get('token')
 
@@ -147,7 +146,7 @@ async def work_session_close(
     workspace: str,
     region: str = '',
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Complete a Work Session."""
     token = kwargs.get('token')
 
@@ -177,7 +176,7 @@ async def work_session_get(
     workspace: str,
     region: str = '',
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Get detailed information about a specific Work Session."""
     token = kwargs.get('token')
 
@@ -210,7 +209,7 @@ async def work_session_list(
     limit: int = 20,
     region: str = '',
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """List Work Sessions with optional status and requester_type filtering."""
     token = kwargs.get('token')
 
@@ -260,7 +259,7 @@ async def work_session_update(
     expires_at: str | None = None,
     region: str = '',
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Partially update a Work Session."""
     token = kwargs.get('token')
 
@@ -349,7 +348,7 @@ async def work_session_extend(
     reason: str,
     region: str = '',
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Extend a Work Session's expiry time."""
     token = kwargs.get('token')
 
@@ -422,7 +421,7 @@ async def work_session_timeline(
     page_size: int | None = None,
     include_records: bool | None = None,
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Get the timeline of a Work Session, following the server's cursor.
 
     Args:
@@ -506,7 +505,7 @@ async def work_session_records(
     cursor: str | None = None,
     page_size: int = _RECORD_DEFAULT_PAGE_SIZE,
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Read one page of one websh session's recording in a Work Session.
 
     Args:
@@ -568,7 +567,7 @@ async def work_session_analyze(
     force: bool = False,
     region: str = '',
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Manually trigger AI analysis for a terminal Work Session."""
     token = kwargs.get('token')
 

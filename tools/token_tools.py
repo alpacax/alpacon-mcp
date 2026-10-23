@@ -14,7 +14,12 @@ this restriction.
 from typing import Any
 
 from utils.api_call import http_call_response
-from utils.common import build_list_params, error_response
+from utils.common import (
+    ToolErrorResponse,
+    ToolResponse,
+    build_list_params,
+    error_response,
+)
 from utils.decorators import mcp_tool_handler, require_jwt_auth
 from utils.error_handler import format_validation_error, validate_server_id_format
 from utils.http_client import http_client
@@ -35,7 +40,7 @@ _JWT_REQUIRED_NOTE = (
 )
 
 
-def _validate_token_id(token_id: str) -> dict[str, Any] | None:
+def _validate_token_id(token_id: str) -> ToolErrorResponse | None:
     if not validate_server_id_format(token_id):
         return format_validation_error(
             'token_id',
@@ -65,7 +70,7 @@ async def list_api_tokens(
     search: str | None = None,
     ordering: str | None = None,
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """List API tokens.
 
     Args:
@@ -120,7 +125,7 @@ async def get_api_token(
     workspace: str,
     region: str = '',
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Get a single API token.
 
     Args:
@@ -168,7 +173,7 @@ async def create_api_token(
     presets: list[str] | None = None,
     region: str = '',
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Create a new API token.
 
     Args:
@@ -231,7 +236,7 @@ async def update_api_token(
     scopes: list[str] | None = None,
     region: str = '',
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Update an API token via PATCH.
 
     Only the fields you pass are sent; everything else is left untouched
@@ -305,7 +310,7 @@ async def delete_api_token(
     workspace: str,
     region: str = '',
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Delete an API token.
 
     Args:
@@ -354,7 +359,7 @@ async def duplicate_api_token(
     name: str | None = None,
     region: str = '',
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Duplicate an API token.
 
     Copies the source's configuration subject to current policy: scopes that can no
@@ -413,7 +418,7 @@ async def duplicate_api_token(
 @require_jwt_auth
 async def rotate_api_token(
     token_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Rotate an API token's secret in place.
 
     A token that had no expiry comes back with the workspace maximum expiry, and
@@ -453,7 +458,7 @@ async def list_api_token_scopes(
     workspace: str,
     region: str = '',
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """List available API token scopes.
 
     Args:
@@ -484,7 +489,7 @@ async def list_api_token_presets(
     workspace: str,
     region: str = '',
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """List available API token scope presets.
 
     Args:

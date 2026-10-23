@@ -3,7 +3,7 @@
 from typing import Any
 
 from utils.api_call import http_call_response
-from utils.common import build_list_params
+from utils.common import ToolResponse, build_list_params
 from utils.decorators import mcp_tool_handler
 from utils.error_handler import format_validation_error
 from utils.http_client import http_client
@@ -56,7 +56,7 @@ async def list_alerts(
     dismissed: bool | None = None,
     resolved: bool | None = None,
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """List alerts.
 
     Args:
@@ -111,7 +111,7 @@ async def list_alerts(
 )
 async def get_alert(
     alert_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Get alert details by ID.
 
     Args:
@@ -153,7 +153,7 @@ async def acknowledge_alert(
     action_type: str,
     region: str = '',
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Acknowledge an alert.
 
     Args:
@@ -223,7 +223,7 @@ async def create_alert_rule(
     notify_email: str | None = None,
     notify_slack_channel: bool | None = None,
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Create an alert rule.
 
     Args:
@@ -340,7 +340,7 @@ async def update_alert_rule(
     notify_email: str | None = None,
     notify_slack_channel: bool | None = None,
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Update an alert rule.
 
     Args:
@@ -454,7 +454,7 @@ async def attach_alert_rule(
     workspace: str,
     region: str = '',
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Attach an alert rule to a server.
 
     Args:
@@ -494,7 +494,7 @@ async def detach_alert_rule(
     workspace: str,
     region: str = '',
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Detach an alert rule from a server.
 
     Args:
@@ -528,7 +528,7 @@ async def detach_alert_rule(
 )
 async def delete_alert_rule(
     rule_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Delete an alert rule.
 
     Args:
@@ -575,7 +575,7 @@ async def delete_alert_rule(
 )
 async def get_alert_rule_recipients(
     rule_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Preview who an alert rule would notify, as counts only.
 
     Requires alpacon-server 2.36.0 or later—an older server has no
@@ -658,7 +658,7 @@ async def preview_alert_rule(
     notify_slack_channel: bool | None = None,
     region: str = '',
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Preview what an alert rule would have raised over a past window.
 
     The rule is judged by the same evaluator that runs saved rules, one tick
@@ -792,7 +792,7 @@ async def list_rule_overrides(
     page: int | None = None,
     page_size: int | None = None,
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """List rule overrides.
 
     Args:
@@ -840,7 +840,7 @@ async def list_rule_overrides(
 )
 async def get_rule_override(
     override_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Get a rule override by ID.
 
     Args:
@@ -891,7 +891,7 @@ async def create_rule_override(
     enabled: bool | None = None,
     region: str = '',
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Create a rule override.
 
     Args:
@@ -960,7 +960,7 @@ async def update_rule_override(
     enabled: bool | None = None,
     region: str = '',
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Update a rule override.
 
     Args:
@@ -1026,7 +1026,7 @@ async def update_rule_override(
 )
 async def delete_rule_override(
     override_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Delete a rule override.
 
     Args:

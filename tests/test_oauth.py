@@ -45,6 +45,7 @@ from utils.oauth import (
     _seal_code,
     _seal_refresh_token,
     _sign_state,
+    _state_str,
     _unseal_code,
     _unseal_refresh_token,
     _verify_state,
@@ -182,7 +183,7 @@ def _authorize_scope_parts(response):
     return query.get('scope', [''])[0].split()
 
 
-def _state_payload(state: str) -> dict:
+def _state_payload(state: str) -> dict[str, object]:
     """_verify_state on a state the test expects to verify."""
     payload = _verify_state(state)
     assert payload is not None
@@ -618,7 +619,25 @@ class TestStateEnvelope:
     def test_sign_adds_expiry(self):
         payload = _verify_state(_sign_state({'state': 'xyz'}))
         assert payload is not None
-        assert payload['exp'] <= int(time.time()) + _STATE_TTL_SECONDS
+        expires_at = payload['exp']
+        assert isinstance(expires_at, int)
+        assert expires_at <= int(time.time()) + _STATE_TTL_SECONDS
+
+    @pytest.mark.parametrize('value', [None, 0, True, ['x'], {'k': 'x'}])
+    def test_state_field_of_another_type_reads_as_absent(self, value):
+        payload = _state_payload(_sign_state({'redirect_uri': value}))
+
+        assert _state_str(payload, 'redirect_uri') == ''
+
+    def test_state_string_field_reads_as_its_value(self):
+        payload = _state_payload(_sign_state({'stage': 'mfa'}))
+
+        assert _state_str(payload, 'stage') == 'mfa'
+
+    def test_missing_state_field_reads_as_absent(self):
+        payload = _state_payload(_sign_state({'stage': 'mfa'}))
+
+        assert _state_str(payload, 'missing') == ''
 
     def test_tampered_payload_is_rejected(self):
         assert _verify_state(_forge_state_under_valid_signature()) is None
@@ -1031,7 +1050,9 @@ class TestOAuthAuthorize:
         device_id = state_data.get('device_id')
         assert isinstance(device_id, str)
         assert re.fullmatch(r'[A-Za-z0-9-]{8,64}', device_id)
-        assert f'device:{device_id}' in state_data.get('original_scope', '').split()
+        original_scope = state_data.get('original_scope')
+        assert isinstance(original_scope, str)
+        assert f'device:{device_id}' in original_scope.split()
 
     def test_authorize_mfa_scope_redirects_to_mfa_audience(self, oauth_app):
         """When 'mfa' pseudo-scope is present, redirects to Auth0 MFA audience."""
@@ -2362,7 +2383,8 @@ class TestMfaPkceReplay:
         assert 'code_challenge' not in stage1
 
         payload = _state_payload(stage1['state'][0])
-        stashed = payload.get('authorize_params', {})
+        stashed = payload.get('authorize_params')
+        assert isinstance(stashed, dict)
         assert stashed.get('code_challenge') == PKCE_PARAMS['code_challenge']
         assert (
             stashed.get('code_challenge_method') == PKCE_PARAMS['code_challenge_method']

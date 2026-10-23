@@ -3,7 +3,7 @@
 from typing import Any
 
 from utils.api_call import http_call_response
-from utils.common import build_list_params
+from utils.common import ToolResponse, build_list_params
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, READ_ONLY
@@ -25,7 +25,7 @@ async def list_system_package_entries(
     page: int | None = None,
     page_size: int | None = None,
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """List system package entries on a server.
 
     Args:
@@ -66,7 +66,7 @@ async def install_system_package(
     version: str | None = None,
     region: str = '',
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Install a system package on a server.
 
     Args:
@@ -108,7 +108,7 @@ async def install_system_package(
 )
 async def remove_system_package(
     entry_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Remove a system package entry.
 
     Args:
@@ -149,7 +149,7 @@ async def list_python_packages(
     page: int | None = None,
     page_size: int | None = None,
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """List Python packages on a server.
 
     Args:
@@ -190,7 +190,7 @@ async def install_python_package(
     version: str | None = None,
     region: str = '',
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Install a Python package on a server.
 
     Args:
@@ -232,7 +232,7 @@ async def install_python_package(
 )
 async def remove_python_package(
     entry_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Remove a Python package entry.
 
     Args:

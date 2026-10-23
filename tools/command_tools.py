@@ -13,6 +13,7 @@ from utils.common import (
     FILE_EXEC_REFUSAL_HINTS,
     INLINE_CREDENTIAL_HINT,
     JsonValue,
+    ToolResponse,
     build_list_params,
     empty_value_error,
     error_response,
@@ -562,7 +563,7 @@ async def list_commands(
     limit: int = 20,
     region: str = '',
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """List recent commands executed on servers."""
     token = kwargs.get('token')
 
@@ -625,7 +626,7 @@ async def execute_command(
     purpose: str | None = None,
     region: str = '',
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Execute a command on a server and wait for the result (requires ACL permission)."""
     if not command.strip():
         return empty_value_error('command')
@@ -1144,7 +1145,7 @@ async def execute_file(
     purpose: str | None = None,
     region: str = '',
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Run a file on the host as a verified execution and wait for the result (ADR 0053)."""
     token = kwargs.get('token')
     # Echo what was asked for, minus the content: the polled row already
@@ -1563,7 +1564,7 @@ async def state_command_purpose(
     timeout: int = 300,
     region: str = '',
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Answer a parked command's purpose demand and wait for the re-judgment."""
     token = kwargs.get('token')
 
@@ -1637,7 +1638,7 @@ async def execute_command_multi_server(
     work_session_id: str | None = None,
     purpose: str | None = None,
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Execute a command on multiple servers using Command API (requires ACL permission)."""
     token = kwargs.get('token')
 

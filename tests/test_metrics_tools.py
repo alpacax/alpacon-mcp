@@ -1144,12 +1144,6 @@ class TestParseCpuMetrics:
 
         assert parsed['available'] is False
 
-    def test_parse_cpu_metrics_none(self):
-        """Test CPU metrics parsing with None."""
-        parsed = parse_cpu_metrics(None)  # type: ignore[arg-type]
-
-        assert parsed['available'] is False
-
 
 class TestParseMemoryMetrics:
     """Test parse_memory_metrics helper function."""

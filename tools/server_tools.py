@@ -3,7 +3,7 @@
 from typing import Any
 
 from utils.api_call import http_call_response
-from utils.common import build_list_params
+from utils.common import ToolErrorResponse, ToolResponse, build_list_params
 from utils.decorators import mcp_tool_handler
 from utils.error_handler import format_validation_error, validate_server_id_format
 from utils.http_client import http_client
@@ -43,7 +43,7 @@ async def list_servers(
     page: int | None = None,
     page_size: int | None = None,
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Get list of servers.
 
     Args:
@@ -85,7 +85,7 @@ async def list_servers(
 )
 async def get_server(
     server_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Get detailed information about a specific server.
 
     Args:
@@ -133,7 +133,7 @@ async def get_server(
 )
 async def get_collection_profile(
     server_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Get a server's collection profile.
 
     Args:
@@ -174,7 +174,7 @@ async def get_collection_profile(
 )
 async def list_server_notes(
     server_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Get list of notes for a specific server.
 
     Args:
@@ -218,7 +218,7 @@ async def create_server_note(
     mentioned_users: list[str] | None = None,
     region: str = '',
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Create a new note for a specific server.
 
     Args:
@@ -271,7 +271,7 @@ async def create_server_note(
 )
 async def get_server_note(
     note_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Get a single server note by ID.
 
     Args:
@@ -312,7 +312,7 @@ async def update_server_note(
     pinned: bool | None = None,
     region: str = '',
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Update an existing server note.
 
     Args:
@@ -372,7 +372,7 @@ async def update_server_note(
 )
 async def delete_server_note(
     note_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Delete a server note.
 
     Args:
@@ -430,7 +430,7 @@ async def _server_action(
 )
 async def restart_agent(
     server_id: str, workspace: str, region: str = '', force: bool = False, **kwargs
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Restart the Alpacon agent on a server.
 
     Args:
@@ -469,7 +469,7 @@ async def restart_agent(
 )
 async def upgrade_agent(
     server_id: str, workspace: str, region: str = '', force: bool = False, **kwargs
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Upgrade the Alpacon agent on a server to the latest version.
 
     Args:
@@ -515,7 +515,7 @@ async def upgrade_agent(
 )
 async def install_pam(
     server_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Install alpamon-pam on a server.
 
     Args:
@@ -549,7 +549,7 @@ async def install_pam(
 )
 async def update_information(
     server_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Trigger system information update on a server.
 
     Args:
@@ -596,7 +596,7 @@ async def update_server(
     region: str = '',
     offline_alert_enabled: bool | None = None,
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Update an existing server record.
 
     Args:
@@ -665,7 +665,7 @@ async def unregister_server(
     auto: bool = False,
     purge_provisioned_accounts: bool = False,
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Unregister a server from the workspace.
 
     Args:
@@ -708,7 +708,7 @@ async def unregister_server(
 )
 async def star_server(
     server_id: str, status: bool, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Set star status on a server.
 
     Args:
@@ -751,7 +751,7 @@ async def list_registration_tokens(
     page: int | None = None,
     page_size: int | None = None,
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """List server registration tokens.
 
     Args:
@@ -797,7 +797,7 @@ async def create_registration_token(
     description: str | None = None,
     region: str = '',
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Create a server registration token.
 
     Args:
@@ -838,7 +838,7 @@ async def create_registration_token(
 )
 async def delete_registration_token(
     token_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Delete a server registration token.
 
     Args:
@@ -887,7 +887,7 @@ async def get_registration_guide(
     server_name: str | None = None,
     region: str = '',
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Get agent installation guide for a platform and registration token.
 
     Args:
@@ -925,7 +925,7 @@ async def get_registration_guide(
     )
 
 
-def _validate_platform(platform: str) -> dict[str, Any] | None:
+def _validate_platform(platform: str) -> ToolErrorResponse | None:
     if platform not in VALID_PLATFORMS:
         return format_validation_error(
             'platform',
@@ -935,7 +935,7 @@ def _validate_platform(platform: str) -> dict[str, Any] | None:
     return None
 
 
-def _validate_token_id(token_id: str) -> dict[str, Any] | None:
+def _validate_token_id(token_id: str) -> ToolErrorResponse | None:
     if not validate_server_id_format(token_id):
         return format_validation_error(
             'token_id',

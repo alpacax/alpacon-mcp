@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from utils.api_call import http_call_response
 from utils.auth import get_token_workspaces_with_dropped
 from utils.common import (
+    ToolResponse,
     error_response,
     is_auth_enabled,
     success_response,
@@ -198,7 +199,7 @@ def _saas_only_security_404(
     },
     requires_workspace=False,
 )
-async def list_workspaces(region: str = '', **kwargs) -> dict[str, Any]:
+async def list_workspaces(region: str = '', **kwargs) -> ToolResponse:
     """Get list of available workspaces.
 
     In local (stdio/SSE) mode, reads from token.json. If region is not specified,
@@ -272,9 +273,7 @@ async def list_workspaces(region: str = '', **kwargs) -> dict[str, Any]:
         'anthropic/searchHint': 'whoami current user identity me authenticated principal',
     },
 )
-async def get_current_user(
-    workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+async def get_current_user(workspace: str, region: str = '', **kwargs) -> ToolResponse:
     """Get the currently authenticated user.
 
     Args:
@@ -315,7 +314,7 @@ async def get_current_user(
 )
 async def get_workspace_access_control(
     workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Get the workspace access control settings.
 
     Args:
@@ -357,7 +356,7 @@ async def get_workspace_access_control(
 @require_jwt_auth
 async def get_workspace_security(
     workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Get the workspace authentication/security settings.
 
     Requires JWT (OAuth/SSO) authentication: the upstream SecuritySettingsViewSet
@@ -414,7 +413,7 @@ async def get_workspace_security(
 @require_jwt_auth
 async def list_workspace_mfa_methods(
     workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+) -> ToolResponse:
     """List MFA methods allowed for the workspace.
 
     Requires JWT (OAuth/SSO) authentication: the upstream mfa-methods action has
@@ -472,7 +471,7 @@ async def list_workspace_mfa_methods(
 )
 async def get_workspace_preferences(
     workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Get the workspace-wide preferences.
 
     Args:
@@ -550,7 +549,7 @@ async def update_workspace_preferences(
     agent_rollout_policy: dict[str, Any] | None = None,
     region: str = '',
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Update the workspace-wide preferences (partial update).
 
     Args:
