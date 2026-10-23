@@ -12,7 +12,7 @@ who approves out-of-band (Alpacon web console or Slack).
 from typing import Any
 
 from utils.api_call import http_call_response
-from utils.common import build_list_params, pending_approval_response
+from utils.common import ToolResponse, build_list_params, pending_approval_response
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, READ_ONLY
@@ -34,7 +34,7 @@ async def list_approval_requests(
     page: int | None = None,
     page_size: int | None = None,
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """List approval requests.
 
     Args:
@@ -69,7 +69,7 @@ async def list_approval_requests(
 )
 async def get_approval_request(
     request_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Get approval request details by ID.
 
     Args:
@@ -117,7 +117,7 @@ async def explain_approval_decision(
     request_id: str | None = None,
     region: str = '',
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Explain that approving/rejecting a request is a human-only, out-of-band action.
 
     This tool performs no mutation and contacts no server endpoint—an agent must
@@ -164,7 +164,7 @@ async def list_sudo_policies(
     user: str | None = None,
     server_id: str | None = None,
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """List sudo policies.
 
     Args:
@@ -224,7 +224,7 @@ async def request_sudo_policy(
     valid_until: str | None = None,
     region: str = '',
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Request a sudo policy that an admin must approve.
 
     Args:

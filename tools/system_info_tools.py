@@ -1,10 +1,10 @@
 """System information tools for Alpacon MCP server."""
 
 import asyncio
-from typing import Any
 
 from utils.api_call import http_call_response
 from utils.common import (
+    ToolResponse,
     build_list_params,
     error_response,
     success_response,
@@ -22,7 +22,7 @@ from utils.tool_annotations import READ_ONLY
 )
 async def get_system_info(
     server_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Get detailed system information for a server.
 
     Args:
@@ -55,7 +55,7 @@ async def get_system_info(
 )
 async def get_os_version(
     server_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Get operating system version information for a server.
 
     Args:
@@ -93,7 +93,7 @@ async def list_system_users(
     login_enabled_only: bool = False,
     region: str = '',
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """List system users on a server.
 
     Args:
@@ -154,7 +154,7 @@ async def list_system_groups(
     groupname_filter: str | None = None,
     region: str = '',
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """List system groups on a server.
 
     Args:
@@ -211,7 +211,7 @@ async def list_system_packages(
     limit: int = 100,
     region: str = '',
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """List installed system packages on a server.
 
     Args:
@@ -271,7 +271,7 @@ async def list_system_packages(
 )
 async def get_network_interfaces(
     server_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Get network interfaces information for a server.
 
     Args:
@@ -304,7 +304,7 @@ async def get_network_interfaces(
 )
 async def get_disk_info(
     server_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Get disk and partition information for a server.
 
     Args:
@@ -388,7 +388,7 @@ async def get_disk_info(
 )
 async def get_system_time(
     server_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Get system time and uptime information for a server.
 
     Args:
@@ -424,7 +424,7 @@ async def get_system_time(
 )
 async def get_server_overview(
     server_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Get comprehensive overview of server system information.
 
     Args:

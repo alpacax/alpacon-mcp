@@ -20,6 +20,10 @@ JsonValue = dict[str, Any] | list[Any] | str | int | float | bool | None
 ToolErrorResponse = dict[str, Any]
 type ToolResult[R] = R | ToolErrorResponse
 
+# What a tool returns; a TypedDict once mypy supports PEP 728 extra_items, since
+# every helper below merges caller-chosen keys into it.
+ToolResponse = dict[str, Any]
+
 # Initialize shared instances
 token_manager = get_token_manager()
 logger = get_logger('common')
@@ -454,7 +458,7 @@ def resolve_time_window(
     return start, end_date
 
 
-def error_response(message: str, **kwargs) -> ToolErrorResponse:
+def error_response(message: str, **kwargs: Any) -> ToolErrorResponse:
     """Create standardized error response.
 
     Args:
@@ -469,7 +473,7 @@ def error_response(message: str, **kwargs) -> ToolErrorResponse:
     return response
 
 
-def empty_value_error(field: str) -> dict[str, Any]:
+def empty_value_error(field: str) -> ToolErrorResponse:
     """Reject an argument that was supplied but carries no value.
 
     Args:
@@ -481,7 +485,7 @@ def empty_value_error(field: str) -> dict[str, Any]:
     return error_response(f'{field} must not be empty')
 
 
-def success_response(data: Any = None, **kwargs) -> dict[str, Any]:
+def success_response(data: Any = None, **kwargs: Any) -> ToolResponse:
     """Create standardized success response.
 
     Args:
@@ -503,7 +507,7 @@ def pending_approval_response(
     *,
     category: str,
     **kwargs: Any,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Create a structured "pending human approval" result (ADR 0015).
 
     AI agents reaching Alpacon through MCP are a request/execution surface and
@@ -562,7 +566,7 @@ def validate_token(region: str, workspace: str) -> str | None:
     return token
 
 
-def token_error_response(region: str, workspace: str) -> dict[str, Any]:
+def token_error_response(region: str, workspace: str) -> ToolErrorResponse:
     """Create standardized token error response.
 
     Args:

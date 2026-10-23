@@ -4,7 +4,7 @@ import re
 from typing import Any
 
 from utils.api_call import http_call_response
-from utils.common import build_list_params, error_response
+from utils.common import ToolResponse, build_list_params, error_response
 from utils.decorators import mcp_tool_handler
 from utils.error_handler import format_validation_error, validate_server_id_format
 from utils.http_client import http_client
@@ -41,7 +41,7 @@ async def list_iam_users(
     page: int | None = None,
     page_size: int | None = None,
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """List all IAM users in workspace.
 
     Args:
@@ -75,7 +75,7 @@ async def list_iam_users(
 )
 async def get_iam_user(
     user_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Get detailed information about a specific IAM user.
 
     Group memberships are not included in the user payload (the user
@@ -121,7 +121,7 @@ async def create_iam_user(
     is_active: bool = True,
     region: str = '',
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Create a new IAM user.
 
     Group assignment is handled separately via add_iam_member
@@ -174,7 +174,7 @@ async def update_iam_user(
     is_active: bool | None = None,
     region: str = '',
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Update an existing IAM user.
 
     Group membership changes are handled separately via
@@ -230,7 +230,7 @@ async def update_iam_user(
 )
 async def delete_iam_user(
     user_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Delete an IAM user.
 
     Args:
@@ -274,7 +274,7 @@ async def list_iam_groups(
     page: int | None = None,
     page_size: int | None = None,
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """List all IAM groups in workspace.
 
     Args:
@@ -313,7 +313,7 @@ async def create_iam_group(
     description: str | None = None,
     region: str = '',
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Create a new IAM group.
 
     Args:
@@ -377,7 +377,7 @@ async def get_iam_group(
     workspace: str,
     region: str = '',
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Get IAM group details.
 
     Args:
@@ -416,7 +416,7 @@ async def update_iam_group(
     description: str | None = None,
     region: str = '',
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Update an existing IAM group.
 
     The group name is read-only on the server (GroupUpdateSerializer);
@@ -469,7 +469,7 @@ async def delete_iam_group(
     workspace: str,
     region: str = '',
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Delete an IAM group.
 
     Args:
@@ -513,7 +513,7 @@ async def list_iam_memberships(
     page: int | None = None,
     page_size: int | None = None,
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """List IAM group memberships.
 
     Args:
@@ -558,7 +558,7 @@ async def add_iam_member(
     role: str = 'member',
     region: str = '',
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Add a user to an IAM group.
 
     Args:
@@ -603,7 +603,7 @@ async def remove_iam_member(
     workspace: str,
     region: str = '',
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Remove a user from an IAM group.
 
     Args:
@@ -645,7 +645,7 @@ async def invite_workspace_user(
     workspace: str,
     region: str = '',
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Invite a user to the workspace by email.
 
     Sends an Auth0 organization invitation and records a pending
@@ -688,7 +688,7 @@ async def list_iam_applications(
     page: int | None = None,
     page_size: int | None = None,
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """List all IAM applications in the workspace.
 
     Args:
@@ -727,7 +727,7 @@ async def create_iam_application(
     service_type: str | None = None,
     region: str = '',
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Create a new IAM application.
 
     Args:
@@ -778,7 +778,7 @@ async def get_iam_application(
     workspace: str,
     region: str = '',
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Get IAM application details.
 
     Args:
@@ -817,7 +817,7 @@ async def update_iam_application(
     description: str | None = None,
     region: str = '',
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Update an existing IAM application.
 
     Args:
@@ -867,7 +867,7 @@ async def delete_iam_application(
     workspace: str,
     region: str = '',
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Delete an IAM application.
 
     Args:
@@ -907,7 +907,7 @@ async def assign_application_system_users(
     workspace: str,
     region: str = '',
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Assign system users to an IAM application.
 
     Args:
@@ -959,7 +959,7 @@ async def unassign_application_system_users(
     workspace: str,
     region: str = '',
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Unassign system users from an IAM application.
 
     Args:

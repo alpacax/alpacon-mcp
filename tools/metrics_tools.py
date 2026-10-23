@@ -7,6 +7,7 @@ from typing import Any
 
 from utils.api_call import http_call_response
 from utils.common import (
+    ToolResponse,
     build_list_params,
     error_response,
     expect_json_object,
@@ -144,7 +145,7 @@ async def get_cpu_usage(
     end_date: str | None = None,
     region: str = '',
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Get CPU usage metrics for a server with parsed statistics.
 
     Args:
@@ -267,7 +268,7 @@ async def get_memory_usage(
     end_date: str | None = None,
     region: str = '',
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Get memory usage metrics for a server with parsed statistics.
 
     Args:
@@ -383,7 +384,7 @@ async def get_disk_usage(
     end_date: str | None = None,
     region: str = '',
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Get disk usage metrics for a server with parsed statistics.
 
     Note: This endpoint requires either 'device' or 'partition' parameter.
@@ -600,7 +601,7 @@ async def get_disk_io(
     end_date: str | None = None,
     region: str = '',
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Get disk I/O performance metrics for a server.
 
     Returns disk read/write throughput metrics with peak and average values.
@@ -669,7 +670,7 @@ async def get_network_traffic(
     end_date: str | None = None,
     region: str = '',
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Get network traffic metrics for a server with parsed statistics.
 
     Args:
@@ -733,7 +734,7 @@ async def get_network_traffic(
 )
 async def get_top_servers(
     workspace: str, metric_types: str = '', region: str = '', **kwargs
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Get top 5 servers by specified metric types in the last 24 hours.
 
     Supports querying multiple metrics simultaneously for efficiency.
@@ -850,7 +851,7 @@ async def get_top_servers(
 )
 async def get_alert_rules(
     workspace: str, server_id: str | None = None, region: str = '', **kwargs
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Get alert rules for servers.
 
     Args:
@@ -964,7 +965,7 @@ async def _list_all_interfaces(
 )
 async def get_server_metrics_summary(
     server_id: str, workspace: str, hours: int = 12, region: str = '', **kwargs
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Get comprehensive metrics summary for a server.
 
     Args:
@@ -1185,7 +1186,7 @@ async def list_latest_metrics(
     page: int | None = None,
     page_size: int | None = None,
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Get the latest metric reading for every server in a workspace, a page at a time.
 
     Requires alpacon-server 2.37.0 or later. It is the servers list with five

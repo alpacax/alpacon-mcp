@@ -14,6 +14,7 @@ import pybase64
 from server import TRANSPORT_STDIO
 from utils.api_call import http_call_response
 from utils.common import (
+    ToolResponse,
     build_list_params,
     empty_value_error,
     error_response,
@@ -262,7 +263,7 @@ async def webftp_session_create(
     work_session_id: str | None = None,
     region: str = '',
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Create a new WebFTP session."""
     token = kwargs.get('token')
 
@@ -305,7 +306,7 @@ async def webftp_session_create(
 )
 async def webftp_sessions_list(
     workspace: str, server_id: str | None = None, region: str = '', **kwargs
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Get list of WebFTP sessions."""
     token = kwargs.get('token')
 
@@ -338,7 +339,7 @@ async def webftp_upload_file(
     region: str = '',
     allow_overwrite: bool = True,
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Upload a local file to a server via S3 presigned URL."""
     token = kwargs.get('token')
 
@@ -456,7 +457,7 @@ async def webftp_upload_content(
     region: str = '',
     allow_overwrite: bool = True,
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Upload base64-encoded file content to a server via WebFTP.
 
     On streamable-http/SSE, file_content is limited to 3 MiB decoded (base64
@@ -591,7 +592,7 @@ async def webftp_download_file(
     work_session_id: str | None = None,
     region: str = '',
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Download a file or folder from a server via S3 presigned URL."""
     token = kwargs.get('token')
     if not isinstance(token, str) or not token:
@@ -695,7 +696,7 @@ async def webftp_download_file(
 )
 async def webftp_uploads_list(
     workspace: str, server_id: str | None = None, region: str = '', **kwargs
-) -> dict[str, Any]:
+) -> ToolResponse:
     """List uploaded files (upload history)."""
     token = kwargs.get('token')
 
@@ -720,7 +721,7 @@ async def webftp_uploads_list(
 )
 async def webftp_downloads_list(
     workspace: str, server_id: str | None = None, region: str = '', **kwargs
-) -> dict[str, Any]:
+) -> ToolResponse:
     """List download requests (download history)."""
     token = kwargs.get('token')
 
@@ -753,7 +754,7 @@ async def webftp_bulk_upload(
     region: str = '',
     allow_overwrite: bool = True,
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Upload multiple files to a server using bulk WebFTP API."""
     token = kwargs.get('token')
 
@@ -907,7 +908,7 @@ async def webftp_bulk_download(
     work_session_id: str | None = None,
     region: str = '',
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Download multiple files/folders as a ZIP archive."""
     token = kwargs.get('token')
 
@@ -1005,7 +1006,7 @@ async def webftp_check_status(
     workspace: str,
     region: str = '',
     **kwargs,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Check status of a WebFTP file transfer."""
     token = kwargs.get('token')
 
