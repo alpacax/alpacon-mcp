@@ -19,6 +19,7 @@ from utils.auth import (
     match_workspace,
 )
 from utils.common import (
+    ToolErrorResponse,
     ToolResult,
     error_response,
     is_auth_enabled,
@@ -342,7 +343,7 @@ async def _check_mfa_requirement(
         logger.debug('MFA pre-check failed (non-fatal): %s', e)
 
 
-def _validate_path_identifier(field: str, value: Any) -> dict[str, Any] | None:
+def _validate_path_identifier(field: str, value: Any) -> ToolErrorResponse | None:
     """Returns an error response, or None if valid."""
     # A non-str never matches the pattern, but the f-string that builds the
     # endpoint stringifies it anyway, so its separators reach the path.
@@ -363,7 +364,7 @@ def _validate_path_identifier(field: str, value: Any) -> dict[str, Any] | None:
     return None
 
 
-def _validate_page_size(field: str, value: Any) -> dict[str, Any] | None:
+def _validate_page_size(field: str, value: Any) -> ToolErrorResponse | None:
     """Returns an error response, or None if valid."""
     # bool is an int subclass, so True would otherwise pass as a page size of 1.
     if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
@@ -375,7 +376,7 @@ def _validate_page_size(field: str, value: Any) -> dict[str, Any] | None:
     return None
 
 
-def _validate_uuid_list(field: str, value: Any) -> dict[str, Any] | None:
+def _validate_uuid_list(field: str, value: Any) -> ToolErrorResponse | None:
     """Returns an error response, or None if valid."""
     if not isinstance(value, list):
         return format_validation_error(

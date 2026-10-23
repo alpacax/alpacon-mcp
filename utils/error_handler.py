@@ -61,7 +61,7 @@ def validate_region_format(region: object) -> TypeGuard[Region]:
         region: Region to validate
 
     Returns:
-        True if valid, False otherwise; True narrows ``region`` to ``Region``
+        True if valid, False otherwise
     """
     if not region or not isinstance(region, str):
         return False

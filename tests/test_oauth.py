@@ -623,12 +623,20 @@ class TestStateEnvelope:
         assert isinstance(expires_at, int)
         assert expires_at <= int(time.time()) + _STATE_TTL_SECONDS
 
-    def test_state_field_of_another_type_reads_as_absent(self):
-        payload = _verify_state(_sign_state({'redirect_uri': ['x'], 'stage': 'mfa'}))
-        assert payload is not None
+    @pytest.mark.parametrize('value', [None, 0, True, ['x'], {'k': 'x'}])
+    def test_state_field_of_another_type_reads_as_absent(self, value):
+        payload = _state_payload(_sign_state({'redirect_uri': value}))
 
         assert _state_str(payload, 'redirect_uri') == ''
+
+    def test_state_string_field_reads_as_its_value(self):
+        payload = _state_payload(_sign_state({'stage': 'mfa'}))
+
         assert _state_str(payload, 'stage') == 'mfa'
+
+    def test_missing_state_field_reads_as_absent(self):
+        payload = _state_payload(_sign_state({'stage': 'mfa'}))
+
         assert _state_str(payload, 'missing') == ''
 
     def test_tampered_payload_is_rejected(self):

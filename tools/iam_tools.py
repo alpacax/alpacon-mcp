@@ -4,7 +4,12 @@ import re
 from typing import Any
 
 from utils.api_call import http_call_response
-from utils.common import ToolResponse, build_list_params, error_response
+from utils.common import (
+    ToolErrorResponse,
+    ToolResponse,
+    build_list_params,
+    error_response,
+)
 from utils.decorators import mcp_tool_handler
 from utils.error_handler import format_validation_error, validate_server_id_format
 from utils.http_client import http_client
@@ -15,7 +20,7 @@ VALID_SERVICE_TYPES = frozenset({'ci_cd', 'monitoring', 'automation', 'integrati
 GROUP_NAME_PATTERN = re.compile(r'^[a-z0-9_-]+$')
 
 
-def _validate_uuid(field: str, value: str) -> dict[str, Any] | None:
+def _validate_uuid(field: str, value: str) -> ToolErrorResponse | None:
     if not validate_server_id_format(value):
         return format_validation_error(
             field,

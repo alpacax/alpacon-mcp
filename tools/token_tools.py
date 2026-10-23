@@ -14,7 +14,12 @@ this restriction.
 from typing import Any
 
 from utils.api_call import http_call_response
-from utils.common import ToolResponse, build_list_params, error_response
+from utils.common import (
+    ToolErrorResponse,
+    ToolResponse,
+    build_list_params,
+    error_response,
+)
 from utils.decorators import mcp_tool_handler, require_jwt_auth
 from utils.error_handler import format_validation_error, validate_server_id_format
 from utils.http_client import http_client
@@ -35,7 +40,7 @@ _JWT_REQUIRED_NOTE = (
 )
 
 
-def _validate_token_id(token_id: str) -> dict[str, Any] | None:
+def _validate_token_id(token_id: str) -> ToolErrorResponse | None:
     if not validate_server_id_format(token_id):
         return format_validation_error(
             'token_id',

@@ -21,7 +21,7 @@ ToolErrorResponse = dict[str, Any]
 type ToolResult[R] = R | ToolErrorResponse
 
 # What a tool returns; a TypedDict once mypy supports PEP 728 extra_items, since
-# every helper below merges caller-chosen keys into it.
+# the response helpers merge caller-chosen **kwargs into it.
 ToolResponse = dict[str, Any]
 
 # Initialize shared instances
@@ -583,7 +583,7 @@ def token_error_response(region: str, workspace: str) -> ToolErrorResponse:
     )
 
 
-def work_session_gate_response(code: str, **kwargs: Any) -> dict[str, Any]:
+def work_session_gate_response(code: str, **kwargs: Any) -> ToolResponse:
     """Translate a server WorkSession gate error code into an agent-actionable result.
 
     ``work_session_not_active`` becomes a pending-approval result (a human must
@@ -698,7 +698,7 @@ def plan_limit_response(
     axis: str,
     next_value: str | None,
     **kwargs: Any,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Build the agent-facing result for a plan-limit 402 (see _plan_limit_axis).
 
     Unlike a feature lock, which needs no more than the generic
@@ -754,7 +754,7 @@ def unwrap_http_result(
     *,
     default_message: str,
     **id_context: Any,
-) -> dict[str, Any] | None:
+) -> ToolErrorResponse | None:
     """Convert an http_client error-dict into an error_response.
 
     Returns the error_response dict if `result` is the error envelope produced

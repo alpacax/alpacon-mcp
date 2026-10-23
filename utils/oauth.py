@@ -637,9 +637,9 @@ def _state_str(state_data: dict[str, object], key: str) -> str:
 
 def _nonce_cookie_matches(request: Request, state_data: dict[str, object]) -> bool:
     """Fail closed: a state with no binding, or a browser with no cookie, is a no."""
-    expected = state_data.get('nonce_hash')
+    expected = _state_str(state_data, 'nonce_hash')
     nonce = request.cookies.get(_NONCE_COOKIE_NAME, '')
-    if not isinstance(expected, str) or not expected or not nonce:
+    if not expected or not nonce:
         return False
     # Compare bytes: compare_digest raises TypeError on non-ASCII str input.
     return hmac.compare_digest(expected.encode(), _hash_nonce(nonce).encode())
@@ -1201,7 +1201,7 @@ def register_oauth_routes(mcp_server):
         original_scope = ''
         nonce_hash = ''
         device_id = ''
-        authorize_params: dict = {}
+        authorize_params: dict[str, object] = {}
         # An absent state is not rejected: Auth0 error callbacks can arrive
         # without one, and it names no redirect target a forgery could steer.
         if composite_state:
@@ -1337,20 +1337,17 @@ def register_oauth_routes(mcp_server):
                     device_id=device_id,
                 ),
             }
-            # Replay PKCE and other client params preserved from Stage 1
-            # so the final code exchange succeeds with the client's verifier.
-            # Validate authorize_params is a dict with only expected keys
-            # to prevent forged state from injecting arbitrary params.
+            # Replay only the expected PKCE/client params from Stage 1, so a forged state
+            # cannot inject arbitrary ones into the final code exchange.
             _ALLOWED_REPLAY_KEYS = {
                 'code_challenge',
                 'code_challenge_method',
                 'nonce',
                 'resource',
             }
-            if isinstance(authorize_params, dict):
-                for key, value in authorize_params.items():
-                    if key in _ALLOWED_REPLAY_KEYS and isinstance(value, str):
-                        stage2_params[key] = value
+            for key, value in authorize_params.items():
+                if key in _ALLOWED_REPLAY_KEYS and isinstance(value, str):
+                    stage2_params[key] = value
 
             auth0_url = (
                 f'{config["auth0_base_url"]}/authorize?{urlencode(stage2_params)}'

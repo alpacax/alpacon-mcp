@@ -3,7 +3,7 @@
 from typing import Any
 
 from utils.api_call import http_call_response
-from utils.common import ToolResponse, build_list_params
+from utils.common import ToolErrorResponse, ToolResponse, build_list_params
 from utils.decorators import mcp_tool_handler
 from utils.error_handler import format_validation_error, validate_server_id_format
 from utils.http_client import http_client
@@ -925,7 +925,7 @@ async def get_registration_guide(
     )
 
 
-def _validate_platform(platform: str) -> dict[str, Any] | None:
+def _validate_platform(platform: str) -> ToolErrorResponse | None:
     if platform not in VALID_PLATFORMS:
         return format_validation_error(
             'platform',
@@ -935,7 +935,7 @@ def _validate_platform(platform: str) -> dict[str, Any] | None:
     return None
 
 
-def _validate_token_id(token_id: str) -> dict[str, Any] | None:
+def _validate_token_id(token_id: str) -> ToolErrorResponse | None:
     if not validate_server_id_format(token_id):
         return format_validation_error(
             'token_id',
