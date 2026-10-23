@@ -26,8 +26,8 @@ import httpx
 from starlette.requests import Request
 from starlette.responses import JSONResponse, RedirectResponse, Response
 
-from utils.common import RouteHandler, RouteRegistry
 from utils.logger import escape_for_log, get_logger
+from utils.routes import RouteHandler, RouteRegistry
 
 logger = get_logger('oauth')
 

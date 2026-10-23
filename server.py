@@ -13,11 +13,12 @@ from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-from utils.common import MCP_VERSION, RouteRegistry, is_auth_enabled
+from utils.common import MCP_VERSION, is_auth_enabled
 from utils.declared_agent import capture_declared_agent, use_environment_fallback
 from utils.health import get_health_info
 from utils.http_client import http_client
 from utils.logger import get_logger, stop_log_listener
+from utils.routes import RouteRegistry
 
 logger = get_logger('server')
 

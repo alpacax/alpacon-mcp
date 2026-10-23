@@ -33,8 +33,8 @@ import server  # noqa: E402
 from utils import request_signal  # noqa: E402
 from utils.auth import Auth0TokenVerifier  # noqa: E402
 from utils.auth_error_middleware import UpstreamAuthErrorMiddleware  # noqa: E402
-from utils.common import RouteRegistry  # noqa: E402
 from utils.error_handler import UpstreamAuthError  # noqa: E402
+from utils.routes import RouteRegistry  # noqa: E402
 
 TOKEN_PREFIX = 'test-jwt'  # noqa: S105
 SIGNALLING_TOOL = 'raise_upstream_401'
