@@ -3973,25 +3973,27 @@ class TestUseFileExecutionRefusal:
         assert result['status'] == 'error'
         assert result['error_code'] == 'use_file_execution'
         assert result['command_id'] == 'cmd-uf1'
-        # The server's translated guidance leads the message.
         assert result['message'].startswith('Run this script as a file instead.')
         next_action = result['next_action']
         assert 'execute_file' in next_action
         assert 'write_file=true' in next_action
         assert f'server_id={VALID_SERVER_ID}' in next_action
         assert 'username=deploy' in next_action
-        assert 'only for this refused server' in next_action
+        assert 'interpreter' in next_action
+        # A single-server call has no fleet batch to warn about.
+        assert 'original target set' not in next_action
 
     @pytest.mark.asyncio
-    async def test_refusal_is_returned_without_polling_to_timeout(
+    async def test_refusal_is_read_ahead_of_the_status(
         self, mock_http_client, mock_token_manager
     ):
+        # A non-terminal status would otherwise keep the poll going to timeout.
         with (
             patch('tools.command_tools._submit_command') as mock_submit,
             patch('tools.command_tools._get_command_result') as mock_poll,
         ):
             mock_submit.return_value = {'id': 'cmd-uf1'}
-            mock_poll.return_value = dict(_REFUSED_ROW)
+            mock_poll.return_value = {**_REFUSED_ROW, 'status': 'verifying'}
 
             await execute_command(
                 server_id=VALID_SERVER_ID,
@@ -4001,6 +4003,35 @@ class TestUseFileExecutionRefusal:
             )
 
         mock_poll.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_next_action_keeps_session_group_and_flags_stdin(
+        self, mock_http_client, mock_token_manager
+    ):
+        with (
+            patch('tools.command_tools._submit_command') as mock_submit,
+            patch('tools.command_tools._get_command_result') as mock_poll,
+        ):
+            mock_submit.return_value = {'id': 'cmd-uf5'}
+            mock_poll.return_value = {
+                **_REFUSED_ROW,
+                'groupname': 'ops',
+                'work_session': {'id': 'ws-uuid-abcd'},
+                'data': 'payload',
+            }
+
+            result = await execute_command(
+                server_id=VALID_SERVER_ID,
+                command="python3 - <<'EOF'\nprint(1)\nEOF",
+                workspace='testworkspace',
+                data='payload',
+                timeout=10,
+            )
+
+        next_action = result['next_action']
+        assert 'groupname=ops' in next_action
+        assert 'work_session_id=ws-uuid-abcd' in next_action
+        assert 'no stdin' in next_action
 
     @pytest.mark.asyncio
     async def test_other_rejection_keeps_generic_error(

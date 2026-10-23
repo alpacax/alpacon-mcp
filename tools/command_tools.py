@@ -281,11 +281,7 @@ def _attach_file_phase_hint(
         target['error_phase_hint'] = hint
 
 
-#: The ``rejection_cause`` the server sets on a shell-lane command whose line
-#: carries a script body (a heredoc, a multi-line ``-c``/``-e`` body, a decoded
-#: payload piped into an interpreter). It is not a submit-time 4xx: the command
-#: is created as usual and the verdict lands on the command row after
-#: verification, so it is read from command detail and the list.
+#: Set on the command row after verification, not returned as a submit-time 4xx.
 USE_FILE_EXECUTION = 'use_file_execution'
 
 _USE_FILE_EXECUTION_HINT = (
@@ -294,57 +290,68 @@ _USE_FILE_EXECUTION_HINT = (
     'command did not run, so nothing needs cancelling.'
 )
 
-
-def _use_file_execution_next_action(result: dict[str, Any], server_id: str) -> str:
-    """Tell the agent how to rerun a refused command on the file lane.
-
-    Names the server and account off the command row, so the rerun stays on
-    the same target. Refusal is per server command, and the file lane needs
-    every target to support it, so the instruction is scoped to this server
-    alone: resubmitting a whole original target set can fail with
-    file_exec_unsupported_agent on a server that was never refused.
-    """
-    server = result.get('server')
-    target = server_id or (server.get('id') if isinstance(server, dict) else server)
-    username = result.get('username')
-    account = f'username={username}' if isinstance(username, str) and username else None
-    on = f'server_id={target}' if isinstance(target, str) and target else None
-    where = ', '.join(part for part in (on, account) if part)
-    return (
-        'call execute_file with the script as content and write_file=true, '
-        'which writes it to an absolute path on the host and runs it in one '
-        f'call, on the same server and account{f" ({where})" if where else ""}. '
-        'Do this only for this refused server; do not resubmit the original '
-        'target set.'
-    )
+#: Refusal is per server command and the file lane needs every target to
+#: support it, so resubmitting a whole fleet batch can fail with
+#: file_exec_unsupported_agent on a server that was never refused.
+_ONLY_REFUSED_SERVERS = (
+    ' Rerun only this refused server; do not resubmit the original target set.'
+)
 
 
-def _use_file_execution_refusal(
-    result: dict[str, Any], *, server_id: str = ''
-) -> dict[str, Any] | None:
-    """The ``error_code`` and ``next_action`` for a use_file_execution refusal.
-
-    Returns None for any other command. ``result`` carries the server's
-    translated guidance sentence, which the message leads with when present.
-    """
+def _use_file_execution_refusal(result: dict[str, Any]) -> dict[str, Any] | None:
+    """message, error_code and next_action for this refusal; None otherwise."""
     if result.get('rejection_cause') != USE_FILE_EXECUTION:
         return None
     guidance = result.get('result')
     message = _USE_FILE_EXECUTION_HINT
     if isinstance(guidance, str) and guidance.strip():
         message = f'{guidance.strip()} {message}'
+    server = result.get('server')
+    work_session = result.get('work_session')
+    groupname = result.get('groupname')
+    # The same run keeps the refused command's account and Work Session, as
+    # _attach_file_execution_suggestion does for a held one.
+    where = ', '.join(
+        f'{key}={value}'
+        for key, value in (
+            ('server_id', server.get('id') if isinstance(server, dict) else server),
+            ('username', result.get('username')),
+            ('groupname', groupname if groupname != 'alpacon' else None),
+            (
+                'work_session_id',
+                work_session.get('id')
+                if isinstance(work_session, dict)
+                else work_session,
+            ),
+        )
+        if isinstance(value, str) and value
+    )
+    # execute_file has no stdin, so data fed to the refused line cannot follow.
+    stdin = (
+        ' execute_file takes no stdin, so the data this command was fed has to '
+        'move into the script.'
+        if result.get('data')
+        else ''
+    )
     return {
         'message': message,
         'error_code': USE_FILE_EXECUTION,
-        'next_action': _use_file_execution_next_action(result, server_id),
+        'next_action': (
+            'call execute_file with the script as content and write_file=true, '
+            'which writes it to an absolute path on the host and runs it in one '
+            'call, on the same server and account'
+            f'{f" ({where})" if where else ""}. Set interpreter to the absolute '
+            'path of the interpreter the refused line invoked (such as '
+            '/usr/bin/python3 for a python3 -c body); it defaults to /bin/bash.'
+            f'{stdin}'
+        ),
     }
 
 
 def _attach_use_file_execution(entry: dict[str, Any]) -> None:
-    """Mark a listed command refused with use_file_execution."""
     if refusal := _use_file_execution_refusal(entry):
         entry['error_code'] = refusal['error_code']
-        entry['next_action'] = refusal['next_action']
+        entry['next_action'] = refusal['next_action'] + _ONLY_REFUSED_SERVERS
 
 
 def _requester_fields(
@@ -670,7 +677,7 @@ async def list_commands(
 
 
 @mcp_tool_handler(
-    description='Run a shell command on a server and wait for the result (up to 5 minutes by default). Returns stdout, stderr, and exit code in a single call. Requires ACL permission. Do not prefix the command with sudo by default: unless a Work Session sudo policy already covers the command, a sudo invocation either routes to human-in-the-loop approval and blocks until a human acts, or is denied outright with no request anyone can approve. Check sudo_denial.category before waiting; a sudo_hint with no sudo_denial is a hard denial that creates no request, so do not wait on it. Use sudo only when the command genuinely requires root and the Work Session carries the "sudo" scope. The timeout resets when the command is actively running. Supports dependency chains (run_after), scheduled execution (scheduled_at), and stdin data. Pass work_session_id to link this command to a Work Session for audit—the server enforces this for MCP OAuth and browser-based auth. Pass purpose to say what this particular command is for, in one or two sentences, whenever the command is not trivially routine: the assessor judges it with the purpose in hand, and a command that would otherwise queue for a human may clear on its own. State a fact local to this host that the Work Session description does not already imply; general knowledge adds nothing the assessor does not have, and a purpose cannot lower a command\'s intrinsic risk. If you omit it the gate may hold the command and ask—a status of purpose_required, which you answer with state_command_purpose within about a minute. A purpose over 2000 characters is trimmed to fit rather than refused, and the response then carries purpose_truncated: true—the assessor judges what was sent, so keep it short enough to survive whole. For a script, a heredoc, or any "bash /path/to/file" line, use execute_file instead: with write_file=true when you have the script\'s text, so one call writes it to the host and runs it as a verified file, or with read_from_server=true when the script already exists on the host, so one call reads its exact bytes from there and submits them. A verified file an approver has marked standing is re-run unchanged without paging a human, which a shell line never is. A line that carries a script body (a heredoc, a multi-line -c or -e body, a decoded payload piped into a shell or interpreter) is refused after verification with error_code use_file_execution: the command did not run, and next_action says to call execute_file with the script as content and write_file=true on the same server and account. When to use: the recommended way to run a one-off command on a server. Related: execute_file (write and run a script whose bytes are reviewed and hashed), execute_command_multi_server (run on multiple servers), state_command_purpose (answer a held command\'s purpose demand), list_commands (browse history), work_session_create (create a Work Session). Note: Default timeout is 300 seconds (5 minutes).',
+    description='Run a shell command on a server and wait for the result (up to 5 minutes by default). Returns stdout, stderr, and exit code in a single call. Requires ACL permission. Do not prefix the command with sudo by default: unless a Work Session sudo policy already covers the command, a sudo invocation either routes to human-in-the-loop approval and blocks until a human acts, or is denied outright with no request anyone can approve. Check sudo_denial.category before waiting; a sudo_hint with no sudo_denial is a hard denial that creates no request, so do not wait on it. Use sudo only when the command genuinely requires root and the Work Session carries the "sudo" scope. The timeout resets when the command is actively running. Supports dependency chains (run_after), scheduled execution (scheduled_at), and stdin data. Pass work_session_id to link this command to a Work Session for audit—the server enforces this for MCP OAuth and browser-based auth. Pass purpose to say what this particular command is for, in one or two sentences, whenever the command is not trivially routine: the assessor judges it with the purpose in hand, and a command that would otherwise queue for a human may clear on its own. State a fact local to this host that the Work Session description does not already imply; general knowledge adds nothing the assessor does not have, and a purpose cannot lower a command\'s intrinsic risk. If you omit it the gate may hold the command and ask—a status of purpose_required, which you answer with state_command_purpose within about a minute. A purpose over 2000 characters is trimmed to fit rather than refused, and the response then carries purpose_truncated: true—the assessor judges what was sent, so keep it short enough to survive whole. For a script, a heredoc, or any "bash /path/to/file" line, use execute_file instead: with write_file=true when you have the script\'s text, so one call writes it to the host and runs it as a verified file, or with read_from_server=true when the script already exists on the host, so one call reads its exact bytes from there and submits them. A verified file an approver has marked standing is re-run unchanged without paging a human, which a shell line never is. A line that carries a script body is refused after verification with error_code use_file_execution; it did not run, and next_action names the execute_file call. When to use: the recommended way to run a one-off command on a server. Related: execute_file (write and run a script whose bytes are reviewed and hashed), execute_command_multi_server (run on multiple servers), state_command_purpose (answer a held command\'s purpose demand), list_commands (browse history), work_session_create (create a Work Session). Note: Default timeout is 300 seconds (5 minutes).',
     annotations=ADDITIVE,
     meta={
         'anthropic/alwaysLoad': True,
@@ -1527,7 +1534,7 @@ async def _poll_command_result(
 
             # Checked ahead of the status match so the refusal keeps its own
             # error_code instead of reading as a bare 'rejected'.
-            if refusal := _use_file_execution_refusal(result, server_id=server_id):
+            if refusal := _use_file_execution_refusal(result):
                 return error_response(
                     refusal['message'],
                     error_code=refusal['error_code'],

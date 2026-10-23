@@ -442,7 +442,11 @@ and `verification_status` are `rejected`, `rejection_cause` is `use_file_executi
 carries the server's guidance sentence. The response is then `status: "error"` with `error_code:
 "use_file_execution"`, a `message` that leads with that sentence, the command row in `details`, and a
 `next_action` telling the agent to call `execute_file` with the script as `content` and
-`write_file: true` on the same server and account (`server_id` and `username` are named when known).
+`write_file: true` on the same server and account (`server_id`, `username`, a non-default
+`groupname` and `work_session_id` are named when the command row carries them), with `interpreter`
+set to the absolute path of the interpreter the refused line invoked, since it defaults to
+`/bin/bash`. A command that was fed stdin `data` is told to move that data into the script, because
+`execute_file` takes no stdin.
 The refused command did not run, so nothing needs cancelling. The server attaches no
 `execute_file_suggestion` here: the script body is on the command line, so there is no path to read.
 `state_command_purpose` returns the same refusal when the re-judged command lands on it.
@@ -565,7 +569,8 @@ List recent command history.
 
 An entry whose `error_phase` starts with `file_` gains `error_phase_hint`, as on `execute_file`.
 An entry whose `rejection_cause` is `use_file_execution` gains `error_code: "use_file_execution"` and
-the same `next_action` as on `execute_command`, naming that entry's server and account.
+the same `next_action` as on `execute_command`, naming that entry's server and account, plus a
+reminder to rerun only that server rather than the original target set.
 
 ### `execute_command_multi_server`
 Execute a command on multiple servers simultaneously.
