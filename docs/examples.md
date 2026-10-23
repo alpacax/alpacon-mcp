@@ -181,7 +181,34 @@ Set `parallel=False` to walk the list one host at a time—useful for a rolling 
 
 ### When a command is refused
 
-A command outside the token's ACL comes back as an API error inside a successful HTTP response—`data.status_code` 403 or 404. That is a permission answer, not a bug: add the command to the token's ACL in the web console (`create_command_acl` does the same thing through the API), or ask an administrator to. On a server that manages command ACLs on the command pre-approval ledger, `create_command_acl` is refused with `error_code` `command_acl_moved`: a Command ACL admin has to issue the entry under Pre-approved commands on the service token's page in the web console instead, and retrying the call does not help. A personal API token has no command list on the ledger.
+A command outside the token's ACL comes back as an API error inside a successful HTTP response—`data.status_code` 403 or 404. That is a permission answer, not a bug: add the command to the token's ACL in the web console (`create_command_acl` does the same thing through the API), or ask an administrator to. On a server that manages command ACLs on the command pre-approval ledger, `create_command_acl` is refused with `error_code` `command_acl_moved` and retrying the call does not help: a Command ACL admin issues the entry on the ledger instead, as [the next example](#pre-approve-a-command-on-the-ledger) shows, or under Pre-approved commands on the service token's page in the web console. A personal API token has no command list on the ledger.
+
+### Pre-approve a command on the ledger
+
+On a workspace whose command ACLs live on the command pre-approval ledger, a Command ACL admin lets a service token run a command without a human approval. This needs a stdio server; SSE and streamable-http do not serve the ledger tools.
+
+1. `get_ledger_capability(workspace)`. `command_acl_surface: "upstream"` means the workspace still uses `create_command_acl`; stop here. On the ledger the first call returns `status: "authorization_required"` with `verification_uri_complete` and `user_code`: give the link to the user, wait until they have signed in, and call it again. `administers_workspace: true` means they may change this workspace's entries.
+2. `list_ledger_entries(workspace, principal_type="service_token", principal_id="<service token uuid>")` to see what the token already has
+3. Issue what is missing, scoped to the hosts it runs on:
+
+```
+issue_ledger_entries(
+    workspace="production",
+    entries=[
+        {
+            "principal_type": "service_token",
+            "principal_id": "<service token uuid>",
+            "command_pattern": "systemctl restart nginx",
+            "username": "root",
+            "server_ids": ["<server uuid>"],
+        }
+    ],
+)
+```
+
+4. `disable_ledger_entry(workspace, entry_id)` pauses an entry and `enable_ledger_entry` resumes it; `revoke_ledger_entry` or `revoke_ledger_entries` withdraws it for good. To change an entry, revoke it and issue a new one.
+
+A person who is not a Command ACL admin gets a 400 whose `detail` says the account does not administer that workspace. `list_ledger_admins`, `grant_ledger_admin` and `revoke_ledger_admin` manage who is.
 
 ---
 
@@ -299,7 +326,7 @@ There is no writable `groups` field on a user—membership is its own record, wh
 
 1. `list_api_token_scopes(workspace)` and `list_api_token_presets(workspace)` to see what is available
 2. `create_api_token(workspace, name="deploy-bot", scopes=[...], expires_at="2026-12-31T00:00:00Z")`
-3. `create_command_acl(workspace, command="systemctl restart nginx", api_token_id=...)` and `create_server_acl(workspace, server_id=..., api_token_id=...)` to bound it further (where command ACLs live on the pre-approval ledger, `create_command_acl` returns `command_acl_moved`; a Command ACL admin issues the entry under Pre-approved commands on a service token's page in the web console, and a personal API token has no command list there)
+3. `create_command_acl(workspace, command="systemctl restart nginx", api_token_id=...)` and `create_server_acl(workspace, server_id=..., api_token_id=...)` to bound it further (where command ACLs live on the command pre-approval ledger, `create_command_acl` returns `command_acl_moved`; a Command ACL admin issues the entry with `issue_ledger_entries` or under Pre-approved commands on a service token's page in the web console, and a personal API token has no command list there)
 4. `bulk_server_acl(workspace, action="add", server_ids=[...], api_token_id=...)` when the list is long
 
 Token management needs JWT/OAuth, a browser session, or a login-source token. Called with an API token from `token.json`, these return 403—by the server's design, not a misconfiguration.
