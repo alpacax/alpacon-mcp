@@ -4034,6 +4034,29 @@ class TestUseFileExecutionRefusal:
         assert 'no stdin' in next_action
 
     @pytest.mark.asyncio
+    async def test_stdin_flagged_from_the_call_when_the_row_omits_data(
+        self, mock_http_client, mock_token_manager
+    ):
+        # Some rows withhold data, so the call's own argument has to count.
+        with (
+            patch('tools.command_tools._submit_command') as mock_submit,
+            patch('tools.command_tools._get_command_result') as mock_poll,
+        ):
+            mock_submit.return_value = {'id': 'cmd-uf6'}
+            mock_poll.return_value = dict(_REFUSED_ROW)
+
+            result = await execute_command(
+                server_id=VALID_SERVER_ID,
+                command="python3 - <<'EOF'\nprint(1)\nEOF",
+                workspace='testworkspace',
+                data='payload',
+                timeout=10,
+            )
+
+        assert result['error_code'] == 'use_file_execution'
+        assert result['next_action'].count('no stdin') == 1
+
+    @pytest.mark.asyncio
     async def test_other_rejection_keeps_generic_error(
         self, mock_http_client, mock_token_manager
     ):

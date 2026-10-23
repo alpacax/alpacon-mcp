@@ -290,6 +290,12 @@ _USE_FILE_EXECUTION_HINT = (
     'command did not run, so nothing needs cancelling.'
 )
 
+#: execute_file has no stdin, so data fed to the refused line cannot follow.
+_STDIN_NOT_CARRIED = (
+    ' execute_file takes no stdin, so the data this command was fed has to '
+    'move into the script.'
+)
+
 #: Refusal is per server command and the file lane needs every target to
 #: support it, so resubmitting a whole fleet batch can fail with
 #: file_exec_unsupported_agent on a server that was never refused.
@@ -326,13 +332,7 @@ def _use_file_execution_refusal(result: dict[str, Any]) -> dict[str, Any] | None
         )
         if isinstance(value, str) and value
     )
-    # execute_file has no stdin, so data fed to the refused line cannot follow.
-    stdin = (
-        ' execute_file takes no stdin, so the data this command was fed has to '
-        'move into the script.'
-        if result.get('data')
-        else ''
-    )
+    stdin = _STDIN_NOT_CARRIED if result.get('data') else ''
     return {
         'message': message,
         'error_code': USE_FILE_EXECUTION,
@@ -747,9 +747,16 @@ async def execute_command(
     # The suggested run must keep the held command's account and Work Session,
     # or following it would submit a run other than the one held. The values
     # this call sent win over the row's; data is withheld on some rows, so it
-    # is checked here too.
+    # is checked here too, and a refusal still warns that stdin cannot follow.
     if data:
         response.pop('execute_file_suggestion', None)
+        next_action = response.get('next_action')
+        if (
+            response.get('error_code') == USE_FILE_EXECUTION
+            and isinstance(next_action, str)
+            and _STDIN_NOT_CARRIED not in next_action
+        ):
+            response['next_action'] = next_action + _STDIN_NOT_CARRIED
     elif suggested := response.get('execute_file_suggestion'):
         arguments = suggested['arguments']
         if username is not None:
