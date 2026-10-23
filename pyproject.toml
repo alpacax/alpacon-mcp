@@ -81,6 +81,7 @@ required-version = ">=0.13,<0.14"  # keep in step with the uv image in Dockerfil
 # Floors for transitive dependencies with security advisories.
 constraint-dependencies = [
     "virtualenv>=21.14.9",  # via pre-commit
+    "opentelemetry-api>=1.45.1",  # via mcp
 ]
 
 [tool.hatch.version]
