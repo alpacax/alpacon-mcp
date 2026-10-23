@@ -14,14 +14,15 @@ per process, and a network transport may share a process between callers.
 """
 
 import json
-import os
 from http import HTTPStatus
-from typing import Any, Literal, NotRequired, TypedDict
+from typing import Annotated, Any, Literal, NotRequired, TypedDict
 
-from server import TRANSPORT_STDIO
+from pydantic import Field
+
 from utils.common import (
     error_response,
     is_auth_enabled,
+    is_stdio_transport,
     success_response,
     unwrap_http_result,
 )
@@ -67,7 +68,18 @@ class LedgerEntryInput(TypedDict):
     tools still reach them, but a personal API token gets no new command list.
     """
 
-    principal_type: Literal['service_token']
+    # A plain string rather than a one-value Literal: the SDK validates the
+    # schema before the tool runs, and a const would refuse 'api_token' with a
+    # bare literal_error instead of the reason issue_ledger_entries gives.
+    principal_type: Annotated[
+        str,
+        Field(
+            description=(
+                "Must be 'service_token'. A personal API token has no command "
+                "list on the ledger, so 'api_token' is refused."
+            ),
+        ),
+    ]
     principal_id: str
     command_pattern: str
     username: str
@@ -110,8 +122,7 @@ async def _ledger_target(
         )
 
     # An unset transport means a caller outside prepare(), and fails closed.
-    transport = os.environ.get('ALPACON_MCP_TRANSPORT', '')
-    if is_auth_enabled() or transport != TRANSPORT_STDIO:
+    if is_auth_enabled() or not is_stdio_transport():
         return error_response(
             _STDIO_ONLY_MESSAGE,
             command_acl_surface=surface,
@@ -154,6 +165,7 @@ async def _ledger_request(
     """Call the ledger as the person who authorized it, and shape the response."""
     context = {'region': region, 'workspace': workspace, **id_context}
 
+    reused = ledger_authorizer.has_token(target)
     ledger_token = await ledger_authorizer.token_for(target)
     if isinstance(ledger_token, dict):
         return {**ledger_token, **context}
@@ -170,11 +182,26 @@ async def _ledger_request(
         isinstance(result, dict)
         and result.get('status_code') == HTTPStatus.UNAUTHORIZED
     ):
-        # Expired or revoked before its time; the cached token is useless now.
+        # The token is useless either way.
         ledger_authorizer.forget(target)
+        detail = _error_detail(result)
+        if not reused:
+            # Issued by this very call, so a new sign-in would only be refused
+            # again: the ledger does not accept what the sign-in service mints
+            # here. Say so instead of handing out another link.
+            return error_response(
+                'The command pre-approval ledger refused the token this sign-in '
+                'just issued. Check that ALPACON_MCP_LEDGER_URL and '
+                'ALPACON_MCP_LEDGER_AUDIENCE name the same ledger (both unset '
+                'uses the default). Calling again starts a new sign-in.',
+                status_code=HTTPStatus.UNAUTHORIZED,
+                detail=detail,
+                **context,
+            )
+        # A cached token expired or was revoked early; sign in again.
         restarted = await ledger_authorizer.token_for(target)
         if isinstance(restarted, dict):
-            return {**restarted, **context}
+            return {**restarted, 'detail': detail, **context}
 
     err = unwrap_http_result(result, default_message=default_message, **context)
     if err:

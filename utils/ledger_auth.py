@@ -138,6 +138,11 @@ class LedgerAuthorizer:
         self._pending: dict[tuple[str, str, str, str], _PendingAuthorization] = {}
         self._lock = asyncio.Lock()
 
+    def has_token(self, target: LedgerTarget) -> bool:
+        """Whether an unexpired token is cached, so the next call reuses it."""
+        cached = self._tokens.get(target.key)
+        return cached is not None and cached.expires_at > _now()
+
     def forget(self, target: LedgerTarget) -> None:
         """Drop the cached token, e.g. after the ledger answered 401."""
         self._tokens.pop(target.key, None)

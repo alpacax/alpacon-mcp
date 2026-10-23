@@ -221,6 +221,24 @@ class TestDeviceAuthorization:
         assert result['status'] == AUTHORIZATION_REQUIRED
 
     @pytest.mark.asyncio
+    async def test_has_token_reports_only_an_unexpired_cached_token(
+        self, authorizer, auth0, clock
+    ):
+        auth0.side_effect = [
+            (HTTPStatus.OK, DEVICE_CODE_BODY),
+            (HTTPStatus.OK, {'access_token': 'ledger-jwt', 'expires_in': 120}),
+        ]
+        assert not authorizer.has_token(TARGET)
+        await authorizer.token_for(TARGET)
+        assert not authorizer.has_token(TARGET)
+        clock.value += 5
+        await authorizer.token_for(TARGET)
+        assert authorizer.has_token(TARGET)
+
+        clock.value += 61
+        assert not authorizer.has_token(TARGET)
+
+    @pytest.mark.asyncio
     async def test_forget_drops_the_cached_token(self, authorizer, auth0, clock):
         auth0.side_effect = [
             (HTTPStatus.OK, DEVICE_CODE_BODY),

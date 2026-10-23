@@ -3,6 +3,8 @@
 from http import HTTPStatus
 from typing import Any
 
+from utils.common import is_stdio_transport
+
 # Closing advice every plan gate shares: the call is settled, only a plan change moves it.
 _PLAN_HINTS = [
     'Retrying will not change the answer.',
@@ -47,16 +49,12 @@ _HINT_REGISTRY: dict[tuple[int, str], dict[str, list[str]]] = {
             'Use list_command_acls to view current permissions.',
             'Ask a workspace admin to grant command ACL via create_command_acl.',
             (
-                'If get_ledger_capability reports command_acl_surface "ai", a '
-                'Command ACL admin grants it with issue_ledger_entries instead.'
+                'If command ACLs live on the command pre-approval ledger, a '
+                'Command ACL admin grants it under Pre-approved commands on the '
+                "service token's page in the web console."
             ),
         ],
-        'related_tools': [
-            'list_command_acls',
-            'create_command_acl',
-            'get_ledger_capability',
-            'issue_ledger_entries',
-        ],
+        'related_tools': ['list_command_acls', 'create_command_acl'],
     },
     (HTTPStatus.FORBIDDEN, 'server'): {
         'recovery_hints': [
@@ -195,6 +193,21 @@ def _parse_status_code(raw: int | str | None) -> int | None:
         return None
 
 
+# Appended on a stdio server, the only transport that registers the ledger
+# tools; any other transport is never pointed at a tool it does not serve.
+_STDIO_HINT_ADDITIONS: dict[tuple[int, str], dict[str, list[str]]] = {
+    (HTTPStatus.FORBIDDEN, 'command'): {
+        'recovery_hints': [
+            (
+                'On this server get_ledger_capability says whether the ledger '
+                'is in use, and issue_ledger_entries grants it there.'
+            ),
+        ],
+        'related_tools': ['get_ledger_capability', 'issue_ledger_entries'],
+    },
+}
+
+
 def _copy_hints(hints: dict[str, list[str]]) -> dict[str, list[str]]:
     """Return a shallow copy of a hints entry to protect the registry."""
     return {
@@ -232,7 +245,12 @@ def get_recovery_hints(
     # Try domain-specific first, then general fallback
     hints = _HINT_REGISTRY.get((code, domain))
     if hints:
-        return _copy_hints(hints)
+        found = _copy_hints(hints)
+        extra = _STDIO_HINT_ADDITIONS.get((code, domain))
+        if extra and is_stdio_transport():
+            found['recovery_hints'] += extra['recovery_hints']
+            found['related_tools'] += extra['related_tools']
+        return found
 
     hints = _HINT_REGISTRY.get((code, 'general'))
     if hints:

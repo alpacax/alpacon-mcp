@@ -31,7 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - The `command_acl_moved` hint, the command ACL tool descriptions and the 403 command recovery hint
-  now name the ledger tools alongside the web console.
+  keep pointing to the web console and, on a stdio server only, also name the ledger tools.
 
 - The `file_exec_unsupported_agent` hint and the `execute_file` description now name alpamon 2.8.3,
   the first release that reports its capabilities, instead of 2.6.0, and separate two cases: an agent

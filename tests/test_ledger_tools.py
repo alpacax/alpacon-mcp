@@ -22,13 +22,16 @@ from tools.ledger_tools import (
     revoke_ledger_entries,
     revoke_ledger_entry,
 )
+from tools.security_tools import _command_acl_list_note, _command_acl_moved_note
 from utils import declared_agent
+from utils.common import unwrap_http_result
 from utils.ledger_auth import (
     AUTHORIZATION_REQUIRED,
     LedgerAuthorizer,
     LedgerTarget,
     _CachedToken,
 )
+from utils.recovery_hints import get_recovery_hints
 
 WORKSPACE_ID = '11111111-2222-3333-4444-555555555555'
 ENTRY_ID = '7e3984de-49ab-4cc6-bcdf-21fbd35858b8'
@@ -57,6 +60,14 @@ PENDING = {
     'user_code': 'X',
     'expires_in': 900,
     'requires_human_action': True,
+}
+
+UNAUTHORIZED_BODY = {'detail': 'Invalid token audience.'}
+UNAUTHORIZED_ENVELOPE = {
+    'error': 'HTTP Error',
+    'status_code': HTTPStatus.UNAUTHORIZED,
+    'message': 'Unauthorized',
+    'response': json.dumps(UNAUTHORIZED_BODY),
 }
 
 mock_http_client = http_client_fixture('tools.ledger_tools')
@@ -300,17 +311,34 @@ class TestAuthorization:
     @pytest.mark.asyncio
     async def test_a_ledger_401_forgets_the_token_and_asks_again(self, ledger):
         client, authorizer = ledger
+        authorizer.has_token.return_value = True  # cached by an earlier call
         authorizer.token_for.side_effect = ['ledger-jwt', PENDING]
-        client.request.return_value = {
-            'error': 'HTTP Error',
-            'status_code': HTTPStatus.UNAUTHORIZED,
-            'message': 'Unauthorized',
-        }
+        client.request.return_value = UNAUTHORIZED_ENVELOPE
 
         result = await list_ledger_entries(workspace='testworkspace', region='ap1')
 
         authorizer.forget.assert_called_once()
+        assert authorizer.token_for.await_count == 2
         assert result['status'] == AUTHORIZATION_REQUIRED
+        assert result['detail'] == UNAUTHORIZED_BODY
+
+    @pytest.mark.asyncio
+    async def test_a_401_on_a_token_this_call_obtained_does_not_loop(self, ledger):
+        """A token the ledger refuses right after sign-in (a wrong audience,
+        say) would be refused again; another link would only repeat that."""
+        client, authorizer = ledger
+        authorizer.has_token.return_value = False  # issued by this call's poll
+        client.request.return_value = UNAUTHORIZED_ENVELOPE
+
+        result = await list_ledger_entries(workspace='testworkspace', region='ap1')
+
+        assert result['status'] == 'error'
+        assert result['status_code'] == HTTPStatus.UNAUTHORIZED
+        assert 'ALPACON_MCP_LEDGER_AUDIENCE' in result['message']
+        assert result['detail'] == UNAUTHORIZED_BODY
+        assert result['workspace'] == 'testworkspace'
+        authorizer.forget.assert_called_once()
+        authorizer.token_for.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_a_ledger_error_carries_its_detail(self, ledger):
@@ -468,6 +496,49 @@ class TestEntries:
         client.get.assert_not_called()
         client.request.assert_not_called()
         authorizer.token_for.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_an_api_token_entry_is_refused_with_the_reason_through_the_sdk(
+        self, ledger
+    ):
+        """The SDK validates arguments against the schema first, so the reason
+        reaches the caller only if the schema lets the value through."""
+        client, authorizer = ledger
+
+        result = await server.mcp.call_tool(
+            'issue_ledger_entries',
+            {
+                'workspace': 'testworkspace',
+                'region': 'ap1',
+                'entries': [
+                    {
+                        'principal_type': 'api_token',
+                        'principal_id': SERVICE_TOKEN_ID,
+                        'command_pattern': 'uptime',
+                        'username': '*',
+                    }
+                ],
+            },
+        )
+
+        payload = result.structured_content
+        assert payload['status'] == 'error'
+        assert 'personal API token has no command list' in payload['message']
+        client.get.assert_not_called()
+        client.request.assert_not_called()
+        authorizer.token_for.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_the_schema_says_only_service_token_can_be_issued(self):
+        tools = {t.name: t for t in await server.mcp.list_tools()}
+        tool = tools['issue_ledger_entries']
+        field = tool.input_schema['$defs']['LedgerEntryInput']['properties'][
+            'principal_type'
+        ]
+
+        assert field['type'] == 'string'
+        assert "'service_token'" in field['description']
+        assert 'cannot be issued' in tool.description
 
     @pytest.mark.asyncio
     async def test_list_still_filters_by_api_token(self, ledger):
@@ -647,3 +718,52 @@ class TestAdmins:
 
         assert _request(client)[:2] == ('DELETE', f'{LEDGER}admins/{admin_id}/')
         assert result['admin_id'] == admin_id
+
+
+class TestTransportAwarePointers:
+    """Only a stdio server registers the ledger tools, so nothing returned on
+    another transport may tell the caller to use them."""
+
+    MOVED = {
+        'error': 'HTTP Error',
+        'status_code': HTTPStatus.METHOD_NOT_ALLOWED,
+        'message': "Client error '405 Method Not Allowed'",
+        'response': '{"code": "command_acl_moved"}',
+    }
+
+    @pytest.mark.parametrize(('transport', 'named'), [('stdio', True), ('sse', False)])
+    def test_command_acl_moved_hint(self, monkeypatch, transport, named):
+        monkeypatch.setenv('ALPACON_MCP_TRANSPORT', transport)
+
+        result = unwrap_http_result(self.MOVED, default_message='failed')
+
+        assert result is not None
+        assert 'web console' in result['message']
+        assert 'personal API token has no command list' in result['message']
+        assert ('issue_ledger_entries' in result['message']) is named
+
+    @pytest.mark.parametrize(('transport', 'named'), [('stdio', True), ('sse', False)])
+    def test_recovery_hints(self, monkeypatch, transport, named):
+        monkeypatch.setenv('ALPACON_MCP_TRANSPORT', transport)
+
+        hints = get_recovery_hints(
+            HTTPStatus.FORBIDDEN, 'command ACL denied', tool_name='execute_command'
+        )
+
+        assert 'list_command_acls' in hints['related_tools']
+        assert ('issue_ledger_entries' in hints['related_tools']) is named
+        assert ('get_ledger_capability' in hints['related_tools']) is named
+        text = ' '.join(hints['recovery_hints'])
+        assert 'web console' in text
+        assert ('issue_ledger_entries' in text) is named
+
+    @pytest.mark.parametrize('stdio', [True, False])
+    def test_command_acl_tool_notes(self, stdio):
+        moved = _command_acl_moved_note(stdio)
+        listed = _command_acl_list_note(stdio)
+
+        assert 'web console' in moved
+        assert 'personal API token has no command list' in moved
+        assert ('issue_ledger_entries' in moved) is stdio
+        assert ('list_ledger_entries' in listed) is stdio
+        assert ('web console' in listed) is not stdio
