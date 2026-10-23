@@ -435,6 +435,18 @@ from that one interpreter path. The held command stays queued and runs if approv
 Alpacon console (Commands) first, or the script waits on two approval requests. No MCP tool cancels
 it.
 
+**Refused as a script body:** a line that carries a script body (a heredoc, a multi-line `-c` or `-e`
+body, or a decoded payload piped into a shell or interpreter) is not refused at submit time. The
+command is created as usual, and the verdict lands on the command row after verification: `status`
+and `verification_status` are `rejected`, `rejection_cause` is `use_file_execution`, and `result`
+carries the server's guidance sentence. The response is then `status: "error"` with `error_code:
+"use_file_execution"`, a `message` that leads with that sentence, the command row in `details`, and a
+`next_action` telling the agent to call `execute_file` with the script as `content` and
+`write_file: true` on the same server and account (`server_id` and `username` are named when known).
+The refused command did not run, so nothing needs cancelling. The server attaches no
+`execute_file_suggestion` here: the script body is on the command line, so there is no path to read.
+`state_command_purpose` returns the same refusal when the re-judged command lands on it.
+
 ### `execute_file`
 Run a script on a server as a verified file, and wait for the result. With `write_file`,
 the same call writes the script to the host first; with `read_from_server`, it reads the script
@@ -552,6 +564,8 @@ List recent command history.
 - `region` (string, optional): Region name; resolved from the workspace when omitted
 
 An entry whose `error_phase` starts with `file_` gains `error_phase_hint`, as on `execute_file`.
+An entry whose `rejection_cause` is `use_file_execution` gains `error_code: "use_file_execution"` and
+the same `next_action` as on `execute_command`, naming that entry's server and account.
 
 ### `execute_command_multi_server`
 Execute a command on multiple servers simultaneously.
@@ -568,6 +582,14 @@ Execute a command on multiple servers simultaneously.
 - `work_session_id` (string, optional): Work Session to run under
 - `purpose` (string, optional): What this particular command is for (ADR 0052). The assessor judges the command with it in hand, so one that would otherwise queue for a human may clear on its own. State a fact local to this host that the Work Session description does not already imply; general knowledge adds nothing the assessor lacks, and a purpose cannot lower a command's intrinsic risk. Trimmed to 2000 characters rather than refused, and the response then carries `purpose_truncated: true`. This tool never waits, so it is never asked for a purpose after the fact—stating it up front is the only chance
 - `region` (string, optional): Region name; resolved from the workspace when omitted
+
+**Refused as a script body:** the `use_file_execution` refusal described under `execute_command` is
+decided per server command after verification, so this tool's submit result never shows it and only
+some targets may be refused. Read it from `list_commands`, where each refused entry carries
+`error_code: "use_file_execution"` and a `next_action`. Rerun the script with `execute_file` on the
+refused servers only, with the same account: the file lane needs every target server to support it,
+so resubmitting the original target set can fail with `file_exec_unsupported_agent` on a server that
+was never refused.
 
 ### `state_command_purpose`
 Answer the purpose demand on a command the verification gate is holding, then wait for the outcome.

@@ -3932,3 +3932,180 @@ class TestListCommandsParams:
             token='test-token',
             params=expected_params,
         )
+
+
+_OTHER_SERVER_ID = '550e8400-e29b-41d4-a716-446655440002'
+
+_REFUSED_ROW = {
+    'id': 'cmd-uf1',
+    'server': VALID_SERVER_ID,
+    'username': 'deploy',
+    'status': 'rejected',
+    'verification_status': 'rejected',
+    'rejection_cause': 'use_file_execution',
+    'rejection_gate': 'approval',
+    'result': 'Run this script as a file instead.',
+    'handled_at': None,
+}
+
+
+class TestUseFileExecutionRefusal:
+    """A script-body line is refused after verification, read off the command row."""
+
+    @pytest.mark.asyncio
+    async def test_execute_command_returns_structured_refusal(
+        self, mock_http_client, mock_token_manager
+    ):
+        with (
+            patch('tools.command_tools._submit_command') as mock_submit,
+            patch('tools.command_tools._get_command_result') as mock_poll,
+        ):
+            mock_submit.return_value = {'id': 'cmd-uf1'}
+            mock_poll.return_value = dict(_REFUSED_ROW)
+
+            result = await execute_command(
+                server_id=VALID_SERVER_ID,
+                command="bash <<'EOF'\necho hi\nEOF",
+                workspace='testworkspace',
+                timeout=10,
+            )
+
+        assert result['status'] == 'error'
+        assert result['error_code'] == 'use_file_execution'
+        assert result['command_id'] == 'cmd-uf1'
+        # The server's translated guidance leads the message.
+        assert result['message'].startswith('Run this script as a file instead.')
+        next_action = result['next_action']
+        assert 'execute_file' in next_action
+        assert 'write_file=true' in next_action
+        assert f'server_id={VALID_SERVER_ID}' in next_action
+        assert 'username=deploy' in next_action
+        assert 'only for this refused server' in next_action
+
+    @pytest.mark.asyncio
+    async def test_refusal_is_returned_without_polling_to_timeout(
+        self, mock_http_client, mock_token_manager
+    ):
+        with (
+            patch('tools.command_tools._submit_command') as mock_submit,
+            patch('tools.command_tools._get_command_result') as mock_poll,
+        ):
+            mock_submit.return_value = {'id': 'cmd-uf1'}
+            mock_poll.return_value = dict(_REFUSED_ROW)
+
+            await execute_command(
+                server_id=VALID_SERVER_ID,
+                command='echo aGk= | base64 -d | sh',
+                workspace='testworkspace',
+                timeout=10,
+            )
+
+        mock_poll.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_other_rejection_keeps_generic_error(
+        self, mock_http_client, mock_token_manager
+    ):
+        with (
+            patch('tools.command_tools._submit_command') as mock_submit,
+            patch('tools.command_tools._get_command_result') as mock_poll,
+        ):
+            mock_submit.return_value = {'id': 'cmd-uf2'}
+            mock_poll.return_value = {
+                **_REFUSED_ROW,
+                'rejection_cause': 'assessor_denied',
+            }
+
+            result = await execute_command(
+                server_id=VALID_SERVER_ID,
+                command='rm -rf /',
+                workspace='testworkspace',
+                timeout=10,
+            )
+
+        assert result['status'] == 'error'
+        assert 'error_code' not in result
+        assert 'next_action' not in result
+
+    @pytest.mark.asyncio
+    async def test_missing_guidance_falls_back_to_hint(
+        self, mock_http_client, mock_token_manager
+    ):
+        with (
+            patch('tools.command_tools._submit_command') as mock_submit,
+            patch('tools.command_tools._get_command_result') as mock_poll,
+        ):
+            mock_submit.return_value = {'id': 'cmd-uf3'}
+            mock_poll.return_value = {**_REFUSED_ROW, 'result': None}
+
+            result = await execute_command(
+                server_id=VALID_SERVER_ID,
+                command="python3 -c 'import os\nprint(1)'",
+                workspace='testworkspace',
+                timeout=10,
+            )
+
+        assert result['error_code'] == 'use_file_execution'
+        assert 'execute_file' in result['message']
+
+    @pytest.mark.asyncio
+    async def test_state_command_purpose_surfaces_refusal(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = {'id': 'cmd-uf1'}
+        with patch('tools.command_tools._get_command_result') as mock_poll:
+            mock_poll.return_value = {
+                **_REFUSED_ROW,
+                'server': {'id': VALID_SERVER_ID, 'name': 'web-1'},
+            }
+
+            result = await state_command_purpose(
+                command_id='cmd-uf1',
+                purpose='Rotate the nginx log on this host.',
+                workspace='testworkspace',
+                timeout=10,
+            )
+
+        assert result['error_code'] == 'use_file_execution'
+        # The server comes off the polled row when the caller has none.
+        assert f'server_id={VALID_SERVER_ID}' in result['next_action']
+
+    @pytest.mark.asyncio
+    async def test_list_commands_marks_only_refused_servers(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.get.return_value = {
+            'results': [
+                dict(_REFUSED_ROW),
+                {
+                    'id': 'cmd-uf4',
+                    'server': _OTHER_SERVER_ID,
+                    'status': 'success',
+                    'result': 'hi',
+                },
+            ]
+        }
+
+        result = await list_commands(workspace='testworkspace', region='ap1')
+
+        refused, ran = result['data']['results']
+        assert refused['error_code'] == 'use_file_execution'
+        assert f'server_id={VALID_SERVER_ID}' in refused['next_action']
+        assert 'do not resubmit the original target set' in refused['next_action']
+        assert 'error_code' not in ran
+        assert 'next_action' not in ran
+
+    @pytest.mark.asyncio
+    async def test_tool_descriptions_name_the_refusal(self):
+        descriptions = await tool_descriptions()
+
+        for name in (
+            'execute_command',
+            'execute_command_multi_server',
+            'list_commands',
+        ):
+            assert 'use_file_execution' in descriptions[name], name
+        assert (
+            'file_exec_unsupported_agent'
+            in descriptions['execute_command_multi_server']
+        )
