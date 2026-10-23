@@ -11,6 +11,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from server import mcp
 from tests.conftest import HTTP_ERROR_ENVELOPE, http_client_fixture
 from tools.workspace_tools import (
     get_current_user,
@@ -740,9 +741,12 @@ class TestUpdateWorkspacePreferences:
 
 
 class TestUpdateWorkspacePreferencesAgentRolloutPolicy:
-    """`agent_rollout_policy` writes, the deprecated `auto_agent_upgrade` alias
-    mapping, their merge precedence, and locally-surfaced validation errors.
-    """
+    def test_policy_replaces_alias_in_tool_schema(self):
+        tool = mcp._tool_manager.get_tool('update_workspace_preferences')
+        assert tool is not None
+        properties = tool.parameters['properties']
+        assert 'agent_rollout_policy' in properties
+        assert 'auto_agent_upgrade' not in properties
 
     @pytest.mark.asyncio
     async def test_full_policy_object_sent_as_is(self, mock_http_client, mock_token):
@@ -791,109 +795,22 @@ class TestUpdateWorkspacePreferencesAgentRolloutPolicy:
             data={'agent_rollout_policy': {'window': {'start_hour': 3}}},
         )
 
+    @pytest.mark.parametrize('mode', ['latest', 'manual', 'n_minus_1'])
     @pytest.mark.asyncio
-    async def test_deprecated_true_maps_to_latest(self, mock_http_client, mock_token):
-        mock_http_client.patch.return_value = {'agent_rollout_policy': {}}
+    async def test_policy_mode_sent_without_alias(
+        self, mock_http_client, mock_token, mode
+    ):
+        mock_http_client.patch.return_value = {'agent_rollout_policy': {'mode': mode}}
 
         result = await update_workspace_preferences(
-            workspace='testworkspace', auto_agent_upgrade=True, region='ap1'
+            workspace='testworkspace', agent_rollout_policy={'mode': mode}, region='ap1'
         )
 
         assert result['status'] == 'success'
-        assert 'deprecated' in result['deprecation_note']
-        assert 'latest' in result['deprecation_note']
-        mock_http_client.patch.assert_called_once_with(
-            region='ap1',
-            workspace='testworkspace',
-            endpoint='/api/workspaces/preferences/-/',
-            token='test-token',
-            data={'agent_rollout_policy': {'mode': 'latest'}},
-        )
-
-    @pytest.mark.asyncio
-    async def test_deprecated_false_maps_to_manual(self, mock_http_client, mock_token):
-        mock_http_client.patch.return_value = {'agent_rollout_policy': {}}
-
-        result = await update_workspace_preferences(
-            workspace='testworkspace', auto_agent_upgrade=False, region='ap1'
-        )
-
-        assert result['status'] == 'success'
-        assert 'manual' in result['deprecation_note']
-        mock_http_client.patch.assert_called_once_with(
-            region='ap1',
-            workspace='testworkspace',
-            endpoint='/api/workspaces/preferences/-/',
-            token='test-token',
-            data={'agent_rollout_policy': {'mode': 'manual'}},
-        )
-
-    @pytest.mark.asyncio
-    async def test_auto_agent_upgrade_never_sent_to_server(
-        self, mock_http_client, mock_token
-    ):
-        mock_http_client.patch.return_value = {'agent_rollout_policy': {}}
-
-        await update_workspace_preferences(
-            workspace='testworkspace', auto_agent_upgrade=True, region='ap1'
-        )
-
-        sent_data = mock_http_client.patch.call_args.kwargs['data']
-        assert 'auto_agent_upgrade' not in sent_data
-
-    @pytest.mark.asyncio
-    async def test_explicit_policy_mode_wins_over_deprecated_boolean(
-        self, mock_http_client, mock_token
-    ):
-        mock_http_client.patch.return_value = {'agent_rollout_policy': {}}
-
-        result = await update_workspace_preferences(
-            workspace='testworkspace',
-            auto_agent_upgrade=True,
-            agent_rollout_policy={'mode': 'n_minus_1'},
-            region='ap1',
-        )
-
-        assert result['status'] == 'success'
-        # The alias still produced a note (it was supplied), but the explicit
-        # mode it wrote is overridden by the explicit agent_rollout_policy.
-        assert result['deprecation_note']
-        mock_http_client.patch.assert_called_once_with(
-            region='ap1',
-            workspace='testworkspace',
-            endpoint='/api/workspaces/preferences/-/',
-            token='test-token',
-            data={'agent_rollout_policy': {'mode': 'n_minus_1'}},
-        )
-
-    @pytest.mark.asyncio
-    async def test_deprecated_boolean_merges_under_explicit_window(
-        self, mock_http_client, mock_token
-    ):
-        """true -> {"mode": "latest"} merge: a field the explicit object does
-        not name (here, mode) still comes from the deprecated boolean.
-        """
-        mock_http_client.patch.return_value = {'agent_rollout_policy': {}}
-
-        await update_workspace_preferences(
-            workspace='testworkspace',
-            auto_agent_upgrade=True,
-            agent_rollout_policy={'window': {'start_hour': 5}},
-            region='ap1',
-        )
-
-        mock_http_client.patch.assert_called_once_with(
-            region='ap1',
-            workspace='testworkspace',
-            endpoint='/api/workspaces/preferences/-/',
-            token='test-token',
-            data={
-                'agent_rollout_policy': {
-                    'mode': 'latest',
-                    'window': {'start_hour': 5},
-                }
-            },
-        )
+        assert 'deprecation_note' not in result
+        assert mock_http_client.patch.call_args.kwargs['data'] == {
+            'agent_rollout_policy': {'mode': mode}
+        }
 
     @pytest.mark.parametrize(
         'policy',

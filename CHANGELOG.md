@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   without the ledger still accepts these writes.
 
 ### Changed
+- `update_workspace_preferences` no longer accepts the deprecated `auto_agent_upgrade` boolean; use the existing `agent_rollout_policy` object instead. Responses no longer include the alias-specific `deprecation_note`; the preferences response shape is otherwise unchanged.
 - The `file_exec_unsupported_agent` hint and the `execute_file` description now name alpamon 2.8.3,
   the first release that reports its capabilities, instead of 2.6.0, and separate two cases: an agent
   older than 2.8.3 reports no capabilities (upgrade it), while one already on 2.8.3 or newer has no
