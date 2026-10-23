@@ -254,7 +254,7 @@ class AlpaconHTTPClient:
 
                 # Return JSON response
                 if response.content:
-                    result = response.json()
+                    result: JsonValue = response.json()
                     if logger.isEnabledFor(logging.DEBUG):
                         logger.debug('Response body: %s', redact_for_log(result))
                     return result

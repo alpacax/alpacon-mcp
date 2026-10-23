@@ -13,7 +13,7 @@ from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-from utils.common import MCP_VERSION, is_auth_enabled
+from utils.common import MCP_VERSION, RouteRegistry, is_auth_enabled
 from utils.declared_agent import capture_declared_agent, use_environment_fallback
 from utils.health import get_health_info
 from utils.http_client import http_client
@@ -300,8 +300,9 @@ def _register_http_health_endpoint() -> None:
     Bypasses auth for unauthenticated health probes
     (e.g., Kubernetes liveness/readiness checks, docker-compose).
     """
+    routes: RouteRegistry = mcp
 
-    @mcp.custom_route('/health', methods=['GET'])
+    @routes.custom_route('/health', methods=['GET'])
     async def health_endpoint(request: Request) -> JSONResponse:
         health = await get_health_info()
         return JSONResponse(

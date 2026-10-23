@@ -5,10 +5,14 @@ import json
 import os
 import platform
 import re
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
-from typing import Any
+from typing import Any, Protocol
 from urllib.parse import urlparse
+
+from starlette.requests import Request
+from starlette.responses import Response
 
 from utils.logger import get_logger
 from utils.token_manager import get_token_manager
@@ -23,6 +27,17 @@ type ToolResult[R] = R | ToolErrorResponse
 # What a tool returns; a TypedDict once mypy supports PEP 728 extra_items, since
 # the response helpers merge caller-chosen **kwargs into it.
 ToolResponse = dict[str, Any]
+
+type RouteHandler = Callable[[Request], Awaitable[Response]]
+
+
+class RouteRegistry(Protocol):
+    """The one MCPServer method route registration needs; tests pass a stand-in."""
+
+    def custom_route(
+        self, path: str, methods: list[str]
+    ) -> Callable[[RouteHandler], RouteHandler]: ...
+
 
 # Initialize shared instances
 token_manager = get_token_manager()

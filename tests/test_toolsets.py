@@ -189,7 +189,7 @@ class TestRunWiring:
         mismatch here (e.g. handing register_resources the sorted list)."""
         imported: list[str] = []
         real_import = importlib.import_module
-        handed: dict = {}
+        handed: dict[str, object] = {}
 
         def spy(name, *args, **kwargs):
             imported.append(name)

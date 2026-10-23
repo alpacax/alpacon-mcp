@@ -20,6 +20,7 @@ from tools.command_tools import (
     FILE_REUSE_DAYS_MIN,
     PURPOSE_MAX_LENGTH,
     _answer_purpose_demand,
+    _CommandRecord,
     _file_phase_hint,
     _get_capped,
     _submit_command,
@@ -73,7 +74,7 @@ class TestSudoDenialHint:
     """The exec-sudo denial code -> agent guidance mapping."""
 
     @staticmethod
-    def _hint(result: dict) -> str | None:
+    def _hint(result: _CommandRecord) -> str | None:
         denial = _sudo_denial(result)
         return denial[1] if denial else None
 
@@ -522,7 +523,7 @@ class TestListCommandsSudoDenialAnnotation:
     """execute_command_multi_server only submits, so denials surface only here."""
 
     @staticmethod
-    def _denied(command_id: str, code: str) -> dict:
+    def _denied(command_id: str, code: str) -> dict[str, str]:
         return {
             'id': command_id,
             'result': f'Alpacon denied this sudo command ({code}).\n',

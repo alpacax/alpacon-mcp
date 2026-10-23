@@ -17,16 +17,16 @@ import os
 import re
 import secrets
 import time
-from collections.abc import Awaitable, Callable
 from functools import wraps
 from http import HTTPStatus
-from typing import Literal, Protocol, TypedDict
+from typing import Literal, TypedDict
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 import httpx
 from starlette.requests import Request
 from starlette.responses import JSONResponse, RedirectResponse, Response
 
+from utils.common import RouteHandler, RouteRegistry
 from utils.logger import escape_for_log, get_logger
 
 logger = get_logger('oauth')
@@ -168,17 +168,6 @@ _DEFAULT_REDIRECT_DOMAINS = tuple(
 )
 
 
-type _RouteHandler = Callable[[Request], Awaitable[Response]]
-
-
-class _RouteRegistry(Protocol):
-    """The one MCPServer method route registration needs; tests pass a stand-in."""
-
-    def custom_route(
-        self, path: str, methods: list[str]
-    ) -> Callable[[_RouteHandler], _RouteHandler]: ...
-
-
 def _get_server_url(request: Request) -> str:
     """Build the MCP server's base URL from config or request.
 
@@ -310,7 +299,7 @@ def _is_registrable_uri_list(value: object) -> bool:
     )
 
 
-def _allow_browser_clients(handler: _RouteHandler) -> _RouteHandler:
+def _allow_browser_clients(handler: RouteHandler) -> RouteHandler:
     """Answer the CORS preflight and mark the response readable cross-origin.
 
     Only for endpoints a browser-based client reaches with fetch: /oauth/authorize
@@ -348,7 +337,7 @@ def _log_authorize_client_profile(
     )
 
 
-def _build_redirect_url(base_url: str, extra_params: dict) -> str:
+def _build_redirect_url(base_url: str, extra_params: dict[str, str]) -> str:
     """Safely merge query params into a URL, preserving existing params."""
     parsed = urlparse(base_url)
     existing_params = parse_qs(parsed.query, keep_blank_values=True)
@@ -661,7 +650,7 @@ def _clear_nonce_cookie(response: Response) -> None:
     response.delete_cookie(_NONCE_COOKIE_NAME, **_NONCE_COOKIE_ATTRS)
 
 
-def register_oauth_routes(mcp_server: _RouteRegistry) -> None:
+def register_oauth_routes(mcp_server: RouteRegistry) -> None:
     """Register OAuth proxy routes on the MCP server.
 
     Raises:

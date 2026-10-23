@@ -12,9 +12,12 @@ not import (and thereby register) any tool module, or --toolsets breaks.
 import importlib
 import inspect
 import re
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
+from types import FunctionType
 
 from server import TOOLS_PACKAGE, mcp
+
+type _ToolFn = Callable[..., Awaitable[object]]  # a decorated read-only tool
 
 # (resource name, `module.func` reference, URI template)
 RESOURCES: list[tuple[str, str, str]] = [
@@ -413,7 +416,7 @@ RESOURCES: list[tuple[str, str, str]] = [
 ]
 
 # (name, `module.func` ref, uri, extra) — extra pins fixed kwargs for filtered resources.
-REGISTRATIONS: list[tuple[str, str, str, dict | None]] = [
+REGISTRATIONS: list[tuple[str, str, str, dict[str, object] | None]] = [
     (n, ref, uri, None) for n, ref, uri in RESOURCES
 ] + [
     (
@@ -432,8 +435,8 @@ REGISTRATIONS: list[tuple[str, str, str, dict | None]] = [
 
 
 def build_resource_wrapper(
-    uri: str, fn: Callable, name: str, extra: dict | None
-) -> Callable:
+    uri: str, fn: _ToolFn, name: str, extra: dict[str, object] | None
+) -> FunctionType:
     """Build the named async wrapper an alpacon:// resource registers.
 
     Path params in `uri` (e.g. {region}) become named arguments; `extra` injects
@@ -448,15 +451,17 @@ def build_resource_wrapper(
     # The SDK needs a real named signature; a **kwargs wrapper fails func_metadata.
     src = f"async def _wrapper({sig}):\n    return {{'content': await _fn({call})}}\n"
     # __name__/__file__ give the wrapper a real __module__ and traceback frame.
-    ns: dict = {'_fn': fn, '__name__': __name__}
+    ns: dict[str, object] = {'_fn': fn, '__name__': __name__}
     exec(compile(src, __file__, 'exec'), ns)  # noqa: S102
     wrapper = ns['_wrapper']
+    if not isinstance(wrapper, FunctionType):
+        raise TypeError(f'{name}: exec produced no wrapper function')
     wrapper.__name__ = wrapper.__qualname__ = name
     return wrapper
 
 
 def register_resource(
-    uri: str, fn: Callable, name: str, extra: dict | None = None
+    uri: str, fn: _ToolFn, name: str, extra: dict[str, object] | None = None
 ) -> None:
     """Register an alpacon:// resource that proxies a read-only tool."""
     wrapper = build_resource_wrapper(uri, fn, name, extra)
@@ -469,9 +474,12 @@ def register_resource(
     mcp.resource(uri, name=name, description=doc, mime_type='application/json')(wrapper)
 
 
-def _resolve(ref: str) -> Callable:
+def _resolve(ref: str) -> _ToolFn:
     module_name, func_name = ref.split('.', 1)
-    return getattr(importlib.import_module(f'{TOOLS_PACKAGE}.{module_name}'), func_name)
+    fn: _ToolFn = getattr(
+        importlib.import_module(f'{TOOLS_PACKAGE}.{module_name}'), func_name
+    )
+    return fn
 
 
 def register_resources(enabled_modules: set[str]) -> None:

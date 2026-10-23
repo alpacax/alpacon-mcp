@@ -55,9 +55,10 @@ _EPOCH = datetime.min.replace(tzinfo=UTC)
 
 type _ProcRecord = dict[str, Any]  # one partition or interface from /api/proc/
 type _MetricSummary = dict[str, Any]  # one metric's entry in the server summary
+type _MetricRow = dict[str, Any]  # one time-series point from /api/metrics/
 
 
-def _timestamp_key(entry: dict[str, Any]) -> datetime:
+def _timestamp_key(entry: _MetricRow) -> datetime:
     """Parse a row's timestamp; a naive one is read as UTC, a bad one sorts first."""
     try:
         parsed = datetime.fromisoformat(
@@ -68,12 +69,12 @@ def _timestamp_key(entry: dict[str, Any]) -> datetime:
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
 
 
-def _oldest_first(results: list) -> list:
+def _oldest_first(results: list[_MetricRow]) -> list[_MetricRow]:
     """Order metric rows by the instant of their timestamp; the API returns newest first."""
     return sorted(results, key=_timestamp_key)
 
 
-def parse_cpu_metrics(results: list) -> dict[str, Any]:
+def parse_cpu_metrics(results: list[_MetricRow]) -> dict[str, Any]:
     """Parse CPU usage metrics to extract meaningful statistics.
 
     Args:
@@ -196,7 +197,7 @@ async def get_cpu_usage(
     return success_response(data=parsed_data, region=region, workspace=workspace)
 
 
-def parse_memory_metrics(results: list) -> dict[str, Any]:
+def parse_memory_metrics(results: list[_MetricRow]) -> dict[str, Any]:
     """Parse memory usage metrics to extract meaningful statistics.
 
     Args:
@@ -319,7 +320,7 @@ async def get_memory_usage(
     return success_response(data=parsed_data, region=region, workspace=workspace)
 
 
-def parse_disk_metrics(results: list) -> dict[str, Any]:
+def parse_disk_metrics(results: list[_MetricRow]) -> dict[str, Any]:
     """Parse disk usage metrics to extract meaningful statistics.
 
     Args:
@@ -498,7 +499,7 @@ async def get_disk_usage(
     return success_response(data=parsed_data, region=region, workspace=workspace)
 
 
-def parse_network_metrics(results: list) -> dict[str, Any]:
+def parse_network_metrics(results: list[_MetricRow]) -> dict[str, Any]:
     """Parse network traffic metrics to extract meaningful statistics.
 
     Args:
