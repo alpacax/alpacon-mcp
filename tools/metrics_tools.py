@@ -53,6 +53,9 @@ _LATEST_ORDERING_SENTENCE = (
 
 _EPOCH = datetime.min.replace(tzinfo=UTC)
 
+type _ProcRecord = dict[str, Any]  # one partition or interface from /api/proc/
+type _MetricSummary = dict[str, Any]  # one metric's entry in the server summary
+
 
 def _timestamp_key(entry: dict[str, Any]) -> datetime:
     """Parse a row's timestamp; a naive one is read as UTC, a bad one sorts first."""
@@ -884,7 +887,7 @@ def _is_http_error(result: object) -> bool:
 
 
 def _find_record_id(
-    result: object, predicate: Callable[[dict[str, Any]], bool]
+    result: object, predicate: Callable[[_ProcRecord], bool]
 ) -> str | None:
     """Return the id of the first /api/proc/ record matching predicate.
 
@@ -1006,14 +1009,14 @@ async def get_server_metrics_summary(
         ),
     )
 
-    def is_root(p: dict[str, Any]) -> bool:
+    def is_root(p: _ProcRecord) -> bool:
         return '/' in (p.get('mount_points') or [])
 
     root_partition_id = _find_record_id(
         partitions_result, lambda p: is_root(p) and not p.get('is_virtual', False)
     ) or _find_record_id(partitions_result, is_root)
 
-    def is_active(i: dict[str, Any]) -> bool:
+    def is_active(i: _ProcRecord) -> bool:
         return not i.get('is_loopback', False) and i.get('is_up', False)
 
     interface_id = _find_record_id(
@@ -1061,7 +1064,7 @@ async def get_server_metrics_summary(
     metric_results = dict(zip(tasks, gathered, strict=True))
 
     # Helper function to extract summary from metric result (from http_client directly)
-    def extract_summary(result: object, metric_type: str) -> dict[str, Any]:
+    def extract_summary(result: object, metric_type: str) -> _MetricSummary:
         # Handle exceptions first
         if isinstance(result, Exception):
             return {'available': False, 'error': str(result)}

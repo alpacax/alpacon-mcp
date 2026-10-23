@@ -2581,24 +2581,40 @@ class TestOAuthCallback:
         assert 'error=access_denied' in location
         assert 'state=xyz' in location
 
-    def test_callback_error_returns_json_without_redirect_uri(self, oauth_app):
-        """Auth0 errors without client redirect_uri fall back to JSON."""
-        response = oauth_app.get(
-            '/oauth/callback',
-            params={'error': 'access_denied', 'error_description': 'User denied'},
-        )
-        assert response.status_code == HTTPStatus.BAD_REQUEST
-        assert response.json()['error'] == 'access_denied'
-
-    def test_callback_error_without_description_answers_an_empty_string(
+    def test_callback_error_without_description_redirects_an_empty_description(
         self, oauth_app
     ):
-        response = oauth_app.get('/oauth/callback', params={'error': 'access_denied'})
+        composite = _make_composite_state('http://localhost:52048/callback', 'xyz')
+
+        response = oauth_app.get(
+            '/oauth/callback',
+            params={'error': 'access_denied', 'state': composite},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == HTTPStatus.FOUND
+        query = parse_qs(
+            urlparse(response.headers['location']).query, keep_blank_values=True
+        )
+        assert query['error_description'] == ['']
+
+    @pytest.mark.parametrize(
+        ('query', 'expected_description'),
+        [({'error_description': 'User denied'}, 'User denied'), ({}, '')],
+        ids=['with_description', 'without_description'],
+    )
+    def test_callback_error_returns_json_without_redirect_uri(
+        self, oauth_app, query, expected_description
+    ):
+        """Auth0 errors without client redirect_uri fall back to JSON."""
+        response = oauth_app.get(
+            '/oauth/callback', params={'error': 'access_denied', **query}
+        )
 
         assert response.status_code == HTTPStatus.BAD_REQUEST
         assert response.json() == {
             'error': 'access_denied',
-            'error_description': '',
+            'error_description': expected_description,
         }
 
     def test_callback_rejects_opaque_state(self, oauth_app):

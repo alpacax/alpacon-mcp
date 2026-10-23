@@ -310,9 +310,7 @@ def _is_registrable_uri_list(value: object) -> bool:
     )
 
 
-def _allow_browser_clients(
-    handler: _RouteHandler,
-) -> _RouteHandler:
+def _allow_browser_clients(handler: _RouteHandler) -> _RouteHandler:
     """Answer the CORS preflight and mark the response readable cross-origin.
 
     Only for endpoints a browser-based client reaches with fetch: /oauth/authorize
@@ -665,9 +663,6 @@ def _clear_nonce_cookie(response: Response) -> None:
 
 def register_oauth_routes(mcp_server: _RouteRegistry) -> None:
     """Register OAuth proxy routes on the MCP server.
-
-    Args:
-        mcp_server: the MCP server object server.py builds
 
     Raises:
         ValueError: ALPACON_MCP_STATE_SECRET or ALPACON_MCP_GRANT_SECRET is set
