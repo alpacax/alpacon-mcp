@@ -28,7 +28,7 @@ async def list_activity_logs(
     region: str = '',
     cursor: str | None = None,
     page_size: int | None = None,
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """List activity logs, following the server's cursor up to the request bound.
 
@@ -65,7 +65,7 @@ async def list_activity_logs(
     meta={'anthropic/searchHint': 'audit activity log detail'},
 )
 async def get_activity_log(
-    log_id: str, workspace: str, region: str = '', **kwargs
+    log_id: str, workspace: str, region: str = '', **kwargs: str
 ) -> ToolResponse:
     """Get activity log details by ID.
 
@@ -112,7 +112,7 @@ async def list_server_logs(
     region: str = '',
     cursor: str | None = None,
     page_size: int | None = None,
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """List server command execution logs, following the server's cursor.
 
@@ -162,7 +162,7 @@ async def list_webftp_logs(
     region: str = '',
     cursor: str | None = None,
     page_size: int | None = None,
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """List WebFTP file transfer logs, following the server's cursor.
 
@@ -213,7 +213,7 @@ async def list_session_analyses(
     region: str = '',
     page: int | None = None,
     page_size: int | None = None,
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """List session security analyses.
 
@@ -260,7 +260,7 @@ async def get_session_analysis_detail(
     analysis_id: str,
     workspace: str,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Get detailed session analysis by ID.
 

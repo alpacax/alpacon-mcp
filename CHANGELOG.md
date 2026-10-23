@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- When Auth0 returns an error to `/oauth/callback` without an `error_description` and no client `redirect_uri` is known, the JSON error now carries `error_description: ""` instead of `null`. RFC 6749 allows the field to be absent or a string, never null; a client that read the field as nullable needs no change (#372).
 - `create_command_acl`, `update_command_acl` and `delete_command_acl` now explain the 405
   `command_acl_moved` that a server managing command pre-approvals on the command pre-approval
   ledger answers on every command-ACL write: the error says a Command ACL admin must issue or revoke

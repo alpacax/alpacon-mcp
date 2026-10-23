@@ -24,7 +24,7 @@ from utils.logger import get_logger, json_logs_requested, logger_manager
 logger = get_logger('main_http')
 
 
-def main():
+def main() -> None:
     """Main entry point for HTTP transport mode."""
     json_logs = json_logs_requested()
     if json_logs:

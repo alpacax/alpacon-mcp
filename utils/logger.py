@@ -264,13 +264,13 @@ def _add_filter_once(logger: logging.Logger, kind: type[logging.Filter]) -> None
 class AlpaconLogger:
     """Centralized logging configuration for Alpacon MCP Server."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.listener: logging.handlers.QueueListener | None = None
         self.stream_handler: logging.StreamHandler
         self.queue_handler: logging.handlers.QueueHandler
         self._setup_logging()
 
-    def _setup_logging(self):
+    def _setup_logging(self) -> None:
         """Setup logging configuration."""
         # Get log level from environment variable
         log_level = os.getenv('ALPACON_MCP_LOG_LEVEL', 'INFO').upper()

@@ -55,7 +55,7 @@ async def list_alerts(
     acknowledged: bool | None = None,
     dismissed: bool | None = None,
     resolved: bool | None = None,
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """List alerts.
 
@@ -110,7 +110,7 @@ async def list_alerts(
     meta={'anthropic/searchHint': 'alert detail info specific'},
 )
 async def get_alert(
-    alert_id: str, workspace: str, region: str = '', **kwargs
+    alert_id: str, workspace: str, region: str = '', **kwargs: str
 ) -> ToolResponse:
     """Get alert details by ID.
 
@@ -152,7 +152,7 @@ async def acknowledge_alert(
     workspace: str,
     action_type: str,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Acknowledge an alert.
 
@@ -222,7 +222,7 @@ async def create_alert_rule(
     severity: str | None = None,
     notify_email: str | None = None,
     notify_slack_channel: bool | None = None,
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Create an alert rule.
 
@@ -339,7 +339,7 @@ async def update_alert_rule(
     severity: str | None = None,
     notify_email: str | None = None,
     notify_slack_channel: bool | None = None,
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Update an alert rule.
 
@@ -453,7 +453,7 @@ async def attach_alert_rule(
     rule_id: str,
     workspace: str,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Attach an alert rule to a server.
 
@@ -493,7 +493,7 @@ async def detach_alert_rule(
     rule_id: str,
     workspace: str,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Detach an alert rule from a server.
 
@@ -527,7 +527,7 @@ async def detach_alert_rule(
     meta={'anthropic/searchHint': 'alert rule delete remove'},
 )
 async def delete_alert_rule(
-    rule_id: str, workspace: str, region: str = '', **kwargs
+    rule_id: str, workspace: str, region: str = '', **kwargs: str
 ) -> ToolResponse:
     """Delete an alert rule.
 
@@ -574,7 +574,7 @@ async def delete_alert_rule(
     },
 )
 async def get_alert_rule_recipients(
-    rule_id: str, workspace: str, region: str = '', **kwargs
+    rule_id: str, workspace: str, region: str = '', **kwargs: str
 ) -> ToolResponse:
     """Preview who an alert rule would notify, as counts only.
 
@@ -657,7 +657,7 @@ async def preview_alert_rule(
     notify_email: str | None = None,
     notify_slack_channel: bool | None = None,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Preview what an alert rule would have raised over a past window.
 
@@ -791,7 +791,7 @@ async def list_rule_overrides(
     region: str = '',
     page: int | None = None,
     page_size: int | None = None,
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """List rule overrides.
 
@@ -839,7 +839,7 @@ async def list_rule_overrides(
     meta={'anthropic/searchHint': 'rule override detail info specific'},
 )
 async def get_rule_override(
-    override_id: str, workspace: str, region: str = '', **kwargs
+    override_id: str, workspace: str, region: str = '', **kwargs: str
 ) -> ToolResponse:
     """Get a rule override by ID.
 
@@ -890,7 +890,7 @@ async def create_rule_override(
     duration_s: int | None = None,
     enabled: bool | None = None,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Create a rule override.
 
@@ -959,7 +959,7 @@ async def update_rule_override(
     duration_s: int | None = None,
     enabled: bool | None = None,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Update a rule override.
 
@@ -1025,7 +1025,7 @@ async def update_rule_override(
     meta={'anthropic/searchHint': 'rule override delete remove'},
 )
 async def delete_rule_override(
-    override_id: str, workspace: str, region: str = '', **kwargs
+    override_id: str, workspace: str, region: str = '', **kwargs: str
 ) -> ToolResponse:
     """Delete a rule override.
 

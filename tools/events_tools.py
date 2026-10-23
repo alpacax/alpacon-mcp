@@ -18,7 +18,7 @@ async def list_events(
     reporter: str | None = None,
     limit: int = 50,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """List events from servers."""
     token = kwargs.get('token')
@@ -50,7 +50,7 @@ async def list_events(
     meta={'anthropic/searchHint': 'event detail specific'},
 )
 async def get_event(
-    event_id: str, workspace: str, region: str = '', **kwargs
+    event_id: str, workspace: str, region: str = '', **kwargs: str
 ) -> ToolResponse:
     """Get detailed information about a specific event."""
     token = kwargs.get('token')
@@ -77,7 +77,7 @@ async def search_events(
     server_id: str | None = None,
     limit: int = 20,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Search events by server name, reporter, record, or description."""
     token = kwargs.get('token')

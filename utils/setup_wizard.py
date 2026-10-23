@@ -65,7 +65,7 @@ def test_connection(region: str, workspace: str, token: str) -> bool:
     """Test API connection with provided credentials."""
     try:
 
-        async def _test():
+        async def _test() -> bool:
             client = AlpaconHTTPClient()
             result = await client.get(
                 region=region,

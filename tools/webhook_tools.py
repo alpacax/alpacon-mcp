@@ -35,7 +35,7 @@ async def list_event_subscriptions(
     region: str = '',
     page: int | None = None,
     page_size: int | None = None,
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """List event subscriptions.
 
@@ -74,7 +74,7 @@ async def create_event_subscription(
     event_type: str,
     target_id: str | None = None,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Create an event subscription.
 
@@ -123,7 +123,7 @@ async def create_event_subscription(
     meta={'anthropic/searchHint': 'event subscription delete remove'},
 )
 async def delete_event_subscription(
-    subscription_id: str, workspace: str, region: str = '', **kwargs
+    subscription_id: str, workspace: str, region: str = '', **kwargs: str
 ) -> ToolResponse:
     """Delete an event subscription.
 
@@ -169,7 +169,7 @@ async def list_webhooks(
     region: str = '',
     page: int | None = None,
     page_size: int | None = None,
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """List webhooks.
 
@@ -217,7 +217,7 @@ async def list_webhooks(
     meta={'anthropic/searchHint': 'webhook detail describe single get'},
 )
 async def get_webhook(
-    webhook_id: str, workspace: str, region: str = '', **kwargs
+    webhook_id: str, workspace: str, region: str = '', **kwargs: str
 ) -> ToolResponse:
     """Get a single webhook by ID.
 
@@ -261,7 +261,7 @@ async def create_webhook(
     ssl_verify: bool = True,
     enabled: bool = True,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Create a webhook.
 
@@ -320,7 +320,7 @@ async def update_webhook(
     ssl_verify: bool | None = None,
     enabled: bool | None = None,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Update an existing webhook.
 
@@ -373,7 +373,7 @@ async def update_webhook(
     meta={'anthropic/searchHint': 'webhook delete remove'},
 )
 async def delete_webhook(
-    webhook_id: str, workspace: str, region: str = '', **kwargs
+    webhook_id: str, workspace: str, region: str = '', **kwargs: str
 ) -> ToolResponse:
     """Delete a webhook.
 

@@ -212,7 +212,7 @@ async def test_list_servers_success():
        parameter: str,
        workspace: str,
        region: str = '',  # Empty means auto-detect from the workspace
-       **kwargs,  # Receives token from decorator
+       **kwargs: str,  # Receives token from decorator
    ) -> ToolResponse:
        """Your tool documentation.
 

@@ -53,7 +53,7 @@ async def list_command_acls(
     service_token_id: str | None = None,
     page: int | None = None,
     page_size: int | None = None,
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """List command ACL rules.
 
@@ -105,7 +105,7 @@ async def create_command_acl(
     username: str = '',
     groupname: str = '',
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Create a command ACL rule.
 
@@ -166,7 +166,7 @@ async def update_command_acl(
     username: str | None = None,
     groupname: str | None = None,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Update an existing command ACL rule.
 
@@ -218,7 +218,7 @@ async def update_command_acl(
     meta={'anthropic/searchHint': 'command acl delete remove'},
 )
 async def delete_command_acl(
-    acl_id: str, workspace: str, region: str = '', **kwargs
+    acl_id: str, workspace: str, region: str = '', **kwargs: str
 ) -> ToolResponse:
     """Delete a command ACL rule.
 
@@ -255,7 +255,7 @@ async def list_server_acls(
     service_token_id: str | None = None,
     page: int | None = None,
     page_size: int | None = None,
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """List server ACL rules.
 
@@ -304,7 +304,7 @@ async def create_server_acl(
     api_token_id: str | None = None,
     service_token_id: str | None = None,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Create a server ACL rule.
 
@@ -357,7 +357,7 @@ async def update_server_acl(
     api_token_id: str | None = None,
     service_token_id: str | None = None,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Update an existing server ACL rule.
 
@@ -412,7 +412,7 @@ async def update_server_acl(
     meta={'anthropic/searchHint': 'server acl delete remove'},
 )
 async def delete_server_acl(
-    acl_id: str, workspace: str, region: str = '', **kwargs
+    acl_id: str, workspace: str, region: str = '', **kwargs: str
 ) -> ToolResponse:
     """Delete a server ACL rule.
 
@@ -450,7 +450,7 @@ async def bulk_server_acl(
     api_token_id: str | None = None,
     service_token_id: str | None = None,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Bulk add or remove server ACL entries.
 
@@ -516,7 +516,7 @@ async def list_file_acls(
     service_token_id: str | None = None,
     page: int | None = None,
     page_size: int | None = None,
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """List file ACL rules.
 
@@ -570,7 +570,7 @@ async def create_file_acl(
     username: str = '',
     groupname: str = '',
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Create a file ACL rule.
 
@@ -637,7 +637,7 @@ async def update_file_acl(
     username: str | None = None,
     groupname: str | None = None,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Update an existing file ACL rule.
 
@@ -695,7 +695,7 @@ async def update_file_acl(
     meta={'anthropic/searchHint': 'file acl delete remove'},
 )
 async def delete_file_acl(
-    acl_id: str, workspace: str, region: str = '', **kwargs
+    acl_id: str, workspace: str, region: str = '', **kwargs: str
 ) -> ToolResponse:
     """Delete a file ACL rule.
 

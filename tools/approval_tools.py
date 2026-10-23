@@ -33,7 +33,7 @@ async def list_approval_requests(
     region: str = '',
     page: int | None = None,
     page_size: int | None = None,
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """List approval requests.
 
@@ -68,7 +68,7 @@ async def list_approval_requests(
     meta={'anthropic/searchHint': 'approval request detail'},
 )
 async def get_approval_request(
-    request_id: str, workspace: str, region: str = '', **kwargs
+    request_id: str, workspace: str, region: str = '', **kwargs: str
 ) -> ToolResponse:
     """Get approval request details by ID.
 
@@ -116,7 +116,7 @@ async def explain_approval_decision(
     workspace: str,
     request_id: str | None = None,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Explain that approving/rejecting a request is a human-only, out-of-band action.
 
@@ -163,7 +163,7 @@ async def list_sudo_policies(
     page_size: int | None = None,
     user: str | None = None,
     server_id: str | None = None,
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """List sudo policies.
 
@@ -223,7 +223,7 @@ async def request_sudo_policy(
     valid_from: str | None = None,
     valid_until: str | None = None,
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> ToolResponse:
     """Request a sudo policy that an admin must approve.
 
