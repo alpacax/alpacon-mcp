@@ -195,7 +195,7 @@ class TestRunWiring:
             imported.append(name)
             return real_import(name, *args, **kwargs)
 
-        monkeypatch.setattr(server.importlib, 'import_module', spy)
+        monkeypatch.setattr(importlib, 'import_module', spy)
         monkeypatch.setattr(res, 'register_resources', lambda m: handed.update(m=m))
         monkeypatch.setattr(server.mcp, 'run', lambda transport: None)
         monkeypatch.setenv('ALPACON_MCP_TRANSPORT', 'restored-on-teardown')
