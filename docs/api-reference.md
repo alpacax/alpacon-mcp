@@ -436,8 +436,9 @@ Alpacon console (Commands) first, or the script waits on two approval requests. 
 it.
 
 **Refused as a script body:** a line that carries a script body (a heredoc, a multi-line `-c` or `-e`
-body, or a decoded payload piped into a shell or interpreter) is not refused at submit time. The
-command is created as usual, and the verdict lands on the command row after verification: `status`
+body, or a decoded payload piped into a shell or interpreter) can be refused when the workspace
+approval policy blocks script bodies. It is never refused at submit time. The command is created as
+usual, and the verdict lands on the command row after verification: `status`
 and `verification_status` are `rejected`, `rejection_cause` is `use_file_execution`, and `result`
 carries the server's guidance sentence. The response is then `status: "error"` with `error_code:
 "use_file_execution"`, a `message` that leads with that sentence, the command row in `details`, and a
@@ -588,8 +589,8 @@ Execute a command on multiple servers simultaneously.
 - `purpose` (string, optional): What this particular command is for (ADR 0052). The assessor judges the command with it in hand, so one that would otherwise queue for a human may clear on its own. State a fact local to this host that the Work Session description does not already imply; general knowledge adds nothing the assessor lacks, and a purpose cannot lower a command's intrinsic risk. Trimmed to 2000 characters rather than refused, and the response then carries `purpose_truncated: true`. This tool never waits, so it is never asked for a purpose after the fact—stating it up front is the only chance
 - `region` (string, optional): Region name; resolved from the workspace when omitted
 
-**Refused as a script body:** the `use_file_execution` refusal described under `execute_command` is
-decided per server command after verification, so this tool's submit result never shows it and only
+**Refused as a script body:** the `use_file_execution` refusal described under `execute_command`, which
+applies when the workspace approval policy blocks script bodies, is decided per server command after verification, so this tool's submit result never shows it and only
 some targets may be refused. Read it from `list_commands`, where each refused entry carries
 `error_code: "use_file_execution"` and a `next_action`. Rerun the script with `execute_file` on the
 refused servers only, with the same account: the file lane needs every target server to support it,
