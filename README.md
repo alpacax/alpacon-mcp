@@ -73,7 +73,7 @@ Before running the setup, get your API token:
 
 1. Visit `https://alpacon.io`
 2. Log in to your account
-3. Click **"API Token"** in left sidebar
+3. Click your account card at the bottom of the left sidebar, then **My API tokens**.
 4. Create new token or copy existing one
 5. **Configure ACL permissions** (important for command execution)
 6. Copy the token (starts with `alpat-...`)
