@@ -457,7 +457,7 @@ async def list_workspace_mfa_methods(
     description=(
         'Get the workspace-wide preferences: timezone, locale (country/language), '
         'front_url, invite_ttl, enabled_extensions, websh_session_timeout, '
-        'agent_rollout_policy, package_proxy, billing_email, and allowed_domains. '
+        'agent_rollout_policy, package_proxy, and billing_email. '
         'agent_rollout_policy is {"mode": "latest"|"n_minus_1"|"manual", "window": '
         '{"days": [0-6, Monday is 0], "start_hour": 0-23, "length_hours": 1-24, '
         '"timezone": "<IANA>"}} and controls automatic agent upgrades. '
@@ -505,7 +505,7 @@ async def get_workspace_preferences(
         'Update workspace-wide preferences. Only the fields you provide are sent (partial '
         'update). Fields: front_url, country, language, timezone, invite_ttl, '
         'enabled_extensions, websh_session_timeout, agent_rollout_policy, package_proxy, '
-        'billing_email, allowed_domains. '
+        'billing_email. '
         'agent_rollout_policy controls automatic agent upgrades: {"mode": '
         '"latest"|"n_minus_1"|"manual", "window": {"days": [0-6, Monday is 0], '
         '"start_hour": 0-23, "length_hours": 1-24, "timezone": "<IANA>"}}. A write may '
@@ -515,11 +515,11 @@ async def get_workspace_preferences(
         'deployment has no pinned-upgrade targets enabled yet. '
         "Warning: timezone is the workspace's billing clock—changing it shifts the daily "
         'usage-aggregation boundary. '
-        'Warning: the list fields (enabled_extensions, allowed_domains) REPLACE the whole '
-        'list, they do not append; read the current value via get_workspace_preferences, '
+        'Warning: enabled_extensions REPLACES the whole list, it does not append; '
+        'read the current value via get_workspace_preferences, '
         'merge, then send the full list to avoid dropping existing entries. Narrowing '
         'enabled_extensions additionally fails with HTTP 402 on non-enterprise plans. '
-        'Warning: billing_email and allowed_domains are only accepted by the server on SaaS '
+        'Warning: billing_email is only accepted by the server on SaaS '
         'deployments. '
         'Related: get_workspace_preferences.'
     ),
@@ -539,7 +539,6 @@ async def update_workspace_preferences(
     websh_session_timeout: int | None = None,
     package_proxy: str | None = None,
     billing_email: str | None = None,
-    allowed_domains: list[str] | None = None,
     agent_rollout_policy: dict[str, Any] | None = None,
     region: str = '',
     **kwargs: str,
@@ -560,9 +559,6 @@ async def update_workspace_preferences(
         package_proxy: Proxy server URL for package installation, e.g.
             http://proxy.example.com:8080 (optional)
         billing_email: Billing contact email; SaaS-only field (optional)
-        allowed_domains: Allowed email domains for invites; SaaS-only field. Replaces the
-            whole list (not additive); read via get_workspace_preferences and merge before
-            sending (optional)
         agent_rollout_policy: Agent-upgrade rollout policy: {"mode": "latest"|
             "n_minus_1"|"manual", "window": {"days": [...], "start_hour": ...,
             "length_hours": ..., "timezone": "..."}}. A write may name only part
@@ -594,8 +590,6 @@ async def update_workspace_preferences(
         update_data['package_proxy'] = package_proxy
     if billing_email is not None:
         update_data['billing_email'] = billing_email
-    if allowed_domains is not None:
-        update_data['allowed_domains'] = allowed_domains
 
     if agent_rollout_policy is not None:
         validation_error = _validate_rollout_policy(agent_rollout_policy)

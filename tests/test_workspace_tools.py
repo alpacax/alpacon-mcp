@@ -10,6 +10,7 @@ from http import HTTPStatus
 from unittest.mock import MagicMock, patch
 
 import pytest
+from mcp.types import CallToolResult
 
 from server import mcp
 from tests.conftest import HTTP_ERROR_ENVELOPE, http_client_fixture
@@ -659,6 +660,57 @@ class TestGetWorkspacePreferences:
 
 class TestUpdateWorkspacePreferences:
     """Test update_workspace_preferences function."""
+
+    def test_allowed_domains_is_not_in_tool_schema(self):
+        tool = mcp._tool_manager.get_tool('update_workspace_preferences')
+        assert tool is not None
+        assert 'allowed_domains' not in tool.parameters['properties']
+
+    @pytest.mark.asyncio
+    async def test_sdk_drops_allowed_domains_and_sends_other_fields(
+        self, mock_http_client, mock_token
+    ):
+        mock_http_client.patch.return_value = {'timezone': 'Asia/Seoul'}
+
+        result = await mcp.call_tool(
+            'update_workspace_preferences',
+            {
+                'workspace': 'testworkspace',
+                'region': 'ap1',
+                'timezone': 'Asia/Seoul',
+                'allowed_domains': ['example.com'],
+            },
+        )
+
+        assert isinstance(result, CallToolResult)
+        assert result.structured_content is not None
+        assert result.structured_content['status'] == 'success'
+        mock_http_client.patch.assert_awaited_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/workspaces/preferences/-/',
+            token='test-token',
+            data={'timezone': 'Asia/Seoul'},
+        )
+
+    @pytest.mark.asyncio
+    async def test_sdk_allowed_domains_alone_returns_no_update_data_error(
+        self, mock_http_client, mock_token
+    ):
+        result = await mcp.call_tool(
+            'update_workspace_preferences',
+            {
+                'workspace': 'testworkspace',
+                'region': 'ap1',
+                'allowed_domains': ['example.com'],
+            },
+        )
+
+        assert isinstance(result, CallToolResult)
+        assert result.structured_content is not None
+        assert result.structured_content['status'] == 'error'
+        assert result.structured_content['message'] == 'No update data provided'
+        assert mock_http_client.mock_calls == []
 
     @pytest.mark.asyncio
     async def test_partial_update_only_sends_provided_fields(
