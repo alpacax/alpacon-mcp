@@ -93,8 +93,8 @@ Before configuring authentication, you need to obtain API tokens from your Alpac
 
 2. **Log in** to your Alpacon account
 
-3. **Navigate to API Token**:
-   - Click **"API Token"** in the left sidebar
+3. **Open My API tokens**:
+   - Click your account card at the bottom of the left sidebar, then **My API tokens**
    - This section manages your authentication tokens
 
 4. **Generate or Copy Token**:
