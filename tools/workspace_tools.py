@@ -461,9 +461,9 @@ async def list_workspace_mfa_methods(
         'agent_rollout_policy is {"mode": "latest"|"n_minus_1"|"manual", "window": '
         '{"days": [0-6, Monday is 0], "start_hour": 0-23, "length_hours": 1-24, '
         '"timezone": "<IANA>"}} and controls automatic agent upgrades. '
-        'DEPRECATED: the response also carries auto_agent_upgrade, a boolean '
-        'alias of agent_rollout_policy (true unless mode is manual); read '
-        'agent_rollout_policy instead. This is workspace-global configuration, not a per-user preference. '
+        'The response also includes auto_agent_upgrade, a read-only boolean derived '
+        'from agent_rollout_policy (true unless mode is manual); read '
+        'agent_rollout_policy. This is workspace-global configuration, not a per-user preference. '
         'Related: update_workspace_preferences.'
     ),
     annotations=READ_ONLY,
@@ -483,8 +483,9 @@ async def get_workspace_preferences(
     Returns:
         Workspace preferences response. `agent_rollout_policy` is the current
         agent-upgrade rollout policy (`mode` plus its upgrade `window`).
-        DEPRECATED: the response also carries `auto_agent_upgrade` (a boolean
-        alias) alongside it; read `agent_rollout_policy` instead.
+        The response also includes `auto_agent_upgrade`, a read-only boolean
+        derived from `agent_rollout_policy` (`true` unless `mode` is `manual`);
+        read `agent_rollout_policy`.
     """
     token = kwargs.get('token')
 
@@ -511,12 +512,6 @@ async def get_workspace_preferences(
         'current value. Validated locally before sending; the server may still refuse '
         'n_minus_1 with 400 preferences_agent_rollout_mode_unavailable when this '
         'deployment has no pinned-upgrade targets enabled yet. '
-        'DEPRECATED: auto_agent_upgrade (boolean) is still accepted and is '
-        'translated locally into a policy fragment (true -> {"mode": "latest"}, false -> '
-        '{"mode": "manual"}); it is never sent to the server as-is. When both are given, '
-        'that fragment is merged underneath agent_rollout_policy: a key agent_rollout_policy '
-        'names wins, but a key it leaves out (e.g. window, when only the boolean set mode) '
-        'still comes from the boolean. Pass agent_rollout_policy directly instead. '
         "Warning: timezone is the workspace's billing clock—changing it shifts the daily "
         'usage-aggregation boundary. '
         'Warning: the list fields (enabled_extensions, allowed_domains) REPLACE the whole '
@@ -541,13 +536,9 @@ async def update_workspace_preferences(
     invite_ttl: int | None = None,
     enabled_extensions: list[str] | None = None,
     websh_session_timeout: int | None = None,
-    auto_agent_upgrade: bool | None = None,
     package_proxy: str | None = None,
     billing_email: str | None = None,
     allowed_domains: list[str] | None = None,
-    # Appended after every pre-existing parameter, not inserted among them:
-    # a caller still passing the old parameters positionally (before
-    # `region`) must keep landing on the same ones.
     agent_rollout_policy: dict[str, Any] | None = None,
     region: str = '',
     **kwargs: str,
@@ -565,13 +556,6 @@ async def update_workspace_preferences(
             (not additive); read via get_workspace_preferences and merge before sending.
             Narrowing this list fails with HTTP 402 on non-enterprise plans (optional)
         websh_session_timeout: Websh idle session timeout, in seconds (optional)
-        auto_agent_upgrade: DEPRECATED, use agent_rollout_policy. Translated
-            locally to a policy fragment (true -> {"mode": "latest"}, false ->
-            {"mode": "manual"}) and never sent to the server as-is. Merged
-            underneath agent_rollout_policy when both are given: an explicit
-            key in agent_rollout_policy overrides the alias's value for that
-            same key, but a key the explicit object does not name (e.g. window
-            when only the alias set mode) still comes from the alias (optional)
         package_proxy: Proxy server URL for package installation, e.g.
             http://proxy.example.com:8080 (optional)
         billing_email: Billing contact email; SaaS-only field (optional)
@@ -582,13 +566,11 @@ async def update_workspace_preferences(
             "n_minus_1"|"manual", "window": {"days": [...], "start_hour": ...,
             "length_hours": ..., "timezone": "..."}}. A write may name only part
             of the object; the rest keeps its current value. Validated locally
-            before the request is sent. See auto_agent_upgrade for the merge
-            order when both are given (optional)
+            before the request is sent (optional)
         region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
-        Workspace preferences update response. Carries a `deprecation_note` when
-        the deprecated `auto_agent_upgrade` input was used.
+        Workspace preferences update response.
     """
     token = kwargs.get('token')
 
@@ -614,37 +596,17 @@ async def update_workspace_preferences(
     if allowed_domains is not None:
         update_data['allowed_domains'] = allowed_domains
 
-    # auto_agent_upgrade is the deprecated alias: map it to a policy fragment
-    # first, then let an explicit agent_rollout_policy override it field by
-    # field, matching the server's own "agent_rollout_policy wins" precedence
-    # (workspaces/api/agent_rollout.py). Neither is ever sent to the server as
-    # `auto_agent_upgrade`.
-    rollout_policy_update: dict[str, Any] = {}
-    deprecation_note: str | None = None
-    if auto_agent_upgrade is not None:
-        alias_mode = 'latest' if auto_agent_upgrade else 'manual'
-        rollout_policy_update['mode'] = alias_mode
-        deprecation_note = (
-            'auto_agent_upgrade is deprecated and will be removed in a future '
-            f"release; it was translated to agent_rollout_policy={{'mode': "
-            f"'{alias_mode}'}}. Pass agent_rollout_policy directly instead."
-        )
     if agent_rollout_policy is not None:
         validation_error = _validate_rollout_policy(agent_rollout_policy)
         if validation_error:
             return error_response(validation_error, region=region, workspace=workspace)
-        rollout_policy_update.update(agent_rollout_policy)
-    if rollout_policy_update:
-        update_data['agent_rollout_policy'] = rollout_policy_update
+        if agent_rollout_policy:
+            update_data['agent_rollout_policy'] = agent_rollout_policy
 
     if not update_data:
         return error_response(
             'No update data provided', region=region, workspace=workspace
         )
-
-    extra_context: dict[str, Any] = {}
-    if deprecation_note is not None:
-        extra_context['deprecation_note'] = deprecation_note
 
     return await http_call_response(
         http_client.patch,
@@ -654,5 +616,4 @@ async def update_workspace_preferences(
         token=token,
         default_message='Failed to update workspace preferences',
         data=update_data,
-        **extra_context,
     )
