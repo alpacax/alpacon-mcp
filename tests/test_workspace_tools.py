@@ -660,6 +660,11 @@ class TestGetWorkspacePreferences:
 class TestUpdateWorkspacePreferences:
     """Test update_workspace_preferences function."""
 
+    def test_allowed_domains_is_not_in_tool_schema(self):
+        tool = mcp._tool_manager.get_tool('update_workspace_preferences')
+        assert tool is not None
+        assert 'allowed_domains' not in tool.parameters['properties']
+
     @pytest.mark.asyncio
     async def test_partial_update_only_sends_provided_fields(
         self, mock_http_client, mock_token

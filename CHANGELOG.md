@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   without the ledger still accepts these writes.
 
 ### Removed
+- BREAKING: `update_workspace_preferences` no longer accepts `allowed_domains`, which the server already ignored (#377). A call that still sends it gets the schema's unknown-parameter error; the response shape is unchanged.
 - BREAKING: `update_workspace_preferences` no longer accepts the deprecated `auto_agent_upgrade` boolean; use the existing `agent_rollout_policy` object instead (`{"mode": "manual"}` replaces the old `false`). Responses no longer include the alias-specific `deprecation_note`; the preferences response shape is otherwise unchanged. The removal is the decided behavior: there is no compatibility shim, and a call that still sends the alias gets the schema's unknown-parameter error.
 
 ### Changed
