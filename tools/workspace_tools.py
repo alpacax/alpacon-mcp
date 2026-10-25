@@ -461,8 +461,9 @@ async def list_workspace_mfa_methods(
         'agent_rollout_policy is {"mode": "latest"|"n_minus_1"|"manual", "window": '
         '{"days": [0-6, Monday is 0], "start_hour": 0-23, "length_hours": 1-24, '
         '"timezone": "<IANA>"}} and controls automatic agent upgrades. '
-        'The response also includes auto_agent_upgrade, a read-only boolean derived '
-        'from agent_rollout_policy (true unless mode is manual); read '
+        'The response also includes auto_agent_upgrade, a deprecated boolean derived '
+        'from agent_rollout_policy (true unless mode is manual) that will be removed '
+        'from the server response; read '
         'agent_rollout_policy. This is workspace-global configuration, not a per-user preference. '
         'Related: update_workspace_preferences.'
     ),
@@ -483,9 +484,9 @@ async def get_workspace_preferences(
     Returns:
         Workspace preferences response. `agent_rollout_policy` is the current
         agent-upgrade rollout policy (`mode` plus its upgrade `window`).
-        The response also includes `auto_agent_upgrade`, a read-only boolean
-        derived from `agent_rollout_policy` (`true` unless `mode` is `manual`);
-        read `agent_rollout_policy`.
+        The response also includes `auto_agent_upgrade`, a deprecated boolean
+        derived from `agent_rollout_policy` (`true` unless `mode` is `manual`)
+        that will be removed from the server response; read `agent_rollout_policy`.
     """
     token = kwargs.get('token')
 

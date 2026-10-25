@@ -1039,7 +1039,7 @@ Get the workspace-wide preferences: timezone, locale, `front_url`, `invite_ttl`,
 - `workspace` (string): Workspace name
 - `region` (string, optional): Region name; resolved from the workspace when omitted
 
-**Note:** The response also includes `auto_agent_upgrade`, a read-only boolean derived from `agent_rollout_policy` (`true` unless `mode` is `manual`). Read `agent_rollout_policy`.
+**Note:** The response also includes `auto_agent_upgrade`, a deprecated boolean derived from `agent_rollout_policy` (`true` unless `mode` is `manual`) that will be removed from the server response. Read `agent_rollout_policy`.
 
 ### `update_workspace_preferences`
 Update workspace-wide preferences. Only the fields you provide are sent (partial update).
