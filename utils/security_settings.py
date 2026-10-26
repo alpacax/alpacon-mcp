@@ -9,32 +9,51 @@ import asyncio
 import hashlib
 import os
 import time
+from collections.abc import Mapping
 from datetime import UTC, datetime
-from typing import Any
 
 import httpx
 
 from utils.logger import escape_for_log, get_logger
+from utils.types import JsonValue
 
 logger = get_logger('security_settings')
 
 _CACHE_TTL = 300  # 5 minutes
+_DEFAULT_MFA_TIMEOUT = 3600  # the server reads a null mfa_timeout as this
+
+
+def _str_list(value: JsonValue) -> list[str] | None:
+    """The strings of a JSON list, or None for any other value."""
+    return (
+        [item for item in value if isinstance(item, str)]
+        if isinstance(value, list)
+        else None
+    )
 
 
 class WorkspaceSecuritySettings:
     """Parsed security settings for a single workspace."""
 
-    def __init__(self, data: dict[str, Any]) -> None:
-        self.mfa_required: bool = data.get('mfa_required', False)
-        self.mfa_timeout: int = data.get('mfa_timeout', 3600)
-        self.mfa_required_actions: list[str] = data.get('mfa_required_actions', [])
-        self.allowed_mfa_methods: list[str] = data.get('allowed_mfa_methods', [])
+    def __init__(self, data: Mapping[str, JsonValue]) -> None:
+        # A malformed field reads as its strictest value, never looser than meant.
+        self.mfa_required = bool(data.get('mfa_required', False))
+        timeout = data.get('mfa_timeout')
+        if timeout is None:
+            timeout = _DEFAULT_MFA_TIMEOUT
+        elif not isinstance(timeout, int | float):
+            timeout = 0
+        self.mfa_timeout: float = timeout
+        # None: malformed, so every action requires MFA and no method satisfies it.
+        self.mfa_required_actions = _str_list(data.get('mfa_required_actions', []))
+        self.allowed_mfa_methods = _str_list(data.get('allowed_mfa_methods', []))
 
     def is_action_mfa_required(self, action: str) -> bool:
         """Check if a specific action requires MFA."""
         if not self.mfa_required:
             return False
-        return action in self.mfa_required_actions
+        actions = self.mfa_required_actions
+        return actions is None or action in actions
 
 
 class SecuritySettingsCache:
@@ -201,7 +220,7 @@ class SecuritySettingsCache:
 
 
 def check_mfa_completed(
-    jwt_claims: dict[str, Any],
+    jwt_claims: Mapping[str, object],
     settings: WorkspaceSecuritySettings,
 ) -> bool:
     """Check if JWT has valid (non-expired) MFA completion.
@@ -223,6 +242,8 @@ def check_mfa_completed(
         return False
 
     allowed_methods = settings.allowed_mfa_methods
+    if allowed_methods is None:
+        return False
     now = datetime.now(tz=UTC)
 
     for method, timestamp_str in completed_mfa.items():

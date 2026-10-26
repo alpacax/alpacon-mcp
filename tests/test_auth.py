@@ -20,6 +20,7 @@ from jwt.algorithms import RSAAlgorithm
 from utils import auth as auth_mod
 from utils.auth import (
     Auth0TokenVerifier,
+    WorkspaceClaim,
     _fetch_jwks,
     _get_signing_key,
     decode_jwt,
@@ -145,6 +146,7 @@ class TestDecodeJwt:
     def test_decodes_valid_token(self, rsa_keypair, jwks_response):
         token = _make_token(rsa_keypair)
         public_key = _get_signing_key(jwks_response, token)
+        assert public_key is not None
         config = {
             'audience': 'https://alpacon.io/access/',
             'issuer': 'https://test.us.auth0.com/',
@@ -156,6 +158,7 @@ class TestDecodeJwt:
     def test_returns_none_for_expired_token(self, rsa_keypair, jwks_response):
         token = _make_token(rsa_keypair, expired=True)
         public_key = _get_signing_key(jwks_response, token)
+        assert public_key is not None
         config = {
             'audience': 'https://alpacon.io/access/',
             'issuer': 'https://test.us.auth0.com/',
@@ -166,6 +169,7 @@ class TestDecodeJwt:
     def test_returns_none_for_wrong_audience(self, rsa_keypair, jwks_response):
         token = _make_token(rsa_keypair)
         public_key = _get_signing_key(jwks_response, token)
+        assert public_key is not None
         config = {
             'audience': 'https://wrong-audience.com/',
             'issuer': 'https://test.us.auth0.com/',
@@ -176,6 +180,7 @@ class TestDecodeJwt:
     def test_returns_none_for_wrong_issuer(self, rsa_keypair, jwks_response):
         token = _make_token(rsa_keypair)
         public_key = _get_signing_key(jwks_response, token)
+        assert public_key is not None
         config = {
             'audience': 'https://alpacon.io/access/',
             'issuer': 'https://wrong-issuer.com/',
@@ -285,15 +290,15 @@ class TestMatchWorkspace:
     """Tests for match_workspace function."""
 
     def test_matches_valid_workspace(self):
-        workspaces = [{'schema_name': 'prod', 'region': 'ap1'}]
+        workspaces: list[WorkspaceClaim] = [{'schema_name': 'prod', 'region': 'ap1'}]
         assert match_workspace(workspaces, 'ap1', 'prod') is True
 
     def test_rejects_wrong_workspace(self):
-        workspaces = [{'schema_name': 'prod', 'region': 'ap1'}]
+        workspaces: list[WorkspaceClaim] = [{'schema_name': 'prod', 'region': 'ap1'}]
         assert match_workspace(workspaces, 'ap1', 'staging') is False
 
     def test_rejects_wrong_region(self):
-        workspaces = [{'schema_name': 'prod', 'region': 'ap1'}]
+        workspaces: list[WorkspaceClaim] = [{'schema_name': 'prod', 'region': 'ap1'}]
         assert match_workspace(workspaces, 'us1', 'prod') is False
 
 
@@ -322,6 +327,37 @@ class TestAuth0TokenVerifier:
         assert result is not None
         assert result.client_id == 'auth0|test-user'
         assert result.token == token
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        'claims',
+        [
+            {'sub': 42},
+            {'scope': ['openid', 'profile']},
+            {'exp': str(int(time.time()) + 3600)},
+        ],
+    )
+    async def test_verify_refuses_a_wrong_typed_access_claim(
+        self, claims, rsa_keypair, jwks_response
+    ):
+        mock_response = MagicMock()
+        mock_response.status_code = HTTPStatus.OK
+        mock_response.json.return_value = jwks_response
+        mock_response.raise_for_status = MagicMock()
+
+        mock_client = AsyncMock()
+        mock_client.get.return_value = mock_response
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+
+        token = _make_token(rsa_keypair, claims=claims)
+
+        with patch.dict('os.environ', AUTH_ENV):
+            with patch('utils.auth.httpx.AsyncClient', return_value=mock_client):
+                verifier = Auth0TokenVerifier()
+                result = await verifier.verify_token(token)
+
+        assert result is None
 
     @pytest.mark.asyncio
     async def test_verify_expired_token_returns_none(self, rsa_keypair, jwks_response):

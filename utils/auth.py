@@ -4,18 +4,30 @@ import asyncio
 import json
 import os
 import time
-from typing import Any
+from collections.abc import Mapping
+from typing import NotRequired, TypedDict
 
 import httpx
 import jwt
+from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicKey
 from mcp.server.auth.provider import AccessToken
 
 from utils.logger import escape_for_log, get_logger
+from utils.types import JsonValue
 
 logger = get_logger('auth')
 
+type JwtClaims = dict[str, JsonValue]  # a decoded JWT payload
+
+
+class WorkspaceClaim(TypedDict):  # one usable entry of the workspaces claim
+    schema_name: str
+    region: str
+    auth0_id: NotRequired[str]
+
+
 # JWKS cache: stores fetched keys and expiry time
-_jwks_cache: dict[str, Any] = {}
+_jwks_cache: dict[str, JsonValue] = {}
 _jwks_cache_expiry: float = 0
 _JWKS_CACHE_TTL = 3600  # 1 hour
 _jwks_lock: asyncio.Lock | None = None
@@ -54,7 +66,7 @@ def _get_auth0_config() -> dict[str, str]:
     }
 
 
-async def _fetch_jwks(jwks_url: str, *, force: bool = False) -> dict[str, Any]:
+async def _fetch_jwks(jwks_url: str, *, force: bool = False) -> dict[str, JsonValue]:
     """Fetch JWKS from Auth0 endpoint with caching.
 
     Uses an async lock to prevent concurrent fetches from racing
@@ -92,7 +104,8 @@ async def _fetch_jwks(jwks_url: str, *, force: bool = False) -> dict[str, Any]:
             _jwks_cache = response.json()
             _jwks_cache_expiry = now + _JWKS_CACHE_TTL
 
-        logger.info('JWKS fetched: %s keys', len(_jwks_cache.get('keys', [])))
+        keys = _jwks_cache.get('keys')
+        logger.info('JWKS fetched: %s keys', len(keys) if isinstance(keys, list) else 0)
         return _jwks_cache
 
 
@@ -105,8 +118,8 @@ def _has_kid(token: str) -> bool:
 
 
 def _get_signing_key(
-    jwks: dict[str, Any], token: str, *, quiet_miss: bool = False
-) -> Any | None:
+    jwks: Mapping[str, JsonValue], token: str, *, quiet_miss: bool = False
+) -> RSAPublicKey | None:
     """Extract the signing key from JWKS matching the token's kid.
 
     ``quiet_miss`` logs a kid miss at info instead of error: the caller passes
@@ -125,9 +138,14 @@ def _get_signing_key(
         logger.error('JWT header missing kid')
         return None
 
-    for key in jwks.get('keys', []):
-        if key.get('kid') == kid:
-            return jwt.algorithms.RSAAlgorithm.from_jwk(json.dumps(key))
+    keys = jwks.get('keys')
+    for key in keys if isinstance(keys, list) else []:
+        if isinstance(key, dict) and key.get('kid') == kid:
+            rsa_key = jwt.algorithms.RSAAlgorithm.from_jwk(json.dumps(key))
+            if isinstance(rsa_key, RSAPublicKey):
+                return rsa_key
+            logger.error('JWKS key for kid %s is not a public key', escape_for_log(kid))
+            return None
 
     if quiet_miss:
         logger.info('No matching key for kid in cached JWKS: %s', escape_for_log(kid))
@@ -137,8 +155,8 @@ def _get_signing_key(
 
 
 def decode_jwt(
-    token: str, public_key: Any, config: dict[str, str]
-) -> dict[str, Any] | None:
+    token: str, public_key: RSAPublicKey, config: dict[str, str]
+) -> JwtClaims | None:
     """Decode and verify a JWT token.
 
     Args:
@@ -169,7 +187,7 @@ def decode_jwt(
     return None
 
 
-def decode_claims_unverified(jwt_token: str) -> dict[str, Any] | None:
+def decode_claims_unverified(jwt_token: str) -> JwtClaims | None:
     """Read a JWT's claims without verifying it.
 
     Only for tokens the auth middleware has already verified; it re-parses the
@@ -190,7 +208,7 @@ def decode_claims_unverified(jwt_token: str) -> dict[str, Any] | None:
         return None
 
 
-def get_token_workspaces(jwt_token: str) -> list[dict[str, str]]:
+def get_token_workspaces(jwt_token: str) -> list[WorkspaceClaim]:
     """List the workspaces a verified JWT grants access to.
 
     Resolves the Auth0 namespace from AUTH0_NAMESPACE, so callers do not have
@@ -201,7 +219,7 @@ def get_token_workspaces(jwt_token: str) -> list[dict[str, str]]:
 
 def get_token_workspaces_with_dropped(
     jwt_token: str,
-) -> tuple[list[dict[str, str]], int]:
+) -> tuple[list[WorkspaceClaim], int]:
     """The same list, paired with how many claim entries were dropped as unusable.
 
     Only `list_workspaces` needs the count: it enumerates workspaces for an
@@ -215,7 +233,9 @@ def get_token_workspaces_with_dropped(
     return _partition_workspaces(claims, namespace)
 
 
-def extract_workspaces(claims: dict[str, Any], namespace: str) -> list[dict[str, str]]:
+def extract_workspaces(
+    claims: Mapping[str, object], namespace: str
+) -> list[WorkspaceClaim]:
     """Extract the usable workspaces from JWT claims.
 
     An entry is dropped unless it names both a workspace and a region as
@@ -233,8 +253,8 @@ def extract_workspaces(claims: dict[str, Any], namespace: str) -> list[dict[str,
 
 
 def _partition_workspaces(
-    claims: dict[str, Any], namespace: str
-) -> tuple[list[dict[str, str]], int]:
+    claims: Mapping[str, object], namespace: str
+) -> tuple[list[WorkspaceClaim], int]:
     """Split the workspaces claim into the usable entries and a count of the rest.
 
     A claim that is not a list at all holds no entries, so it drops nothing.
@@ -248,7 +268,7 @@ def _partition_workspaces(
         logger.warning('Invalid workspaces claim type: %s', type(workspaces))
         return [], 0
 
-    usable = []
+    usable: list[WorkspaceClaim] = []
     dropped = 0
     for entry in workspaces:
         if not isinstance(entry, dict):
@@ -260,23 +280,33 @@ def _partition_workspaces(
             continue
         # Only the field names reach the log: nothing here controls what else
         # the Auth0 Action puts in an entry.
+        schema_name, region = entry.get('schema_name'), entry.get('region')
+        if (
+            isinstance(schema_name, str)
+            and schema_name.strip()
+            and isinstance(region, str)
+            and region.strip()
+        ):
+            claim: WorkspaceClaim = {'schema_name': schema_name, 'region': region}
+            auth0_id = entry.get('auth0_id')
+            if isinstance(auth0_id, str):
+                claim['auth0_id'] = auth0_id
+            usable.append(claim)
+            continue
         blank = [
             field
-            for field in ('schema_name', 'region')
-            if not (isinstance(entry.get(field), str) and entry[field].strip())
+            for field, value in (('schema_name', schema_name), ('region', region))
+            if not (isinstance(value, str) and value.strip())
         ]
-        if blank:
-            logger.warning(
-                'Dropping workspaces claim entry: %s missing or blank', ', '.join(blank)
-            )
-            dropped += 1
-            continue
-        usable.append(entry)
+        logger.warning(
+            'Dropping workspaces claim entry: %s missing or blank', ', '.join(blank)
+        )
+        dropped += 1
     return usable, dropped
 
 
 def match_workspace(
-    workspaces: list[dict[str, str]], region: str, workspace: str
+    workspaces: list[WorkspaceClaim], region: str, workspace: str
 ) -> bool:
     """Check if a workspace/region pair is authorized by JWT claims.
 
@@ -348,11 +378,19 @@ class Auth0TokenVerifier:
                 ws_names,
             )
 
+            sub = claims.get('sub', 'unknown')
+            scope = claims.get('scope') or ''
+            exp = claims.get('exp')
+            # Refused rather than coerced: a wrong type here failed AccessToken before.
+            if not (
+                isinstance(sub, str)
+                and isinstance(scope, str)
+                and (exp is None or isinstance(exp, int))
+            ):
+                logger.warning('JWT sub, scope or exp claim has an unexpected type')
+                return None
             return AccessToken(
-                token=token,
-                client_id=claims.get('sub', 'unknown'),
-                scopes=claims.get('scope', '').split() if claims.get('scope') else [],
-                expires_at=claims.get('exp'),
+                token=token, client_id=sub, scopes=scope.split(), expires_at=exp
             )
 
         except ValueError as e:

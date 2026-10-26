@@ -14,6 +14,7 @@ import time
 
 import httpx
 
+from utils.auth import WorkspaceClaim
 from utils.error_handler import validate_workspace_format
 from utils.logger import escape_for_log, get_logger
 
@@ -90,7 +91,7 @@ async def lookup_schema_name(slug: str) -> str | None:
 
 
 async def resolve_workspace(
-    workspace: str, claim_workspaces: list[dict[str, str]]
+    workspace: str, claim_workspaces: list[WorkspaceClaim]
 ) -> str:
     """Map ``workspace`` to a claim's ``schema_name`` when it is a renamed slug.
 
