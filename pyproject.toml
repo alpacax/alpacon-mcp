@@ -173,6 +173,7 @@ module = [
     "utils.auth",
     "utils.common",
     "utils.cursor_pagination",
+    "utils.ledger_auth",
     "utils.security_settings",
     "utils.token_manager",
 ]

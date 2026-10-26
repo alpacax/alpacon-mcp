@@ -298,6 +298,43 @@ class TestDeviceAuthorization:
         assert auth0.await_count == 2
 
     @pytest.mark.asyncio
+    async def test_a_boolean_device_interval_and_lifetime_read_as_the_defaults(
+        self, authorizer, auth0, clock
+    ):
+        auth0.return_value = (
+            HTTPStatus.OK,
+            {**DEVICE_CODE_BODY, 'interval': True, 'expires_in': True},
+        )
+        started = await authorizer.token_for(TARGET)
+        clock.value += 2
+
+        result = await authorizer.token_for(TARGET)
+
+        assert started['expires_in'] == 900
+        assert result['status'] == AUTHORIZATION_REQUIRED
+        assert auth0.await_count == 1
+
+    @pytest.mark.asyncio
+    async def test_a_boolean_expires_in_falls_back_to_the_exp_claim(
+        self, authorizer, auth0, clock
+    ):
+        auth0.side_effect = [
+            (HTTPStatus.OK, DEVICE_CODE_BODY),
+            (HTTPStatus.OK, {'access_token': 'ledger-jwt', 'expires_in': True}),
+        ]
+        await authorizer.token_for(TARGET)
+        clock.value += 5
+        with (
+            patch.object(
+                ledger_auth, 'decode_claims_unverified', return_value={'exp': 4000}
+            ),
+            patch('utils.ledger_auth.time.time', return_value=1000.0),
+        ):
+            await authorizer.token_for(TARGET)
+
+        assert authorizer.has_token(TARGET) is True
+
+    @pytest.mark.asyncio
     async def test_a_token_without_a_lifetime_is_used_once(
         self, authorizer, auth0, clock
     ):

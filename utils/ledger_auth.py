@@ -24,13 +24,14 @@ import os
 import time
 from dataclasses import dataclass
 from http import HTTPStatus
-from typing import Any
+from typing import TypeGuard
 
 import httpx
 
 from utils.auth import decode_claims_unverified
 from utils.common import error_response
 from utils.logger import get_logger
+from utils.types import JsonValue, ToolResponse
 
 logger = get_logger('ledger_auth')
 
@@ -103,7 +104,20 @@ class _CachedToken:
     expires_at: float
 
 
-async def _post_form(url: str, data: dict[str, str]) -> tuple[int, dict[str, Any]]:
+type _Auth0Body = dict[str, JsonValue]
+
+
+def _is_number(value: JsonValue) -> TypeGuard[int | float]:
+    return isinstance(value, int | float) and not isinstance(value, bool)  # bool is int
+
+
+def _positive_int(value: JsonValue, default: int) -> int:
+    if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+        return value
+    return default
+
+
+async def _post_form(url: str, data: dict[str, str]) -> tuple[int, _Auth0Body]:
     """POST a form to Auth0 and return the status and the JSON object body."""
     async with httpx.AsyncClient(timeout=_AUTH0_TIMEOUT) as client:
         response = await client.post(
@@ -118,14 +132,15 @@ async def _post_form(url: str, data: dict[str, str]) -> tuple[int, dict[str, Any
     return response.status_code, body if isinstance(body, dict) else {}
 
 
-def _token_lifetime(body: dict[str, Any]) -> float:
+def _token_lifetime(body: _Auth0Body) -> float:
     """Seconds the issued token stays usable, from `expires_in` or its `exp`."""
     expires_in = body.get('expires_in')
-    if isinstance(expires_in, int | float) and expires_in > 0:
+    if _is_number(expires_in) and expires_in > 0:
         return float(expires_in)
-    claims = decode_claims_unverified(body.get('access_token', '')) or {}
+    token = body.get('access_token')
+    claims = (decode_claims_unverified(token) if isinstance(token, str) else None) or {}
     exp = claims.get('exp')
-    if isinstance(exp, int | float):
+    if _is_number(exp):
         return float(exp) - time.time()
     return 0.0
 
@@ -152,7 +167,7 @@ class LedgerAuthorizer:
         self._tokens.clear()
         self._pending.clear()
 
-    async def token_for(self, target: LedgerTarget) -> str | dict[str, Any]:
+    async def token_for(self, target: LedgerTarget) -> str | ToolResponse:
         """Return a ledger token, or the response telling a person to authorize.
 
         Returns:
@@ -181,7 +196,7 @@ class LedgerAuthorizer:
 
             return await self._start(target)
 
-    async def _start(self, target: LedgerTarget) -> dict[str, Any]:
+    async def _start(self, target: LedgerTarget) -> ToolResponse:
         data = {
             'client_id': target.client_id,
             'audience': ledger_audience(),
@@ -215,16 +230,8 @@ class LedgerAuthorizer:
             )
 
         now = _now()
-        interval = body.get('interval')
-        interval = (
-            interval
-            if isinstance(interval, int) and interval > 0
-            else _DEFAULT_INTERVAL
-        )
-        expires_in = body.get('expires_in')
-        expires_in = (
-            expires_in if isinstance(expires_in, int) and expires_in > 0 else 900
-        )
+        interval = _positive_int(body.get('interval'), _DEFAULT_INTERVAL)
+        expires_in = _positive_int(body.get('expires_in'), 900)
         verification_uri = str(body.get('verification_uri', ''))
         pending = _PendingAuthorization(
             device_code=str(body['device_code']),
@@ -242,7 +249,7 @@ class LedgerAuthorizer:
 
     async def _poll(
         self, target: LedgerTarget, pending: _PendingAuthorization
-    ) -> str | dict[str, Any] | None:
+    ) -> str | ToolResponse | None:
         """Poll once. A token or a terminal answer is returned; None keeps waiting."""
         key = target.key
         data = {
@@ -292,7 +299,7 @@ class LedgerAuthorizer:
         )
 
 
-def _authorization_required(pending: _PendingAuthorization) -> dict[str, Any]:
+def _authorization_required(pending: _PendingAuthorization) -> ToolResponse:
     remaining = max(0, int(pending.expires_at - _now()))
     return {
         'status': AUTHORIZATION_REQUIRED,
