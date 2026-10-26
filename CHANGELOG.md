@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   row `metric_severity`, cell `threshold` and `operator`, and envelope `summary` fields (#397).
   Clients parsing responses see these new keys, including permission-dependent nulls; no
   existing fields are removed. Severity ordering and these fields require a server deployment
-  that supports them; earlier deployments reject that ordering and omit the fields.
+  that supports them; earlier deployments ignore that ordering (the default order applies) and omit the fields, as does a caller without `alert:read` for the ordering.
 - Command pre-approval ledger tools (#362): `get_ledger_capability`, `list_ledger_entries`,
   `issue_ledger_entries`, `revoke_ledger_entry`, `revoke_ledger_entries`, `disable_ledger_entry`,
   `enable_ledger_entry`, `list_ledger_admins`, `grant_ledger_admin` and `revoke_ledger_admin`, in a new

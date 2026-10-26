@@ -227,8 +227,8 @@ or `get_server_metrics_summary` for one server's detail. **Requires alpacon-serv
 later.**
 
 Severity ordering and the `metric_severity`, `threshold`, `operator`, and `summary` fields
-require a server deployment that supports them. Earlier deployments reject severity ordering
-and omit those fields.
+require a server deployment that supports them. Earlier deployments ignore severity ordering
+(the default order applies) and omit those fields; without `alert:read` the ordering is ignored too.
 
 **Parameters:**
 - `workspace` (string): Workspace name

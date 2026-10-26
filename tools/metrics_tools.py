@@ -1236,7 +1236,8 @@ async def get_server_metrics_summary(
         "etc.; for one server's detail use get_server_metrics_summary. Requires "
         'alpacon-server 2.37.0 or later. Severity ordering, metric_severity, '
         'threshold, operator and summary require server support; earlier '
-        'deployments reject that ordering and omit those fields.'
+        'deployments ignore that ordering (default order) and omit those fields; '
+        'without alert:read the ordering is ignored too.'
     ),
     annotations=READ_ONLY,
     meta={
@@ -1263,7 +1264,8 @@ async def list_latest_metrics(
     own, plus `state` and `ordering`.
 
     Severity ordering, metric_severity, threshold, operator, and summary require
-    server support; earlier deployments reject that ordering and omit those fields.
+    server support; earlier deployments ignore that ordering (default order) and
+    omit those fields, and without alert:read the ordering is ignored too.
 
     Args:
         workspace: Workspace name. Required parameter
