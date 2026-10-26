@@ -252,7 +252,7 @@ webftp_download_file(
 )
 ```
 
-A folder arrives as a ZIP. Large ones take time to stage in S3—raise `ALPACON_MCP_WEBFTP_DOWNLOAD_TIMEOUT` (default 60 seconds) and follow progress with `webftp_check_status(file_id, transfer_type="download", workspace=...)`.
+A folder arrives as a ZIP the host uploads to S3, and the call waits for that upload before it answers. A large one can outlast the wait and return `download_timeout`: raise `ALPACON_MCP_WEBFTP_DOWNLOAD_TIMEOUT` (default 60 seconds), or follow the transfer with `webftp_check_status(file_id, transfer_type="download", workspace=...)`.
 
 ### Several files at once
 

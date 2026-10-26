@@ -772,6 +772,11 @@ def plan_limit_response(
     return response
 
 
+def is_http_error(result: object) -> bool:
+    """True when ``result`` is the 4xx/5xx envelope ``unwrap_http_result`` renders."""
+    return isinstance(result, dict) and 'error' in result
+
+
 def unwrap_http_result(
     result: object,
     *,

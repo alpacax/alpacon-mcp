@@ -2750,9 +2750,8 @@ class TestExecuteFileWriteFile:
     """write_file puts the submitted bytes on the host before the run is submitted."""
 
     @pytest.fixture(autouse=True)
-    def _no_poll_wait(self):
-        with patch('tools.command_tools._FILE_WRITE_POLL_INTERVAL', 0):
-            yield
+    def _clock(self, fake_clock):
+        return fake_clock
 
     @pytest.mark.asyncio
     async def test_off_by_default_writes_nothing(
@@ -2943,7 +2942,7 @@ class TestExecuteFileWriteFile:
         with (
             patch('tools.command_tools._submit_file_execution') as mock_submit,
             patch('tools.command_tools._put_to_s3', return_value=None),
-            patch('tools.command_tools._FILE_WRITE_POLL_ATTEMPTS', 3),
+            patch('tools.command_tools._FILE_WRITE_TIMEOUT', 2),
         ):
             result = await execute_file(
                 server_id=VALID_SERVER_ID,
@@ -3192,11 +3191,23 @@ _DOWNLOAD_COMMAND_DONE = {
 }
 
 
-def _route_download_status(status: Any = None, command: Any = None):
-    """Answer the transfer command and download status GETs the read path makes."""
+def _route_download_status(
+    status: Any = None,
+    command: Any = None,
+    *,
+    commands: list[Any] | None = None,
+    log: list[str] | None = None,
+):
+    """Answer the transfer command and download status GETs the read path makes.
+
+    ``commands`` answers the command polls in order, its last entry repeating."""
 
     async def _get(*, endpoint: str, **_: Any) -> Any:
+        if log is not None:
+            log.append(endpoint)
         if endpoint == '/api/events/commands/cmd-d1/':
+            if commands:
+                return commands.pop(0) if len(commands) > 1 else commands[0]
             return _DOWNLOAD_COMMAND_DONE if command is None else command
         assert endpoint == '/api/webftp/downloads/down-1/status/'
         return {'success': True, 'message': None} if status is None else status
@@ -3208,9 +3219,8 @@ class TestExecuteFileReadFromServer:
     """read_from_server submits the bytes already on the host as content."""
 
     @pytest.fixture(autouse=True)
-    def _no_poll_wait(self):
-        with patch('tools.command_tools._FILE_READ_POLL_INTERVAL', 0):
-            yield
+    def _clock(self, fake_clock):
+        return fake_clock
 
     @pytest.mark.asyncio
     async def test_reads_the_file_then_submits_its_exact_bytes(
@@ -3549,7 +3559,7 @@ class TestExecuteFileReadFromServer:
             # The host never finishes sending the file.
             ({'status': 'running', 'handled_at': None}, None, 3),
             # The host sent it but never reports the transfer.
-            (None, {'success': None}, 3),
+            (None, {'success': None}, 4),
         ],
     )
     async def test_a_read_that_never_lands_times_out(
@@ -3563,7 +3573,7 @@ class TestExecuteFileReadFromServer:
         with (
             patch('tools.command_tools._submit_file_execution') as mock_submit,
             patch('tools.command_tools._get_capped', return_value=b'echo hi\n'),
-            patch('tools.command_tools._FILE_READ_POLL_ATTEMPTS', 3),
+            patch('tools.command_tools._FILE_READ_TIMEOUT', 2),
         ):
             result = await execute_file(
                 server_id=VALID_SERVER_ID,
@@ -3576,6 +3586,72 @@ class TestExecuteFileReadFromServer:
         assert result['error_code'] == 'file_read_timeout'
         assert result['download_id'] == 'down-1'
         assert mock_http_client.get.call_count == gets
+        mock_submit.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_command_handled_at_the_deadline_still_checks_transfer_status(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = _DOWNLOAD_ROW
+        calls: list[str] = []
+        mock_http_client.get.side_effect = _route_download_status(
+            commands=[
+                {'status': 'running', 'handled_at': None},
+                _DOWNLOAD_COMMAND_DONE,
+            ],
+            log=calls,
+        )
+
+        with (
+            patch(
+                'tools.command_tools._submit_file_execution',
+                return_value=_file_exec_envelope('file_exec_empty_content'),
+            ) as mock_submit,
+            patch('tools.command_tools._get_capped', return_value=b'echo hi\n'),
+            patch('tools.command_tools._FILE_READ_TIMEOUT', 1),
+        ):
+            result = await execute_file(
+                server_id=VALID_SERVER_ID,
+                path='/opt/deploy.sh',
+                read_from_server=True,
+                workspace='testworkspace',
+                region='ap1',
+            )
+
+        assert result['error_code'] == 'file_exec_empty_content'  # the submit's answer
+        assert mock_submit.call_args.kwargs['content'] == 'echo hi\n'
+        assert calls == [
+            '/api/events/commands/cmd-d1/',
+            '/api/events/commands/cmd-d1/',
+            '/api/webftp/downloads/down-1/status/',
+        ]
+
+    @pytest.mark.asyncio
+    async def test_a_failed_fetch_is_reported_without_checking_the_transfer(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = _DOWNLOAD_ROW
+        calls: list[str] = []
+        mock_http_client.get.side_effect = _route_download_status(log=calls)
+
+        with (
+            patch('tools.command_tools._submit_file_execution') as mock_submit,
+            patch(
+                'tools.command_tools._get_capped',
+                return_value='Failed to download from S3: 404 - Not Found',
+            ),
+        ):
+            result = await execute_file(
+                server_id=VALID_SERVER_ID,
+                path='/opt/deploy.sh',
+                read_from_server=True,
+                workspace='testworkspace',
+                region='ap1',
+            )
+
+        assert result['error_code'] == 'file_read_failed'
+        assert '404 - Not Found' in result['message']
+        assert calls == ['/api/events/commands/cmd-d1/']
         mock_submit.assert_not_called()
 
     @pytest.mark.asyncio

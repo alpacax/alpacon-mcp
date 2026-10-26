@@ -15,7 +15,6 @@ class TransferRequest(TypedDict, total=False):  # a created upload or download
 class TransferState(TypedDict, total=False):  # success is null while in progress
     success: bool | None
     message: str | None
-    download_url: str | None
 
 
 TRANSFER_REQUEST = TypeAdapter(TransferRequest)
