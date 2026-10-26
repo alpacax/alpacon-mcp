@@ -1,6 +1,6 @@
 """Alert management tools for Alpacon MCP server."""
 
-from typing import Any
+from typing import TypedDict
 
 from utils.api_call import http_call_response
 from utils.common import build_list_params
@@ -13,6 +13,11 @@ from utils.types import ToolResponse
 # Mirrors AlertAcknowledgement.ACTION_TYPE_CHOICES; the server takes nothing else.
 ALERT_ACTION_TYPES = frozenset({'checked', 'dismissed'})
 _ACTION_TYPES_SENTENCE = f'One of {", ".join(sorted(ALERT_ACTION_TYPES))}.'
+
+
+class _RuleContext(TypedDict, total=False):  # extra ids echoed in a preview response
+    rule_id: str
+
 
 # Mirrors AlertRule.EmailDestination; the server takes nothing else.
 ALERT_EMAIL_DESTINATIONS = frozenset({'all', 'admins', 'group_members', 'none'})
@@ -751,8 +756,7 @@ async def preview_alert_rule(
         body['servers'] = servers
     if window_s is not None:
         body['window_s'] = window_s
-    # Any: ** is checked against every keyword of http_call_response
-    id_context: dict[str, Any] = {} if rule_id is None else {'rule_id': rule_id}
+    id_context: _RuleContext = {} if rule_id is None else {'rule_id': rule_id}
 
     return await http_call_response(
         http_client.post,

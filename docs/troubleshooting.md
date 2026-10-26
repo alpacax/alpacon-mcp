@@ -144,7 +144,7 @@ The server now handles this on its own: an unknown `kid` triggers one forced JWK
 
 ```bash
 # Read the JWKS the server sees and list the kids it offers
-curl -s "https://${AUTH0_ALPACON_DOMAIN}/.well-known/jwks.json" | python -c "import json,sys; print([k['kid'] for k in json.load(sys.stdin)['keys']])"
+curl -s "https://${AUTH0_ALPACON_DOMAIN:-$AUTH0_DOMAIN}/.well-known/jwks.json" | python -c "import json,sys; print([k['kid'] for k in json.load(sys.stdin)['keys']])"
 
 # Read the kid the rejected token carries (header only, no verification).
 # `read -rs` keeps the token out of both shell history and `ps`. A here-string
