@@ -11,7 +11,6 @@ the paginator does so whatever the request names. ``opt_in_pagination`` is how a
 walk asks, and how it reads the answer of a server that cannot.
 """
 
-from collections.abc import Awaitable, Callable
 from typing import Any, NamedTuple
 
 from utils.common import (
@@ -22,7 +21,7 @@ from utils.common import (
     success_response,
     unwrap_http_result,
 )
-from utils.types import QueryParams, ToolResponse
+from utils.types import ApiMethod, QueryParams, ToolResponse
 
 # Requests one walk may issue. A walk cut short hands back a cursor to resume.
 MAX_CURSOR_PAGES = 10
@@ -170,7 +169,7 @@ def _report(
 
 
 async def cursor_list_response(
-    method: Callable[..., Awaitable[object]],
+    method: ApiMethod,
     *,
     region: str,
     workspace: str,

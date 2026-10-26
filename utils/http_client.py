@@ -282,7 +282,7 @@ class AlpaconHTTPClient:
                     if await backoff('Server error'):
                         continue
 
-                    error_response = {
+                    error_response: dict[str, JsonValue] = {
                         'error': _ERR_MAX_RETRIES,
                         'status_code': e.response.status_code,
                         'message': f'Server error after {self.max_retries} attempts',
@@ -505,7 +505,7 @@ class AlpaconHTTPClient:
     @staticmethod
     def _handle_upstream_401(
         exc: httpx.HTTPStatusError, token: str | None = None
-    ) -> dict[str, object]:
+    ) -> dict[str, JsonValue]:
         """Handle upstream API 401 responses.
 
         Detects MFA-required errors from the Alpacon API response body and
@@ -556,7 +556,7 @@ class AlpaconHTTPClient:
             raise UpstreamAuthError(mfa_required=mfa_required, source=source)
 
         error_msg = 'MFA verification required' if mfa_required else str(exc)
-        error_response = {
+        error_response: dict[str, JsonValue] = {
             'error': _ERR_MFA_REQUIRED if mfa_required else _ERR_HTTP,
             'status_code': HTTPStatus.UNAUTHORIZED,
             'message': error_msg,

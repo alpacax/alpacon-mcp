@@ -3129,6 +3129,38 @@ class TestExecuteFileWriteFile:
         mock_submit.assert_not_called()
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        'post, status',
+        [
+            ({**_UPLOAD_ROW, 'id': 7}, None),
+            (_UPLOAD_ROW, {'success': 'yes'}),
+        ],
+        ids=['create', 'status'],
+    )
+    async def test_a_wrong_typed_transfer_field_is_a_write_failure(
+        self, mock_http_client, mock_token_manager, post, status
+    ):
+        mock_http_client.post.return_value = post
+        mock_http_client.get.side_effect = _route_get(status=status)
+        with (
+            patch('tools.command_tools._submit_file_execution') as mock_submit,
+            patch('tools.command_tools._put_to_s3', return_value=None),
+        ):
+            result = await execute_file(
+                server_id=VALID_SERVER_ID,
+                path='/opt/deploy.sh',
+                content=_FILE_SCRIPT,
+                write_file=True,
+                workspace='testworkspace',
+                region='ap1',
+            )
+
+        assert result['status'] == 'error'
+        assert result['error_code'] == 'file_write_failed'
+        assert 'Unexpected upstream response shape' in result['message']
+        mock_submit.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_overwrite_without_write_file_is_refused(
         self, mock_http_client, mock_token_manager
     ):
@@ -3425,6 +3457,11 @@ class TestExecuteFileReadFromServer:
             ({**_DOWNLOAD_ROW, 'command': None}, None, None),
             # The request answers with neither id nor URL.
             ({}, None, None),
+            # The server denies the transfer command.
+            (_DOWNLOAD_ROW, None, {'status': 'denied'}),
+            # The request or the command answers with a wrong-typed field.
+            ({**_DOWNLOAD_ROW, 'id': 7}, None, None),
+            (_DOWNLOAD_ROW, None, {'status': 'running', 'handled_at': 5}),
         ],
     )
     async def test_a_failed_read_submits_nothing(
@@ -3476,6 +3513,33 @@ class TestExecuteFileReadFromServer:
 
         assert result['error_code'] == 'file_read_failed'
         assert 'Permission denied' in result['message']
+        mock_submit.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_a_wrong_typed_transfer_status_is_a_read_failure(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = _DOWNLOAD_ROW
+        mock_http_client.get.side_effect = _route_download_status(
+            status={'success': 'yes'}
+        )
+
+        with (
+            patch('tools.command_tools._submit_file_execution') as mock_submit,
+            patch('tools.command_tools._get_capped', return_value=b'echo hi\n'),
+        ):
+            result = await execute_file(
+                server_id=VALID_SERVER_ID,
+                path='/opt/deploy.sh',
+                read_from_server=True,
+                workspace='testworkspace',
+                region='ap1',
+            )
+
+        assert result['status'] == 'error'
+        assert result['error_code'] == 'file_read_failed'
+        assert result['download_id'] == 'down-1'
+        assert 'success: ' in result['message']
         mock_submit.assert_not_called()
 
     @pytest.mark.asyncio

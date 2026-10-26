@@ -7,10 +7,11 @@ import shlex
 from collections.abc import AsyncIterator
 from http import HTTPStatus
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
 
 import httpx
 import pybase64
+from pydantic import TypeAdapter
 
 from server import TRANSPORT_STDIO
 from utils.api_call import http_call_response
@@ -18,18 +19,19 @@ from utils.common import (
     build_list_params,
     empty_value_error,
     error_response,
-    expect_json_object,
     is_auth_enabled,
     json_records,
     resolve_work_session_id,
     success_response,
     unwrap_http_result,
+    validate_response,
 )
 from utils.decorators import mcp_tool_handler
 from utils.error_handler import format_validation_error, validate_file_path
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, READ_ONLY
 from utils.types import ToolResponse
+from utils.webftp_shapes import TRANSFER_REQUEST, TRANSFER_STATE, TransferRequest
 
 # base64 inflates bytes 4/3x; this keeps the decoded upload at 3 MiB even
 # though the ASGI layer allows a larger envelope (see #144, design in #275).
@@ -64,7 +66,8 @@ _UNKNOWN_FILE = 'unknown'
 
 # Type aliases
 type _UploadResult = dict[str, str | int | None]
-type _UploadSlot = dict[str, Any]  # one bulk-create entry (id, upload_url)
+
+_UPLOAD_SLOTS = TypeAdapter(list[TransferRequest])  # one entry per bulk-created file
 
 
 class _S3DownloadError(Exception):
@@ -202,11 +205,11 @@ async def _download_remote_mode(
     ):
         return err
 
-    result = expect_json_object(result)
-    download_url = result.get('download_url')
+    request = validate_response(TRANSFER_REQUEST, result)
+    download_url = request.get('download_url')
 
     if not download_url:
-        file_id = result.get('id')
+        file_id = request['id']
         for _ in range(_REMOTE_DOWNLOAD_TIMEOUT):
             await asyncio.sleep(1)
             status = await http_client.get(
@@ -221,13 +224,13 @@ async def _download_remote_mode(
                 file_id=file_id,
             ):
                 return err
-            status = expect_json_object(status)
-            if status.get('success') is True:
-                download_url = status.get('download_url')
+            state = validate_response(TRANSFER_STATE, status)
+            if state.get('success') is True:
+                download_url = state.get('download_url')
                 break
-            elif status.get('success') is False:
+            elif state.get('success') is False:
                 return error_response(
-                    f'Server failed to process download: {status.get("message", "unknown error")}',
+                    f'Server failed to process download: {state.get("message") or "unknown error"}',
                     file_id=file_id,
                     code='download_failed',
                 )
@@ -388,16 +391,17 @@ async def webftp_upload_file(
     ):
         return http_err
 
-    result = expect_json_object(result)
-    if result.get('upload_url'):
-        err = await _upload_bytes_to_s3(result['upload_url'], file_content)
+    request = validate_response(TRANSFER_REQUEST, result)
+    if upload_url := request.get('upload_url'):
+        err = await _upload_bytes_to_s3(upload_url, file_content)
         if err:
-            return error_response(err, upload_url=result['upload_url'])
+            return error_response(err, upload_url=upload_url)
 
+        upload_id = request['id']
         upload_trigger = await http_client.get(
             region=region,
             workspace=workspace,
-            endpoint=f'{_API_UPLOADS}{result["id"]}/upload/',
+            endpoint=f'{_API_UPLOADS}{upload_id}/upload/',
             token=token,
         )
 
@@ -417,8 +421,8 @@ async def webftp_upload_file(
             local_file_path=local_file_path,
             remote_file_path=remote_file_path,
             file_size=len(file_content),
-            upload_url=result['upload_url'],
-            download_url=result.get('download_url'),
+            upload_url=upload_url,
+            download_url=request.get('download_url'),
             region=region,
             workspace=workspace,
         )
@@ -521,16 +525,17 @@ async def webftp_upload_content(
     ):
         return http_err
 
-    result = expect_json_object(result)
-    if result.get('upload_url'):
-        err = await _upload_bytes_to_s3(result['upload_url'], raw_bytes)
+    request = validate_response(TRANSFER_REQUEST, result)
+    if upload_url := request.get('upload_url'):
+        err = await _upload_bytes_to_s3(upload_url, raw_bytes)
         if err:
-            return error_response(err, upload_url=result['upload_url'])
+            return error_response(err, upload_url=upload_url)
 
+        upload_id = request['id']
         upload_trigger = await http_client.get(
             region=region,
             workspace=workspace,
-            endpoint=f'{_API_UPLOADS}{result["id"]}/upload/',
+            endpoint=f'{_API_UPLOADS}{upload_id}/upload/',
             token=token,
         )
 
@@ -549,7 +554,7 @@ async def webftp_upload_content(
             server_id=server_id,
             remote_file_path=remote_file_path,
             file_size=len(raw_bytes),
-            upload_url=result['upload_url'],
+            upload_url=upload_url,
             region=region,
             workspace=workspace,
         )
@@ -653,16 +658,14 @@ async def webftp_download_file(
     ):
         return err
 
-    result = expect_json_object(result)
-    if result.get('download_url'):
+    request = validate_response(TRANSFER_REQUEST, result)
+    if download_url := request.get('download_url'):
         try:
-            file_size = await _stream_s3_to_file(
-                result['download_url'], local_file_path
-            )
+            file_size = await _stream_s3_to_file(download_url, local_file_path)
         except _S3DownloadError as e:
             return error_response(
                 f'Failed to download from S3: {e}',
-                download_url=result['download_url'],
+                download_url=download_url,
             )
         except _LocalSaveError as e:
             return error_response(f'Failed to save file locally: {e}')
@@ -675,7 +678,7 @@ async def webftp_download_file(
             local_file_path=local_file_path,
             resource_type=resource_type,
             file_size=file_size,
-            download_url=result.get('download_url'),
+            download_url=download_url,
             region=region,
             workspace=workspace,
         )
@@ -805,18 +808,20 @@ async def webftp_bulk_upload(
     ):
         return err
 
-    upload_items = json_records(result, single_object_as_record=True)
-    file_ids = [file_id for item in upload_items if (file_id := item.get('id'))]
+    upload_items = validate_response(
+        _UPLOAD_SLOTS, json_records(result, single_object_as_record=True)
+    )
+    file_ids = [item['id'] for item in upload_items if item['id']]
 
     semaphore = asyncio.Semaphore(_UPLOAD_CONCURRENCY)
 
     async def _upload_one(
         client: httpx.AsyncClient,
         idx: int,
-        item: _UploadSlot,
+        item: TransferRequest,
     ) -> _UploadResult:
         upload_url = item.get('upload_url')
-        file_id = item.get('id')
+        file_id = item['id']
         name = file_names[idx] if idx < len(file_names) else _UNKNOWN_FILE
 
         if not upload_url or idx >= len(local_file_paths):
@@ -961,7 +966,7 @@ async def webftp_bulk_download(
     ):
         return err
 
-    download_url = result.get('download_url') if isinstance(result, dict) else None
+    download_url = validate_response(TRANSFER_REQUEST, result).get('download_url')
     if download_url:
         try:
             file_size = await _stream_s3_to_file(
@@ -1038,14 +1043,13 @@ async def webftp_check_status(
     ):
         return err
 
-    # The server leaves `success` null until the transfer finishes.
-    result = expect_json_object(result)
-    transfer_state = result.get('success')
+    state = validate_response(TRANSFER_STATE, result)
+    transfer_state = state.get('success')
     if transfer_state is True:
         message = f'{transfer_type.capitalize()} completed'
     elif transfer_state is False:
         message = f'{transfer_type.capitalize()} failed'
-        if server_message := result.get('message'):
+        if server_message := state.get('message'):
             message = f'{message}: {server_message}'
     else:
         message = f'{transfer_type.capitalize()} still in progress; check again shortly'

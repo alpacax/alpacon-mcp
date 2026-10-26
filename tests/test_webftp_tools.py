@@ -950,6 +950,27 @@ class TestWebFtpBulkUpload:
         assert 'JSON object' in result['message']
 
     @pytest.mark.asyncio
+    async def test_bulk_upload_slot_with_a_non_string_id_is_an_error(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = [
+            {'id': 7, 'upload_url': 'https://s3.example.com/p0'}
+        ]
+
+        is_file, os_access, os_stat = self._patch_local_file_checks()
+        with is_file, os_access, os_stat, patch('httpx.AsyncClient') as httpx_cls:
+            result = await webftp_bulk_upload(
+                server_id=VALID_SERVER_ID,
+                local_file_paths=['/local/a.txt'],
+                remote_directory='/remote/',
+                workspace='ws',
+            )
+
+        assert result['status'] == 'error'
+        assert '0.id: ' in result['message']
+        httpx_cls.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_bulk_upload_partial_success(
         self, mock_http_client, mock_token_manager
     ):
@@ -1878,7 +1899,7 @@ class TestNonObjectResponseBodies:
     @staticmethod
     def _assert_shape_error(result):
         assert result['status'] == 'error'
-        assert 'JSON object' in result['message']
+        assert 'Unexpected upstream response shape: <root>: ' in result['message']
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize('body', BODIES, ids=BODY_IDS)
@@ -1897,6 +1918,28 @@ class TestNonObjectResponseBodies:
             )
 
         self._assert_shape_error(result)
+
+    @pytest.mark.asyncio
+    async def test_upload_file_without_an_id_uploads_nothing(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = {'upload_url': 'https://s3.example.com/p'}
+
+        with (
+            patch.object(Path, 'read_bytes', return_value=b'data'),
+            patch('tools.webftp_tools._upload_bytes_to_s3') as mock_upload,
+        ):
+            result = await webftp_upload_file(
+                server_id=VALID_SERVER_ID,
+                local_file_path='/local/test.txt',
+                remote_file_path='/remote/test.txt',
+                workspace='ws',
+                region='ap1',
+            )
+
+        assert result['status'] == 'error'
+        assert 'id: ' in result['message']
+        mock_upload.assert_not_called()
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize('body', BODIES, ids=BODY_IDS)
@@ -1987,6 +2030,40 @@ class TestNonObjectResponseBodies:
         )
 
         self._assert_shape_error(result)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('body', BODIES, ids=BODY_IDS)
+    async def test_bulk_download_rejects_non_object_create_response(
+        self, body, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = body
+
+        with patch('tools.webftp_tools._stream_s3_to_file') as mock_stream:
+            result = await webftp_bulk_download(
+                server_id=VALID_SERVER_ID,
+                remote_paths=['/remote/a.txt'],
+                local_file_path='/local/out.zip',
+                workspace='ws',
+            )
+
+        self._assert_shape_error(result)
+        mock_stream.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_check_status_rejects_a_non_boolean_success(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.get.return_value = {'success': 'yes'}
+
+        result = await webftp_check_status(
+            file_id='file-123',
+            transfer_type='upload',
+            workspace='ws',
+            region='ap1',
+        )
+
+        assert result['status'] == 'error'
+        assert 'success: ' in result['message']
 
 
 if __name__ == '__main__':

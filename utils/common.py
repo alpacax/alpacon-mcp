@@ -10,6 +10,8 @@ from http import HTTPStatus
 from typing import Any
 from urllib.parse import urlparse
 
+from pydantic import TypeAdapter, ValidationError
+
 from utils.logger import get_logger
 from utils.token_manager import get_token_manager
 from utils.types import (
@@ -860,7 +862,7 @@ class UnexpectedResponseShapeError(ValueError):
     """Upstream answered with a JSON body whose shape the caller cannot use."""
 
 
-def expect_json_object(result: JsonValue) -> dict[str, Any]:
+def expect_json_object(result: JsonValue) -> dict[str, JsonValue]:
     """Return `result` when it is a JSON object, else raise UnexpectedResponseShapeError."""
     if not isinstance(result, dict):
         raise UnexpectedResponseShapeError(
@@ -871,7 +873,7 @@ def expect_json_object(result: JsonValue) -> dict[str, Any]:
 
 def json_records(
     result: JsonValue, *, single_object_as_record: bool = False
-) -> list[Any]:
+) -> list[JsonValue]:
     """Return a list body, or an object's `results`; an object without it is one record or none.
 
     Raises UnexpectedResponseShapeError on a scalar body or a non-list `results`."""
@@ -886,3 +888,19 @@ def json_records(
             )
         return records
     return [obj] if single_object_as_record else []
+
+
+def validate_response[T](adapter: TypeAdapter[T], result: JsonValue) -> T:
+    """Return `result` validated strictly by `adapter`; undeclared keys are dropped.
+
+    Raises UnexpectedResponseShapeError naming field paths, never the rejected values."""
+    try:
+        return adapter.validate_python(result, strict=True)
+    except ValidationError as e:  # field paths and reasons only: inputs may be secret
+        problems = '; '.join(
+            f'{".".join(map(str, err["loc"])) or "<root>"}: {err["msg"]}'
+            for err in e.errors(include_url=False, include_input=False)
+        )
+        raise UnexpectedResponseShapeError(
+            f'Unexpected upstream response shape: {problems}'
+        ) from None

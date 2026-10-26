@@ -198,11 +198,11 @@ class TestHTTPClientGet:
         )
 
         assert isinstance(result, dict)
-        assert result['status_code'] == HTTPStatus.INTERNAL_SERVER_ERROR
-        assert (
-            _detect_error_domain(result['status_code'], result['message'], tool_name)
-            == domain
-        )
+        status_code, message = result['status_code'], result['message']
+        assert status_code == HTTPStatus.INTERNAL_SERVER_ERROR
+        assert isinstance(status_code, int)
+        assert isinstance(message, str)
+        assert _detect_error_domain(status_code, message, tool_name) == domain
 
         enriched = enrich_error_response(dict(result), tool_name=tool_name)
         assert enriched['recovery_hints'] == [
