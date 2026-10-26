@@ -3,10 +3,11 @@
 import os
 import time
 
-from utils.common import MCP_VERSION, ToolResponse, is_auth_enabled
+from utils.common import MCP_VERSION, is_auth_enabled
 from utils.http_client import http_client
 from utils.logger import get_logger
 from utils.token_manager import get_token_manager
+from utils.types import ToolResponse
 
 logger = get_logger('health')
 

@@ -7,8 +7,6 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from utils.api_call import http_call_response
 from utils.auth import get_token_workspaces_with_dropped
 from utils.common import (
-    ToolErrorResponse,
-    ToolResponse,
     error_response,
     is_auth_enabled,
     success_response,
@@ -18,6 +16,7 @@ from utils.decorators import mcp_tool_handler, require_jwt_auth
 from utils.http_client import http_client
 from utils.token_manager import TokenManager, get_token_manager
 from utils.tool_annotations import IDEMPOTENT_WRITE, READ_ONLY
+from utils.types import ToolErrorResponse, ToolResponse
 
 # Mirrors alpacon-server's AgentUpgradePolicy choices
 # (workspaces/api/agent_rollout.py); kept here rather than imported since this

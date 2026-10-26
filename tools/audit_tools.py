@@ -1,11 +1,12 @@
 """Audit and logging tools for Alpacon MCP server."""
 
 from utils.api_call import http_call_response
-from utils.common import ToolResponse, build_list_params
+from utils.common import build_list_params
 from utils.cursor_pagination import CURSOR_WALK_DESCRIPTION, cursor_list_response
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import READ_ONLY
+from utils.types import ToolResponse
 
 # ===============================
 # ACTIVITY LOG TOOLS

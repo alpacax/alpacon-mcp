@@ -7,8 +7,6 @@ from typing import Any
 
 from utils.api_call import http_call_response
 from utils.common import (
-    QueryParam,
-    ToolResponse,
     build_list_params,
     error_response,
     expect_json_object,
@@ -21,6 +19,7 @@ from utils.decorators import mcp_tool_handler
 from utils.error_handler import UpstreamAuthError, format_validation_error
 from utils.http_client import http_client
 from utils.tool_annotations import READ_ONLY
+from utils.types import QueryParam, ToolResponse
 
 #: `?state=` values `/api/metrics/latest/` accepts; mirrors alpacon-server's
 #: `metrics.latest.LATEST_STATES`. `stale` covers `no_data`: never-stored is overdue.

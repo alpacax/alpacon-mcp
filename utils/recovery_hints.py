@@ -2,7 +2,7 @@
 
 from http import HTTPStatus
 
-from utils.common import ToolResponse
+from utils.types import ToolResponse
 
 # Closing advice every plan gate shares: the call is settled, only a plan change moves it.
 _PLAN_HINTS = [

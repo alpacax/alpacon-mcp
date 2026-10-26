@@ -2,7 +2,6 @@
 
 from utils.api_call import http_call_response
 from utils.common import (
-    ToolResponse,
     build_list_params,
     error_response,
     pending_approval_response,
@@ -14,6 +13,7 @@ from utils.decorators import mcp_tool_handler
 from utils.error_handler import format_validation_error
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ_ONLY
+from utils.types import ToolResponse
 
 _API_SESSIONS = '/api/work-sessions/sessions/'
 

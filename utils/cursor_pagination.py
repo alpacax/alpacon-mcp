@@ -15,8 +15,6 @@ from collections.abc import Awaitable, Callable
 from typing import Any, NamedTuple
 
 from utils.common import (
-    RequestParams,
-    ToolResponse,
     UnexpectedResponseShapeError,
     error_response,
     expect_json_object,
@@ -24,6 +22,7 @@ from utils.common import (
     success_response,
     unwrap_http_result,
 )
+from utils.types import QueryParams, ToolResponse
 
 # Requests one walk may issue. A walk cut short hands back a cursor to resume.
 MAX_CURSOR_PAGES = 10
@@ -178,7 +177,7 @@ async def cursor_list_response(
     endpoint: str,
     token: str | None,
     default_message: str,
-    params: RequestParams,
+    params: QueryParams,
     opt_in_pagination: bool = False,
     **id_context: object,
 ) -> ToolResponse:

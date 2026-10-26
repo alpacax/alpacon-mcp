@@ -10,10 +10,11 @@ who approves out-of-band (Alpacon web console or Slack).
 """
 
 from utils.api_call import http_call_response
-from utils.common import ToolResponse, build_list_params, pending_approval_response
+from utils.common import build_list_params, pending_approval_response
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, READ_ONLY
+from utils.types import ToolResponse
 
 # ===============================
 # APPROVAL REQUEST TOOLS
