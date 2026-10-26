@@ -80,6 +80,12 @@ OAUTH_ENV = {
     'AUTH0_ALPACON_LOGIN_CLIENT_ID': TEST_CLIENT_ID,
     'AUTH0_ALPACON_LOGIN_CLIENT_SECRET': TEST_CLIENT_SECRET,
     'AUTH0_ALPACON_USER_AUDIENCE': 'https://alpacon.io/access/',
+    'AUTH0_DOMAIN': '',
+    'AUTH0_CLIENT_ID': '',
+    'AUTH0_CLIENT_SECRET': '',
+    'AUTH0_AUDIENCE': '',
+    'AUTH0_MFA_AUDIENCE': '',
+    'AUTH0_NAMESPACE': '',
     'ALPACON_MCP_AUTH_ENABLED': 'true',
     'ALPACON_MCP_RESOURCE_URL': TEST_RESOURCE_URL,
     # Pinned empty so a developer's exported redirect_uri settings cannot
