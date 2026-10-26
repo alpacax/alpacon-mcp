@@ -5,7 +5,6 @@ import json
 import os
 import platform
 import re
-from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
 from typing import Any
@@ -13,24 +12,12 @@ from urllib.parse import urlparse
 
 from utils.logger import get_logger
 from utils.token_manager import get_token_manager
-
-# Every value response.json() can produce; AlpaconHTTPClient methods return it.
-JsonValue = dict[str, Any] | list[Any] | str | int | float | bool | None
-
-# Query params httpx accepts: each value a scalar or a sequence of them.
-type QueryValue = str | int | float | bool | None
-type QueryParam = QueryValue | Sequence[QueryValue]
-type RequestParams = Mapping[str, QueryParam]
-
-type RequestBody = Mapping[str, object]  # a JSON request body
-
-# What a tool returns; a TypedDict once mypy supports PEP 728 extra_items, since
-# the response helpers merge caller-chosen **kwargs into it.
-ToolResponse = dict[str, Any]  # not object: callers index it without narrowing
-
-# The {'status': 'error', ...} envelope any decorated tool may return instead.
-ToolErrorResponse = dict[str, Any]
-type ToolResult[R] = R | ToolErrorResponse
+from utils.types import (
+    JsonValue,
+    QueryParam,
+    ToolErrorResponse,
+    ToolResponse,
+)
 
 # Initialize shared instances
 token_manager = get_token_manager()

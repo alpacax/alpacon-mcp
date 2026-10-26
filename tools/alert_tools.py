@@ -3,11 +3,12 @@
 from typing import Any
 
 from utils.api_call import http_call_response
-from utils.common import ToolResponse, build_list_params
+from utils.common import build_list_params
 from utils.decorators import mcp_tool_handler
 from utils.error_handler import format_validation_error
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ_ONLY
+from utils.types import ToolResponse
 
 # Mirrors AlertAcknowledgement.ACTION_TYPE_CHOICES; the server takes nothing else.
 ALERT_ACTION_TYPES = frozenset({'checked', 'dismissed'})

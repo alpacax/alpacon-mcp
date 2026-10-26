@@ -12,12 +12,7 @@ this restriction.
 """
 
 from utils.api_call import http_call_response
-from utils.common import (
-    ToolErrorResponse,
-    ToolResponse,
-    build_list_params,
-    error_response,
-)
+from utils.common import build_list_params, error_response
 from utils.decorators import mcp_tool_handler, require_jwt_auth
 from utils.error_handler import format_validation_error, validate_server_id_format
 from utils.http_client import http_client
@@ -27,6 +22,7 @@ from utils.tool_annotations import (
     IDEMPOTENT_WRITE,
     READ_ONLY,
 )
+from utils.types import ToolErrorResponse, ToolResponse
 
 _API_TOKENS = '/api/auth/tokens/'
 _API_TOKEN_SCOPES = f'{_API_TOKENS}scopes/'

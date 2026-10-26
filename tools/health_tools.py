@@ -3,9 +3,10 @@
 from mcp.types import ToolAnnotations
 
 from server import mcp
-from utils.common import ToolResponse, success_response
+from utils.common import success_response
 from utils.decorators import with_error_handling
 from utils.health import get_health_info
+from utils.types import ToolResponse
 
 
 # Raw registration: this tool has to answer before any workspace or JWT exists.

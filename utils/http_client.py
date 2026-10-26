@@ -11,16 +11,11 @@ from urllib.parse import urljoin
 import httpx
 
 from utils import request_signal
-from utils.common import (
-    MCP_USER_AGENT,
-    JsonValue,
-    RequestBody,
-    RequestParams,
-    is_auth_enabled,
-)
+from utils.common import MCP_USER_AGENT, is_auth_enabled
 from utils.declared_agent import declared_agent_headers
 from utils.error_handler import UpstreamAuthError
 from utils.logger import get_logger, redact_for_log
+from utils.types import JsonValue, RequestBody, RequestParams
 
 logger = get_logger('http_client')
 

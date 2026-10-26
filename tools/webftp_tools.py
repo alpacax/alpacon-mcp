@@ -15,7 +15,6 @@ import pybase64
 from server import TRANSPORT_STDIO
 from utils.api_call import http_call_response
 from utils.common import (
-    ToolResponse,
     build_list_params,
     empty_value_error,
     error_response,
@@ -30,6 +29,7 @@ from utils.decorators import mcp_tool_handler
 from utils.error_handler import format_validation_error, validate_file_path
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, READ_ONLY
+from utils.types import ToolResponse
 
 # base64 inflates bytes 4/3x; this keeps the decoded upload at 3 MiB even
 # though the ASGI layer allows a larger envelope (see #144, design in #275).

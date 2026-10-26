@@ -1,15 +1,11 @@
 """Security ACL tools for Alpacon MCP server."""
 
 from utils.api_call import http_call_response
-from utils.common import (
-    ToolResponse,
-    build_list_params,
-    empty_value_error,
-    error_response,
-)
+from utils.common import build_list_params, empty_value_error, error_response
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ_ONLY
+from utils.types import ToolResponse
 
 VALID_BULK_ACTIONS = ('add', 'remove')
 _BULK_ACTIONS_STR = ', '.join(f"'{a}'" for a in VALID_BULK_ACTIONS)

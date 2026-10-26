@@ -19,8 +19,6 @@ from utils.auth import (
     match_workspace,
 )
 from utils.common import (
-    ToolErrorResponse,
-    ToolResult,
     error_response,
     is_auth_enabled,
     token_error_response,
@@ -41,6 +39,7 @@ from utils.security_settings import (
     get_action_for_tool,
     security_cache,
 )
+from utils.types import ToolErrorResponse, ToolResult
 from utils.workspace_resolver import resolve_workspace
 
 logger = get_logger('decorators')

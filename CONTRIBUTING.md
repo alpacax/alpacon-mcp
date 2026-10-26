@@ -202,9 +202,9 @@ async def test_list_servers_success():
    ```python
    # tools/your_feature_tools.py
    from utils.api_call import http_call_response
-   from utils.common import ToolResponse
    from utils.decorators import mcp_tool_handler
    from utils.http_client import http_client
+   from utils.types import ToolResponse
 
 
    @mcp_tool_handler(description='Your tool description')

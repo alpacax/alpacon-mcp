@@ -6,13 +6,8 @@ utils.common module.
 
 from collections.abc import Awaitable, Callable
 
-from utils.common import (
-    RequestBody,
-    RequestParams,
-    ToolResponse,
-    success_response,
-    unwrap_http_result,
-)
+from utils.common import success_response, unwrap_http_result
+from utils.types import RequestBody, RequestParams, ToolResponse
 
 
 async def http_call_response(
