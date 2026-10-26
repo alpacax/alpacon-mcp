@@ -2,8 +2,9 @@
 
 import asyncio
 import re
+from collections.abc import Mapping, MutableMapping
 from datetime import UTC, datetime
-from typing import Annotated, Any, TypedDict, cast
+from typing import Annotated, TypedDict, cast
 
 import httpx
 from pydantic import Strict, TypeAdapter
@@ -186,7 +187,7 @@ _SUDO_HUMAN_APPROVAL_CODES = frozenset(
 )
 
 
-type _CommandRecord = dict[str, Any]  # one command result row (result, status, ...)
+type _CommandRecord = Mapping[str, JsonValue]  # one command row, as read
 
 
 class _SubmittedCommand(TypedDict, total=False):
@@ -225,7 +226,7 @@ def _sudo_denial(result: _CommandRecord) -> tuple[str, str] | None:
 
 
 def _attach_sudo_denial(
-    target: dict[str, Any], source: dict[str, Any] | None = None
+    target: MutableMapping[str, JsonValue], source: _CommandRecord | None = None
 ) -> None:
     """Attach denial guidance found in ``source`` onto ``target``.
 
@@ -284,7 +285,7 @@ _FILE_PHASE_GENERIC_HINT = (
 )
 
 
-def _file_phase_hint(result: dict[str, Any]) -> str | None:
+def _file_phase_hint(result: _CommandRecord) -> str | None:
     """Hint for a file-lane ``error_phase``, or None for any other phase."""
     phase = result.get('error_phase')
     if not isinstance(phase, str) or not phase.startswith('file_'):
@@ -293,7 +294,7 @@ def _file_phase_hint(result: dict[str, Any]) -> str | None:
 
 
 def _attach_file_phase_hint(
-    target: dict[str, Any], source: dict[str, Any] | None = None
+    target: MutableMapping[str, JsonValue], source: _CommandRecord | None = None
 ) -> None:
     """Attach the file-lane hint for ``source``'s ``error_phase`` onto ``target``."""
     hint = _file_phase_hint(target if source is None else source)
@@ -324,7 +325,7 @@ _ONLY_REFUSED_SERVERS = (
 )
 
 
-def _rerun_coordinates(result: dict[str, Any]) -> dict[str, str]:
+def _rerun_coordinates(result: _CommandRecord) -> dict[str, str]:
     """The polled row's server, account and Work Session, keyed as tool arguments.
 
     A rerun has to keep the held or refused command's account and Work Session,
@@ -345,14 +346,20 @@ def _rerun_coordinates(result: dict[str, Any]) -> dict[str, str]:
     return {key: value for key, value in candidates if isinstance(value, str) and value}
 
 
-def _stdin_was_fed(result: dict[str, Any], stdin_fed: bool) -> bool:
+def _stdin_was_fed(result: _CommandRecord, stdin_fed: bool) -> bool:
     """Data is withheld on some rows, so the submitting call's word counts too."""
     return stdin_fed or bool(result.get('data'))
 
 
+class _FileExecutionRefusal(TypedDict):
+    message: str
+    error_code: str
+    next_action: str
+
+
 def _use_file_execution_refusal(
-    result: dict[str, Any], stdin_fed: bool = False
-) -> dict[str, Any] | None:
+    result: _CommandRecord, stdin_fed: bool = False
+) -> _FileExecutionRefusal | None:
     """message, error_code and next_action for this refusal; None otherwise."""
     if result.get('rejection_cause') != USE_FILE_EXECUTION:
         return None
@@ -379,7 +386,7 @@ def _use_file_execution_refusal(
     }
 
 
-def _attach_use_file_execution(entry: dict[str, Any]) -> None:
+def _attach_use_file_execution(entry: MutableMapping[str, JsonValue]) -> None:
     if refusal := _use_file_execution_refusal(entry):
         entry['error_code'] = refusal['error_code']
         entry['next_action'] = refusal['next_action'] + _ONLY_REFUSED_SERVERS
@@ -632,7 +639,7 @@ def _purpose_was_truncated(purpose: str | None) -> bool:
     return len((purpose or '').strip()) > PURPOSE_MAX_LENGTH
 
 
-def _remaining_purpose_window(expires_at: Any) -> int | None:
+def _remaining_purpose_window(expires_at: JsonValue) -> int | None:
     """Seconds left before the demand expires, or None when unknowable.
 
     Measured against the expiry the server derived. The window's length is
@@ -1434,7 +1441,7 @@ _BARE_INTERPRETER_RE = re.compile(r'[A-Za-z0-9][A-Za-z0-9._+-]{0,63}')
 
 def _attach_file_execution_suggestion(
     response: ToolResponse,
-    result: dict[str, Any],
+    result: _CommandRecord,
     *,
     server_id: str,
     workspace: str,

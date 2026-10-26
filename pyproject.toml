@@ -164,3 +164,8 @@ module = "tests.*"
 disallow_untyped_defs = false  # test functions take pytest fixtures untyped
 disallow_incomplete_defs = false
 disallow_untyped_calls = false  # test helpers stay untyped until the tests are annotated
+
+# Modules cleared of explicit Any; each stays that way.
+[[tool.mypy.overrides]]
+module = ["tools.command_tools"]
+disallow_any_explicit = true
