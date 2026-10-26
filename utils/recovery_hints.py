@@ -261,6 +261,10 @@ def enrich_error_response(
     if 'recovery_hints' in response:
         return response
 
+    # The 5xx hints say try again, and resending a write that may have acted can repeat it.
+    if response.get('outcome_unknown') is True:
+        return response
+
     status_code = response.get('status_code') or response.get('error_code')
     message = response.get('message', '')
 

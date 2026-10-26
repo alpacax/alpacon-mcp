@@ -44,6 +44,8 @@ All MCP tools follow a consistent response structure:
 
 > **Note**: `"status": "success"` indicates successful HTTP communication. Check the `data.error` field for API-level errors like ACL permission issues (403/404).
 
+A request is retried with backoff after a 5xx, a timeout, or a network error, with one exception: a `POST` or `PATCH` is retried only when it never reached the server—no connection opened or came free from the pool, the proxy refused the tunnel, the URL scheme cannot be sent, or the server answered 503 `auth_verification_unavailable`, which it sends before any view runs. Once it may have reached the server (a read or write timeout, a broken connection, any other 5xx, or an unexpected error such as a 2xx whose body cannot be read), the tool's error comes back at once with `outcome_unknown: true` and no `recovery_hints`, because sending it again could repeat what it did. Check whether the write took effect before calling the tool again. An error without the field was not acted on, or came from a method that is safe to resend (#392).
+
 ## 🖥️ Server management tools
 
 ### `list_servers`
@@ -452,6 +454,8 @@ The refused command did not run, so nothing needs cancelling. The server attache
 `execute_file_suggestion` here: the script body is on the command line, so there is no path to read.
 `state_command_purpose` returns the same refusal when the re-judged command lands on it.
 
+**Lost submission:** the command is submitted once and never resent after its request may have reached the server (#392). The response is then `status: "error"` with `outcome_unknown: true`, as described under Response structure, and the command may have been created and may have run. Do not resubmit it until `list_commands` for that server shows it is not there, since a resubmission may run the command twice.
+
 ### `execute_file`
 Run a script on a server as a verified file, and wait for the result. With `write_file`,
 the same call writes the script to the host first; with `read_from_server`, it reads the script
@@ -537,6 +541,8 @@ denials, and the result all follow the same rules—plus a `file` object echoing
 and `args` (never `content`). `command` and `shell` are not echoed; the polled command row carries the
 server-rendered line.
 
+**Lost submission:** the command submission follows the `execute_command` rule: with `outcome_unknown: true` the command may exist and may have run, so check `list_commands` for that server before resubmitting. The `write_file` upload and the `read_from_server` download are POSTs too, and a failed one carries the same field.
+
 **Refusals** come back as `status: "error"` with `error_code` set, and a message stating the fix. None
 has a request waiting behind it, so a client acts on them rather than waiting or retrying as-is:
 `file_exec_unsupported_agent` (the agent on that server did not report support for this lane: an
@@ -596,6 +602,8 @@ some targets may be refused. Read it from `list_commands`, where each refused en
 refused servers only, with the same account: the file lane needs every target server to support it,
 so resubmitting the original target set can fail with `file_exec_unsupported_agent` on a server that
 was never refused.
+
+**Lost submission:** a server whose entry in `deploy_shell_results` carries `outcome_unknown: true` follows the `execute_command` rule: its command may exist and may have run, so check `list_commands` for that server before resubmitting to it.
 
 ### `state_command_purpose`
 Answer the purpose demand on a command the verification gate is holding, then wait for the outcome.

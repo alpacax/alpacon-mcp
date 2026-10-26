@@ -18,7 +18,6 @@ from utils.common import (
     empty_value_error,
     error_response,
     exclude_none,
-    is_http_error,
     pending_approval_response,
     resolve_work_session_id,
     success_response,
@@ -747,6 +746,25 @@ async def execute_command(
     return response
 
 
+def _submission_error(
+    result: JsonValue | BaseException, *, server_id: str, region: str, workspace: str
+) -> ToolErrorResponse | None:
+    """A failed command submission as a tool error; None when it was accepted."""
+    response = unwrap_http_result(
+        result,
+        default_message='Command execution failed',
+        server_id=server_id,
+        region=region,
+        workspace=workspace,
+    )
+    if response is not None and response.get('outcome_unknown') is True:
+        response['message'] += (
+            f' {DO_NOT_RESUBMIT} until list_commands for this server shows it '
+            'is not there: a resubmission may run it twice.'
+        )
+    return response
+
+
 async def _settle_submission(
     exec_data: JsonValue,
     *,
@@ -762,12 +780,8 @@ async def _settle_submission(
 ) -> ToolResponse:
     """Turn a submit response into the tool's answer (refusal, id, then the
     wait); shared by the shell and file lanes (ADR 0053)."""
-    if err := unwrap_http_result(
-        exec_data,
-        default_message='Command execution failed',
-        server_id=server_id,
-        region=region,
-        workspace=workspace,
+    if err := _submission_error(
+        exec_data, server_id=server_id, region=region, workspace=workspace
     ):
         return err
 
@@ -1703,15 +1717,10 @@ async def execute_command_multi_server(
                     'message': str(result),
                 }
                 failed_count += 1
-            elif is_http_error(result):
-                # unwrap_http_result returns non-None whenever 'error' is in the dict
-                deploy_results[sid] = unwrap_http_result(
-                    result,
-                    default_message='Command execution failed',
-                    server_id=sid,
-                    region=region,
-                    workspace=workspace,
-                )
+            elif err := _submission_error(
+                result, server_id=sid, region=region, workspace=workspace
+            ):
+                deploy_results[sid] = err
                 failed_count += 1
             else:
                 deploy_results[sid] = {'status': 'success', 'data': result}
@@ -1720,15 +1729,10 @@ async def execute_command_multi_server(
         for sid in server_ids:
             try:
                 result = await _submit_one(sid)
-                if is_http_error(result):
-                    # unwrap_http_result returns non-None whenever 'error' is in the dict
-                    deploy_results[sid] = unwrap_http_result(
-                        result,
-                        default_message='Command execution failed',
-                        server_id=sid,
-                        region=region,
-                        workspace=workspace,
-                    )
+                if err := _submission_error(
+                    result, server_id=sid, region=region, workspace=workspace
+                ):
+                    deploy_results[sid] = err
                     failed_count += 1
                 else:
                     deploy_results[sid] = {'status': 'success', 'data': result}

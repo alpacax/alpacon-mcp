@@ -2,6 +2,7 @@
 
 import inspect
 import logging
+from collections.abc import Mapping
 from http import HTTPStatus
 from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
@@ -862,3 +863,205 @@ class TestHTTPVerbsConstant:
         }
 
         assert set(HTTP_VERBS) == public_async - self.NON_VERB_ASYNC_METHODS
+
+
+COMMAND_URL = 'https://ws.ap1.alpacon.io/api/events/commands/'
+SERVERS_URL = 'https://ws.ap1.alpacon.io/api/servers/servers/'
+NON_IDEMPOTENT = pytest.mark.parametrize('method', ['POST', 'PATCH'])
+IDEMPOTENT = pytest.mark.parametrize('method', ['GET', 'PUT', 'DELETE'])
+MAY_HAVE_LANDED = pytest.mark.parametrize(
+    ('error', 'expected'),
+    [
+        (httpx.ReadTimeout, 'Timeout'),
+        (httpx.WriteTimeout, 'Timeout'),
+        (httpx.ReadError, 'Request Error'),
+        (httpx.RemoteProtocolError, 'Request Error'),
+        (httpx.LocalProtocolError, 'Request Error'),
+    ],
+)
+NEVER_SENT = pytest.mark.parametrize(
+    ('error', 'expected'),
+    [
+        (httpx.ConnectError, 'Request Error'),
+        (httpx.ConnectTimeout, 'Timeout'),
+        (httpx.PoolTimeout, 'Timeout'),
+        (httpx.ProxyError, 'Request Error'),
+        (httpx.UnsupportedProtocol, 'Request Error'),
+    ],
+)
+CREATED = (HTTPStatus.CREATED, {'id': 'command-1'})
+
+
+def scripted(*steps: type[httpx.TransportError] | tuple[int, Mapping[str, str]]):
+    """A transport raising or answering each step in turn, and the requests it saw."""
+    seen: list[httpx.Request] = []
+
+    def answer(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        step = steps[min(len(seen), len(steps)) - 1]
+        if isinstance(step, tuple):
+            status, body = step
+            return httpx.Response(status, json=body)
+        raise step('scripted failure', request=request)
+
+    return httpx.MockTransport(answer), seen
+
+
+class TestNonIdempotentRequestIsNotReplayed:
+    @NON_IDEMPOTENT
+    @MAY_HAVE_LANDED
+    async def test_request_that_may_have_reached_the_server_is_sent_once(
+        self, make_client, method, error, expected
+    ):
+        transport, seen = scripted(error, CREATED)
+        client = make_client(transport)
+
+        result = await client.request(method, COMMAND_URL, json_data={'line': 'ls'})
+
+        assert [r.method for r in seen] == [method]
+        assert result['error'] == expected
+        assert result['outcome_unknown'] is True
+        assert result['message'].endswith(
+            f'The {method} was not resent: the server may already have acted on it.'
+        )
+
+    @NON_IDEMPOTENT
+    @pytest.mark.parametrize(
+        ('body', 'error_code'),
+        [({'code': 'db_unavailable'}, 'db_unavailable'), ({}, None)],
+    )
+    async def test_server_error_is_returned_without_a_second_request(
+        self, make_client, method, body, error_code
+    ):
+        transport, seen = scripted((HTTPStatus.BAD_GATEWAY, body), CREATED)
+        client = make_client(transport)
+
+        result = await client.request(method, COMMAND_URL, json_data={'line': 'ls'})
+
+        assert len(seen) == 1
+        assert result['error'] == 'HTTP Error'
+        assert result['status_code'] == HTTPStatus.BAD_GATEWAY
+        assert result.get('error_code') == error_code
+        assert result['outcome_unknown'] is True
+
+    @NON_IDEMPOTENT
+    async def test_credential_check_outage_is_retried_as_never_reaching_a_view(
+        self, make_client, method
+    ):
+        unavailable = (
+            HTTPStatus.SERVICE_UNAVAILABLE,
+            {'code': 'auth_verification_unavailable'},
+        )
+        transport, seen = scripted(unavailable, CREATED)
+        client = make_client(transport)
+
+        result = await client.request(method, COMMAND_URL, json_data={'line': 'ls'})
+
+        assert len(seen) == 2
+        assert result == {'id': 'command-1'}
+
+    async def test_post_credential_check_outage_exhausts_retries_with_a_known_outcome(
+        self, make_client
+    ):
+        transport, seen = scripted(
+            (HTTPStatus.SERVICE_UNAVAILABLE, {'code': 'auth_verification_unavailable'})
+        )
+        client = make_client(transport)
+
+        result = await client.request('POST', COMMAND_URL, json_data={'line': 'ls'})
+
+        assert len(seen) == client.max_retries
+        assert result['error_code'] == 'auth_verification_unavailable'
+        assert 'outcome_unknown' not in result
+
+    @NON_IDEMPOTENT
+    @NEVER_SENT
+    async def test_request_that_never_left_is_retried_and_succeeds(
+        self, make_client, method, error, expected
+    ):
+        transport, seen = scripted(error, CREATED)
+        client = make_client(transport)
+
+        result = await client.request(method, COMMAND_URL, json_data={'line': 'ls'})
+
+        assert len(seen) == 2
+        assert result == {'id': 'command-1'}
+
+    @NON_IDEMPOTENT
+    @NEVER_SENT
+    async def test_request_that_never_left_exhausts_retries_with_a_known_outcome(
+        self, make_client, method, error, expected
+    ):
+        transport, seen = scripted(error)
+        client = make_client(transport)
+
+        result = await client.request(method, COMMAND_URL, json_data={'line': 'ls'})
+
+        assert len(seen) == client.max_retries
+        assert result['error'] == expected
+        assert 'outcome_unknown' not in result
+
+    @NON_IDEMPOTENT
+    async def test_retry_after_a_failed_connect_stops_at_the_first_lost_response(
+        self, make_client, method
+    ):
+        transport, seen = scripted(httpx.ConnectError, httpx.ReadTimeout, CREATED)
+        client = make_client(transport)
+
+        result = await client.request(method, COMMAND_URL, json_data={'line': 'ls'})
+
+        assert len(seen) == 2  # only the second attempt could have reached the server
+        assert result['outcome_unknown'] is True
+
+    async def test_post_answered_with_an_unreadable_body_may_have_run(
+        self, make_client
+    ):
+        client = make_client(
+            httpx.MockTransport(
+                lambda request: httpx.Response(HTTPStatus.OK, text='<html>ok</html>')
+            )
+        )
+
+        result = await client.request('POST', COMMAND_URL, json_data={'line': 'ls'})
+
+        assert result['error'] == 'Unexpected Error'
+        assert result['outcome_unknown'] is True
+
+
+class TestIdempotentRequestIsRetried:
+    @IDEMPOTENT
+    async def test_request_whose_response_timed_out_is_retried(
+        self, make_client, method
+    ):
+        transport, seen = scripted(httpx.ReadTimeout, (HTTPStatus.OK, {'id': 'x'}))
+        client = make_client(transport)
+
+        result = await client.request(method, SERVERS_URL)
+
+        assert len(seen) == 2
+        assert result == {'id': 'x'}
+
+    @IDEMPOTENT
+    async def test_server_error_is_retried(self, make_client, method):
+        transport, seen = scripted(
+            (HTTPStatus.BAD_GATEWAY, {}), (HTTPStatus.OK, {'id': 'x'})
+        )
+        client = make_client(transport)
+
+        result = await client.request(method, SERVERS_URL)
+
+        assert len(seen) == 2
+        assert result == {'id': 'x'}
+
+    @IDEMPOTENT
+    async def test_exhausted_retries_carry_no_outcome_unknown(
+        self, make_client, method
+    ):
+        transport, seen = scripted(httpx.ReadTimeout)
+        client = make_client(transport)
+
+        result = await client.request(method, SERVERS_URL)
+
+        assert len(seen) == client.max_retries
+        assert result['error'] == 'Timeout'
+        assert 'outcome_unknown' not in result

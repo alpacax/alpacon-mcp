@@ -12,6 +12,7 @@ import pytest
 
 from server import create_streamable_http_app, mcp
 from utils import request_signal
+from utils.http_client import AlpaconHTTPClient
 
 # The AlpaconHTTPClient methods a tool calls.
 HTTP_VERBS = ('get', 'post', 'put', 'patch', 'delete')
@@ -133,3 +134,19 @@ def mock_region_auto_detect():
         patch('tools.workspace_tools.get_token_manager', return_value=mock_tm),
     ):
         yield mock_tm
+
+
+@pytest.fixture
+async def make_client():
+    """Build AlpaconHTTPClients over a given transport, with no retry delay."""
+    clients: list[AlpaconHTTPClient] = []
+
+    def build(transport: httpx.AsyncBaseTransport) -> AlpaconHTTPClient:
+        client = AlpaconHTTPClient(transport=transport)
+        client.retry_delay = 0
+        clients.append(client)
+        return client
+
+    yield build
+    for client in clients:
+        await client.close()

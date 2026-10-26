@@ -653,6 +653,8 @@ def unwrap_http_result(
     status_code = result.get('status_code')
     if status_code is not None:
         error_kwargs['status_code'] = status_code
+    if result.get('outcome_unknown') is True:  # a POST or PATCH that may have acted
+        error_kwargs['outcome_unknown'] = True
 
     # Parse the body's `code` once; it decides whether this is a WorkSession
     # gate (membership in _WORK_SESSION_GATE_CODES) and, on the generic path

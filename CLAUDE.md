@@ -83,6 +83,13 @@ Things the code will not tell you at a glance:
   access the caller has lost. The auth-path caches stay: the JWKS keys in
   `utils/auth.py` and the workspace security settings in
   `utils/security_settings.py` are not permission-filtered tool data.
+- **`AlpaconHTTPClient` never resends a POST or PATCH that may have reached the
+  server** (#392). Only the errors in `_NEVER_SENT_ERRORS`, raised before the
+  request goes out, and the 5xx codes in `_REJECTED_BEFORE_VIEW_CODES` retry
+  them; a read timeout, a broken connection or any other 5xx returns at once
+  with `outcome_unknown: true`, and such an error gets no recovery hints.
+  alpacon-server takes no idempotency key, so a resent
+  `/api/events/commands/` POST runs the command twice.
 - **The WorkSession gate applies to OAuth/browser callers only.** Static API and
   service tokens bypass it, so a flow that works in stdio mode can be blocked in
   remote mode. `ALPACON_WORK_SESSION` supplies a default session id; an explicit
