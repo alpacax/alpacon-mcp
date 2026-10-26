@@ -502,6 +502,26 @@ class TestUnwrapHttpResultPlanLimit:
         # Re-registration guidance (C9) is server-axis only.
         assert 'delete the old server entry' in next_action
 
+    def test_a_non_string_next_is_reported_as_null(self, mock_token_manager):
+        mock_token_manager.get_base_url_override.return_value = None
+        envelope = self._envelope(code='server_limit_exceeded', axis='server')
+        envelope['response'] = json.dumps(
+            {
+                'code': 'server_limit_exceeded',
+                'gate': 'plan',
+                'axis': 'server',
+                'next': 7,
+            }
+        )
+
+        out = _unwrap_error(
+            envelope, default_message='failed', region='us1', workspace='acme'
+        )
+
+        assert out['gate'] == 'plan'
+        assert out['axis'] == 'server'
+        assert out['next'] is None
+
     def test_gate_less_legacy_code_becomes_the_same_shape(self, mock_token_manager):
         mock_token_manager.get_base_url_override.return_value = None
         out = _unwrap_error(

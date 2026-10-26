@@ -11,7 +11,7 @@ the paginator does so whatever the request names. ``opt_in_pagination`` is how a
 walk asks, and how it reads the answer of a server that cannot.
 """
 
-from typing import Any, NamedTuple
+from typing import NamedTuple
 
 from utils.common import (
     UnexpectedResponseShapeError,
@@ -21,7 +21,7 @@ from utils.common import (
     success_response,
     unwrap_http_result,
 )
-from utils.types import ApiMethod, QueryParams, ToolResponse
+from utils.types import ApiMethod, JsonValue, QueryParams, ToolResponse
 
 # Requests one walk may issue. A walk cut short hands back a cursor to resume.
 MAX_CURSOR_PAGES = 10
@@ -97,14 +97,14 @@ class _Page(NamedTuple):
     ``unpaginated`` marks a body with no ``next`` at all, read as the whole list.
     """
 
-    records: list[Any]
-    count: Any
+    records: list[JsonValue]
+    total: JsonValue  # the server's `count` (tuple.count owns that name)
     next_cursor: str | None
     unpaginated: bool = False
 
 
 def _read_page(
-    result: Any, sent_cursor: str | None, *, opt_in: bool, first: bool
+    result: JsonValue, sent_cursor: str | None, *, opt_in: bool, first: bool
 ) -> _Page:
     """Return a page's records, its ``count``, and its ``next`` cursor.
 
@@ -225,8 +225,8 @@ async def cursor_list_response(
     start_cursor = sent if isinstance(sent, str) and sent else None
     started_from_cursor = start_cursor is not None
     cursor = start_cursor
-    records: list[Any] = []
-    count: Any = None
+    records: list[JsonValue] = []
+    count: JsonValue = None
     pages = 0
     unpaginated = False
 
@@ -281,8 +281,8 @@ async def cursor_list_response(
 
         pages += 1
         records.extend(page.records)
-        if page.count is not None:
-            count = page.count
+        if page.total is not None:
+            count = page.total
         cursor = page.next_cursor
         unpaginated = page.unpaginated
         if cursor is None:
