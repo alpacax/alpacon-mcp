@@ -1,11 +1,9 @@
 """Health check tool for MCP clients."""
 
-from typing import Any
-
 from mcp.types import ToolAnnotations
 
 from server import mcp
-from utils.common import success_response
+from utils.common import ToolResponse, success_response
 from utils.decorators import with_error_handling
 from utils.health import get_health_info
 
@@ -20,7 +18,7 @@ from utils.health import get_health_info
     },
 )
 @with_error_handling
-async def health_check() -> dict[str, Any]:
+async def health_check() -> ToolResponse:
     """Check MCP server health and return status information.
 
     No parameters required - returns server health metrics including

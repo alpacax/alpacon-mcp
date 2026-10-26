@@ -5,13 +5,19 @@ import json
 import logging
 from http import HTTPStatus
 from types import TracebackType
-from typing import Any, Self
+from typing import Self
 from urllib.parse import urljoin
 
 import httpx
 
 from utils import request_signal
-from utils.common import MCP_USER_AGENT, JsonValue, is_auth_enabled
+from utils.common import (
+    MCP_USER_AGENT,
+    JsonValue,
+    RequestBody,
+    RequestParams,
+    is_auth_enabled,
+)
 from utils.declared_agent import declared_agent_headers
 from utils.error_handler import UpstreamAuthError
 from utils.logger import get_logger, redact_for_log
@@ -41,7 +47,7 @@ def _error_code_of(text: str) -> str | None:
     return code if isinstance(code, str) and code else None
 
 
-def _error_body_for_log(response: httpx.Response) -> Any:
+def _error_body_for_log(response: httpx.Response) -> object:
     """An upstream error body by its field names, or by its size if not JSON."""
     try:
         return redact_for_log(response.json())
@@ -151,8 +157,8 @@ class AlpaconHTTPClient:
         url: str,
         token: str | None = None,
         headers: dict[str, str] | None = None,
-        json_data: dict[str, Any] | None = None,
-        params: dict[str, Any] | None = None,
+        json_data: RequestBody | None = None,
+        params: RequestParams | None = None,
         timeout: float | None = None,
     ) -> JsonValue:
         """Execute HTTP request with retry logic.
@@ -348,7 +354,7 @@ class AlpaconHTTPClient:
         workspace: str,
         endpoint: str,
         token: str | None = None,
-        params: dict[str, Any] | None = None,
+        params: RequestParams | None = None,
     ) -> JsonValue:
         """Execute GET request.
 
@@ -375,8 +381,8 @@ class AlpaconHTTPClient:
         workspace: str,
         endpoint: str,
         token: str | None = None,
-        data: dict[str, Any] | None = None,
-        params: dict[str, Any] | None = None,
+        data: RequestBody | None = None,
+        params: RequestParams | None = None,
     ) -> JsonValue:
         """Execute POST request.
 
@@ -404,7 +410,7 @@ class AlpaconHTTPClient:
         workspace: str,
         endpoint: str,
         token: str | None = None,
-        data: dict[str, Any] | None = None,
+        data: RequestBody | None = None,
     ) -> JsonValue:
         """Execute PUT request.
 
@@ -431,7 +437,7 @@ class AlpaconHTTPClient:
         workspace: str,
         endpoint: str,
         token: str | None = None,
-        data: dict[str, Any] | None = None,
+        data: RequestBody | None = None,
     ) -> JsonValue:
         """Execute PATCH request.
 
@@ -458,7 +464,7 @@ class AlpaconHTTPClient:
         workspace: str,
         endpoint: str,
         token: str | None = None,
-        params: dict[str, Any] | None = None,
+        params: RequestParams | None = None,
     ) -> JsonValue:
         """Execute DELETE request.
 
@@ -504,7 +510,7 @@ class AlpaconHTTPClient:
     @staticmethod
     def _handle_upstream_401(
         exc: httpx.HTTPStatusError, token: str | None = None
-    ) -> dict[str, Any]:
+    ) -> dict[str, object]:
         """Handle upstream API 401 responses.
 
         Detects MFA-required errors from the Alpacon API response body and

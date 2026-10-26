@@ -15,6 +15,8 @@ from collections.abc import Awaitable, Callable
 from typing import Any, NamedTuple
 
 from utils.common import (
+    RequestParams,
+    ToolResponse,
     UnexpectedResponseShapeError,
     error_response,
     expect_json_object,
@@ -149,7 +151,7 @@ def _report(
     stopped_because: str,
     started_from_cursor: bool,
     next_cursor: str | None,
-) -> dict[str, Any]:
+) -> dict[str, object]:
     """Build the walk's own account of itself, minus the per-outcome fields.
 
     ``complete`` means this response holds the whole list, so a walk resumed
@@ -169,17 +171,17 @@ def _report(
 
 
 async def cursor_list_response(
-    method: Callable[..., Awaitable[Any]],
+    method: Callable[..., Awaitable[object]],
     *,
     region: str,
     workspace: str,
     endpoint: str,
     token: str | None,
     default_message: str,
-    params: dict[str, Any],
+    params: RequestParams,
     opt_in_pagination: bool = False,
-    **id_context: Any,
-) -> dict[str, Any]:
+    **id_context: object,
+) -> ToolResponse:
     """Walk a cursor-paginated list, bounded by ``MAX_CURSOR_PAGES``, as one response.
 
     ``params`` is re-sent on every request with only ``cursor`` rewritten,
@@ -221,7 +223,8 @@ async def cursor_list_response(
         name: value for name, value in params.items() if name != _CURSOR_PARAM
     }
     # The server reads an empty cursor as the first page, and so does the walk.
-    start_cursor = params.get(_CURSOR_PARAM) or None
+    sent = params.get(_CURSOR_PARAM)
+    start_cursor = sent if isinstance(sent, str) and sent else None
     started_from_cursor = start_cursor is not None
     cursor = start_cursor
     records: list[Any] = []

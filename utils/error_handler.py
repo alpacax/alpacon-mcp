@@ -2,7 +2,7 @@
 
 import re
 import uuid
-from typing import Any, Literal, TypeGuard
+from typing import Literal, TypeGuard
 
 from mcp.server.mcpserver.exceptions import ToolError
 
@@ -132,8 +132,8 @@ def validate_file_path(file_path: str, allow_relative: bool = False) -> bool:
 
 
 def format_validation_error(
-    field: str, value: Any, expected_format: str | None = None
-) -> dict[str, Any]:
+    field: str, value: object, expected_format: str | None = None
+) -> dict[str, str]:
     """Format validation error with helpful message.
 
     Args:
