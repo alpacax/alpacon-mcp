@@ -1,7 +1,8 @@
 """Recovery hints for error responses to help LLM self-recover."""
 
 from http import HTTPStatus
-from typing import Any
+
+from utils.common import ToolResponse
 
 # Closing advice every plan gate shares: the call is settled, only a plan change moves it.
 _PLAN_HINTS = [
@@ -233,10 +234,10 @@ def get_recovery_hints(
 
 
 def enrich_error_response(
-    response: dict[str, Any],
+    response: ToolResponse,
     tool_name: str | None = None,
     endpoint: str | None = None,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Add recovery hints to an error response dict.
 
     Only modifies dicts that look like error responses (have status='error'

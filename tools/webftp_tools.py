@@ -168,13 +168,13 @@ async def _download_remote_mode(
     username: str | None,
     work_session_id: str | None,
     token: str,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Handle webftp_download_file in remote mode: poll until ready, return presigned URL."""
     file_name = os.path.basename(remote_file_path)
     if resource_type == 'folder':
         file_name += '.zip'
 
-    download_data: dict[str, Any] = {
+    download_data: dict[str, object] = {
         'server': server_id,
         'path': remote_file_path,
         'name': file_name,
@@ -493,7 +493,7 @@ async def webftp_upload_content(
 
     name = file_name or os.path.basename(remote_file_path)
 
-    upload_data: dict[str, Any] = {
+    upload_data: dict[str, object] = {
         'server': server_id,
         'name': name,
         'path': remote_file_path,
@@ -777,7 +777,7 @@ async def webftp_bulk_upload(
         return format_validation_error('remote_directory', remote_directory)
 
     file_names = [os.path.basename(p) for p in local_file_paths]
-    bulk_data: dict[str, Any] = {
+    bulk_data: dict[str, object] = {
         'server': server_id,
         'path': remote_directory,
         'names': file_names,
@@ -814,7 +814,7 @@ async def webftp_bulk_upload(
         client: httpx.AsyncClient,
         idx: int,
         item: _UploadSlot,
-    ) -> dict[str, Any]:
+    ) -> _UploadResult:
         upload_url = item.get('upload_url')
         file_id = item.get('id')
         name = file_names[idx] if idx < len(file_names) else _UNKNOWN_FILE
@@ -935,7 +935,7 @@ async def webftp_bulk_download(
                     remote_paths=remote_paths,
                 )
 
-    download_data: dict[str, Any] = {
+    download_data: dict[str, object] = {
         'server': server_id,
         'path': remote_paths,
     }

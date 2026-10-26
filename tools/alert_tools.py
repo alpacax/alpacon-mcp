@@ -275,7 +275,7 @@ async def create_alert_rule(
 
     token = kwargs.get('token')
 
-    rule_data: dict[str, Any] = {
+    rule_data: dict[str, object] = {
         'name': name,
         'target': target,
         'threshold': threshold,
@@ -393,7 +393,7 @@ async def update_alert_rule(
 
     token = kwargs.get('token')
 
-    update_data: dict[str, Any] = {}
+    update_data: dict[str, object] = {}
     if name is not None:
         update_data['name'] = name
     if target is not None:
@@ -739,7 +739,7 @@ async def preview_alert_rule(
     }
     # The server always requires the rule object; an empty one previews the
     # rule_id rule unchanged.
-    body: dict[str, Any] = {
+    body: dict[str, object] = {
         'rule': {
             field: value for field, value in rule_fields.items() if value is not None
         }
@@ -750,6 +750,7 @@ async def preview_alert_rule(
         body['servers'] = servers
     if window_s is not None:
         body['window_s'] = window_s
+    # Any: ** is checked against every keyword of http_call_response
     id_context: dict[str, Any] = {} if rule_id is None else {'rule_id': rule_id}
 
     return await http_call_response(
@@ -914,7 +915,7 @@ async def create_rule_override(
     """
     token = kwargs.get('token')
 
-    override_data: dict[str, Any] = {'server': server_id, 'rule': rule_id}
+    override_data: dict[str, object] = {'server': server_id, 'rule': rule_id}
     if threshold is not None:
         override_data['threshold'] = threshold
     if recovery_threshold is not None:
@@ -979,7 +980,7 @@ async def update_rule_override(
     """
     token = kwargs.get('token')
 
-    update_data: dict[str, Any] = {}
+    update_data: dict[str, object] = {}
     if server_id is not None:
         update_data['server'] = server_id
     if rule_id is not None:

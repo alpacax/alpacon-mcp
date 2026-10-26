@@ -1,7 +1,5 @@
 """Certificate and PKI management tools for Alpacon MCP server."""
 
-from typing import Any
-
 from utils.api_call import http_call_response
 from utils.common import ToolResponse, build_list_params, error_response
 from utils.decorators import mcp_tool_handler
@@ -94,7 +92,7 @@ async def create_certificate_authority(
     """
     token = kwargs.get('token')
 
-    ca_data: dict[str, Any] = {
+    ca_data: dict[str, object] = {
         'name': name,
         'domain': domain,
         'organization': organization,
@@ -189,7 +187,7 @@ async def update_certificate_authority(
     """
     token = kwargs.get('token')
 
-    patch_data: dict[str, Any] = {}
+    patch_data: dict[str, object] = {}
     if default_valid_days is not None:
         patch_data['default_valid_days'] = default_valid_days
     if max_valid_days is not None:
@@ -336,7 +334,7 @@ async def create_sign_request(
             'At least one entry in domain_list or ip_list is required'
         )
 
-    csr_data: dict[str, Any] = {
+    csr_data: dict[str, object] = {
         'domain_list': domains,
         'ip_list': ips,
     }
@@ -644,7 +642,7 @@ async def revoke_certificate(
     """
     token = kwargs.get('token')
 
-    data: dict[str, Any] = {
+    data: dict[str, object] = {
         'certificate': certificate_id,
     }
     if reason is not None:

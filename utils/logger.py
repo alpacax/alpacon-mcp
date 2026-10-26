@@ -10,7 +10,7 @@ import time
 from collections.abc import Generator, Mapping
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, TextIO
+from typing import TextIO
 
 LOG_FORMAT = (
     '%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s'
@@ -63,7 +63,7 @@ def escape_for_log(value: object, max_chars: int = LOG_VALUE_MAX_CHARS) -> str:
     return escaped
 
 
-def describe_for_log(value: Any) -> Any:
+def describe_for_log(value: object) -> object:
     """Stand in for a value with its type and size.
 
     A number, a flag or None cannot carry text and passes through; a string,
@@ -81,7 +81,7 @@ def describe_for_log(value: Any) -> Any:
     return f'<{type(value).__name__}>'
 
 
-def redact_for_log(value: Any) -> Any:
+def redact_for_log(value: object) -> object:
     """Keep a mapping's keys and describe each value; describe anything else.
 
     For payloads whose values the log has no business holding: request and
@@ -132,7 +132,7 @@ class JsonFormatter(logging.Formatter):
     default_msec_format = '%s.%03dZ'
 
     def format(self, record: logging.LogRecord) -> str:
-        entry: dict[str, Any] = {
+        entry: dict[str, object] = {
             'timestamp': self.formatTime(record),
             'level': record.levelname,
             'message': record.getMessage(),

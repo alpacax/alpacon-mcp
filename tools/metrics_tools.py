@@ -7,6 +7,7 @@ from typing import Any
 
 from utils.api_call import http_call_response
 from utils.common import (
+    QueryParam,
     ToolResponse,
     build_list_params,
     error_response,
@@ -824,7 +825,7 @@ async def get_top_servers(
         )
 
     # Multiple metrics - combine into dict
-    combined_data: dict[str, Any] = {}
+    combined_data: dict[str, object] = {}
     for metric, result in zip(tasks.keys(), results, strict=False):
         if isinstance(result, BaseException):
             if not isinstance(result, Exception):
@@ -926,13 +927,13 @@ _MAX_INTERFACE_PAGES = 20  # with page_size=100, at most 2000 interfaces
 
 
 async def _list_all_interfaces(
-    *, region: str, workspace: str, token: Any, server_id: str
+    *, region: str, workspace: str, token: str | None, server_id: str
 ) -> list[Any] | dict[str, Any]:
     """Collect a server's /api/proc/interfaces/ records, or return the error dict.
 
     `next` is a page number; paging stops after `_MAX_INTERFACE_PAGES` pages.
     """
-    base_params = {'server': server_id, 'page_size': 100}
+    base_params: dict[str, QueryParam] = {'server': server_id, 'page_size': 100}
     params = base_params
     records: list[Any] = []
     for _ in range(_MAX_INTERFACE_PAGES):

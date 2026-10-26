@@ -824,7 +824,7 @@ class TestDebugLogPayloadsAreLazy:
         self, mock_httpx_client
     ):
         """Every payload the client logs reaches the logger unrendered, by field name."""
-        params = {'page': 1, 'search': 'db-prod'}
+        params: dict[str, int | str] = {'page': 1, 'search': 'db-prod'}
         data = {'name': 'web-01'}
         mock_httpx_client.request.return_value = create_mock_response(
             status_code=HTTPStatus.OK

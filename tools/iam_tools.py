@@ -1,7 +1,6 @@
 """IAM (Identity and Access Management) tools for Alpacon MCP server."""
 
 import re
-from typing import Any
 
 from utils.api_call import http_call_response
 from utils.common import (
@@ -203,7 +202,7 @@ async def update_iam_user(
 
     token = kwargs.get('token')
 
-    update_data: dict[str, Any] = {}
+    update_data: dict[str, object] = {}
     if email is not None:
         update_data['email'] = email
     if first_name is not None:
@@ -340,7 +339,7 @@ async def create_iam_group(
 
     token = kwargs.get('token')
 
-    group_data: dict[str, Any] = {'name': name}
+    group_data: dict[str, object] = {'name': name}
 
     if display_name is not None:
         group_data['display_name'] = display_name
@@ -443,7 +442,7 @@ async def update_iam_group(
 
     token = kwargs.get('token')
 
-    update_data: dict[str, Any] = {}
+    update_data: dict[str, object] = {}
     if display_name is not None:
         update_data['display_name'] = display_name
     if description is not None:
@@ -755,7 +754,7 @@ async def create_iam_application(
 
     token = kwargs.get('token')
 
-    app_data: dict[str, Any] = {'name': name}
+    app_data: dict[str, object] = {'name': name}
     if description is not None:
         app_data['description'] = description
     if service_type is not None:
@@ -841,7 +840,7 @@ async def update_iam_application(
 
     token = kwargs.get('token')
 
-    update_data: dict[str, Any] = {}
+    update_data: dict[str, object] = {}
     if name is not None:
         update_data['name'] = name
     if description is not None:
