@@ -159,6 +159,19 @@ class TestCheckMfaCompleted:
 
         assert check_mfa_completed(claims, settings) is False
 
+    def test_a_boolean_timeout_lets_no_mfa_count_as_fresh(self):
+        claims = {
+            'https://alpacon.io/completed_mfa_methods': {
+                'otp': datetime.now(tz=UTC).isoformat().replace('+00:00', 'Z')
+            }
+        }
+        settings = WorkspaceSecuritySettings(
+            {'mfa_required': True, 'mfa_timeout': True}
+        )
+
+        assert settings.mfa_timeout == 0
+        assert check_mfa_completed(claims, settings) is False
+
     def test_malformed_allowed_methods_let_no_method_satisfy_mfa(self):
         recent = (
             (datetime.now(tz=UTC) - timedelta(seconds=60))

@@ -208,6 +208,24 @@ class TestListWorkspaces:
         assert plain_ws['domain'] == 'https://pinned-by-env.us1.alpacon.io'
 
     @pytest.mark.asyncio
+    async def test_list_workspaces_skips_a_non_object_top_level_value(self, tmp_path):
+        config_path = tmp_path / 'token.json'
+        config_path.write_text(
+            json.dumps({'ap1': {'production': 'token1'}, '_comment': 'edited by hand'})
+        )
+        real_manager = TokenManager(config_file=str(config_path))
+
+        with patch(
+            'tools.workspace_tools.get_token_manager', return_value=real_manager
+        ):
+            result = await list_workspaces()
+
+        assert result['status'] == 'success'
+        assert [ws['workspace'] for ws in result['data']['workspaces']] == [
+            'production'
+        ]
+
+    @pytest.mark.asyncio
     async def test_list_workspaces_malformed_token_file_returns_error_envelope(
         self, mock_token_manager
     ):

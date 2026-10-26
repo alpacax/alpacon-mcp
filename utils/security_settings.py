@@ -40,7 +40,7 @@ class WorkspaceSecuritySettings:
         timeout = data.get('mfa_timeout')
         if timeout is None:
             timeout = _DEFAULT_MFA_TIMEOUT
-        elif not isinstance(timeout, int | float):
+        elif isinstance(timeout, bool) or not isinstance(timeout, int | float):
             timeout = 0
         self.mfa_timeout: float = timeout
         # None: malformed, so every action requires MFA and no method satisfies it.

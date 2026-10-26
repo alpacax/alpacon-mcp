@@ -153,6 +153,7 @@ class TestNonObjectRegionValue:
 
         assert tm.get_available_regions() == ['ap1']
         assert tm.get_default_region() == 'ap1'
+        assert tm.get_all_tokens() == {'ap1': {'production': 't'}}
 
     def test_a_non_object_region_has_no_token(self, token_file):
         tm = token_file({'ap1': 'production'})

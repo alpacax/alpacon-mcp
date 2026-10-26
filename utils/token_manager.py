@@ -247,13 +247,13 @@ class TokenManager:
 
         return None
 
-    def get_all_tokens(self) -> dict[str, JsonValue]:
-        """Get all stored tokens.
-
-        Returns:
-            All token data
-        """
-        return self.tokens
+    def get_all_tokens(self) -> dict[str, dict[str, JsonValue]]:
+        """Get the stored tokens by region, without top-level non-object values."""
+        return {
+            region: workspaces
+            for region, workspaces in self.tokens.items()
+            if isinstance(workspaces, dict)
+        }
 
     def get_available_regions(self) -> list[str]:
         """Get list of regions that have configured tokens.
@@ -261,11 +261,7 @@ class TokenManager:
         Returns:
             List of region names (e.g., ['ap1'], ['dev'], ['ap1', 'us1'])
         """
-        return [
-            region
-            for region, workspaces in self.tokens.items()
-            if isinstance(workspaces, dict)  # a non-object value holds no tokens
-        ]
+        return list(self.get_all_tokens())
 
     def get_default_region(self) -> str | None:
         """Get default region if only one region is configured.
