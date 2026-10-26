@@ -20,15 +20,17 @@ _warning_lock = Lock()
 
 
 def get_auth0_env(name: str, default: str = '') -> str:
-    """Prefer the target name, preserving explicitly empty environment values."""
+    """Prefer the target name; an empty target falls back to a set legacy name."""
     value = os.getenv(name)
-    if value is not None:
+    if value:
         return value
 
     legacy_name = _LEGACY_NAMES[name]
-    value = os.getenv(legacy_name)
-    if value is None:
-        return default
+    legacy_value = os.getenv(legacy_name)
+    if not legacy_value:
+        if value is not None:
+            return value
+        return default if legacy_value is None else legacy_value
 
     with _warning_lock:
         if legacy_name not in _warned_legacy_names:
@@ -39,4 +41,4 @@ def get_auth0_env(name: str, default: str = '') -> str:
                 legacy_name,
                 name,
             )
-    return value
+    return legacy_value

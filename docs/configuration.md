@@ -242,7 +242,7 @@ To connect a client to a remote streamable-http server, point it at the server U
 #### Environment variables
 
 The legacy names `AUTH0_DOMAIN`, `AUTH0_CLIENT_ID`, `AUTH0_CLIENT_SECRET`, `AUTH0_AUDIENCE`, `AUTH0_MFA_AUDIENCE`, and `AUTH0_NAMESPACE` still work as fallbacks and will be removed in a later release.
-The target name takes precedence when present, including an explicitly empty value; defaults apply only when both names are absent. Using a legacy fallback logs one deprecation warning per process per variable, without its value.
+A non-empty target name takes precedence; an empty or unset target falls back to the legacy name when that is set and non-empty. Defaults apply only when both names are absent. Using a legacy fallback logs one deprecation warning per process per variable, without its value.
 
 ```bash
 # Token configuration

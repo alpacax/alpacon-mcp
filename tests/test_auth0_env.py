@@ -45,7 +45,7 @@ def isolated_env(monkeypatch):
         (None, 'legacy-value', 'legacy-value'),
         ('target-value', 'legacy-value', 'target-value'),
         (None, None, 'default-value'),
-        ('', 'legacy-value', ''),
+        ('', 'legacy-value', 'legacy-value'),
         ('', None, ''),
         (None, '', ''),
     ],
@@ -61,7 +61,7 @@ def test_env_matrix(
     with caplog.at_level(logging.WARNING):
         assert get_auth0_env(target, 'default-value') == expected
 
-    assert len(caplog.records) == int(target_value is None and legacy_value is not None)
+    assert len(caplog.records) == int(not target_value and bool(legacy_value))
 
 
 def test_legacy_warnings_are_once_per_variable_and_exclude_values(monkeypatch, caplog):
