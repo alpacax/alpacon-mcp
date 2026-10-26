@@ -80,7 +80,8 @@ dev = [
 required-version = ">=0.13,<0.14"  # keep in step with the uv image in Dockerfile
 # Floors for transitive dependencies with security advisories.
 constraint-dependencies = [
-    "virtualenv>=21.14.9",  # via pre-commit
+    "virtualenv>=21.14.13",  # via pre-commit
+    "filelock>=4.2.1",  # via virtualenv, python-discovery
     "opentelemetry-api>=1.45.1",  # via mcp
 ]
 
