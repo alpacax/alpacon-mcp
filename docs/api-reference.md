@@ -657,7 +657,7 @@ Download a file or folder from a server. The call waits until the host has run t
 - Local mode: streams the file to a temporary name beside `local_file_path` once the host has handled the transfer command, and moves it into place only after the transfer is confirmed. A failed download leaves any file already at `local_file_path` untouched.
 - Remote mode (streamable-http): returns `download_url`, a presigned URL valid for 24 hours, with a `curl` command in `tip`. The URL is returned only once the file is in place, so it can be fetched at once.
 
-A transfer the host or server reports as failed returns `code: "download_failed"` with the server's message, and so does a create response with no download URL, which most likely means the token lacks the WebFTP download scope. A transfer still running when the wait ends returns `code: "download_timeout"` with `file_id`; follow it with `webftp_check_status`.
+A transfer the host or server reports as failed returns `code: "download_failed"` with the server's message, and so does a create response with no download URL, which most likely means the token lacks the WebFTP download scope. A transfer still running when the wait ends returns `code: "download_timeout"` with `file_id`; follow it with `webftp_check_status`. In remote mode that error also carries `download_url`, which works once `webftp_check_status` reports the download completed.
 
 **Parameters:**
 - `server_id` (string): Server ID

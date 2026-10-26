@@ -2,9 +2,11 @@
 
 import asyncio
 import binascii
+import contextlib
 import os
 import secrets
 import shlex
+import shutil
 from collections.abc import AsyncIterator
 from http import HTTPStatus
 from pathlib import Path
@@ -211,7 +213,11 @@ def _download_stalled(
     match outcome:
         case Refused(response):
             refused = unwrap_http_result(
-                response, default_message=poll_message, file_id=file_id
+                response,
+                default_message=poll_message,
+                file_id=file_id,
+                region=region,
+                workspace=workspace,
             )
             return refused or _download_failed(poll_message, file_id=file_id)
         case Failed(reason):
@@ -273,6 +279,19 @@ async def _download_transferred(
     )
 
 
+def _create_private_file(path: str) -> None:
+    try:
+        os.close(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600))
+    except OSError as e:
+        raise _LocalSaveError(str(e)) from e
+
+
+def _move_into_place(part_path: str, local_file_path: str) -> None:
+    with contextlib.suppress(FileNotFoundError):  # an existing file keeps its mode
+        shutil.copymode(local_file_path, part_path)
+    os.replace(part_path, local_file_path)
+
+
 async def _discard(path: str) -> None:
     try:
         await asyncio.to_thread(os.unlink, path)
@@ -328,14 +347,16 @@ async def _download_remote_mode(
     if not isinstance(download, _HostDownload):
         return download
     deadline = deadline_after(_DOWNLOAD_TIMEOUT)
-    if failed := await _download_handled(
-        download, deadline=deadline, region=region, workspace=workspace, token=token
-    ):
-        return failed
-    if failed := await _download_transferred(
-        download, deadline=deadline, region=region, workspace=workspace, token=token
-    ):
-        return failed
+    for wait in (_download_handled, _download_transferred):
+        if failed := await wait(
+            download, deadline=deadline, region=region, workspace=workspace, token=token
+        ):
+            if failed.get('code') == 'download_timeout':  # the transfer may still land
+                failed['download_url'] = download.url
+                failed['message'] += (
+                    ' Once it reports the download completed, fetch download_url.'
+                )
+            return failed
 
     return success_response(
         message=f'File ready for download: {file_name}',
@@ -671,7 +692,9 @@ async def webftp_upload_content(
         'Waits until the host reports the file transferred, up to '
         'ALPACON_MCP_WEBFTP_DOWNLOAD_TIMEOUT seconds (default 60); a failed '
         'transfer returns error code download_failed, and one still running '
-        'when the wait ends returns download_timeout. '
+        'when the wait ends returns download_timeout; in remote mode that error '
+        'carries download_url, to fetch once webftp_check_status reports the '
+        'download completed. '
         'In local mode: saves to local_file_path, leaving an existing file '
         'there untouched when the download fails. '
         'In remote mode (streamable-http): returns a presigned download URL valid for 24 hours—'
@@ -771,7 +794,11 @@ async def webftp_download_file(
     part_path = f'{local_file_path}.{secrets.token_hex(4)}.part'
     try:
         try:
-            file_size = await _stream_s3_to_file(download.url, part_path)
+            await _ensure_parent_dir(local_file_path)
+            await asyncio.to_thread(_create_private_file, part_path)
+            file_size = await _stream_s3_to_file(
+                download.url, part_path, timeout=_DOWNLOAD_TIMEOUT
+            )
         except _S3DownloadError as e:
             return error_response(
                 f'Failed to download from S3: {e}', download_url=download.url
@@ -783,7 +810,7 @@ async def webftp_download_file(
         ):
             return failed
         try:
-            await asyncio.to_thread(os.replace, part_path, local_file_path)
+            await asyncio.to_thread(_move_into_place, part_path, local_file_path)
         except OSError as e:
             return error_response(f'Failed to save file locally: {e}')
     finally:

@@ -447,12 +447,14 @@ class TestWebFtpDownloadFile:
         return fake_clock
 
     @staticmethod
-    def _stream_writing(body=b'new bytes', log=None):
+    def _stream_writing(body=b'new bytes', log=None, seen=None):
         """Stand in for the S3 GET, writing ``body`` where the tool asks."""
 
-        async def _stream(url, path):
+        async def _stream(url, path, *, timeout):
             if log is not None:
                 log.append('GET ' + url)
+            if seen is not None:
+                seen.update(timeout=timeout, mode=Path(path).stat().st_mode & 0o777)
             Path(path).write_bytes(body)
             return len(body)
 
@@ -475,8 +477,15 @@ class TestWebFtpDownloadFile:
         mock_http_client.post.return_value = _DOWNLOAD_ROW
         mock_http_client.get.side_effect = _route_download()
         dest = tmp_path / 'test.txt'
+        seen: dict[str, int] = {}
 
-        with patch('tools.webftp_tools._stream_s3_to_file', new=self._stream_writing()):
+        with (
+            patch('tools.webftp_tools._DOWNLOAD_TIMEOUT', 5),
+            patch(
+                'tools.webftp_tools._stream_s3_to_file',
+                new=self._stream_writing(seen=seen),
+            ),
+        ):
             result = await self._download(dest, username='testuser', region='ap1')
 
         assert result['status'] == 'success'
@@ -488,6 +497,7 @@ class TestWebFtpDownloadFile:
         assert result['resource_type'] == 'file'
         assert dest.read_bytes() == b'new bytes'
         assert list(tmp_path.iterdir()) == [dest]
+        assert seen == {'timeout': 5, 'mode': 0o600}
 
     @pytest.mark.asyncio
     async def test_download_folder_success(
@@ -688,12 +698,14 @@ class TestWebFtpDownloadFile:
         mock_http_client.get.side_effect = _route_download()
         dest = tmp_path / 'test.txt'
         dest.write_bytes(b'old bytes')
+        dest.chmod(0o640)
 
         with patch('tools.webftp_tools._stream_s3_to_file', new=self._stream_writing()):
             result = await self._download(dest)
 
         assert result['status'] == 'success'
         assert dest.read_bytes() == b'new bytes'
+        assert dest.stat().st_mode & 0o777 == 0o640
         assert list(tmp_path.iterdir()) == [dest]
 
     @pytest.mark.asyncio
@@ -1801,13 +1813,31 @@ class TestRemoteModeDownload:
         assert result['status'] == 'error'
         assert result['code'] == 'download_timeout'
         assert result['file_id'] == 'dl-abc'
-        assert 'download_url' not in result
+        assert result['download_url'] == _DOWNLOAD_URL
+        assert result['message'].endswith(
+            'Once it reports the download completed, fetch download_url.'
+        )
         assert calls == [
             '/api/events/commands/cmd-dl/',
             '/api/webftp/downloads/dl-abc/status/',
             '/api/webftp/downloads/dl-abc/status/',
             '/api/webftp/downloads/dl-abc/status/',
         ]
+
+    @pytest.mark.asyncio
+    async def test_remote_download_timing_out_on_the_command_still_hands_back_the_url(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = _DOWNLOAD_ROW
+        mock_http_client.get.side_effect = _route_download(commands=(_COMMAND_RUNNING,))
+
+        with patch('tools.webftp_tools._DOWNLOAD_TIMEOUT', 2):
+            result = await self._download()
+
+        assert result['status'] == 'error'
+        assert result['code'] == 'download_timeout'
+        assert result['download_url'] == _DOWNLOAD_URL
+        assert mock_http_client.get.call_count == 3
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
@@ -1912,6 +1942,7 @@ class TestRemoteModeDownload:
         assert result['status'] == 'error'
         assert result['message'] == 'Failed to poll the download command'
         assert result['file_id'] == 'dl-abc'
+        assert (result['region'], result['workspace']) == ('ap1', 'ws')
         assert result['status_code'] == HTTPStatus.INTERNAL_SERVER_ERROR
         assert mock_http_client.get.call_count == 1
 
