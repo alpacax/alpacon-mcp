@@ -345,11 +345,10 @@ class TestRequestSudoPolicy:
 
         assert result['status'] == 'error'
 
-    def test_request_sudo_policy_takes_no_bypass_parameter(self):
-        """The server rejects allow_bypass_mfa on this endpoint, so the tool never offers it."""
-        assert (
-            'allow_bypass_mfa' not in inspect.signature(request_sudo_policy).parameters
-        )
+    @pytest.mark.parametrize('parameter', ['allow_bypass_mfa', 'session_authorized'])
+    def test_request_sudo_policy_takes_no_session_authorized_parameter(self, parameter):
+        """The endpoint rejects both names, so the tool offers neither."""
+        assert parameter not in inspect.signature(request_sudo_policy).parameters
 
     def test_create_sudo_policy_is_gone(self):
         """The direct-write policy tool is no longer part of the tool surface."""

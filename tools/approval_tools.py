@@ -204,9 +204,10 @@ async def list_sudo_policies(
         '(Alpacon web console or Slack) before the policy exists, and the tool returns '
         'status="pending_approval". Omitting users scopes the approved policy to the requester '
         'alone, not to the whole workspace, and the server reports no error when it narrows it '
-        'that way; a non-superuser may name only themselves. An MFA-bypass policy cannot be '
-        'requested here at all—the server refuses it on this endpoint, and such a policy needs an '
-        'enterprise plan and a Work Session binding a human sets up. '
+        'that way; a non-superuser may name only themselves. A session-authorized sudo policy '
+        'cannot be requested here at all—the server refuses it on this endpoint, and such a policy needs an '
+        'enterprise plan and a usable Work Session. A human must set session_authorized on '
+        "that Work Session's sudo policy in the Alpacon web console. "
         'Related: list_sudo_policies (audit existing policies), list_approval_requests (watch the '
         'request), explain_approval_decision (what a human has to do).'
     ),

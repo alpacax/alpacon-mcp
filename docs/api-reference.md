@@ -900,7 +900,7 @@ Close a session (triggers AI security analysis) or re-run analysis on a terminal
 - `get_approval_request`: `request_id`, `workspace`, `region` (optional)
 - `explain_approval_decision`: `workspace`, `request_id` (optional), `region` (optional). Explains that deciding is human-only and out of band; performs no mutation
 - `list_sudo_policies`: `workspace`, `region` (optional), `page`, `page_size`, `user` (UUID), `server_id` (UUID)
-- `request_sudo_policy`: `workspace`, `servers` (UUID list), `commands`, `reason`, `users` (optional UUID list), `valid_from`, `valid_until`, `region` (optional). Creates an approval request, not a policy; returns `status="pending_approval"`. Omitting `users` scopes the approved policy to the requester alone, not to the whole workspace. `allow_bypass_mfa` is not accepted: the server refuses it on this endpoint
+- `request_sudo_policy`: `workspace`, `servers` (UUID list), `commands`, `reason`, `users` (optional UUID list), `valid_from`, `valid_until`, `region` (optional). Creates an approval request, not a policy; returns `status="pending_approval"`. Omitting `users` scopes the approved policy to the requester alone, not to the whole workspace. `session_authorized` is not accepted: the server refuses it on this endpoint. For session-authorized sudo, a human must set `session_authorized` on the Work Session's sudo policy in the Alpacon web console; this needs an enterprise plan and a usable Work Session
 
 There is intentionally no `approve_request`/`reject_request` tool: the Alpacon server refuses approve/reject from agent and token channels with HTTP 403. Approval happens in the web console or Slack.
 
