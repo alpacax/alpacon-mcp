@@ -22,7 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - BREAKING: `update_workspace_preferences` no longer accepts the deprecated `auto_agent_upgrade` boolean; use the existing `agent_rollout_policy` object instead (`{"mode": "manual"}` replaces the old `false`) (#376). Responses no longer include the alias-specific `deprecation_note`; the preferences response shape is otherwise unchanged. The SDK drops the alias before the request: a call that sends only it returns `No update data provided`, while other fields in the same call are still sent.
 
 ### Changed
-- Sudo tool descriptions, denial hints, and next actions now call the policy session-authorized sudo and name the `session_authorized` field a human sets on the Work Session's sudo policy in the Alpacon web console. `request_sudo_policy` still cannot carry that field; tool names, parameters, error codes, and response shapes are unchanged, so clients parsing responses have nothing new to handle.
+- Sudo tool descriptions, denial hints, and next actions now describe the policy as session-authorized sudo and name the `session_authorized` field a human sets on the Work Session's sudo policy in the Alpacon web console. `request_sudo_policy` still cannot carry that field; tool names, parameters, error codes, and response shapes are unchanged, so clients parsing responses have nothing new to handle.
 - The WebFTP and command tools now check the type of each response field they read, and the metrics tools check that each metric row is an object. A body of the wrong shape returns an error whose message contains `Unexpected upstream response shape:` followed by each bad field's path, where several of these reads used to say `Expected a JSON object from upstream, got <type>`; a WebFTP transfer answer without an `id` is now such an error before any bytes are uploaded. `webftp_bulk_download` and the device lookup in `get_disk_usage` now return this error for a non-object body instead of answering as if no URL or no device came back, and `execute_file` reports it as `file_read_failed` or `file_write_failed`. The error response shape is unchanged; a client matching the old message text has to match the new one.
 - The `get_workspace_preferences` description now marks the `auto_agent_upgrade` response boolean as deprecated and due for removal from the server response (#292). Clients should read `agent_rollout_policy`; the current response shape is unchanged.
 - The `file_exec_unsupported_agent` hint and the `execute_file` description now name alpamon 2.8.3,
@@ -229,8 +229,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `status="pending_approval"` with category `SUDO_POLICY_REQUEST_PENDING`, so a client that already
   branches on the pending-approval shape needs no new handling. Omitting `users` scopes the
   approved policy to the requester alone rather than to the whole workspace, which is how the
-  server narrows an approved request. `allow_bypass_mfa` is deliberately not a parameter: the
-  server refuses it on this endpoint.
+  server narrows an approved request. `session_authorized` (formerly `allow_bypass_mfa`) is
+  deliberately not a parameter: the server refuses it on this endpoint.
 - `--toolsets` CLI argument (and `ALPACON_MCP_TOOLSETS` env var) for local
   stdio/SSE mode: selectively register toolsets; default remains `all`
   (#34). Remote mode is unaffected and always registers every tool.
