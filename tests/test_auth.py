@@ -334,6 +334,7 @@ class TestAuth0TokenVerifier:
         [
             {'sub': 42},
             {'scope': ['openid', 'profile']},
+            {'scope': None},
             {'exp': str(int(time.time()) + 3600)},
         ],
     )

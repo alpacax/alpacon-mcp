@@ -261,7 +261,11 @@ class TokenManager:
         Returns:
             List of region names (e.g., ['ap1'], ['dev'], ['ap1', 'us1'])
         """
-        return list(self.tokens.keys())
+        return [
+            region
+            for region, workspaces in self.tokens.items()
+            if isinstance(workspaces, dict)  # a non-object value holds no tokens
+        ]
 
     def get_default_region(self) -> str | None:
         """Get default region if only one region is configured.

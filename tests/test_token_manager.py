@@ -143,3 +143,27 @@ class TestGetBaseURLOverride:
     def test_missing_workspace_has_no_override(self, token_file):
         tm = token_file({'ap1': {'production': {'token': 't', 'url': 'https://x'}}})
         assert tm.get_base_url_override('ap1', 'staging') is None
+
+
+class TestNonObjectRegionValue:
+    """A top-level value that is not an object holds no tokens and is kept on save."""
+
+    def test_a_non_object_value_is_not_a_region(self, token_file):
+        tm = token_file({'ap1': {'production': 't'}, '_comment': 'edited by hand'})
+
+        assert tm.get_available_regions() == ['ap1']
+        assert tm.get_default_region() == 'ap1'
+
+    def test_a_non_object_region_has_no_token(self, token_file):
+        tm = token_file({'ap1': 'production'})
+
+        assert tm.get_token('ap1', 'production') is None
+        assert tm.remove_token('ap1', 'production')['status'] == 'error'
+
+    def test_saving_a_token_keeps_a_non_object_value(self, token_file, tmp_path):
+        tm = token_file({'_comment': 'edited by hand'})
+
+        tm.set_token('ap1', 'production', 't')
+
+        saved = json.loads((tmp_path / 'token.json').read_text())
+        assert saved == {'_comment': 'edited by hand', 'ap1': {'production': 't'}}

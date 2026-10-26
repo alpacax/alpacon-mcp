@@ -379,7 +379,7 @@ class Auth0TokenVerifier:
             )
 
             sub = claims.get('sub', 'unknown')
-            scope = claims.get('scope') or ''
+            scope = claims.get('scope', '')
             exp = claims.get('exp')
             # Refused rather than coerced: a wrong type here failed AccessToken before.
             if not (

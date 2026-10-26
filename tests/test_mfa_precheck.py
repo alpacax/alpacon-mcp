@@ -172,6 +172,26 @@ class TestCheckMfaCompleted:
 
         assert check_mfa_completed(claims, settings) is False
 
+    def test_a_non_string_allowed_method_lets_no_method_satisfy_mfa(self):
+        recent = (
+            (datetime.now(tz=UTC) - timedelta(seconds=60))
+            .isoformat()
+            .replace('+00:00', 'Z')
+        )
+        claims = {'https://alpacon.io/completed_mfa_methods': {'otp': recent}}
+        settings = WorkspaceSecuritySettings(
+            {'mfa_required': True, 'allowed_mfa_methods': [123]}
+        )
+
+        assert check_mfa_completed(claims, settings) is False
+
+    def test_a_non_string_required_action_requires_mfa_for_every_action(self):
+        settings = WorkspaceSecuritySettings(
+            {'mfa_required': True, 'mfa_required_actions': ['command', 7]}
+        )
+
+        assert settings.is_action_mfa_required('webftp') is True
+
     def test_malformed_required_actions_require_mfa_for_every_action(self):
         settings = WorkspaceSecuritySettings(
             {'mfa_required': True, 'mfa_required_actions': 'command'}

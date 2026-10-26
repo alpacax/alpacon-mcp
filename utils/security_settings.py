@@ -24,12 +24,11 @@ _DEFAULT_MFA_TIMEOUT = 3600  # the server reads a null mfa_timeout as this
 
 
 def _str_list(value: JsonValue) -> list[str] | None:
-    """The strings of a JSON list, or None for any other value."""
-    return (
-        [item for item in value if isinstance(item, str)]
-        if isinstance(value, list)
-        else None
-    )
+    """A JSON list of strings, or None for any other value, a mixed list included."""
+    if not isinstance(value, list):
+        return None
+    strings = [item for item in value if isinstance(item, str)]
+    return strings if len(strings) == len(value) else None
 
 
 class WorkspaceSecuritySettings:
