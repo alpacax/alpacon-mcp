@@ -287,6 +287,18 @@ class TestGetDiskUsage:
         assert mock_http_client.get.call_count == 1
 
     @pytest.mark.asyncio
+    async def test_disk_usage_non_object_device_list_is_an_error(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.get.return_value = ['/dev/sda1']
+
+        result = await get_disk_usage(server_id=SERVER_ID, workspace='testworkspace')
+
+        assert result['status'] == 'error'
+        assert 'Unexpected upstream response shape' in result['message']
+        assert mock_http_client.get.call_count == 1
+
+    @pytest.mark.asyncio
     async def test_disk_usage_no_token(self, mock_http_client, mock_token_manager):
         """Test disk usage when no token is available."""
         mock_token_manager.get_token.return_value = None
@@ -1909,6 +1921,18 @@ class TestMetricsToolsBodyShapes:
 
         assert result['status'] == 'error'
         assert 'JSON object' in result['message']
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('name', CALLS)
+    async def test_non_object_row_is_an_error_not_statistics(
+        self, name, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.get.return_value = {'results': ['not-a-row']}
+
+        result = await self._call(name)
+
+        assert result['status'] == 'error'
+        assert 'Unexpected upstream response shape: 0: ' in result['message']
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize('name', CALLS)

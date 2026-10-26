@@ -1,12 +1,14 @@
 """Unit tests for utils.common WorkSession gate and denial-guidance helpers."""
 
 import json
+import traceback
 from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
-from typing import Any
+from typing import Any, TypedDict
 from unittest.mock import patch
 
 import pytest
+from pydantic import TypeAdapter
 
 from utils.common import (
     _ERROR_CODE_HINT,
@@ -26,8 +28,10 @@ from utils.common import (
     resolve_time_window,
     resolve_work_session_id,
     unwrap_http_result,
+    validate_response,
     work_session_gate_response,
 )
+from utils.types import JsonValue
 
 
 def _unwrap_error(result: object, **kwargs: Any) -> dict[str, Any]:
@@ -722,7 +726,7 @@ class TestResolveTimeWindow:
 
 class TestExpectJsonObject:
     def test_object_is_returned_unchanged(self):
-        body = {'id': 'x', 'results': [1]}
+        body: JsonValue = {'id': 'x', 'results': [1]}
 
         assert expect_json_object(body) is body
 
@@ -734,7 +738,7 @@ class TestExpectJsonObject:
 
 class TestJsonRecords:
     def test_list_body_is_the_records(self):
-        records = [{'id': 'a'}, {'id': 'b'}]
+        records: JsonValue = [{'id': 'a'}, {'id': 'b'}]
 
         assert json_records(records) is records
 
@@ -742,15 +746,17 @@ class TestJsonRecords:
         assert json_records({'results': [{'id': 'a'}], 'next': None}) == [{'id': 'a'}]
 
     def test_object_without_results_is_empty(self):
-        assert json_records({'detail': 'x'}) == []
+        body: JsonValue = {'detail': 'x'}
+
+        assert json_records(body) == []
 
     def test_object_without_results_is_one_record_when_asked(self):
-        body = {'id': 'a', 'upload_url': 'u'}
+        body: JsonValue = {'id': 'a', 'upload_url': 'u'}
 
         assert json_records(body, single_object_as_record=True) == [body]
 
     def test_results_key_wins_over_single_record_flag(self):
-        body = {'results': [{'id': 'a'}]}
+        body: JsonValue = {'results': [{'id': 'a'}]}
 
         assert json_records(body, single_object_as_record=True) == [{'id': 'a'}]
 
@@ -763,3 +769,77 @@ class TestJsonRecords:
     def test_non_list_results_raises(self, results):
         with pytest.raises(UnexpectedResponseShapeError, match='results'):
             json_records({'results': results})
+
+
+class _Row(TypedDict, total=False):
+    id: str
+    size: int
+
+
+_ROW = TypeAdapter(_Row)
+_ROWS = TypeAdapter(list[_Row])
+
+
+class TestValidateResponse:
+    def test_declared_fields_are_returned(self):
+        body: JsonValue = {'id': 'a', 'size': 3}
+
+        assert validate_response(_ROW, body) == {'id': 'a', 'size': 3}
+
+    def test_missing_optional_fields_are_allowed(self):
+        body: JsonValue = {}
+
+        assert validate_response(_ROW, body) == {}
+
+    def test_undeclared_keys_are_dropped(self):
+        body: JsonValue = {'id': 'a', 'extra': 'x'}
+
+        assert validate_response(_ROW, body) == {'id': 'a'}
+
+    def test_wrong_field_type_names_the_field(self):
+        body: JsonValue = {'id': 5}
+
+        with pytest.raises(UnexpectedResponseShapeError, match='id: '):
+            validate_response(_ROW, body)
+
+    def test_null_is_rejected_for_a_non_nullable_field(self):
+        body: JsonValue = {'id': None}
+
+        with pytest.raises(UnexpectedResponseShapeError, match='id: '):
+            validate_response(_ROW, body)
+
+    def test_nested_shape_error_names_the_full_path(self):
+        body: JsonValue = [{'id': 'a'}, {'id': 5}]
+
+        with pytest.raises(UnexpectedResponseShapeError, match=r'1\.id: '):
+            validate_response(_ROWS, body)
+
+    def test_every_problem_is_reported(self):
+        body: JsonValue = {'id': 5, 'size': 'x'}
+
+        with pytest.raises(UnexpectedResponseShapeError) as excinfo:
+            validate_response(_ROW, body)
+
+        assert 'id: ' in str(excinfo.value)
+        assert 'size: ' in str(excinfo.value)
+
+    def test_numeric_string_is_not_coerced(self):
+        body: JsonValue = {'size': '3'}
+
+        with pytest.raises(UnexpectedResponseShapeError, match='size: '):
+            validate_response(_ROW, body)
+
+    def test_message_leaves_out_the_rejected_value(self):
+        body: JsonValue = {'id': ['https://bucket/key?X-Amz-Signature=SECRET']}
+
+        with pytest.raises(UnexpectedResponseShapeError) as excinfo:
+            validate_response(_ROW, body)
+
+        assert 'SECRET' not in str(excinfo.value)
+        assert excinfo.value.__suppress_context__
+        assert 'SECRET' not in ''.join(traceback.format_exception(excinfo.value))
+
+    @pytest.mark.parametrize('body', [[{'id': 'a'}], 'ok', 42, None])
+    def test_non_object_body_raises(self, body):
+        with pytest.raises(UnexpectedResponseShapeError, match='<root>'):
+            validate_response(_ROW, body)

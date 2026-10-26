@@ -39,7 +39,9 @@ class TestTimeoutScenarios:
         assert call_count == 3
         assert isinstance(result, dict)
         assert result['error'] == 'Timeout'
-        assert 'timed out' in result['message']
+        message = result['message']
+        assert isinstance(message, str)
+        assert 'timed out' in message
 
 
 class TestMalformedResponses:
@@ -115,7 +117,9 @@ class TestConnectionErrors:
         assert call_count == 3
         assert isinstance(result, dict)
         assert result['error'] == 'Request Error'
-        assert 'Connection refused' in result['message']
+        message = result['message']
+        assert isinstance(message, str)
+        assert 'Connection refused' in message
 
 
 class TestHTTPStatusErrorHandling:

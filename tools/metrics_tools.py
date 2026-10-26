@@ -3,7 +3,9 @@
 import asyncio
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, TypedDict
+
+from pydantic import TypeAdapter
 
 from utils.api_call import http_call_response
 from utils.common import (
@@ -14,12 +16,13 @@ from utils.common import (
     resolve_time_window,
     success_response,
     unwrap_http_result,
+    validate_response,
 )
 from utils.decorators import mcp_tool_handler
 from utils.error_handler import UpstreamAuthError, format_validation_error
 from utils.http_client import http_client
 from utils.tool_annotations import READ_ONLY
-from utils.types import QueryParam, ToolResponse
+from utils.types import JsonValue, QueryParam, ToolResponse
 
 #: `?state=` values `/api/metrics/latest/` accepts; mirrors alpacon-server's
 #: `metrics.latest.LATEST_STATES`. `stale` covers `no_data`: never-stored is overdue.
@@ -56,6 +59,24 @@ _EPOCH = datetime.min.replace(tzinfo=UTC)
 type _ProcRecord = dict[str, Any]  # one partition or interface from /api/proc/
 type _MetricSummary = dict[str, Any]  # one metric's entry in the server summary
 type _MetricRow = dict[str, Any]  # one time-series point from /api/metrics/
+
+
+class _DiskDevices(TypedDict, total=False):
+    devices: list[str]
+
+
+class _NextPage(TypedDict, total=False):  # a page-number list envelope
+    next: int | None
+
+
+_METRIC_ROWS = TypeAdapter(list[_MetricRow])
+_DISK_DEVICES = TypeAdapter(_DiskDevices)
+_NEXT_PAGE = TypeAdapter(_NextPage)
+
+
+def _metric_rows(result: JsonValue) -> list[_MetricRow]:
+    """The time-series rows of a /api/metrics/ answer; a row that is no object raises."""
+    return validate_response(_METRIC_ROWS, json_records(result))
 
 
 def _timestamp_key(entry: _MetricRow) -> datetime:
@@ -190,7 +211,7 @@ async def get_cpu_usage(
     parsed_data = {
         'server_id': server_id,
         'metric_type': 'cpu_usage',
-        'statistics': parse_cpu_metrics(json_records(result)),
+        'statistics': parse_cpu_metrics(_metric_rows(result)),
         'raw_data_available': True,
     }
 
@@ -313,7 +334,7 @@ async def get_memory_usage(
     parsed_data = {
         'server_id': server_id,
         'metric_type': 'memory_usage',
-        'statistics': parse_memory_metrics(json_records(result)),
+        'statistics': parse_memory_metrics(_metric_rows(result)),
         'raw_data_available': True,
     }
 
@@ -432,10 +453,8 @@ async def get_disk_usage(
                 return err
 
             # Extract device list from response
-            available_devices = (
-                devices_result.get('devices', [])
-                if isinstance(devices_result, dict)
-                else []
+            available_devices = validate_response(_DISK_DEVICES, devices_result).get(
+                'devices', []
             )
 
             if available_devices:
@@ -492,7 +511,7 @@ async def get_disk_usage(
         'metric_type': 'disk_usage',
         'device': device,
         'partition': partition,
-        'statistics': parse_disk_metrics(json_records(result)),
+        'statistics': parse_disk_metrics(_metric_rows(result)),
         'raw_data_available': True,
     }
 
@@ -722,7 +741,7 @@ async def get_network_traffic(
         'server_id': server_id,
         'metric_type': 'network_traffic',
         'interface': interface,
-        'statistics': parse_network_metrics(json_records(result)),
+        'statistics': parse_network_metrics(_metric_rows(result)),
         'raw_data_available': True,
     }
 
@@ -952,7 +971,7 @@ async def _list_all_interfaces(
         if not page:
             return records
         records.extend(page)
-        next_page = result.get('next')
+        next_page = validate_response(_NEXT_PAGE, result).get('next')
         if not next_page:
             return records
         params = {**base_params, 'page': next_page}
