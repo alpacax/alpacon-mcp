@@ -881,6 +881,100 @@ class TestServerMetricsSummaryLookups:
         assert sent['/api/metrics/realtime/traffic/']['interface'] == 'v1'
 
     @pytest.mark.asyncio
+    async def test_summary_reads_a_non_boolean_is_loopback_as_not_loopback(
+        self, mock_http_client, mock_token_manager
+    ):
+        interfaces = [
+            {'id': 'p1', 'name': 'eth0', 'is_loopback': 'false', 'is_up': True},
+            {'id': 'v1', 'name': 'docker0', 'is_loopback': False, 'is_up': True},
+        ]
+        sent = self.route_calls(
+            mock_http_client, **{'/api/proc/interfaces/': interfaces}
+        )
+
+        await get_server_metrics_summary(server_id=SERVER_ID, workspace='testworkspace')
+
+        assert sent['/api/metrics/realtime/traffic/']['interface'] == 'p1'
+
+    @pytest.mark.asyncio
+    async def test_summary_skips_an_interface_whose_id_is_not_a_string(
+        self, mock_http_client, mock_token_manager
+    ):
+        interfaces = [
+            {'id': 7, 'name': 'eth0', 'is_loopback': False, 'is_up': True},
+            {'id': 'v1', 'name': 'docker0', 'is_loopback': False, 'is_up': True},
+        ]
+        sent = self.route_calls(
+            mock_http_client, **{'/api/proc/interfaces/': interfaces}
+        )
+
+        await get_server_metrics_summary(server_id=SERVER_ID, workspace='testworkspace')
+
+        assert sent['/api/metrics/realtime/traffic/']['interface'] == 'v1'
+
+    @pytest.mark.asyncio
+    async def test_summary_marks_only_the_metric_with_non_list_results_unavailable(
+        self, mock_http_client, mock_token_manager
+    ):
+        self.route_calls(
+            mock_http_client, **{'/api/metrics/realtime/cpu/': {'results': 5}}
+        )
+
+        result = await get_server_metrics_summary(
+            server_id=SERVER_ID, workspace='testworkspace'
+        )
+
+        assert result['status'] == 'success'
+        metrics = result['data']['metrics']
+        assert metrics['cpu']['available'] is False
+        assert '`results`' in metrics['cpu']['error']
+        assert metrics['memory']['available'] is True
+
+    @pytest.mark.asyncio
+    async def test_summary_reads_a_non_boolean_is_virtual_as_not_virtual(
+        self, mock_http_client, mock_token_manager
+    ):
+        partitions = [
+            {'id': 'tmp', 'name': 'overlay', 'mount_points': ['/'], 'is_virtual': True},
+            {
+                'id': ROOT_PARTITION_ID,
+                'name': '/dev/sda1',
+                'mount_points': ['/'],
+                'is_virtual': 'false',
+            },
+        ]
+        sent = self.route_calls(
+            mock_http_client, **{'/api/proc/partitions/': partitions}
+        )
+
+        await get_server_metrics_summary(server_id=SERVER_ID, workspace='testworkspace')
+
+        disk_params = sent['/api/metrics/realtime/disk-usage/']
+        assert disk_params['partition'] == ROOT_PARTITION_ID
+
+    @pytest.mark.asyncio
+    async def test_summary_does_not_read_a_string_mount_points_as_root(
+        self, mock_http_client, mock_token_manager
+    ):
+        partitions = [
+            {'id': 'str', 'name': 'odd', 'mount_points': '/', 'is_virtual': False},
+            {
+                'id': ROOT_PARTITION_ID,
+                'name': '/dev/sda1',
+                'mount_points': ['/'],
+                'is_virtual': False,
+            },
+        ]
+        sent = self.route_calls(
+            mock_http_client, **{'/api/proc/partitions/': partitions}
+        )
+
+        await get_server_metrics_summary(server_id=SERVER_ID, workspace='testworkspace')
+
+        disk_params = sent['/api/metrics/realtime/disk-usage/']
+        assert disk_params['partition'] == ROOT_PARTITION_ID
+
+    @pytest.mark.asyncio
     async def test_summary_prefers_a_non_virtual_root_partition(
         self, mock_http_client, mock_token_manager
     ):
@@ -1991,7 +2085,10 @@ class TestMetricsToolsBodyShapes:
             ('cpu', {'timestamp': 0, 'usage': 25.5}, '0.timestamp'),
             ('memory', {'usage': None}, '0.usage'),
             ('disk', {'usage': 50.0, 'total': 1.5}, '0.total'),
+            ('disk', {'usage': 50.0, 'device': 1}, '0.device'),
+            ('disk', {'usage': 50.0, 'mount_point': 1}, '0.mount_point'),
             ('network', {'peak_input_bps': '1'}, '0.peak_input_bps'),
+            ('network', {'interface': 1}, '0.interface'),
         ],
     )
     async def test_wrong_typed_row_field_is_an_error_not_statistics(

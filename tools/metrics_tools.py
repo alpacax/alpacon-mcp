@@ -9,6 +9,7 @@ from pydantic import TypeAdapter
 
 from utils.api_call import http_call_response
 from utils.common import (
+    UnexpectedResponseShapeError,
     build_list_params,
     error_response,
     expect_json_object,
@@ -946,7 +947,9 @@ def _find_record_id(
         return None
     for record in result:
         if isinstance(record, dict) and predicate(record):
-            return record.get('id')
+            record_id = record.get('id')
+            if isinstance(record_id, str):
+                return record_id
     return None
 
 
@@ -1143,9 +1146,13 @@ async def get_server_metrics_summary(
 
             # Return metadata only, not the full data points
             if 'results' in result:
+                try:
+                    data_points = len(json_records(result))
+                except UnexpectedResponseShapeError as e:
+                    return {'available': False, 'error': str(e)}
                 return {
                     'available': True,
-                    'data_points': len(result.get('results', [])),
+                    'data_points': data_points,
                     'note': f'Full {metric_type} data available via dedicated endpoint',
                 }
 
