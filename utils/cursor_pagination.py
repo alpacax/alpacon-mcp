@@ -22,7 +22,7 @@ from utils.common import (
     success_response,
     unwrap_http_result,
 )
-from utils.types import RequestParams, ToolResponse
+from utils.types import QueryParams, ToolResponse
 
 # Requests one walk may issue. A walk cut short hands back a cursor to resume.
 MAX_CURSOR_PAGES = 10
@@ -177,7 +177,7 @@ async def cursor_list_response(
     endpoint: str,
     token: str | None,
     default_message: str,
-    params: RequestParams,
+    params: QueryParams,
     opt_in_pagination: bool = False,
     **id_context: object,
 ) -> ToolResponse:

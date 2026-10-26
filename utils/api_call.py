@@ -7,7 +7,7 @@ utils.common module.
 from collections.abc import Awaitable, Callable
 
 from utils.common import success_response, unwrap_http_result
-from utils.types import RequestBody, RequestParams, ToolResponse
+from utils.types import QueryParams, RequestBody, ToolResponse
 
 
 async def http_call_response(
@@ -19,7 +19,7 @@ async def http_call_response(
     token: str | None,
     default_message: str,
     data: RequestBody | None = None,
-    params: RequestParams | None = None,
+    params: QueryParams | None = None,
     **id_context: object,
 ) -> ToolResponse:
     """Call an http_client method and shape the result as a standard tool response.

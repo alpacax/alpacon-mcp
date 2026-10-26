@@ -15,7 +15,7 @@ from utils.common import MCP_USER_AGENT, is_auth_enabled
 from utils.declared_agent import declared_agent_headers
 from utils.error_handler import UpstreamAuthError
 from utils.logger import get_logger, redact_for_log
-from utils.types import JsonValue, RequestBody, RequestParams
+from utils.types import JsonValue, QueryParams, RequestBody
 
 logger = get_logger('http_client')
 
@@ -153,7 +153,7 @@ class AlpaconHTTPClient:
         token: str | None = None,
         headers: dict[str, str] | None = None,
         json_data: RequestBody | None = None,
-        params: RequestParams | None = None,
+        params: QueryParams | None = None,
         timeout: float | None = None,
     ) -> JsonValue:
         """Execute HTTP request with retry logic.
@@ -349,7 +349,7 @@ class AlpaconHTTPClient:
         workspace: str,
         endpoint: str,
         token: str | None = None,
-        params: RequestParams | None = None,
+        params: QueryParams | None = None,
     ) -> JsonValue:
         """Execute GET request.
 
@@ -377,7 +377,7 @@ class AlpaconHTTPClient:
         endpoint: str,
         token: str | None = None,
         data: RequestBody | None = None,
-        params: RequestParams | None = None,
+        params: QueryParams | None = None,
     ) -> JsonValue:
         """Execute POST request.
 
@@ -459,7 +459,7 @@ class AlpaconHTTPClient:
         workspace: str,
         endpoint: str,
         token: str | None = None,
-        params: RequestParams | None = None,
+        params: QueryParams | None = None,
     ) -> JsonValue:
         """Execute DELETE request.
 
