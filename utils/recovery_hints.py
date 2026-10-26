@@ -2,6 +2,7 @@
 
 from http import HTTPStatus
 
+from utils.common import is_stdio_transport
 from utils.types import ToolResponse
 
 # Closing advice every plan gate shares: the call is settled, only a plan change moves it.
@@ -47,6 +48,11 @@ _HINT_REGISTRY: dict[tuple[int, str], dict[str, list[str]]] = {
             "Check if the API token has 'command_execute' ACL permission.",
             'Use list_command_acls to view current permissions.',
             'Ask a workspace admin to grant command ACL via create_command_acl.',
+            (
+                'If command ACLs live on the command pre-approval ledger, a '
+                'Command ACL admin grants it under Pre-approved commands on the '
+                "service token's page in the web console."
+            ),
         ],
         'related_tools': ['list_command_acls', 'create_command_acl'],
     },
@@ -187,6 +193,21 @@ def _parse_status_code(raw: int | str | None) -> int | None:
         return None
 
 
+# Appended on a stdio server, the only transport that registers the ledger
+# tools; any other transport is never pointed at a tool it does not serve.
+_STDIO_HINT_ADDITIONS: dict[tuple[int, str], dict[str, list[str]]] = {
+    (HTTPStatus.FORBIDDEN, 'command'): {
+        'recovery_hints': [
+            (
+                'On this server get_ledger_capability says whether the ledger '
+                'is in use, and issue_ledger_entries grants it there.'
+            ),
+        ],
+        'related_tools': ['get_ledger_capability', 'issue_ledger_entries'],
+    },
+}
+
+
 def _copy_hints(hints: dict[str, list[str]]) -> dict[str, list[str]]:
     """Return a shallow copy of a hints entry to protect the registry."""
     return {
@@ -224,7 +245,12 @@ def get_recovery_hints(
     # Try domain-specific first, then general fallback
     hints = _HINT_REGISTRY.get((code, domain))
     if hints:
-        return _copy_hints(hints)
+        found = _copy_hints(hints)
+        extra = _STDIO_HINT_ADDITIONS.get((code, domain))
+        if extra and is_stdio_transport():
+            found['recovery_hints'] += extra['recovery_hints']
+            found['related_tools'] += extra['related_tools']
+        return found
 
     hints = _HINT_REGISTRY.get((code, 'general'))
     if hints:

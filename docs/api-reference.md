@@ -947,7 +947,33 @@ The `command` and `path` a rule matches on must not be empty or whitespace-only.
 - `bulk_server_acl`: `workspace`, `action` (add or remove), `server_ids` (array), token id, `region` (optional)
 - `list_file_acls` / `create_file_acl` (`path`, `action`) / `update_file_acl` / `delete_file_acl`
 
-On a server that manages command ACLs on the command pre-approval ledger, `create_command_acl`, `update_command_acl`, and `delete_command_acl` are refused with 405 and `error_code` `command_acl_moved`; retrying the call does not help. A Command ACL admin then issues or revokes the entry under Pre-approved commands on the service token's page in the web console. A personal API token has no command list on the ledger. `list_command_acls` still works there, and a server without the ledger keeps accepting all four.
+On a server that manages command ACLs on the command pre-approval ledger, `create_command_acl`, `update_command_acl`, and `delete_command_acl` are refused with 405 and `error_code` `command_acl_moved`; retrying the call does not help. A Command ACL admin then issues or revokes the entry under Pre-approved commands on the service token's page in the web console, or, on a stdio server, with the [command pre-approval ledger tools](#-command-pre-approval-ledger-tools). The error hint, the tool descriptions and the 403 recovery hint name those tools only on stdio, the one transport that registers them. A personal API token has no command list on the ledger. `list_command_acls` still answers there, but those rules no longer decide anything; a server without the ledger keeps accepting all four.
+
+---
+
+## 📜 Command pre-approval ledger tools
+
+On a workspace whose `command_acl_surface` is `ai`, the pre-approvals that let a token run a command without a human approval live on the command pre-approval ledger—the Pre-approved commands card in the web console—instead of in the command ACL tools above. Every tool here first reads `GET /api/auth/env/` on the workspace server. A workspace reporting `upstream` (or a server too old to report the field) is refused with `command_acl_surface: "upstream"` and pointed to the command ACL tools; `get_ledger_capability` answers it as a success instead.
+
+The ledger accepts only a person's token issued for its own audience, never an API or service token, and only a Command ACL admin of the workspace may read or change it. So the first ledger call in a process returns `status: "authorization_required"` with `verification_uri_complete`, `verification_uri`, `user_code`, `expires_in` and `requires_human_action: true`. Show the link to the user; once they open it, confirm the code and sign in, call the same tool again. The agent cannot complete this step itself. The token covers one workspace, lives in memory only, carries no refresh token, and expires after the period the sign-in service sets (24 hours today); a restarted process or an expired token asks again. A declined or failed sign-in returns `status: "error"` with the sign-in service's `error_code`, and the next call starts over.
+
+These tools are served over stdio only. SSE and streamable-http do not register them, and a call that reaches one anyway returns an error pointing to the web console before the sign-in cache is read: that cache belongs to the process, and a network transport may serve several callers from one process. Remote mode also holds no token for the ledger's audience. The ledger host defaults to `https://alpacon.ai`; `ALPACON_MCP_LEDGER_URL` and `ALPACON_MCP_LEDGER_AUDIENCE` override the host and the audience.
+
+A refusal from the ledger keeps its body in `detail`, which names the field and the reason, for example `{"workspace_id": ["This account does not administer that workspace."]}` for a person who is not a Command ACL admin of it, or `{"entries": ["Row 0 is a grant the ledger already holds: ..."]}` for a duplicate.
+
+A 401 from the ledger also keeps its body in `detail`. When the refused token was cached by an earlier call, it was revoked or expired early, so the call returns `authorization_required` with a new link. When the token was issued during the same call, another sign-in would be refused the same way, so the call returns an error instead, usually pointing at a mismatched `ALPACON_MCP_LEDGER_URL` or `ALPACON_MCP_LEDGER_AUDIENCE`. The next call starts a new sign-in.
+
+The list and issue tools, and `grant_ledger_admin`, name the workspace's id to the ledger. The tools that take an `entry_id`, `entry_ids` or `admin_id` do not: the ledger resolves an id only among the workspaces the signed-in person administers, and answers an id outside them as not found. Their `workspace` argument selects whose sign-in to use, not which workspace the id belongs to.
+
+- `get_ledger_capability`: `workspace`, `region` (optional). Returns `command_acl_surface`; on the ledger also `is_ledger_admin`, `administers_workspace` (this workspace), `workspace_id` and `workspace_ids`
+- `list_ledger_entries`: `workspace`, `principal_type` (`service_token` or `api_token`; `api_token` finds entries a personal API token kept from before, which the revoke and disable tools still reach), `principal_id`, `page`, `page_size` (at most 200), `region` (optional). Active entries only; the page carries `count`, `current`, `next`, `previous`, `last`, `results`
+- `issue_ledger_entries`: `workspace`, `entries` (1 to 200), `region` (optional). Each entry takes `principal_type` (`service_token` only: a personal API token has no command list on the ledger, and a batch naming `api_token` is refused before anything is sent), `principal_id` (the service token's UUID), `command_pattern`, `username` (`*` for any user), and optionally `groupname`, `server_ids` (omit to apply on every server, which the ledger flags in `warnings`), `expires_at`, `enabled`. All or nothing. An entry is never edited: revoke it and issue a new one
+- `revoke_ledger_entry`: `workspace`, `entry_id`. The entry stops matching and stays readable for audit
+- `revoke_ledger_entries`: `workspace`, `entry_ids` (1 to 200). All or nothing; returns `revoked`
+- `disable_ledger_entry` / `enable_ledger_entry`: `workspace`, `entry_id`. Reversible, unlike a revocation
+- `list_ledger_admins`: `workspace`, `page`, `page_size`, `region` (optional)
+- `grant_ledger_admin`: `workspace`, `subject` (the person's Auth0 user id), `email` (optional), `region` (optional). A machine principal is refused
+- `revoke_ledger_admin`: `workspace`, `admin_id`. The last admin of a workspace cannot be removed
 
 ---
 

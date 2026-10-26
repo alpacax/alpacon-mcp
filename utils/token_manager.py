@@ -3,11 +3,26 @@
 import json
 import os
 from pathlib import Path
-from typing import Any
+from typing import TypedDict
 
 from utils.logger import get_logger
+from utils.types import JsonValue
 
 logger = get_logger('token_manager')
+
+
+class RegionStatus(TypedDict):
+    region: str
+    workspaces: list[str]
+    count: int
+
+
+class AuthStatus(TypedDict):
+    authenticated: bool
+    total_tokens: int
+    regions: list[RegionStatus]
+    config_dir: str
+    token_file: str
 
 
 class TokenManager:
@@ -61,7 +76,7 @@ class TokenManager:
 
         self.tokens = self._load_tokens()
 
-    def _load_tokens(self) -> dict[str, Any]:
+    def _load_tokens(self) -> dict[str, JsonValue]:
         """Load tokens from configuration file.
 
         Returns:
@@ -94,7 +109,9 @@ class TokenManager:
         logger.info('Loaded tokens from %s: %s regions', self.token_file, len(tokens))
         return tokens
 
-    def _save_tokens_to_file(self, tokens: dict[str, Any], file_path: Path) -> None:
+    def _save_tokens_to_file(
+        self, tokens: dict[str, JsonValue], file_path: Path
+    ) -> None:
         """Save tokens to specific file.
 
         Args:
@@ -121,11 +138,12 @@ class TokenManager:
         Returns:
             Success message with details
         """
-        if region not in self.tokens:
-            self.tokens[region] = {}
+        workspaces = self.tokens.get(region)
+        if not isinstance(workspaces, dict):  # absent, or not an object to add to
+            workspaces = self.tokens[region] = {}
 
         # Simplified structure: region -> workspace -> token (string only)
-        self.tokens[region][workspace] = token
+        workspaces[workspace] = token
 
         self._save_tokens()
 
@@ -137,7 +155,7 @@ class TokenManager:
         }
 
     @staticmethod
-    def _entry_token(entry: Any) -> str | None:
+    def _entry_token(entry: JsonValue) -> str | None:
         """Extract the token string from a config entry.
 
         An entry is either a bare token string (legacy form) or an object
@@ -174,8 +192,9 @@ class TokenManager:
 
         # Fall back to config file. An entry may be a bare token string or an
         # object ``{"token": "...", "url": "..."}``; unwrap either form.
-        if region in self.tokens and workspace in self.tokens[region]:
-            token = self._entry_token(self.tokens[region][workspace])
+        workspaces = self.tokens.get(region)
+        if isinstance(workspaces, dict) and workspace in workspaces:
+            token = self._entry_token(workspaces[workspace])
             if token:
                 logger.debug(
                     'Found token for %s.%s from config file', workspace, region
@@ -218,8 +237,9 @@ class TokenManager:
         if env_url and env_url.strip():
             return self._normalize_base_url(env_url)
 
-        if region in self.tokens and workspace in self.tokens[region]:
-            entry = self.tokens[region][workspace]
+        workspaces = self.tokens.get(region)
+        if isinstance(workspaces, dict) and workspace in workspaces:
+            entry = workspaces[workspace]
             if isinstance(entry, dict):
                 url = entry.get('url')
                 if isinstance(url, str) and url.strip():
@@ -227,13 +247,13 @@ class TokenManager:
 
         return None
 
-    def get_all_tokens(self) -> dict[str, Any]:
-        """Get all stored tokens.
-
-        Returns:
-            All token data
-        """
-        return self.tokens
+    def get_all_tokens(self) -> dict[str, dict[str, JsonValue]]:
+        """Get the stored tokens by region, without top-level non-object values."""
+        return {
+            region: workspaces
+            for region, workspaces in self.tokens.items()
+            if isinstance(workspaces, dict)
+        }
 
     def get_available_regions(self) -> list[str]:
         """Get list of regions that have configured tokens.
@@ -241,7 +261,7 @@ class TokenManager:
         Returns:
             List of region names (e.g., ['ap1'], ['dev'], ['ap1', 'us1'])
         """
-        return list(self.tokens.keys())
+        return list(self.get_all_tokens())
 
     def get_default_region(self) -> str | None:
         """Get default region if only one region is configured.
@@ -282,11 +302,12 @@ class TokenManager:
         Returns:
             Success or error message
         """
-        if region in self.tokens and workspace in self.tokens[region]:
-            del self.tokens[region][workspace]
+        workspaces = self.tokens.get(region)
+        if isinstance(workspaces, dict) and workspace in workspaces:
+            del workspaces[workspace]
 
             # Clean up empty region
-            if not self.tokens[region]:
+            if not workspaces:
                 del self.tokens[region]
 
             self._save_tokens()
@@ -301,16 +322,21 @@ class TokenManager:
             'message': f'No token found for {workspace}.{region}',
         }
 
-    def get_auth_status(self) -> dict[str, Any]:
+    def get_auth_status(self) -> AuthStatus:
         """Get authentication status for all stored tokens.
 
         Returns:
             Authentication status information
         """
-        total_tokens = sum(len(workspaces) for workspaces in self.tokens.values())
+        by_region = {
+            region: workspaces
+            for region, workspaces in self.tokens.items()
+            if isinstance(workspaces, dict)  # a non-object value holds no tokens
+        }
+        total_tokens = sum(len(workspaces) for workspaces in by_region.values())
 
-        regions = []
-        for region, workspaces in self.tokens.items():
+        regions: list[RegionStatus] = []
+        for region, workspaces in by_region.items():
             regions.append(
                 {
                     'region': region,

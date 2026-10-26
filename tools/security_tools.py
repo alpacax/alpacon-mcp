@@ -1,7 +1,12 @@
 """Security ACL tools for Alpacon MCP server."""
 
 from utils.api_call import http_call_response
-from utils.common import build_list_params, empty_value_error, error_response
+from utils.common import (
+    build_list_params,
+    empty_value_error,
+    error_response,
+    is_stdio_transport,
+)
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ_ONLY
@@ -24,19 +29,51 @@ _BULK_MAX_SERVERS = 100
 _BOTH_TOKENS_ERROR = 'Provide either api_token_id or service_token_id, not both'
 _TOKEN_REQUIRED_ERROR = 'Either api_token_id or service_token_id must be provided'
 
-# Shared by the three command-ACL write tools. A deployment that moved command
-# ACLs to the pre-approval ledger refuses every write; one without it does not.
-_COMMAND_ACL_MOVED_NOTE = (
-    ' On a server that manages command ACLs on the command pre-approval '
-    'ledger, this write is refused with 405 command_acl_moved; a Command ACL '
-    'admin must then issue or revoke the entry under Pre-approved commands on '
-    "the service token's page in the web console, and a personal API token has "
-    'no command list on the ledger. Do not retry it.'
-)
+
+def _command_acl_moved_note(stdio: bool) -> str:
+    """The note the command-ACL write tools carry about the ledger.
+
+    A deployment that moved command ACLs to the pre-approval ledger refuses
+    every write; one without it does not. Only a stdio server registers the
+    ledger tools, so only there does the note name them.
+    """
+    ledger_tools = (
+        ', or with issue_ledger_entries and revoke_ledger_entry on this server '
+        '(get_ledger_capability reports command_acl_surface "ai")'
+        if stdio
+        else ''
+    )
+    return (
+        ' On a server that manages command ACLs on the command pre-approval '
+        'ledger, this write is refused with 405 command_acl_moved; a Command '
+        'ACL admin then issues or revokes the entry under Pre-approved commands '
+        f"on the service token's page in the web console{ledger_tools}. A "
+        'personal API token has no command list on the ledger. Do not retry it.'
+    )
+
+
+def _command_acl_list_note(stdio: bool) -> str:
+    """The note list_command_acls carries about the ledger."""
+    where = (
+        'use list_ledger_entries.'
+        if stdio
+        else "see Pre-approved commands on the service token's page in the web console."
+    )
+    return (
+        ' On a server whose command_acl_surface is "ai" these rules no longer '
+        f'decide anything; {where}'
+    )
+
+
+# prepare() sets the transport before this module is imported, so the
+# descriptions match the toolsets this process registers.
+_COMMAND_ACL_MOVED_NOTE = _command_acl_moved_note(is_stdio_transport())
+_COMMAND_ACL_LIST_NOTE = _command_acl_list_note(is_stdio_transport())
 
 
 @mcp_tool_handler(
-    description='List command ACL rules that control which commands can be executed. When to use: checking command execution permissions or debugging 403 errors from execute_command. Related: create_command_acl (add rules), list_server_acls (server access rules), list_file_acls (file access rules).',
+    description='List command ACL rules that control which commands can be executed. When to use: checking command execution permissions or debugging 403 errors from execute_command. Related: create_command_acl (add rules), list_server_acls (server access rules), list_file_acls (file access rules).'
+    + _COMMAND_ACL_LIST_NOTE,
     annotations=READ_ONLY,
     meta={'anthropic/searchHint': 'command acl permission rules security'},
 )
