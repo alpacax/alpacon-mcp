@@ -1312,6 +1312,7 @@ class TestLostSubmissionIsNotResubmitted:
         assert result['outcome_unknown'] is True
         assert DO_NOT_RESUBMIT in result['message']
         assert 'list_commands' in result['message']
+        assert 'raise limit until the oldest entry predates it' in result['message']
 
     @pytest.mark.asyncio
     async def test_execute_file_sends_once_and_points_at_list_commands(

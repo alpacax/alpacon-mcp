@@ -760,7 +760,9 @@ def _submission_error(
     if response is not None and response.get('outcome_unknown') is True:
         response['message'] += (
             f' {DO_NOT_RESUBMIT} until list_commands for this server shows it '
-            'is not there: a resubmission may run it twice.'
+            'is not there, read back past this call: raise limit until the oldest '
+            'entry predates it, since a page of newer commands proves nothing. '
+            'A resubmission may run it twice.'
         )
     return response
 
