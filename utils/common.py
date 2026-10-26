@@ -332,13 +332,18 @@ AGENT_ROLLOUT_POLICY_REFUSAL_HINTS: dict[str, str] = {
 }
 
 #: 405 on every command-ACL write once the server moved command pre-approvals
-#: to the ledger; this MCP has no ledger tool, hence the web console.
+#: to the ledger. Only a stdio server registers the ledger tools, so only it
+#: names them; every transport gets the web console.
 COMMAND_ACL_MOVED_HINT = (
     'Command ACLs are now managed on the command pre-approval ledger, so this '
-    'endpoint no longer accepts writes. For now a Command ACL admin must issue '
-    "or revoke the entry under Pre-approved commands on the service token's "
-    'page in the web console; a personal API token has no command list on the '
-    'ledger. Do not retry this call.'
+    'endpoint no longer accepts writes. A Command ACL admin can issue or revoke '
+    "the entry under Pre-approved commands on the service token's page in the "
+    'web console; a personal API token has no command list on the ledger. Do '
+    'not retry this call.'
+)
+COMMAND_ACL_MOVED_STDIO_HINT = (
+    f'{COMMAND_ACL_MOVED_HINT} On this server issue_ledger_entries and '
+    'revoke_ledger_entry do the same.'
 )
 
 _ERROR_CODE_HINT: dict[str, str] = {
@@ -351,6 +356,12 @@ _ERROR_CODE_HINT: dict[str, str] = {
     'workspace_extension_plan_required': WORKSPACE_EXTENSION_PLAN_REQUIRED_HINT,
     'workspace_extension_not_enabled': WORKSPACE_EXTENSION_NOT_ENABLED_HINT,
     'work_session_extension_reason_required': WORK_SESSION_EXTENSION_REASON_REQUIRED_HINT,
+}
+
+# Replaces an _ERROR_CODE_HINT entry on a stdio server, the only transport that
+# registers the tools these name.
+_STDIO_ERROR_CODE_HINT: dict[str, str] = {
+    'command_acl_moved': COMMAND_ACL_MOVED_STDIO_HINT,
 }
 
 # A plan-limit 402 (#296) is distinct from every other _ERROR_CODE_HINT entry
@@ -407,6 +418,16 @@ def is_auth_enabled() -> bool:
     authenticates with tokens from token.json.
     """
     return os.getenv('ALPACON_MCP_AUTH_ENABLED', '').lower() == 'true'
+
+
+def is_stdio_transport() -> bool:
+    """Whether this process serves the stdio transport.
+
+    `server.prepare()` sets ALPACON_MCP_TRANSPORT before any tool module is
+    imported. An unset value means a caller outside prepare() and reads as
+    not stdio, so a stdio-only path fails closed.
+    """
+    return os.getenv('ALPACON_MCP_TRANSPORT', '') == 'stdio'
 
 
 def resolve_work_session_id(explicit: str | None) -> str | None:
@@ -823,6 +844,8 @@ def unwrap_http_result(
     if code is not None:
         error_kwargs['error_code'] = code
         hint = _ERROR_CODE_HINT.get(code)
+        if is_stdio_transport():
+            hint = _STDIO_ERROR_CODE_HINT.get(code, hint)
         if hint is not None:
             message = f'{message} {hint}'
 

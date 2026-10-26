@@ -491,6 +491,7 @@ class TestPathIdentifierValidation:
     # server_id and session_id are absent: the decorator already validates them.
     PATH_IDENTIFIERS = [
         'acl_id',
+        'admin_id',
         'alert_id',
         'analysis_id',
         'app_id',
@@ -526,6 +527,7 @@ class TestPathIdentifierValidation:
     NON_PATH_IDENTIFIERS = [
         'api_token_id',
         'authority_id',
+        'principal_id',
         'service_token_id',
         'target_id',
         'websh_session_id',
