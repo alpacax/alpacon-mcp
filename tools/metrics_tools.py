@@ -102,7 +102,7 @@ _NEXT_PAGE = TypeAdapter(_NextPage)
 
 
 def _metric_rows[R](adapter: TypeAdapter[list[R]], result: JsonValue) -> list[R]:
-    """The time-series rows of a /api/metrics/ answer; raises on a row adapter rejects."""
+    """The time-series rows of a /api/metrics/ answer; raises on a row the adapter rejects."""
     return validate_response(adapter, json_records(result))
 
 
@@ -1061,11 +1061,11 @@ async def get_server_metrics_summary(
         return isinstance(mount_points, list) and '/' in mount_points
 
     root_partition_id = _find_record_id(
-        partitions_result, lambda p: is_root(p) and not p.get('is_virtual', False)
+        partitions_result, lambda p: is_root(p) and p.get('is_virtual') is not True
     ) or _find_record_id(partitions_result, is_root)
 
     def is_active(i: _ProcRecord) -> bool:
-        return not i.get('is_loopback', False) and bool(i.get('is_up', False))
+        return i.get('is_loopback') is not True and i.get('is_up') is True
 
     interface_id = _find_record_id(
         interfaces_result,

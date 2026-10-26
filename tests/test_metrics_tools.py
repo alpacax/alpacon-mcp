@@ -865,6 +865,22 @@ class TestServerMetricsSummaryLookups:
         assert sent['/api/metrics/realtime/traffic/']['interface'] == 'v1'
 
     @pytest.mark.asyncio
+    async def test_summary_reads_a_non_boolean_is_up_as_down(
+        self, mock_http_client, mock_token_manager
+    ):
+        interfaces = [
+            {'id': 'p1', 'name': 'eth0', 'is_loopback': False, 'is_up': 'false'},
+            {'id': 'v1', 'name': 'docker0', 'is_loopback': False, 'is_up': True},
+        ]
+        sent = self.route_calls(
+            mock_http_client, **{'/api/proc/interfaces/': interfaces}
+        )
+
+        await get_server_metrics_summary(server_id=SERVER_ID, workspace='testworkspace')
+
+        assert sent['/api/metrics/realtime/traffic/']['interface'] == 'v1'
+
+    @pytest.mark.asyncio
     async def test_summary_prefers_a_non_virtual_root_partition(
         self, mock_http_client, mock_token_manager
     ):
@@ -1972,6 +1988,7 @@ class TestMetricsToolsBodyShapes:
         ('name', 'row', 'path'),
         [
             ('cpu', {'usage': '25.5'}, '0.usage'),
+            ('cpu', {'timestamp': 0, 'usage': 25.5}, '0.timestamp'),
             ('memory', {'usage': None}, '0.usage'),
             ('disk', {'usage': 50.0, 'total': 1.5}, '0.total'),
             ('network', {'peak_input_bps': '1'}, '0.peak_input_bps'),
