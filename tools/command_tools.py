@@ -2,30 +2,33 @@
 
 import asyncio
 import re
+from collections.abc import Mapping, MutableMapping
 from datetime import UTC, datetime
-from typing import Annotated, Any, cast
+from typing import Annotated, TypedDict, cast
 
 import httpx
-from pydantic import Strict
+from pydantic import Strict, TypeAdapter
 
 from utils.common import (
     FILE_EXEC_INLINE_CREDENTIAL_HINT,
     FILE_EXEC_REFUSAL_HINTS,
     INLINE_CREDENTIAL_HINT,
+    UnexpectedResponseShapeError,
     build_list_params,
     empty_value_error,
     error_response,
-    expect_json_object,
     pending_approval_response,
     resolve_work_session_id,
     success_response,
     unwrap_http_result,
+    validate_response,
 )
 from utils.decorators import mcp_tool_handler
 from utils.error_handler import validate_file_path
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, READ_ONLY
 from utils.types import JsonValue, ToolErrorResponse, ToolResponse
+from utils.webftp_shapes import TRANSFER_REQUEST, TRANSFER_STATE
 
 #: Ceiling the server puts on a stated purpose, on both write paths (ADR 0052).
 #: Truncating here rather than letting the server refuse keeps a long purpose
@@ -184,7 +187,23 @@ _SUDO_HUMAN_APPROVAL_CODES = frozenset(
 )
 
 
-type _CommandRecord = dict[str, Any]  # one command result row (result, status, ...)
+type _CommandRecord = Mapping[str, JsonValue]  # one command row, as read
+
+
+class _SubmittedCommand(TypedDict, total=False):
+    id: str | None
+
+
+# A command as /api/events/commands/{id}/ reports it.
+class _CommandState(TypedDict, total=False):
+    status: str
+    handled_at: str | None
+    success: bool | None
+    result: str | None
+
+
+_SUBMITTED_COMMAND = TypeAdapter(_SubmittedCommand)
+_COMMAND_STATE = TypeAdapter(_CommandState)
 
 
 def _sudo_denial(result: _CommandRecord) -> tuple[str, str] | None:
@@ -207,7 +226,7 @@ def _sudo_denial(result: _CommandRecord) -> tuple[str, str] | None:
 
 
 def _attach_sudo_denial(
-    target: dict[str, Any], source: dict[str, Any] | None = None
+    target: MutableMapping[str, JsonValue], source: _CommandRecord | None = None
 ) -> None:
     """Attach denial guidance found in ``source`` onto ``target``.
 
@@ -266,7 +285,7 @@ _FILE_PHASE_GENERIC_HINT = (
 )
 
 
-def _file_phase_hint(result: dict[str, Any]) -> str | None:
+def _file_phase_hint(result: _CommandRecord) -> str | None:
     """Hint for a file-lane ``error_phase``, or None for any other phase."""
     phase = result.get('error_phase')
     if not isinstance(phase, str) or not phase.startswith('file_'):
@@ -275,7 +294,7 @@ def _file_phase_hint(result: dict[str, Any]) -> str | None:
 
 
 def _attach_file_phase_hint(
-    target: dict[str, Any], source: dict[str, Any] | None = None
+    target: MutableMapping[str, JsonValue], source: _CommandRecord | None = None
 ) -> None:
     """Attach the file-lane hint for ``source``'s ``error_phase`` onto ``target``."""
     hint = _file_phase_hint(target if source is None else source)
@@ -306,7 +325,7 @@ _ONLY_REFUSED_SERVERS = (
 )
 
 
-def _rerun_coordinates(result: dict[str, Any]) -> dict[str, str]:
+def _rerun_coordinates(result: _CommandRecord) -> dict[str, str]:
     """The polled row's server, account and Work Session, keyed as tool arguments.
 
     A rerun has to keep the held or refused command's account and Work Session,
@@ -327,14 +346,20 @@ def _rerun_coordinates(result: dict[str, Any]) -> dict[str, str]:
     return {key: value for key, value in candidates if isinstance(value, str) and value}
 
 
-def _stdin_was_fed(result: dict[str, Any], stdin_fed: bool) -> bool:
+def _stdin_was_fed(result: _CommandRecord, stdin_fed: bool) -> bool:
     """Data is withheld on some rows, so the submitting call's word counts too."""
     return stdin_fed or bool(result.get('data'))
 
 
+class _FileExecutionRefusal(TypedDict):
+    message: str
+    error_code: str
+    next_action: str
+
+
 def _use_file_execution_refusal(
-    result: dict[str, Any], stdin_fed: bool = False
-) -> dict[str, Any] | None:
+    result: _CommandRecord, stdin_fed: bool = False
+) -> _FileExecutionRefusal | None:
     """message, error_code and next_action for this refusal; None otherwise."""
     if result.get('rejection_cause') != USE_FILE_EXECUTION:
         return None
@@ -361,7 +386,7 @@ def _use_file_execution_refusal(
     }
 
 
-def _attach_use_file_execution(entry: dict[str, Any]) -> None:
+def _attach_use_file_execution(entry: MutableMapping[str, JsonValue]) -> None:
     if refusal := _use_file_execution_refusal(entry):
         entry['error_code'] = refusal['error_code']
         entry['next_action'] = refusal['next_action'] + _ONLY_REFUSED_SERVERS
@@ -614,7 +639,7 @@ def _purpose_was_truncated(purpose: str | None) -> bool:
     return len((purpose or '').strip()) > PURPOSE_MAX_LENGTH
 
 
-def _remaining_purpose_window(expires_at: Any) -> int | None:
+def _remaining_purpose_window(expires_at: JsonValue) -> int | None:
     """Seconds left before the demand expires, or None when unknowable.
 
     Measured against the expiry the server derived. The window's length is
@@ -809,19 +834,20 @@ async def _settle_submission(
 
     if isinstance(exec_data, list):
         if exec_data:
-            command_id = exec_data[0].get('id')
+            submitted = exec_data[0]
         else:
             return error_response(
                 'No command data returned', workspace=workspace, region=region
             )
     elif isinstance(exec_data, dict):
-        command_id = exec_data.get('id')
+        submitted = exec_data
     else:
         return error_response(
             f'Unexpected response format: {type(exec_data).__name__}',
             workspace=workspace,
             region=region,
         )
+    command_id = validate_response(_SUBMITTED_COMMAND, submitted).get('id')
 
     if not command_id:
         return error_response(
@@ -973,10 +999,13 @@ async def _read_file_from_host(
     ):
         return refused
 
-    download = expect_json_object(download)
-    download_id = download.get('id')
-    download_url = download.get('download_url')
-    command_id = download.get('command')
+    try:
+        request = validate_response(TRANSFER_REQUEST, download)
+    except UnexpectedResponseShapeError as e:
+        return _failed(str(e))
+    download_id = request['id']
+    download_url = request.get('download_url')
+    command_id = request.get('command')
     if not download_id or not download_url or not command_id:
         return _failed(
             'the download request returned no download id, URL or command',
@@ -1004,16 +1033,19 @@ async def _read_file_from_host(
             command, 'Failed to poll the download command', download_id=download_id
         ):
             return refused
-        command = expect_json_object(command)
-        if command.get('status') in ('denied', 'rejected', 'stuck'):
+        try:
+            state = validate_response(_COMMAND_STATE, command)
+        except UnexpectedResponseShapeError as e:
+            return _failed(str(e), download_id=download_id)
+        if (outcome := state.get('status')) in ('denied', 'rejected', 'stuck'):
             return _failed(
-                f'the download command ended as {command["status"]}',
+                f'the download command ended as {outcome}',
                 download_id=download_id,
             )
-        if command.get('handled_at') is not None:
-            if command.get('success') is False:
+        if state.get('handled_at') is not None:
+            if state.get('success') is False:
                 return _failed(
-                    str(command.get('result') or 'the host refused the read'),
+                    state.get('result') or 'the host refused the read',
                     download_id=download_id,
                 )
             break
@@ -1038,12 +1070,15 @@ async def _read_file_from_host(
             status, 'Failed to poll download status', download_id=download_id
         ):
             return refused
-        status = expect_json_object(status)
-        if status.get('success') is True:
+        try:
+            transfer = validate_response(TRANSFER_STATE, status)
+        except UnexpectedResponseShapeError as e:
+            return _failed(str(e), download_id=download_id)
+        if transfer.get('success') is True:
             break
-        if status.get('success') is False:
+        if transfer.get('success') is False:
             return _failed(
-                str(status.get('message') or 'the host refused the read'),
+                transfer.get('message') or 'the host refused the read',
                 download_id=download_id,
             )
         await asyncio.sleep(_FILE_READ_POLL_INTERVAL)
@@ -1139,9 +1174,12 @@ async def _write_file_to_host(
     ):
         return refused
 
-    upload = expect_json_object(upload)
-    upload_id = upload.get('id')
-    upload_url = upload.get('upload_url')
+    try:
+        request = validate_response(TRANSFER_REQUEST, upload)
+    except UnexpectedResponseShapeError as e:
+        return _failed(str(e))
+    upload_id = request['id']
+    upload_url = request.get('upload_url')
     # Without both, these bytes have no way onto the host, and polling would
     # only report on whatever file was already at path.
     if not upload_id or not upload_url:
@@ -1171,11 +1209,14 @@ async def _write_file_to_host(
             status, 'Failed to poll upload status', upload_id=upload_id
         ):
             return refused
-        status = expect_json_object(status)
-        if status.get('success') is True:
+        try:
+            transfer = validate_response(TRANSFER_STATE, status)
+        except UnexpectedResponseShapeError as e:
+            return _failed(str(e), upload_id=upload_id)
+        if transfer.get('success') is True:
             return None
-        if status.get('success') is False:
-            reason = str(status.get('message') or 'the host refused the write')
+        if transfer.get('success') is False:
+            reason = transfer.get('message') or 'the host refused the write'
             # The agent answers "PATH already exists." for an existing file.
             if not overwrite and 'already exists' in reason:
                 reason += (
@@ -1400,7 +1441,7 @@ _BARE_INTERPRETER_RE = re.compile(r'[A-Za-z0-9][A-Za-z0-9._+-]{0,63}')
 
 def _attach_file_execution_suggestion(
     response: ToolResponse,
-    result: dict[str, Any],
+    result: _CommandRecord,
     *,
     server_id: str,
     workspace: str,

@@ -5,10 +5,12 @@ import json
 import os
 import platform
 import re
+from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
-from typing import Any
 from urllib.parse import urlparse
+
+from pydantic import TypeAdapter, ValidationError
 
 from utils.logger import get_logger
 from utils.token_manager import get_token_manager
@@ -680,7 +682,9 @@ def _plan_limit_next_action(axis: str, region: object, workspace: object) -> str
     )
 
 
-def _plan_limit_axis(body: dict[str, Any] | None, code: str | None) -> str | None:
+def _plan_limit_axis(
+    body: Mapping[str, JsonValue] | None, code: str | None
+) -> str | None:
     """Classify an http error body as a plan-limit refusal, and on which axis.
 
     Rule 1 (current alpacon-server): `gate == "plan"` and `axis` is a
@@ -730,7 +734,7 @@ def plan_limit_response(
             passed through unmodified.
         axis: One of `server`, `user`, `application`, `websh`, `webftp`,
             `websh-share`, `workspace` (#296).
-        next_value: The body's `next` field, passed through unmodified for a
+        next_value: The body's `next` string (None for any other value), for a
             machine caller that wants to read current usage numbers: the
             server's self-relative entitlements-read API path (e.g.
             `/api/workspaces/workspaces/<id>/entitlements/`) on a count cap,
@@ -828,9 +832,12 @@ def unwrap_http_result(
         body = _parse_error_body(result)
         axis = _plan_limit_axis(body, code)
         if axis is not None:
-            next_value = body.get('next') if isinstance(body, dict) else None
+            next_value = body.get('next') if body is not None else None
             return plan_limit_response(
-                error_code=code, axis=axis, next_value=next_value, **error_kwargs
+                error_code=code,
+                axis=axis,
+                next_value=next_value if isinstance(next_value, str) else None,
+                **error_kwargs,
             )
 
     message = result.get('message', default_message)
@@ -845,7 +852,7 @@ def unwrap_http_result(
     return error_response(message, **error_kwargs)
 
 
-def _parse_error_body(result: dict[str, Any]) -> dict[str, Any] | None:
+def _parse_error_body(result: Mapping[str, object]) -> dict[str, JsonValue] | None:
     """Return the JSON object an http error envelope carries in its body, if any.
 
     ``utils.http_client`` carries the raw body text in the ``response`` key.
@@ -861,7 +868,7 @@ def _parse_error_body(result: dict[str, Any]) -> dict[str, Any] | None:
     return body if isinstance(body, dict) else None
 
 
-def _extract_error_code(result: dict[str, Any]) -> str | None:
+def _extract_error_code(result: Mapping[str, object]) -> str | None:
     """Return the `code` field carried by an http error envelope's body, if any.
 
     alpacon-server's exception handler returns 4xx bodies shaped as at least
@@ -883,7 +890,7 @@ class UnexpectedResponseShapeError(ValueError):
     """Upstream answered with a JSON body whose shape the caller cannot use."""
 
 
-def expect_json_object(result: JsonValue) -> dict[str, Any]:
+def expect_json_object(result: JsonValue) -> dict[str, JsonValue]:
     """Return `result` when it is a JSON object, else raise UnexpectedResponseShapeError."""
     if not isinstance(result, dict):
         raise UnexpectedResponseShapeError(
@@ -894,7 +901,7 @@ def expect_json_object(result: JsonValue) -> dict[str, Any]:
 
 def json_records(
     result: JsonValue, *, single_object_as_record: bool = False
-) -> list[Any]:
+) -> list[JsonValue]:
     """Return a list body, or an object's `results`; an object without it is one record or none.
 
     Raises UnexpectedResponseShapeError on a scalar body or a non-list `results`."""
@@ -909,3 +916,19 @@ def json_records(
             )
         return records
     return [obj] if single_object_as_record else []
+
+
+def validate_response[T](adapter: TypeAdapter[T], result: JsonValue) -> T:
+    """Return `result` validated strictly by `adapter`; undeclared keys are dropped.
+
+    Raises UnexpectedResponseShapeError naming field paths, never the rejected values."""
+    try:
+        return adapter.validate_python(result, strict=True)
+    except ValidationError as e:  # field paths and reasons only: inputs may be secret
+        problems = '; '.join(
+            f'{".".join(map(str, err["loc"])) or "<root>"}: {err["msg"]}'
+            for err in e.errors(include_url=False, include_input=False)
+        )
+        raise UnexpectedResponseShapeError(
+            f'Unexpected upstream response shape: {problems}'
+        ) from None

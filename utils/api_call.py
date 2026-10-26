@@ -4,14 +4,12 @@ Lives in its own module to keep the call pipeline out of the grab-bag
 utils.common module.
 """
 
-from collections.abc import Awaitable, Callable
-
 from utils.common import success_response, unwrap_http_result
-from utils.types import QueryParams, RequestBody, ToolResponse
+from utils.types import ApiMethod, QueryParams, RequestBody, ToolResponse
 
 
 async def http_call_response(
-    method: Callable[..., Awaitable[object]],
+    method: ApiMethod,
     *,
     region: str,
     workspace: str,

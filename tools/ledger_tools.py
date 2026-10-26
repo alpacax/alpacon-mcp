@@ -15,7 +15,7 @@ per process, and a network transport may share a process between callers.
 
 import json
 from http import HTTPStatus
-from typing import Annotated, Any, Literal, NotRequired, TypedDict
+from typing import Annotated, Literal, NotRequired, TypedDict
 
 from pydantic import Field
 
@@ -34,6 +34,14 @@ from utils.ledger_auth import (
     ledger_base_url,
 )
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ_ONLY
+from utils.types import (
+    JsonValue,
+    QueryParam,
+    QueryParams,
+    RequestBody,
+    ToolErrorResponse,
+    ToolResponse,
+)
 
 _API_AUTH_ENV = '/api/auth/env/'
 _API_ACL = '/api/acl/'
@@ -91,7 +99,7 @@ class LedgerEntryInput(TypedDict):
 
 async def _ledger_target(
     region: str, workspace: str, token: str | None
-) -> LedgerTarget | dict[str, Any]:
+) -> LedgerTarget | ToolErrorResponse:
     """Read the workspace's ACL surface and Auth0 settings; refuse what cannot reach the ledger."""
     result = await http_client.get(
         region=region,
@@ -158,10 +166,10 @@ async def _ledger_request(
     region: str,
     workspace: str,
     default_message: str,
-    json_data: dict[str, Any] | None = None,
-    params: dict[str, Any] | None = None,
-    **id_context: Any,
-) -> dict[str, Any]:
+    json_data: RequestBody | None = None,
+    params: QueryParams | None = None,
+    **id_context: object,
+) -> ToolResponse:
     """Call the ledger as the person who authorized it, and shape the response."""
     context = {'region': region, 'workspace': workspace, **id_context}
 
@@ -221,10 +229,10 @@ async def _ledger_call(
     token: str | None,
     default_message: str,
     scope_to_workspace: Literal['query', 'body'] | None = None,
-    json_data: dict[str, Any] | None = None,
-    params: dict[str, Any] | None = None,
-    **id_context: Any,
-) -> dict[str, Any]:
+    json_data: RequestBody | None = None,
+    params: QueryParams | None = None,
+    **id_context: object,
+) -> ToolResponse:
     """Resolve the ledger target, then call it.
 
     `scope_to_workspace` names where the workspace's id goes: a list names it
@@ -252,15 +260,16 @@ async def _ledger_call(
     )
 
 
-def _error_detail(result: Any) -> Any:
+def _error_detail(result: object) -> JsonValue:
     """The ledger's error body, which names the field and the reason."""
     raw = result.get('response') if isinstance(result, dict) else None
     if not isinstance(raw, str):
         return None
     try:
-        return json.loads(raw)
+        body: JsonValue = json.loads(raw)
     except ValueError:
         return None
+    return body
 
 
 @mcp_tool_handler(
@@ -278,7 +287,7 @@ def _error_detail(result: Any) -> Any:
 )
 async def get_ledger_capability(
     workspace: str, region: str = '', **kwargs: str
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Report the command ACL surface and the caller's ledger authority.
 
     Args:
@@ -343,7 +352,7 @@ async def list_ledger_entries(
     page: int | None = None,
     page_size: int | None = None,
     **kwargs: str,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """List active ledger entries.
 
     Args:
@@ -359,7 +368,7 @@ async def list_ledger_entries(
     Returns:
         A page with `count`, `current`, `next`, `previous`, `last`, `results`
     """
-    params: dict[str, Any] = {}
+    params: dict[str, QueryParam] = {}
     for name, value in (
         ('principal_type', principal_type),
         ('principal_id', principal_id),
@@ -400,7 +409,7 @@ async def issue_ledger_entries(
     entries: list[LedgerEntryInput],
     region: str = '',
     **kwargs: str,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Issue ledger entries in one request.
 
     Args:
@@ -460,7 +469,7 @@ async def issue_ledger_entries(
 )
 async def revoke_ledger_entry(
     workspace: str, entry_id: str, region: str = '', **kwargs: str
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Revoke one ledger entry.
 
     Args:
@@ -494,7 +503,7 @@ async def revoke_ledger_entry(
 )
 async def revoke_ledger_entries(
     workspace: str, entry_ids: list[str], region: str = '', **kwargs: str
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Revoke several ledger entries.
 
     Args:
@@ -530,7 +539,7 @@ async def _set_entry_enabled(
     entry_id: str,
     region: str,
     token: str | None,
-) -> dict[str, Any]:
+) -> ToolResponse:
     return await _ledger_call(
         'POST',
         f'entries/{entry_id}/{action}/',
@@ -552,7 +561,7 @@ async def _set_entry_enabled(
 )
 async def disable_ledger_entry(
     workspace: str, entry_id: str, region: str = '', **kwargs: str
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Disable one ledger entry.
 
     Args:
@@ -578,7 +587,7 @@ async def disable_ledger_entry(
 )
 async def enable_ledger_entry(
     workspace: str, entry_id: str, region: str = '', **kwargs: str
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Enable one ledger entry.
 
     Args:
@@ -609,7 +618,7 @@ async def list_ledger_admins(
     page: int | None = None,
     page_size: int | None = None,
     **kwargs: str,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """List the workspace's Command ACL admins.
 
     Args:
@@ -621,7 +630,7 @@ async def list_ledger_admins(
     Returns:
         A page of admins, each with `id`, `subject` and `email`
     """
-    params: dict[str, Any] = {}
+    params: dict[str, QueryParam] = {}
     if page is not None:
         params['page'] = page
     if page_size is not None:
@@ -655,7 +664,7 @@ async def grant_ledger_admin(
     email: str = '',
     region: str = '',
     **kwargs: str,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Grant Command ACL admin.
 
     Args:
@@ -693,7 +702,7 @@ async def grant_ledger_admin(
 )
 async def revoke_ledger_admin(
     workspace: str, admin_id: str, region: str = '', **kwargs: str
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Revoke Command ACL admin.
 
     Args:

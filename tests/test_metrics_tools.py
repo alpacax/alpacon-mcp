@@ -17,7 +17,11 @@ from server import mcp
 from tests.conftest import HTTP_ERROR_ENVELOPE, http_client_fixture
 from tools.metrics_tools import (
     _MAX_INTERFACE_PAGES,
+    _DiskUsageRow,
     _oldest_first,
+    _TimedRow,
+    _TrafficRow,
+    _UsageRow,
     get_alert_rules,
     get_cpu_usage,
     get_disk_io,
@@ -284,6 +288,18 @@ class TestGetDiskUsage:
         assert result['status_code'] == HTTPStatus.NOT_FOUND
         assert 'No disk devices found' not in result['message']
         # The metrics call must be skipped once discovery fails.
+        assert mock_http_client.get.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_disk_usage_non_object_device_list_is_an_error(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.get.return_value = ['/dev/sda1']
+
+        result = await get_disk_usage(server_id=SERVER_ID, workspace='testworkspace')
+
+        assert result['status'] == 'error'
+        assert 'Unexpected upstream response shape' in result['message']
         assert mock_http_client.get.call_count == 1
 
     @pytest.mark.asyncio
@@ -849,6 +865,116 @@ class TestServerMetricsSummaryLookups:
         assert sent['/api/metrics/realtime/traffic/']['interface'] == 'v1'
 
     @pytest.mark.asyncio
+    async def test_summary_reads_a_non_boolean_is_up_as_down(
+        self, mock_http_client, mock_token_manager
+    ):
+        interfaces = [
+            {'id': 'p1', 'name': 'eth0', 'is_loopback': False, 'is_up': 'false'},
+            {'id': 'v1', 'name': 'docker0', 'is_loopback': False, 'is_up': True},
+        ]
+        sent = self.route_calls(
+            mock_http_client, **{'/api/proc/interfaces/': interfaces}
+        )
+
+        await get_server_metrics_summary(server_id=SERVER_ID, workspace='testworkspace')
+
+        assert sent['/api/metrics/realtime/traffic/']['interface'] == 'v1'
+
+    @pytest.mark.asyncio
+    async def test_summary_reads_a_non_boolean_is_loopback_as_not_loopback(
+        self, mock_http_client, mock_token_manager
+    ):
+        interfaces = [
+            {'id': 'p1', 'name': 'eth0', 'is_loopback': 'false', 'is_up': True},
+            {'id': 'v1', 'name': 'docker0', 'is_loopback': False, 'is_up': True},
+        ]
+        sent = self.route_calls(
+            mock_http_client, **{'/api/proc/interfaces/': interfaces}
+        )
+
+        await get_server_metrics_summary(server_id=SERVER_ID, workspace='testworkspace')
+
+        assert sent['/api/metrics/realtime/traffic/']['interface'] == 'p1'
+
+    @pytest.mark.asyncio
+    async def test_summary_skips_an_interface_whose_id_is_not_a_string(
+        self, mock_http_client, mock_token_manager
+    ):
+        interfaces = [
+            {'id': 7, 'name': 'eth0', 'is_loopback': False, 'is_up': True},
+            {'id': 'v1', 'name': 'docker0', 'is_loopback': False, 'is_up': True},
+        ]
+        sent = self.route_calls(
+            mock_http_client, **{'/api/proc/interfaces/': interfaces}
+        )
+
+        await get_server_metrics_summary(server_id=SERVER_ID, workspace='testworkspace')
+
+        assert sent['/api/metrics/realtime/traffic/']['interface'] == 'v1'
+
+    @pytest.mark.asyncio
+    async def test_summary_marks_only_the_metric_with_non_list_results_unavailable(
+        self, mock_http_client, mock_token_manager
+    ):
+        self.route_calls(
+            mock_http_client, **{'/api/metrics/realtime/cpu/': {'results': 5}}
+        )
+
+        result = await get_server_metrics_summary(
+            server_id=SERVER_ID, workspace='testworkspace'
+        )
+
+        assert result['status'] == 'success'
+        metrics = result['data']['metrics']
+        assert metrics['cpu']['available'] is False
+        assert '`results`' in metrics['cpu']['error']
+        assert metrics['memory']['available'] is True
+
+    @pytest.mark.asyncio
+    async def test_summary_reads_a_non_boolean_is_virtual_as_not_virtual(
+        self, mock_http_client, mock_token_manager
+    ):
+        partitions = [
+            {'id': 'tmp', 'name': 'overlay', 'mount_points': ['/'], 'is_virtual': True},
+            {
+                'id': ROOT_PARTITION_ID,
+                'name': '/dev/sda1',
+                'mount_points': ['/'],
+                'is_virtual': 'false',
+            },
+        ]
+        sent = self.route_calls(
+            mock_http_client, **{'/api/proc/partitions/': partitions}
+        )
+
+        await get_server_metrics_summary(server_id=SERVER_ID, workspace='testworkspace')
+
+        disk_params = sent['/api/metrics/realtime/disk-usage/']
+        assert disk_params['partition'] == ROOT_PARTITION_ID
+
+    @pytest.mark.asyncio
+    async def test_summary_does_not_read_a_string_mount_points_as_root(
+        self, mock_http_client, mock_token_manager
+    ):
+        partitions = [
+            {'id': 'str', 'name': 'odd', 'mount_points': '/', 'is_virtual': False},
+            {
+                'id': ROOT_PARTITION_ID,
+                'name': '/dev/sda1',
+                'mount_points': ['/'],
+                'is_virtual': False,
+            },
+        ]
+        sent = self.route_calls(
+            mock_http_client, **{'/api/proc/partitions/': partitions}
+        )
+
+        await get_server_metrics_summary(server_id=SERVER_ID, workspace='testworkspace')
+
+        disk_params = sent['/api/metrics/realtime/disk-usage/']
+        assert disk_params['partition'] == ROOT_PARTITION_ID
+
+    @pytest.mark.asyncio
     async def test_summary_prefers_a_non_virtual_root_partition(
         self, mock_http_client, mock_token_manager
     ):
@@ -1124,7 +1250,7 @@ class TestParseCpuMetrics:
 
     def test_parse_cpu_metrics_with_data(self):
         """Test CPU metrics parsing with valid data."""
-        results = [
+        results: list[_UsageRow] = [
             {'timestamp': '2024-01-01T00:00:00Z', 'usage': 25.0},
             {'timestamp': '2024-01-01T01:00:00Z', 'usage': 50.0},
             {'timestamp': '2024-01-01T02:00:00Z', 'usage': 75.0},
@@ -1133,9 +1259,12 @@ class TestParseCpuMetrics:
         parsed = parse_cpu_metrics(results)
 
         assert parsed['available'] is True
-        assert parsed['raw_values']['current'] == 75.0
-        assert parsed['raw_values']['min'] == 25.0
-        assert parsed['raw_values']['max'] == 75.0
+        assert parsed['raw_values'] == {
+            'current': 75.0,
+            'average': 50.0,
+            'min': 25.0,
+            'max': 75.0,
+        }
         assert parsed['data_points'] == 3
 
     def test_parse_cpu_metrics_empty(self):
@@ -1150,7 +1279,7 @@ class TestParseMemoryMetrics:
 
     def test_parse_memory_metrics_with_data(self):
         """Test memory metrics parsing with valid data."""
-        results = [
+        results: list[_UsageRow] = [
             {'timestamp': '2024-01-01T00:00:00Z', 'usage': 40.0},
             {'timestamp': '2024-01-01T01:00:00Z', 'usage': 60.0},
         ]
@@ -1158,7 +1287,12 @@ class TestParseMemoryMetrics:
         parsed = parse_memory_metrics(results)
 
         assert parsed['available'] is True
-        assert parsed['raw_values']['current'] == 60.0
+        assert parsed['raw_values'] == {
+            'current': 60.0,
+            'average': 50.0,
+            'min': 40.0,
+            'max': 60.0,
+        }
         assert parsed['data_points'] == 2
 
     def test_parse_memory_metrics_empty(self):
@@ -1172,22 +1306,22 @@ class TestOldestFirst:
     """Rows order by the instant they name, not by the timestamp text."""
 
     def test_mixed_utc_offsets_order_by_instant(self):
-        later = {'timestamp': '2024-01-01T10:00:00+09:00'}  # 01:00 UTC
-        earlier = {'timestamp': '2024-01-01T00:30:00Z'}
+        later: _TimedRow = {'timestamp': '2024-01-01T10:00:00+09:00'}  # 01:00 UTC
+        earlier: _TimedRow = {'timestamp': '2024-01-01T00:30:00Z'}
 
         assert _oldest_first([earlier, later]) == [earlier, later]
         assert _oldest_first([later, earlier]) == [earlier, later]
 
     def test_a_naive_timestamp_is_read_as_utc(self):
-        naive = {'timestamp': '2024-01-01T00:00:00'}
-        aware = {'timestamp': '2024-01-01T01:00:00Z'}
+        naive: _TimedRow = {'timestamp': '2024-01-01T00:00:00'}
+        aware: _TimedRow = {'timestamp': '2024-01-01T01:00:00Z'}
 
         assert _oldest_first([aware, naive]) == [naive, aware]
 
     def test_rows_without_a_usable_timestamp_sort_first(self):
-        good = {'timestamp': '2024-01-01T00:00:00Z'}
-        missing = {'usage': 1.0}
-        garbage = {'timestamp': 'not-a-date'}
+        good: _TimedRow = {'timestamp': '2024-01-01T00:00:00Z'}
+        missing: _UsageRow = {'usage': 1.0}
+        garbage: _TimedRow = {'timestamp': 'not-a-date'}
 
         assert _oldest_first([good, missing, garbage]) == [missing, garbage, good]
 
@@ -1199,7 +1333,7 @@ class TestParsersReadNewestFirstRows:
     OLDEST = '2024-01-01T00:00:00Z'
 
     def test_cpu_current_is_the_newest_row(self):
-        results = [
+        results: list[_UsageRow] = [
             {'timestamp': self.NEWEST, 'usage': 75.0},
             {'timestamp': '2024-01-01T01:00:00Z', 'usage': 50.0},
             {'timestamp': self.OLDEST, 'usage': 25.0},
@@ -1207,23 +1341,33 @@ class TestParsersReadNewestFirstRows:
 
         parsed = parse_cpu_metrics(results)
 
-        assert parsed['raw_values']['current'] == 75.0
+        assert parsed['raw_values'] == {
+            'current': 75.0,
+            'average': 50.0,
+            'min': 25.0,
+            'max': 75.0,
+        }
         assert parsed['time_range'] == {'start': self.OLDEST, 'end': self.NEWEST}
 
     def test_memory_current_is_the_newest_row(self):
-        results = [
+        results: list[_UsageRow] = [
             {'timestamp': self.NEWEST, 'usage': 60.0},
             {'timestamp': self.OLDEST, 'usage': 40.0},
         ]
 
         parsed = parse_memory_metrics(results)
 
-        assert parsed['raw_values']['current'] == 60.0
+        assert parsed['raw_values'] == {
+            'current': 60.0,
+            'average': 50.0,
+            'min': 40.0,
+            'max': 60.0,
+        }
         assert parsed['time_range'] == {'start': self.OLDEST, 'end': self.NEWEST}
 
     def test_disk_current_and_space_info_come_from_the_newest_row(self):
         gib = 1024**3
-        results = [
+        results: list[_DiskUsageRow] = [
             {
                 'timestamp': self.NEWEST,
                 'usage': 80.0,
@@ -1245,12 +1389,17 @@ class TestParsersReadNewestFirstRows:
         parsed = parse_disk_metrics(results)
 
         assert parsed['current_usage'] == 80.0
-        assert parsed['space_info']['used'] == '80.00 GB'
-        assert parsed['space_info']['device'] == '/dev/new'
+        assert parsed['space_info'] == {
+            'total': '100.00 GB',
+            'used': '80.00 GB',
+            'free': '20.00 GB',
+            'device': '/dev/new',
+            'mount_point': None,
+        }
         assert parsed['time_range'] == {'start': self.OLDEST, 'end': self.NEWEST}
 
     def test_network_current_is_the_newest_row(self):
-        results = [
+        results: list[_TrafficRow] = [
             {
                 'timestamp': self.NEWEST,
                 'interface': INTERFACE_ID,
@@ -1275,8 +1424,14 @@ class TestParsersReadNewestFirstRows:
 
         parsed = parse_network_metrics(results)
 
-        assert parsed['current']['peak_input_bps'] == '2.00 Kbps'
-        assert parsed['current']['peak_input_pps'] == '7.00 pps'
+        assert parsed['current'] == {
+            'peak_input_bps': '2.00 Kbps',
+            'peak_output_bps': '0.00 bps',
+            'avg_input_bps': '0.00 bps',
+            'avg_output_bps': '0.00 bps',
+            'peak_input_pps': '7.00 pps',
+            'peak_output_pps': '0.00 pps',
+        }
         assert parsed['time_range'] == {'start': self.OLDEST, 'end': self.NEWEST}
 
 
@@ -1909,6 +2064,42 @@ class TestMetricsToolsBodyShapes:
 
         assert result['status'] == 'error'
         assert 'JSON object' in result['message']
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('name', CALLS)
+    async def test_non_object_row_is_an_error_not_statistics(
+        self, name, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.get.return_value = {'results': ['not-a-row']}
+
+        result = await self._call(name)
+
+        assert result['status'] == 'error'
+        assert 'Unexpected upstream response shape: 0: ' in result['message']
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ('name', 'row', 'path'),
+        [
+            ('cpu', {'usage': '25.5'}, '0.usage'),
+            ('cpu', {'timestamp': 0, 'usage': 25.5}, '0.timestamp'),
+            ('memory', {'usage': None}, '0.usage'),
+            ('disk', {'usage': 50.0, 'total': 1.5}, '0.total'),
+            ('disk', {'usage': 50.0, 'device': 1}, '0.device'),
+            ('disk', {'usage': 50.0, 'mount_point': 1}, '0.mount_point'),
+            ('network', {'peak_input_bps': '1'}, '0.peak_input_bps'),
+            ('network', {'interface': 1}, '0.interface'),
+        ],
+    )
+    async def test_wrong_typed_row_field_is_an_error_not_statistics(
+        self, name, row, path, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.get.return_value = {'results': [{'timestamp': START, **row}]}
+
+        result = await self._call(name)
+
+        assert result['status'] == 'error'
+        assert f'Unexpected upstream response shape: {path}: ' in result['message']
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize('name', CALLS)
