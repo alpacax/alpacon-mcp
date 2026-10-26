@@ -29,8 +29,8 @@ from utils.auth import (
 )
 
 AUTH_ENV = {
-    'AUTH0_DOMAIN': 'test.us.auth0.com',
-    'AUTH0_AUDIENCE': 'https://alpacon.io/access/',
+    'AUTH0_ALPACON_DOMAIN': 'test.us.auth0.com',
+    'AUTH0_ALPACON_USER_AUDIENCE': 'https://alpacon.io/access/',
 }
 
 

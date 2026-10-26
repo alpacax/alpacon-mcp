@@ -31,13 +31,15 @@ uv sync --extra dev         # runtime + dev dependencies
 
 python main.py              # stdio transport (default MCP mode)
 python main_sse.py          # SSE transport
-python main_http.py         # streamable-http; needs AUTH0_* configured
+python main_http.py         # streamable-http; needs AUTH0_ALPACON_* configured
 
 pytest                      # test suite
 python -c "from server import mcp; print('ok')"   # import smoke check
 ```
 
 ## Non-obvious invariants
+
+The legacy Auth0 environment variable names still work as fallbacks and will be removed in a later release; see `docs/configuration.md` for the mapping.
 
 Things the code will not tell you at a glance:
 
@@ -93,7 +95,7 @@ Things the code will not tell you at a glance:
   60-second cooldown against re-auth loops.
 - **The code and refresh token a remote client holds are sealed by this
   server**, carrying the device id minted for that grant. Rotating
-  `ALPACON_MCP_GRANT_SECRET` (or `AUTH0_CLIENT_SECRET`, which it is derived
+  `ALPACON_MCP_GRANT_SECRET` (or `AUTH0_ALPACON_LOGIN_CLIENT_SECRET`, which it is derived
   from by default) logs every remote session out.
 - **Transport settings live at the entry point, not on the constructor.** SDK 2.x
   takes `host`, `json_response` and `stateless_http` on

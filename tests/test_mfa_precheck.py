@@ -133,7 +133,7 @@ class TestCheckMfaCompleted:
         assert check_mfa_completed(claims, settings) is False
 
     def test_custom_namespace(self):
-        """AUTH0_NAMESPACE env var changes the claim key lookup."""
+        """AUTH0_ALPACON_NAMESPACE env var changes the claim key lookup."""
         recent = (
             (datetime.now(tz=UTC) - timedelta(seconds=60))
             .isoformat()
@@ -142,7 +142,7 @@ class TestCheckMfaCompleted:
         claims = {'http://localhost/completed_mfa_methods': {'otp': recent}}
         settings = self._make_settings()
 
-        with patch.dict(os.environ, {'AUTH0_NAMESPACE': 'http://localhost/'}):
+        with patch.dict(os.environ, {'AUTH0_ALPACON_NAMESPACE': 'http://localhost/'}):
             assert check_mfa_completed(claims, settings) is True
 
         # Default namespace should not find it

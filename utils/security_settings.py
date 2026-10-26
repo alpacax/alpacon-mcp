@@ -14,6 +14,7 @@ from typing import Any
 
 import httpx
 
+from utils.auth0_env import get_auth0_env
 from utils.logger import escape_for_log, get_logger
 
 logger = get_logger('security_settings')
@@ -215,7 +216,10 @@ def check_mfa_completed(
     Returns:
         True if MFA is completed and within timeout, False otherwise
     """
-    namespace = os.getenv('AUTH0_NAMESPACE', 'https://alpacon.io/').rstrip('/') + '/'
+    namespace = (
+        get_auth0_env('AUTH0_ALPACON_NAMESPACE', 'https://alpacon.io/').rstrip('/')
+        + '/'
+    )
     mfa_claim_key = f'{namespace}completed_mfa_methods'
     completed_mfa = jwt_claims.get(mfa_claim_key, {})
 

@@ -2,7 +2,6 @@
 
 import asyncio
 import json
-import os
 import time
 from typing import Any
 
@@ -10,6 +9,7 @@ import httpx
 import jwt
 from mcp.server.auth.provider import AccessToken
 
+from utils.auth0_env import get_auth0_env
 from utils.logger import escape_for_log, get_logger
 
 logger = get_logger('auth')
@@ -38,12 +38,17 @@ def _get_jwks_lock() -> asyncio.Lock:
 
 def _get_auth0_config() -> dict[str, str]:
     """Get Auth0 configuration from environment variables."""
-    domain = os.getenv('AUTH0_DOMAIN', '')
-    audience = os.getenv('AUTH0_AUDIENCE', 'https://alpacon.io/access/')
-    namespace = os.getenv('AUTH0_NAMESPACE', 'https://alpacon.io/').rstrip('/') + '/'
+    domain = get_auth0_env('AUTH0_ALPACON_DOMAIN', '')
+    audience = get_auth0_env(
+        'AUTH0_ALPACON_USER_AUDIENCE', 'https://alpacon.io/access/'
+    )
+    namespace = (
+        get_auth0_env('AUTH0_ALPACON_NAMESPACE', 'https://alpacon.io/').rstrip('/')
+        + '/'
+    )
 
     if not domain:
-        raise ValueError('AUTH0_DOMAIN environment variable is required')
+        raise ValueError('AUTH0_ALPACON_DOMAIN environment variable is required')
 
     return {
         'domain': domain,
@@ -193,7 +198,7 @@ def decode_claims_unverified(jwt_token: str) -> dict[str, Any] | None:
 def get_token_workspaces(jwt_token: str) -> list[dict[str, str]]:
     """List the workspaces a verified JWT grants access to.
 
-    Resolves the Auth0 namespace from AUTH0_NAMESPACE, so callers do not have
+    Resolves the Auth0 namespace from AUTH0_ALPACON_NAMESPACE, so callers do not have
     to know how the claim key is built.
     """
     return get_token_workspaces_with_dropped(jwt_token)[0]
@@ -211,7 +216,10 @@ def get_token_workspaces_with_dropped(
     if not claims:
         return [], 0
 
-    namespace = os.getenv('AUTH0_NAMESPACE', 'https://alpacon.io/').rstrip('/') + '/'
+    namespace = (
+        get_auth0_env('AUTH0_ALPACON_NAMESPACE', 'https://alpacon.io/').rstrip('/')
+        + '/'
+    )
     return _partition_workspaces(claims, namespace)
 
 

@@ -115,9 +115,11 @@ One id per grant means one MFA record per MCP client installation: a step-up in 
 
 ## Configuration
 
+The legacy Auth0 environment variable names still work as fallbacks and will be removed in a later release; see [environment configuration](configuration.md#environment-configuration).
+
 | Environment variable | Description | Example |
 |---------------------|-------------|---------|
 | `ALPACON_ACCOUNT_URL` | Account service base URL | `https://account.alpacax.com` |
-| `AUTH0_MFA_AUDIENCE` | Auth0 MFA API audience | `https://{domain}/mfa/` |
-| `AUTH0_NAMESPACE` | JWT custom claim namespace | `https://alpacon.io/` |
+| `AUTH0_ALPACON_MFA_AUDIENCE` | Auth0 MFA API audience | `https://{domain}/mfa/` |
+| `AUTH0_ALPACON_NAMESPACE` | JWT custom claim namespace | `https://alpacon.io/` |
 | `ALPACON_MCP_GRANT_SECRET` | Key that seals codes and refresh tokens (optional; derived from the client secret otherwise) | `openssl rand -hex 32` |

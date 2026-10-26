@@ -19,8 +19,8 @@ import sys
 from typing import cast
 
 os.environ['ALPACON_MCP_AUTH_ENABLED'] = 'true'
-os.environ['AUTH0_DOMAIN'] = 'example.us.auth0.com'
-os.environ['AUTH0_CLIENT_ID'] = 'test-client-id'
+os.environ['AUTH0_ALPACON_DOMAIN'] = 'example.us.auth0.com'
+os.environ['AUTH0_ALPACON_LOGIN_CLIENT_ID'] = 'test-client-id'
 os.environ['ALPACON_MCP_RESOURCE_URL'] = 'https://mcp.example.com'
 
 import uvicorn  # noqa: E402
