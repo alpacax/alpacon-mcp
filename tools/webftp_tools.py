@@ -209,7 +209,7 @@ async def _download_remote_mode(
     download_url = request.get('download_url')
 
     if not download_url:
-        file_id = request.get('id')
+        file_id = request['id']
         for _ in range(_REMOTE_DOWNLOAD_TIMEOUT):
             await asyncio.sleep(1)
             status = await http_client.get(
@@ -811,7 +811,7 @@ async def webftp_bulk_upload(
     upload_items = validate_response(
         _UPLOAD_SLOTS, json_records(result, single_object_as_record=True)
     )
-    file_ids = [file_id for item in upload_items if (file_id := item.get('id'))]
+    file_ids = [item['id'] for item in upload_items if item['id']]
 
     semaphore = asyncio.Semaphore(_UPLOAD_CONCURRENCY)
 
@@ -821,7 +821,7 @@ async def webftp_bulk_upload(
         item: TransferRequest,
     ) -> _UploadResult:
         upload_url = item.get('upload_url')
-        file_id = item.get('id')
+        file_id = item['id']
         name = file_names[idx] if idx < len(file_names) else _UNKNOWN_FILE
 
         if not upload_url or idx >= len(local_file_paths):

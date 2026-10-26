@@ -1920,6 +1920,28 @@ class TestNonObjectResponseBodies:
         self._assert_shape_error(result)
 
     @pytest.mark.asyncio
+    async def test_upload_file_without_an_id_uploads_nothing(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = {'upload_url': 'https://s3.example.com/p'}
+
+        with (
+            patch.object(Path, 'read_bytes', return_value=b'data'),
+            patch('tools.webftp_tools._upload_bytes_to_s3') as mock_upload,
+        ):
+            result = await webftp_upload_file(
+                server_id=VALID_SERVER_ID,
+                local_file_path='/local/test.txt',
+                remote_file_path='/remote/test.txt',
+                workspace='ws',
+                region='ap1',
+            )
+
+        assert result['status'] == 'error'
+        assert 'id: ' in result['message']
+        mock_upload.assert_not_called()
+
+    @pytest.mark.asyncio
     @pytest.mark.parametrize('body', BODIES, ids=BODY_IDS)
     async def test_upload_content_rejects_non_object_create_response(
         self, body, mock_http_client, mock_token_manager

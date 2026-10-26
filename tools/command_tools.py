@@ -996,7 +996,7 @@ async def _read_file_from_host(
         request = validate_response(TRANSFER_REQUEST, download)
     except UnexpectedResponseShapeError as e:
         return _failed(str(e))
-    download_id = request.get('id')
+    download_id = request['id']
     download_url = request.get('download_url')
     command_id = request.get('command')
     if not download_id or not download_url or not command_id:
@@ -1171,7 +1171,7 @@ async def _write_file_to_host(
         request = validate_response(TRANSFER_REQUEST, upload)
     except UnexpectedResponseShapeError as e:
         return _failed(str(e))
-    upload_id = request.get('id')
+    upload_id = request['id']
     upload_url = request.get('upload_url')
     # Without both, these bytes have no way onto the host, and polling would
     # only report on whatever file was already at path.
