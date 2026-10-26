@@ -127,36 +127,23 @@ def _collect_workspaces_from_tokens(
         if target_region and region_key != target_region:
             continue
 
-        if isinstance(region_data, dict):
-            for workspace_key, workspace_data in region_data.items():
-                if isinstance(workspace_data, dict):
-                    has_token = bool(workspace_data.get('token'))
-                else:
-                    has_token = bool(workspace_data)
+        for workspace_key, workspace_data in region_data.items():
+            if isinstance(workspace_data, dict):
+                has_token = bool(workspace_data.get('token'))
+            else:
+                has_token = bool(workspace_data)
 
-                # Resolve the displayed host through the same helper request
-                # routing uses (env-var precedence + normalization), so the
-                # reported domain always matches http_client.get_base_url()
-                # (ADR 0027 slug safety).
-                pinned_url = token_manager.get_base_url_override(
-                    region_key, workspace_key
-                )
-                workspaces.append(
-                    {
-                        'workspace': workspace_key,
-                        'region': region_key,
-                        'has_token': has_token,
-                        'domain': pinned_url
-                        or f'{workspace_key}.{region_key}.alpacon.io',
-                    }
-                )
-        else:
+            # Resolve the displayed host through the same helper request
+            # routing uses (env-var precedence + normalization), so the
+            # reported domain always matches http_client.get_base_url()
+            # (ADR 0027 slug safety).
+            pinned_url = token_manager.get_base_url_override(region_key, workspace_key)
             workspaces.append(
                 {
-                    'workspace': region_key,
+                    'workspace': workspace_key,
                     'region': region_key,
-                    'has_token': bool(region_data),
-                    'domain': f'{region_key}.{region_key}.alpacon.io',
+                    'has_token': has_token,
+                    'domain': pinned_url or f'{workspace_key}.{region_key}.alpacon.io',
                 }
             )
     return workspaces

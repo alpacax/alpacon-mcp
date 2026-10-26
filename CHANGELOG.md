@@ -7,7 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Command pre-approval ledger tools (#362): `get_ledger_capability`, `list_ledger_entries`,
+  `issue_ledger_entries`, `revoke_ledger_entry`, `revoke_ledger_entries`, `disable_ledger_entry`,
+  `enable_ledger_entry`, `list_ledger_admins`, `grant_ledger_admin` and `revoke_ledger_admin`, in a new
+  `ledger` toolset. They manage Pre-approved commands and Command ACL admins on a workspace whose
+  `command_acl_surface` is `ai`. They are served over stdio only: SSE and streamable-http do not
+  register them, and a call that reaches one there is refused before any sign-in is read. The first call returns a new
+  `status` value, `authorization_required`, carrying a sign-in link a person must open before the
+  call is retried, so a client branching on `status` has to handle it. `issue_ledger_entries` takes
+  `service_token` entries only: a personal API token has no command list on the ledger, and
+  `api_token` stays a `list_ledger_entries` filter so entries such a token already has can still be
+  listed and revoked.
+
 ### Fixed
+- In remote mode, the MFA pre-check now reads a workspace whose `mfa_timeout` is null as the server does, as 3600 seconds. It used to fail the comparison and treat every completed MFA as stale, so a call needing MFA kept asking for re-authentication. Responses are unchanged.
 - When Auth0 returns an error to `/oauth/callback` without an `error_description` and no client `redirect_uri` is known, the JSON error now carries `error_description: ""` instead of `null`. RFC 6749 allows the field to be absent or a string, never null; a client that read the field as nullable needs no change (#372).
 - `create_command_acl`, `update_command_acl` and `delete_command_acl` now explain the 405
   `command_acl_moved` that a server managing command pre-approvals on the command pre-approval
@@ -23,6 +37,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Sudo tool descriptions, denial hints, and next actions now describe the policy as session-authorized sudo and name the `session_authorized` field a human sets on the Work Session's sudo policy in the Alpacon web console. `request_sudo_policy` still cannot carry that field; tool names, parameters, error codes, and response shapes are unchanged, so clients parsing responses have nothing new to handle.
+- The `command_acl_moved` hint, the command ACL tool descriptions and the 403 command recovery hint
+  keep pointing to the web console and, on a stdio server only, also name the ledger tools.
+- Remote mode reads the JWT and the workspace security settings more strictly, only for values the Alpacon API server and Auth0 do not send. A token whose `sub` or `scope` is not a string, or whose `exp` is not an integer, is refused, where a string `exp` used to be accepted. A malformed security setting takes its strictest reading: an `mfa_required_actions` that is not a list of strings requires MFA for every action, an `allowed_mfa_methods` that is not a list of strings lets no method satisfy MFA, and a non-numeric or boolean `mfa_timeout` counts no MFA as fresh. `list_workspaces` reports a non-string `auth0_id` from the workspaces claim as an empty string. In local mode, a top-level `token.json` value that is not an object, such as a `_comment` key, is no longer counted as a region or reported by `list_workspaces`, where it used to appear as a workspace named after its key, and saving a token keeps it in the file.
 - A plan-limit error (a 402 with `gate: "plan"`, or with no `gate` and a legacy `*_limit_exceeded` code from an older or self-hosted server) now reports `next` as null when the server body carries a non-string `next`, where the value used to be passed through unchanged. The Alpacon API server sends a string path or null, so a client that already reads `next` as a string or null has nothing new to handle.
 - The WebFTP and command tools now check the type of each response field they read, and the metrics tools check each metric row field they read (`timestamp`, `usage`, the disk `device`, `mount_point` and byte counts, the traffic `interface` and rates). A body of the wrong shape returns an error whose message contains `Unexpected upstream response shape:` followed by each bad field's path, where several of these reads used to say `Expected a JSON object from upstream, got <type>`; a WebFTP transfer answer without an `id` is now such an error before any bytes are uploaded. `webftp_bulk_download` and the device lookup in `get_disk_usage` now return this error for a non-object body instead of answering as if no URL or no device came back, and `execute_file` reports it as `file_read_failed` or `file_write_failed`. `get_server_metrics_summary` now marks a metric whose `results` is not a list as unavailable instead of failing the whole summary. The error response shape is unchanged; a client matching the old message text has to match the new one.
 - The `get_workspace_preferences` description now marks the `auto_agent_upgrade` response boolean as deprecated and due for removal from the server response (#292). Clients should read `agent_rollout_policy`; the current response shape is unchanged.

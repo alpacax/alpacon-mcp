@@ -132,6 +132,86 @@ class TestCheckMfaCompleted:
         settings = self._make_settings()
         assert check_mfa_completed(claims, settings) is False
 
+    def test_null_timeout_reads_as_the_server_default(self):
+        recent = (
+            (datetime.now(tz=UTC) - timedelta(seconds=60))
+            .isoformat()
+            .replace('+00:00', 'Z')
+        )
+        claims = {'https://alpacon.io/completed_mfa_methods': {'otp': recent}}
+        settings = WorkspaceSecuritySettings(
+            {'mfa_required': True, 'mfa_timeout': None}
+        )
+
+        assert settings.mfa_timeout == 3600
+        assert check_mfa_completed(claims, settings) is True
+
+    def test_malformed_timeout_lets_no_mfa_count_as_fresh(self):
+        recent = (
+            (datetime.now(tz=UTC) - timedelta(seconds=60))
+            .isoformat()
+            .replace('+00:00', 'Z')
+        )
+        claims = {'https://alpacon.io/completed_mfa_methods': {'otp': recent}}
+        settings = WorkspaceSecuritySettings(
+            {'mfa_required': True, 'mfa_timeout': '900'}
+        )
+
+        assert check_mfa_completed(claims, settings) is False
+
+    def test_a_boolean_timeout_lets_no_mfa_count_as_fresh(self):
+        claims = {
+            'https://alpacon.io/completed_mfa_methods': {
+                'otp': datetime.now(tz=UTC).isoformat().replace('+00:00', 'Z')
+            }
+        }
+        settings = WorkspaceSecuritySettings(
+            {'mfa_required': True, 'mfa_timeout': True}
+        )
+
+        assert settings.mfa_timeout == 0
+        assert check_mfa_completed(claims, settings) is False
+
+    def test_malformed_allowed_methods_let_no_method_satisfy_mfa(self):
+        recent = (
+            (datetime.now(tz=UTC) - timedelta(seconds=60))
+            .isoformat()
+            .replace('+00:00', 'Z')
+        )
+        claims = {'https://alpacon.io/completed_mfa_methods': {'otp': recent}}
+        settings = WorkspaceSecuritySettings(
+            {'mfa_required': True, 'allowed_mfa_methods': None}
+        )
+
+        assert check_mfa_completed(claims, settings) is False
+
+    def test_a_non_string_allowed_method_lets_no_method_satisfy_mfa(self):
+        recent = (
+            (datetime.now(tz=UTC) - timedelta(seconds=60))
+            .isoformat()
+            .replace('+00:00', 'Z')
+        )
+        claims = {'https://alpacon.io/completed_mfa_methods': {'otp': recent}}
+        settings = WorkspaceSecuritySettings(
+            {'mfa_required': True, 'allowed_mfa_methods': [123]}
+        )
+
+        assert check_mfa_completed(claims, settings) is False
+
+    def test_a_non_string_required_action_requires_mfa_for_every_action(self):
+        settings = WorkspaceSecuritySettings(
+            {'mfa_required': True, 'mfa_required_actions': ['command', 7]}
+        )
+
+        assert settings.is_action_mfa_required('webftp') is True
+
+    def test_malformed_required_actions_require_mfa_for_every_action(self):
+        settings = WorkspaceSecuritySettings(
+            {'mfa_required': True, 'mfa_required_actions': 'command'}
+        )
+
+        assert settings.is_action_mfa_required('webftp') is True
+
     def test_custom_namespace(self):
         """AUTH0_NAMESPACE env var changes the claim key lookup."""
         recent = (

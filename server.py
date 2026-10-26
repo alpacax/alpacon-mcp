@@ -66,8 +66,13 @@ TOOLSET_REGISTRY: dict[str, str] = {
     'packages': 'package_tools',
     'certs': 'cert_tools',
     'tokens': 'token_tools',
+    'ledger': 'ledger_tools',
 }
 ALL_TOOL_MODULES: frozenset[str] = frozenset(TOOLSET_REGISTRY.values())
+
+# Served over stdio only. Their tools cache a person's sign-in in the process,
+# and every other transport may share one process between several callers.
+STDIO_ONLY_MODULES: frozenset[str] = frozenset({'ledger_tools'})
 
 # Always registered; these names are accepted in --toolsets but select nothing.
 # work_session_tools must stay: gate denials tell the agent to call work_session_*.
@@ -360,6 +365,13 @@ def prepare(
 
     # Import triggers registration: @mcp_tool_handler runs at import time.
     modules = _modules_to_load(toolsets, remote_mode)
+    if transport != TRANSPORT_STDIO and modules & STDIO_ONLY_MODULES:
+        logger.info(
+            'Not registering stdio-only modules on %s: %s',
+            transport,
+            ', '.join(sorted(modules & STDIO_ONLY_MODULES)),
+        )
+        modules -= STDIO_ONLY_MODULES
     ordered = sorted(modules)
     for module_name in ordered:
         importlib.import_module(f'{TOOLS_PACKAGE}.{module_name}')
