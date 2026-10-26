@@ -1,7 +1,7 @@
 """Workspace management tools for Alpacon MCP server."""
 
+from collections.abc import Mapping
 from http import HTTPStatus
-from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from utils.api_call import http_call_response
@@ -539,7 +539,7 @@ async def update_workspace_preferences(
     websh_session_timeout: int | None = None,
     package_proxy: str | None = None,
     billing_email: str | None = None,
-    agent_rollout_policy: dict[str, Any] | None = None,
+    agent_rollout_policy: Mapping[str, object] | None = None,
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
