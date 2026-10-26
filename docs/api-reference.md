@@ -226,6 +226,10 @@ value is missing, stale, or not collected — use `get_cpu_usage` etc. for one s
 or `get_server_metrics_summary` for one server's detail. **Requires alpacon-server 2.37.0 or
 later.**
 
+Severity ordering and the `metric_severity`, `threshold`, `operator`, and `summary` fields
+require a server deployment that supports them. Earlier deployments reject severity ordering
+and omit those fields.
+
 **Parameters:**
 - `workspace` (string): Workspace name
 - `region` (string, optional): Region name; resolved from the workspace when omitted

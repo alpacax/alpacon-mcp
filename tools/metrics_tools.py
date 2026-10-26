@@ -1234,7 +1234,9 @@ async def get_server_metrics_summary(
         'and warning excludes critical servers. '
         "For one server's time series use get_cpu_usage "
         "etc.; for one server's detail use get_server_metrics_summary. Requires "
-        'alpacon-server 2.37.0 or later.'
+        'alpacon-server 2.37.0 or later. Severity ordering, metric_severity, '
+        'threshold, operator and summary require server support; earlier '
+        'deployments reject that ordering and omit those fields.'
     ),
     annotations=READ_ONLY,
     meta={
@@ -1259,6 +1261,9 @@ async def list_latest_metrics(
     Requires alpacon-server 2.37.0 or later. It is the servers list with five
     metric cells added: the filters, search, and pagination are `list_servers`'
     own, plus `state` and `ordering`.
+
+    Severity ordering, metric_severity, threshold, operator, and summary require
+    server support; earlier deployments reject that ordering and omit those fields.
 
     Args:
         workspace: Workspace name. Required parameter
