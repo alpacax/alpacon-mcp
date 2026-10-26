@@ -1,9 +1,7 @@
 """Audit and logging tools for Alpacon MCP server."""
 
-from typing import Any
-
 from utils.api_call import http_call_response
-from utils.common import build_list_params
+from utils.common import ToolResponse, build_list_params
 from utils.cursor_pagination import CURSOR_WALK_DESCRIPTION, cursor_list_response
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
@@ -30,8 +28,8 @@ async def list_activity_logs(
     region: str = '',
     cursor: str | None = None,
     page_size: int | None = None,
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """List activity logs, following the server's cursor up to the request bound.
 
     Args:
@@ -67,8 +65,8 @@ async def list_activity_logs(
     meta={'anthropic/searchHint': 'audit activity log detail'},
 )
 async def get_activity_log(
-    log_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+    log_id: str, workspace: str, region: str = '', **kwargs: str
+) -> ToolResponse:
     """Get activity log details by ID.
 
     Args:
@@ -114,8 +112,8 @@ async def list_server_logs(
     region: str = '',
     cursor: str | None = None,
     page_size: int | None = None,
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """List server command execution logs, following the server's cursor.
 
     Args:
@@ -164,8 +162,8 @@ async def list_webftp_logs(
     region: str = '',
     cursor: str | None = None,
     page_size: int | None = None,
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """List WebFTP file transfer logs, following the server's cursor.
 
     Args:
@@ -215,8 +213,8 @@ async def list_session_analyses(
     region: str = '',
     page: int | None = None,
     page_size: int | None = None,
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """List session security analyses.
 
     Args:
@@ -262,8 +260,8 @@ async def get_session_analysis_detail(
     analysis_id: str,
     workspace: str,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """Get detailed session analysis by ID.
 
     Args:

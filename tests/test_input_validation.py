@@ -2,6 +2,7 @@
 
 import ast
 from pathlib import Path
+from types import FunctionType
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -14,6 +15,7 @@ from tools.cert_tools import (
 from tools.server_tools import list_servers
 from tools.webftp_tools import webftp_download_file, webftp_upload_file
 from utils.decorators import _PAGINATION_FIELDS, with_token_validation
+from utils.error_handler import validate_region_format
 
 SERVER_ID = '550e8400-e29b-41d4-a716-446655440000'
 SECOND_SERVER_ID = '660e8400-e29b-41d4-a716-446655440001'
@@ -44,9 +46,11 @@ def _make_decorated_func(extra_params=None):
     sig = ', '.join(param_parts)
 
     func_code = f"async def _inner({sig}):\n    return {{'status': 'success', 'token': kwargs.get('token')}}"
-    namespace: dict = {}
+    namespace: dict[str, object] = {}
     exec(func_code, namespace)  # noqa: S102
-    return with_token_validation(namespace['_inner'])
+    inner = namespace['_inner']
+    assert isinstance(inner, FunctionType)
+    return with_token_validation(inner)
 
 
 # ---------------------------------------------------------------------------
@@ -666,7 +670,7 @@ class TestPathIdentifierValidation:
             mock_client.get = AsyncMock(return_value={})
 
             result = await get_certificate_authority(
-                ca_id=['../../iam/users'],
+                ca_id=['../../iam/users'],  # type: ignore[arg-type]
                 workspace='demo',
                 region='ap1',
             )
@@ -767,19 +771,20 @@ class TestPathIdentifierValidation:
             return None
 
         tools_dir = Path(__file__).resolve().parent.parent / 'tools'
-        unchecked = set()
+        unchecked: set[str] = set()
 
         for module in sorted(tools_dir.glob('*.py')):
             tree = ast.parse(module.read_text(encoding='utf-8'), str(module))
 
             # Anything assigned at module level is fixed at import, so it is
             # never a value the client sent. Only the strings can be resolved.
-            module_names, constants = set(), {}
-            for node in tree.body:
-                if not isinstance(node, ast.Assign):
+            module_names: set[str] = set()
+            constants: dict[str, str] = {}
+            for statement in tree.body:
+                if not isinstance(statement, ast.Assign):
                     continue
-                resolved = fold(node.value, constants)
-                for target in node.targets:
+                resolved = fold(statement.value, constants)
+                for target in statement.targets:
                     if isinstance(target, ast.Name):
                         module_names.add(target.id)
                         if resolved is not None:
@@ -1126,3 +1131,24 @@ class TestCatchAllRequirement:
 
         with pytest.raises(TypeError, match=r'declares no \*\*kwargs'):
             with_token_validation(_inner)
+
+
+# ---------------------------------------------------------------------------
+# Region format
+# ---------------------------------------------------------------------------
+
+
+class TestRegionFormat:
+    """validate_region_format takes any object, since it guards untyped input."""
+
+    @pytest.mark.parametrize('region', ['ap1', 'us1', 'dev'])
+    def test_known_region_is_accepted(self, region):
+        assert validate_region_format(region) is True
+
+    @pytest.mark.parametrize('region', ['', 'eu1', 'AP1', ' ap1'])
+    def test_unknown_region_string_is_rejected(self, region):
+        assert validate_region_format(region) is False
+
+    @pytest.mark.parametrize('region', [None, 0, 1, True, ['ap1'], b'ap1'])
+    def test_non_string_region_is_rejected(self, region):
+        assert validate_region_format(region) is False

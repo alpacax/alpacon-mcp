@@ -3,7 +3,7 @@
 from typing import Any
 
 from utils.api_call import http_call_response
-from utils.common import build_list_params, error_response
+from utils.common import ToolResponse, build_list_params, error_response
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ_ONLY
@@ -23,8 +23,8 @@ async def list_certificate_authorities(
     region: str = '',
     page: int | None = None,
     page_size: int | None = None,
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """List certificate authorities.
 
     Args:
@@ -70,8 +70,8 @@ async def create_certificate_authority(
     key_size: int | None = None,
     install: bool | None = None,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """Create a certificate authority.
 
     Args:
@@ -135,8 +135,8 @@ async def get_certificate_authority(
     ca_id: str,
     workspace: str,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """Get certificate authority details.
 
     Args:
@@ -172,8 +172,8 @@ async def update_certificate_authority(
     max_valid_days: int | None = None,
     owner: str | None = None,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """Update a certificate authority (partial update).
 
     Args:
@@ -234,8 +234,8 @@ async def delete_certificate_authority(
     ca_id: str,
     workspace: str,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """Delete a certificate authority that has never received a sign request.
 
     Args:
@@ -274,8 +274,8 @@ async def list_sign_requests(
     region: str = '',
     page: int | None = None,
     page_size: int | None = None,
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """List certificate signing requests.
 
     Args:
@@ -313,8 +313,8 @@ async def create_sign_request(
     ip_list: list[str] | None = None,
     valid_days: int | None = None,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """Create a certificate signing request.
 
     Args:
@@ -364,8 +364,8 @@ async def get_sign_request(
     csr_id: str,
     workspace: str,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """Get certificate signing request details.
 
     Args:
@@ -398,8 +398,8 @@ async def delete_sign_request(
     csr_id: str,
     workspace: str,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """Cancel a certificate signing request.
 
     Args:
@@ -432,8 +432,8 @@ async def approve_sign_request(
     csr_id: str,
     workspace: str,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """Approve a certificate signing request.
 
     Args:
@@ -467,8 +467,8 @@ async def deny_sign_request(
     csr_id: str,
     workspace: str,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """Deny a certificate signing request.
 
     Args:
@@ -504,8 +504,8 @@ async def retry_sign_request(
     csr_id: str,
     workspace: str,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """Retry a certificate signing request stuck in the signing state.
 
     Args:
@@ -546,8 +546,8 @@ async def list_certificates(
     region: str = '',
     page: int | None = None,
     page_size: int | None = None,
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """List issued certificates.
 
     Args:
@@ -588,8 +588,8 @@ async def get_certificate(
     certificate_id: str,
     workspace: str,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """Get certificate details.
 
     Args:
@@ -624,8 +624,8 @@ async def revoke_certificate(
     reason: int | None = None,
     requested_reason: str | None = None,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """Create a certificate revocation request.
 
     If the caller is the CA owner or an admin the request is auto-approved and
@@ -679,8 +679,8 @@ async def list_revoke_requests(
     region: str = '',
     page: int | None = None,
     page_size: int | None = None,
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """List certificate revocation requests.
 
     Args:
@@ -716,8 +716,8 @@ async def get_revoke_request(
     revoke_id: str,
     workspace: str,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """Get certificate revocation request details.
 
     Args:
@@ -750,8 +750,8 @@ async def approve_revoke_request(
     revoke_id: str,
     workspace: str,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """Approve a certificate revocation request.
 
     Args:
@@ -785,8 +785,8 @@ async def deny_revoke_request(
     revoke_id: str,
     workspace: str,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """Deny a certificate revocation request.
 
     Args:
@@ -822,8 +822,8 @@ async def retry_revoke_request(
     revoke_id: str,
     workspace: str,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """Retry a certificate revocation request stuck in the revoking state.
 
     Args:
@@ -857,8 +857,8 @@ async def cancel_revoke_request(
     revoke_id: str,
     workspace: str,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """Cancel a pending certificate revocation request.
 
     Args:

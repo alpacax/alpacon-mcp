@@ -49,7 +49,8 @@ def load_existing_config(config_path: Path) -> dict[str, dict[str, str]]:
     if config_path.exists():
         try:
             with open(config_path) as f:
-                return json.load(f)
+                config: dict[str, dict[str, str]] = json.load(f)
+            return config
         except json.JSONDecodeError:
             return {}
     return {}
@@ -65,7 +66,7 @@ def test_connection(region: str, workspace: str, token: str) -> bool:
     """Test API connection with provided credentials."""
     try:
 
-        async def _test():
+        async def _test() -> bool:
             client = AlpaconHTTPClient()
             result = await client.get(
                 region=region,

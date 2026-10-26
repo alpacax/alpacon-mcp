@@ -78,6 +78,11 @@ dev = [
 
 [tool.uv]
 required-version = ">=0.13,<0.14"  # keep in step with the uv image in Dockerfile
+# Floors for transitive dependencies with security advisories.
+constraint-dependencies = [
+    "virtualenv>=21.14.9",  # via pre-commit
+    "opentelemetry-api>=1.45.1",  # via mcp
+]
 
 [tool.hatch.version]
 source = "vcs"
@@ -149,16 +154,13 @@ line-ending = "auto"
 
 [tool.mypy]
 python_version = "3.12"
-ignore_missing_imports = true
 namespace_packages = true
 explicit_package_bases = true
-check_untyped_defs = true
-strict_equality = true
-extra_checks = true
-warn_redundant_casts = true
-warn_unused_ignores = true
+strict = true
 warn_unreachable = true
 
 [[tool.mypy.overrides]]
 module = "tests.*"
-check_untyped_defs = false
+disallow_untyped_defs = false  # test functions take pytest fixtures untyped
+disallow_incomplete_defs = false
+disallow_untyped_calls = false  # test helpers stay untyped until the tests are annotated

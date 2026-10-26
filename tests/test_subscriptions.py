@@ -33,7 +33,7 @@ _SIGNAL_TOKEN = 'test-jwt-signalled'  # noqa: S105
 _SIGNAL_TOKEN_2025 = 'test-jwt-signalled-2025'  # noqa: S105
 _PROTOCOL_VERSION = '2026-07-28'
 _STATELESS_PROTOCOL_VERSION = '2025-06-18'
-_LISTEN = {'notifications': {'toolsListChanged': True}}
+_LISTEN: JsonObject = {'notifications': {'toolsListChanged': True}}
 _SIGNALLING_TOOL = 'raise_upstream_401'
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -43,7 +43,8 @@ _HARNESS = os.path.join(REPO_ROOT, 'tests', 'subscription_harness.py')
 def _free_port() -> int:
     with socket.socket() as s:
         s.bind(('127.0.0.1', 0))
-        return s.getsockname()[1]
+        port: int = s.getsockname()[1]
+    return port
 
 
 @pytest.fixture(scope='module')
@@ -123,7 +124,8 @@ async def _next_sse_payload(lines: AsyncIterator[str]) -> JsonObject:
     async def read() -> JsonObject:
         async for line in lines:
             if line.startswith('data: '):
-                return json.loads(line[len('data: ') :])
+                frame: JsonObject = json.loads(line[len('data: ') :])
+                return frame
         raise AssertionError('stream ended before a data frame arrived')
 
     return await asyncio.wait_for(read(), timeout=10)
@@ -132,7 +134,8 @@ async def _next_sse_payload(lines: AsyncIterator[str]) -> JsonObject:
 async def _live_subscriptions(base_url: str) -> int:
     async with httpx.AsyncClient(base_url=base_url, timeout=10) as client:
         response = await client.get('/_test/subscriptions')
-        return response.json()['listeners']
+    listeners: int = response.json()['listeners']
+    return listeners
 
 
 async def _wait_for_subscriptions(base_url: str, expected: int) -> int:
@@ -188,7 +191,9 @@ async def test_an_authenticated_subscription_connects_stays_idle_and_cancels(bas
             lines = response.aiter_lines()
             acknowledged = await _next_sse_payload(lines)
             assert acknowledged['method'] == 'notifications/subscriptions/acknowledged'
-            assert acknowledged['params']['notifications'] == _LISTEN['notifications']
+            params = acknowledged['params']
+            assert isinstance(params, dict)
+            assert params['notifications'] == _LISTEN['notifications']
 
             await asyncio.sleep(2)  # idle, short of the transport's 15s ping
 

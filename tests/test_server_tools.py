@@ -9,8 +9,7 @@ from http import HTTPStatus
 
 import pytest
 
-from server import mcp
-from tests.conftest import HTTP_ERROR_ENVELOPE, http_client_fixture
+from tests.conftest import HTTP_ERROR_ENVELOPE, http_client_fixture, tool_descriptions
 from tools.server_tools import (
     create_registration_token,
     create_server_note,
@@ -1400,12 +1399,12 @@ class TestGetRegistrationGuide:
     @pytest.mark.asyncio
     async def test_description_lists_every_valid_platform(self):
         """A client reading only the tool schema must see every platform."""
-        descriptions = {t.name: t.description for t in await mcp.list_tools()}
+        descriptions = await tool_descriptions()
 
+        description = descriptions['get_registration_guide']
         assert (
             'The `platform` must be one of: '
-            '"darwin", "debian", "rhel", "suse", "windows".'
-            in descriptions['get_registration_guide']
+            '"darwin", "debian", "rhel", "suse", "windows".' in description
         )
 
     @pytest.mark.asyncio

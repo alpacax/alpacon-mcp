@@ -7,6 +7,7 @@ from typing import Any
 
 from utils.api_call import http_call_response
 from utils.common import (
+    ToolResponse,
     build_list_params,
     error_response,
     expect_json_object,
@@ -52,8 +53,12 @@ _LATEST_ORDERING_SENTENCE = (
 
 _EPOCH = datetime.min.replace(tzinfo=UTC)
 
+type _ProcRecord = dict[str, Any]  # one partition or interface from /api/proc/
+type _MetricSummary = dict[str, Any]  # one metric's entry in the server summary
+type _MetricRow = dict[str, Any]  # one time-series point from /api/metrics/
 
-def _timestamp_key(entry: dict[str, Any]) -> datetime:
+
+def _timestamp_key(entry: _MetricRow) -> datetime:
     """Parse a row's timestamp; a naive one is read as UTC, a bad one sorts first."""
     try:
         parsed = datetime.fromisoformat(
@@ -64,12 +69,12 @@ def _timestamp_key(entry: dict[str, Any]) -> datetime:
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
 
 
-def _oldest_first(results: list) -> list:
+def _oldest_first(results: list[_MetricRow]) -> list[_MetricRow]:
     """Order metric rows by the instant of their timestamp; the API returns newest first."""
     return sorted(results, key=_timestamp_key)
 
 
-def parse_cpu_metrics(results: list) -> dict[str, Any]:
+def parse_cpu_metrics(results: list[_MetricRow]) -> dict[str, Any]:
     """Parse CPU usage metrics to extract meaningful statistics.
 
     Args:
@@ -94,7 +99,7 @@ def parse_cpu_metrics(results: list) -> dict[str, Any]:
     maximum = max(usage_values)
 
     # Determine usage status
-    def get_status(usage):
+    def get_status(usage: float) -> str:
         if usage < 20:
             return 'idle'
         elif usage < 50:
@@ -143,8 +148,8 @@ async def get_cpu_usage(
     start_date: str | None = None,
     end_date: str | None = None,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """Get CPU usage metrics for a server with parsed statistics.
 
     Args:
@@ -192,7 +197,7 @@ async def get_cpu_usage(
     return success_response(data=parsed_data, region=region, workspace=workspace)
 
 
-def parse_memory_metrics(results: list) -> dict[str, Any]:
+def parse_memory_metrics(results: list[_MetricRow]) -> dict[str, Any]:
     """Parse memory usage metrics to extract meaningful statistics.
 
     Args:
@@ -217,7 +222,7 @@ def parse_memory_metrics(results: list) -> dict[str, Any]:
     maximum = max(usage_values)
 
     # Determine usage status
-    def get_status(usage):
+    def get_status(usage: float) -> str:
         if usage < 30:
             return 'idle'
         elif usage < 60:
@@ -266,8 +271,8 @@ async def get_memory_usage(
     start_date: str | None = None,
     end_date: str | None = None,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """Get memory usage metrics for a server with parsed statistics.
 
     Args:
@@ -315,7 +320,7 @@ async def get_memory_usage(
     return success_response(data=parsed_data, region=region, workspace=workspace)
 
 
-def parse_disk_metrics(results: list) -> dict[str, Any]:
+def parse_disk_metrics(results: list[_MetricRow]) -> dict[str, Any]:
     """Parse disk usage metrics to extract meaningful statistics.
 
     Args:
@@ -341,7 +346,7 @@ def parse_disk_metrics(results: list) -> dict[str, Any]:
     free_bytes = latest_entry.get('free', 0)
 
     # Convert bytes to human-readable format
-    def bytes_to_human(bytes_value):
+    def bytes_to_human(bytes_value: float) -> str:
         for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
             if bytes_value < 1024.0:
                 return f'{bytes_value:.2f} {unit}'
@@ -382,8 +387,8 @@ async def get_disk_usage(
     start_date: str | None = None,
     end_date: str | None = None,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """Get disk usage metrics for a server with parsed statistics.
 
     Note: This endpoint requires either 'device' or 'partition' parameter.
@@ -494,7 +499,7 @@ async def get_disk_usage(
     return success_response(data=parsed_data, region=region, workspace=workspace)
 
 
-def parse_network_metrics(results: list) -> dict[str, Any]:
+def parse_network_metrics(results: list[_MetricRow]) -> dict[str, Any]:
     """Parse network traffic metrics to extract meaningful statistics.
 
     Args:
@@ -517,7 +522,7 @@ def parse_network_metrics(results: list) -> dict[str, Any]:
     peak_output_pps = [entry.get('peak_output_pps', 0) for entry in results]
 
     # Convert bps to human-readable format
-    def bps_to_human(bps_value):
+    def bps_to_human(bps_value: float) -> str:
         for unit in ['bps', 'Kbps', 'Mbps', 'Gbps']:
             if bps_value < 1024.0:
                 return f'{bps_value:.2f} {unit}'
@@ -599,8 +604,8 @@ async def get_disk_io(
     start_date: str | None = None,
     end_date: str | None = None,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """Get disk I/O performance metrics for a server.
 
     Returns disk read/write throughput metrics with peak and average values.
@@ -668,8 +673,8 @@ async def get_network_traffic(
     start_date: str | None = None,
     end_date: str | None = None,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """Get network traffic metrics for a server with parsed statistics.
 
     Args:
@@ -732,8 +737,8 @@ async def get_network_traffic(
     },
 )
 async def get_top_servers(
-    workspace: str, metric_types: str = '', region: str = '', **kwargs
-) -> dict[str, Any]:
+    workspace: str, metric_types: str = '', region: str = '', **kwargs: str
+) -> ToolResponse:
     """Get top 5 servers by specified metric types in the last 24 hours.
 
     Supports querying multiple metrics simultaneously for efficiency.
@@ -849,8 +854,8 @@ async def get_top_servers(
     },
 )
 async def get_alert_rules(
-    workspace: str, server_id: str | None = None, region: str = '', **kwargs
-) -> dict[str, Any]:
+    workspace: str, server_id: str | None = None, region: str = '', **kwargs: str
+) -> ToolResponse:
     """Get alert rules for servers.
 
     Args:
@@ -883,7 +888,7 @@ def _is_http_error(result: object) -> bool:
 
 
 def _find_record_id(
-    result: object, predicate: Callable[[dict[str, Any]], bool]
+    result: object, predicate: Callable[[_ProcRecord], bool]
 ) -> str | None:
     """Return the id of the first /api/proc/ record matching predicate.
 
@@ -963,8 +968,8 @@ async def _list_all_interfaces(
     },
 )
 async def get_server_metrics_summary(
-    server_id: str, workspace: str, hours: int = 12, region: str = '', **kwargs
-) -> dict[str, Any]:
+    server_id: str, workspace: str, hours: int = 12, region: str = '', **kwargs: str
+) -> ToolResponse:
     """Get comprehensive metrics summary for a server.
 
     Args:
@@ -1005,14 +1010,14 @@ async def get_server_metrics_summary(
         ),
     )
 
-    def is_root(p):
+    def is_root(p: _ProcRecord) -> bool:
         return '/' in (p.get('mount_points') or [])
 
     root_partition_id = _find_record_id(
         partitions_result, lambda p: is_root(p) and not p.get('is_virtual', False)
     ) or _find_record_id(partitions_result, is_root)
 
-    def is_active(i):
+    def is_active(i: _ProcRecord) -> bool:
         return not i.get('is_loopback', False) and i.get('is_up', False)
 
     interface_id = _find_record_id(
@@ -1060,7 +1065,7 @@ async def get_server_metrics_summary(
     metric_results = dict(zip(tasks, gathered, strict=True))
 
     # Helper function to extract summary from metric result (from http_client directly)
-    def extract_summary(result, metric_type):
+    def extract_summary(result: object, metric_type: str) -> _MetricSummary:
         # Handle exceptions first
         if isinstance(result, Exception):
             return {'available': False, 'error': str(result)}
@@ -1184,8 +1189,8 @@ async def list_latest_metrics(
     ordering: str | None = None,
     page: int | None = None,
     page_size: int | None = None,
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """Get the latest metric reading for every server in a workspace, a page at a time.
 
     Requires alpacon-server 2.37.0 or later. It is the servers list with five

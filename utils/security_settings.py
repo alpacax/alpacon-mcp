@@ -49,7 +49,9 @@ class SecuritySettingsCache:
         # {token_key: {workspace: (settings, expiry_time)}}
         self._cache: dict[str, dict[str, tuple[WorkspaceSecuritySettings, float]]] = {}
         # Per-token in-flight deduplication to prevent thundering herd
-        self._inflight: dict[str, asyncio.Task] = {}
+        self._inflight: dict[
+            str, asyncio.Task[dict[str, WorkspaceSecuritySettings]]
+        ] = {}
         # Timestamp of last global prune (max once per TTL period)
         self._last_prune: float = 0
 

@@ -277,7 +277,7 @@ def _error_detail(result: Any) -> Any:
     meta={'anthropic/searchHint': 'pre-approved commands ledger admin capability'},
 )
 async def get_ledger_capability(
-    workspace: str, region: str = '', **kwargs
+    workspace: str, region: str = '', **kwargs: str
 ) -> dict[str, Any]:
     """Report the command ACL surface and the caller's ledger authority.
 
@@ -342,7 +342,7 @@ async def list_ledger_entries(
     principal_id: str | None = None,
     page: int | None = None,
     page_size: int | None = None,
-    **kwargs,
+    **kwargs: str,
 ) -> dict[str, Any]:
     """List active ledger entries.
 
@@ -399,7 +399,7 @@ async def issue_ledger_entries(
     workspace: str,
     entries: list[LedgerEntryInput],
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> dict[str, Any]:
     """Issue ledger entries in one request.
 
@@ -459,7 +459,7 @@ async def issue_ledger_entries(
     meta={'anthropic/searchHint': 'pre-approved commands ledger revoke delete'},
 )
 async def revoke_ledger_entry(
-    workspace: str, entry_id: str, region: str = '', **kwargs
+    workspace: str, entry_id: str, region: str = '', **kwargs: str
 ) -> dict[str, Any]:
     """Revoke one ledger entry.
 
@@ -493,7 +493,7 @@ async def revoke_ledger_entry(
     meta={'anthropic/searchHint': 'pre-approved commands ledger bulk revoke'},
 )
 async def revoke_ledger_entries(
-    workspace: str, entry_ids: list[str], region: str = '', **kwargs
+    workspace: str, entry_ids: list[str], region: str = '', **kwargs: str
 ) -> dict[str, Any]:
     """Revoke several ledger entries.
 
@@ -551,7 +551,7 @@ async def _set_entry_enabled(
     meta={'anthropic/searchHint': 'pre-approved commands ledger disable pause'},
 )
 async def disable_ledger_entry(
-    workspace: str, entry_id: str, region: str = '', **kwargs
+    workspace: str, entry_id: str, region: str = '', **kwargs: str
 ) -> dict[str, Any]:
     """Disable one ledger entry.
 
@@ -577,7 +577,7 @@ async def disable_ledger_entry(
     meta={'anthropic/searchHint': 'pre-approved commands ledger enable resume'},
 )
 async def enable_ledger_entry(
-    workspace: str, entry_id: str, region: str = '', **kwargs
+    workspace: str, entry_id: str, region: str = '', **kwargs: str
 ) -> dict[str, Any]:
     """Enable one ledger entry.
 
@@ -608,7 +608,7 @@ async def list_ledger_admins(
     region: str = '',
     page: int | None = None,
     page_size: int | None = None,
-    **kwargs,
+    **kwargs: str,
 ) -> dict[str, Any]:
     """List the workspace's Command ACL admins.
 
@@ -654,7 +654,7 @@ async def grant_ledger_admin(
     subject: str,
     email: str = '',
     region: str = '',
-    **kwargs,
+    **kwargs: str,
 ) -> dict[str, Any]:
     """Grant Command ACL admin.
 
@@ -692,7 +692,7 @@ async def grant_ledger_admin(
     meta={'anthropic/searchHint': 'command acl admin ledger revoke remove'},
 )
 async def revoke_ledger_admin(
-    workspace: str, admin_id: str, region: str = '', **kwargs
+    workspace: str, admin_id: str, region: str = '', **kwargs: str
 ) -> dict[str, Any]:
     """Revoke Command ACL admin.
 

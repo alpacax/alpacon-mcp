@@ -1,9 +1,7 @@
 """Event management tools for Alpacon MCP server - Refactored version."""
 
-from typing import Any
-
 from utils.api_call import http_call_response
-from utils.common import build_list_params
+from utils.common import ToolResponse, build_list_params
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import READ_ONLY
@@ -20,8 +18,8 @@ async def list_events(
     reporter: str | None = None,
     limit: int = 50,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """List events from servers."""
     token = kwargs.get('token')
 
@@ -52,8 +50,8 @@ async def list_events(
     meta={'anthropic/searchHint': 'event detail specific'},
 )
 async def get_event(
-    event_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+    event_id: str, workspace: str, region: str = '', **kwargs: str
+) -> ToolResponse:
     """Get detailed information about a specific event."""
     token = kwargs.get('token')
 
@@ -79,8 +77,8 @@ async def search_events(
     server_id: str | None = None,
     limit: int = 20,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """Search events by server name, reporter, record, or description."""
     token = kwargs.get('token')
 

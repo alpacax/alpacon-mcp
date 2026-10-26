@@ -4,7 +4,8 @@ import asyncio
 import json
 import logging
 from http import HTTPStatus
-from typing import Any
+from types import TracebackType
+from typing import Any, Self
 from urllib.parse import urljoin
 
 import httpx
@@ -77,17 +78,22 @@ class AlpaconHTTPClient:
             self.max_retries,
         )
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> Self:
         """Async context manager entry."""
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
         """Async context manager exit - close client."""
         await self._close_client()
 
     # __del__ removed: lifespan handles cleanup via close()
 
-    async def close(self):
+    async def close(self) -> None:
         """Close the HTTP client.
 
         This is the primary public method for cleanup. Safe to call
@@ -99,7 +105,7 @@ class AlpaconHTTPClient:
                 logger.debug('Closed HTTP client')
         logger.info('HTTP client closed')
 
-    async def _close_client(self):
+    async def _close_client(self) -> None:
         """Close the shared client. Alias for close() for backward compatibility."""
         await self.close()
 
@@ -248,7 +254,7 @@ class AlpaconHTTPClient:
 
                 # Return JSON response
                 if response.content:
-                    result = response.json()
+                    result: JsonValue = response.json()
                     if logger.isEnabledFor(logging.DEBUG):
                         logger.debug('Response body: %s', redact_for_log(result))
                     return result

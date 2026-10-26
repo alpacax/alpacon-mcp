@@ -3,7 +3,7 @@
 from typing import Any
 
 from utils.api_call import http_call_response
-from utils.common import build_list_params
+from utils.common import ToolErrorResponse, ToolResponse, build_list_params
 from utils.decorators import mcp_tool_handler
 from utils.error_handler import format_validation_error, validate_server_id_format
 from utils.http_client import http_client
@@ -42,8 +42,8 @@ async def list_servers(
     region: str = '',
     page: int | None = None,
     page_size: int | None = None,
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """Get list of servers.
 
     Args:
@@ -84,8 +84,8 @@ async def list_servers(
     },
 )
 async def get_server(
-    server_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+    server_id: str, workspace: str, region: str = '', **kwargs: str
+) -> ToolResponse:
     """Get detailed information about a specific server.
 
     Args:
@@ -132,8 +132,8 @@ async def get_server(
     },
 )
 async def get_collection_profile(
-    server_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+    server_id: str, workspace: str, region: str = '', **kwargs: str
+) -> ToolResponse:
     """Get a server's collection profile.
 
     Args:
@@ -173,8 +173,8 @@ async def get_collection_profile(
     meta={'anthropic/searchHint': 'server notes documentation'},
 )
 async def list_server_notes(
-    server_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+    server_id: str, workspace: str, region: str = '', **kwargs: str
+) -> ToolResponse:
     """Get list of notes for a specific server.
 
     Args:
@@ -217,8 +217,8 @@ async def create_server_note(
     pinned: bool | None = None,
     mentioned_users: list[str] | None = None,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """Create a new note for a specific server.
 
     Args:
@@ -270,8 +270,8 @@ async def create_server_note(
     meta={'anthropic/searchHint': 'server note detail describe single get'},
 )
 async def get_server_note(
-    note_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+    note_id: str, workspace: str, region: str = '', **kwargs: str
+) -> ToolResponse:
     """Get a single server note by ID.
 
     Args:
@@ -311,8 +311,8 @@ async def update_server_note(
     private: bool | None = None,
     pinned: bool | None = None,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """Update an existing server note.
 
     Args:
@@ -371,8 +371,8 @@ async def update_server_note(
     meta={'anthropic/searchHint': 'server note delete remove'},
 )
 async def delete_server_note(
-    note_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+    note_id: str, workspace: str, region: str = '', **kwargs: str
+) -> ToolResponse:
     """Delete a server note.
 
     Args:
@@ -429,8 +429,8 @@ async def _server_action(
     meta={'anthropic/searchHint': 'agent restart alpacon process'},
 )
 async def restart_agent(
-    server_id: str, workspace: str, region: str = '', force: bool = False, **kwargs
-) -> dict[str, Any]:
+    server_id: str, workspace: str, region: str = '', force: bool = False, **kwargs: str
+) -> ToolResponse:
     """Restart the Alpacon agent on a server.
 
     Args:
@@ -468,8 +468,8 @@ async def restart_agent(
     meta={'anthropic/searchHint': 'agent upgrade update version'},
 )
 async def upgrade_agent(
-    server_id: str, workspace: str, region: str = '', force: bool = False, **kwargs
-) -> dict[str, Any]:
+    server_id: str, workspace: str, region: str = '', force: bool = False, **kwargs: str
+) -> ToolResponse:
     """Upgrade the Alpacon agent on a server to the latest version.
 
     Args:
@@ -514,8 +514,8 @@ async def upgrade_agent(
     meta={'anthropic/searchHint': 'alpamon-pam install pam module sudo mfa'},
 )
 async def install_pam(
-    server_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+    server_id: str, workspace: str, region: str = '', **kwargs: str
+) -> ToolResponse:
     """Install alpamon-pam on a server.
 
     Args:
@@ -548,8 +548,8 @@ async def install_pam(
     meta={'anthropic/searchHint': 'refresh system info hardware OS rescan'},
 )
 async def update_information(
-    server_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+    server_id: str, workspace: str, region: str = '', **kwargs: str
+) -> ToolResponse:
     """Trigger system information update on a server.
 
     Args:
@@ -595,8 +595,8 @@ async def update_server(
     description: str | None = None,
     region: str = '',
     offline_alert_enabled: bool | None = None,
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """Update an existing server record.
 
     Args:
@@ -664,8 +664,8 @@ async def unregister_server(
     region: str = '',
     auto: bool = False,
     purge_provisioned_accounts: bool = False,
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """Unregister a server from the workspace.
 
     Args:
@@ -707,8 +707,8 @@ async def unregister_server(
     meta={'anthropic/searchHint': 'server star pin favorite bookmark personalization'},
 )
 async def star_server(
-    server_id: str, status: bool, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+    server_id: str, status: bool, workspace: str, region: str = '', **kwargs: str
+) -> ToolResponse:
     """Set star status on a server.
 
     Args:
@@ -750,8 +750,8 @@ async def list_registration_tokens(
     region: str = '',
     page: int | None = None,
     page_size: int | None = None,
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """List server registration tokens.
 
     Args:
@@ -796,8 +796,8 @@ async def create_registration_token(
     name: str,
     description: str | None = None,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """Create a server registration token.
 
     Args:
@@ -837,8 +837,8 @@ async def create_registration_token(
     meta={'anthropic/searchHint': 'registration token delete revoke rotate invalidate'},
 )
 async def delete_registration_token(
-    token_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+    token_id: str, workspace: str, region: str = '', **kwargs: str
+) -> ToolResponse:
     """Delete a server registration token.
 
     Args:
@@ -886,8 +886,8 @@ async def get_registration_guide(
     platform: str,
     server_name: str | None = None,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """Get agent installation guide for a platform and registration token.
 
     Args:
@@ -925,7 +925,7 @@ async def get_registration_guide(
     )
 
 
-def _validate_platform(platform: str) -> dict[str, Any] | None:
+def _validate_platform(platform: str) -> ToolErrorResponse | None:
     if platform not in VALID_PLATFORMS:
         return format_validation_error(
             'platform',
@@ -935,7 +935,7 @@ def _validate_platform(platform: str) -> dict[str, Any] | None:
     return None
 
 
-def _validate_token_id(token_id: str) -> dict[str, Any] | None:
+def _validate_token_id(token_id: str) -> ToolErrorResponse | None:
     if not validate_server_id_format(token_id):
         return format_validation_error(
             'token_id',

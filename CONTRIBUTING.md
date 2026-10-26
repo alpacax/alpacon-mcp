@@ -201,8 +201,8 @@ async def test_list_servers_success():
 1. **Create Tool File**
    ```python
    # tools/your_feature_tools.py
-   from typing import Dict, Any, Optional
    from utils.api_call import http_call_response
+   from utils.common import ToolResponse
    from utils.decorators import mcp_tool_handler
    from utils.http_client import http_client
 
@@ -212,8 +212,8 @@ async def test_list_servers_success():
        parameter: str,
        workspace: str,
        region: str = '',  # Empty means auto-detect from the workspace
-       **kwargs,  # Receives token from decorator
-   ) -> Dict[str, Any]:
+       **kwargs: str,  # Receives token from decorator
+   ) -> ToolResponse:
        """Your tool documentation.
 
        Args:

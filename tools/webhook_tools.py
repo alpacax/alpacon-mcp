@@ -3,7 +3,7 @@
 from typing import Any
 
 from utils.api_call import http_call_response
-from utils.common import build_list_params
+from utils.common import ToolResponse, build_list_params
 from utils.decorators import mcp_tool_handler
 from utils.error_handler import format_validation_error, validate_uuid_format
 from utils.http_client import http_client
@@ -35,8 +35,8 @@ async def list_event_subscriptions(
     region: str = '',
     page: int | None = None,
     page_size: int | None = None,
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """List event subscriptions.
 
     Args:
@@ -74,8 +74,8 @@ async def create_event_subscription(
     event_type: str,
     target_id: str | None = None,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """Create an event subscription.
 
     Args:
@@ -123,8 +123,8 @@ async def create_event_subscription(
     meta={'anthropic/searchHint': 'event subscription delete remove'},
 )
 async def delete_event_subscription(
-    subscription_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+    subscription_id: str, workspace: str, region: str = '', **kwargs: str
+) -> ToolResponse:
     """Delete an event subscription.
 
     Args:
@@ -169,8 +169,8 @@ async def list_webhooks(
     region: str = '',
     page: int | None = None,
     page_size: int | None = None,
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """List webhooks.
 
     Args:
@@ -217,8 +217,8 @@ async def list_webhooks(
     meta={'anthropic/searchHint': 'webhook detail describe single get'},
 )
 async def get_webhook(
-    webhook_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+    webhook_id: str, workspace: str, region: str = '', **kwargs: str
+) -> ToolResponse:
     """Get a single webhook by ID.
 
     Args:
@@ -261,8 +261,8 @@ async def create_webhook(
     ssl_verify: bool = True,
     enabled: bool = True,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """Create a webhook.
 
     Args:
@@ -320,8 +320,8 @@ async def update_webhook(
     ssl_verify: bool | None = None,
     enabled: bool | None = None,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """Update an existing webhook.
 
     Args:
@@ -373,8 +373,8 @@ async def update_webhook(
     meta={'anthropic/searchHint': 'webhook delete remove'},
 )
 async def delete_webhook(
-    webhook_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+    webhook_id: str, workspace: str, region: str = '', **kwargs: str
+) -> ToolResponse:
     """Delete a webhook.
 
     Args:

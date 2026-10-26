@@ -7,7 +7,7 @@ utils.common module.
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from utils.common import success_response, unwrap_http_result
+from utils.common import ToolResponse, success_response, unwrap_http_result
 
 
 async def http_call_response(
@@ -21,7 +21,7 @@ async def http_call_response(
     data: dict[str, Any] | None = None,
     params: dict[str, Any] | None = None,
     **id_context: Any,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Call an http_client method and shape the result as a standard tool response.
 
     Collapses the idiom shared by every tool: run the request, return the

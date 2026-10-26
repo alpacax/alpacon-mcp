@@ -18,8 +18,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pybase64
 import pytest
 
-from server import MAX_REQUEST_BODY_SIZE, mcp
-from tests.conftest import VALID_SERVER_ID, http_client_fixture
+from server import MAX_REQUEST_BODY_SIZE
+from tests.conftest import VALID_SERVER_ID, http_client_fixture, tool_descriptions
 from tools.webftp_tools import (
     _MAX_UPLOAD_CONTENT_BYTES,
     _STATUS_ERROR,
@@ -865,7 +865,7 @@ class TestWebFtpBulkUpload:
         )
 
     @staticmethod
-    def _bulk_create_response(count: int) -> list[dict]:
+    def _bulk_create_response(count: int) -> list[dict[str, str]]:
         return [
             {'id': f'upload-{i}', 'upload_url': f'https://s3.example.com/p{i}'}
             for i in range(count)
@@ -982,25 +982,20 @@ class TestWebFtpBulkUpload:
         assert statuses.count('uploaded') == 2
         assert statuses.count('failed') == 1
 
-    @staticmethod
-    def _fake_gather(return_value):
-        """Build a gather replacement that closes incoming coroutines.
+    class _FakeGather:
+        """Close each coroutine in place of asyncio.gather, so none warns unawaited."""
 
-        Closing them avoids 'coroutine was never awaited' warnings since the
-        test bypasses the real gather and never awaits the supplied tasks.
-        """
-        captured: dict = {}
+        def __init__(self, return_value):
+            self.return_value = return_value
+            self.kwargs: dict[str, object] = {}
 
-        async def fake(*coros, **kwargs):
-            captured['kwargs'] = kwargs
+        async def __call__(self, *coros, **kwargs):
+            self.kwargs = kwargs
             for coro in coros:
                 close = getattr(coro, 'close', None)
                 if callable(close):
                     close()
-            return return_value
-
-        fake.captured = captured
-        return fake
+            return self.return_value
 
     @pytest.mark.asyncio
     async def test_bulk_upload_uses_return_exceptions(
@@ -1011,7 +1006,7 @@ class TestWebFtpBulkUpload:
         mock_http_client.post.side_effect = [self._bulk_create_response(2), None]
 
         is_file, os_access, os_stat = self._patch_local_file_checks()
-        fake = self._fake_gather(
+        fake = self._FakeGather(
             [
                 {
                     'file': 'a.txt',
@@ -1041,7 +1036,7 @@ class TestWebFtpBulkUpload:
                 workspace='ws',
             )
 
-        assert fake.captured['kwargs'].get('return_exceptions') is True
+        assert fake.kwargs.get('return_exceptions') is True
 
     @pytest.mark.asyncio
     async def test_bulk_upload_normalizes_exception_to_error_dict(
@@ -1064,7 +1059,7 @@ class TestWebFtpBulkUpload:
             patch('httpx.AsyncClient'),
             patch(
                 'tools.webftp_tools.asyncio.gather',
-                new=self._fake_gather(mixed_results),
+                new=self._FakeGather(mixed_results),
             ),
         ):
             result = await webftp_bulk_upload(
@@ -1097,7 +1092,7 @@ class TestWebFtpBulkUpload:
             patch('httpx.AsyncClient'),
             patch(
                 'tools.webftp_tools.asyncio.gather',
-                new=self._fake_gather([KeyboardInterrupt(), {'file': 'b.txt'}]),
+                new=self._FakeGather([KeyboardInterrupt(), {'file': 'b.txt'}]),
             ),
             pytest.raises(KeyboardInterrupt),
         ):
@@ -1565,10 +1560,11 @@ class TestRemoteModeUnsupported:
     async def test_local_file_tool_description_advertises_remote_mode_unsupported(
         self, tool_name
     ):
-        descriptions = {t.name: t.description for t in await mcp.list_tools()}
+        descriptions = await tool_descriptions()
 
-        assert 'remote_mode_unsupported' in descriptions[tool_name]
-        assert 'ALPACON_MCP_AUTH_ENABLED=true' in descriptions[tool_name]
+        description = descriptions[tool_name]
+        assert 'remote_mode_unsupported' in description
+        assert 'ALPACON_MCP_AUTH_ENABLED=true' in description
 
 
 class TestRemoteModeDownload:

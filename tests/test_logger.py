@@ -30,6 +30,10 @@ from utils.logger import (
 )
 
 
+async def _unserved_app(scope, receive, send) -> None:
+    """Stand-in ASGI app: these tests build a uvicorn Config only for its logging."""
+
+
 @contextmanager
 def _built_manager():
     """Build a logger manager, restoring the root logger afterwards."""
@@ -39,6 +43,7 @@ def _built_manager():
     # pytest installs its own.
     root.handlers.clear()
     instance = AlpaconLogger()
+    assert instance.listener is not None
     file_sinks = instance.listener.handlers
     try:
         yield instance, root.handlers[:]
@@ -297,7 +302,7 @@ class TestUvicornRecords:
     """uvicorn writes through its own stderr handler and formatter."""
 
     def test_an_application_traceback_stays_under_its_record(self, manager, capsys):
-        uvicorn.Config(app=None, log_level='info')
+        uvicorn.Config(app=_unserved_app, log_level='info')
         try:
             raise ValueError(f'bad value {FORGED_LINE}\nINFO:     forged')
         except ValueError:
@@ -312,7 +317,7 @@ class TestUvicornRecords:
         assert all(line == '' or line[0].isspace() for line in rest)
 
     def test_a_message_value_is_escaped(self, manager, capsys):
-        uvicorn.Config(app=None, log_level='info')
+        uvicorn.Config(app=_unserved_app, log_level='info')
 
         logging.getLogger('uvicorn.error').warning('value: %s', FORGED_LINE)
 
@@ -398,7 +403,7 @@ class TestHttpJsonFormat:
         instance, _ = http_json_manager
         stdout = io.StringIO()
         monkeypatch.setattr(instance.stream_handler, 'stream', stdout)
-        uvicorn.Config(app=None, log_level='info', log_config=None)
+        uvicorn.Config(app=_unserved_app, log_level='info', log_config=None)
 
         logging.getLogger('uvicorn.error').warning('value: %s', FORGED_LINE)
         logging.getLogger('uvicorn.access').info(
@@ -475,7 +480,7 @@ class TestThirdPartyLoggers:
 
     def test_the_access_log_drops_the_query_string(self, manager):
         """The OAuth callback carries the authorization code in its query."""
-        uvicorn.Config(app=None, log_level='info')
+        uvicorn.Config(app=_unserved_app, log_level='info')
         record = logging.LogRecord(
             'uvicorn.access',
             logging.INFO,

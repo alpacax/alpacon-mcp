@@ -40,6 +40,7 @@ class TestRetryBehavior:
         )
 
         assert call_count == 3
+        assert isinstance(result, dict)
         assert result['error'] == 'Max retries exceeded'
 
     async def test_5xx_retry_succeeds_on_second_attempt(
@@ -111,6 +112,7 @@ class TestRetryBehavior:
         )
 
         assert call_count == 1
+        assert isinstance(result, dict)
         assert result['error'] == 'HTTP Error'
         assert result['status_code'] == HTTPStatus.NOT_FOUND
 
@@ -134,6 +136,7 @@ class TestRetryBehavior:
         )
 
         assert call_count == 1
+        assert isinstance(result, dict)
         assert result['error'] == 'HTTP Error'
         assert result['status_code'] == HTTPStatus.UNAUTHORIZED
 
@@ -181,6 +184,7 @@ class TestRetryBehavior:
         )
 
         assert call_count == 3
+        assert isinstance(result, dict)
         assert result['error'] == 'Max retries exceeded'
 
 
@@ -258,6 +262,8 @@ class TestNoResponseCache:
         )
         after = await http_client.request(method='GET', url=url, token='tok')
 
+        assert isinstance(before, dict)
+        assert isinstance(after, dict)
         assert before['name'] == 'old'
         assert after['name'] == 'new'
 

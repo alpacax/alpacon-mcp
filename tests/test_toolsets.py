@@ -148,13 +148,14 @@ class TestCliWiring:
         # By path: each probe gets its own module, so a monkeypatch never lands on a cached `main`.
         path = Path(server.__file__).parent / filename
         spec = importlib.util.spec_from_file_location(f'_probe_{filename}', path)
+        assert spec is not None and spec.loader is not None
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         return module
 
     def test_stdio_entry_point_forwards_toolsets(self, monkeypatch):
         module = self._load('main.py')
-        captured = {}
+        captured: dict[str, object] = {}
         monkeypatch.setattr(
             module, 'run', lambda transport, **kw: captured.update(kw, t=transport)
         )
@@ -169,7 +170,7 @@ class TestCliWiring:
 
     def test_sse_entry_point_forwards_toolsets(self, monkeypatch):
         module = self._load('main_sse.py')
-        captured = {}
+        captured: dict[str, object] = {}
         monkeypatch.setattr(
             module, 'run', lambda transport, **kw: captured.update(kw, t=transport)
         )
@@ -188,13 +189,13 @@ class TestRunWiring:
         mismatch here (e.g. handing register_resources the sorted list)."""
         imported: list[str] = []
         real_import = importlib.import_module
-        handed: dict = {}
+        handed: dict[str, object] = {}
 
         def spy(name, *args, **kwargs):
             imported.append(name)
             return real_import(name, *args, **kwargs)
 
-        monkeypatch.setattr(server.importlib, 'import_module', spy)
+        monkeypatch.setattr(importlib, 'import_module', spy)
         monkeypatch.setattr(res, 'register_resources', lambda m: handed.update(m=m))
         monkeypatch.setattr(server.mcp, 'run', lambda transport: None)
         monkeypatch.setenv('ALPACON_MCP_TRANSPORT', 'restored-on-teardown')

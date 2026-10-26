@@ -1,10 +1,10 @@
 """System information tools for Alpacon MCP server."""
 
 import asyncio
-from typing import Any
 
 from utils.api_call import http_call_response
 from utils.common import (
+    ToolResponse,
     build_list_params,
     error_response,
     success_response,
@@ -21,8 +21,8 @@ from utils.tool_annotations import READ_ONLY
     meta={'anthropic/searchHint': 'system hardware cpu cores ram architecture specs'},
 )
 async def get_system_info(
-    server_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+    server_id: str, workspace: str, region: str = '', **kwargs: str
+) -> ToolResponse:
     """Get detailed system information for a server.
 
     Args:
@@ -54,8 +54,8 @@ async def get_system_info(
     meta={'anthropic/searchHint': 'os operating system version kernel distribution'},
 )
 async def get_os_version(
-    server_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+    server_id: str, workspace: str, region: str = '', **kwargs: str
+) -> ToolResponse:
     """Get operating system version information for a server.
 
     Args:
@@ -92,8 +92,8 @@ async def list_system_users(
     username_filter: str | None = None,
     login_enabled_only: bool = False,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """List system users on a server.
 
     Args:
@@ -153,8 +153,8 @@ async def list_system_groups(
     workspace: str,
     groupname_filter: str | None = None,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """List system groups on a server.
 
     Args:
@@ -210,8 +210,8 @@ async def list_system_packages(
     architecture: str | None = None,
     limit: int = 100,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """List installed system packages on a server.
 
     Args:
@@ -270,8 +270,8 @@ async def list_system_packages(
     meta={'anthropic/searchHint': 'network interfaces ip mac address mtu'},
 )
 async def get_network_interfaces(
-    server_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+    server_id: str, workspace: str, region: str = '', **kwargs: str
+) -> ToolResponse:
     """Get network interfaces information for a server.
 
     Args:
@@ -303,8 +303,8 @@ async def get_network_interfaces(
     meta={'anthropic/searchHint': 'disk partition mount filesystem storage layout'},
 )
 async def get_disk_info(
-    server_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+    server_id: str, workspace: str, region: str = '', **kwargs: str
+) -> ToolResponse:
     """Get disk and partition information for a server.
 
     Args:
@@ -387,8 +387,8 @@ async def get_disk_info(
     meta={'anthropic/searchHint': 'time timezone uptime clock ntp'},
 )
 async def get_system_time(
-    server_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+    server_id: str, workspace: str, region: str = '', **kwargs: str
+) -> ToolResponse:
     """Get system time and uptime information for a server.
 
     Args:
@@ -423,8 +423,8 @@ async def get_system_time(
     },
 )
 async def get_server_overview(
-    server_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+    server_id: str, workspace: str, region: str = '', **kwargs: str
+) -> ToolResponse:
     """Get comprehensive overview of server system information.
 
     Args:

@@ -101,6 +101,7 @@ class TestResourceRegistration:
             for t in await mcp.list_resource_templates()
             if t.uri_template == 'alpacon://alerts/active/{region}/{workspace}'
         )
+        assert active.description is not None
         assert 'acknowledged=False' in active.description
 
     @pytest.mark.asyncio
@@ -117,6 +118,7 @@ class TestResourceRegistration:
             for t in await mcp.list_resource_templates()
             if t.uri_template == 'alpacon://metrics/{region}/{workspace}/latest/stale'
         )
+        assert stale.description is not None
         assert "state='stale'" in stale.description
 
     @pytest.mark.asyncio

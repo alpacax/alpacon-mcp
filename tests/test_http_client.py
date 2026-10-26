@@ -12,6 +12,14 @@ from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
+from mcp.server.context import ServerRequestContext
+from mcp.server.mcpserver import MCPServer
+from mcp.types import (
+    LATEST_PROTOCOL_VERSION,
+    CallToolRequestParams,
+    CallToolResult,
+    TextContent,
+)
 
 from tests.conftest import HTTP_VERBS
 from utils import request_signal
@@ -136,6 +144,7 @@ class TestHTTPClientGet:
             token='test-token',
         )
 
+        assert isinstance(result, dict)
         assert result['error'] == 'HTTP Error'
         assert result['status_code'] == HTTPStatus.NOT_FOUND
 
@@ -154,6 +163,7 @@ class TestHTTPClientGet:
             token='test-token',
         )
 
+        assert isinstance(result, dict)
         assert result['error'] == 'Max retries exceeded'
         # Should have retried 3 times
         assert mock_httpx_client.request.call_count == 3
@@ -187,6 +197,7 @@ class TestHTTPClientGet:
             token='test-token',
         )
 
+        assert isinstance(result, dict)
         assert result['status_code'] == HTTPStatus.INTERNAL_SERVER_ERROR
         assert (
             _detect_error_domain(result['status_code'], result['message'], tool_name)
@@ -235,6 +246,7 @@ class TestHTTPClientPost:
             data={'invalid': 'data'},
         )
 
+        assert isinstance(result, dict)
         assert result['error'] == 'HTTP Error'
         assert result['status_code'] == HTTPStatus.BAD_REQUEST
 
@@ -445,6 +457,7 @@ class TestErrorHandling:
             token='test-token',
         )
 
+        assert isinstance(result, dict)
         assert result['error'] == 'Timeout'
 
     @pytest.mark.asyncio
@@ -459,6 +472,7 @@ class TestErrorHandling:
             token='test-token',
         )
 
+        assert isinstance(result, dict)
         assert result['error'] == 'Request Error'
 
     @pytest.mark.asyncio
@@ -482,6 +496,7 @@ class TestErrorHandling:
             token='test-token',
         )
 
+        assert isinstance(result, dict)
         assert result['error'] == 'Unexpected Error'
 
 
@@ -848,9 +863,6 @@ class TestUpstreamAuthErrorReachesTheClient:
     """The SDK boundary that turns a bare Exception into 'Error executing tool <name>'."""
 
     async def test_upstream_auth_error_message_survives_the_tool_boundary(self, caplog):
-        from mcp.server.mcpserver import Context, MCPServer
-        from mcp.types import CallToolRequestParams
-
         mcp_server = MCPServer(name='test-upstream-auth-error')
 
         @mcp_server.tool()
@@ -859,14 +871,22 @@ class TestUpstreamAuthErrorReachesTheClient:
 
         with caplog.at_level(logging.ERROR, logger='mcp.server.mcpserver.server'):
             result = await mcp_server._handle_call_tool(
-                Context(mcp_server=mcp_server, subscriptions=mcp_server._subscriptions),
+                ServerRequestContext(
+                    session=MagicMock(),
+                    lifespan_context={},
+                    protocol_version=LATEST_PROTOCOL_VERSION,
+                    method='tools/call',
+                ),
                 CallToolRequestParams(name='failing_tool', arguments={}),
             )
 
+        assert isinstance(result, CallToolResult)
         assert result.is_error is True
+        content = result.content[0]
+        assert isinstance(content, TextContent)
         # A plain Exception collapses to just this prefix; ToolError keeps the
         # original message after it.
-        assert result.content[0].text == (
+        assert content.text == (
             'Error executing tool failing_tool: MFA verification required'
         )
         assert not any(r.levelno >= logging.ERROR for r in caplog.records)

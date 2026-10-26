@@ -89,7 +89,9 @@ async def lookup_schema_name(slug: str) -> str | None:
     return organization
 
 
-async def resolve_workspace(workspace: str, claim_workspaces: list[dict]) -> str:
+async def resolve_workspace(
+    workspace: str, claim_workspaces: list[dict[str, str]]
+) -> str:
     """Map ``workspace`` to a claim's ``schema_name`` when it is a renamed slug.
 
     Returns ``workspace`` unchanged when it already is a ``schema_name`` in the

@@ -4,6 +4,7 @@ from typing import Any
 
 from utils.api_call import http_call_response
 from utils.common import (
+    ToolResponse,
     build_list_params,
     empty_value_error,
     error_response,
@@ -85,8 +86,8 @@ async def list_command_acls(
     service_token_id: str | None = None,
     page: int | None = None,
     page_size: int | None = None,
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """List command ACL rules.
 
     Args:
@@ -137,8 +138,8 @@ async def create_command_acl(
     username: str = '',
     groupname: str = '',
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """Create a command ACL rule.
 
     Exactly one of api_token_id or service_token_id must be provided.
@@ -198,8 +199,8 @@ async def update_command_acl(
     username: str | None = None,
     groupname: str | None = None,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """Update an existing command ACL rule.
 
     Note: This tool does not support changing the token binding. Delete and recreate to rebind to a different token.
@@ -250,8 +251,8 @@ async def update_command_acl(
     meta={'anthropic/searchHint': 'command acl delete remove'},
 )
 async def delete_command_acl(
-    acl_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+    acl_id: str, workspace: str, region: str = '', **kwargs: str
+) -> ToolResponse:
     """Delete a command ACL rule.
 
     Args:
@@ -287,8 +288,8 @@ async def list_server_acls(
     service_token_id: str | None = None,
     page: int | None = None,
     page_size: int | None = None,
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """List server ACL rules.
 
     Args:
@@ -336,8 +337,8 @@ async def create_server_acl(
     api_token_id: str | None = None,
     service_token_id: str | None = None,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """Create a server ACL rule.
 
     Exactly one of api_token_id or service_token_id must be provided.
@@ -389,8 +390,8 @@ async def update_server_acl(
     api_token_id: str | None = None,
     service_token_id: str | None = None,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """Update an existing server ACL rule.
 
     Note: Token binding can be updated by providing api_token_id or service_token_id.
@@ -444,8 +445,8 @@ async def update_server_acl(
     meta={'anthropic/searchHint': 'server acl delete remove'},
 )
 async def delete_server_acl(
-    acl_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+    acl_id: str, workspace: str, region: str = '', **kwargs: str
+) -> ToolResponse:
     """Delete a server ACL rule.
 
     Args:
@@ -482,8 +483,8 @@ async def bulk_server_acl(
     api_token_id: str | None = None,
     service_token_id: str | None = None,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """Bulk add or remove server ACL entries.
 
     Exactly one of api_token_id or service_token_id must be provided.
@@ -548,8 +549,8 @@ async def list_file_acls(
     service_token_id: str | None = None,
     page: int | None = None,
     page_size: int | None = None,
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """List file ACL rules.
 
     Args:
@@ -602,8 +603,8 @@ async def create_file_acl(
     username: str = '',
     groupname: str = '',
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """Create a file ACL rule.
 
     Exactly one of api_token_id or service_token_id must be provided.
@@ -669,8 +670,8 @@ async def update_file_acl(
     username: str | None = None,
     groupname: str | None = None,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """Update an existing file ACL rule.
 
     Note: This tool does not support changing the token binding. Delete and recreate to rebind to a different token.
@@ -727,8 +728,8 @@ async def update_file_acl(
     meta={'anthropic/searchHint': 'file acl delete remove'},
 )
 async def delete_file_acl(
-    acl_id: str, workspace: str, region: str = '', **kwargs
-) -> dict[str, Any]:
+    acl_id: str, workspace: str, region: str = '', **kwargs: str
+) -> ToolResponse:
     """Delete a file ACL rule.
 
     Args:

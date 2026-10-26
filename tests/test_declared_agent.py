@@ -1,5 +1,6 @@
 """The agent's clientInfo reaches alpacon-server as two headers (#317)."""
 
+import importlib
 from http import HTTPStatus
 from types import SimpleNamespace
 from typing import Any
@@ -338,7 +339,7 @@ class TestEnvironmentFallback:
     def test_only_stdio_turns_the_fallback_on(
         self, monkeypatch: pytest.MonkeyPatch, transport: Any, enabled: bool
     ) -> None:
-        monkeypatch.setattr(server_module.importlib, 'import_module', lambda _: None)
+        monkeypatch.setattr(importlib, 'import_module', lambda _: None)
         monkeypatch.setattr(resources_module, 'register_resources', lambda _: None)
         monkeypatch.setattr(
             server_module, '_register_http_health_endpoint', lambda: None

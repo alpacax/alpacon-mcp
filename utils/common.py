@@ -16,6 +16,14 @@ from utils.token_manager import get_token_manager
 # Every value response.json() can produce; AlpaconHTTPClient methods return it.
 JsonValue = dict[str, Any] | list[Any] | str | int | float | bool | None
 
+# The {'status': 'error', ...} envelope any decorated tool may return instead.
+ToolErrorResponse = dict[str, Any]
+type ToolResult[R] = R | ToolErrorResponse
+
+# What a tool returns; a TypedDict once mypy supports PEP 728 extra_items, since
+# the response helpers merge caller-chosen **kwargs into it.
+ToolResponse = dict[str, Any]
+
 # Initialize shared instances
 token_manager = get_token_manager()
 logger = get_logger('common')
@@ -471,7 +479,7 @@ def resolve_time_window(
     return start, end_date
 
 
-def error_response(message: str, **kwargs) -> dict[str, Any]:
+def error_response(message: str, **kwargs: Any) -> ToolErrorResponse:
     """Create standardized error response.
 
     Args:
@@ -486,7 +494,7 @@ def error_response(message: str, **kwargs) -> dict[str, Any]:
     return response
 
 
-def empty_value_error(field: str) -> dict[str, Any]:
+def empty_value_error(field: str) -> ToolErrorResponse:
     """Reject an argument that was supplied but carries no value.
 
     Args:
@@ -498,7 +506,7 @@ def empty_value_error(field: str) -> dict[str, Any]:
     return error_response(f'{field} must not be empty')
 
 
-def success_response(data: Any = None, **kwargs) -> dict[str, Any]:
+def success_response(data: Any = None, **kwargs: Any) -> ToolResponse:
     """Create standardized success response.
 
     Args:
@@ -520,7 +528,7 @@ def pending_approval_response(
     *,
     category: str,
     **kwargs: Any,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Create a structured "pending human approval" result (ADR 0015).
 
     AI agents reaching Alpacon through MCP are a request/execution surface and
@@ -579,7 +587,7 @@ def validate_token(region: str, workspace: str) -> str | None:
     return token
 
 
-def token_error_response(region: str, workspace: str) -> dict[str, Any]:
+def token_error_response(region: str, workspace: str) -> ToolErrorResponse:
     """Create standardized token error response.
 
     Args:
@@ -596,7 +604,7 @@ def token_error_response(region: str, workspace: str) -> dict[str, Any]:
     )
 
 
-def work_session_gate_response(code: str, **kwargs: Any) -> dict[str, Any]:
+def work_session_gate_response(code: str, **kwargs: Any) -> ToolResponse:
     """Translate a server WorkSession gate error code into an agent-actionable result.
 
     ``work_session_not_active`` becomes a pending-approval result (a human must
@@ -711,7 +719,7 @@ def plan_limit_response(
     axis: str,
     next_value: str | None,
     **kwargs: Any,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Build the agent-facing result for a plan-limit 402 (see _plan_limit_axis).
 
     Unlike a feature lock, which needs no more than the generic
@@ -767,7 +775,7 @@ def unwrap_http_result(
     *,
     default_message: str,
     **id_context: Any,
-) -> dict[str, Any] | None:
+) -> ToolErrorResponse | None:
     """Convert an http_client error-dict into an error_response.
 
     Returns the error_response dict if `result` is the error envelope produced

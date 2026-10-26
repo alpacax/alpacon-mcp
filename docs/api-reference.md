@@ -435,6 +435,23 @@ from that one interpreter path. The held command stays queued and runs if approv
 Alpacon console (Commands) first, or the script waits on two approval requests. No MCP tool cancels
 it.
 
+**Refused as a script body:** a line that carries a script body (a heredoc, a multi-line `-c` or `-e`
+body, or a decoded payload piped into a shell or interpreter) can be refused when the workspace
+approval policy blocks script bodies. It is never refused at submit time. The command is created as
+usual, and the verdict lands on the command row after verification: `status`
+and `verification_status` are `rejected`, `rejection_cause` is `use_file_execution`, and `result`
+carries the server's guidance sentence. The response is then `status: "error"` with `error_code:
+"use_file_execution"`, a `message` that leads with that sentence, the command row in `details`, and a
+`next_action` telling the agent to call `execute_file` with the script as `content` and
+`write_file: true` on the same server and account (`server_id`, `username`, a non-default
+`groupname` and `work_session_id` are named when the command row carries them), with `interpreter`
+set to the absolute path of the interpreter the refused line invoked, since it defaults to
+`/bin/bash`. A command that was fed stdin `data` is told to move that data into the script, because
+`execute_file` takes no stdin.
+The refused command did not run, so nothing needs cancelling. The server attaches no
+`execute_file_suggestion` here: the script body is on the command line, so there is no path to read.
+`state_command_purpose` returns the same refusal when the re-judged command lands on it.
+
 ### `execute_file`
 Run a script on a server as a verified file, and wait for the result. With `write_file`,
 the same call writes the script to the host first; with `read_from_server`, it reads the script
@@ -552,6 +569,9 @@ List recent command history.
 - `region` (string, optional): Region name; resolved from the workspace when omitted
 
 An entry whose `error_phase` starts with `file_` gains `error_phase_hint`, as on `execute_file`.
+An entry whose `rejection_cause` is `use_file_execution` gains `error_code: "use_file_execution"` and
+the same `next_action` as on `execute_command`, naming that entry's server and account, plus a
+reminder to rerun only that server rather than the original target set.
 
 ### `execute_command_multi_server`
 Execute a command on multiple servers simultaneously.
@@ -568,6 +588,14 @@ Execute a command on multiple servers simultaneously.
 - `work_session_id` (string, optional): Work Session to run under
 - `purpose` (string, optional): What this particular command is for (ADR 0052). The assessor judges the command with it in hand, so one that would otherwise queue for a human may clear on its own. State a fact local to this host that the Work Session description does not already imply; general knowledge adds nothing the assessor lacks, and a purpose cannot lower a command's intrinsic risk. Trimmed to 2000 characters rather than refused, and the response then carries `purpose_truncated: true`. This tool never waits, so it is never asked for a purpose after the fact—stating it up front is the only chance
 - `region` (string, optional): Region name; resolved from the workspace when omitted
+
+**Refused as a script body:** the `use_file_execution` refusal described under `execute_command`, which
+applies when the workspace approval policy blocks script bodies, is decided per server command after verification, so this tool's submit result never shows it and only
+some targets may be refused. Read it from `list_commands`, where each refused entry carries
+`error_code: "use_file_execution"` and a `next_action`. Rerun the script with `execute_file` on the
+refused servers only, with the same account: the file lane needs every target server to support it,
+so resubmitting the original target set can fail with `file_exec_unsupported_agent` on a server that
+was never refused.
 
 ### `state_command_purpose`
 Answer the purpose demand on a command the verification gate is holding, then wait for the outcome.
@@ -1059,13 +1087,13 @@ List the MFA methods allowed for the workspace (`allowed_mfa_methods`, `passkey_
 **Note:** Like `get_workspace_security`, this requires JWT (OAuth/SSO) authentication (a static API token is rejected up front) and the route is SaaS-only.
 
 ### `get_workspace_preferences`
-Get the workspace-wide preferences: timezone, locale, `front_url`, `invite_ttl`, `enabled_extensions`, `websh_session_timeout`, `agent_rollout_policy`, `package_proxy`, `billing_email`, `allowed_domains`. Workspace-global configuration, not per-user.
+Get the workspace-wide preferences: timezone, locale, `front_url`, `invite_ttl`, `enabled_extensions`, `websh_session_timeout`, `agent_rollout_policy`, `package_proxy`, `billing_email`. Workspace-global configuration, not per-user.
 
 **Parameters:**
 - `workspace` (string): Workspace name
 - `region` (string, optional): Region name; resolved from the workspace when omitted
 
-**Note:** The response also carries `auto_agent_upgrade`, a **deprecated** boolean alias for `agent_rollout_policy` (`true` unless `mode` is `manual`). Read `agent_rollout_policy` instead.
+**Note:** The response also includes `auto_agent_upgrade`, a deprecated boolean derived from `agent_rollout_policy` (`true` unless `mode` is `manual`) that will be removed from the server response. Read `agent_rollout_policy`.
 
 ### `update_workspace_preferences`
 Update workspace-wide preferences. Only the fields you provide are sent (partial update).
@@ -1080,15 +1108,13 @@ Update workspace-wide preferences. Only the fields you provide are sent (partial
 - `enabled_extensions` (array, optional): List of enabled extension names. Replaces the whole list (not additive); read via `get_workspace_preferences` and merge before sending. Narrowing it fails with HTTP 402 on non-enterprise plans
 - `websh_session_timeout` (integer, optional): Websh idle session timeout, in seconds
 - `agent_rollout_policy` (object, optional): The agent-upgrade rollout policy: `{"mode": "latest"|"n_minus_1"|"manual", "window": {"days": [0-6, Monday is 0], "start_hour": 0-23, "length_hours": 1-24, "timezone": "<IANA>"}}`. A write may name only part of the object (just `mode`, or just one `window` key); whatever it leaves out keeps its current value. `manual` runs no automatic upgrade; `latest` and `n_minus_1` (one release behind) run the scheduled upgrade inside the window. The shape is validated locally before the request is sent
-- `auto_agent_upgrade` (boolean, optional): **Deprecated**, use `agent_rollout_policy`. Translated locally into a policy write—`true` becomes `{"mode": "latest"}`, `false` becomes `{"mode": "manual"}`—merged under whatever `agent_rollout_policy` also names, and never sent to the server as `auto_agent_upgrade`. When both are given, `agent_rollout_policy` wins on any key it names
 - `package_proxy` (string, optional): Proxy server URL for package installation
 - `billing_email` (string, optional): Billing contact email; SaaS-only field
-- `allowed_domains` (array, optional): Allowed email domains for invites; SaaS-only field. Replaces the whole list (not additive); read via `get_workspace_preferences` and merge before sending
 - `region` (string, optional): Region name; resolved from the workspace when omitted
 
-**⚠️ Warning:** `timezone` is the workspace's billing clock—changing it shifts the daily usage-aggregation boundary. The list fields (`enabled_extensions`, `allowed_domains`) replace the whole list rather than appending—read the current value, merge, then send. `billing_email` and `allowed_domains` are only accepted by the server on SaaS deployments.
+**⚠️ Warning:** `timezone` is the workspace's billing clock—changing it shifts the daily usage-aggregation boundary. `enabled_extensions` replaces the whole list rather than appending—read the current value, merge, then send. `billing_email` is only accepted by the server on SaaS deployments.
 
-**Note:** Choosing `n_minus_1` can be refused with a `400` (`error_code: preferences_agent_rollout_mode_unavailable`) until this deployment has pinned agent-upgrade targets enabled—use `latest` or `manual` instead. A malformed `agent_rollout_policy` object is rejected locally with a field-specific message before any request is sent; a shape-valid object the server still refuses comes back with the coded `error_code` (`preferences_agent_rollout_policy_invalid`, `_mode_invalid`, `_window_days_invalid`, `_window_start_hour_invalid`, `_window_length_invalid`, `_window_timezone_invalid`) and an actionable message. The response of a call that used the deprecated `auto_agent_upgrade` input carries a `deprecation_note`.
+**Note:** Choosing `n_minus_1` can be refused with a `400` (`error_code: preferences_agent_rollout_mode_unavailable`) until this deployment has pinned agent-upgrade targets enabled—use `latest` or `manual` instead. A malformed `agent_rollout_policy` object is rejected locally with a field-specific message before any request is sent; a shape-valid object the server still refuses comes back with the coded `error_code` (`preferences_agent_rollout_policy_invalid`, `_mode_invalid`, `_window_days_invalid`, `_window_start_hour_invalid`, `_window_length_invalid`, `_window_timezone_invalid`) and an actionable message.
 
 ### Why access control and security are read-only here
 

@@ -3,13 +3,16 @@
 import asyncio
 import json
 import logging
+from collections.abc import Mapping
 from http import HTTPStatus
 
 import pytest
+from starlette.types import Message, Scope
 
 from utils import request_signal
 from utils.auth_error_middleware import UpstreamAuthErrorMiddleware
 from utils.error_handler import UpstreamAuthError
+from utils.request_signal import AuthSignal
 
 # Default body that mimics http_client's 401 error response dict.
 _DEFAULT_401_BODY = {
@@ -29,8 +32,8 @@ class _MockApp:
 
     def __init__(
         self,
-        body: dict | None = None,
-        signal_error: dict | None = None,
+        body: Mapping[str, object] | None = None,
+        signal_error: AuthSignal | None = None,
         auth_value: str = 'test-jwt',  # noqa: S107
     ):
         if body is not None:
@@ -67,7 +70,7 @@ class _DispatchingApp:
     called it—so one middleware instance can serve two concurrent requests
     that behave differently, with its cooldown dict shared between them."""
 
-    def __init__(self, fail_path: str, signal_error: dict):
+    def __init__(self, fail_path: str, signal_error: AuthSignal):
         self._fail_path = fail_path
         self._signal_error = signal_error
 
@@ -90,7 +93,7 @@ class _DispatchingApp:
         )
 
 
-def _http_scope(auth_header: str = 'Bearer test-jwt', path: str = '/') -> dict:
+def _http_scope(auth_header: str = 'Bearer test-jwt', path: str = '/') -> Scope:
     return {
         'type': 'http',
         'method': 'POST',
@@ -99,9 +102,9 @@ def _http_scope(auth_header: str = 'Bearer test-jwt', path: str = '/') -> dict:
     }
 
 
-async def _collect_response(messages: list[dict]) -> tuple[int, dict, str]:
+async def _collect_response(messages: list[Message]) -> tuple[int, dict[str, str], str]:
     status = 0
-    headers = {}
+    headers: dict[str, str] = {}
     body = b''
     for msg in messages:
         if msg['type'] == 'http.response.start':
@@ -116,7 +119,7 @@ async def _collect_response(messages: list[dict]) -> tuple[int, dict, str]:
 async def _run(middleware, scope=None):
     if scope is None:
         scope = _http_scope()
-    sent: list[dict] = []
+    sent: list[Message] = []
 
     async def mock_send(msg):
         sent.append(msg)
@@ -328,8 +331,14 @@ async def test_non_http_scope_passes_through():
         nonlocal call_count
         call_count += 1
 
+    async def receive():
+        return {}
+
+    async def send(message):
+        pass
+
     mw = UpstreamAuthErrorMiddleware(mock_app)
-    await mw({'type': 'websocket'}, lambda: {}, lambda msg: None)
+    await mw({'type': 'websocket'}, receive, send)
     assert call_count == 1
 
 
@@ -587,7 +596,7 @@ async def test_a_chunk_reaches_the_client_while_the_app_is_still_running():
     app = _HandshakeApp(delivered)
     mw = UpstreamAuthErrorMiddleware(app)
 
-    sent: list[dict] = []
+    sent: list[Message] = []
 
     async def recording_send(message):
         sent.append(message)
@@ -693,7 +702,7 @@ class _StartOnlyApp:
     """Signals an upstream 401 and answers with a start message and no body,
     leaving the middleware's post-``self.app()`` check as the only one that runs."""
 
-    def __init__(self, signal_error: dict):
+    def __init__(self, signal_error: AuthSignal):
         self._signal_error = signal_error
 
     async def __call__(self, scope, receive, send):

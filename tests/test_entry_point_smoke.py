@@ -15,11 +15,14 @@ import time
 from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Any
 
 import httpx
 import pytest
 
 pytestmark = pytest.mark.smoke
+
+type _JsonRpcReply = dict[str, Any]  # parsed JSON-RPC reply; read by nested keys
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BOOT_TIMEOUT = 60
@@ -58,7 +61,8 @@ runpy.run_path('main_http.py', run_name='__main__')
 def _free_port() -> int:
     with socket.socket() as s:
         s.bind(('127.0.0.1', 0))
-        return s.getsockname()[1]
+        port: int = s.getsockname()[1]
+    return port
 
 
 @pytest.fixture
@@ -81,7 +85,7 @@ def entry_env(tmp_path: Path) -> dict[str, str]:
     return env
 
 
-def _stop(process: subprocess.Popen) -> None:
+def _stop(process: subprocess.Popen[str]) -> None:
     # SIGINT, not SIGTERM: server.py turns SIGTERM into KeyboardInterrupt from
     # inside the loop, which uvicorn logs as a crash.
     process.send_signal(signal.SIGINT)
@@ -151,7 +155,9 @@ def _post_initialize_as_public_host(url: str) -> httpx.Response:
     )
 
 
-def _initialize_over_stdio(argv: list[str], env: dict[str, str], cwd: str) -> dict:
+def _initialize_over_stdio(
+    argv: list[str], env: dict[str, str], cwd: str
+) -> _JsonRpcReply:
     process = subprocess.Popen(  # noqa: S603
         [sys.executable, *argv],
         cwd=cwd,
@@ -171,7 +177,7 @@ def _initialize_over_stdio(argv: list[str], env: dict[str, str], cwd: str) -> di
         process.stdin.flush()
         line = process.stdout.readline()
         assert line, f'main.py sent no initialize reply within {BOOT_TIMEOUT}s'
-        reply = json.loads(line)
+        reply: _JsonRpcReply = json.loads(line)
     finally:
         watchdog.cancel()
         if process.stdin:
@@ -245,7 +251,7 @@ except KeyboardInterrupt:
 
 def _run_main_http_without_auth0(
     env: dict[str, str], cwd: Path
-) -> subprocess.CompletedProcess:
+) -> subprocess.CompletedProcess[str]:
     env = {k: v for k, v in env.items() if not k.startswith('AUTH0_')}
     return subprocess.run(  # noqa: S603
         [sys.executable, str(Path(REPO_ROOT) / 'main_http.py')],

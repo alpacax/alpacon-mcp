@@ -4,6 +4,7 @@ import asyncio
 import binascii
 import os
 import shlex
+from collections.abc import AsyncIterator
 from http import HTTPStatus
 from pathlib import Path
 from typing import Any, cast
@@ -14,6 +15,7 @@ import pybase64
 from server import TRANSPORT_STDIO
 from utils.api_call import http_call_response
 from utils.common import (
+    ToolResponse,
     build_list_params,
     empty_value_error,
     error_response,
@@ -62,6 +64,7 @@ _UNKNOWN_FILE = 'unknown'
 
 # Type aliases
 type _UploadResult = dict[str, str | int | None]
+type _UploadSlot = dict[str, Any]  # one bulk-create entry (id, upload_url)
 
 
 class _S3DownloadError(Exception):
@@ -136,7 +139,7 @@ async def _save_stream(response: httpx.Response, local_path: str) -> int:
     return file_size
 
 
-async def _aiter_file(path: str, chunk_size: int = _CHUNK_SIZE):
+async def _aiter_file(path: str, chunk_size: int = _CHUNK_SIZE) -> AsyncIterator[bytes]:
     """Yield file chunks for streaming uploads. Single-shot: not replayable on retry."""
     src_file = await asyncio.to_thread(open, path, 'rb')
     try:
@@ -261,8 +264,8 @@ async def webftp_session_create(
     username: str | None = None,
     work_session_id: str | None = None,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """Create a new WebFTP session."""
     token = kwargs.get('token')
 
@@ -304,8 +307,8 @@ async def webftp_session_create(
     meta={'anthropic/searchHint': 'webftp sessions list active file transfer'},
 )
 async def webftp_sessions_list(
-    workspace: str, server_id: str | None = None, region: str = '', **kwargs
-) -> dict[str, Any]:
+    workspace: str, server_id: str | None = None, region: str = '', **kwargs: str
+) -> ToolResponse:
     """Get list of WebFTP sessions."""
     token = kwargs.get('token')
 
@@ -337,8 +340,8 @@ async def webftp_upload_file(
     work_session_id: str | None = None,
     region: str = '',
     allow_overwrite: bool = True,
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """Upload a local file to a server via S3 presigned URL."""
     token = kwargs.get('token')
 
@@ -455,8 +458,8 @@ async def webftp_upload_content(
     work_session_id: str | None = None,
     region: str = '',
     allow_overwrite: bool = True,
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """Upload base64-encoded file content to a server via WebFTP.
 
     On streamable-http/SSE, file_content is limited to 3 MiB decoded (base64
@@ -590,8 +593,8 @@ async def webftp_download_file(
     username: str | None = None,
     work_session_id: str | None = None,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """Download a file or folder from a server via S3 presigned URL."""
     token = kwargs.get('token')
     if not isinstance(token, str) or not token:
@@ -694,8 +697,8 @@ async def webftp_download_file(
     meta={'anthropic/searchHint': 'webftp uploads history list files'},
 )
 async def webftp_uploads_list(
-    workspace: str, server_id: str | None = None, region: str = '', **kwargs
-) -> dict[str, Any]:
+    workspace: str, server_id: str | None = None, region: str = '', **kwargs: str
+) -> ToolResponse:
     """List uploaded files (upload history)."""
     token = kwargs.get('token')
 
@@ -719,8 +722,8 @@ async def webftp_uploads_list(
     meta={'anthropic/searchHint': 'webftp downloads history list files'},
 )
 async def webftp_downloads_list(
-    workspace: str, server_id: str | None = None, region: str = '', **kwargs
-) -> dict[str, Any]:
+    workspace: str, server_id: str | None = None, region: str = '', **kwargs: str
+) -> ToolResponse:
     """List download requests (download history)."""
     token = kwargs.get('token')
 
@@ -752,8 +755,8 @@ async def webftp_bulk_upload(
     work_session_id: str | None = None,
     region: str = '',
     allow_overwrite: bool = True,
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """Upload multiple files to a server using bulk WebFTP API."""
     token = kwargs.get('token')
 
@@ -810,7 +813,7 @@ async def webftp_bulk_upload(
     async def _upload_one(
         client: httpx.AsyncClient,
         idx: int,
-        item: dict,
+        item: _UploadSlot,
     ) -> dict[str, Any]:
         upload_url = item.get('upload_url')
         file_id = item.get('id')
@@ -906,8 +909,8 @@ async def webftp_bulk_download(
     username: str | None = None,
     work_session_id: str | None = None,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """Download multiple files/folders as a ZIP archive."""
     token = kwargs.get('token')
 
@@ -1004,8 +1007,8 @@ async def webftp_check_status(
     transfer_type: str,
     workspace: str,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """Check status of a WebFTP file transfer."""
     token = kwargs.get('token')
 

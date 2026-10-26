@@ -3,14 +3,17 @@
 import importlib
 import json
 from http import HTTPStatus
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from mcp.types import CallToolResult
 
 import server
 from tests.conftest import http_client_fixture
 from tools import resources as res
 from tools.ledger_tools import (
+    LedgerEntryInput,
     disable_ledger_entry,
     enable_ledger_entry,
     get_ledger_capability,
@@ -257,13 +260,13 @@ class TestStdioOnly:
     ):
         imported: list[str] = []
         real_import = importlib.import_module
-        handed: dict = {}
+        handed: dict[str, Any] = {}
 
         def spy(name, *args, **kwargs):
             imported.append(name)
             return real_import(name, *args, **kwargs)
 
-        monkeypatch.setattr(server.importlib, 'import_module', spy)
+        monkeypatch.setattr(importlib, 'import_module', spy)
         monkeypatch.setattr(res, 'register_resources', lambda m: handed.update(m=m))
         monkeypatch.setenv('ALPACON_MCP_TRANSPORT', 'restored-on-teardown')
         monkeypatch.delenv('ALPACON_MCP_AUTH_ENABLED', raising=False)
@@ -453,7 +456,7 @@ class TestEntries:
     @pytest.mark.asyncio
     async def test_issue_sends_the_bulk_envelope(self, ledger):
         client, _ = ledger
-        entry = {
+        entry: LedgerEntryInput = {
             'principal_type': 'service_token',
             'principal_id': SERVICE_TOKEN_ID,
             'command_pattern': 'systemctl restart nginx',
@@ -476,13 +479,16 @@ class TestEntries:
     @pytest.mark.asyncio
     async def test_issue_refuses_an_api_token_entry_before_any_request(self, ledger):
         client, authorizer = ledger
-        service_entry = {
+        service_entry: LedgerEntryInput = {
             'principal_type': 'service_token',
             'principal_id': SERVICE_TOKEN_ID,
             'command_pattern': 'uptime',
             'username': '*',
         }
-        api_token_entry = {**service_entry, 'principal_type': 'api_token'}
+        api_token_entry: LedgerEntryInput = {
+            **service_entry,
+            'principal_type': 'api_token',
+        }
 
         result = await issue_ledger_entries(
             workspace='testworkspace',
@@ -521,7 +527,9 @@ class TestEntries:
             },
         )
 
+        assert isinstance(result, CallToolResult)
         payload = result.structured_content
+        assert payload is not None
         assert payload['status'] == 'error'
         assert 'personal API token has no command list' in payload['message']
         client.get.assert_not_called()
@@ -538,6 +546,7 @@ class TestEntries:
 
         assert field['type'] == 'string'
         assert "'service_token'" in field['description']
+        assert tool.description is not None
         assert 'cannot be issued' in tool.description
 
     @pytest.mark.asyncio
@@ -565,7 +574,7 @@ class TestEntries:
     @pytest.mark.asyncio
     async def test_issue_refuses_an_oversized_batch(self, ledger):
         client, _ = ledger
-        entry = {
+        entry: LedgerEntryInput = {
             'principal_type': 'service_token',
             'principal_id': SERVICE_TOKEN_ID,
             'command_pattern': 'uptime',

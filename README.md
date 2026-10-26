@@ -73,7 +73,7 @@ Before running the setup, get your API token:
 
 1. Visit `https://alpacon.io`
 2. Log in to your account
-3. Click **"API Token"** in left sidebar
+3. Click your account card at the bottom of the left sidebar, then **My API tokens**.
 4. Create new token or copy existing one
 5. **Configure ACL permissions** (important for command execution)
 6. Copy the token (starts with `alpat-...`)
@@ -530,7 +530,7 @@ These tools need a JWT/OAuth session (hosted server), a browser session, or a lo
 - **get_workspace_security**: Get authentication/security settings (JWT/SSO auth only, SaaS only)
 - **list_workspace_mfa_methods**: List allowed MFA methods (JWT/SSO auth only, SaaS only)
 - **get_workspace_preferences**: Get workspace-wide preferences, including the `agent_rollout_policy` (mode + upgrade window)
-- **update_workspace_preferences**: Update workspace-wide preferences (partial), including `agent_rollout_policy`; the old `auto_agent_upgrade` boolean is still accepted and mapped onto it, deprecated
+- **update_workspace_preferences**: Update workspace-wide preferences (partial), including `agent_rollout_policy`
 - **health_check**: MCP server health, version, and authentication mode
 
 ### 🧩 Resources and prompts

@@ -13,6 +13,7 @@ from utils.common import (
     FILE_EXEC_REFUSAL_HINTS,
     INLINE_CREDENTIAL_HINT,
     JsonValue,
+    ToolResponse,
     build_list_params,
     empty_value_error,
     error_response,
@@ -184,7 +185,10 @@ _SUDO_HUMAN_APPROVAL_CODES = frozenset(
 )
 
 
-def _sudo_denial(result: dict[str, Any]) -> tuple[str, str] | None:
+type _CommandRecord = dict[str, Any]  # one command result row (result, status, ...)
+
+
+def _sudo_denial(result: _CommandRecord) -> tuple[str, str] | None:
     """Detect a non-interactive sudo denial in the command output.
 
     Returns ``(code, hint)`` for the matched denial category so the caller can
@@ -278,6 +282,90 @@ def _attach_file_phase_hint(
     hint = _file_phase_hint(target if source is None else source)
     if hint:
         target['error_phase_hint'] = hint
+
+
+#: Set on the command row after verification, not returned as a submit-time 4xx.
+USE_FILE_EXECUTION = 'use_file_execution'
+
+_USE_FILE_EXECUTION_HINT = (
+    'The server refused this command because its line carries a script body. '
+    'Run the script as a verified file with execute_file instead. The refused '
+    'command did not run, so nothing needs cancelling.'
+)
+
+#: execute_file has no stdin, so data fed to the refused line cannot follow.
+_STDIN_NOT_CARRIED = (
+    ' execute_file takes no stdin, so the data this command was fed has to '
+    'move into the script.'
+)
+
+#: Refusal is per server command and the file lane needs every target to
+#: support it, so resubmitting a whole fleet batch can fail with
+#: file_exec_unsupported_agent on a server that was never refused.
+_ONLY_REFUSED_SERVERS = (
+    ' Rerun only this refused server; do not resubmit the original target set.'
+)
+
+
+def _rerun_coordinates(result: dict[str, Any]) -> dict[str, str]:
+    """The polled row's server, account and Work Session, keyed as tool arguments.
+
+    A rerun has to keep the held or refused command's account and Work Session,
+    or following the hint would submit a run other than the one the server saw.
+    """
+    server = result.get('server')
+    work_session = result.get('work_session')
+    groupname = result.get('groupname')
+    candidates = (
+        ('server_id', server.get('id') if isinstance(server, dict) else server),
+        ('username', result.get('username')),
+        ('groupname', groupname if groupname != 'alpacon' else None),
+        (
+            'work_session_id',
+            work_session.get('id') if isinstance(work_session, dict) else work_session,
+        ),
+    )
+    return {key: value for key, value in candidates if isinstance(value, str) and value}
+
+
+def _stdin_was_fed(result: dict[str, Any], stdin_fed: bool) -> bool:
+    """Data is withheld on some rows, so the submitting call's word counts too."""
+    return stdin_fed or bool(result.get('data'))
+
+
+def _use_file_execution_refusal(
+    result: dict[str, Any], stdin_fed: bool = False
+) -> dict[str, Any] | None:
+    """message, error_code and next_action for this refusal; None otherwise."""
+    if result.get('rejection_cause') != USE_FILE_EXECUTION:
+        return None
+    guidance = result.get('result')
+    message = _USE_FILE_EXECUTION_HINT
+    if isinstance(guidance, str) and guidance.strip():
+        message = f'{guidance.strip()} {message}'
+    where = ', '.join(
+        f'{key}={value}' for key, value in _rerun_coordinates(result).items()
+    )
+    stdin = _STDIN_NOT_CARRIED if _stdin_was_fed(result, stdin_fed) else ''
+    return {
+        'message': message,
+        'error_code': USE_FILE_EXECUTION,
+        'next_action': (
+            'call execute_file with the script as content and write_file=true, '
+            'which writes it to an absolute path on the host and runs it in one '
+            'call, on the same server and account'
+            f'{f" ({where})" if where else ""}. Set interpreter to the absolute '
+            'path of the interpreter the refused line invoked (such as '
+            '/usr/bin/python3 for a python3 -c body); it defaults to /bin/bash.'
+            f'{stdin}'
+        ),
+    }
+
+
+def _attach_use_file_execution(entry: dict[str, Any]) -> None:
+    if refusal := _use_file_execution_refusal(entry):
+        entry['error_code'] = refusal['error_code']
+        entry['next_action'] = refusal['next_action'] + _ONLY_REFUSED_SERVERS
 
 
 def _requester_fields(
@@ -552,7 +640,7 @@ def _remaining_purpose_window(expires_at: Any) -> int | None:
 
 
 @mcp_tool_handler(
-    description='List recent command execution history with status, output, and timestamps. Filterable by server ID. An entry whose output is a sudo denial also carries sudo_hint and, when a human can clear it, a structured sudo_denial block. When to use: reviewing past commands, retrieving the result of a command whose execute_command call timed out, or reading the results of an execute_command_multi_server batch. Related: execute_command (run a command and wait).',
+    description="List recent command execution history with status, output, and timestamps. Filterable by server ID. An entry whose output is a sudo denial also carries sudo_hint and, when a human can clear it, a structured sudo_denial block. When to use: reviewing past commands, retrieving the result of a command whose execute_command call timed out, or reading the results of an execute_command_multi_server batch. An entry the server refused because its line carries a script body (rejection_cause use_file_execution) also carries error_code use_file_execution and a next_action: rerun that script with execute_file (write_file=true) on that entry's server and account only. Related: execute_command (run a command and wait), execute_file.",
     annotations=READ_ONLY,
     meta={'anthropic/searchHint': 'command history list recent'},
 )
@@ -561,8 +649,8 @@ async def list_commands(
     server_id: str | None = None,
     limit: int = 20,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """List recent commands executed on servers."""
     token = kwargs.get('token')
 
@@ -591,6 +679,7 @@ async def list_commands(
         if isinstance(entry, dict):
             _attach_sudo_denial(entry)
             _attach_file_phase_hint(entry)
+            _attach_use_file_execution(entry)
 
     return success_response(
         data=result,
@@ -602,7 +691,7 @@ async def list_commands(
 
 
 @mcp_tool_handler(
-    description='Run a shell command on a server and wait for the result (up to 5 minutes by default). Returns stdout, stderr, and exit code in a single call. Requires ACL permission. Do not prefix the command with sudo by default: unless a Work Session sudo policy already covers the command, a sudo invocation either routes to human-in-the-loop approval and blocks until a human acts, or is denied outright with no request anyone can approve. Check sudo_denial.category before waiting; a sudo_hint with no sudo_denial is a hard denial that creates no request, so do not wait on it. Use sudo only when the command genuinely requires root and the Work Session carries the "sudo" scope. The timeout resets when the command is actively running. Supports dependency chains (run_after), scheduled execution (scheduled_at), and stdin data. Pass work_session_id to link this command to a Work Session for audit—the server enforces this for MCP OAuth and browser-based auth. Pass purpose to say what this particular command is for, in one or two sentences, whenever the command is not trivially routine: the assessor judges it with the purpose in hand, and a command that would otherwise queue for a human may clear on its own. State a fact local to this host that the Work Session description does not already imply; general knowledge adds nothing the assessor does not have, and a purpose cannot lower a command\'s intrinsic risk. If you omit it the gate may hold the command and ask—a status of purpose_required, which you answer with state_command_purpose within about a minute. A purpose over 2000 characters is trimmed to fit rather than refused, and the response then carries purpose_truncated: true—the assessor judges what was sent, so keep it short enough to survive whole. For a script, a heredoc, or any "bash /path/to/file" line, use execute_file instead: with write_file=true when you have the script\'s text, so one call writes it to the host and runs it as a verified file, or with read_from_server=true when the script already exists on the host, so one call reads its exact bytes from there and submits them. A verified file an approver has marked standing is re-run unchanged without paging a human, which a shell line never is. When to use: the recommended way to run a one-off command on a server. Related: execute_file (write and run a script whose bytes are reviewed and hashed), execute_command_multi_server (run on multiple servers), state_command_purpose (answer a held command\'s purpose demand), list_commands (browse history), work_session_create (create a Work Session). Note: Default timeout is 300 seconds (5 minutes).',
+    description='Run a shell command on a server and wait for the result (up to 5 minutes by default). Returns stdout, stderr, and exit code in a single call. Requires ACL permission. Do not prefix the command with sudo by default: unless a Work Session sudo policy already covers the command, a sudo invocation either routes to human-in-the-loop approval and blocks until a human acts, or is denied outright with no request anyone can approve. Check sudo_denial.category before waiting; a sudo_hint with no sudo_denial is a hard denial that creates no request, so do not wait on it. Use sudo only when the command genuinely requires root and the Work Session carries the "sudo" scope. The timeout resets when the command is actively running. Supports dependency chains (run_after), scheduled execution (scheduled_at), and stdin data. Pass work_session_id to link this command to a Work Session for audit—the server enforces this for MCP OAuth and browser-based auth. Pass purpose to say what this particular command is for, in one or two sentences, whenever the command is not trivially routine: the assessor judges it with the purpose in hand, and a command that would otherwise queue for a human may clear on its own. State a fact local to this host that the Work Session description does not already imply; general knowledge adds nothing the assessor does not have, and a purpose cannot lower a command\'s intrinsic risk. If you omit it the gate may hold the command and ask—a status of purpose_required, which you answer with state_command_purpose within about a minute. A purpose over 2000 characters is trimmed to fit rather than refused, and the response then carries purpose_truncated: true—the assessor judges what was sent, so keep it short enough to survive whole. For a script, a heredoc, or any "bash /path/to/file" line, use execute_file instead: with write_file=true when you have the script\'s text, so one call writes it to the host and runs it as a verified file, or with read_from_server=true when the script already exists on the host, so one call reads its exact bytes from there and submits them. A verified file an approver has marked standing is re-run unchanged without paging a human, which a shell line never is. A line that carries a script body can be refused after verification when the workspace approval policy blocks script bodies, with error_code use_file_execution; it did not run, and next_action names the execute_file call. When to use: the recommended way to run a one-off command on a server. Related: execute_file (write and run a script whose bytes are reviewed and hashed), execute_command_multi_server (run on multiple servers), state_command_purpose (answer a held command\'s purpose demand), list_commands (browse history), work_session_create (create a Work Session). Note: Default timeout is 300 seconds (5 minutes).',
     annotations=ADDITIVE,
     meta={
         'anthropic/alwaysLoad': True,
@@ -624,8 +713,8 @@ async def execute_command(
     work_session_id: str | None = None,
     purpose: str | None = None,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """Execute a command on a server and wait for the result (requires ACL permission)."""
     if not command.strip():
         return empty_value_error('command')
@@ -668,14 +757,12 @@ async def execute_command(
         purpose=purpose,
         region=region,
         token=token,
+        stdin_fed=bool(data),
     )
     # The suggested run must keep the held command's account and Work Session,
     # or following it would submit a run other than the one held. The values
-    # this call sent win over the row's; data is withheld on some rows, so it
-    # is checked here too.
-    if data:
-        response.pop('execute_file_suggestion', None)
-    elif suggested := response.get('execute_file_suggestion'):
+    # this call sent win over the row's.
+    if suggested := response.get('execute_file_suggestion'):
         arguments = suggested['arguments']
         if username is not None:
             arguments['username'] = username
@@ -697,6 +784,7 @@ async def _settle_submission(
     token: str | None,
     command: str = '',
     shell: str = '',
+    stdin_fed: bool = False,
 ) -> dict[str, Any]:
     """Turn a submit response into the tool's answer: refusal, id, then the wait.
 
@@ -752,6 +840,7 @@ async def _settle_submission(
         timeout=timeout,
         region=region,
         token=token,
+        stdin_fed=stdin_fed,
     )
     if _purpose_was_truncated(purpose):
         response['purpose_truncated'] = True
@@ -1143,8 +1232,8 @@ async def execute_file(
     work_session_id: str | None = None,
     purpose: str | None = None,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """Run a file on the host as a verified execution and wait for the result (ADR 0053)."""
     token = kwargs.get('token')
     # Echo what was asked for, minus the content: the polled row already
@@ -1317,6 +1406,7 @@ def _attach_file_execution_suggestion(
     workspace: str,
     region: str,
     shell_lane: bool,
+    stdin_fed: bool = False,
 ) -> None:
     """Point a held shell-lane command at execute_file with read_from_server.
 
@@ -1362,15 +1452,13 @@ def _attach_file_execution_suggestion(
     if shell_lane or well_formed:
         response['message'] += _FILE_LANE_HINT
     # execute_file has no stdin, so a run fed data cannot be suggested as one.
-    if not well_formed or result.get('data'):
+    if not well_formed or _stdin_was_fed(result, stdin_fed):
         return
     # The rest of the call comes off the polled row, so a caller that did not
     # submit the command (state_command_purpose) still suggests the run held.
-    server = result.get('server')
-    work_session = result.get('work_session')
+    coordinates = _rerun_coordinates(result)
     arguments: dict[str, Any] = {
-        'server_id': server_id
-        or (server.get('id') if isinstance(server, dict) else server),
+        'server_id': server_id or coordinates.get('server_id'),
         'path': path,
         'interpreter': interpreter,
         'args': args,
@@ -1378,12 +1466,9 @@ def _attach_file_execution_suggestion(
         'workspace': workspace,
         'region': region,
     }
-    if username := result.get('username'):
-        arguments['username'] = username
-    if (groupname := result.get('groupname')) and groupname != 'alpacon':
-        arguments['groupname'] = groupname
-    if isinstance(work_session, dict) and work_session.get('id'):
-        arguments['work_session_id'] = work_session['id']
+    arguments.update(
+        (key, value) for key, value in coordinates.items() if key != 'server_id'
+    )
     call: dict[str, Any] = {'tool': 'execute_file', 'arguments': arguments}
     if interpreter is None:
         call['interpreter_name'] = interpreter_name
@@ -1410,6 +1495,8 @@ async def _poll_command_result(
     # gets echoed back, and reporting a shell the command may not have run under
     # is the misleading metadata this echo exists to avoid.
     shell: str = '',
+    # Whether the submitting call fed stdin, which some rows do not echo back.
+    stdin_fed: bool = False,
 ) -> dict[str, Any]:
     """Wait for a submitted command to reach a state worth reporting.
 
@@ -1456,6 +1543,20 @@ async def _poll_command_result(
 
         if isinstance(result, dict):
             status = result.get('status', '')
+
+            # Checked ahead of the status match so the refusal keeps its own
+            # error_code instead of reading as a bare 'rejected'.
+            if refusal := _use_file_execution_refusal(result, stdin_fed):
+                return error_response(
+                    refusal['message'],
+                    error_code=refusal['error_code'],
+                    next_action=refusal['next_action'],
+                    command_id=command_id,
+                    region=region,
+                    workspace=workspace,
+                    details=result,
+                    **echo,
+                )
 
             # handled_at is set once the agent reports the result (status then
             # becomes 'success'/'failed'); the Command API has no 'finished_at'.
@@ -1511,6 +1612,7 @@ async def _poll_command_result(
                         workspace=workspace,
                         region=region,
                         shell_lane=bool(command),
+                        stdin_fed=stdin_fed,
                     )
                     return response
 
@@ -1562,8 +1664,8 @@ async def state_command_purpose(
     workspace: str,
     timeout: int = 300,
     region: str = '',
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """Answer a parked command's purpose demand and wait for the re-judgment."""
     token = kwargs.get('token')
 
@@ -1620,7 +1722,7 @@ async def state_command_purpose(
 
 
 @mcp_tool_handler(
-    description='Run the same shell command on multiple servers simultaneously or sequentially. Returns per-server results with success/failure status. Requires ACL permission. Do not prefix the command with sudo by default: unless a Work Session sudo policy already covers the command, a sudo invocation either routes to human-in-the-loop approval and stalls that server\'s command until a human acts—once per server—or is denied outright with no request anyone can approve. The denial surfaces on that server\'s list_commands entry: check sudo_denial.category there before waiting; a sudo_hint with no sudo_denial is a hard denial that creates no request, so do not wait on it. Use sudo only when the command genuinely requires root and the Work Session carries the "sudo" scope. Pass work_session_id to link commands to a Work Session for audit—the server enforces this for MCP OAuth and browser-based auth. Pass purpose to state what the batch is for; it rides every submission and the assessor judges each command with it in hand. Unlike execute_command this tool never waits, so it is never asked for a purpose after the fact—stating it up front is the only chance. A purpose over 2000 characters is trimmed rather than refused, and the response then carries purpose_truncated: true. When to use: batch operations like deploying configs, checking status, or running diagnostics across a fleet. Related: execute_command (single server), work_session_create (create a Work Session). Note: Set parallel=false for sequential execution. This submits commands without waiting for results—use list_commands to check status.',
+    description='Run the same shell command on multiple servers simultaneously or sequentially. Returns per-server results with success/failure status. Requires ACL permission. Do not prefix the command with sudo by default: unless a Work Session sudo policy already covers the command, a sudo invocation either routes to human-in-the-loop approval and stalls that server\'s command until a human acts—once per server—or is denied outright with no request anyone can approve. The denial surfaces on that server\'s list_commands entry: check sudo_denial.category there before waiting; a sudo_hint with no sudo_denial is a hard denial that creates no request, so do not wait on it. Use sudo only when the command genuinely requires root and the Work Session carries the "sudo" scope. Pass work_session_id to link commands to a Work Session for audit—the server enforces this for MCP OAuth and browser-based auth. Pass purpose to state what the batch is for; it rides every submission and the assessor judges each command with it in hand. Unlike execute_command this tool never waits, so it is never asked for a purpose after the fact—stating it up front is the only chance. A purpose over 2000 characters is trimmed rather than refused, and the response then carries purpose_truncated: true. When to use: batch operations like deploying configs, checking status, or running diagnostics across a fleet. A line that carries a script body (a heredoc, a multi-line -c or -e body, a decoded payload piped into a shell or interpreter) can be refused per server after verification when the workspace approval policy blocks script bodies, so only some targets may be refused: their list_commands entries carry error_code use_file_execution. Rerun the script with execute_file (write_file=true) on the refused servers only, with the same account; resubmitting the original target set can fail with file_exec_unsupported_agent on a server whose agent lacks the file lane. Related: execute_command (single server), execute_file, work_session_create (create a Work Session). Note: Set parallel=false for sequential execution. This submits commands without waiting for results—use list_commands to check status.',
     annotations=ADDITIVE,
     meta={'anthropic/searchHint': 'command multi server batch deploy fleet parallel'},
 )
@@ -1636,8 +1738,8 @@ async def execute_command_multi_server(
     parallel: bool = True,
     work_session_id: str | None = None,
     purpose: str | None = None,
-    **kwargs,
-) -> dict[str, Any]:
+    **kwargs: str,
+) -> ToolResponse:
     """Execute a command on multiple servers using Command API (requires ACL permission)."""
     token = kwargs.get('token')
 

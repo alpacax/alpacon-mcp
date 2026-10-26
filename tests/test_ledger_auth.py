@@ -289,7 +289,7 @@ class TestDeviceAuthorization:
             patch.object(
                 ledger_auth, 'decode_claims_unverified', return_value={'exp': 4000}
             ),
-            patch.object(ledger_auth.time, 'time', return_value=1000.0),
+            patch('utils.ledger_auth.time.time', return_value=1000.0),
         ):
             assert await authorizer.token_for(TARGET) == 'ledger-jwt'
 
@@ -375,9 +375,8 @@ class TestPostForm:
 
         transport = httpx.MockTransport(handler)
         real_client = httpx.AsyncClient
-        with patch.object(
-            ledger_auth.httpx,
-            'AsyncClient',
+        with patch(
+            'utils.ledger_auth.httpx.AsyncClient',
             lambda **kw: real_client(transport=transport, **kw),
         ):
             status, body = await ledger_auth._post_form(
@@ -394,9 +393,8 @@ class TestPostForm:
             lambda request: httpx.Response(HTTPStatus.BAD_GATEWAY, text='oops')
         )
         real_client = httpx.AsyncClient
-        with patch.object(
-            ledger_auth.httpx,
-            'AsyncClient',
+        with patch(
+            'utils.ledger_auth.httpx.AsyncClient',
             lambda **kw: real_client(transport=transport, **kw),
         ):
             status, body = await ledger_auth._post_form('https://x/oauth/token', {})

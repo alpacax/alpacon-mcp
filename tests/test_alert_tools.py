@@ -5,6 +5,7 @@ import json
 import sys
 from http import HTTPStatus
 from pathlib import Path
+from typing import TypedDict, cast
 
 import pytest
 
@@ -56,6 +57,19 @@ NEW_DESTINATION_FIELDS = [
 # (alpacax/alpacon-server#3594), for forwarding coverage broader than the one
 # value NEW_DESTINATION_FIELDS exercises.
 ALL_NOTIFY_EMAIL_VALUES = ['all', 'admins', 'group_members', 'none']
+
+
+class _PreviewRuleFields(TypedDict, total=False):
+    target: str
+    threshold: float
+    operator: str
+    duration_s: int
+    recovery_threshold: float
+    no_data_after_s: int
+    device: str
+    severity: str
+    notify_email: str
+    notify_slack_channel: bool
 
 
 mock_http_client = http_client_fixture('tools.alert_tools')
@@ -727,7 +741,7 @@ PREVIEW_RESPONSE = {
 }
 
 
-def _coded_envelope(status_code: HTTPStatus, code: str) -> dict:
+def _coded_envelope(status_code: HTTPStatus, code: str) -> dict[str, object]:
     """The http_client error envelope for a coded alpacon-server refusal."""
     return {
         'error': 'HTTP Error',
@@ -800,7 +814,10 @@ class TestPreviewAlertRule:
         }
 
         await preview_alert_rule(
-            workspace='testworkspace', region='ap1', rule_id=RULE_ID, **fields
+            workspace='testworkspace',
+            region='ap1',
+            rule_id=RULE_ID,
+            **cast(_PreviewRuleFields, fields),
         )
 
         assert mock_http_client.post.call_args.kwargs['data']['rule'] == fields

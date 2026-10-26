@@ -5,9 +5,9 @@ from __future__ import annotations
 import inspect
 import logging
 import re
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from functools import wraps
-from typing import Any
+from typing import Any, Protocol
 
 from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.types import ToolAnnotations
@@ -19,6 +19,8 @@ from utils.auth import (
     match_workspace,
 )
 from utils.common import (
+    ToolErrorResponse,
+    ToolResult,
     error_response,
     is_auth_enabled,
     token_error_response,
@@ -341,7 +343,7 @@ async def _check_mfa_requirement(
         logger.debug('MFA pre-check failed (non-fatal): %s', e)
 
 
-def _validate_path_identifier(field: str, value: Any) -> dict[str, Any] | None:
+def _validate_path_identifier(field: str, value: Any) -> ToolErrorResponse | None:
     """Returns an error response, or None if valid."""
     # A non-str never matches the pattern, but the f-string that builds the
     # endpoint stringifies it anyway, so its separators reach the path.
@@ -362,7 +364,7 @@ def _validate_path_identifier(field: str, value: Any) -> dict[str, Any] | None:
     return None
 
 
-def _validate_page_size(field: str, value: Any) -> dict[str, Any] | None:
+def _validate_page_size(field: str, value: Any) -> ToolErrorResponse | None:
     """Returns an error response, or None if valid."""
     # bool is an int subclass, so True would otherwise pass as a page size of 1.
     if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
@@ -374,7 +376,7 @@ def _validate_page_size(field: str, value: Any) -> dict[str, Any] | None:
     return None
 
 
-def _validate_uuid_list(field: str, value: Any) -> dict[str, Any] | None:
+def _validate_uuid_list(field: str, value: Any) -> ToolErrorResponse | None:
     """Returns an error response, or None if valid."""
     if not isinstance(value, list):
         return format_validation_error(
@@ -394,7 +396,9 @@ def _validate_uuid_list(field: str, value: Any) -> dict[str, Any] | None:
     return None
 
 
-def with_token_validation(func: Callable, requires_workspace: bool = True) -> Callable:
+def with_token_validation[**P, R](
+    func: Callable[P, Awaitable[R]], requires_workspace: bool = True
+) -> Callable[P, Awaitable[ToolResult[R]]]:
     """Validate a tool's inputs, then resolve and inject its auth token.
 
     Despite the name, this is the single validation gate for MCP tools:
@@ -440,8 +444,10 @@ def with_token_validation(func: Callable, requires_workspace: bool = True) -> Ca
             'the token'
         )
 
+    unchecked_func: Callable[..., Awaitable[R]] = func  # bound_args no longer carries P
+
     @wraps(func)
-    async def wrapper(*args, **kwargs):
+    async def wrapper(*args: P.args, **kwargs: P.kwargs) -> ToolResult[R]:
         bound_args = original_sig.bind_partial(*args, **kwargs)
         bound_args.apply_defaults()
         arguments = bound_args.arguments
@@ -566,9 +572,8 @@ def with_token_validation(func: Callable, requires_workspace: bool = True) -> Ca
 
         bound_args.arguments[catch_all] = extra_kwargs
 
-        # Call the original function using bound_args to handle
-        # both positional and keyword region correctly
-        return await func(*bound_args.args, **bound_args.kwargs)
+        # bound_args carries a positional or keyword region alike
+        return await unchecked_func(*bound_args.args, **bound_args.kwargs)
 
     # The SDK publishes a VAR_KEYWORD as a required field, not a catch-all.
     new_params = [p for p in original_sig.parameters.values() if p.name != catch_all]
@@ -577,7 +582,9 @@ def with_token_validation(func: Callable, requires_workspace: bool = True) -> Ca
     return wrapper
 
 
-def with_error_handling(func: Callable) -> Callable:
+def with_error_handling[**P, R](
+    func: Callable[P, Awaitable[R]],
+) -> Callable[P, Awaitable[ToolResult[R]]]:
     """Decorator to add consistent error handling to MCP tools.
 
     This decorator:
@@ -585,26 +592,17 @@ def with_error_handling(func: Callable) -> Callable:
     2. Logs errors with context
     3. Returns standardized error responses
     4. Enriches error responses with recovery hints for LLM self-recovery
-
-    Args:
-        func: The async function to decorate
-
-    Returns:
-        Decorated async function
     """
 
     @wraps(func)
-    async def wrapper(*args, **kwargs):
-        # Extract function name for logging
+    async def wrapper(*args: P.args, **kwargs: P.kwargs) -> ToolResult[R]:
         func_name = func.__name__
 
         try:
-            # Call the original function
             result = await func(*args, **kwargs)
 
-            # Enrich error responses with recovery hints
             if isinstance(result, dict):
-                result = enrich_error_response(result, tool_name=func_name)
+                return enrich_error_response(result, tool_name=func_name)
 
             return result
 
@@ -672,20 +670,13 @@ def _log_arguments(arguments: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def with_logging(func: Callable) -> Callable:
+def with_logging[**P, R](func: Callable[P, Awaitable[R]]) -> Callable[P, Awaitable[R]]:
     """Decorator to add automatic logging to MCP tools.
 
     This decorator:
     1. Logs function entry: `_LOGGED_VERBATIM_KEYS` are written bounded by
        `_summarize_log_value`, every other argument by type and size alone
-    2. Logs successful completion
-    3. Logs errors (works with with_error_handling)
-
-    Args:
-        func: The async function to decorate
-
-    Returns:
-        Decorated async function
+    2. Logs completion when the result is a dict with status 'success'
     """
     # with_token_validation has already published the catch-all-free signature
     # this binds against, and nothing assigns __signature__ afterwards, so the
@@ -693,7 +684,7 @@ def with_logging(func: Callable) -> Callable:
     sig = inspect.signature(func)
 
     @wraps(func)
-    async def wrapper(*args, **kwargs):
+    async def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
         func_name = func.__name__
 
         # Guarded, not merely lazy: %s defers the formatting but not the bind
@@ -706,10 +697,8 @@ def with_logging(func: Callable) -> Callable:
                 '%s called with: %s', func_name, _log_arguments(bound_args.arguments)
             )
 
-        # Call the original function
         result = await func(*args, **kwargs)
 
-        # Log completion if successful
         if isinstance(result, dict) and result.get('status') == 'success':
             logger.info('%s completed successfully', func_name)
 
@@ -718,13 +707,15 @@ def with_logging(func: Callable) -> Callable:
     return wrapper
 
 
-def require_jwt_auth(func: Callable) -> Callable:
+def require_jwt_auth[**P, R](
+    func: Callable[P, Awaitable[R]],
+) -> Callable[P, Awaitable[ToolResult[R]]]:
     """Reject non-JWT (API) tokens before any upstream call.
 
     Stack INSIDE ``@mcp_tool_handler`` so the resolved token is already
     in the wrapped function's ``**kwargs`` when this guard runs. Used on
     tools whose endpoint authentication accepts only JWT (OAuth/SSO)
-    sessions — e.g. ``APITokenObjectPermission`` 403s ``source='api'``
+    sessions—e.g. ``APITokenObjectPermission`` 403s ``source='api'``
     requests, and viewsets whose ``authentication_classes`` omit
     ``APITokenAuthentication`` return 403 (AnonymousUser) for static API
     tokens. Short-circuiting here skips the wasted round-trip and returns
@@ -738,9 +729,11 @@ def require_jwt_auth(func: Callable) -> Callable:
     """
 
     @wraps(func)
-    async def wrapper(*args, **kwargs):
+    async def wrapper(*args: P.args, **kwargs: P.kwargs) -> ToolResult[R]:
         token = kwargs.get('token')
-        if token and not AlpaconHTTPClient._is_jwt(token):
+        if token not in (None, '') and not (
+            isinstance(token, str) and AlpaconHTTPClient._is_jwt(token)
+        ):
             return error_response(
                 f'{func.__name__} requires JWT (OAuth/SSO) authentication and '
                 'cannot be performed with a static API token. '
@@ -751,12 +744,18 @@ def require_jwt_auth(func: Callable) -> Callable:
     return wrapper
 
 
+class _ToolDecorator(Protocol):
+    def __call__[**P, R](
+        self, func: Callable[P, Awaitable[R]], /
+    ) -> Callable[P, Awaitable[ToolResult[R]]]: ...
+
+
 def mcp_tool_handler(
     description: str,
     annotations: ToolAnnotations | None = None,
     meta: dict[str, Any] | None = None,
     requires_workspace: bool = True,
-):
+) -> _ToolDecorator:
     """Combined decorator for MCP tools that adds all common functionality.
 
     This decorator combines:
@@ -773,16 +772,16 @@ def mcp_tool_handler(
             for a tool that answers before any workspace is known and reaches
             no workspace-scoped resource; see ``with_token_validation`` for
             what that turns off.
-
-    Returns:
-        Decorator function
     """
 
-    def decorator(func: Callable) -> Callable:
-        # Apply decorators in order (innermost first)
-        func = with_error_handling(func)
-        func = with_token_validation(func, requires_workspace=requires_workspace)
-        func = with_logging(func)
+    def decorator[**P, R](
+        func: Callable[P, Awaitable[R]],
+    ) -> Callable[P, Awaitable[ToolResult[R]]]:
+        handled = with_error_handling(func)
+        validated = with_token_validation(
+            handled, requires_workspace=requires_workspace
+        )
+        logged = with_logging(validated)
 
         # Deliberately local: server.py builds the MCP server at module
         # level from ALPACON_MCP_AUTH_ENABLED, which main_http.py sets just
@@ -794,6 +793,6 @@ def mcp_tool_handler(
             description=description,
             annotations=annotations,
             meta=meta,
-        )(func)
+        )(logged)
 
     return decorator

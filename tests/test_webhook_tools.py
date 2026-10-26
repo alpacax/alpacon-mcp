@@ -367,7 +367,7 @@ class TestWebhooks:
     @pytest.mark.asyncio
     async def test_create_without_owner_is_a_type_error(self):
         with pytest.raises(TypeError):
-            await create_webhook(
+            await create_webhook(  # type: ignore[call-arg]
                 workspace='testworkspace', name='n', url='https://example.test/hook'
             )
 

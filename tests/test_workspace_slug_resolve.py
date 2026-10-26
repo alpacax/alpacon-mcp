@@ -235,6 +235,7 @@ async def test_mfa_check_receives_schema_name():
 
     await _call('acme-renamed', client_cls, mfa=mfa)
 
+    assert mfa.await_args is not None
     assert mfa.await_args.args[2] == 'acme_internal'
 
 

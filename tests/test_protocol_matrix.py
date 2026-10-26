@@ -14,7 +14,7 @@ from tests.conftest import streamable_http_client
 from utils.common import MCP_VERSION
 
 
-def _initialize(protocol_version: str) -> dict:
+def _initialize(protocol_version: str) -> dict[str, object]:
     return {
         'jsonrpc': '2.0',
         'id': 1,
@@ -27,7 +27,7 @@ def _initialize(protocol_version: str) -> dict:
     }
 
 
-def _discover() -> dict:
+def _discover() -> dict[str, object]:
     return {
         'jsonrpc': '2.0',
         'id': 2,

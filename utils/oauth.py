@@ -27,6 +27,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, RedirectResponse, Response
 
 from utils.logger import escape_for_log, get_logger
+from utils.routes import RouteHandler, RouteRegistry
 
 logger = get_logger('oauth')
 
@@ -167,7 +168,7 @@ _DEFAULT_REDIRECT_DOMAINS = tuple(
 )
 
 
-def _get_server_url(request) -> str:
+def _get_server_url(request: Request) -> str:
     """Build the MCP server's base URL from config or request.
 
     Prefers ALPACON_MCP_RESOURCE_URL env var to avoid relying on
@@ -298,7 +299,7 @@ def _is_registrable_uri_list(value: object) -> bool:
     )
 
 
-def _allow_browser_clients(handler):
+def _allow_browser_clients(handler: RouteHandler) -> RouteHandler:
     """Answer the CORS preflight and mark the response readable cross-origin.
 
     Only for endpoints a browser-based client reaches with fetch: /oauth/authorize
@@ -336,7 +337,7 @@ def _log_authorize_client_profile(
     )
 
 
-def _build_redirect_url(base_url: str, extra_params: dict) -> str:
+def _build_redirect_url(base_url: str, extra_params: dict[str, str]) -> str:
     """Safely merge query params into a URL, preserving existing params."""
     parsed = urlparse(base_url)
     existing_params = parse_qs(parsed.query, keep_blank_values=True)
@@ -436,7 +437,7 @@ async def _read_bounded_body(request: Request) -> bytes | None:
     return b''.join(chunks)
 
 
-def _sign_state(payload: dict) -> str:
+def _sign_state(payload: dict[str, object]) -> str:
     """Serialise a state payload with an expiry and an HMAC signature."""
     body = {**payload, 'exp': int(time.time()) + _STATE_TTL_SECONDS}
     encoded = base64.urlsafe_b64encode(
@@ -448,7 +449,7 @@ def _sign_state(payload: dict) -> str:
     return f'{encoded}.{signature}'
 
 
-def _verify_state(state: str) -> dict | None:
+def _verify_state(state: str) -> dict[str, object] | None:
     """Return the state payload, or None when it is forged or expired.
 
     The signature covers the encoded payload rather than the raw JSON so it can
@@ -480,7 +481,7 @@ def _verify_state(state: str) -> dict | None:
     return payload
 
 
-def _build_state(redirect_uri: str, state: str, **extra) -> str:
+def _build_state(redirect_uri: str, state: str, **extra: object) -> str:
     """Pack everything the callback needs to recover into one signed state value."""
     return _sign_state({'redirect_uri': redirect_uri, 'state': state, **extra})
 
@@ -629,11 +630,17 @@ def _set_nonce_cookie(response: Response, nonce: str) -> None:
     )
 
 
-def _nonce_cookie_matches(request: Request, state_data: dict) -> bool:
+def _state_str(state_data: dict[str, object], key: str) -> str:
+    """A string field of a verified state; any other type reads as absent."""
+    value = state_data.get(key)
+    return value if isinstance(value, str) else ''
+
+
+def _nonce_cookie_matches(request: Request, state_data: dict[str, object]) -> bool:
     """Fail closed: a state with no binding, or a browser with no cookie, is a no."""
-    expected = state_data.get('nonce_hash')
+    expected = _state_str(state_data, 'nonce_hash')
     nonce = request.cookies.get(_NONCE_COOKIE_NAME, '')
-    if not isinstance(expected, str) or not expected or not nonce:
+    if not expected or not nonce:
         return False
     # Compare bytes: compare_digest raises TypeError on non-ASCII str input.
     return hmac.compare_digest(expected.encode(), _hash_nonce(nonce).encode())
@@ -643,11 +650,8 @@ def _clear_nonce_cookie(response: Response) -> None:
     response.delete_cookie(_NONCE_COOKIE_NAME, **_NONCE_COOKIE_ATTRS)
 
 
-def register_oauth_routes(mcp_server):
+def register_oauth_routes(mcp_server: RouteRegistry) -> None:
     """Register OAuth proxy routes on the MCP server.
-
-    Args:
-        mcp_server: the MCP server object server.py builds
 
     Raises:
         ValueError: ALPACON_MCP_STATE_SECRET or ALPACON_MCP_GRANT_SECRET is set
@@ -666,7 +670,7 @@ def register_oauth_routes(mcp_server):
     # the 500 path too, so a misconfiguration is readable rather than a CORS error.
     @mcp_server.custom_route('/.well-known/oauth-authorization-server', methods=['GET'])
     @_allow_browser_clients
-    async def oauth_metadata(request):
+    async def oauth_metadata(request: Request) -> Response:
         """OAuth 2.0 Authorization Server Metadata (RFC 8414).
 
         Returns metadata advertising this MCP server as the OAuth
@@ -706,7 +710,7 @@ def register_oauth_routes(mcp_server):
         )
 
     @mcp_server.custom_route('/oauth/authorize', methods=['GET'])
-    async def oauth_authorize(request):
+    async def oauth_authorize(request: Request) -> Response:
         """Redirect to Auth0's authorization endpoint.
 
         Proxies the OAuth authorize request to Auth0, adding the
@@ -872,7 +876,7 @@ def register_oauth_routes(mcp_server):
 
     @mcp_server.custom_route('/oauth/token', methods=['POST', 'OPTIONS'])
     @_allow_browser_clients
-    async def oauth_token(request):
+    async def oauth_token(request: Request) -> Response:
         """Proxy token exchange to Auth0.
 
         Forwards the token request to Auth0's /oauth/token endpoint.
@@ -1083,7 +1087,7 @@ def register_oauth_routes(mcp_server):
 
     @mcp_server.custom_route('/oauth/register', methods=['POST', 'OPTIONS'])
     @_allow_browser_clients
-    async def oauth_register(request):
+    async def oauth_register(request: Request) -> Response:
         """Dynamic Client Registration endpoint (RFC 7591).
 
         Auth0 does not support Dynamic Client Registration on non-Enterprise
@@ -1174,7 +1178,7 @@ def register_oauth_routes(mcp_server):
         )
 
     @mcp_server.custom_route('/oauth/callback', methods=['GET'])
-    async def oauth_callback(request):
+    async def oauth_callback(request: Request) -> Response:
         """Handle Auth0 callback after authorization.
 
         Supports two-stage MFA flow:
@@ -1186,7 +1190,7 @@ def register_oauth_routes(mcp_server):
         code = request.query_params.get('code')
         composite_state = request.query_params.get('state')
         error = request.query_params.get('error')
-        error_description = request.query_params.get('error_description')
+        error_description = request.query_params.get('error_description', '')
 
         # Decode the composite state to get client's redirect_uri and original state
         client_redirect_uri = ''
@@ -1195,7 +1199,7 @@ def register_oauth_routes(mcp_server):
         original_scope = ''
         nonce_hash = ''
         device_id = ''
-        authorize_params: dict = {}
+        authorize_params: dict[str, object] = {}
         # An absent state is not rejected: Auth0 error callbacks can arrive
         # without one, and it names no redirect target a forgery could steer.
         if composite_state:
@@ -1220,16 +1224,18 @@ def register_oauth_routes(mcp_server):
                 return _oauth_error(
                     'invalid_request', 'Invalid or expired state parameter'
                 )
-            client_redirect_uri = state_data.get('redirect_uri', '')
-            original_state = state_data.get('state', '')
-            stage = state_data.get('stage', '')
-            original_scope = state_data.get('original_scope', '')
-            nonce_hash = state_data.get('nonce_hash', '')
-            authorize_params = state_data.get('authorize_params', {})
+            client_redirect_uri = _state_str(state_data, 'redirect_uri')
+            original_state = _state_str(state_data, 'state')
+            stage = _state_str(state_data, 'stage')
+            original_scope = _state_str(state_data, 'original_scope')
+            nonce_hash = _state_str(state_data, 'nonce_hash')
+            stored_params = state_data.get('authorize_params')
+            if isinstance(stored_params, dict):
+                authorize_params = stored_params
             # Every state this server mints carries an id; without one the
             # code could not be sealed and the exchange would refuse it anyway.
-            device_id = state_data.get('device_id', '')
-            if not isinstance(device_id, str) or not _is_device_id(device_id):
+            device_id = _state_str(state_data, 'device_id')
+            if not _is_device_id(device_id):
                 logger.warning('Callback rejected a state without a device id')
                 return _oauth_error(
                     'invalid_request', 'Invalid or expired state parameter'
@@ -1249,10 +1255,10 @@ def register_oauth_routes(mcp_server):
             logger.warning(
                 'Auth0 callback error: %s - %s',
                 escape_for_log(error),
-                escape_for_log(error_description or ''),
+                escape_for_log(error_description),
             )
             if client_redirect_uri:
-                params = {'error': error, 'error_description': error_description or ''}
+                params = {'error': error, 'error_description': error_description}
                 if original_state:
                     params['state'] = original_state
                 return RedirectResponse(
@@ -1329,20 +1335,17 @@ def register_oauth_routes(mcp_server):
                     device_id=device_id,
                 ),
             }
-            # Replay PKCE and other client params preserved from Stage 1
-            # so the final code exchange succeeds with the client's verifier.
-            # Validate authorize_params is a dict with only expected keys
-            # to prevent forged state from injecting arbitrary params.
+            # Replay only the expected PKCE/client params from Stage 1, so a forged state
+            # cannot inject arbitrary ones into the final code exchange.
             _ALLOWED_REPLAY_KEYS = {
                 'code_challenge',
                 'code_challenge_method',
                 'nonce',
                 'resource',
             }
-            if isinstance(authorize_params, dict):
-                for key, value in authorize_params.items():
-                    if key in _ALLOWED_REPLAY_KEYS and isinstance(value, str):
-                        stage2_params[key] = value
+            for key, value in authorize_params.items():
+                if key in _ALLOWED_REPLAY_KEYS and isinstance(value, str):
+                    stage2_params[key] = value
 
             auth0_url = (
                 f'{config["auth0_base_url"]}/authorize?{urlencode(stage2_params)}'
@@ -1391,7 +1394,7 @@ def register_oauth_routes(mcp_server):
         return json_response
 
     @mcp_server.custom_route('/token', methods=['POST', 'OPTIONS'])
-    async def oauth_token_fallback(request):
+    async def oauth_token_fallback(request: Request) -> Response:
         """Fallback token endpoint at /token.
 
         MCP SDK clients fall back to /token (instead of /oauth/token) when
@@ -1404,7 +1407,7 @@ def register_oauth_routes(mcp_server):
         return await oauth_token(request)
 
     @mcp_server.custom_route('/authorize', methods=['GET'])
-    async def oauth_authorize_fallback(request):
+    async def oauth_authorize_fallback(request: Request) -> Response:
         """Fallback authorize endpoint at /authorize.
 
         MCP SDK clients fall back to /authorize when oauth_metadata
@@ -1414,7 +1417,7 @@ def register_oauth_routes(mcp_server):
         return await oauth_authorize(request)
 
     @mcp_server.custom_route('/register', methods=['POST', 'OPTIONS'])
-    async def oauth_register_fallback(request):
+    async def oauth_register_fallback(request: Request) -> Response:
         """Fallback register endpoint at /register.
 
         MCP SDK clients fall back to /register when oauth_metadata

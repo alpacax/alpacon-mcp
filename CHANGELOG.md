@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   listed and revoked.
 
 ### Fixed
+- When Auth0 returns an error to `/oauth/callback` without an `error_description` and no client `redirect_uri` is known, the JSON error now carries `error_description: ""` instead of `null`. RFC 6749 allows the field to be absent or a string, never null; a client that read the field as nullable needs no change (#372).
 - `create_command_acl`, `update_command_acl` and `delete_command_acl` now explain the 405
   `command_acl_moved` that a server managing command pre-approvals on the command pre-approval
   ledger answers on every command-ACL write: the error says a Command ACL admin must issue or revoke
@@ -29,10 +30,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   three tool descriptions, `docs/api-reference.md` and `docs/examples.md` say the same; a server
   without the ledger still accepts these writes.
 
+### Removed
+- BREAKING: `update_workspace_preferences` no longer accepts `allowed_domains`, which the server already ignored (#377). The SDK drops this argument before the request: a call that sends only it returns `No update data provided`, while other fields in the same call are still sent. The response shape is unchanged.
+- BREAKING: `update_workspace_preferences` no longer accepts the deprecated `auto_agent_upgrade` boolean; use the existing `agent_rollout_policy` object instead (`{"mode": "manual"}` replaces the old `false`) (#376). Responses no longer include the alias-specific `deprecation_note`; the preferences response shape is otherwise unchanged. The SDK drops the alias before the request: a call that sends only it returns `No update data provided`, while other fields in the same call are still sent.
+
 ### Changed
 - The `command_acl_moved` hint, the command ACL tool descriptions and the 403 command recovery hint
   keep pointing to the web console and, on a stdio server only, also name the ledger tools.
-
+- The `get_workspace_preferences` description now marks the `auto_agent_upgrade` response boolean as deprecated and due for removal from the server response (#292). Clients should read `agent_rollout_policy`; the current response shape is unchanged.
 - The `file_exec_unsupported_agent` hint and the `execute_file` description now name alpamon 2.8.3,
   the first release that reports its capabilities, instead of 2.6.0, and separate two cases: an agent
   older than 2.8.3 reports no capabilities (upgrade it), while one already on 2.8.3 or newer has no
@@ -45,6 +50,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   wording said an omitted `reuse_days` could run with no expiry when the workspace had no ceiling.
 
 ### Added
+- `execute_command`, `state_command_purpose` and `list_commands` now recognize a command the server refused because its line carries a script body, which can happen when the workspace approval policy blocks script bodies (`rejection_cause: "use_file_execution"` on the command row, read after verification rather than from a submit-time 4xx) and return `error_code: "use_file_execution"` with a `next_action` to rerun the script through `execute_file` with `write_file: true` on the same server and account (#358). A client parsing the response sees the new `error_code` on the `execute_command` error and on refused `list_commands` entries; for `execute_command_multi_server`, only the refused servers should be resubmitted.
 - `execute_file` gained an optional `write_file` (boolean, default `false`) that writes `content`
   to `path` on the host through WebFTP, then submits the same bytes once the host reports the file
   written, and an `overwrite` that lets it replace an existing file (#360). A client parsing errors
@@ -247,7 +253,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Exposed the five read tools as `alpacon://workspace-settings/{access-control|security|mfa-methods|notifications|preferences}/{region}/{workspace}` resources
   - Security and access-control writes are intentionally omitted from the tool surface; on SaaS the server gates them behind a superuser session with fresh MFA (unsatisfiable by a static API token), and even where an on-premise admin token could write them, keeping governance-level settings human-only via the web console is the safer default
   - `get_workspace_security` and `list_workspace_mfa_methods` require JWT (OAuth/SSO) authentication and short-circuit a static API token before any request, and are SaaS-only (a clear not-available message on on-premise 404)
-  - The list fields on the update tools (`notification_channels`, `enabled_extensions`, `allowed_domains`) replace the whole array rather than appending; documented the read-merge-write pattern
+  - The list fields on the update tools (`notification_channels`, `enabled_extensions`) replace the whole array rather than appending; documented the read-merge-write pattern
 - `suse` (openSUSE / SLES) as a `platform` value on `get_registration_guide`, matching
   the platform choices the server offers for token-based installs (#182). The guide
   response keeps its existing shape—the zypper commands arrive in the same
@@ -370,15 +376,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   responses should check for `axis` before falling back to generic error handling. A feature
   lock (`gate: "plan"` with no `axis`) is unaffected and keeps its existing generic-error
   handling.
-
-### Deprecated
-- `auto_agent_upgrade` on `update_workspace_preferences` (#292). Still accepted for one
-  release: `true` is translated locally to `agent_rollout_policy={"mode": "latest"}` and
-  `false` to `{"mode": "manual"}`, merged under whatever `agent_rollout_policy` also
-  names (which wins on any key it names), and the response carries a `deprecation_note`.
-  `get_workspace_preferences` still returns `auto_agent_upgrade` alongside
-  `agent_rollout_policy`, matching the server's own one-release alias. Removed in a
-  future release—callers should move to `agent_rollout_policy`.
 
 ### Removed
 - BREAKING: the `owner` filter on `list_webhooks` (alpacax/alpacon-server#3647). A server

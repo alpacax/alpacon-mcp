@@ -10,6 +10,9 @@ This file covers additional scenarios like region variations,
 error conditions, and parameter handling.
 """
 
+from collections.abc import Awaitable, Callable
+from typing import Any
+
 import pytest
 
 from tests.conftest import http_client_fixture
@@ -336,7 +339,11 @@ class TestCrossFunctionScenarios:
         mock_http_client.get.return_value = {'test': 'data'}
 
         # Test with different regions
-        for func in [get_system_info, list_system_users]:
+        tools: list[Callable[..., Awaitable[dict[str, Any]]]] = [
+            get_system_info,
+            list_system_users,
+        ]
+        for func in tools:
             result = await func(
                 server_id=US_REGION_SERVER_ID,
                 workspace='us-workspace',
