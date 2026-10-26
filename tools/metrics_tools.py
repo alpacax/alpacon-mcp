@@ -1,14 +1,15 @@
 """Metrics and monitoring tools for Alpacon MCP server."""
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime, timedelta
-from typing import Any, TypedDict
+from typing import TypedDict
 
 from pydantic import TypeAdapter
 
 from utils.api_call import http_call_response
 from utils.common import (
+    UnexpectedResponseShapeError,
     build_list_params,
     error_response,
     expect_json_object,
@@ -56,9 +57,34 @@ _LATEST_ORDERING_SENTENCE = (
 
 _EPOCH = datetime.min.replace(tzinfo=UTC)
 
-type _ProcRecord = dict[str, Any]  # one partition or interface from /api/proc/
-type _MetricSummary = dict[str, Any]  # one metric's entry in the server summary
-type _MetricRow = dict[str, Any]  # one time-series point from /api/metrics/
+type _ProcRecord = Mapping[str, JsonValue]  # one partition or interface from /api/proc/
+type _MetricSummary = dict[str, object]  # one metric's entry in the server summary
+
+
+class _TimedRow(TypedDict, total=False):  # one time-series point from /api/metrics/
+    timestamp: str
+
+
+class _UsageRow(_TimedRow, total=False):  # a CPU or memory point
+    usage: float
+
+
+class _DiskUsageRow(_UsageRow, total=False):
+    device: str
+    mount_point: str | None
+    total: int
+    used: int
+    free: int
+
+
+class _TrafficRow(_TimedRow, total=False):
+    interface: str
+    peak_input_bps: float
+    peak_output_bps: float
+    avg_input_bps: float
+    avg_output_bps: float
+    peak_input_pps: float
+    peak_output_pps: float
 
 
 class _DiskDevices(TypedDict, total=False):
@@ -69,17 +95,19 @@ class _NextPage(TypedDict, total=False):  # a page-number list envelope
     next: int | None
 
 
-_METRIC_ROWS = TypeAdapter(list[_MetricRow])
+_USAGE_ROWS = TypeAdapter(list[_UsageRow])
+_DISK_USAGE_ROWS = TypeAdapter(list[_DiskUsageRow])
+_TRAFFIC_ROWS = TypeAdapter(list[_TrafficRow])
 _DISK_DEVICES = TypeAdapter(_DiskDevices)
 _NEXT_PAGE = TypeAdapter(_NextPage)
 
 
-def _metric_rows(result: JsonValue) -> list[_MetricRow]:
-    """The time-series rows of a /api/metrics/ answer; a row that is no object raises."""
-    return validate_response(_METRIC_ROWS, json_records(result))
+def _metric_rows[R](adapter: TypeAdapter[list[R]], result: JsonValue) -> list[R]:
+    """The time-series rows of a /api/metrics/ answer; raises on a row the adapter rejects."""
+    return validate_response(adapter, json_records(result))
 
 
-def _timestamp_key(entry: _MetricRow) -> datetime:
+def _timestamp_key(entry: _TimedRow) -> datetime:
     """Parse a row's timestamp; a naive one is read as UTC, a bad one sorts first."""
     try:
         parsed = datetime.fromisoformat(
@@ -90,12 +118,12 @@ def _timestamp_key(entry: _MetricRow) -> datetime:
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
 
 
-def _oldest_first(results: list[_MetricRow]) -> list[_MetricRow]:
+def _oldest_first[R: _TimedRow](results: list[R]) -> list[R]:
     """Order metric rows by the instant of their timestamp; the API returns newest first."""
     return sorted(results, key=_timestamp_key)
 
 
-def parse_cpu_metrics(results: list[_MetricRow]) -> dict[str, Any]:
+def parse_cpu_metrics(results: list[_UsageRow]) -> dict[str, object]:
     """Parse CPU usage metrics to extract meaningful statistics.
 
     Args:
@@ -211,14 +239,14 @@ async def get_cpu_usage(
     parsed_data = {
         'server_id': server_id,
         'metric_type': 'cpu_usage',
-        'statistics': parse_cpu_metrics(_metric_rows(result)),
+        'statistics': parse_cpu_metrics(_metric_rows(_USAGE_ROWS, result)),
         'raw_data_available': True,
     }
 
     return success_response(data=parsed_data, region=region, workspace=workspace)
 
 
-def parse_memory_metrics(results: list[_MetricRow]) -> dict[str, Any]:
+def parse_memory_metrics(results: list[_UsageRow]) -> dict[str, object]:
     """Parse memory usage metrics to extract meaningful statistics.
 
     Args:
@@ -334,14 +362,14 @@ async def get_memory_usage(
     parsed_data = {
         'server_id': server_id,
         'metric_type': 'memory_usage',
-        'statistics': parse_memory_metrics(_metric_rows(result)),
+        'statistics': parse_memory_metrics(_metric_rows(_USAGE_ROWS, result)),
         'raw_data_available': True,
     }
 
     return success_response(data=parsed_data, region=region, workspace=workspace)
 
 
-def parse_disk_metrics(results: list[_MetricRow]) -> dict[str, Any]:
+def parse_disk_metrics(results: list[_DiskUsageRow]) -> dict[str, object]:
     """Parse disk usage metrics to extract meaningful statistics.
 
     Args:
@@ -511,14 +539,14 @@ async def get_disk_usage(
         'metric_type': 'disk_usage',
         'device': device,
         'partition': partition,
-        'statistics': parse_disk_metrics(_metric_rows(result)),
+        'statistics': parse_disk_metrics(_metric_rows(_DISK_USAGE_ROWS, result)),
         'raw_data_available': True,
     }
 
     return success_response(data=parsed_data, region=region, workspace=workspace)
 
 
-def parse_network_metrics(results: list[_MetricRow]) -> dict[str, Any]:
+def parse_network_metrics(results: list[_TrafficRow]) -> dict[str, object]:
     """Parse network traffic metrics to extract meaningful statistics.
 
     Args:
@@ -741,7 +769,7 @@ async def get_network_traffic(
         'server_id': server_id,
         'metric_type': 'network_traffic',
         'interface': interface,
-        'statistics': parse_network_metrics(_metric_rows(result)),
+        'statistics': parse_network_metrics(_metric_rows(_TRAFFIC_ROWS, result)),
         'raw_data_available': True,
     }
 
@@ -919,7 +947,9 @@ def _find_record_id(
         return None
     for record in result:
         if isinstance(record, dict) and predicate(record):
-            return record.get('id')
+            record_id = record.get('id')
+            if isinstance(record_id, str):
+                return record_id
     return None
 
 
@@ -946,14 +976,14 @@ _MAX_INTERFACE_PAGES = 20  # with page_size=100, at most 2000 interfaces
 
 async def _list_all_interfaces(
     *, region: str, workspace: str, token: str | None, server_id: str
-) -> list[Any] | dict[str, Any]:
+) -> list[JsonValue] | dict[str, JsonValue]:
     """Collect a server's /api/proc/interfaces/ records, or return the error dict.
 
     `next` is a page number; paging stops after `_MAX_INTERFACE_PAGES` pages.
     """
     base_params: dict[str, QueryParam] = {'server': server_id, 'page_size': 100}
     params = base_params
-    records: list[Any] = []
+    records: list[JsonValue] = []
     for _ in range(_MAX_INTERFACE_PAGES):
         result = await http_client.get(
             region=region,
@@ -1030,14 +1060,15 @@ async def get_server_metrics_summary(
     )
 
     def is_root(p: _ProcRecord) -> bool:
-        return '/' in (p.get('mount_points') or [])
+        mount_points = p.get('mount_points')
+        return isinstance(mount_points, list) and '/' in mount_points
 
     root_partition_id = _find_record_id(
-        partitions_result, lambda p: is_root(p) and not p.get('is_virtual', False)
+        partitions_result, lambda p: is_root(p) and p.get('is_virtual') is not True
     ) or _find_record_id(partitions_result, is_root)
 
     def is_active(i: _ProcRecord) -> bool:
-        return not i.get('is_loopback', False) and i.get('is_up', False)
+        return i.get('is_loopback') is not True and i.get('is_up') is True
 
     interface_id = _find_record_id(
         interfaces_result,
@@ -1115,9 +1146,13 @@ async def get_server_metrics_summary(
 
             # Return metadata only, not the full data points
             if 'results' in result:
+                try:
+                    data_points = len(json_records(result))
+                except UnexpectedResponseShapeError as e:
+                    return {'available': False, 'error': str(e)}
                 return {
                     'available': True,
-                    'data_points': len(result.get('results', [])),
+                    'data_points': data_points,
                     'note': f'Full {metric_type} data available via dedicated endpoint',
                 }
 
