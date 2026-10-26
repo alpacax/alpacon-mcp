@@ -14,6 +14,7 @@ from mcp.types import ToolAnnotations
 
 from utils import request_signal, token_manager
 from utils.auth import (
+    WorkspaceClaim,
     decode_claims_unverified,
     get_token_workspaces,
     match_workspace,
@@ -216,14 +217,14 @@ def _get_jwt_token() -> str | None:
 
 
 def _validate_jwt_workspace(
-    workspaces: list[dict[str, str]], region: str, workspace: str
+    workspaces: list[WorkspaceClaim], region: str, workspace: str
 ) -> bool:
     """Validate that the JWT's workspaces authorize the given workspace/region."""
     return match_workspace(workspaces, region, workspace)
 
 
 def _resolve_region_from_jwt(
-    workspaces: list[dict[str, str]], workspace: str | None = None
+    workspaces: list[WorkspaceClaim], workspace: str | None = None
 ) -> str | None:
     """Resolve region from the JWT's workspaces.
 
@@ -247,7 +248,7 @@ def _resolve_region_from_jwt(
 
 
 def _resolve_region_jwt(
-    workspaces: list[dict[str, str]], workspace: str | None
+    workspaces: list[WorkspaceClaim], workspace: str | None
 ) -> tuple[str | None, str | None]:
     """Resolve region from the JWT's workspaces.
 
@@ -466,7 +467,7 @@ def with_token_validation[**P, R](
 
         # Retrieve JWT token once upfront in streamable-http mode
         jwt_token = ''
-        jwt_workspaces: list[dict[str, str]] = []
+        jwt_workspaces: list[WorkspaceClaim] = []
         if auth_enabled:
             jwt_token = _get_jwt_token() or ''
             if not jwt_token:
