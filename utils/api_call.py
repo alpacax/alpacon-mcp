@@ -5,22 +5,22 @@ utils.common module.
 """
 
 from collections.abc import Awaitable, Callable
-from typing import Any
 
-from utils.common import ToolResponse, success_response, unwrap_http_result
+from utils.common import success_response, unwrap_http_result
+from utils.types import QueryParams, RequestBody, ToolResponse
 
 
 async def http_call_response(
-    method: Callable[..., Awaitable[Any]],
+    method: Callable[..., Awaitable[object]],
     *,
     region: str,
     workspace: str,
     endpoint: str,
     token: str | None,
     default_message: str,
-    data: dict[str, Any] | None = None,
-    params: dict[str, Any] | None = None,
-    **id_context: Any,
+    data: RequestBody | None = None,
+    params: QueryParams | None = None,
+    **id_context: object,
 ) -> ToolResponse:
     """Call an http_client method and shape the result as a standard tool response.
 
@@ -46,7 +46,7 @@ async def http_call_response(
     Returns:
         Standardized success or error response dict.
     """
-    call_kwargs: dict[str, Any] = {
+    call_kwargs: dict[str, object] = {
         'region': region,
         'workspace': workspace,
         'endpoint': endpoint,

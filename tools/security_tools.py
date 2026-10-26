@@ -1,10 +1,7 @@
 """Security ACL tools for Alpacon MCP server."""
 
-from typing import Any
-
 from utils.api_call import http_call_response
 from utils.common import (
-    ToolResponse,
     build_list_params,
     empty_value_error,
     error_response,
@@ -13,6 +10,7 @@ from utils.common import (
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ_ONLY
+from utils.types import ToolResponse
 
 VALID_BULK_ACTIONS = ('add', 'remove')
 _BULK_ACTIONS_STR = ', '.join(f"'{a}'" for a in VALID_BULK_ACTIONS)
@@ -165,7 +163,7 @@ async def create_command_acl(
 
     token = kwargs.get('token')
 
-    acl_data: dict[str, Any] = {
+    acl_data: dict[str, object] = {
         'command': command,
         'username': username,
         'groupname': groupname,
@@ -221,7 +219,7 @@ async def update_command_acl(
 
     token = kwargs.get('token')
 
-    update_data: dict[str, Any] = {}
+    update_data: dict[str, object] = {}
     if command is not None:
         update_data['command'] = command
     if username is not None:
@@ -361,7 +359,7 @@ async def create_server_acl(
 
     token = kwargs.get('token')
 
-    acl_data: dict[str, Any] = {'server': server_id}
+    acl_data: dict[str, object] = {'server': server_id}
     if api_token_id is not None:
         acl_data['token'] = api_token_id
     else:
@@ -412,7 +410,7 @@ async def update_server_acl(
 
     token = kwargs.get('token')
 
-    update_data: dict[str, Any] = {}
+    update_data: dict[str, object] = {}
     if server_id is not None:
         update_data['server'] = server_id
     # When rebinding, null the opposing field explicitly: the server enforces
@@ -517,7 +515,7 @@ async def bulk_server_acl(
 
     token = kwargs.get('token')
 
-    body: dict[str, Any] = {'servers': server_ids}
+    body: dict[str, object] = {'servers': server_ids}
     if api_token_id is not None:
         body['token'] = api_token_id
     else:
@@ -635,7 +633,7 @@ async def create_file_acl(
 
     token = kwargs.get('token')
 
-    acl_data: dict[str, Any] = {
+    acl_data: dict[str, object] = {
         'path': path,
         'action': action,
         'username': username,
@@ -697,7 +695,7 @@ async def update_file_acl(
 
     token = kwargs.get('token')
 
-    update_data: dict[str, Any] = {}
+    update_data: dict[str, object] = {}
     if path is not None:
         update_data['path'] = path
     if action is not None:

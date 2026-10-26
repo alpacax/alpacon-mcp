@@ -32,7 +32,6 @@ when it names the agent.
 
 import os
 from contextvars import ContextVar
-from typing import Any
 
 from mcp.server.context import CallNext, HandlerResult, ServerRequestContext
 
@@ -61,7 +60,7 @@ def use_environment_fallback(enabled: bool) -> None:
 
 
 async def capture_declared_agent(
-    ctx: ServerRequestContext[Any, Any], call_next: CallNext
+    ctx: ServerRequestContext[object, object], call_next: CallNext
 ) -> HandlerResult:
     """Bind the client's ``clientInfo`` for the rest of this request."""
     params = ctx.session.client_params

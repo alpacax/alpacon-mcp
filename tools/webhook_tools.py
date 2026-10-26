@@ -1,13 +1,12 @@
 """Webhook and event subscription tools for Alpacon MCP server."""
 
-from typing import Any
-
 from utils.api_call import http_call_response
-from utils.common import ToolResponse, build_list_params
+from utils.common import build_list_params
 from utils.decorators import mcp_tool_handler
 from utils.error_handler import format_validation_error, validate_uuid_format
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ_ONLY
+from utils.types import ToolResponse
 
 # Mirrors Webhook.Provider; omitting provider lets the server infer it from the URL.
 WEBHOOK_PROVIDERS = ('slack', 'discord', 'teams', 'telegram', 'custom')
@@ -98,7 +97,7 @@ async def create_event_subscription(
     """
     token = kwargs.get('token')
 
-    subscription_data: dict[str, Any] = {
+    subscription_data: dict[str, object] = {
         'channel': channel,
         'event_type': event_type,
     }
@@ -286,7 +285,7 @@ async def create_webhook(
 
     token = kwargs.get('token')
 
-    webhook_data: dict[str, Any] = {
+    webhook_data: dict[str, object] = {
         'name': name,
         'url': url,
         'owner': owner,
@@ -338,7 +337,7 @@ async def update_webhook(
     """
     token = kwargs.get('token')
 
-    update_data: dict[str, Any] = {}
+    update_data: dict[str, object] = {}
     if name is not None:
         update_data['name'] = name
     if url is not None:

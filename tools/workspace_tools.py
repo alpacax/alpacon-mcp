@@ -7,7 +7,6 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from utils.api_call import http_call_response
 from utils.auth import get_token_workspaces_with_dropped
 from utils.common import (
-    ToolResponse,
     error_response,
     is_auth_enabled,
     success_response,
@@ -17,6 +16,7 @@ from utils.decorators import mcp_tool_handler, require_jwt_auth
 from utils.http_client import http_client
 from utils.token_manager import TokenManager, get_token_manager
 from utils.tool_annotations import IDEMPOTENT_WRITE, READ_ONLY
+from utils.types import ToolErrorResponse, ToolResponse
 
 # Mirrors alpacon-server's AgentUpgradePolicy choices
 # (workspaces/api/agent_rollout.py); kept here rather than imported since this
@@ -26,12 +26,12 @@ _ROLLOUT_POLICY_KEYS = frozenset({'mode', 'window'})
 _ROLLOUT_WINDOW_KEYS = frozenset({'days', 'start_hour', 'length_hours', 'timezone'})
 
 
-def _is_plain_int(value: Any) -> bool:
+def _is_plain_int(value: object) -> bool:
     """True for a real int, not the `bool` subclass (`True`/`False` are ints)."""
     return isinstance(value, int) and not isinstance(value, bool)
 
 
-def _validate_rollout_policy(policy: Any) -> str | None:
+def _validate_rollout_policy(policy: object) -> str | None:
     """Validate an `agent_rollout_policy` write locally before it reaches the API.
 
     Mirrors the shape `AgentRolloutPolicyField.to_internal_value` accepts
@@ -112,7 +112,7 @@ def _validate_rollout_policy(policy: Any) -> str | None:
 def _collect_workspaces_from_tokens(
     token_manager: TokenManager,
     target_region: str = '',
-) -> list[dict[str, Any]]:
+) -> list[dict[str, object]]:
     """Collect workspace info from token.json data.
 
     Args:
@@ -163,8 +163,8 @@ def _collect_workspaces_from_tokens(
 
 
 def _saas_only_security_404(
-    result: Any, region: str, workspace: str
-) -> dict[str, Any] | None:
+    result: object, region: str, workspace: str
+) -> ToolErrorResponse | None:
     """Translate a SaaS-only 404 into a clear "not available" error.
 
     The server registers the security settings routes (security settings and
@@ -221,7 +221,7 @@ async def list_workspaces(region: str = '', **kwargs: str) -> ToolResponse:
     if is_auth_enabled():
         token = kwargs['token']  # always set: the decorator rejected a missing one
         jwt_workspaces, unusable_entries = get_token_workspaces_with_dropped(token)
-        workspaces = []
+        workspaces: list[dict[str, object]] = []
         for ws in jwt_workspaces:
             ws_name = ws.get('schema_name', '')
             ws_region = ws.get('region', '')
@@ -571,7 +571,7 @@ async def update_workspace_preferences(
     """
     token = kwargs.get('token')
 
-    update_data: dict[str, Any] = {}
+    update_data: dict[str, object] = {}
     if front_url is not None:
         update_data['front_url'] = front_url
     if country is not None:

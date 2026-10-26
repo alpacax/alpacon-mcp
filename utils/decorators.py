@@ -5,9 +5,9 @@ from __future__ import annotations
 import inspect
 import logging
 import re
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from functools import wraps
-from typing import Any, Protocol
+from typing import Protocol
 
 from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.types import ToolAnnotations
@@ -19,8 +19,6 @@ from utils.auth import (
     match_workspace,
 )
 from utils.common import (
-    ToolErrorResponse,
-    ToolResult,
     error_response,
     is_auth_enabled,
     token_error_response,
@@ -41,6 +39,7 @@ from utils.security_settings import (
     get_action_for_tool,
     security_cache,
 )
+from utils.types import ToolErrorResponse, ToolResult
 from utils.workspace_resolver import resolve_workspace
 
 logger = get_logger('decorators')
@@ -343,7 +342,7 @@ async def _check_mfa_requirement(
         logger.debug('MFA pre-check failed (non-fatal): %s', e)
 
 
-def _validate_path_identifier(field: str, value: Any) -> ToolErrorResponse | None:
+def _validate_path_identifier(field: str, value: object) -> ToolErrorResponse | None:
     """Returns an error response, or None if valid."""
     # A non-str never matches the pattern, but the f-string that builds the
     # endpoint stringifies it anyway, so its separators reach the path.
@@ -364,7 +363,7 @@ def _validate_path_identifier(field: str, value: Any) -> ToolErrorResponse | Non
     return None
 
 
-def _validate_page_size(field: str, value: Any) -> ToolErrorResponse | None:
+def _validate_page_size(field: str, value: object) -> ToolErrorResponse | None:
     """Returns an error response, or None if valid."""
     # bool is an int subclass, so True would otherwise pass as a page size of 1.
     if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
@@ -376,7 +375,7 @@ def _validate_page_size(field: str, value: Any) -> ToolErrorResponse | None:
     return None
 
 
-def _validate_uuid_list(field: str, value: Any) -> ToolErrorResponse | None:
+def _validate_uuid_list(field: str, value: object) -> ToolErrorResponse | None:
     """Returns an error response, or None if valid."""
     if not isinstance(value, list):
         return format_validation_error(
@@ -634,7 +633,7 @@ def with_error_handling[**P, R](
     return wrapper
 
 
-def _summarize_log_value(value: Any, _nested: bool = False) -> Any:
+def _summarize_log_value(value: object, _nested: bool = False) -> object:
     """Bound a verbatim argument, describing whatever is past the bound.
 
     A string longer than the bound becomes ``<str len=N>``, a container
@@ -658,7 +657,7 @@ def _summarize_log_value(value: Any, _nested: bool = False) -> Any:
     return value
 
 
-def _log_arguments(arguments: dict[str, Any]) -> dict[str, Any]:
+def _log_arguments(arguments: Mapping[str, object]) -> dict[str, object]:
     """The entry log's view of a call: every key, and a value only if reviewed."""
     return {
         key: (
@@ -753,7 +752,7 @@ class _ToolDecorator(Protocol):
 def mcp_tool_handler(
     description: str,
     annotations: ToolAnnotations | None = None,
-    meta: dict[str, Any] | None = None,
+    meta: dict[str, object] | None = None,
     requires_workspace: bool = True,
 ) -> _ToolDecorator:
     """Combined decorator for MCP tools that adds all common functionality.

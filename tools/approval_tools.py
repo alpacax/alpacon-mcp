@@ -9,13 +9,12 @@ human, but provide no approve/reject mutation. The agent must escalate to a huma
 who approves out-of-band (Alpacon web console or Slack).
 """
 
-from typing import Any
-
 from utils.api_call import http_call_response
-from utils.common import ToolResponse, build_list_params, pending_approval_response
+from utils.common import build_list_params, pending_approval_response
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, READ_ONLY
+from utils.types import ToolResponse
 
 # ===============================
 # APPROVAL REQUEST TOOLS
@@ -132,7 +131,7 @@ async def explain_approval_decision(
     Returns:
         Structured pending-approval guidance (no approve/reject is performed)
     """
-    context: dict[str, Any] = {'region': region, 'workspace': workspace}
+    context: dict[str, object] = {'region': region, 'workspace': workspace}
     if request_id is not None:
         context['request_id'] = request_id
 
@@ -244,7 +243,7 @@ async def request_sudo_policy(
     """
     token = kwargs.get('token')
 
-    policy_request: dict[str, Any] = {
+    policy_request: dict[str, object] = {
         'servers': servers,
         'commands': commands,
         'reason': reason,

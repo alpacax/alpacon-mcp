@@ -4,7 +4,6 @@ import asyncio
 
 from utils.api_call import http_call_response
 from utils.common import (
-    ToolResponse,
     build_list_params,
     error_response,
     success_response,
@@ -13,6 +12,7 @@ from utils.common import (
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import READ_ONLY
+from utils.types import ToolResponse
 
 
 @mcp_tool_handler(

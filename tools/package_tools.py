@@ -1,12 +1,11 @@
 """Package management tools for Alpacon MCP server."""
 
-from typing import Any
-
 from utils.api_call import http_call_response
-from utils.common import ToolResponse, build_list_params
+from utils.common import build_list_params
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, READ_ONLY
+from utils.types import ToolResponse
 
 # ===============================
 # SYSTEM PACKAGE TOOLS
@@ -81,7 +80,7 @@ async def install_system_package(
     """
     token = kwargs.get('token')
 
-    package_data: dict[str, Any] = {
+    package_data: dict[str, object] = {
         'server': server_id,
         'name': package_name,
     }
@@ -205,7 +204,7 @@ async def install_python_package(
     """
     token = kwargs.get('token')
 
-    package_data: dict[str, Any] = {
+    package_data: dict[str, object] = {
         'server': server_id,
         'name': package_name,
     }

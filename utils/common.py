@@ -12,17 +12,12 @@ from urllib.parse import urlparse
 
 from utils.logger import get_logger
 from utils.token_manager import get_token_manager
-
-# Every value response.json() can produce; AlpaconHTTPClient methods return it.
-JsonValue = dict[str, Any] | list[Any] | str | int | float | bool | None
-
-# The {'status': 'error', ...} envelope any decorated tool may return instead.
-ToolErrorResponse = dict[str, Any]
-type ToolResult[R] = R | ToolErrorResponse
-
-# What a tool returns; a TypedDict once mypy supports PEP 728 extra_items, since
-# the response helpers merge caller-chosen **kwargs into it.
-ToolResponse = dict[str, Any]
+from utils.types import (
+    JsonValue,
+    QueryParam,
+    ToolErrorResponse,
+    ToolResponse,
+)
 
 # Initialize shared instances
 token_manager = get_token_manager()
@@ -448,8 +443,8 @@ def resolve_work_session_id(explicit: str | None) -> str | None:
 def build_list_params(
     page: int | None = None,
     page_size: int | None = None,
-    **filters: Any,
-) -> dict[str, Any]:
+    **filters: QueryParam,
+) -> dict[str, QueryParam]:
     """Assemble the query params of a list endpoint from its optional arguments.
 
     One rule decides every field: a value is omitted only when it is None. A
@@ -479,7 +474,7 @@ def resolve_time_window(
     return start, end_date
 
 
-def error_response(message: str, **kwargs: Any) -> ToolErrorResponse:
+def error_response(message: str, **kwargs: object) -> ToolErrorResponse:
     """Create standardized error response.
 
     Args:
@@ -489,7 +484,7 @@ def error_response(message: str, **kwargs: Any) -> ToolErrorResponse:
     Returns:
         Standardized error response dict
     """
-    response = {'status': 'error', 'message': message}
+    response: ToolErrorResponse = {'status': 'error', 'message': message}
     response.update(kwargs)
     return response
 
@@ -506,7 +501,7 @@ def empty_value_error(field: str) -> ToolErrorResponse:
     return error_response(f'{field} must not be empty')
 
 
-def success_response(data: Any = None, **kwargs: Any) -> ToolResponse:
+def success_response(data: object = None, **kwargs: object) -> ToolResponse:
     """Create standardized success response.
 
     Args:
@@ -516,7 +511,7 @@ def success_response(data: Any = None, **kwargs: Any) -> ToolResponse:
     Returns:
         Standardized success response dict
     """
-    response = {'status': 'success'}
+    response: ToolResponse = {'status': 'success'}
     if data is not None:
         response['data'] = data
     response.update(kwargs)
@@ -527,7 +522,7 @@ def pending_approval_response(
     message: str,
     *,
     category: str,
-    **kwargs: Any,
+    **kwargs: object,
 ) -> ToolResponse:
     """Create a structured "pending human approval" result (ADR 0015).
 
@@ -556,7 +551,7 @@ def pending_approval_response(
     """
     # Apply caller context first so the fixed, security-relevant fields below
     # (the flags and category) always win and cannot be overridden by a kwarg.
-    response: dict[str, Any] = {**kwargs}
+    response: ToolResponse = {**kwargs}
     response.update(
         {
             'status': 'pending_approval',
@@ -604,7 +599,7 @@ def token_error_response(region: str, workspace: str) -> ToolErrorResponse:
     )
 
 
-def work_session_gate_response(code: str, **kwargs: Any) -> ToolResponse:
+def work_session_gate_response(code: str, **kwargs: object) -> ToolResponse:
     """Translate a server WorkSession gate error code into an agent-actionable result.
 
     ``work_session_not_active`` becomes a pending-approval result (a human must
@@ -630,7 +625,7 @@ def work_session_gate_response(code: str, **kwargs: Any) -> ToolResponse:
     )
 
 
-def _plan_limit_billing_link(region: Any, workspace: Any) -> str:
+def _plan_limit_billing_link(region: object, workspace: object) -> str:
     """Console billing link for a plan-limit next_action.
 
     Derived from the workspace host the tool was called for (#296): an
@@ -674,7 +669,7 @@ def _plan_limit_remedy(axis: str) -> str:
     return remedy
 
 
-def _plan_limit_next_action(axis: str, region: Any, workspace: Any) -> str:
+def _plan_limit_next_action(axis: str, region: object, workspace: object) -> str:
     """The agent-facing instruction for a plan-limit 402 on the given axis."""
     axis_name = _PLAN_LIMIT_AXIS_NAME.get(axis, axis)
     return (
@@ -718,7 +713,7 @@ def plan_limit_response(
     error_code: str | None,
     axis: str,
     next_value: str | None,
-    **kwargs: Any,
+    **kwargs: object,
 ) -> ToolResponse:
     """Build the agent-facing result for a plan-limit 402 (see _plan_limit_axis).
 
@@ -753,7 +748,7 @@ def plan_limit_response(
     """
     # Apply caller context first so the fixed fields below always win and
     # cannot be overridden by a kwarg (mirrors pending_approval_response).
-    response: dict[str, Any] = {**kwargs}
+    response: ToolResponse = {**kwargs}
     response.update(
         {
             'status': 'error',
@@ -771,10 +766,10 @@ def plan_limit_response(
 
 
 def unwrap_http_result(
-    result: Any,
+    result: object,
     *,
     default_message: str,
-    **id_context: Any,
+    **id_context: object,
 ) -> ToolErrorResponse | None:
     """Convert an http_client error-dict into an error_response.
 
@@ -812,7 +807,7 @@ def unwrap_http_result(
     if not (isinstance(result, dict) and 'error' in result):
         return None
 
-    error_kwargs: dict[str, Any] = dict(id_context)
+    error_kwargs: dict[str, object] = dict(id_context)
     status_code = result.get('status_code')
     if status_code is not None:
         error_kwargs['status_code'] = status_code

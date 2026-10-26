@@ -2,12 +2,12 @@
 
 import os
 import time
-from typing import Any
 
 from utils.common import MCP_VERSION, is_auth_enabled
 from utils.http_client import http_client
 from utils.logger import get_logger
 from utils.token_manager import get_token_manager
+from utils.types import ToolResponse
 
 logger = get_logger('health')
 
@@ -15,7 +15,7 @@ logger = get_logger('health')
 _start_time = time.monotonic()
 
 
-def _get_auth_info_remote() -> dict[str, Any]:
+def _get_auth_info_remote() -> dict[str, object]:
     """Get auth info for remote (JWT) mode."""
     return {
         'mode': 'jwt',
@@ -23,7 +23,7 @@ def _get_auth_info_remote() -> dict[str, Any]:
     }
 
 
-def _get_auth_info_local() -> dict[str, Any]:
+def _get_auth_info_local() -> dict[str, object]:
     """Get auth info for local (token.json) mode."""
     token_manager = get_token_manager()
     auth_status = token_manager.get_auth_status()
@@ -35,7 +35,7 @@ def _get_auth_info_local() -> dict[str, Any]:
     }
 
 
-async def get_health_info() -> dict[str, Any]:
+async def get_health_info() -> ToolResponse:
     """Collect health information for the MCP server.
 
     Returns a sanitized health status dict that never exposes

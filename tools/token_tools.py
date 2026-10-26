@@ -11,15 +11,8 @@ check. The scopes and presets catalog endpoints are not subject to
 this restriction.
 """
 
-from typing import Any
-
 from utils.api_call import http_call_response
-from utils.common import (
-    ToolErrorResponse,
-    ToolResponse,
-    build_list_params,
-    error_response,
-)
+from utils.common import build_list_params, error_response
 from utils.decorators import mcp_tool_handler, require_jwt_auth
 from utils.error_handler import format_validation_error, validate_server_id_format
 from utils.http_client import http_client
@@ -29,6 +22,7 @@ from utils.tool_annotations import (
     IDEMPOTENT_WRITE,
     READ_ONLY,
 )
+from utils.types import ToolErrorResponse, ToolResponse
 
 _API_TOKENS = '/api/auth/tokens/'
 _API_TOKEN_SCOPES = f'{_API_TOKENS}scopes/'
@@ -192,7 +186,7 @@ async def create_api_token(
     """
     token = kwargs.get('token')
 
-    token_data: dict[str, Any] = {'name': name}
+    token_data: dict[str, object] = {'name': name}
     if scopes is not None:
         token_data['scopes'] = scopes
     if expires_at is not None:
@@ -268,7 +262,7 @@ async def update_api_token(
     if expires_at is not None and clear_expires_at:
         return error_response('expires_at and clear_expires_at are mutually exclusive')
 
-    update_data: dict[str, Any] = {}
+    update_data: dict[str, object] = {}
     if name is not None:
         update_data['name'] = name
     if enabled is not None:
@@ -380,7 +374,7 @@ async def duplicate_api_token(
     if err:
         return err
 
-    data: dict[str, Any] = {}
+    data: dict[str, object] = {}
     if name is not None:
         data['name'] = name
 

@@ -12,8 +12,6 @@ from utils.common import (
     FILE_EXEC_INLINE_CREDENTIAL_HINT,
     FILE_EXEC_REFUSAL_HINTS,
     INLINE_CREDENTIAL_HINT,
-    JsonValue,
-    ToolResponse,
     build_list_params,
     empty_value_error,
     error_response,
@@ -27,6 +25,7 @@ from utils.decorators import mcp_tool_handler
 from utils.error_handler import validate_file_path
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, READ_ONLY
+from utils.types import JsonValue, ToolErrorResponse, ToolResponse
 
 #: Ceiling the server puts on a stated purpose, on both write paths (ADR 0052).
 #: Truncating here rather than letting the server refuse keeps a long purpose
@@ -376,7 +375,7 @@ def _requester_fields(
     work_session_id: str | None,
     purpose: str | None,
     purpose_demand_supported: bool,
-) -> dict[str, Any]:
+) -> dict[str, object]:
     """The submit-body fields that describe the requester, not what runs.
 
     Shared by the shell lane and the file lane (ADR 0053): the server reads
@@ -384,7 +383,7 @@ def _requester_fields(
     rule such as the blank-purpose one from being applied on one lane and
     forgotten on the other.
     """
-    fields: dict[str, Any] = {}
+    fields: dict[str, object] = {}
     if username:
         fields['username'] = username
     if run_after:
@@ -426,7 +425,7 @@ async def _submit_command(
     *,
     token: str | None = None,
 ) -> JsonValue:
-    command_data: dict[str, Any] = {
+    command_data: dict[str, object] = {
         'server': server_id,
         'shell': shell,
         'line': command,
@@ -490,18 +489,19 @@ async def _submit_file_execution(
     that predates the field ignores the key, and a run with no
     proposal sends the same body it always did.
     """
-    command_data: dict[str, Any] = {
-        'server': server_id,
-        'groupname': groupname,
-        'file': {
-            'path': path,
-            'interpreter': interpreter,
-            'args': list(args or []),
-            'content': content,
-        },
+    file_spec: dict[str, object] = {
+        'path': path,
+        'interpreter': interpreter,
+        'args': list(args or []),
+        'content': content,
     }
     if reuse_days is not None:
-        command_data['file']['reuse_days'] = reuse_days
+        file_spec['reuse_days'] = reuse_days
+    command_data: dict[str, object] = {
+        'server': server_id,
+        'groupname': groupname,
+        'file': file_spec,
+    }
     command_data.update(
         _requester_fields(
             username=username,
@@ -555,8 +555,8 @@ async def _answer_purpose_demand(
 
 
 def _purpose_required_response(
-    deadline_seconds: int | None = None, **kwargs: Any
-) -> dict[str, Any]:
+    deadline_seconds: int | None = None, **kwargs: object
+) -> ToolResponse:
     """Report an open purpose demand as something this agent must answer itself.
 
     Deliberately not ``pending_approval_response``: that shape says a human
@@ -570,7 +570,7 @@ def _purpose_required_response(
     description. An agent reads the answer to its own call far more reliably
     than it recalls a description that context compaction may have dropped.
     """
-    response: dict[str, Any] = {**kwargs}
+    response: ToolResponse = {**kwargs}
     response.update(
         {
             'status': 'purpose_required',
@@ -785,7 +785,7 @@ async def _settle_submission(
     command: str = '',
     shell: str = '',
     stdin_fed: bool = False,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Turn a submit response into the tool's answer: refusal, id, then the wait.
 
     Shared by ``execute_command`` and ``execute_file``. The server answers both
@@ -797,7 +797,7 @@ async def _settle_submission(
     if isinstance(exec_data, dict) and 'error' in exec_data:
         # unwrap_http_result returns non-None whenever 'error' is in the dict
         return cast(
-            dict[str, Any],
+            ToolErrorResponse,
             unwrap_http_result(
                 exec_data,
                 default_message='Command execution failed',
@@ -862,15 +862,15 @@ async def _put_to_s3(upload_url: str, data: bytes) -> str | None:
 
 
 def _transfer_refusal(
-    result: Any,
+    result: object,
     default_message: str,
     *,
     prefix: str,
     error_code: str,
     region: str,
     workspace: str,
-    **extra: Any,
-) -> dict[str, Any] | None:
+    **extra: object,
+) -> ToolErrorResponse | None:
     """Render a refused WebFTP call on the file lane, or None when it was not refused."""
     # Only a bare refusal gets error_code: beside a gate's `code` or `gate`, or
     # a pending_approval, it would read as a separate transfer failure.
@@ -924,7 +924,7 @@ async def _read_file_from_host(
     work_session_id: str | None,
     region: str,
     token: str | None,
-) -> str | dict[str, Any]:
+) -> str | ToolErrorResponse:
     """Read ``path`` from the host through WebFTP, as ``username``.
 
     Returns the file's contents, decoded as UTF-8 with no normalization, or an
@@ -932,7 +932,7 @@ async def _read_file_from_host(
     hashes the on-disk file at execution, so a file changed after this read
     fails closed.
     """
-    download_data: dict[str, Any] = {
+    download_data: dict[str, object] = {
         'server': server_id,
         'name': path.rsplit('/', 1)[-1],
         'path': path,
@@ -945,12 +945,12 @@ async def _read_file_from_host(
 
     prefix = f'Could not read {path} from the host, so nothing was submitted: '
 
-    def _failed(reason: str, **extra: Any) -> dict[str, Any]:
+    def _failed(reason: str, **extra: object) -> ToolErrorResponse:
         return error_response(prefix + reason, error_code='file_read_failed', **extra)
 
     def _refused(
-        result: Any, default_message: str, **extra: Any
-    ) -> dict[str, Any] | None:
+        result: object, default_message: str, **extra: object
+    ) -> ToolErrorResponse | None:
         return _transfer_refusal(
             result,
             default_message,
@@ -1086,7 +1086,7 @@ async def _write_file_to_host(
     work_session_id: str | None,
     region: str,
     token: str | None,
-) -> dict[str, Any] | None:
+) -> ToolErrorResponse | None:
     """Write ``content`` to ``path`` on the host through WebFTP and wait for it.
 
     Returns an error response, or None once the host reports the file written.
@@ -1094,7 +1094,7 @@ async def _write_file_to_host(
     the submit sends for review. An existing file is replaced only with
     ``overwrite``; otherwise the host refuses it, as the CLI's upload does.
     """
-    upload_data: dict[str, Any] = {
+    upload_data: dict[str, object] = {
         'server': server_id,
         'name': path.rsplit('/', 1)[-1],
         'path': path,
@@ -1111,12 +1111,12 @@ async def _write_file_to_host(
 
     prefix = f'Could not write {path} on the host, so nothing was submitted: '
 
-    def _failed(reason: str, **extra: Any) -> dict[str, Any]:
+    def _failed(reason: str, **extra: object) -> ToolErrorResponse:
         return error_response(prefix + reason, error_code='file_write_failed', **extra)
 
     def _refused(
-        result: Any, default_message: str, **extra: Any
-    ) -> dict[str, Any] | None:
+        result: object, default_message: str, **extra: object
+    ) -> ToolErrorResponse | None:
         return _transfer_refusal(
             result,
             default_message,
@@ -1195,7 +1195,7 @@ async def _write_file_to_host(
     )
 
 
-def _file_exec_refusal(code: str, **kwargs: Any) -> dict[str, Any]:
+def _file_exec_refusal(code: str, **kwargs: object) -> ToolErrorResponse:
     """Refuse a file execution locally with the wording the server's 400 gets.
 
     Same ``error_code`` and the same hint text as ``unwrap_http_result`` renders
@@ -1399,7 +1399,7 @@ _BARE_INTERPRETER_RE = re.compile(r'[A-Za-z0-9][A-Za-z0-9._+-]{0,63}')
 
 
 def _attach_file_execution_suggestion(
-    response: dict[str, Any],
+    response: ToolResponse,
     result: dict[str, Any],
     *,
     server_id: str,
@@ -1457,7 +1457,7 @@ def _attach_file_execution_suggestion(
     # The rest of the call comes off the polled row, so a caller that did not
     # submit the command (state_command_purpose) still suggests the run held.
     coordinates = _rerun_coordinates(result)
-    arguments: dict[str, Any] = {
+    arguments: dict[str, object] = {
         'server_id': server_id or coordinates.get('server_id'),
         'path': path,
         'interpreter': interpreter,
@@ -1469,7 +1469,7 @@ def _attach_file_execution_suggestion(
     arguments.update(
         (key, value) for key, value in coordinates.items() if key != 'server_id'
     )
-    call: dict[str, Any] = {'tool': 'execute_file', 'arguments': arguments}
+    call: dict[str, object] = {'tool': 'execute_file', 'arguments': arguments}
     if interpreter is None:
         call['interpreter_name'] = interpreter_name
         call['instruction'] = (
@@ -1497,7 +1497,7 @@ async def _poll_command_result(
     shell: str = '',
     # Whether the submitting call fed stdin, which some rows do not echo back.
     stdin_fed: bool = False,
-) -> dict[str, Any]:
+) -> ToolResponse:
     """Wait for a submitted command to reach a state worth reporting.
 
     Shared by ``execute_command`` and ``state_command_purpose``: answering a
@@ -1765,7 +1765,7 @@ async def execute_command_multi_server(
             token=token,
         )
 
-    deploy_results: dict[str, Any] = {}
+    deploy_results: dict[str, object] = {}
     successful_count = 0
     failed_count = 0
     purpose_truncated = _purpose_was_truncated(purpose)
