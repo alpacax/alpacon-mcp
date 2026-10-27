@@ -14,21 +14,8 @@ VALID_REGIONS: tuple[Region, ...] = (*SERVED_REGIONS, 'dev')
 
 
 class UpstreamAuthError(ToolError):
-    """Raised when re-authentication is required for the Alpacon API.
-
-    Used in remote (streamable-http) mode to signal that the current call
-    requires OAuth re-authentication. As a ``ToolError``, the SDK logs it
-    at INFO without a traceback and keeps the message intact for the client.
-
-    Typically raised when the upstream Alpacon API returns 401 or when
-    local checks (such as MFA pre-checks) determine that the current
-    session requires re-authentication. The ``mfa_required`` flag
-    indicates whether multi-factor verification is specifically needed.
-
-    Raising this only cuts the current call short; the signal the
-    middleware reads is recorded separately via
-    ``utils.request_signal.signal_upstream_auth_error``.
-    """
+    """Re-authentication is required (a ToolError, logged at INFO). Raising only cuts
+    the call short; request_signal records what the middleware reads."""
 
     def __init__(self, mfa_required: bool = False, source: str = ''):
         self.mfa_required = mfa_required
@@ -38,14 +25,7 @@ class UpstreamAuthError(ToolError):
 
 
 def validate_workspace_format(workspace: str) -> bool:
-    """Validate workspace name format.
-
-    Args:
-        workspace: Workspace name to validate
-
-    Returns:
-        True if valid, False otherwise
-    """
+    """Alphanumeric with inner hyphens/underscores, at most 63 characters."""
     if not workspace or not isinstance(workspace, str):
         return False
 
@@ -55,14 +35,6 @@ def validate_workspace_format(workspace: str) -> bool:
 
 
 def validate_region_format(region: object) -> TypeGuard[Region]:
-    """Validate region format.
-
-    Args:
-        region: Region to validate
-
-    Returns:
-        True if valid, False otherwise
-    """
     if not region or not isinstance(region, str):
         return False
 
@@ -70,14 +42,6 @@ def validate_region_format(region: object) -> TypeGuard[Region]:
 
 
 def validate_uuid_format(value: str) -> bool:
-    """Validate that a value is a UUID.
-
-    Args:
-        value: Value to validate
-
-    Returns:
-        True if valid UUID, False otherwise
-    """
     if not value or not isinstance(value, str):
         return False
 
@@ -89,15 +53,8 @@ def validate_uuid_format(value: str) -> bool:
 
 
 def validate_file_path(file_path: str, allow_relative: bool = False) -> bool:
-    """Validate file path for security.
-
-    Args:
-        file_path: File path to validate
-        allow_relative: Whether to allow relative paths
-
-    Returns:
-        True if path is safe, False otherwise
-    """
+    """True only for a safe path: absolute unless allow_relative, no traversal, no null
+    byte or <>|*? characters."""
     if not file_path or not isinstance(file_path, str):
         return False
 
@@ -122,16 +79,8 @@ def validate_file_path(file_path: str, allow_relative: bool = False) -> bool:
 def format_validation_error(
     field: str, value: object, expected_format: str | None = None
 ) -> dict[str, str]:
-    """Format validation error with helpful message.
-
-    Args:
-        field: Field name that failed validation
-        value: The invalid value
-        expected_format: Description of expected format
-
-    Returns:
-        Formatted validation error response
-    """
+    """Build a validation error response; expected_format overrides the per-field
+    hint."""
     message = f"'{field}' value is invalid."
 
     if expected_format:

@@ -1,12 +1,5 @@
-"""MCP prompts—workflow guides that teach an agent the Alpacon operating discipline.
-
-Unlike tools (which act) and resources (which expose data), these prompts inject the
-*rules* an MCP agent must follow: every infrastructure action is wrapped in a Work
-Session, approval gates route to a human (an agent can never self-approve), and denials
-are structured so the agent self-corrects instead of brute-forcing. Grounded in the
-alpacon-handbook product model (ACCESS -> EXECUTION -> AUDIT, Work Session as the single
-primitive). Each prompt returns static guidance text; arguments only scope the context.
-"""
+"""MCP prompts: static workflow guides for the Alpacon operating discipline.
+Every action runs in a Work Session, approvals go to a human, denials are structured."""
 
 from server import mcp
 

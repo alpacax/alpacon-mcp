@@ -1,9 +1,4 @@
-"""
-Interactive setup wizard for Alpacon MCP Server configuration.
-
-This module provides a user-friendly CLI interface for configuring the MCP server,
-eliminating the need for manual JSON editing.
-"""
+"""Interactive setup wizard that writes token.json, replacing manual JSON editing."""
 
 import asyncio
 import json
@@ -17,10 +12,8 @@ from .token_manager import TokenManager
 
 
 def _region_accepted(region: str) -> bool:
-    """Return True if the region validator accepts it, else print an error and return False.
-
-    The internal-only `dev` region passes too; the error message advertises only the served ones.
-    """
+    """True if the region validator accepts it; otherwise print an error and return
+    False."""
     if validate_region_format(region):
         return True
     print(
@@ -31,21 +24,21 @@ def _region_accepted(region: str) -> bool:
 
 
 def get_global_config_path() -> Path:
-    """Get the global configuration directory path."""
+    """Path of the global token.json; creates ~/.alpacon-mcp if missing."""
     config_dir = Path.home() / '.alpacon-mcp'
     config_dir.mkdir(parents=True, exist_ok=True)
     return config_dir / 'token.json'
 
 
 def get_local_config_path() -> Path:
-    """Get the local (project) configuration path."""
+    """Path of the local token.json; creates ./config if missing."""
     config_dir = Path('config')
     config_dir.mkdir(parents=True, exist_ok=True)
     return config_dir / 'token.json'
 
 
 def load_existing_config(config_path: Path) -> dict[str, dict[str, str]]:
-    """Load existing configuration if it exists."""
+    """Load a token.json; an absent or malformed file reads as empty."""
     if config_path.exists():
         try:
             with open(config_path) as f:
@@ -57,13 +50,13 @@ def load_existing_config(config_path: Path) -> dict[str, dict[str, str]]:
 
 
 def save_config(config: dict[str, dict[str, str]], config_path: Path) -> None:
-    """Save configuration to file."""
     with open(config_path, 'w') as f:
         json.dump(config, f, indent=2)
 
 
 def test_connection(region: str, workspace: str, token: str) -> bool:
-    """Test API connection with provided credentials."""
+    """True if a server-list request succeeds with these credentials; any failure is
+    False."""
     try:
 
         async def _test() -> bool:
@@ -85,7 +78,6 @@ def test_connection(region: str, workspace: str, token: str) -> bool:
 
 
 def print_mcp_config() -> None:
-    """Print MCP server configuration."""
     print('\n' + '=' * 60)
     print('📋 MCP Server Configuration')
     print('=' * 60)
@@ -103,13 +95,8 @@ def print_mcp_config() -> None:
 
 
 def run_setup_wizard(force_local: bool = False, custom_path: str | None = None) -> None:
-    """
-    Run interactive setup wizard for Alpacon MCP Server.
-
-    Args:
-        force_local: If True, save to local config instead of global
-        custom_path: Custom path to token.json file (overrides force_local)
-    """
+    """Run the interactive setup; custom_path overrides force_local. Exits with status 1
+    on invalid input or a failed save."""
     print('\n' + '=' * 60)
     print('🚀 Welcome to Alpacon MCP Server Setup!')
     print('=' * 60)
@@ -181,7 +168,6 @@ def run_setup_wizard(force_local: bool = False, custom_path: str | None = None) 
 
 
 def list_workspaces() -> None:
-    """List all configured workspaces."""
     global_config_path = get_global_config_path()
     global_config = load_existing_config(global_config_path)
     local_config_path = get_local_config_path()
@@ -215,7 +201,6 @@ def list_workspaces() -> None:
 
 
 def add_workspace() -> None:
-    """Add a new workspace to existing configuration."""
     print('\n' + '=' * 60)
     print('➕ Add Workspace')
     print('=' * 60)
@@ -278,7 +263,6 @@ def add_workspace() -> None:
 
 
 def test_credentials() -> None:
-    """Test configured credentials."""
     print('\n' + '=' * 60)
     print('🔍 Testing Credentials')
     print('=' * 60)

@@ -16,7 +16,6 @@ _start_time = time.monotonic()
 
 
 def _get_auth_info_remote() -> dict[str, object]:
-    """Get auth info for remote (JWT) mode."""
     return {
         'mode': 'jwt',
         'auth_required': True,
@@ -24,7 +23,6 @@ def _get_auth_info_remote() -> dict[str, object]:
 
 
 def _get_auth_info_local() -> dict[str, object]:
-    """Get auth info for local (token.json) mode."""
     token_manager = get_token_manager()
     auth_status = token_manager.get_auth_status()
     return {
@@ -36,14 +34,8 @@ def _get_auth_info_local() -> dict[str, object]:
 
 
 async def get_health_info() -> ToolResponse:
-    """Collect health information for the MCP server.
-
-    Returns a sanitized health status dict that never exposes
-    token values, workspace names, file paths, or internal URLs.
-
-    Returns:
-        Health status dictionary
-    """
+    """Health status dict; never exposes token values, workspace names, file paths or
+    internal URLs."""
     # Auth config — mode-appropriate info only
     auth_info = _get_auth_info_remote() if is_auth_enabled() else _get_auth_info_local()
 

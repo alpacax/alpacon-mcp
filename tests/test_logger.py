@@ -1,7 +1,5 @@
-"""Tests for the logging setup in utils/logger.py.
-
-The file sink must not run on the caller's thread: in remote mode every tool
-call shares one event loop, and a FileHandler flushes to disk on every record.
+"""Logging setup in utils/logger.py. The file sink must not run on the caller's thread:
+in remote mode every tool call shares one loop.
 """
 
 import io
@@ -497,8 +495,6 @@ class TestThirdPartyLoggers:
 
 
 class TestEscapeForLog:
-    """Tests for the client-value escaping helper."""
-
     def test_escapes_a_line_break(self):
         assert escape_for_log('a\r\nb') == 'a\\r\\nb'
 

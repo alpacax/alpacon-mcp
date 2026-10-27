@@ -11,8 +11,6 @@ from utils.recovery_hints import (
 
 
 class TestDetectErrorDomain:
-    """Tests for error domain detection."""
-
     def test_command_from_message(self):
         assert (
             _detect_error_domain(HTTPStatus.FORBIDDEN, 'command ACL denied')
@@ -107,8 +105,6 @@ class TestDetectErrorDomain:
 
 
 class TestParseStatusCode:
-    """Tests for status code parsing."""
-
     def test_int(self):
         assert _parse_status_code(HTTPStatus.FORBIDDEN) == HTTPStatus.FORBIDDEN
 
@@ -128,8 +124,6 @@ class TestParseStatusCode:
 
 
 class TestGetRecoveryHints:
-    """Tests for recovery hint lookup."""
-
     def test_403_command_acl(self):
         hints = get_recovery_hints(
             HTTPStatus.FORBIDDEN, 'command ACL denied', tool_name='execute_command_sync'
@@ -207,8 +201,6 @@ class TestGetRecoveryHints:
 
 
 class TestEnrichErrorResponse:
-    """Tests for error response enrichment."""
-
     def test_enriches_error_response(self):
         resp = {
             'status': 'error',

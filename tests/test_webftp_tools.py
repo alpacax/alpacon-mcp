@@ -1,9 +1,4 @@
-"""
-Unit tests for webftp_tools module.
-
-Tests WebFTP functionality including session management, file uploads,
-file downloads, and file transfer history.
-"""
+"""Unit tests for webftp_tools: sessions, uploads, downloads, and transfer history."""
 
 import asyncio
 import base64
@@ -119,12 +114,8 @@ async def _max_loop_gap_during[T](coro: Awaitable[T]) -> tuple[float, T]:
 
 
 class TestWebFtpSessionCreate:
-    """Test webftp_session_create function."""
-
     @pytest.mark.asyncio
     async def test_session_create_success(self, mock_http_client, mock_token_manager):
-        """Test successful WebFTP session creation."""
-
         # Mock successful response
         mock_http_client.post.return_value = {
             'id': 'session-123',
@@ -164,8 +155,6 @@ class TestWebFtpSessionCreate:
     async def test_session_create_without_username(
         self, mock_http_client, mock_token_manager
     ):
-        """Test WebFTP session creation without username."""
-
         mock_http_client.post.return_value = {'id': 'session-123'}
 
         result = await webftp_session_create(
@@ -187,8 +176,6 @@ class TestWebFtpSessionCreate:
 
     @pytest.mark.asyncio
     async def test_session_create_no_token(self, mock_http_client, mock_token_manager):
-        """Test session creation when no token is available."""
-
         mock_token_manager.get_token.return_value = None
 
         result = await webftp_session_create(
@@ -203,8 +190,6 @@ class TestWebFtpSessionCreate:
 class TestWebFtpSessionsList:
     @pytest.mark.asyncio
     async def test_sessions_list_success(self, mock_http_client, mock_token_manager):
-        """Test successful WebFTP sessions listing."""
-
         # Mock successful response
         mock_http_client.get.return_value = {
             'count': 2,
@@ -245,8 +230,6 @@ class TestWebFtpSessionsList:
     async def test_sessions_list_with_server_filter(
         self, mock_http_client, mock_token_manager
     ):
-        """Test sessions listing with server filter."""
-
         mock_http_client.get.return_value = {'count': 1, 'results': []}
 
         result = await webftp_sessions_list(
@@ -267,8 +250,6 @@ class TestWebFtpSessionsList:
 
     @pytest.mark.asyncio
     async def test_sessions_list_no_token(self, mock_http_client, mock_token_manager):
-        """Test sessions listing when no token is available."""
-
         mock_token_manager.get_token.return_value = None
 
         result = await webftp_sessions_list(workspace='testworkspace')
@@ -292,14 +273,10 @@ class TestWebFtpSessionsList:
 
 
 class TestWebFtpUploadFile:
-    """Test webftp_upload_file function."""
-
     @pytest.mark.asyncio
     async def test_upload_file_success_with_s3(
         self, mock_http_client, mock_token_manager
     ):
-        """Test successful file upload with S3."""
-
         # Mock file content
         file_content = b'test file content'
 
@@ -361,8 +338,6 @@ class TestWebFtpUploadFile:
     async def test_upload_file_success_direct(
         self, mock_http_client, mock_token_manager
     ):
-        """Test successful file upload without S3."""
-
         file_content = b'test file content'
 
         with patch.object(Path, 'read_bytes', return_value=file_content):
@@ -385,8 +360,6 @@ class TestWebFtpUploadFile:
 
     @pytest.mark.asyncio
     async def test_upload_file_not_found(self, mock_http_client, mock_token_manager):
-        """Test file upload when local file doesn't exist."""
-
         with patch.object(
             Path,
             'read_bytes',
@@ -407,8 +380,6 @@ class TestWebFtpUploadFile:
     async def test_upload_file_s3_error(
         self, mock_http_client, mock_token_manager, mock_httpx
     ):
-        """Test file upload with S3 error."""
-
         file_content = b'test file content'
 
         with patch.object(Path, 'read_bytes', return_value=file_content):
@@ -435,8 +406,6 @@ class TestWebFtpUploadFile:
 
     @pytest.mark.asyncio
     async def test_upload_file_no_token(self, mock_http_client, mock_token_manager):
-        """Test file upload when no token is available."""
-
         mock_token_manager.get_token.return_value = None
 
         result = await webftp_upload_file(
@@ -451,8 +420,6 @@ class TestWebFtpUploadFile:
 
 
 class TestWebFtpDownloadFile:
-    """Test webftp_download_file function."""
-
     @pytest.fixture(autouse=True)
     def _clock(self, fake_clock):
         return fake_clock
@@ -795,8 +762,6 @@ class TestWebFtpDownloadFile:
 
     @pytest.mark.asyncio
     async def test_download_file_no_token(self, mock_http_client, mock_token_manager):
-        """Test file download when no token is available."""
-
         mock_token_manager.get_token.return_value = None
 
         result = await webftp_download_file(
@@ -811,12 +776,8 @@ class TestWebFtpDownloadFile:
 
 
 class TestWebFtpUploadsList:
-    """Test webftp_uploads_list function."""
-
     @pytest.mark.asyncio
     async def test_uploads_list_success(self, mock_http_client, mock_token_manager):
-        """Test successful uploads list retrieval."""
-
         # Mock successful response
         mock_http_client.get.return_value = {
             'count': 2,
@@ -856,8 +817,6 @@ class TestWebFtpUploadsList:
     async def test_uploads_list_with_server_filter(
         self, mock_http_client, mock_token_manager
     ):
-        """Test uploads list with server filter."""
-
         mock_http_client.get.return_value = {'count': 1, 'results': []}
 
         result = await webftp_uploads_list(
@@ -876,8 +835,6 @@ class TestWebFtpUploadsList:
 
     @pytest.mark.asyncio
     async def test_uploads_list_no_token(self, mock_http_client, mock_token_manager):
-        """Test uploads list when no token is available."""
-
         mock_token_manager.get_token.return_value = None
 
         result = await webftp_uploads_list(workspace='testworkspace')
@@ -890,8 +847,6 @@ class TestWebFtpUploadsList:
 class TestWebFtpDownloadsList:
     @pytest.mark.asyncio
     async def test_downloads_list_success(self, mock_http_client, mock_token_manager):
-        """Test successful downloads list retrieval."""
-
         # Mock successful response
         mock_http_client.get.return_value = {
             'count': 2,
@@ -931,8 +886,6 @@ class TestWebFtpDownloadsList:
     async def test_downloads_list_with_server_filter(
         self, mock_http_client, mock_token_manager
     ):
-        """Test downloads list with server filter."""
-
         mock_http_client.get.return_value = {'count': 1, 'results': []}
 
         result = await webftp_downloads_list(
@@ -951,8 +904,6 @@ class TestWebFtpDownloadsList:
 
     @pytest.mark.asyncio
     async def test_downloads_list_no_token(self, mock_http_client, mock_token_manager):
-        """Test downloads list when no token is available."""
-
         mock_token_manager.get_token.return_value = None
 
         result = await webftp_downloads_list(workspace='testworkspace')
@@ -1086,8 +1037,6 @@ class TestWebFtpCheckStatus:
 
 
 class TestWebFtpBulkUpload:
-    """Test webftp_bulk_upload function."""
-
     @staticmethod
     def _patch_local_file_checks():
         """Patch path/access/stat checks so validation passes."""
@@ -1390,8 +1339,6 @@ class TestWebFtpBulkUpload:
 
 
 class TestWebFtpBulkDownload:
-    """Test webftp_bulk_download function."""
-
     @pytest.mark.asyncio
     async def test_bulk_download_success(self, mock_http_client, mock_token_manager):
         """Successful streaming download returns size and metadata."""
@@ -1536,7 +1483,7 @@ class TestWebFtpBulkDownload:
 
 
 class TestUploadContent:
-    """Test webftp_upload_content — content-based upload for remote and local modes."""
+    """Test webftp_upload_content: content-based upload for remote and local modes."""
 
     @pytest.mark.asyncio
     async def test_upload_content_success(
@@ -1751,14 +1698,10 @@ class TestUploadContent:
 
 
 class TestRemoteModeUnsupported:
-    """Test that file-transfer tools return a clear error in remote mode."""
-
     @pytest.mark.asyncio
     async def test_upload_file_remote_mode(self, mock_http_client, mock_token_manager):
-        """webftp_upload_file returns remote_mode_unsupported error in remote mode.
-
-        The decorator's auth check is bypassed (auth disabled) so the function
-        body's is_auth_enabled check is what we're exercising here.
+        """webftp_upload_file returns remote_mode_unsupported in remote mode. The
+        decorator's auth check is bypassed, so the body's is_auth_enabled check runs.
         """
         with patch('tools.webftp_tools.is_auth_enabled', return_value=True):
             result = await webftp_upload_file(
@@ -2060,8 +2003,6 @@ class TestRemoteModeDownload:
 
 
 class TestAiterFile:
-    """Test the _aiter_file streaming-upload helper."""
-
     @pytest.mark.asyncio
     async def test_aiter_file_yields_chunks(self, tmp_path):
         """Yields exact file contents in chunks bounded by chunk_size."""
@@ -2090,8 +2031,6 @@ class TestAiterFile:
 
 
 class TestEnsureParentDir:
-    """Test the _ensure_parent_dir helper."""
-
     @pytest.mark.asyncio
     async def test_ensure_parent_dir_wraps_oserror_as_local_save_error(self):
         """OSError from mkdir surfaces as _LocalSaveError with the OS message."""

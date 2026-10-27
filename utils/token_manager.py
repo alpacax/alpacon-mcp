@@ -26,17 +26,11 @@ class AuthStatus(TypedDict):
 
 
 class TokenManager:
-    """Manages API tokens for different regions and workspaces."""
+    """Reads and writes the region -> workspace -> token store in the config file."""
 
     def __init__(self, config_file: str | None = None):
-        """Initialize token manager.
-
-        Args:
-            config_file: Full path to config file. If None, resolution order is
-                        ALPACON_MCP_CONFIG_FILE, then ~/.alpacon-mcp/token.json,
-                        then ./config/token.json, defaulting to the global path
-                        when neither file exists.
-        """
+        """Config file: explicit path, else ALPACON_MCP_CONFIG_FILE, else the existing
+        ~/.alpacon-mcp/token.json or ./config/token.json, else the global path."""
         if config_file:
             # Use specific config file path, expand ~ to home directory
             expanded_path = os.path.expanduser(config_file)
@@ -77,11 +71,7 @@ class TokenManager:
         self.tokens = self._load_tokens()
 
     def _load_tokens(self) -> dict[str, JsonValue]:
-        """Load tokens from configuration file.
-
-        Returns:
-            Dictionary containing token data
-        """
+        """Return the file's token object; {} if missing, unreadable or not one."""
         if not self.token_file.exists():
             logger.warning(
                 'No token file at %s, starting with empty tokens', self.token_file
@@ -112,32 +102,18 @@ class TokenManager:
     def _save_tokens_to_file(
         self, tokens: dict[str, JsonValue], file_path: Path
     ) -> None:
-        """Save tokens to specific file.
-
-        Args:
-            tokens: Token data to save
-            file_path: Path to save the tokens
-        """
+        """Write the tokens to file_path."""
         # Ensure directory exists
         file_path.parent.mkdir(exist_ok=True)
         with open(file_path, 'w') as f:
             json.dump(tokens, f, indent=2)
 
     def _save_tokens(self) -> None:
-        """Save tokens to configuration file."""
+        """Persist the tokens to the config file."""
         self._save_tokens_to_file(self.tokens, self.token_file)
 
     def set_token(self, region: str, workspace: str, token: str) -> dict[str, str]:
-        """Set token for specific region and workspace.
-
-        Args:
-            region: Region (ap1, us1)
-            workspace: Workspace name
-            token: API token
-
-        Returns:
-            Success message with details
-        """
+        """Store the token under region and workspace, persisting to the config file."""
         workspaces = self.tokens.get(region)
         if not isinstance(workspaces, dict):  # absent, or not an object to add to
             workspaces = self.tokens[region] = {}
@@ -156,12 +132,7 @@ class TokenManager:
 
     @staticmethod
     def _entry_token(entry: JsonValue) -> str | None:
-        """Extract the token string from a config entry.
-
-        An entry is either a bare token string (legacy form) or an object
-        ``{"token": "...", "url": "..."}`` (used to pin a workspace's API host;
-        see ``get_base_url_override``). Returns None when no token is present.
-        """
+        """Return a config entry's token (string or ``{"token", ...}``), or None."""
         if isinstance(entry, dict):
             token = entry.get('token')
             return token if isinstance(token, str) and token else None
@@ -170,15 +141,8 @@ class TokenManager:
         return None
 
     def get_token(self, region: str, workspace: str) -> str | None:
-        """Get token for specific region and workspace.
-
-        Args:
-            region: Region (ap1, us1)
-            workspace: Workspace name
-
-        Returns:
-            Token string if found, None otherwise
-        """
+        """Return the token from ALPACON_MCP_<REGION>_<WORKSPACE>_TOKEN, else the config
+        file; None if neither has one."""
         logger.debug('Getting token for %s.%s', workspace, region)
 
         # First try environment variable: ALPACON_MCP_<REGION>_<WORKSPACE>_TOKEN
@@ -206,32 +170,15 @@ class TokenManager:
 
     @staticmethod
     def _normalize_base_url(url: str) -> str:
-        """Normalize a configured base URL: add https:// if scheme-less, drop trailing '/'."""
+        """Add https:// to a scheme-less base URL and drop the trailing '/'."""
         url = url.strip().rstrip('/')
         if url and '://' not in url:
             url = 'https://' + url
         return url
 
     def get_base_url_override(self, region: str, workspace: str) -> str | None:
-        """Get an explicitly configured API base URL for a region/workspace.
-
-        Alpacon Cloud hosts are normally derived as
-        ``https://{workspace}.{region}.alpacon.io``. That derivation re-builds
-        the host from the workspace label on every call, which is unsafe once a
-        workspace's URL slug becomes mutable (ADR 0027): a freed slug can later
-        be reused by a different workspace, so a stale label could resolve to
-        the wrong host. Pinning the resolved base URL here keeps a workspace
-        addressable across a slug change (the old host stays alive as an alias)
-        without re-deriving it from a reusable label.
-
-        Resolution order (mirrors ``get_token``):
-        1. Environment variable ``ALPACON_MCP_<REGION>_<WORKSPACE>_URL``
-        2. Config-file object form ``{"token": "...", "url": "https://..."}``
-
-        Returns:
-            The normalized base URL if configured, otherwise None (caller derives
-            the default host).
-        """
+        """Return the pinned API base URL, or None so the caller derives it (ADR 0027).
+        Checks ALPACON_MCP_<REGION>_<WORKSPACE>_URL, then the entry's ``url``."""
         env_var_name = f'ALPACON_MCP_{region.upper()}_{workspace.upper()}_URL'
         env_url = os.getenv(env_var_name)
         if env_url and env_url.strip():
@@ -256,33 +203,18 @@ class TokenManager:
         }
 
     def get_available_regions(self) -> list[str]:
-        """Get list of regions that have configured tokens.
-
-        Returns:
-            List of region names (e.g., ['ap1'], ['dev'], ['ap1', 'us1'])
-        """
+        """Return the regions that have a token object configured."""
         return list(self.get_all_tokens())
 
     def get_default_region(self) -> str | None:
-        """Get default region if only one region is configured.
-
-        Returns:
-            Region name if exactly one region exists, None otherwise
-        """
+        """Return the region when exactly one is configured, else None."""
         regions = self.get_available_regions()
         if len(regions) == 1:
             return regions[0]
         return None
 
     def find_region_for_workspace(self, workspace: str) -> str | None:
-        """Find which region contains the given workspace.
-
-        Args:
-            workspace: Workspace name to look up
-
-        Returns:
-            Region name if found in exactly one region, None otherwise
-        """
+        """Return the region holding the workspace; None if it is in none or several."""
         matching_regions = [
             region
             for region, workspaces in self.tokens.items()
@@ -293,15 +225,7 @@ class TokenManager:
         return None
 
     def remove_token(self, region: str, workspace: str) -> dict[str, str]:
-        """Remove token for specific region and workspace.
-
-        Args:
-            region: Region (ap1, us1)
-            workspace: Workspace name
-
-        Returns:
-            Success or error message
-        """
+        """Delete the token, dropping an emptied region; an error dict if absent."""
         workspaces = self.tokens.get(region)
         if isinstance(workspaces, dict) and workspace in workspaces:
             del workspaces[workspace]
@@ -323,11 +247,7 @@ class TokenManager:
         }
 
     def get_auth_status(self) -> AuthStatus:
-        """Get authentication status for all stored tokens.
-
-        Returns:
-            Authentication status information
-        """
+        """Summarize the stored tokens per region, with the config paths."""
         by_region = {
             region: workspaces
             for region, workspaces in self.tokens.items()
@@ -359,11 +279,7 @@ _global_token_manager = None
 
 
 def get_token_manager() -> TokenManager:
-    """Get the global token manager instance.
-
-    Returns:
-        Global TokenManager instance
-    """
+    """Return the process-wide TokenManager, creating it on first use."""
     global _global_token_manager
     if _global_token_manager is None:
         # Let TokenManager handle config file resolution logic

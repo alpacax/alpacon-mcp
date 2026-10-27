@@ -1,13 +1,5 @@
-"""Approval and sudo policy tools for Alpacon MCP server.
-
-ADR 0015 (out-of-band approval channel): AI agents reach Alpacon through MCP and
-are a request/execution surface only. They CANNOT approve or reject
-privileged-access requests—the Alpacon server refuses approve/reject from
-agent/token channels with HTTP 403. These tools therefore expose approval
-requests read-only (list/get) so an agent can observe what is pending and tell a
-human, but provide no approve/reject mutation. The agent must escalate to a human
-who approves out-of-band (Alpacon web console or Slack).
-"""
+"""Approval and sudo policy tools; approvals are read-only here (ADR 0015).
+An agent cannot approve or reject: a human decides in the web console or Slack."""
 
 from utils.api_call import http_call_response
 from utils.common import build_list_params, exclude_none, pending_approval_response
@@ -117,20 +109,7 @@ async def explain_approval_decision(
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
-    """Explain that approving/rejecting a request is a human-only, out-of-band action.
-
-    This tool performs no mutation and contacts no server endpoint—an agent must
-    never be the approver. It returns the structured ADR 0015 pending-approval
-    guidance so the agent waits/escalates instead of attempting to self-approve.
-
-    Args:
-        workspace: Workspace name. Required parameter
-        request_id: Approval request ID this guidance refers to (optional)
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        Structured pending-approval guidance (no approve/reject is performed)
-    """
+    """Return human-only approval guidance (ADR 0015); makes no server request."""
     context: dict[str, object] = {
         'region': region,
         'workspace': workspace,
@@ -226,23 +205,8 @@ async def request_sudo_policy(
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
-    """Request a sudo policy that an admin must approve.
-
-    Args:
-        workspace: Workspace name. Required parameter
-        servers: Server UUIDs the policy should cover. Required parameter
-        commands: Command patterns to allow under sudo. Required parameter
-        reason: Justification shown to the approver. Required parameter
-        users: User UUIDs the policy should cover (optional; omitting it scopes
-            the approved policy to the requester alone, and a non-superuser may
-            name only themselves)
-        valid_from: ISO 8601 start of the validity window (optional)
-        valid_until: ISO 8601 end of the validity window (optional)
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        Pending-approval response carrying the created approval request
-    """
+    """Request a sudo policy; answers pending_approval until an admin approves it.
+    Omitted `users` scopes it to the requester; a non-superuser may name only self."""
     token = kwargs.get('token')
 
     policy_request: dict[str, object] = {

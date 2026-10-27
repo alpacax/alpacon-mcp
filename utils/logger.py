@@ -52,10 +52,8 @@ def _escape_controls(text: str) -> str:
 
 
 def escape_for_log(value: object, max_chars: int = LOG_VALUE_MAX_CHARS) -> str:
-    """Escape control characters in a client-supplied value and bound its size.
-
-    A raw newline would otherwise let a client forge a second log line.
-    """
+    """Escape control characters in a client-supplied value and cap its length, so a
+    raw newline cannot forge a second log line."""
     text = value if isinstance(value, str) else str(value)
     escaped = _escape_controls(text[:max_chars])
     if len(text) > max_chars or len(escaped) > max_chars:
@@ -64,12 +62,8 @@ def escape_for_log(value: object, max_chars: int = LOG_VALUE_MAX_CHARS) -> str:
 
 
 def describe_for_log(value: object) -> object:
-    """Stand in for a value with its type and size.
-
-    A number, a flag or None cannot carry text and passes through; a string,
-    container, or anything else is recorded as a placeholder such as
-    ``<str len=42>`` so no part of it reaches the log.
-    """
+    """Stand in for a value with its type and size; numbers, flags and None pass
+    through. Text and containers become a placeholder such as ``<str len=42>``."""
     if value is None or isinstance(value, (bool, int, float)):
         return value
     if isinstance(value, (str, bytes)):
@@ -82,11 +76,7 @@ def describe_for_log(value: object) -> object:
 
 
 def redact_for_log(value: object) -> object:
-    """Keep a mapping's keys and describe each value; describe anything else.
-
-    For payloads whose values the log has no business holding: request and
-    response bodies, query parameters, upstream error bodies.
-    """
+    """Keep a mapping's keys and describe each value; describe anything else."""
     if isinstance(value, Mapping):
         return {key: describe_for_log(item) for key, item in value.items()}
     return describe_for_log(value)
@@ -101,11 +91,8 @@ def _indent_block(block: str) -> str:
 
 
 class SingleLineFormatter(logging.Formatter):
-    """Format a record so no value inside it can pass for another record.
-
-    The message is escaped whole, and a traceback keeps its lines but indents
-    each one under the record line.
-    """
+    """Escape the whole message so no value can pass for another record; a traceback
+    keeps its lines, each indented under the record line."""
 
     def format(self, record: logging.LogRecord) -> str:
         record.message = _escape_controls(record.getMessage())
@@ -147,12 +134,8 @@ class JsonFormatter(logging.Formatter):
 
 
 class SingleLineRecordFilter(logging.Filter):
-    """Give a record the escaping SingleLineFormatter applies, before any handler.
-
-    For loggers whose handlers this module does not own: uvicorn installs its
-    own formatter on its stderr handler. That formatter reuses a filled
-    ``exc_text``, so the indented traceback stands in for its own.
-    """
+    """Apply SingleLineFormatter's escaping before any handler, on uvicorn's loggers.
+    Fills ``exc_text`` with the indented traceback, which uvicorn's formatter reuses."""
 
     _traceback_formatter = logging.Formatter()
 
@@ -169,10 +152,8 @@ class SingleLineRecordFilter(logging.Filter):
 
 
 class AccessLogQueryFilter(logging.Filter):
-    """Drop the query string from a uvicorn access record.
-
-    The OAuth callback receives the authorization code and state in its query.
-    """
+    """Drop the query string from a uvicorn access record: the OAuth callback's
+    query carries the authorization code and state."""
 
     def filter(self, record: logging.LogRecord) -> bool:
         args = record.args
@@ -271,7 +252,7 @@ class AlpaconLogger:
         self._setup_logging()
 
     def _setup_logging(self) -> None:
-        """Setup logging configuration."""
+        """Configure handlers, filters and third-party log levels."""
         # Get log level from environment variable
         log_level = os.getenv('ALPACON_MCP_LOG_LEVEL', 'INFO').upper()
 

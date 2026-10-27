@@ -1,17 +1,5 @@
-"""HTTP Streamable transport entry point for Alpacon MCP server.
-
-This module starts the MCP server with Auth0 JWT authentication
-and streamable-http transport for remote deployment.
-
-Environment variables must be set before running:
-    AUTH0_DOMAIN        - Auth0 tenant domain (required)
-    AUTH0_CLIENT_ID     - Auth0 application client ID (required)
-    AUTH0_AUDIENCE      - Auth0 API audience (default: https://alpacon.io/access/)
-
-Usage:
-    alpacon-mcp-http          # Via installed script entry
-    python main_http.py       # Direct execution
-"""
+"""Streamable-http entry point with Auth0 JWT auth. Needs AUTH0_DOMAIN and
+AUTH0_CLIENT_ID."""
 
 import os
 import sys
@@ -25,7 +13,6 @@ logger = get_logger('main_http')
 
 
 def main() -> None:
-    """Main entry point for HTTP transport mode."""
     json_logs = json_logs_requested()
     if json_logs:
         logger_manager.use_json_stdout()

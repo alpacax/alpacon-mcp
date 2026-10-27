@@ -20,8 +20,6 @@ from utils.security_settings import (
 
 
 class TestGetActionForTool:
-    """Tests for tool name -> MFA action mapping."""
-
     def test_removed_tools_return_none(self):
         assert get_action_for_tool('execute_command_with_acl') is None
         assert get_action_for_tool('execute_command_sync') is None
@@ -48,8 +46,6 @@ class TestGetActionForTool:
 
 
 class TestCheckMfaCompleted:
-    """Tests for JWT MFA claim validation."""
-
     def _make_settings(
         self, mfa_required=True, timeout=900, actions=None, methods=None
     ):
@@ -230,8 +226,6 @@ class TestCheckMfaCompleted:
 
 
 class TestMfaPrecheck:
-    """Tests for _check_mfa_requirement in decorators."""
-
     @pytest.fixture(autouse=True)
     def _set_auth_env(self):
         with patch.dict(os.environ, {'ALPACON_MCP_AUTH_ENABLED': 'true'}):
@@ -347,8 +341,6 @@ class TestMfaPrecheck:
 
 
 class TestSecuritySettingsCache:
-    """Tests for SecuritySettingsCache TTL, pruning, and deduplication."""
-
     def test_cache_hit(self):
         cache = SecuritySettingsCache(ttl=60)
         settings = WorkspaceSecuritySettings({'mfa_required': True, 'mfa_timeout': 900})

@@ -129,11 +129,7 @@ async def _ensure_parent_dir(local_path: str) -> None:
 
 
 async def _save_stream(response: httpx.Response, local_path: str) -> int:
-    """Save streaming response body to a local file. Returns bytes written.
-
-    On any failure during the write loop (network error, OSError), the
-    partially-written file is removed so retries do not see stale data.
-    """
+    """Write the body to `local_path`, return bytes written; failure deletes it."""
     try:
         dest_file = await asyncio.to_thread(open, local_path, 'wb')
     except OSError as e:
@@ -585,12 +581,8 @@ async def webftp_upload_content(
     allow_overwrite: bool = True,
     **kwargs: str,
 ) -> ToolResponse:
-    """Upload base64-encoded file content to a server via WebFTP.
-
-    On streamable-http/SSE, file_content is limited to 3 MiB decoded (base64
-    inflates bytes 4/3x). stdio has no such cap. Larger files must use
-    webftp_upload_file in local mode.
-    """
+    """Non-stdio transports cap decoded `file_content` at 3 MiB (content_too_large);
+    use webftp_upload_file in local mode for larger files."""
     token = kwargs.get('token')
 
     try:

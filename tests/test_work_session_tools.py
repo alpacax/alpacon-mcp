@@ -513,11 +513,8 @@ class TestWorkSessionUpdate:
     async def test_update_queued_modification_surfaces_approval_signal(
         self, mock_http_client, mock_token_manager
     ):
-        """A queued modification (server HTTP 202) is surfaced as pending approval.
-
-        Scope/server changes on an approved/active session are not applied
-        immediately—the server queues a ``work_session_mod`` approval request
-        and reports it via a non-null ``pending_modification_request``.
+        """A queued modification (HTTP 202) surfaces as pending approval.
+        The server queues a ``work_session_mod`` request (pending_modification_request).
         """
 
         mock_http_client.patch.return_value = {
@@ -615,11 +612,8 @@ class TestWorkSessionExtend:
     async def test_extend_queued_surfaces_approval_signal(
         self, mock_http_client, mock_token_manager
     ):
-        """A queued extension (server HTTP 202) is surfaced as pending approval.
-
-        An extension on a lane other than auto-approve is not applied
-        immediately—the server queues a ``work_session_mod`` approval request
-        and reports it via a non-null ``pending_extension_request``.
+        """A queued extension (HTTP 202) surfaces as pending approval.
+        Off the auto-approve lane the server queues a ``work_session_mod`` request.
         """
 
         mock_http_client.post.return_value = {
@@ -679,9 +673,7 @@ class TestWorkSessionExtend:
         self, mock_http_client, mock_token_manager
     ):
         """The server's reason-required refusal comes back with an actionable hint.
-
-        Only reachable when reason is supplied but blank/whitespace—the tool's
-        own required parameter stops an omitted reason before any request.
+        Reachable only with a blank reason; the required parameter stops an omitted one.
         """
 
         mock_http_client.post.return_value = {
@@ -711,7 +703,6 @@ _ALWAYS = {'include_records': 'false'}
 
 def _timeline_server(pages):
     """A fake alpacon-server 2.42+: the whole list without `cursor`, a page with it.
-
     `pages` maps each cursor ('' is the first page) to `(items, next_cursor)`.
     """
     whole = [item for items, _ in pages.values() for item in items]
@@ -1071,10 +1062,7 @@ class TestWorkSessionRecords:
         self, mock_http_client, mock_token_manager
     ):
         """Reading a recording whole is paid-only, and a paywall is not a 403.
-
-        The server's own refusal is a feature lock—`gate: "plan"` with no
-        `axis`—so it keeps the generic coded-error shape rather than the
-        plan-limit one below.
+        The refusal is a feature lock (`gate: "plan"`, no `axis`): generic coded shape.
         """
         mock_http_client.get.return_value = {
             'error': 'HTTP Error',

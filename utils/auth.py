@@ -41,7 +41,6 @@ _jwks_last_forced_fetch: float = 0
 
 
 def _get_jwks_lock() -> asyncio.Lock:
-    """Get or create the JWKS cache lock (lazy init for event loop safety)."""
     global _jwks_lock
     if _jwks_lock is None:
         _jwks_lock = asyncio.Lock()
@@ -49,7 +48,8 @@ def _get_jwks_lock() -> asyncio.Lock:
 
 
 def _get_auth0_config() -> dict[str, str]:
-    """Get Auth0 configuration from environment variables."""
+    """Read the Auth0 settings from the environment; raises ValueError when AUTH0_DOMAIN
+    is unset."""
     domain = os.getenv('AUTH0_DOMAIN', '')
     audience = os.getenv('AUTH0_AUDIENCE', 'https://alpacon.io/access/')
     namespace = os.getenv('AUTH0_NAMESPACE', 'https://alpacon.io/').rstrip('/') + '/'
@@ -67,13 +67,8 @@ def _get_auth0_config() -> dict[str, str]:
 
 
 async def _fetch_jwks(jwks_url: str, *, force: bool = False) -> dict[str, JsonValue]:
-    """Fetch JWKS from Auth0 endpoint with caching.
-
-    Uses an async lock to prevent concurrent fetches from racing
-    on the module-level cache. With ``force``, the cached keys are read
-    again unless another forced fetch beat this one to it, in which case
-    the caller gets those fresh keys instead of a second round trip.
-    """
+    """Fetch the JWKS under a lock, cached for an hour. A force fetch is skipped (cache
+    returned) within the cooldown of the last forced one."""
     global _jwks_cache, _jwks_cache_expiry, _jwks_last_forced_fetch
 
     now = time.time()
@@ -110,7 +105,6 @@ async def _fetch_jwks(jwks_url: str, *, force: bool = False) -> dict[str, JsonVa
 
 
 def _has_kid(token: str) -> bool:
-    """Check whether the token header carries a kid worth looking up again."""
     try:
         return bool(jwt.get_unverified_header(token).get('kid'))
     except jwt.exceptions.DecodeError:
@@ -120,13 +114,8 @@ def _has_kid(token: str) -> bool:
 def _get_signing_key(
     jwks: Mapping[str, JsonValue], token: str, *, quiet_miss: bool = False
 ) -> RSAPublicKey | None:
-    """Extract the signing key from JWKS matching the token's kid.
-
-    ``quiet_miss`` logs a kid miss at info instead of error: the caller passes
-    it when it is about to retry against a freshly forced JWKS fetch, so a key
-    rotation does not read as an application error before the retry has had a
-    chance to resolve it.
-    """
+    """The RSA key matching the token's kid, or None. quiet_miss logs a kid miss at
+    info, for callers about to retry on a forced refetch."""
     try:
         unverified_header = jwt.get_unverified_header(token)
     except jwt.exceptions.DecodeError as e:
@@ -157,16 +146,8 @@ def _get_signing_key(
 def decode_jwt(
     token: str, public_key: RSAPublicKey, config: dict[str, str]
 ) -> JwtClaims | None:
-    """Decode and verify a JWT token.
-
-    Args:
-        token: The raw JWT string
-        public_key: RSA public key from JWKS
-        config: Auth0 configuration dict
-
-    Returns:
-        Decoded claims dict, or None if verification fails
-    """
+    """Decode and verify a JWT as RS256 against the audience and issuer; None when
+    verification fails."""
     try:
         claims = jwt.decode(
             token,
@@ -188,11 +169,8 @@ def decode_jwt(
 
 
 def decode_claims_unverified(jwt_token: str) -> JwtClaims | None:
-    """Read a JWT's claims without verifying it.
-
-    Only for tokens the auth middleware has already verified; it re-parses the
-    same string to read claims the AccessToken does not carry.
-    """
+    """Read a JWT's claims without verifying it; only for tokens the auth middleware
+    already verified."""
     try:
         return jwt.decode(
             jwt_token,
@@ -209,22 +187,16 @@ def decode_claims_unverified(jwt_token: str) -> JwtClaims | None:
 
 
 def get_token_workspaces(jwt_token: str) -> list[WorkspaceClaim]:
-    """List the workspaces a verified JWT grants access to.
-
-    Resolves the Auth0 namespace from AUTH0_NAMESPACE, so callers do not have
-    to know how the claim key is built.
-    """
+    """List the workspaces a verified JWT grants; the claim key comes from
+    AUTH0_NAMESPACE."""
     return get_token_workspaces_with_dropped(jwt_token)[0]
 
 
 def get_token_workspaces_with_dropped(
     jwt_token: str,
 ) -> tuple[list[WorkspaceClaim], int]:
-    """The same list, paired with how many claim entries were dropped as unusable.
-
-    Only `list_workspaces` needs the count: it enumerates workspaces for an
-    agent, which cannot otherwise tell a short list from a complete one.
-    """
+    """The same list, paired with the count of claim entries dropped as unusable, so
+    list_workspaces can flag a short list."""
     claims = decode_claims_unverified(jwt_token)
     if not claims:
         return [], 0
@@ -236,29 +208,16 @@ def get_token_workspaces_with_dropped(
 def extract_workspaces(
     claims: Mapping[str, object], namespace: str
 ) -> list[WorkspaceClaim]:
-    """Extract the usable workspaces from JWT claims.
-
-    An entry is dropped unless it names both a workspace and a region as
-    non-blank strings: every caller walks the list as workspace dicts, so half
-    an entry either crashes one or lists a workspace with an empty name.
-
-    Args:
-        claims: Decoded JWT claims
-        namespace: Auth0 namespace prefix (e.g. 'https://alpacon.io/')
-
-    Returns:
-        List of workspace dicts with schema_name, auth0_id, region
-    """
+    """Usable workspaces from the claims: an entry needs non-blank string schema_name
+    and region, else it is dropped."""
     return _partition_workspaces(claims, namespace)[0]
 
 
 def _partition_workspaces(
     claims: Mapping[str, object], namespace: str
 ) -> tuple[list[WorkspaceClaim], int]:
-    """Split the workspaces claim into the usable entries and a count of the rest.
-
-    A claim that is not a list at all holds no entries, so it drops nothing.
-    """
+    """Split the workspaces claim into usable entries and a count of the dropped; a
+    non-list claim drops nothing."""
     # Ensure namespace ends with '/' to build correct claim key
     if namespace and not namespace.endswith('/'):
         namespace = namespace + '/'
@@ -308,16 +267,7 @@ def _partition_workspaces(
 def match_workspace(
     workspaces: list[WorkspaceClaim], region: str, workspace: str
 ) -> bool:
-    """Check if a workspace/region pair is authorized by JWT claims.
-
-    Args:
-        workspaces: List of workspace dicts from JWT claims
-        region: Region to match (e.g. 'ap1')
-        workspace: Workspace name to match (schema_name)
-
-    Returns:
-        True if the workspace/region pair is found in claims
-    """
+    """True when the claims authorize this workspace (schema_name) and region pair."""
     return any(
         ws.get('schema_name') == workspace and ws.get('region') == region
         for ws in workspaces
@@ -325,14 +275,12 @@ def match_workspace(
 
 
 class Auth0TokenVerifier:
-    """Auth0 JWT token verifier implementing the SDK's TokenVerifier protocol.
-
-    Verifies RS256-signed JWTs using Auth0's JWKS endpoint and extracts
-    workspace claims for authorization.
-    """
+    """Auth0 JWT verifier for the SDK's TokenVerifier protocol: RS256 via JWKS, with
+    workspace claims."""
 
     def __init__(self) -> None:
-        """Initialize with Auth0 config from environment variables."""
+        """Load the Auth0 config from the environment; raises ValueError when
+        AUTH0_DOMAIN is unset."""
         self._config = _get_auth0_config()
         logger.info(
             'Auth0TokenVerifier initialized - domain: %s, audience: %s',
@@ -341,16 +289,8 @@ class Auth0TokenVerifier:
         )
 
     async def verify_token(self, token: str) -> AccessToken | None:
-        """Verify a Bearer token and return access info if valid.
-
-        Implements the SDK TokenVerifier protocol.
-
-        Args:
-            token: Raw JWT string from Authorization header
-
-        Returns:
-            AccessToken with JWT info, or None if invalid
-        """
+        """AccessToken for a valid Bearer token, else None on any failure; an unknown
+        kid forces one JWKS refetch."""
         try:
             # Fetch JWKS and find signing key
             jwks = await _fetch_jwks(self._config['jwks_url'])
