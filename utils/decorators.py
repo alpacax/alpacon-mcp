@@ -29,7 +29,7 @@ from utils.error_handler import (
     UpstreamAuthError,
     format_validation_error,
     validate_region_format,
-    validate_server_id_format,
+    validate_uuid_format,
     validate_workspace_format,
 )
 from utils.http_client import AlpaconHTTPClient
@@ -385,7 +385,7 @@ def _validate_uuid_list(field: str, value: object) -> ToolErrorResponse | None:
             'Must be a list of server UUIDs.',
         )
 
-    invalid = [item for item in value if not validate_server_id_format(item)]
+    invalid = [item for item in value if not validate_uuid_format(item)]
     if invalid:
         return format_validation_error(
             field,
@@ -504,7 +504,7 @@ def with_token_validation[**P, R](
 
         # Validate server_id format if present
         server_id = arguments.get('server_id')
-        if server_id is not None and not validate_server_id_format(server_id):
+        if server_id is not None and not validate_uuid_format(server_id):
             return format_validation_error('server_id', server_id)
 
         # 'servers' carries server UUIDs sent in request bodies.
@@ -518,7 +518,7 @@ def with_token_validation[**P, R](
 
         # session_id is interpolated into URL paths, so reject non-UUID values that could retarget the request.
         session_id = arguments.get('session_id')
-        if session_id is not None and not validate_server_id_format(session_id):
+        if session_id is not None and not validate_uuid_format(session_id):
             return format_validation_error('session_id', session_id)
 
         # Every other *_id may be interpolated into an endpoint path. Their

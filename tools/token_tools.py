@@ -14,7 +14,7 @@ this restriction.
 from utils.api_call import http_call_response
 from utils.common import build_list_params, error_response
 from utils.decorators import mcp_tool_handler, require_jwt_auth
-from utils.error_handler import format_validation_error, validate_server_id_format
+from utils.error_handler import uuid_field_error
 from utils.http_client import http_client
 from utils.tool_annotations import (
     ADDITIVE,
@@ -22,7 +22,7 @@ from utils.tool_annotations import (
     IDEMPOTENT_WRITE,
     READ_ONLY,
 )
-from utils.types import ToolErrorResponse, ToolResponse
+from utils.types import ToolResponse
 
 _API_TOKENS = '/api/auth/tokens/'
 _API_TOKEN_SCOPES = f'{_API_TOKENS}scopes/'
@@ -32,16 +32,6 @@ _JWT_REQUIRED_NOTE = (
     "Returns 403 Forbidden when called with a source='api' API token; "
     'use JWT/OAuth, a browser session, or a login-source token instead.'
 )
-
-
-def _validate_token_id(token_id: str) -> ToolErrorResponse | None:
-    if not validate_server_id_format(token_id):
-        return format_validation_error(
-            'token_id',
-            token_id,
-            'Must be a valid UUID. Example: 550e8400-e29b-41d4-a716-446655440000',
-        )
-    return None
 
 
 @mcp_tool_handler(
@@ -132,7 +122,7 @@ async def get_api_token(
     """
     token = kwargs.get('token')
 
-    err = _validate_token_id(token_id)
+    err = uuid_field_error('token_id', token_id)
     if err:
         return err
 
@@ -255,7 +245,7 @@ async def update_api_token(
     """
     token = kwargs.get('token')
 
-    err = _validate_token_id(token_id)
+    err = uuid_field_error('token_id', token_id)
     if err:
         return err
 
@@ -317,7 +307,7 @@ async def delete_api_token(
     """
     token = kwargs.get('token')
 
-    err = _validate_token_id(token_id)
+    err = uuid_field_error('token_id', token_id)
     if err:
         return err
 
@@ -370,7 +360,7 @@ async def duplicate_api_token(
     """
     token = kwargs.get('token')
 
-    err = _validate_token_id(token_id)
+    err = uuid_field_error('token_id', token_id)
     if err:
         return err
 
@@ -428,7 +418,7 @@ async def rotate_api_token(
     """
     token = kwargs.get('token')
 
-    err = _validate_token_id(token_id)
+    err = uuid_field_error('token_id', token_id)
     if err:
         return err
 

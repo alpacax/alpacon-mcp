@@ -88,18 +88,6 @@ def validate_uuid_format(value: str) -> bool:
         return False
 
 
-def validate_server_id_format(server_id: str) -> bool:
-    """Validate server ID (should be UUID format).
-
-    Args:
-        server_id: Server ID to validate
-
-    Returns:
-        True if valid UUID, False otherwise
-    """
-    return validate_uuid_format(server_id)
-
-
 def validate_file_path(file_path: str, allow_relative: bool = False) -> bool:
     """Validate file path for security.
 
@@ -166,3 +154,14 @@ def format_validation_error(
         'message': message,
         'suggestion': suggestion,
     }
+
+
+def uuid_field_error(field: str, value: str) -> dict[str, str] | None:
+    """Return the validation error for a non-UUID `value`, or None if it is one."""
+    if validate_uuid_format(value):
+        return None
+    return format_validation_error(
+        field,
+        value,
+        'Must be a valid UUID. Example: 550e8400-e29b-41d4-a716-446655440000',
+    )
