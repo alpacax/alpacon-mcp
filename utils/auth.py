@@ -169,8 +169,8 @@ def decode_jwt(
 
 
 def decode_claims_unverified(jwt_token: str) -> JwtClaims | None:
-    """Read a JWT's claims without verifying it; only for tokens the auth middleware
-    already verified."""
+    """Read a JWT's claims without verifying it; the caller must already trust the
+    token, as one the auth middleware verified or this process obtained itself."""
     try:
         return jwt.decode(
             jwt_token,

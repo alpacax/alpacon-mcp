@@ -452,8 +452,8 @@ def build_resource_wrapper(
 def register_resource(
     uri: str, fn: _ToolFn, name: str, extra: dict[str, object] | None = None
 ) -> None:
-    """Register an alpacon:// resource over a read-only tool; the tool's docstring
-    becomes its published description."""
+    """Register an alpacon:// resource over a read-only tool; its published description
+    is the tool's docstring plus a line naming any filter `extra` pins."""
     wrapper = build_resource_wrapper(uri, fn, name, extra)
     doc = inspect.getdoc(fn) or name
     if extra:

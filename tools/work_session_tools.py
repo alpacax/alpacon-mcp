@@ -488,7 +488,7 @@ async def work_session_records(
     page_size: int = _RECORD_DEFAULT_PAGE_SIZE,
     **kwargs: str,
 ) -> ToolResponse:
-    """Read one page of a websh recording; pass `next` back as `cursor`, and only
+    """Read one page of a Websh recording; pass `next` back as `cursor`, and only
     `next: null` ends it. `page_size` is 1 to 16 (default 8); a byte cap can cut it."""
     if not 1 <= page_size <= _RECORD_MAX_PAGE_SIZE:
         return format_validation_error(
