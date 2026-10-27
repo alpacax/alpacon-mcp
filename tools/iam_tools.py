@@ -5,24 +5,14 @@ import re
 from utils.api_call import http_call_response
 from utils.common import build_list_params, error_response
 from utils.decorators import mcp_tool_handler
-from utils.error_handler import format_validation_error, validate_server_id_format
+from utils.error_handler import format_validation_error, uuid_field_error
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ_ONLY
-from utils.types import ToolErrorResponse, ToolResponse
+from utils.types import ToolResponse
 
 VALID_MEMBERSHIP_ROLES = frozenset({'member', 'manager', 'owner'})
 VALID_SERVICE_TYPES = frozenset({'ci_cd', 'monitoring', 'automation', 'integration'})
 GROUP_NAME_PATTERN = re.compile(r'^[a-z0-9_-]+$')
-
-
-def _validate_uuid(field: str, value: str) -> ToolErrorResponse | None:
-    if not validate_server_id_format(value):
-        return format_validation_error(
-            field,
-            value,
-            'Must be a valid UUID. Example: 550e8400-e29b-41d4-a716-446655440000',
-        )
-    return None
 
 
 # ===============================
@@ -90,7 +80,7 @@ async def get_iam_user(
     Returns:
         IAM user details response
     """
-    err = _validate_uuid('user_id', user_id)
+    err = uuid_field_error('user_id', user_id)
     if err:
         return err
 
@@ -192,7 +182,7 @@ async def update_iam_user(
     Returns:
         User update response
     """
-    err = _validate_uuid('user_id', user_id)
+    err = uuid_field_error('user_id', user_id)
     if err:
         return err
 
@@ -241,7 +231,7 @@ async def delete_iam_user(
     Returns:
         User deletion response
     """
-    err = _validate_uuid('user_id', user_id)
+    err = uuid_field_error('user_id', user_id)
     if err:
         return err
 
@@ -388,7 +378,7 @@ async def get_iam_group(
     Returns:
         IAM group detail response
     """
-    err = _validate_uuid('group_id', group_id)
+    err = uuid_field_error('group_id', group_id)
     if err:
         return err
 
@@ -432,7 +422,7 @@ async def update_iam_group(
     Returns:
         IAM group update response
     """
-    err = _validate_uuid('group_id', group_id)
+    err = uuid_field_error('group_id', group_id)
     if err:
         return err
 
@@ -480,7 +470,7 @@ async def delete_iam_group(
     Returns:
         IAM group deletion response
     """
-    err = _validate_uuid('group_id', group_id)
+    err = uuid_field_error('group_id', group_id)
     if err:
         return err
 
@@ -527,7 +517,7 @@ async def list_iam_memberships(
         IAM memberships list response
     """
     if group_id is not None:
-        err = _validate_uuid('group_id', group_id)
+        err = uuid_field_error('group_id', group_id)
         if err:
             return err
 
@@ -571,7 +561,7 @@ async def add_iam_member(
     Returns:
         IAM membership creation response
     """
-    err = _validate_uuid('group_id', group_id) or _validate_uuid('user_id', user_id)
+    err = uuid_field_error('group_id', group_id) or uuid_field_error('user_id', user_id)
     if err:
         return err
     if role not in VALID_MEMBERSHIP_ROLES:
@@ -614,7 +604,7 @@ async def remove_iam_member(
     Returns:
         IAM membership deletion response
     """
-    err = _validate_uuid('membership_id', membership_id)
+    err = uuid_field_error('membership_id', membership_id)
     if err:
         return err
 
@@ -789,7 +779,7 @@ async def get_iam_application(
     Returns:
         IAM application detail response
     """
-    err = _validate_uuid('app_id', app_id)
+    err = uuid_field_error('app_id', app_id)
     if err:
         return err
 
@@ -830,7 +820,7 @@ async def update_iam_application(
     Returns:
         IAM application update response
     """
-    err = _validate_uuid('app_id', app_id)
+    err = uuid_field_error('app_id', app_id)
     if err:
         return err
 
@@ -878,7 +868,7 @@ async def delete_iam_application(
     Returns:
         IAM application deletion response
     """
-    err = _validate_uuid('app_id', app_id)
+    err = uuid_field_error('app_id', app_id)
     if err:
         return err
 
@@ -919,7 +909,7 @@ async def assign_application_system_users(
     Returns:
         Assigned system users response
     """
-    err = _validate_uuid('app_id', app_id)
+    err = uuid_field_error('app_id', app_id)
     if err:
         return err
     if not system_user_ids:
@@ -929,7 +919,7 @@ async def assign_application_system_users(
             'Must contain at least one system user ID',
         )
     for su_id in system_user_ids:
-        err = _validate_uuid('system_user_ids', su_id)
+        err = uuid_field_error('system_user_ids', su_id)
         if err:
             return err
 
@@ -971,7 +961,7 @@ async def unassign_application_system_users(
     Returns:
         Unassigned system users response
     """
-    err = _validate_uuid('app_id', app_id)
+    err = uuid_field_error('app_id', app_id)
     if err:
         return err
     if not system_user_ids:
@@ -981,7 +971,7 @@ async def unassign_application_system_users(
             'Must contain at least one system user ID',
         )
     for su_id in system_user_ids:
-        err = _validate_uuid('system_user_ids', su_id)
+        err = uuid_field_error('system_user_ids', su_id)
         if err:
             return err
 

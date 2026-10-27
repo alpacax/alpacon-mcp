@@ -3,7 +3,7 @@
 from utils.api_call import http_call_response
 from utils.common import build_list_params
 from utils.decorators import mcp_tool_handler
-from utils.error_handler import format_validation_error, validate_server_id_format
+from utils.error_handler import format_validation_error, uuid_field_error
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ_ONLY
 from utils.types import ToolErrorResponse, ToolResponse
@@ -850,7 +850,7 @@ async def delete_registration_token(
     """
     token = kwargs.get('token')
 
-    err = _validate_token_id(token_id)
+    err = uuid_field_error('token_id', token_id)
     if err:
         return err
 
@@ -901,7 +901,7 @@ async def get_registration_guide(
     """
     token = kwargs.get('token')
 
-    err = _validate_token_id(token_id)
+    err = uuid_field_error('token_id', token_id)
     if err:
         return err
     err = _validate_platform(platform)
@@ -930,15 +930,5 @@ def _validate_platform(platform: str) -> ToolErrorResponse | None:
             'platform',
             platform,
             f'Must be one of: {", ".join(sorted(VALID_PLATFORMS))}',
-        )
-    return None
-
-
-def _validate_token_id(token_id: str) -> ToolErrorResponse | None:
-    if not validate_server_id_format(token_id):
-        return format_validation_error(
-            'token_id',
-            token_id,
-            'Must be a valid UUID. Example: 550e8400-e29b-41d4-a716-446655440000',
         )
     return None
