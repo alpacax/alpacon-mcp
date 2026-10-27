@@ -112,16 +112,16 @@ What a server collects and at what cadence, and what it does not collect. Not ga
 ### `unregister_server`
 Unregister a host from the workspace. The agent stays installed; bringing the host back needs a registration token.
 
-**Parameters:** `server_id`, `workspace`, `auto` (boolean, default `false`: refuses a still-connected host with 400 `SERVER_CANNOT_BE_DELETED`; `true` tears the agent off a host that is still running), `purge_provisioned_accounts` (boolean, default `false`: also deletes the OS accounts Alpacon provisioned on the host, skipped when the host is unreachable), `region` (optional)
+**Parameters:** `server_id`, `workspace`, `auto` (boolean, default `false`: refuses a still-connected host with 400 `SERVER_CANNOT_BE_DELETED`; `true` tears the agent off a host that is still running), `purge_provisioned_accounts` (boolean, default `false`: also deletes the OS accounts Alpacon provisioned on the host, skipped when the host is unreachable), `region` (`ap1` or `us1`, optional)
 
 ### `star_server`
 Pin or unpin a server for the calling user. A personal preference flag, not a fleet-wide setting.
 
-**Parameters:** `server_id`, `status` (boolean), `workspace`, `region` (optional)
+**Parameters:** `server_id`, `status` (boolean), `workspace`, `region` (`ap1` or `us1`, optional)
 
 ### Agent actions
 
-Each takes `server_id`, `workspace`, and an optional `region`. This is the complete set of actions
+Each takes `server_id`, `workspace`, and an optional `region` (`ap1` or `us1`). This is the complete set of actions
 this endpoint accepts; an action outside this set returns 400. The two disruptive ones also take
 `force` (boolean, default `false`), which runs the action even while the host is busy with an open
 Websh or WebFTP session or an in-flight command, tearing that work down. `install_pam` and
@@ -144,10 +144,10 @@ They run through a Work Session and `execute_command`—see "Keeping hosts curre
 
 ### Registration tokens (Alpamon)
 
-- `list_registration_tokens`: `workspace`, `region` (optional), `page`, `page_size`
-- `create_registration_token`: `workspace`, `name`, `description` (optional), `region` (optional)
-- `delete_registration_token`: `token_id`, `workspace`, `region` (optional)
-- `get_registration_guide`: `token_id`, `workspace`, `platform` (`debian`, `rhel`, `suse`, `darwin`, `windows`), `server_name` (optional), `region` (optional). Returns the platform-specific install command
+- `list_registration_tokens`: `workspace`, `region` (`ap1` or `us1`, optional), `page`, `page_size`
+- `create_registration_token`: `workspace`, `name`, `description` (optional), `region` (`ap1` or `us1`, optional)
+- `delete_registration_token`: `token_id`, `workspace`, `region` (`ap1` or `us1`, optional)
+- `get_registration_guide`: `token_id`, `workspace`, `platform` (`debian`, `rhel`, `suse`, `darwin`, `windows`), `server_name` (optional), `region` (`ap1` or `us1`, optional). Returns the platform-specific install command
 
 ---
 
@@ -689,17 +689,17 @@ On streamable-http and SSE, `file_content` is capped at 3 MiB of decoded (origin
 ### `webftp_bulk_upload`
 Upload several local files to one directory in a single operation.
 
-**Parameters:** `server_id`, `local_file_paths` (array), `remote_directory`, `workspace`, `username` (optional), `work_session_id` (optional), `allow_overwrite`, `region` (optional)
+**Parameters:** `server_id`, `local_file_paths` (array), `remote_directory`, `workspace`, `username` (optional), `work_session_id` (optional), `allow_overwrite`, `region` (`ap1` or `us1`, optional)
 
 ### `webftp_bulk_download`
 Download several files or folders as one ZIP archive.
 
-**Parameters:** `server_id`, `remote_paths` (array), `local_file_path`, `workspace`, `username` (optional), `work_session_id` (optional), `region` (optional)
+**Parameters:** `server_id`, `remote_paths` (array), `local_file_path`, `workspace`, `username` (optional), `work_session_id` (optional), `region` (`ap1` or `us1`, optional)
 
 ### `webftp_check_status`
 Check the status of an in-flight transfer.
 
-**Parameters:** `file_id`, `transfer_type` (`upload` or `download`), `workspace`, `region` (optional)
+**Parameters:** `file_id`, `transfer_type` (`upload` or `download`), `workspace`, `region` (`ap1` or `us1`, optional)
 
 ### `webftp_uploads_list`
 List uploaded files (upload history).
@@ -843,23 +843,23 @@ Read a group by `group_id`, update its `display_name`/`description` (the `name` 
 ### Membership management
 
 #### `list_iam_memberships`
-List group memberships. **Parameters:** `workspace`, `group_id` (optional filter), `region` (optional), `page`, `page_size`.
+List group memberships. **Parameters:** `workspace`, `group_id` (optional filter), `region` (`ap1` or `us1`, optional), `page`, `page_size`.
 
 #### `add_iam_member`
-Add a user to a group. **Parameters:** `group_id`, `user_id`, `workspace`, `role` (`member`, `manager`, or `owner`), `region` (optional).
+Add a user to a group. **Parameters:** `group_id`, `user_id`, `workspace`, `role` (`member`, `manager`, or `owner`), `region` (`ap1` or `us1`, optional).
 
 #### `remove_iam_member`
-Remove a membership. **Parameters:** `membership_id`, `workspace`, `region` (optional).
+Remove a membership. **Parameters:** `membership_id`, `workspace`, `region` (`ap1` or `us1`, optional).
 
 #### `invite_workspace_user`
-Send an email invitation to join the workspace (Auth0-enabled deployments). **Parameters:** `email`, `workspace`, `region` (optional).
+Send an email invitation to join the workspace (Auth0-enabled deployments). **Parameters:** `email`, `workspace`, `region` (`ap1` or `us1`, optional).
 
 ### Application management (machine service accounts)
 
-- `list_iam_applications`: `workspace`, `region` (optional), `page`, `page_size`
-- `create_iam_application`: `name`, `workspace`, `description` (optional), `service_type` (optional), `region` (optional)
+- `list_iam_applications`: `workspace`, `region` (`ap1` or `us1`, optional), `page`, `page_size`
+- `create_iam_application`: `name`, `workspace`, `description` (optional), `service_type` (optional), `region` (`ap1` or `us1`, optional)
 - `get_iam_application` / `update_iam_application` / `delete_iam_application`: by `app_id`
-- `assign_application_system_users` / `unassign_application_system_users`: `app_id`, `system_user_ids` (array), `workspace`, `region` (optional)
+- `assign_application_system_users` / `unassign_application_system_users`: `app_id`, `system_user_ids` (array), `workspace`, `region` (`ap1` or `us1`, optional)
 
 **Note:** Role and permission endpoints are not implemented in the Alpacon server, so there are no `list_iam_roles`, `assign_iam_user_role`, or permission tools.
 
@@ -870,7 +870,7 @@ Send an email invitation to join the workspace (Auth0-enabled deployments). **Pa
 A Work Session is the unit of authorized work: a scope, a set of servers, an expiry, and an audit trail. OAuth/browser callers must have one active before executing commands or transferring files; static API tokens and service tokens bypass the gate.
 
 ### `work_session_create`
-Open a session. **Parameters:** `workspace`, `scopes` (array; agents may request `command`, `webftp`, `tunnel`, and `sudo`—request `sudo` only when the work genuinely requires root, since a sudo invocation no policy covers routes to human approval), `servers` (array of UUIDs), `expires_at` (ISO 8601), `description`, `title` (optional), `target_account_username` (optional; the OS account commands will run as, such as `root`—set it when you intend to run as another account so it is approved with the session, then pass the same account as `username` to `execute_command` and `execute_file`; running directly as `root` is declared here, while the `sudo` scope is for elevation from another account; sent only when given), `region` (optional). Only `title`, `target_account_username` and `region` may be omitted—a session with no expiry or no stated reason is not a session anyone can approve.
+Open a session. **Parameters:** `workspace`, `scopes` (array; agents may request `command`, `webftp`, `tunnel`, and `sudo`—request `sudo` only when the work genuinely requires root, since a sudo invocation no policy covers routes to human approval), `servers` (array of UUIDs), `expires_at` (ISO 8601), `description`, `title` (optional), `target_account_username` (optional; the OS account commands will run as, such as `root`—set it when you intend to run as another account so it is approved with the session, then pass the same account as `username` to `execute_command` and `execute_file`; running directly as `root` is declared here, while the `sudo` scope is for elevation from another account; sent only when given), `region` (`ap1` or `us1`, optional). Only `title`, `target_account_username` and `region` may be omitted—a session with no expiry or no stated reason is not a session anyone can approve.
 
 `description` is prose for the human who approves the session. It is not a command list and nothing in it is executed; commands run via `execute_command` once the session is active.
 
@@ -882,13 +882,13 @@ Read one session (`session_id`) or list them (`status`, `requester_type`, `limit
 ### `work_session_update` / `work_session_extend`
 Partial update of `title`, `description`, `scopes`, `servers` (and `expires_at` for pending sessions only), or extend `expires_at` on an approved/active session. `description` carries the same prose-only rule as on `work_session_create`. An update that needs approval is queued as a modification request.
 
-`work_session_extend` **parameters:** `session_id`, `workspace`, `expires_at` (ISO 8601, must be later than the current expiry), `reason` (required—a short justification the human approver judges the request by), `region` (optional). Whether the extension applies immediately or waits for approval follows the workspace's approval policy, the same rule `work_session_create` uses: an auto-approve lane extends directly and the tool returns a normal success; any other lane queues an extension request instead, and the tool returns `status="pending_approval"`—the session's `expires_at` stays at its prior value until a human decides out-of-band. Poll `work_session_get` until `expires_at` changes to see the outcome; the session's `pending_extension_request` field names the open request until then. A blank `reason` is rejected with `error_code: work_session_extension_reason_required`.
+`work_session_extend` **parameters:** `session_id`, `workspace`, `expires_at` (ISO 8601, must be later than the current expiry), `reason` (required—a short justification the human approver judges the request by), `region` (`ap1` or `us1`, optional). Whether the extension applies immediately or waits for approval follows the workspace's approval policy, the same rule `work_session_create` uses: an auto-approve lane extends directly and the tool returns a normal success; any other lane queues an extension request instead, and the tool returns `status="pending_approval"`—the session's `expires_at` stays at its prior value until a human decides out-of-band. Poll `work_session_get` until `expires_at` changes to see the outcome; the session's `pending_extension_request` field names the open request until then. A blank `reason` is rejected with `error_code: work_session_extension_reason_required`.
 
 ### `work_session_timeline`
-Chronological record of commands, file transfers, websh activity, and sudo grants, oldest first. **Parameters:** `session_id`, `workspace`, `region` (optional), `cursor`, `page_size` (1 to 500; the server defaults to 100, and a larger value is refused locally with a `validation` error), and `include_records`, which is retired and refused. The endpoint pages only when a request names `cursor`, so the tool names it on every request, empty on the first, and walks the cursor the same way the audit tools do—see **Audit tools** for the `pagination` object and how to resume. Three things differ from those lists. The walk reads forward, so a result stopped at the bound holds the start of the session and omits its most recent activity. The paged timeline carries no websh terminal recordings; it names the sessions that have one, and `work_session_records` below reads them. `include_records` is still declared only so that passing it can be refused, since the SDK discards an argument the published schema does not name before the call. Any value, `true` or `false`, is answered with `status: "error"`, `error_code: "validation"` and `field: "include_records"` before any request is made. And an alpacon-server that predates the paged timeline ignores `cursor` and answers with the whole session and no `next`; that first answer is read as the whole list, reported `stopped_because: unpaginated_server` with `complete: true`, a value only this tool can return. If the call sent a `cursor` the server ignored, the `note` says so, because the records then start at the beginning of the session. A later page without `next` is an error, as it is for every list.
+Chronological record of commands, file transfers, websh activity, and sudo grants, oldest first. **Parameters:** `session_id`, `workspace`, `region` (`ap1` or `us1`, optional), `cursor`, `page_size` (1 to 500; the server defaults to 100, and a larger value is refused locally with a `validation` error), and `include_records`, which is retired and refused. The endpoint pages only when a request names `cursor`, so the tool names it on every request, empty on the first, and walks the cursor the same way the audit tools do—see **Audit tools** for the `pagination` object and how to resume. Three things differ from those lists. The walk reads forward, so a result stopped at the bound holds the start of the session and omits its most recent activity. The paged timeline carries no websh terminal recordings; it names the sessions that have one, and `work_session_records` below reads them. `include_records` is still declared only so that passing it can be refused, since the SDK discards an argument the published schema does not name before the call. Any value, `true` or `false`, is answered with `status: "error"`, `error_code: "validation"` and `field: "include_records"` before any request is made. And an alpacon-server that predates the paged timeline ignores `cursor` and answers with the whole session and no `next`; that first answer is read as the whole list, reported `stopped_because: unpaginated_server` with `complete: true`, a value only this tool can return. If the call sent a `cursor` the server ignored, the `note` says so, because the records then start at the beginning of the session. A later page without `next` is an error, as it is for every list.
 
 ### `work_session_records`
-One page of one websh terminal recording captured inside the session: the output in chunks, oldest first, as `{added_at, record}` items. **Parameters:** `session_id` (the work session), `websh_session_id`, `workspace`, `region` (optional), `cursor` (optional), `page_size` (1 to 16, default 8; a value outside that range is refused locally with a `validation` error before any request). Wraps `GET /api/work-sessions/sessions/{id}/records/?session=<websh session id>` and **requires alpacon-server 2.42.0 or later**.
+One page of one websh terminal recording captured inside the session: the output in chunks, oldest first, as `{added_at, record}` items. **Parameters:** `session_id` (the work session), `websh_session_id`, `workspace`, `region` (`ap1` or `us1`, optional), `cursor` (optional), `page_size` (1 to 16, default 8; a value outside that range is refused locally with a `validation` error before any request). Wraps `GET /api/work-sessions/sessions/{id}/records/?session=<websh session id>` and **requires alpacon-server 2.42.0 or later**.
 
 `websh_session_id` is the `id` of a `websh_session` item on `work_session_timeline`, which is how you learn which sessions a work session recorded. The websh session must belong to this work session and must not be a tunnel, which records no terminal; one that does not, or that is outside what the caller may see, answers `404`. A missing or malformed `session` answers `400` with `error_code: invalid_input`. Reading a recording whole is a paid-plan feature, as it is on the websh route, so a Free workspace answers `402` (`error_code: workspace_plan_update_required`), and so does a session older than the plan's audit window.
 
@@ -903,11 +903,11 @@ Close a session (triggers AI security analysis) or re-run analysis on a terminal
 
 ## ✅ Approval and sudo tools
 
-- `list_approval_requests`: `workspace`, `status` (optional), `region` (optional), `page`, `page_size`
-- `get_approval_request`: `request_id`, `workspace`, `region` (optional)
-- `explain_approval_decision`: `workspace`, `request_id` (optional), `region` (optional). Explains that deciding is human-only and out of band; performs no mutation
-- `list_sudo_policies`: `workspace`, `region` (optional), `page`, `page_size`, `user` (UUID), `server_id` (UUID)
-- `request_sudo_policy`: `workspace`, `servers` (UUID list), `commands`, `reason`, `users` (optional UUID list), `valid_from`, `valid_until`, `region` (optional). Creates an approval request, not a policy; returns `status="pending_approval"`. Omitting `users` scopes the approved policy to the requester alone, not to the whole workspace. `allow_bypass_mfa` is not accepted: the server refuses it on this endpoint
+- `list_approval_requests`: `workspace`, `status` (optional), `region` (`ap1` or `us1`, optional), `page`, `page_size`
+- `get_approval_request`: `request_id`, `workspace`, `region` (`ap1` or `us1`, optional)
+- `explain_approval_decision`: `workspace`, `request_id` (optional), `region` (`ap1` or `us1`, optional). Explains that deciding is human-only and out of band; performs no mutation
+- `list_sudo_policies`: `workspace`, `region` (`ap1` or `us1`, optional), `page`, `page_size`, `user` (UUID), `server_id` (UUID)
+- `request_sudo_policy`: `workspace`, `servers` (UUID list), `commands`, `reason`, `users` (optional UUID list), `valid_from`, `valid_until`, `region` (`ap1` or `us1`, optional). Creates an approval request, not a policy; returns `status="pending_approval"`. Omitting `users` scopes the approved policy to the requester alone, not to the whole workspace. `allow_bypass_mfa` is not accepted: the server refuses it on this endpoint
 
 There is intentionally no `approve_request`/`reject_request` tool: the Alpacon server refuses approve/reject from agent and token channels with HTTP 403. Approval happens in the web console or Slack.
 
@@ -915,15 +915,15 @@ There is intentionally no `approve_request`/`reject_request` tool: the Alpacon s
 
 ## 🔔 Alert tools
 
-- `list_alerts`: `workspace`, `server_id`, `alert_type`, `severity` (`critical`, `warning`, `info`), `server_name`, `acknowledged`, `dismissed`, `resolved`, `region` (optional), `page`, `page_size`. `resolved` omitted returns open alerts only; `true` returns the resolved history instead
-- `get_alert`: `alert_id`, `workspace`, `region` (optional)
-- `acknowledge_alert`: `alert_id`, `workspace`, `action_type` (`checked` or `dismissed`), `region` (optional). One acknowledgement per user per alert, and it cannot be changed afterwards
-- `create_alert_rule`: `workspace`, `name`, `target`, `threshold`, `is_default`, `operator` (`gte` or `lte`, default `gte`), `duration_s` (seconds the condition must hold; `0`, the default, fires on a single sample), `recovery_threshold`, `no_data_after_s` (floored at the target's collection interval), `device` (disk/interface name; device-scoped targets only), `severity` (`critical`, `warning`, `info`; default `warning`), `notify_email` (`all`, `admins`, `group_members`, or `none`; default `all`), `notify_slack_channel` (boolean; default `true`), `region` (optional). `target` is a metric the workspace exposes, e.g. `cpu-usage`, `memory-usage`, `disk-usage`, or one of the peak/avg bps or pps network and disk rates; the server holds the authoritative list and rejects an unrecognized value with `400`. `device` is accepted only for a device-scoped target—`cpu-usage` and `memory-usage` are host-wide. `notify_email` and `notify_slack_channel` decide who hears about alerts this rule raises; only a human caller may set them—a service-token or agent write naming either is refused with `400` (`metrics_alert_rule_destination_not_allowed`), and an `info`-severity rule sends no mail and posts to no channel regardless of either setting
+- `list_alerts`: `workspace`, `server_id`, `alert_type`, `severity` (`critical`, `warning`, `info`), `server_name`, `acknowledged`, `dismissed`, `resolved`, `region` (`ap1` or `us1`, optional), `page`, `page_size`. `resolved` omitted returns open alerts only; `true` returns the resolved history instead
+- `get_alert`: `alert_id`, `workspace`, `region` (`ap1` or `us1`, optional)
+- `acknowledge_alert`: `alert_id`, `workspace`, `action_type` (`checked` or `dismissed`), `region` (`ap1` or `us1`, optional). One acknowledgement per user per alert, and it cannot be changed afterwards
+- `create_alert_rule`: `workspace`, `name`, `target`, `threshold`, `is_default`, `operator` (`gte` or `lte`, default `gte`), `duration_s` (seconds the condition must hold; `0`, the default, fires on a single sample), `recovery_threshold`, `no_data_after_s` (floored at the target's collection interval), `device` (disk/interface name; device-scoped targets only), `severity` (`critical`, `warning`, `info`; default `warning`), `notify_email` (`all`, `admins`, `group_members`, or `none`; default `all`), `notify_slack_channel` (boolean; default `true`), `region` (`ap1` or `us1`, optional). `target` is a metric the workspace exposes, e.g. `cpu-usage`, `memory-usage`, `disk-usage`, or one of the peak/avg bps or pps network and disk rates; the server holds the authoritative list and rejects an unrecognized value with `400`. `device` is accepted only for a device-scoped target—`cpu-usage` and `memory-usage` are host-wide. `notify_email` and `notify_slack_channel` decide who hears about alerts this rule raises; only a human caller may set them—a service-token or agent write naming either is refused with `400` (`metrics_alert_rule_destination_not_allowed`), and an `info`-severity rule sends no mail and posts to no channel regardless of either setting
 - `update_alert_rule`: `rule_id`, `workspace`, and any of `name`, `target`, `threshold`, `is_default`, `operator`, `duration_s`, `recovery_threshold`, `no_data_after_s`, `device`, `severity`, `notify_email`, `notify_slack_channel`—sent only for the fields given. `target`, when given, is subject to the same rule as `create_alert_rule`: the server holds the authoritative list and rejects an unrecognized value with `400`. `notify_email`, when given, is one of the same four choices as on `create_alert_rule` (`all`, `admins`, `group_members`, `none`); `notify_slack_channel` is a boolean. Both carry the same human-only restriction and `info`-severity behavior as on `create_alert_rule`; omitted, each keeps the rule's current value
 - `delete_alert_rule`: by `rule_id`. A rule with `is_default=true` cannot be deleted
-- `attach_alert_rule` / `detach_alert_rule`: `server_id`, `rule_id`, `workspace`, `region` (optional). Each is idempotent in the state it aims at: attaching a rule the server already has changes nothing, and so does detaching a rule the server does not have
-- `get_alert_rule_recipients`: `rule_id`, `workspace`, `region` (optional). Preview who the rule would notify, as counts only—never names. Requires alpacon-server 2.36.0 or later. Returns `email` (`mode`, `count`, `reasons` with `admins`/`group_members`/`owner`—these overlap each other and need not sum to `count`), `slack_channel` (`enabled`, `connected`—both stay as configured for an `info`-severity rule even though `info` posts nothing), and `event_subscriptions` (machine listeners, unaffected by either destination). Counted over the servers the rule is attached to that the caller can see and that the rule can actually fire on; a `404` while the rule itself reads fine through `get_alert_rules` means every one of its servers is outside what the caller can see, not that the rule is gone, while a rule attached to no server answers zeros
-- `preview_alert_rule`: `workspace`, `rule_id` (optional), `servers` (optional UUID list, up to 20), `window_s` (optional; `60` to `604800`, default `86400`), any of `target`, `threshold`, `operator`, `duration_s`, `recovery_threshold`, `no_data_after_s`, `device`, `severity`, `notify_email`, `notify_slack_channel` (the `create_alert_rule` fields minus `name` and `is_default`, sent only when given), `region` (optional). Replays the rule over the window's realtime samples with the live evaluator's own logic, one tick every 60 seconds, and stores nothing. Without `rule_id` the fields describe a new rule and `servers` is required; with `rule_id` they override that rule's values (give none to preview it unchanged), its server overrides apply, and `servers` defaults to its attached servers. Returns `window` (`start`, `end`), `sample_interval_s`, `summary` (`episodes`, `would_interrupt`, `open_at_end`, `longest_s`), `servers` (one row per server and device: `server`, `device`, `samples`, `episodes` with `condition`, `raised_at`, `resolved_at`, `peak`, `outlived_hold`, `would_interrupt`), `recipients` (the `get_alert_rule_recipients` shape, over the replayed servers), and `not_reproduced`. Refused with `400` and an `error_code`: `metrics_alert_rule_preview_window_too_long` (`window_s` over seven days), `metrics_alert_rule_preview_too_many_servers` (over 20 servers, or servers × `window_s` over 5 × 604800), `metrics_alert_rule_preview_too_many_samples` (over 300,000 samples), `metrics_alert_rule_preview_servers_required` (neither `rule_id` nor `servers`), and `server_not_found` (an entry in `servers` is unknown or out of reach). A `404` means no rule with `rule_id`, or every server it is attached to is outside what the caller can see. `notify_email` and `notify_slack_channel` carry the same human-only restriction as on `create_alert_rule`
+- `attach_alert_rule` / `detach_alert_rule`: `server_id`, `rule_id`, `workspace`, `region` (`ap1` or `us1`, optional). Each is idempotent in the state it aims at: attaching a rule the server already has changes nothing, and so does detaching a rule the server does not have
+- `get_alert_rule_recipients`: `rule_id`, `workspace`, `region` (`ap1` or `us1`, optional). Preview who the rule would notify, as counts only—never names. Requires alpacon-server 2.36.0 or later. Returns `email` (`mode`, `count`, `reasons` with `admins`/`group_members`/`owner`—these overlap each other and need not sum to `count`), `slack_channel` (`enabled`, `connected`—both stay as configured for an `info`-severity rule even though `info` posts nothing), and `event_subscriptions` (machine listeners, unaffected by either destination). Counted over the servers the rule is attached to that the caller can see and that the rule can actually fire on; a `404` while the rule itself reads fine through `get_alert_rules` means every one of its servers is outside what the caller can see, not that the rule is gone, while a rule attached to no server answers zeros
+- `preview_alert_rule`: `workspace`, `rule_id` (optional), `servers` (optional UUID list, up to 20), `window_s` (optional; `60` to `604800`, default `86400`), any of `target`, `threshold`, `operator`, `duration_s`, `recovery_threshold`, `no_data_after_s`, `device`, `severity`, `notify_email`, `notify_slack_channel` (the `create_alert_rule` fields minus `name` and `is_default`, sent only when given), `region` (`ap1` or `us1`, optional). Replays the rule over the window's realtime samples with the live evaluator's own logic, one tick every 60 seconds, and stores nothing. Without `rule_id` the fields describe a new rule and `servers` is required; with `rule_id` they override that rule's values (give none to preview it unchanged), its server overrides apply, and `servers` defaults to its attached servers. Returns `window` (`start`, `end`), `sample_interval_s`, `summary` (`episodes`, `would_interrupt`, `open_at_end`, `longest_s`), `servers` (one row per server and device: `server`, `device`, `samples`, `episodes` with `condition`, `raised_at`, `resolved_at`, `peak`, `outlived_hold`, `would_interrupt`), `recipients` (the `get_alert_rule_recipients` shape, over the replayed servers), and `not_reproduced`. Refused with `400` and an `error_code`: `metrics_alert_rule_preview_window_too_long` (`window_s` over seven days), `metrics_alert_rule_preview_too_many_servers` (over 20 servers, or servers × `window_s` over 5 × 604800), `metrics_alert_rule_preview_too_many_samples` (over 300,000 samples), `metrics_alert_rule_preview_servers_required` (neither `rule_id` nor `servers`), and `server_not_found` (an entry in `servers` is unknown or out of reach). A `404` means no rule with `rule_id`, or every server it is attached to is outside what the caller can see. `notify_email` and `notify_slack_channel` carry the same human-only restriction as on `create_alert_rule`
 
 Creating and updating a rule need a paid plan; reading, attaching and detaching work on any plan. A
 listed or fetched alert can carry `device` and `severity` from the rule that raised it, and
@@ -933,9 +933,9 @@ listed or fetched alert can carry `device` and `severity` from the rule that rai
 
 A per-server departure from a workspace alert rule, against `/api/metrics/rule-overrides/`. `server` and `rule` identify the override; `threshold`, `recovery_threshold`, `duration_s`, and `enabled` are nullable per-field overrides—a field left unset keeps the rule's own value for that server, and `enabled=false` exempts the server from the rule entirely regardless of the other fields. At most one override per `(server, rule)` pair; a second create for the same pair is refused.
 
-- `list_rule_overrides`: `workspace`, `server_id` (optional), `rule_id` (optional), `enabled` (optional), `region` (optional), `page`, `page_size`
-- `get_rule_override`: `override_id`, `workspace`, `region` (optional)
-- `create_rule_override`: `server_id`, `rule_id`, `workspace`, `threshold`, `recovery_threshold`, `duration_s`, `enabled` (all four optional), `region` (optional)
+- `list_rule_overrides`: `workspace`, `server_id` (optional), `rule_id` (optional), `enabled` (optional), `region` (`ap1` or `us1`, optional), `page`, `page_size`
+- `get_rule_override`: `override_id`, `workspace`, `region` (`ap1` or `us1`, optional)
+- `create_rule_override`: `server_id`, `rule_id`, `workspace`, `threshold`, `recovery_threshold`, `duration_s`, `enabled` (all four optional), `region` (`ap1` or `us1`, optional)
 - `update_rule_override`: `override_id`, `workspace`, and any of `server_id`, `rule_id`, `threshold`, `recovery_threshold`, `duration_s`, `enabled`—sent only for the fields given
 - `delete_rule_override`: by `override_id`
 
@@ -947,11 +947,11 @@ Command ACLs decide which commands a token may run, server ACLs which hosts it m
 
 The `command` and `path` a rule matches on must not be empty or whitespace-only. Both are patterns the server matches against, so a blank one is a pattern of its own rather than a missing value, and `create_command_acl`, `update_command_acl`, `create_file_acl`, and `update_file_acl` reject it before the request is built. The catch-all is `*`.
 
-- `list_command_acls`: `workspace`, `api_token_id`/`service_token_id` filters, `region` (optional), `page`, `page_size`
-- `create_command_acl`: `workspace`, `command`, `api_token_id` or `service_token_id`, `username`, `groupname`, `region` (optional)
+- `list_command_acls`: `workspace`, `api_token_id`/`service_token_id` filters, `region` (`ap1` or `us1`, optional), `page`, `page_size`
+- `create_command_acl`: `workspace`, `command`, `api_token_id` or `service_token_id`, `username`, `groupname`, `region` (`ap1` or `us1`, optional)
 - `update_command_acl` / `delete_command_acl`: by `acl_id`
 - `list_server_acls` / `create_server_acl` (`server_id` + token id) / `update_server_acl` / `delete_server_acl`
-- `bulk_server_acl`: `workspace`, `action` (add or remove), `server_ids` (array), token id, `region` (optional)
+- `bulk_server_acl`: `workspace`, `action` (add or remove), `server_ids` (array), token id, `region` (`ap1` or `us1`, optional)
 - `list_file_acls` / `create_file_acl` (`path`, `action`) / `update_file_acl` / `delete_file_acl`
 
 On a server that manages command ACLs on the command pre-approval ledger, `create_command_acl`, `update_command_acl`, and `delete_command_acl` are refused with 405 and `error_code` `command_acl_moved`; retrying the call does not help. A Command ACL admin then issues or revokes the entry under Pre-approved commands on the service token's page in the web console, or, on a stdio server, with the [command pre-approval ledger tools](#-command-pre-approval-ledger-tools). The error hint, the tool descriptions and the 403 recovery hint name those tools only on stdio, the one transport that registers them. A personal API token has no command list on the ledger. `list_command_acls` still answers there, but those rules no longer decide anything; a server without the ledger keeps accepting all four.
@@ -972,14 +972,14 @@ A 401 from the ledger also keeps its body in `detail`. When the refused token wa
 
 The list and issue tools, and `grant_ledger_admin`, name the workspace's id to the ledger. The tools that take an `entry_id`, `entry_ids` or `admin_id` do not: the ledger resolves an id only among the workspaces the signed-in person administers, and answers an id outside them as not found. Their `workspace` argument selects whose sign-in to use, not which workspace the id belongs to.
 
-- `get_ledger_capability`: `workspace`, `region` (optional). Returns `command_acl_surface`; on the ledger also `is_ledger_admin`, `administers_workspace` (this workspace), `workspace_id` and `workspace_ids`
-- `list_ledger_entries`: `workspace`, `principal_type` (`service_token` or `api_token`; `api_token` finds entries a personal API token kept from before, which the revoke and disable tools still reach), `principal_id`, `page`, `page_size` (at most 200), `region` (optional). Active entries only; the page carries `count`, `current`, `next`, `previous`, `last`, `results`
-- `issue_ledger_entries`: `workspace`, `entries` (1 to 200), `region` (optional). Each entry takes `principal_type` (`service_token` only: a personal API token has no command list on the ledger, and a batch naming `api_token` is refused before anything is sent), `principal_id` (the service token's UUID), `command_pattern`, `username` (`*` for any user), and optionally `groupname`, `server_ids` (omit to apply on every server, which the ledger flags in `warnings`), `expires_at`, `enabled`. All or nothing. An entry is never edited: revoke it and issue a new one
+- `get_ledger_capability`: `workspace`, `region` (`ap1` or `us1`, optional). Returns `command_acl_surface`; on the ledger also `is_ledger_admin`, `administers_workspace` (this workspace), `workspace_id` and `workspace_ids`
+- `list_ledger_entries`: `workspace`, `principal_type` (`service_token` or `api_token`; `api_token` finds entries a personal API token kept from before, which the revoke and disable tools still reach), `principal_id`, `page`, `page_size` (at most 200), `region` (`ap1` or `us1`, optional). Active entries only; the page carries `count`, `current`, `next`, `previous`, `last`, `results`
+- `issue_ledger_entries`: `workspace`, `entries` (1 to 200), `region` (`ap1` or `us1`, optional). Each entry takes `principal_type` (`service_token` only: a personal API token has no command list on the ledger, and a batch naming `api_token` is refused before anything is sent), `principal_id` (the service token's UUID), `command_pattern`, `username` (`*` for any user), and optionally `groupname`, `server_ids` (omit to apply on every server, which the ledger flags in `warnings`), `expires_at`, `enabled`. All or nothing. An entry is never edited: revoke it and issue a new one
 - `revoke_ledger_entry`: `workspace`, `entry_id`. The entry stops matching and stays readable for audit
 - `revoke_ledger_entries`: `workspace`, `entry_ids` (1 to 200). All or nothing; returns `revoked`
 - `disable_ledger_entry` / `enable_ledger_entry`: `workspace`, `entry_id`. Reversible, unlike a revocation
-- `list_ledger_admins`: `workspace`, `page`, `page_size`, `region` (optional)
-- `grant_ledger_admin`: `workspace`, `subject` (the person's Auth0 user id), `email` (optional), `region` (optional). A machine principal is refused
+- `list_ledger_admins`: `workspace`, `page`, `page_size`, `region` (`ap1` or `us1`, optional)
+- `grant_ledger_admin`: `workspace`, `subject` (the person's Auth0 user id), `email` (optional), `region` (`ap1` or `us1`, optional). A machine principal is refused
 - `revoke_ledger_admin`: `workspace`, `admin_id`. The last admin of a workspace cannot be removed
 
 ---
@@ -988,20 +988,20 @@ The list and issue tools, and `grant_ledger_admin`, name the workspace's id to t
 
 `list_activity_logs`, `list_server_logs`, and `list_webftp_logs` read Elasticsearch-backed endpoints that alpacon-server paginates by cursor, not by page number; they take no `page`, and one passed anyway is dropped without an error. Each call follows the cursor for up to 10 requests and merges the pages, so `data.results` spans all of them and `data.count` stays the server's total match count. A top-level `pagination` object reports the walk: `complete`, `stopped_because` (`end_of_list`, `page_bound`, `upstream_error`), `started_from_cursor`, `pages_read`, `max_pages`, `records_returned`, `next_cursor`, and, when there is something to explain, a `note`. Check `pagination.complete` before treating the result as the whole list, and pass `pagination.next_cursor` back as `cursor` to continue; an empty `cursor` starts from the beginning. A call resumed from `cursor` holds only the records after it, so it is never `complete` on its own: when it reads to the end it reports `stopped_because: end_of_list` with `complete: false`, and the whole list is its records together with those of the calls before it. A request that fails partway through, or a page that is not a well-formed cursor page (no `results` list, no `next`, a `next` that is neither null nor a cursor string, or a `next` repeating the cursor just sent), returns an error carrying the same object with `records_discarded`; the partial list is not handed back as a success, and `next_cursor` is where the walk started, so a retry reads the discarded records again. When the server refuses the cursor (`error_code` `api_cursor_expired` or `api_invalid_cursor`), `next_cursor` is null: retry from the start.
 
-- `list_activity_logs`: `workspace`, `region` (optional), `cursor`, `page_size`
-- `get_activity_log`: `log_id`, `workspace`, `region` (optional)
+- `list_activity_logs`: `workspace`, `region` (`ap1` or `us1`, optional), `cursor`, `page_size`
+- `get_activity_log`: `log_id`, `workspace`, `region` (`ap1` or `us1`, optional)
 - `list_server_logs`: command execution history; `workspace`, `server_id` (optional), `cursor`, `page_size`
 - `list_webftp_logs`: file transfer history; same parameters
 - `list_session_analyses`: AI security analyses; a plain page-numbered list, so `page` applies here; `workspace`, `server_id`, `status`, `risk_score`, `page`, `page_size`
-- `get_session_analysis_detail`: `analysis_id`, `workspace`, `region` (optional). Includes MITRE ATT&CK mapping
+- `get_session_analysis_detail`: `analysis_id`, `workspace`, `region` (`ap1` or `us1`, optional). Includes MITRE ATT&CK mapping
 
 ---
 
 ## 📦 Package tools
 
-- `list_system_package_entries`: `server_id`, `workspace`, `region` (optional), `page`, `page_size`
-- `install_system_package`: `server_id`, `package_name`, `workspace`, `version` (optional), `region` (optional)
-- `remove_system_package`: `entry_id`, `workspace`, `region` (optional)
+- `list_system_package_entries`: `server_id`, `workspace`, `region` (`ap1` or `us1`, optional), `page`, `page_size`
+- `install_system_package`: `server_id`, `package_name`, `workspace`, `version` (optional), `region` (`ap1` or `us1`, optional)
+- `remove_system_package`: `entry_id`, `workspace`, `region` (`ap1` or `us1`, optional)
 - `list_python_packages` / `install_python_package` / `remove_python_package`: same shape, via pip
 
 ---
@@ -1020,9 +1020,9 @@ The list and issue tools, and `grant_ledger_admin`, name the workspace's id to t
 
 ## 🔗 Webhook tools
 
-- `list_webhooks`: `workspace`, `provider` (one of `slack`, `discord`, `teams`, `telegram`, `custom`), `region` (optional), `page`, `page_size`
+- `list_webhooks`: `workspace`, `provider` (one of `slack`, `discord`, `teams`, `telegram`, `custom`), `region` (`ap1` or `us1`, optional), `page`, `page_size`
 - `get_webhook` / `delete_webhook`: by `webhook_id`
-- `create_webhook`: `workspace`, `name`, `url`, `owner` (user UUID, required), `provider` (optional), `ssl_verify`, `enabled`, `region` (optional). `provider` is one of `slack`, `discord`, `teams`, `telegram`, `custom`, and is detected from the URL when omitted
+- `create_webhook`: `workspace`, `name`, `url`, `owner` (user UUID, required), `provider` (optional), `ssl_verify`, `enabled`, `region` (`ap1` or `us1`, optional). `provider` is one of `slack`, `discord`, `teams`, `telegram`, `custom`, and is detected from the URL when omitted
 - `update_webhook`: `webhook_id`, `workspace`, and any of `name`, `url`, `ssl_verify`, `enabled`
 - `list_event_subscriptions` / `create_event_subscription` (`channel`, `event_type`, `target_id`) / `delete_event_subscription`. `event_type` includes `command_fin`, `servers_commit`, `sudo`, and (with the workspace's metrics extension enabled) `metric_threshold_crossed` / `metric_threshold_resolved`, which pair through the `alert_id` they carry; subscribing to every server (an omitted `target_id`) needs an admin account
 
@@ -1032,12 +1032,12 @@ Webhook tools need an admin account, and creating or updating a webhook needs a 
 
 ## 🎫 API token tools
 
-- `list_api_tokens`: `workspace`, `region` (optional), `page`, `page_size`, `name`, `enabled`, `search` (name only), `ordering` (`added_at`, `updated_at`, `last_used_at`)
-- `get_api_token`: `token_id`, `workspace`, `region` (optional)
-- `create_api_token`: `workspace`, `name`, `scopes`, `presets`, `expires_at`, `enabled`, `region` (optional). An omitted `expires_at` is issued at the workspace maximum lifetime
-- `update_api_token`: `token_id`, `workspace`, `name`, `enabled`, `expires_at`, `clear_expires_at`, `scopes`, `region` (optional). `clear_expires_at` sends a null expiry, which the server resets to the workspace maximum lifetime; no token can be made non-expiring
+- `list_api_tokens`: `workspace`, `region` (`ap1` or `us1`, optional), `page`, `page_size`, `name`, `enabled`, `search` (name only), `ordering` (`added_at`, `updated_at`, `last_used_at`)
+- `get_api_token`: `token_id`, `workspace`, `region` (`ap1` or `us1`, optional)
+- `create_api_token`: `workspace`, `name`, `scopes`, `presets`, `expires_at`, `enabled`, `region` (`ap1` or `us1`, optional). An omitted `expires_at` is issued at the workspace maximum lifetime
+- `update_api_token`: `token_id`, `workspace`, `name`, `enabled`, `expires_at`, `clear_expires_at`, `scopes`, `region` (`ap1` or `us1`, optional). `clear_expires_at` sends a null expiry, which the server resets to the workspace maximum lifetime; no token can be made non-expiring
 - `delete_api_token` / `duplicate_api_token`: by `token_id`
-- `rotate_api_token`: `token_id`, `workspace`, `region` (optional). Regenerates the secret in place; the old secret dies immediately, and the id, name, scopes and ACLs survive. A token that had no expiry comes back with the workspace maximum expiry, and one already past its expiry is refused with 400 `API_TOKEN_ALREADY_EXPIRED`. Paid plans only
+- `rotate_api_token`: `token_id`, `workspace`, `region` (`ap1` or `us1`, optional). Regenerates the secret in place; the old secret dies immediately, and the id, name, scopes and ACLs survive. A token that had no expiry comes back with the workspace maximum expiry, and one already past its expiry is refused with 400 `API_TOKEN_ALREADY_EXPIRED`. Paid plans only
 - `list_api_token_scopes` / `list_api_token_presets`: catalogs for building a token
 
 **Authentication note:** the server rejects these calls when the request is authenticated with a `source='api'` token, so in stdio mode with a `token.json` token they return `403 Forbidden`. Use the hosted server (JWT/OAuth), a browser session, or a login-source token. The scopes and presets catalogs are exempt.
