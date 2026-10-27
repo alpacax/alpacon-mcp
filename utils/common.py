@@ -332,8 +332,8 @@ AGENT_ROLLOUT_POLICY_REFUSAL_HINTS: dict[str, str] = {
 }
 
 #: 405 on every command-ACL write once the server moved command pre-approvals
-#: to the ledger. Only a stdio server registers the ledger tools, so only it
-#: names them; every transport gets the web console.
+#: to the ledger. Only a server that registers the ledger tools names them;
+#: every transport gets the web console.
 COMMAND_ACL_MOVED_HINT = (
     'Command ACLs are now managed on the command pre-approval ledger, so this '
     'endpoint no longer accepts writes. A Command ACL admin can issue or revoke '
@@ -358,8 +358,8 @@ _ERROR_CODE_HINT: dict[str, str] = {
     'work_session_extension_reason_required': WORK_SESSION_EXTENSION_REASON_REQUIRED_HINT,
 }
 
-# Replaces an _ERROR_CODE_HINT entry on a stdio server, the only transport that
-# registers the tools these name.
+# Replaces an _ERROR_CODE_HINT entry on a server that registers the tools these
+# name: stdio, or remote mode with the ledger enabled.
 _STDIO_ERROR_CODE_HINT: dict[str, str] = {
     'command_acl_moved': COMMAND_ACL_MOVED_STDIO_HINT,
 }
@@ -428,6 +428,30 @@ def is_stdio_transport() -> bool:
     not stdio, so a stdio-only path fails closed.
     """
     return os.getenv('ALPACON_MCP_TRANSPORT', '') == 'stdio'
+
+
+REMOTE_LEDGER_ENV = 'ALPACON_MCP_REMOTE_LEDGER'
+
+
+def is_remote_ledger_enabled() -> bool:
+    """Whether remote mode serves the command pre-approval ledger tools.
+
+    Off unless the operator sets ALPACON_MCP_REMOTE_LEDGER=true, because the
+    MCP's Auth0 application has to be allowed the ledger audience first;
+    without that every ledger call would send its user around a sign-in that
+    cannot succeed. Only an authenticated streamable-http server qualifies:
+    SSE has no signed-in person to bind a ledger token to.
+    """
+    return (
+        is_auth_enabled()
+        and os.getenv('ALPACON_MCP_TRANSPORT', '') == 'streamable-http'
+        and os.getenv(REMOTE_LEDGER_ENV, '').lower() == 'true'
+    )
+
+
+def serves_ledger_tools() -> bool:
+    """Whether this process registers the command pre-approval ledger tools."""
+    return is_stdio_transport() or is_remote_ledger_enabled()
 
 
 def resolve_work_session_id(explicit: str | None) -> str | None:
@@ -852,7 +876,7 @@ def unwrap_http_result(
     if code is not None:
         error_kwargs['error_code'] = code
         hint = _ERROR_CODE_HINT.get(code)
-        if is_stdio_transport():
+        if serves_ledger_tools():
             hint = _STDIO_ERROR_CODE_HINT.get(code, hint)
         if hint is not None:
             message = f'{message} {hint}'

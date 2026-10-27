@@ -16,11 +16,12 @@ audience only, and keeps the result in memory:
 
 Only a stdio server uses this. The cache is process-global and keyed by
 workspace, not by caller, which is safe only where the process serves one
-person; SSE and streamable-http may serve several from one process.
+person; SSE and streamable-http may serve several from one process. Remote
+mode carries its ledger token in each caller's credential instead (see
+`utils.ledger_grant`).
 """
 
 import asyncio
-import os
 import time
 from dataclasses import dataclass
 from http import HTTPStatus
@@ -30,17 +31,33 @@ import httpx
 
 from utils.auth import decode_claims_unverified
 from utils.common import error_response
+from utils.ledger_grant import (
+    DEFAULT_LEDGER_AUDIENCE,
+    DEFAULT_LEDGER_URL,
+    LEDGER_AUDIENCE_ENV,
+    LEDGER_URL_ENV,
+    ledger_audience,
+    ledger_base_url,
+)
 from utils.logger import get_logger
 from utils.types import JsonValue, ToolResponse
 
 logger = get_logger('ledger_auth')
 
-LEDGER_URL_ENV = 'ALPACON_MCP_LEDGER_URL'
-LEDGER_AUDIENCE_ENV = 'ALPACON_MCP_LEDGER_AUDIENCE'
-DEFAULT_LEDGER_URL = 'https://alpacon.ai'
-# An audience is an opaque identifier matched character for character; the
-# trailing slash is part of it.
-DEFAULT_LEDGER_AUDIENCE = 'https://alpacon.ai/'
+# The ledger host and audience moved to utils.ledger_grant, which the OAuth
+# proxy imports without this module's dependencies; they stay importable here.
+__all__ = [
+    'AUTHORIZATION_REQUIRED',
+    'DEFAULT_LEDGER_AUDIENCE',
+    'DEFAULT_LEDGER_URL',
+    'LEDGER_AUDIENCE_ENV',
+    'LEDGER_URL_ENV',
+    'LedgerAuthorizer',
+    'LedgerTarget',
+    'ledger_audience',
+    'ledger_authorizer',
+    'ledger_base_url',
+]
 
 AUTHORIZATION_REQUIRED = 'authorization_required'
 
@@ -51,17 +68,6 @@ _DEFAULT_INTERVAL = 5
 # with a token that lapses on the way.
 _EXPIRY_SKEW = 60
 _AUTH0_TIMEOUT = httpx.Timeout(10.0, connect=5.0)
-
-
-def ledger_base_url() -> str:
-    """The ledger API host, without a trailing slash."""
-    url = os.getenv(LEDGER_URL_ENV, '').strip() or DEFAULT_LEDGER_URL
-    return url.rstrip('/')
-
-
-def ledger_audience() -> str:
-    """The ledger audience, verbatim."""
-    return os.getenv(LEDGER_AUDIENCE_ENV, '').strip() or DEFAULT_LEDGER_AUDIENCE
 
 
 def _now() -> float:

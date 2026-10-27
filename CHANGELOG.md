@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- The command pre-approval ledger tools can be served in remote mode (streamable-http) when the operator sets
+  `ALPACON_MCP_REMOTE_LEDGER=true` (#362). A ledger call without a usable ledger token asks the MCP client to sign
+  in again through a 403 `insufficient_scope` challenge naming `ledger:<workspace>`; the OAuth proxy then obtains a
+  ledger token for that person and carries it, encrypted, in the access token it hands that one client. The
+  returned access token can therefore be an opaque `amcpl1.` value rather than an Auth0 JWT, and when the client
+  cannot step up the tool returns `authorization_required` without a `verification_uri`. SSE still never serves
+  these tools.
 - Command pre-approval ledger tools (#362): `get_ledger_capability`, `list_ledger_entries`,
   `issue_ledger_entries`, `revoke_ledger_entry`, `revoke_ledger_entries`, `disable_ledger_entry`,
   `enable_ledger_entry`, `list_ledger_admins`, `grant_ledger_admin` and `revoke_ledger_admin`, in a new

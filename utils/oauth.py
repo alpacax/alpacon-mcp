@@ -26,6 +26,19 @@ import httpx
 from starlette.requests import Request
 from starlette.responses import JSONResponse, RedirectResponse, Response
 
+from utils.common import is_remote_ledger_enabled
+from utils.error_handler import validate_workspace_format
+from utils.ledger_grant import (
+    LedgerGrant,
+    grant_from_token_response,
+    ledger_audience,
+    open_grant,
+    open_stage,
+    seal_grant,
+    seal_stage,
+    subject_of,
+    wrap_access_token,
+)
 from utils.logger import escape_for_log, get_logger
 from utils.routes import RouteHandler, RouteRegistry
 
@@ -38,6 +51,17 @@ _STATE_SECRET_ENV = 'ALPACON_MCP_STATE_SECRET'
 # Stage tags carried through the state in the two-stage MFA flow.
 _STAGE_MFA = 'mfa'
 _STAGE_REGULAR = 'regular'
+# The command pre-approval ledger stage: a sign-in for the ledger audience,
+# run before the regular one when the client asks for `ledger:<workspace>`.
+_STAGE_LEDGER = 'ledger'
+_LEDGER_SCOPE_PREFIX = 'ledger:'
+
+# Domain-separates the ledger grant key from the grant seal's HMAC key.
+_LEDGER_KEY_INFO = b'alpacon-mcp-ledger-key-v1'
+
+# Holds the encrypted ledger token from the ledger callback to the final one,
+# so it never rides a URL to Auth0. Same attributes as the nonce cookie.
+_LEDGER_COOKIE_NAME = '__Host-alpacon_ledger_grant'
 
 # Domain-separates the state key from other keys derived from the client secret.
 _STATE_SECRET_INFO = b'alpacon-mcp-oauth-state-v1'
@@ -418,6 +442,17 @@ def _get_grant_secret() -> bytes:
     )
 
 
+def ledger_grant_key() -> bytes:
+    """The AES-256 key for ledger grants, derived from the grant secret.
+
+    Every replica derives the same key, so a ledger token one replica wrapped
+    into a client's credential is readable by whichever replica the client
+    reaches next; rotating the grant secret drops every ledger grant with the
+    sessions it already ends.
+    """
+    return hmac.new(_get_grant_secret(), _LEDGER_KEY_INFO, hashlib.sha256).digest()
+
+
 async def _read_bounded_body(request: Request) -> bytes | None:
     """The body, or None once it passes `_MAX_REQUEST_BODY_BYTES`.
 
@@ -507,22 +542,42 @@ def _strip_device_scopes(scope: str) -> str:
     return ' '.join(s for s in scope.split() if not s.startswith('device:'))
 
 
+def _ledger_org(scope: str) -> str:
+    """The workspace a `ledger:<workspace>` pseudo-scope asks for, or ''.
+
+    Only the first such token counts, and only when remote mode serves the
+    ledger; the name lands in a scope sent to Auth0, so it must be one a
+    workspace can have.
+    """
+    if not is_remote_ledger_enabled():
+        return ''
+    first = next((s for s in scope.split() if s.startswith(_LEDGER_SCOPE_PREFIX)), '')
+    org = first.removeprefix(_LEDGER_SCOPE_PREFIX)
+    return org if validate_workspace_format(org) else ''
+
+
+def _strip_ledger_scopes(scope: str) -> str:
+    """The scope without any `ledger:` token; Auth0 never sees the pseudo-scope."""
+    return ' '.join(s for s in scope.split() if not s.startswith(_LEDGER_SCOPE_PREFIX))
+
+
 def _mint_device_id() -> str:
     """One id per grant; 32 hex characters clear the Auth0 action's validator."""
     return secrets.token_hex(16)
 
 
-def _seal(kind: str, value: str, device_id: str) -> str:
+def _seal(kind: str, value: str, device_id: str, ledger: str = '') -> str:
     """Bind a value the client echoes back opaquely to its grant's device id.
 
     Codes and refresh tokens are the only carrier for the id without server-side
     storage; the signature keeps a client from pointing one at another grant's
-    record.
+    record. `ledger` is an encrypted ledger grant riding along, if any.
     """
+    payload: dict[str, str] = {'k': kind, 'v': value, 'd': device_id}
+    if ledger:
+        payload['l'] = ledger
     encoded = base64.urlsafe_b64encode(
-        json.dumps(
-            {'k': kind, 'v': value, 'd': device_id}, separators=(',', ':')
-        ).encode()
+        json.dumps(payload, separators=(',', ':')).encode()
     ).decode()
     signed = f'{_SEALED_PREFIX}.{encoded}'
     signature = base64.urlsafe_b64encode(
@@ -535,6 +590,12 @@ def _unseal(kind: str, sealed: object) -> tuple[str, str] | None:
     """(value, device_id), or None unless this server sealed it as `kind`, so a
     code cannot be replayed as a refresh token.
     """
+    opened = _open_seal(kind, sealed)
+    return None if opened is None else (opened[0], opened[1])
+
+
+def _open_seal(kind: str, sealed: object) -> tuple[str, str, str] | None:
+    """(value, device_id, encrypted ledger grant or ''), as `_unseal` checks it."""
     prefix = f'{_SEALED_PREFIX}.'
     if not isinstance(sealed, str) or not sealed.startswith(prefix):
         return None
@@ -559,19 +620,20 @@ def _unseal(kind: str, sealed: object) -> tuple[str, str] | None:
         return None
     if not isinstance(device_id, str) or not _is_device_id(device_id):
         return None
-    return value, device_id
+    ledger = payload.get('l', '')
+    return value, device_id, ledger if isinstance(ledger, str) else ''
 
 
-def _seal_code(code: str, device_id: str) -> str:
-    return _seal(_SEAL_KIND_CODE, code, device_id)
+def _seal_code(code: str, device_id: str, ledger: str = '') -> str:
+    return _seal(_SEAL_KIND_CODE, code, device_id, ledger)
 
 
 def _unseal_code(sealed: object) -> tuple[str, str] | None:
     return _unseal(_SEAL_KIND_CODE, sealed)
 
 
-def _seal_refresh_token(refresh_token: str, device_id: str) -> str:
-    return _seal(_SEAL_KIND_REFRESH, refresh_token, device_id)
+def _seal_refresh_token(refresh_token: str, device_id: str, ledger: str = '') -> str:
+    return _seal(_SEAL_KIND_REFRESH, refresh_token, device_id, ledger)
 
 
 def _unseal_refresh_token(sealed: object) -> tuple[str, str] | None:
@@ -648,6 +710,163 @@ def _nonce_cookie_matches(request: Request, state_data: dict[str, object]) -> bo
 
 def _clear_nonce_cookie(response: Response) -> None:
     response.delete_cookie(_NONCE_COOKIE_NAME, **_NONCE_COOKIE_ATTRS)
+
+
+def _ledger_state(ledger_org: str) -> dict[str, str]:
+    """The state field naming the ledger workspace; absent when none was asked."""
+    return {'ledger_org': ledger_org} if ledger_org else {}
+
+
+def _ledger_stage_url(
+    config: dict[str, str], server_url: str, state: str, ledger_org: str
+) -> str:
+    """The Auth0 authorize URL for the ledger audience, for one workspace.
+
+    The MCP's own application asks, so its callback and client secret serve the
+    exchange. No offline_access: the ledger allows no refresh token, and when
+    the token expires the person authorizes again. The `org:` scope is the one
+    the CLI sends, from which the login action stamps the organization claim
+    the ledger reads.
+    """
+    params = {
+        'response_type': 'code',
+        'client_id': config['client_id'],
+        'audience': ledger_audience(),
+        'redirect_uri': f'{server_url}/oauth/callback',
+        'scope': f'openid profile email org:{ledger_org}',
+        'state': state,
+    }
+    return f'{config["auth0_base_url"]}/authorize?{urlencode(params)}'
+
+
+# Replayed from the first stage into the last, and nothing else, so a forged
+# state cannot inject arbitrary parameters into the final code exchange.
+_ALLOWED_REPLAY_KEYS = frozenset(
+    {'code_challenge', 'code_challenge_method', 'nonce', 'resource'}
+)
+
+
+def _final_stage_url(
+    config: dict[str, str],
+    server_url: str,
+    client_redirect_uri: str,
+    original_state: str,
+    original_scope: str,
+    nonce_hash: str,
+    device_id: str,
+    authorize_params: dict[str, object],
+    ledger_org: str = '',
+) -> str:
+    """The Auth0 authorize URL for the regular audience, after an earlier stage.
+
+    The Auth0 SSO session skips the login prompt, since the person signed in
+    moments ago. `ledger_org` stays in the state so the final callback looks
+    for the ledger token the previous stage kept.
+    """
+    params = {
+        'response_type': 'code',
+        'client_id': config['client_id'],
+        'audience': config['audience'],
+        'redirect_uri': f'{server_url}/oauth/callback',
+        'scope': original_scope or 'openid profile email offline_access',
+        'state': _build_state(
+            client_redirect_uri,
+            original_state,
+            stage=_STAGE_REGULAR,
+            nonce_hash=nonce_hash,
+            device_id=device_id,
+            **_ledger_state(ledger_org),
+        ),
+    }
+    for key, value in authorize_params.items():
+        if key in _ALLOWED_REPLAY_KEYS and isinstance(value, str):
+            params[key] = value
+    return f'{config["auth0_base_url"]}/authorize?{urlencode(params)}'
+
+
+async def _exchange_ledger_code(
+    config: dict[str, str], server_url: str, code: str, ledger_org: str
+) -> LedgerGrant | None:
+    """Exchange the ledger stage's code; None when Auth0 issued no usable token.
+
+    A failure here does not end the sign-in: the person still gets their
+    session, and the ledger tool asks for the ledger again.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                f'{config["auth0_base_url"]}/oauth/token',
+                data={
+                    'grant_type': 'authorization_code',
+                    'code': code,
+                    'redirect_uri': f'{server_url}/oauth/callback',
+                    'client_id': config['client_id'],
+                    'client_secret': config['client_secret'],
+                },
+                headers={'Content-Type': 'application/x-www-form-urlencoded'},
+            )
+    except httpx.HTTPError as e:
+        logger.warning('Ledger token exchange failed: %s', e)
+        return None
+    try:
+        body = response.json()
+    except ValueError:
+        body = None
+    if response.status_code != HTTPStatus.OK or not isinstance(body, dict):
+        logger.warning(
+            'Ledger token exchange returned %s: %s',
+            response.status_code,
+            escape_for_log(
+                body.get('error', 'unknown') if isinstance(body, dict) else 'non-JSON'
+            ),
+        )
+        return None
+    grant = grant_from_token_response(body, ledger_org)
+    if grant is None:
+        logger.warning('Ledger token exchange returned no usable token')
+    return grant
+
+
+def _staged_ledger_grant(request: Request, ledger_org: str, nonce_hash: str) -> str:
+    """The encrypted grant the ledger stage left for this browser, or ''."""
+    if not ledger_org:
+        return ''
+    key = ledger_grant_key()
+    grant = open_stage(key, request.cookies.get(_LEDGER_COOKIE_NAME), nonce_hash)
+    if grant is None or grant.org != ledger_org:
+        return ''
+    return seal_grant(key, grant)
+
+
+def _set_ledger_cookie(response: Response, sealed: str) -> None:
+    response.set_cookie(
+        _LEDGER_COOKIE_NAME, sealed, max_age=_STATE_TTL_SECONDS, **_NONCE_COOKIE_ATTRS
+    )
+
+
+def _clear_ledger_cookie(response: Response) -> None:
+    response.delete_cookie(_LEDGER_COOKIE_NAME, **_NONCE_COOKIE_ATTRS)
+
+
+def _carried_ledger_grant(
+    sealed_ledger: str, access_token: object
+) -> tuple[str, LedgerGrant] | None:
+    """(encrypted grant, grant) to wrap into this access token, or None.
+
+    Refused when the grant is unreadable, expired, or names another person than
+    the access token Auth0 just issued: a ledger token is only ever handed to
+    the session of the person who authorized it.
+    """
+    if not sealed_ledger or not isinstance(access_token, str):
+        return None
+    key = ledger_grant_key()
+    grant = open_grant(key, sealed_ledger)
+    if grant is None or not grant.usable_for(grant.org):
+        return None
+    if grant.subject != subject_of(access_token):
+        logger.warning('Dropped a ledger grant issued to another subject')
+        return None
+    return sealed_ledger, grant
 
 
 def register_oauth_routes(mcp_server: RouteRegistry) -> None:
@@ -750,6 +969,12 @@ def register_oauth_routes(mcp_server: RouteRegistry) -> None:
             device_id = _mint_device_id()
         scope = f'{_strip_device_scopes(scope)} device:{device_id}'.strip()
 
+        # A ledger tool asks for `ledger:<workspace>` the way the MFA pre-check
+        # asks for `mfa`; it becomes a sign-in for the ledger audience ahead of
+        # the regular one, and never reaches Auth0 as a scope.
+        ledger_org = _ledger_org(scope)
+        scope = _strip_ledger_scopes(scope)
+
         # Detect MFA pseudo-scope from re-auth flow.
         # When the ASGI middleware returns 401 with scope="... mfa",
         # the MCP client includes 'mfa' in the authorize request scope.
@@ -810,6 +1035,20 @@ def register_oauth_routes(mcp_server: RouteRegistry) -> None:
         # _build_state signs with the configured key, so a malformed
         # ALPACON_MCP_STATE_SECRET raises here — on the endpoint an operator
         # reaches before the callback. Carry the message instead of a bare 500.
+        # Preserve PKCE and other client authorize params for the final stage.
+        # The MCP client's PKCE code_challenge must be replayed when
+        # redirecting to the regular audience so the final code exchange
+        # succeeds with the client's code_verifier.
+        stage2_authorize_params = {}
+        for key in (
+            'code_challenge',
+            'code_challenge_method',
+            'nonce',
+            'resource',
+        ):
+            if key in params:
+                stage2_authorize_params[key] = params[key]
+
         try:
             if mfa_requested:
                 # Two-stage OAuth flow: Stage 1 — redirect to Auth0 MFA audience
@@ -823,20 +1062,6 @@ def register_oauth_routes(mcp_server: RouteRegistry) -> None:
                     'scope': 'enroll read:authenticators',
                 }
 
-                # Preserve PKCE and other client authorize params for Stage 2.
-                # The MCP client's PKCE code_challenge must be replayed when
-                # redirecting to the regular audience so the final code exchange
-                # succeeds with the client's code_verifier.
-                stage2_authorize_params = {}
-                for key in (
-                    'code_challenge',
-                    'code_challenge_method',
-                    'nonce',
-                    'resource',
-                ):
-                    if key in params:
-                        stage2_authorize_params[key] = params[key]
-
                 mfa_params['state'] = _build_state(
                     client_redirect_uri,
                     original_state,
@@ -845,6 +1070,7 @@ def register_oauth_routes(mcp_server: RouteRegistry) -> None:
                     authorize_params=stage2_authorize_params,
                     nonce_hash=nonce_hash,
                     device_id=device_id,
+                    **_ledger_state(ledger_org),
                 )
 
                 auth0_url = (
@@ -853,6 +1079,23 @@ def register_oauth_routes(mcp_server: RouteRegistry) -> None:
                 logger.info(
                     'Stage 1: Redirecting to Auth0 MFA audience for MFA verification'
                 )
+            elif ledger_org:
+                auth0_url = _ledger_stage_url(
+                    config,
+                    server_url,
+                    _build_state(
+                        client_redirect_uri,
+                        original_state,
+                        stage=_STAGE_LEDGER,
+                        original_scope=scope,
+                        authorize_params=stage2_authorize_params,
+                        nonce_hash=nonce_hash,
+                        device_id=device_id,
+                        ledger_org=ledger_org,
+                    ),
+                    ledger_org,
+                )
+                logger.info('Redirecting to Auth0 for the ledger audience first')
             else:
                 # Standard single-stage OAuth flow (no MFA required)
                 params['redirect_uri'] = f'{server_url}/oauth/callback'
@@ -977,17 +1220,18 @@ def register_oauth_routes(mcp_server: RouteRegistry) -> None:
         # to /authorize, so there the field is dropped rather than set. Either
         # way a client-supplied device id never reaches Auth0, on either channel.
         sealed_device_id = ''
+        sealed_ledger = ''
         if grant_type == 'authorization_code':
-            unsealed = _unseal_code(params.get('code', ''))
-            if unsealed is None:
+            opened = _open_seal(_SEAL_KIND_CODE, params.get('code', ''))
+            if opened is None:
                 return _reject_unsealed('authorization code', params.get('code'))
-            params['code'], sealed_device_id = unsealed
+            params['code'], sealed_device_id, sealed_ledger = opened
             params.pop('device_id', None)
         elif grant_type == 'refresh_token':
-            unsealed = _unseal_refresh_token(params.get('refresh_token', ''))
-            if unsealed is None:
+            opened = _open_seal(_SEAL_KIND_REFRESH, params.get('refresh_token', ''))
+            if opened is None:
                 return _reject_unsealed('refresh token', params.get('refresh_token'))
-            params['refresh_token'], sealed_device_id = unsealed
+            params['refresh_token'], sealed_device_id, sealed_ledger = opened
             params['device_id'] = sealed_device_id
 
         # Override redirect_uri to match what was sent to Auth0 during /authorize.
@@ -1025,6 +1269,22 @@ def register_oauth_routes(mcp_server: RouteRegistry) -> None:
                     'error_description': 'Auth0 returned unexpected response format',
                 }
 
+            # A ledger grant authorized in this sign-in, or carried by the
+            # refresh token, rides in the access token handed to this one
+            # client. It is carried only until its own expiry: the ledger
+            # allows no refresh, so a lapsed grant is dropped here.
+            carried = None
+            if response.status_code == HTTPStatus.OK and isinstance(
+                response_data, dict
+            ):
+                carried = _carried_ledger_grant(
+                    sealed_ledger, response_data.get('access_token')
+                )
+            if carried is not None:
+                response_data['access_token'] = wrap_access_token(
+                    ledger_grant_key(), response_data['access_token'], carried[1]
+                )
+
             # Auth0 rotates refresh tokens, so every one that leaves here is
             # sealed under the grant's id or the next refresh loses it.
             if (
@@ -1034,7 +1294,9 @@ def register_oauth_routes(mcp_server: RouteRegistry) -> None:
                 and isinstance(response_data.get('refresh_token'), str)
             ):
                 response_data['refresh_token'] = _seal_refresh_token(
-                    response_data['refresh_token'], sealed_device_id
+                    response_data['refresh_token'],
+                    sealed_device_id,
+                    carried[0] if carried is not None else '',
                 )
 
             # Log token response details for debugging refresh issues
@@ -1199,6 +1461,7 @@ def register_oauth_routes(mcp_server: RouteRegistry) -> None:
         original_scope = ''
         nonce_hash = ''
         device_id = ''
+        ledger_org = ''
         authorize_params: dict[str, object] = {}
         # An absent state is not rejected: Auth0 error callbacks can arrive
         # without one, and it names no redirect target a forgery could steer.
@@ -1229,6 +1492,7 @@ def register_oauth_routes(mcp_server: RouteRegistry) -> None:
             stage = _state_str(state_data, 'stage')
             original_scope = _state_str(state_data, 'original_scope')
             nonce_hash = _state_str(state_data, 'nonce_hash')
+            ledger_org = _state_str(state_data, 'ledger_org')
             stored_params = state_data.get('authorize_params')
             if isinstance(stored_params, dict):
                 authorize_params = stored_params
@@ -1318,43 +1582,79 @@ def register_oauth_routes(mcp_server: RouteRegistry) -> None:
             except httpx.HTTPError as e:
                 logger.warning('MFA token exchange failed (non-fatal): %s', e)
 
-            # Stage 2: redirect to Auth0 with regular audience.
-            # The Auth0 SSO session will skip the login prompt since
-            # the user just authenticated (with MFA) moments ago.
-            stage2_params = {
-                'response_type': 'code',
-                'client_id': config['client_id'],
-                'audience': config['audience'],
-                'redirect_uri': f'{server_url}/oauth/callback',
-                'scope': original_scope or 'openid profile email offline_access',
-                'state': _build_state(
+            if ledger_org:
+                # The ledger stage comes next; it hands over to Stage 2 itself.
+                auth0_url = _ledger_stage_url(
+                    config,
+                    server_url,
+                    _build_state(
+                        client_redirect_uri,
+                        original_state,
+                        stage=_STAGE_LEDGER,
+                        original_scope=original_scope,
+                        authorize_params=authorize_params,
+                        nonce_hash=nonce_hash,
+                        device_id=device_id,
+                        ledger_org=ledger_org,
+                    ),
+                    ledger_org,
+                )
+                logger.info('Stage 2: Redirecting to Auth0 for the ledger audience')
+            else:
+                auth0_url = _final_stage_url(
+                    config,
+                    server_url,
                     client_redirect_uri,
                     original_state,
-                    stage=_STAGE_REGULAR,
-                    nonce_hash=nonce_hash,
-                    device_id=device_id,
-                ),
-            }
-            # Replay only the expected PKCE/client params from Stage 1, so a forged state
-            # cannot inject arbitrary ones into the final code exchange.
-            _ALLOWED_REPLAY_KEYS = {
-                'code_challenge',
-                'code_challenge_method',
-                'nonce',
-                'resource',
-            }
-            for key, value in authorize_params.items():
-                if key in _ALLOWED_REPLAY_KEYS and isinstance(value, str):
-                    stage2_params[key] = value
-
-            auth0_url = (
-                f'{config["auth0_base_url"]}/authorize?{urlencode(stage2_params)}'
-            )
-            logger.info('Stage 2: Redirecting to Auth0 regular audience (SSO)')
+                    original_scope,
+                    nonce_hash,
+                    device_id,
+                    authorize_params,
+                )
+                logger.info('Stage 2: Redirecting to Auth0 regular audience (SSO)')
             response = RedirectResponse(url=auth0_url, status_code=HTTPStatus.FOUND)
             # Stage 2 restarts the state expiry; re-set the cookie so the two
             # do not drift apart.
             _set_nonce_cookie(response, request.cookies[_NONCE_COOKIE_NAME])
+            return response
+
+        # --- Ledger stage callback: keep the token, then the regular stage ---
+        if stage == _STAGE_LEDGER and ledger_org:
+            try:
+                config = _get_oauth_config()
+                key = ledger_grant_key()
+            except ValueError as e:
+                return JSONResponse(
+                    {'error': str(e)}, status_code=HTTPStatus.INTERNAL_SERVER_ERROR
+                )
+            server_url = _get_server_url(request)
+            grant = await _exchange_ledger_code(config, server_url, code, ledger_org)
+
+            response = RedirectResponse(
+                url=_final_stage_url(
+                    config,
+                    server_url,
+                    client_redirect_uri,
+                    original_state,
+                    original_scope,
+                    nonce_hash,
+                    device_id,
+                    authorize_params,
+                    ledger_org,
+                ),
+                status_code=HTTPStatus.FOUND,
+            )
+            _set_nonce_cookie(response, request.cookies[_NONCE_COOKIE_NAME])
+            if grant is not None:
+                _set_ledger_cookie(response, seal_stage(key, grant, nonce_hash))
+            else:
+                # The person still signs in; the ledger tool asks again.
+                _clear_ledger_cookie(response)
+            logger.info(
+                'Ledger stage complete (token obtained: %s); redirecting to the '
+                'regular audience',
+                grant is not None,
+            )
             return response
 
         # --- Standard callback (stage 'regular' or absent) ---
@@ -1367,7 +1667,9 @@ def register_oauth_routes(mcp_server: RouteRegistry) -> None:
             logger.warning('Callback rejected a code that arrived without a state')
             return _oauth_error('invalid_request', 'Missing state parameter')
         try:
-            code = _seal_code(code, device_id)
+            code = _seal_code(
+                code, device_id, _staged_ledger_grant(request, ledger_org, nonce_hash)
+            )
         except ValueError as e:
             return JSONResponse(
                 {'error': str(e)}, status_code=HTTPStatus.INTERNAL_SERVER_ERROR
@@ -1383,6 +1685,8 @@ def register_oauth_routes(mcp_server: RouteRegistry) -> None:
                 status_code=HTTPStatus.FOUND,
             )
             _clear_nonce_cookie(response)
+            if ledger_org:
+                _clear_ledger_cookie(response)
             return response
 
         # Fallback: return as JSON if no client redirect_uri was found
@@ -1391,6 +1695,8 @@ def register_oauth_routes(mcp_server: RouteRegistry) -> None:
             result['state'] = original_state
         json_response = JSONResponse(result)
         _clear_nonce_cookie(json_response)
+        if ledger_org:
+            _clear_ledger_cookie(json_response)
         return json_response
 
     @mcp_server.custom_route('/token', methods=['POST', 'OPTIONS'])

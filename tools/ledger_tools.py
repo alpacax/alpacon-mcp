@@ -8,21 +8,31 @@ its own audience, never an API or service token, and only a Command ACL admin
 of the workspace may change it. `utils.ledger_auth` obtains that token.
 
 A workspace whose surface is `upstream` keeps using the command ACL tools in
-`security_tools`; every tool here refuses it and says so. Any transport other
-than stdio is refused too, before the sign-in cache is touched: that cache is
-per process, and a network transport may share a process between callers.
+`security_tools`; every tool here refuses it and says so.
+
+Where the person's ledger token comes from depends on the transport. Over
+stdio, `utils.ledger_auth` runs a device authorization and caches the token in
+the process, which serves one person. In remote mode (streamable-http with
+ALPACON_MCP_REMOTE_LEDGER on), the OAuth proxy obtains it during the caller's
+own sign-in and the token verifier hands it over from that caller's
+credential (`utils.ledger_grant`); a missing or expired one asks the client to
+sign in again, and the process cache is never read. SSE, or remote mode with
+the ledger off, is refused before either is touched.
 """
 
 import json
 from http import HTTPStatus
 from typing import Annotated, Literal, NotRequired, TypedDict
 
+from mcp.server.auth.middleware.auth_context import get_access_token
 from pydantic import Field
 
+from utils import request_signal
 from utils.common import (
     build_list_params,
     error_response,
     is_auth_enabled,
+    is_remote_ledger_enabled,
     is_stdio_transport,
     success_response,
     unwrap_http_result,
@@ -30,10 +40,12 @@ from utils.common import (
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.ledger_auth import (
+    AUTHORIZATION_REQUIRED,
     LedgerTarget,
     ledger_authorizer,
     ledger_base_url,
 )
+from utils.ledger_grant import ledger_grant_of
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ_ONLY
 from utils.types import (
     JsonValue,
@@ -59,12 +71,11 @@ _UPSTREAM_SURFACE_MESSAGE = (
     'delete_command_acl instead.'
 )
 _STDIO_ONLY_MESSAGE = (
-    'Managing the command pre-approval ledger needs a local stdio MCP server: '
-    "the ledger accepts only a person's own sign-in, and a network transport "
-    '(SSE or streamable-http) may share one process between several callers, '
-    "so it could hand one person's sign-in to another. A Command ACL admin "
-    "can manage the entries under Pre-approved commands on the service token's "
-    'page in the web console.'
+    'Managing the command pre-approval ledger needs a local stdio MCP server, '
+    'or a remote MCP server with the ledger enabled: the ledger accepts only a '
+    "person's own sign-in, and this server has no way to keep one per caller. "
+    'A Command ACL admin can manage the entries under Pre-approved commands on '
+    "the service token's page in the web console."
 )
 
 
@@ -130,7 +141,9 @@ async def _ledger_target(
         )
 
     # An unset transport means a caller outside prepare(), and fails closed.
-    if is_auth_enabled() or not is_stdio_transport():
+    if not is_remote_ledger_enabled() and (
+        is_auth_enabled() or not is_stdio_transport()
+    ):
         return error_response(
             _STDIO_ONLY_MESSAGE,
             command_acl_surface=surface,
@@ -158,6 +171,44 @@ async def _ledger_target(
     )
 
 
+def _remote_authorization_required(target: LedgerTarget) -> ToolResponse:
+    """Ask the remote client to sign in again, this time for the ledger too.
+
+    The signal makes the transport answer 403 insufficient_scope with
+    `ledger:<workspace>`, which the client turns into a new authorization
+    request; the OAuth proxy runs the ledger sign-in inside it. The response
+    below reaches the agent only when the transport could not replace it, e.g.
+    within the re-auth cooldown.
+    """
+    request_signal.signal_upstream_auth_error(
+        {'ledger_org': target.org_name, 'source': 'ledger'}
+    )
+    return {
+        'status': AUTHORIZATION_REQUIRED,
+        'message': (
+            'The command pre-approval ledger needs its own authorization by the '
+            f'signed-in person for workspace {target.org_name}, and it expires '
+            'without a refresh. The MCP client was asked to sign in again; the '
+            'person completes that sign-in, then the same tool is called again. '
+            'The agent cannot complete this step itself. If no sign-in opened, '
+            'call the tool again after a minute.'
+        ),
+        'requires_human_action': True,
+    }
+
+
+def _remote_ledger_token(target: LedgerTarget) -> str | ToolResponse:
+    """The ledger token this caller's own credential carries for the workspace.
+
+    Only this request's credential is read, so one caller can never be handed
+    another's token, and any replica can answer.
+    """
+    grant = ledger_grant_of(get_access_token())
+    if grant is not None and grant.usable_for(target.org_name):
+        return grant.token
+    return _remote_authorization_required(target)
+
+
 async def _ledger_request(
     target: LedgerTarget,
     method: str,
@@ -173,8 +224,13 @@ async def _ledger_request(
     """Call the ledger as the person who authorized it, and shape the response."""
     context = {'region': region, 'workspace': workspace, **id_context}
 
-    reused = ledger_authorizer.has_token(target)
-    ledger_token = await ledger_authorizer.token_for(target)
+    remote = is_remote_ledger_enabled()
+    if remote:
+        reused = True
+        ledger_token = _remote_ledger_token(target)
+    else:
+        reused = ledger_authorizer.has_token(target)
+        ledger_token = await ledger_authorizer.token_for(target)
     if isinstance(ledger_token, dict):
         return {**ledger_token, **context}
 
@@ -190,9 +246,16 @@ async def _ledger_request(
         isinstance(result, dict)
         and result.get('status_code') == HTTPStatus.UNAUTHORIZED
     ):
+        detail = _error_detail(result)
+        if remote:
+            # Revoked or rejected early; only a new sign-in replaces it.
+            return {
+                **_remote_authorization_required(target),
+                'detail': detail,
+                **context,
+            }
         # The token is useless either way.
         ledger_authorizer.forget(target)
-        detail = _error_detail(result)
         if not reused:
             # Issued by this very call, so a new sign-in would only be refused
             # again: the ledger does not accept what the sign-in service mints
@@ -279,8 +342,9 @@ def _error_detail(result: object) -> JsonValue:
         'Command ACL admin of it. When to use: before listing or changing '
         'Pre-approved commands. A workspace reporting command_acl_surface '
         '"upstream" uses list_command_acls and its siblings instead. On the '
-        'ledger, the first call returns status "authorization_required" with a '
-        'link a person must open; call again after they sign in.'
+        'ledger, the first call returns status "authorization_required": a link '
+        'a person must open over stdio, or a new sign-in the MCP client opens '
+        'in remote mode. Call again after they sign in.'
     ),
     annotations=READ_ONLY,
     meta={'anthropic/searchHint': 'pre-approved commands ledger admin capability'},

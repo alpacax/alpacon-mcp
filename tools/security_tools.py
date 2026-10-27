@@ -6,7 +6,7 @@ from utils.common import (
     empty_value_error,
     error_response,
     exclude_none,
-    is_stdio_transport,
+    serves_ledger_tools,
 )
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
@@ -35,8 +35,8 @@ def _command_acl_moved_note(stdio: bool) -> str:
     """The note the command-ACL write tools carry about the ledger.
 
     A deployment that moved command ACLs to the pre-approval ledger refuses
-    every write; one without it does not. Only a stdio server registers the
-    ledger tools, so only there does the note name them.
+    every write; one without it does not. Only a server that registers the
+    ledger tools names them.
     """
     ledger_tools = (
         ', or with issue_ledger_entries and revoke_ledger_entry on this server '
@@ -68,8 +68,8 @@ def _command_acl_list_note(stdio: bool) -> str:
 
 # prepare() sets the transport before this module is imported, so the
 # descriptions match the toolsets this process registers.
-_COMMAND_ACL_MOVED_NOTE = _command_acl_moved_note(is_stdio_transport())
-_COMMAND_ACL_LIST_NOTE = _command_acl_list_note(is_stdio_transport())
+_COMMAND_ACL_MOVED_NOTE = _command_acl_moved_note(serves_ledger_tools())
+_COMMAND_ACL_LIST_NOTE = _command_acl_list_note(serves_ledger_tools())
 
 
 @mcp_tool_handler(

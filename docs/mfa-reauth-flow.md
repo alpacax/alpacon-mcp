@@ -113,6 +113,10 @@ One id per grant means one MFA record per MCP client installation: a step-up in 
 | OAuth proxy (authorize) | `utils/oauth.py` | Routes to MFA or regular audience based on scope |
 | OAuth proxy (callback) | `utils/oauth.py` | Handles two-stage callback (MFA → regular) |
 
+## Ledger stage
+
+The command pre-approval ledger tools reuse the same step-up in remote mode (`ALPACON_MCP_REMOTE_LEDGER=true`). A ledger tool with no usable ledger token signals `ledger_org`, the middleware answers 403 `insufficient_scope` with `ledger:<workspace>` in the scope, and `/oauth/authorize` turns that pseudo-scope into one more leg: an authorization-code sign-in for the ledger audience, run after the MFA leg (if any) and before the regular one. Its code is exchanged server to server like the MFA leg's, but the token is kept: an encrypted cookie carries it to the regular callback, the sealed code carries it to `/oauth/token`, and the access token handed to the client carries it from then on. See `docs/configuration.md` for the details and the Auth0 settings.
+
 ## Configuration
 
 | Environment variable | Description | Example |
