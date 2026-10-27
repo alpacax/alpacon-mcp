@@ -3627,6 +3627,48 @@ class TestExecuteFileReadFromServer:
         ]
 
     @pytest.mark.asyncio
+    async def test_a_token_that_cannot_read_the_command_reads_after_the_transfer(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = _DOWNLOAD_ROW
+        calls: list[str] = []
+        mock_http_client.get.side_effect = _route_download_status(
+            command={
+                'error': 'HTTP Error',
+                'status_code': HTTPStatus.FORBIDDEN,
+                'response': '{"code":"api_token_scope_missing"}',
+            },
+            log=calls,
+        )
+
+        async def _fetch(url: str, limit: int) -> bytes:
+            calls.append('GET')
+            return b'echo hi\n'
+
+        with (
+            patch(
+                'tools.command_tools._submit_file_execution',
+                return_value=_file_exec_envelope('file_exec_empty_content'),
+            ) as mock_submit,
+            patch('tools.command_tools._get_capped', new=_fetch),
+        ):
+            result = await execute_file(
+                server_id=VALID_SERVER_ID,
+                path='/opt/deploy.sh',
+                read_from_server=True,
+                workspace='testworkspace',
+                region='ap1',
+            )
+
+        assert result['error_code'] == 'file_exec_empty_content'  # the submit's answer
+        assert mock_submit.call_args.kwargs['content'] == 'echo hi\n'
+        assert calls == [
+            '/api/events/commands/cmd-d1/',
+            '/api/webftp/downloads/down-1/status/',
+            'GET',
+        ]
+
+    @pytest.mark.asyncio
     async def test_a_failed_fetch_is_reported_without_checking_the_transfer(
         self, mock_http_client, mock_token_manager
     ):

@@ -229,7 +229,7 @@ AUTH_VERIFICATION_UNAVAILABLE_HINT = (
 )
 
 # Actionable hints for server error `code` values that are not WorkSession
-# gate codes (see _extract_error_code). Keyed by code so new hints can be
+# gate codes (see http_error_code). Keyed by code so new hints can be
 # added without touching unwrap_http_result. Appended to the error message
 # so an AI agent reading the response text alone knows how to retry.
 INLINE_CREDENTIAL_HINT = (
@@ -827,7 +827,7 @@ def unwrap_http_result(
     # Parse the body's `code` once; it decides whether this is a WorkSession
     # gate (membership in _WORK_SESSION_GATE_CODES) and, on the generic path
     # below, what gets surfaced as `error_code`.
-    code = _extract_error_code(result)
+    code = http_error_code(result)
     if code is not None and code in _WORK_SESSION_GATE_CODES:
         return work_session_gate_response(code, **error_kwargs)
 
@@ -876,7 +876,7 @@ def _parse_error_body(result: Mapping[str, object]) -> dict[str, JsonValue] | No
     return body if isinstance(body, dict) else None
 
 
-def _extract_error_code(result: Mapping[str, object]) -> str | None:
+def http_error_code(result: Mapping[str, object]) -> str | None:
     """Return the `code` field carried by an http error envelope's body, if any.
 
     alpacon-server's exception handler returns 4xx bodies shaped as at least

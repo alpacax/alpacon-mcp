@@ -8,6 +8,7 @@ import pytest
 
 from tests.conftest import http_client_fixture
 from utils.host_transfer import (
+    CommandHidden,
     Failed,
     Refused,
     TimedOut,
@@ -172,3 +173,27 @@ async def test_a_command_handled_unsuccessfully_fails_with_its_result(
     outcome = await _wait_command()
 
     assert outcome == Failed(result)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ('code', 'expected'),
+    [
+        pytest.param('api_token_scope_missing', CommandHidden(), id='scope-missing'),
+        pytest.param('work_session_required', None, id='other-refusal'),
+    ],
+)
+async def test_only_a_missing_scope_hides_the_command(
+    mock_http_client, fake_clock, code, expected
+):
+    refusal: JsonValue = {
+        'error': 'HTTP Error',
+        'status_code': HTTPStatus.FORBIDDEN,
+        'response': f'{{"code":"{code}"}}',
+    }
+    mock_http_client.get.return_value = refusal
+
+    outcome = await _wait_command()
+
+    assert outcome == (expected or Refused(refusal))
+    assert mock_http_client.get.call_count == 1

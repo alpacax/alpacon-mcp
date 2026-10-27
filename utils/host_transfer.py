@@ -8,13 +8,21 @@ from typing import TypedDict
 
 from pydantic import TypeAdapter
 
-from utils.common import UnexpectedResponseShapeError, is_http_error, validate_response
+from utils.common import (
+    UnexpectedResponseShapeError,
+    http_error_code,
+    is_http_error,
+    validate_response,
+)
 from utils.http_client import http_client
 from utils.types import JsonValue
 from utils.webftp_shapes import TRANSFER_STATE
 
 #: Command statuses that mean it never ran and never will.
 COMMAND_NEVER_RAN = frozenset({'denied', 'rejected', 'stuck'})
+
+# The file_download and file_transfer token presets carry no command:read.
+_SCOPE_MISSING = 'api_token_scope_missing'
 
 
 class _CommandState(TypedDict, total=False):  # as /api/events/commands/{id}/ reports it
@@ -45,6 +53,11 @@ class TimedOut:
 type Stalled = Refused | Failed | TimedOut
 
 
+@dataclass(frozen=True)
+class CommandHidden:  # the token may not read the command; only the transfer shows
+    pass
+
+
 class _Pending:
     pass
 
@@ -56,12 +69,12 @@ def deadline_after(seconds: float) -> float:
     return monotonic() + seconds
 
 
-async def _poll(
-    check: Callable[[], Awaitable[Stalled | _Pending | None]],
+async def _poll[T](
+    check: Callable[[], Awaitable[T | _Pending]],
     *,
     deadline: float,
     interval: float,
-) -> Stalled | None:
+) -> T | TimedOut:
     """Run ``check`` until it settles; the last run starts at or after ``deadline``."""
     while True:
         final = monotonic() >= deadline
@@ -81,10 +94,10 @@ async def await_command_handled(
     token: str | None,
     deadline: float,
     interval: float,
-) -> Stalled | None:
+) -> Stalled | CommandHidden | None:
     """Wait until the host has handled ``command_id``; None once it has, successfully."""
 
-    async def check() -> Stalled | _Pending | None:
+    async def check() -> Stalled | CommandHidden | _Pending | None:
         command = await http_client.get(
             region=region,
             workspace=workspace,
@@ -92,6 +105,8 @@ async def await_command_handled(
             token=token,
         )
         if is_http_error(command):
+            if isinstance(command, dict) and http_error_code(command) == _SCOPE_MISSING:
+                return CommandHidden()
             return Refused(command)
         try:
             state = validate_response(_COMMAND_STATE, command)

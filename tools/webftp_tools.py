@@ -32,6 +32,7 @@ from utils.common import (
 from utils.decorators import mcp_tool_handler
 from utils.error_handler import format_validation_error, validate_file_path
 from utils.host_transfer import (
+    CommandHidden,
     Failed,
     Refused,
     Stalled,
@@ -235,9 +236,9 @@ def _download_stalled(
 
 async def _download_handled(
     download: _HostDownload, *, deadline: float, region: str, workspace: str, token: str
-) -> ToolErrorResponse | None:
+) -> ToolErrorResponse | CommandHidden | None:
     """None once the host has handled the download command."""
-    stalled = await await_command_handled(
+    outcome = await await_command_handled(
         download.command_id,
         region=region,
         workspace=workspace,
@@ -245,10 +246,10 @@ async def _download_handled(
         deadline=deadline,
         interval=_DOWNLOAD_POLL_INTERVAL,
     )
-    if stalled is None:
-        return None
+    if outcome is None or isinstance(outcome, CommandHidden):
+        return outcome
     return _download_stalled(
-        stalled,
+        outcome,
         'Failed to poll the download command',
         file_id=download.file_id,
         workspace=workspace,
@@ -279,9 +280,11 @@ async def _download_transferred(
     )
 
 
-def _create_private_file(path: str) -> None:
+def _create_part(part_path: str, local_file_path: str) -> None:
+    # Owner-only beside an existing file, whose mode it takes on at the move.
+    mode = 0o600 if os.path.lexists(local_file_path) else 0o666
     try:
-        os.close(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600))
+        os.close(os.open(part_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, mode))
     except OSError as e:
         raise _LocalSaveError(str(e)) from e
 
@@ -348,9 +351,10 @@ async def _download_remote_mode(
         return download
     deadline = deadline_after(_DOWNLOAD_TIMEOUT)
     for wait in (_download_handled, _download_transferred):
-        if failed := await wait(
+        failed = await wait(
             download, deadline=deadline, region=region, workspace=workspace, token=token
-        ):
+        )
+        if isinstance(failed, dict):
             if failed.get('code') == 'download_timeout':  # the transfer may still land
                 failed['download_url'] = download.url
                 failed['message'] += (
@@ -784,9 +788,19 @@ async def webftp_download_file(
     if not isinstance(download, _HostDownload):
         return download
     deadline = deadline_after(_DOWNLOAD_TIMEOUT)
-    if failed := await _download_handled(
+    command = await _download_handled(
         download, deadline=deadline, region=region, workspace=workspace, token=token
-    ):
+    )
+    if isinstance(command, dict):
+        return command
+
+    async def _confirm() -> ToolErrorResponse | None:
+        return await _download_transferred(
+            download, deadline=deadline, region=region, workspace=workspace, token=token
+        )
+
+    # Without the command to watch, only a confirmed transfer says the file is there.
+    if isinstance(command, CommandHidden) and (failed := await _confirm()):
         return failed
 
     # The file lands under a temporary name, so a failed transfer never
@@ -795,7 +809,7 @@ async def webftp_download_file(
     try:
         try:
             await _ensure_parent_dir(local_file_path)
-            await asyncio.to_thread(_create_private_file, part_path)
+            await asyncio.to_thread(_create_part, part_path, local_file_path)
             file_size = await _stream_s3_to_file(
                 download.url, part_path, timeout=_DOWNLOAD_TIMEOUT
             )
@@ -805,9 +819,7 @@ async def webftp_download_file(
             )
         except _LocalSaveError as e:
             return error_response(f'Failed to save file locally: {e}')
-        if failed := await _download_transferred(
-            download, deadline=deadline, region=region, workspace=workspace, token=token
-        ):
+        if command is None and (failed := await _confirm()):
             return failed
         try:
             await asyncio.to_thread(_move_into_place, part_path, local_file_path)

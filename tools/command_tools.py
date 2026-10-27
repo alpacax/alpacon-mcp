@@ -28,6 +28,7 @@ from utils.decorators import mcp_tool_handler
 from utils.error_handler import validate_file_path
 from utils.host_transfer import (
     COMMAND_NEVER_RAN,
+    CommandHidden,
     Failed,
     Refused,
     Stalled,
@@ -1033,27 +1034,38 @@ async def _read_file_from_host(
                 return timed_out
 
     deadline = deadline_after(_FILE_READ_TIMEOUT)
-    if stalled := await await_command_handled(
+    command = await await_command_handled(
         command_id,
         region=region,
         workspace=workspace,
         token=token,
         deadline=deadline,
         interval=_FILE_READ_POLL_INTERVAL,
-    ):
-        return _stalled(stalled, 'Failed to poll the download command')
+    )
+    if command is not None and not isinstance(command, CommandHidden):
+        return _stalled(command, 'Failed to poll the download command')
+
+    async def _confirm() -> ToolErrorResponse | None:
+        stalled = await await_transfer_success(
+            f'{_API_WEBFTP_DOWNLOADS}{download_id}/status/',
+            region=region,
+            workspace=workspace,
+            token=token,
+            deadline=deadline,
+            interval=_FILE_READ_POLL_INTERVAL,
+        )
+        if stalled is None:
+            return None
+        return _stalled(stalled, 'Failed to poll download status')
+
+    # Without the command to watch, only a confirmed transfer says the file is there.
+    if isinstance(command, CommandHidden) and (failed := await _confirm()):
+        return failed
     body = await _get_capped(download_url, FILE_CONTENT_MAX_BYTES)
     if isinstance(body, str):
         return _failed(body, download_id=download_id)
-    if stalled := await await_transfer_success(
-        f'{_API_WEBFTP_DOWNLOADS}{download_id}/status/',
-        region=region,
-        workspace=workspace,
-        token=token,
-        deadline=deadline,
-        interval=_FILE_READ_POLL_INTERVAL,
-    ):
-        return _stalled(stalled, 'Failed to poll download status')
+    if command is None and (failed := await _confirm()):
+        return failed
 
     if not body:
         return error_response(

@@ -53,6 +53,17 @@ _COMMAND_DONE = {
     'handled_at': '2026-10-26T00:00:01Z',
 }
 _TRANSFER_DONE = {'success': True, 'message': None}
+_SCOPE_REFUSAL = {
+    'error': 'HTTP Error',
+    'status_code': HTTPStatus.FORBIDDEN,
+    'response': '{"code":"api_token_scope_missing"}',
+}
+
+
+def _default_file_mode():
+    umask = os.umask(0)
+    os.umask(umask)
+    return 0o666 & ~umask
 
 
 def _route_download(commands=(_COMMAND_DONE,), statuses=(_TRANSFER_DONE,), log=None):
@@ -497,7 +508,7 @@ class TestWebFtpDownloadFile:
         assert result['resource_type'] == 'file'
         assert dest.read_bytes() == b'new bytes'
         assert list(tmp_path.iterdir()) == [dest]
-        assert seen == {'timeout': 5, 'mode': 0o600}
+        assert seen == {'timeout': 5, 'mode': _default_file_mode()}
 
     @pytest.mark.asyncio
     async def test_download_folder_success(
@@ -699,14 +710,66 @@ class TestWebFtpDownloadFile:
         dest = tmp_path / 'test.txt'
         dest.write_bytes(b'old bytes')
         dest.chmod(0o640)
+        seen: dict[str, int] = {}
 
-        with patch('tools.webftp_tools._stream_s3_to_file', new=self._stream_writing()):
+        with patch(
+            'tools.webftp_tools._stream_s3_to_file',
+            new=self._stream_writing(seen=seen),
+        ):
             result = await self._download(dest)
 
         assert result['status'] == 'success'
         assert dest.read_bytes() == b'new bytes'
+        assert seen['mode'] == 0o600
         assert dest.stat().st_mode & 0o777 == 0o640
         assert list(tmp_path.iterdir()) == [dest]
+
+    @pytest.mark.asyncio
+    async def test_a_token_that_cannot_read_the_command_fetches_after_the_transfer(
+        self, mock_http_client, mock_token_manager, tmp_path
+    ):
+        mock_http_client.post.return_value = _DOWNLOAD_ROW
+        calls: list[str] = []
+        mock_http_client.get.side_effect = _route_download(
+            commands=(_SCOPE_REFUSAL,),
+            statuses=({'success': None}, _TRANSFER_DONE),
+            log=calls,
+        )
+        dest = tmp_path / 'test.txt'
+
+        with patch(
+            'tools.webftp_tools._stream_s3_to_file',
+            new=self._stream_writing(log=calls),
+        ):
+            result = await self._download(dest)
+
+        assert result['status'] == 'success'
+        assert dest.read_bytes() == b'new bytes'
+        assert calls == [
+            '/api/events/commands/cmd-dl/',
+            '/api/webftp/downloads/dl-abc/status/',
+            '/api/webftp/downloads/dl-abc/status/',
+            'GET ' + _DOWNLOAD_URL,
+        ]
+
+    @pytest.mark.asyncio
+    async def test_a_token_that_cannot_read_the_command_never_fetches_a_failed_transfer(
+        self, mock_http_client, mock_token_manager, tmp_path
+    ):
+        mock_http_client.post.return_value = _DOWNLOAD_ROW
+        mock_http_client.get.side_effect = _route_download(
+            commands=(_SCOPE_REFUSAL,),
+            statuses=({'success': False, 'message': 'upload to S3 failed'},),
+        )
+
+        with patch('tools.webftp_tools._stream_s3_to_file') as mock_stream:
+            result = await self._download(tmp_path / 'test.txt')
+
+        assert result['status'] == _STATUS_ERROR
+        assert result['code'] == 'download_failed'
+        assert 'upload to S3 failed' in result['message']
+        mock_stream.assert_not_called()
+        assert list(tmp_path.iterdir()) == []
 
     @pytest.mark.asyncio
     async def test_local_download_times_out_when_the_host_never_handles_the_command(
@@ -1926,6 +1989,25 @@ class TestRemoteModeDownload:
             f'Server failed to process download: the transfer command ended as {outcome}'
         )
         assert calls == ['/api/events/commands/cmd-dl/']
+
+    @pytest.mark.asyncio
+    async def test_remote_download_waits_on_the_transfer_when_the_command_is_hidden(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = _DOWNLOAD_ROW
+        calls: list[str] = []
+        mock_http_client.get.side_effect = _route_download(
+            commands=(_SCOPE_REFUSAL,), log=calls
+        )
+
+        result = await self._download()
+
+        assert result['status'] == 'success'
+        assert result['download_url'] == _DOWNLOAD_URL
+        assert calls == [
+            '/api/events/commands/cmd-dl/',
+            '/api/webftp/downloads/dl-abc/status/',
+        ]
 
     @pytest.mark.asyncio
     async def test_remote_download_reports_a_refused_command_poll(
