@@ -450,8 +450,6 @@ def with_token_validation[**P, R](
             'the token'
         )
 
-    unchecked_func: Callable[..., Awaitable[R]] = func  # bound_args no longer carries P
-
     @wraps(func)
     async def wrapper(*args: P.args, **kwargs: P.kwargs) -> ToolResult[R]:
         bound_args = original_sig.bind_partial(*args, **kwargs)
@@ -579,7 +577,7 @@ def with_token_validation[**P, R](
         bound_args.arguments[catch_all] = extra_kwargs
 
         # bound_args carries a positional or keyword region alike
-        return await unchecked_func(*bound_args.args, **bound_args.kwargs)
+        return await func(*bound_args.args, **bound_args.kwargs)
 
     # The SDK publishes a VAR_KEYWORD as a required field, not a catch-all.
     new_params = [
