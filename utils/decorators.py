@@ -26,6 +26,7 @@ from utils.common import (
     validate_token,
 )
 from utils.error_handler import (
+    ServedRegion,
     UpstreamAuthError,
     format_validation_error,
     validate_region_format,
@@ -396,6 +397,11 @@ def _validate_uuid_list(field: str, value: object) -> ToolErrorResponse | None:
     return None
 
 
+def _published_region(param: inspect.Parameter) -> inspect.Parameter:
+    """Advertise the served regions; an omitted one arrives as None to resolve."""
+    return param.replace(annotation=ServedRegion.__value__ | None, default=None)
+
+
 def with_token_validation[**P, R](
     func: Callable[P, Awaitable[R]], requires_workspace: bool = True
 ) -> Callable[P, Awaitable[ToolResult[R]]]:
@@ -413,7 +419,7 @@ def with_token_validation[**P, R](
     is known—``list_workspaces`` is the one today. It skips the workspace
     checks, the workspace-keyed region resolution, the JWT workspace
     authorization, the MFA pre-check, and the stdio token injection, and reads
-    an empty ``region`` as "all regions" rather than one to resolve. A region
+    an omitted ``region`` as "all regions" rather than one to resolve. A region
     that is given is still validated. A tool that reaches any workspace-scoped
     resource must not set it, read-only or not.
 
@@ -427,7 +433,7 @@ def with_token_validation[**P, R](
 
     Returns:
         Decorated async function whose published signature drops the **kwargs
-        catch-all, so it never reaches the schema the SDK publishes
+        catch-all and offers ``region`` as a served region or None
     """
     original_sig = inspect.signature(func)
     catch_all = next(
@@ -485,7 +491,7 @@ def with_token_validation[**P, R](
                 workspace = resolved_workspace
                 bound_args.arguments['workspace'] = workspace
 
-        if not region and requires_workspace:  # workspace-less: empty means all
+        if not region and requires_workspace:  # workspace-less: omitted means all
             if auth_enabled:
                 resolved_region, err_msg = _resolve_region_jwt(
                     jwt_workspaces, workspace
@@ -576,7 +582,11 @@ def with_token_validation[**P, R](
         return await unchecked_func(*bound_args.args, **bound_args.kwargs)
 
     # The SDK publishes a VAR_KEYWORD as a required field, not a catch-all.
-    new_params = [p for p in original_sig.parameters.values() if p.name != catch_all]
+    new_params = [
+        _published_region(p) if p.name == 'region' else p
+        for p in original_sig.parameters.values()
+        if p.name != catch_all
+    ]
     wrapper.__signature__ = original_sig.replace(parameters=new_params)  # type: ignore[attr-defined]
 
     return wrapper

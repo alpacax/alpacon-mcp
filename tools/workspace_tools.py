@@ -14,6 +14,7 @@ from utils.common import (
     unwrap_http_result,
 )
 from utils.decorators import mcp_tool_handler, require_jwt_auth
+from utils.error_handler import ServedRegion
 from utils.http_client import http_client
 from utils.token_manager import TokenManager, get_token_manager
 from utils.tool_annotations import IDEMPOTENT_WRITE, READ_ONLY
@@ -112,13 +113,13 @@ def _validate_rollout_policy(policy: object) -> str | None:
 
 def _collect_workspaces_from_tokens(
     token_manager: TokenManager,
-    target_region: str = '',
+    target_region: str | None = None,
 ) -> list[dict[str, object]]:
     """Collect workspace info from token.json data.
 
     Args:
         token_manager: TokenManager to read entries and pinned URL overrides from.
-        target_region: If provided, filter to this region only. Empty means all regions.
+        target_region: If provided, filter to this region only. None means all regions.
 
     Returns:
         List of workspace info dicts
@@ -187,7 +188,9 @@ def _saas_only_security_404(
     },
     requires_workspace=False,
 )
-async def list_workspaces(region: str = '', **kwargs: str) -> ToolResponse:
+async def list_workspaces(
+    region: ServedRegion | None = None, **kwargs: str
+) -> ToolResponse:
     """Get list of available workspaces.
 
     In local (stdio/SSE) mode, reads from token.json. If region is not specified,
@@ -197,7 +200,7 @@ async def list_workspaces(region: str = '', **kwargs: str) -> ToolResponse:
     If region is provided, it filters results to that region only.
 
     Args:
-        region: Region filter (e.g., ap1, us1). Empty string means all regions.
+        region: Region filter (ap1 or us1). None means all regions.
 
     Returns:
         Workspaces list response. `unusable_entries` counts the JWT workspace

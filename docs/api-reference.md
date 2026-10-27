@@ -5,7 +5,7 @@ Complete reference for all Alpacon MCP Server tools and capabilities.
 ## 📌 Conventions
 
 - **`workspace` is always required.** Every tool that talks to the API takes it.
-- **`region` is optional.** Leave it out and the server resolves it from the workspace—via `token.json` in local mode, via the JWT claims in hosted mode. Supply it (`ap1`, `us1`) when one token spans several regions. An unresolvable region comes back as a validation error, not a silent default.
+- **`region` is optional.** Leave it out and the server resolves it from the workspace—via `token.json` in local mode, via the JWT claims in hosted mode. Supply it (`ap1` or `us1`; the schema refuses any other value, including an empty string) when one token spans several regions. An unresolvable region comes back as a validation error, not a silent default.
 - **Server IDs are UUIDs**, never names. Get them from `list_servers`.
 - **Every other `*_id` is checked before the request is built.** A value must be a string of letters, digits, `.`, `_`, `~`, or `-`, and must not be `.` or `..`. Most of these identifiers are interpolated into the endpoint path, where a `/` or a `..` retargets the request; the ones that only reach a query parameter or a request body are held to the same rule, because the check goes by the argument name rather than by where the value ends up. Anything else—a `/`, a `?`, a `#`, a percent-encoded spelling of one, or a value that is not a string at all—comes back as a validation error naming the field, and no request is sent. `work_session_id` is the one exception: its surrounding whitespace is stripped on purpose, so the rule would reject values the `ALPACON_WORK_SESSION` route accepts.
 - **`limit` and `page_size` must be positive integers.** Both name a page size and reach the API as `page_size`, where a zero or a negative asks for a page that cannot exist. Either one comes back as a validation error naming the field, and no request is sent. Omitting the argument still gets the tool's own default.
@@ -50,7 +50,7 @@ All MCP tools follow a consistent response structure:
 List all servers in a region and workspace.
 
 **Parameters:**
-- `region` (string, optional): Region name; resolved from the workspace when omitted
+- `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 - `workspace` (string): Workspace name
 
 **Returns:** Array of server objects with ID, name, status, and metadata.
@@ -60,7 +60,7 @@ Get detailed information about a specific server.
 
 **Parameters:**
 - `server_id` (string): Server ID to get details for
-- `region` (string, optional): Region name; resolved from the workspace when omitted
+- `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 - `workspace` (string): Workspace name
 
 **Returns:** Complete server information including hardware specs, status, and configuration.
@@ -70,7 +70,7 @@ List notes for a specific server.
 
 **Parameters:**
 - `server_id` (string): Server ID
-- `region` (string, optional): Region name; resolved from the workspace when omitted
+- `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 - `workspace` (string): Workspace name
 
 ### `create_server_note`
@@ -82,7 +82,7 @@ Create a new note for a server.
 - `private` (boolean, optional): Hide the note from other workspace members
 - `pinned` (boolean, optional): Pin the note; a server holds at most three pinned notes
 - `mentioned_users` (array of strings, optional): User UUIDs to notify; accepted on create only
-- `region` (string, optional): Region name; resolved from the workspace when omitted
+- `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 - `workspace` (string): Workspace name
 
 ### `get_server_note` / `update_server_note` / `delete_server_note`
@@ -97,14 +97,14 @@ Rename or relabel a server's Alpacon entry, or toggle its own offline-alert deli
 - `name` (string, optional): New display name
 - `description` (string, optional): New description
 - `offline_alert_enabled` (boolean, optional): This server's own offline-alert toggle, independent of any workspace rule; defaults to `true` on the server. Refused when the caller is the server's own agent credential
-- `region` (string, optional): Region name
+- `region` (`ap1` or `us1`, optional): Region name
 
 ### `get_collection_profile`
 What a server collects and at what cadence, and what it does not collect. Not gated behind the metrics extension, so it answers on every plan.
 
 **Parameters:**
 - `server_id` (string): Server ID
-- `region` (string, optional): Region name; resolved from the workspace when omitted
+- `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 - `workspace` (string): Workspace name
 
 **Returns:** `enabled` (whether the metrics extension is on for this workspace), `core[]` and `metrics[]`—each entry carrying `name`, `interval_s`, `last_sample_at`, `collected`, `scope`, and `reason` when not collected; `metrics[]` entries also carry `retention_days`, and the core disk-usage entry alone carries `latest[]` (per-volume readings)—and `not_collected[]`, each entry carrying `name`, `reason`, and `unlocked_by`.
@@ -160,7 +160,7 @@ Get CPU usage metrics for a server.
 - `server_id` (string): Server ID to get metrics for
 - `start_date` (string, optional, default: 12 hours ago): Start date in ISO format; the server returns at most the last 12 hours
 - `end_date` (string, optional): End date in ISO format
-- `region` (string, optional): Region name; resolved from the workspace when omitted
+- `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 - `workspace` (string): Workspace name
 
 **Example:**
@@ -186,7 +186,7 @@ Get disk usage metrics for a server.
 - `partition` (string, optional): Partition ID (UUID) from `/api/proc/partitions/`
 - `start_date` (string, optional, default: 12 hours ago): Start date; the server returns at most the last 12 hours
 - `end_date` (string, optional): End date
-- `region` (string, optional): Region name; resolved from the workspace when omitted
+- `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 - `workspace` (string): Workspace name
 
 ### `get_network_traffic`
@@ -197,7 +197,7 @@ Get network traffic metrics for a server.
 - `interface` (string): Interface ID (UUID) from `/api/proc/interfaces/`, required; the endpoint returns HTTP 400 when it is missing or is an interface name such as `eth0`
 - `start_date` (string, optional, default: 12 hours ago): Start date; the server returns at most the last 12 hours
 - `end_date` (string, optional): End date
-- `region` (string, optional): Region name; resolved from the workspace when omitted
+- `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 - `workspace` (string): Workspace name
 
 ### `get_disk_io`
@@ -207,7 +207,7 @@ Get disk I/O performance metrics for a server.
 - `server_id` (string): Server ID
 - `start_date` (string, optional, default: 12 hours ago): Start date in ISO format; the server returns at most the last 12 hours
 - `end_date` (string, optional): End date in ISO format
-- `region` (string, optional): Region name; resolved from the workspace when omitted
+- `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 - `workspace` (string): Workspace name
 
 ### `get_top_servers`
@@ -216,7 +216,7 @@ Rank the top five servers by resource usage over the last 24 hours.
 **Parameters:**
 - `workspace` (string): Workspace name
 - `metric_types` (string, optional): Comma-separated metrics to rank by (`cpu`, `memory`, `disk_io`, `traffic`); omit for all four
-- `region` (string, optional): Region name; resolved from the workspace when omitted
+- `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 
 ### `list_latest_metrics`
 Get the latest CPU, memory, disk usage, disk I/O and network reading for many servers in one
@@ -228,7 +228,7 @@ later.**
 
 **Parameters:**
 - `workspace` (string): Workspace name
-- `region` (string, optional): Region name; resolved from the workspace when omitted
+- `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 - `search` (string, optional): Free-text search across server name, version, owner, and group name
 - `groups` (string, optional): Filter by group ID(s)
 - `tag` (string, optional): Filter by tag(s) in `key:value` form
@@ -252,7 +252,7 @@ Get alert rules for servers.
 
 **Parameters:**
 - `server_id` (string, optional): Server ID to filter rules
-- `region` (string, optional): Region name; resolved from the workspace when omitted
+- `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 - `workspace` (string): Workspace name
 
 ### `get_server_metrics_summary`
@@ -261,7 +261,7 @@ Comprehensive health overview for one server; for many servers at once, use `lis
 **Parameters:**
 - `server_id` (string): Server ID
 - `hours` (integer, default: 12, max: 12): Number of hours back to get metrics; the realtime endpoints keep only the last 12 hours, so a larger value is clamped to 12
-- `region` (string, optional): Region name; resolved from the workspace when omitted
+- `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 - `workspace` (string): Workspace name
 
 **Returns:** `metrics.cpu`, `metrics.memory`, `metrics.disk`, and `metrics.network`, each with `available` and either `data_points` or `error`. Disk usage is read for the partition mounted at `/`, preferring one that is not virtual, using its ID from `/api/proc/partitions/`. Network traffic is read for the first active non-loopback interface whose name does not look virtual (`docker`, `br-`, `veth`, `virbr`, `cni`, `flannel`, `cali`, `vxlan`, `tun`, `tap`, `lxc`, `kube` prefixes), falling back to the first active non-loopback interface, using its ID from `/api/proc/interfaces/` (up to 20 pages of 100 interfaces are read, so an interface missing from the summary does not prove none exists beyond the first 2000). If the partition lookup fails or returns no root partition, `metrics.disk.error` describes the problem and the disk-usage endpoint is not called. If the interface lookup fails or finds no active non-loopback interface, `metrics.network.error` describes the problem and the traffic endpoint is not called.
@@ -275,7 +275,7 @@ Get detailed system information for a server.
 
 **Parameters:**
 - `server_id` (string): Server ID
-- `region` (string, optional): Region name; resolved from the workspace when omitted
+- `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 - `workspace` (string): Workspace name
 
 **Returns:** Hardware specs, CPU details, memory info, and system identifiers.
@@ -285,7 +285,7 @@ Get operating system version information.
 
 **Parameters:**
 - `server_id` (string): Server ID
-- `region` (string, optional): Region name; resolved from the workspace when omitted
+- `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 - `workspace` (string): Workspace name
 
 ### `list_system_users`
@@ -295,7 +295,7 @@ List system users on a server.
 - `server_id` (string): Server ID
 - `username_filter` (string, optional): Username to search for
 - `login_enabled_only` (boolean, default: false): Only return users that can login
-- `region` (string, optional): Region name; resolved from the workspace when omitted
+- `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 - `workspace` (string): Workspace name
 
 ### `list_system_groups`
@@ -304,7 +304,7 @@ List system groups on a server.
 **Parameters:**
 - `server_id` (string): Server ID
 - `groupname_filter` (string, optional): Group name to search for
-- `region` (string, optional): Region name; resolved from the workspace when omitted
+- `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 - `workspace` (string): Workspace name
 
 ### `list_system_packages`
@@ -315,7 +315,7 @@ List installed system packages on a server.
 - `package_name` (string, optional): Package name to search for
 - `architecture` (string, optional): Architecture filter (e.g., 'x86_64')
 - `limit` (integer, default: 100): Maximum number of packages to return
-- `region` (string, optional): Region name; resolved from the workspace when omitted
+- `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 - `workspace` (string): Workspace name
 
 ### `get_network_interfaces`
@@ -323,7 +323,7 @@ Get network interfaces information for a server.
 
 **Parameters:**
 - `server_id` (string): Server ID
-- `region` (string, optional): Region name; resolved from the workspace when omitted
+- `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 - `workspace` (string): Workspace name
 
 ### `get_disk_info`
@@ -331,7 +331,7 @@ Get disk and partition information for a server.
 
 **Parameters:**
 - `server_id` (string): Server ID
-- `region` (string, optional): Region name; resolved from the workspace when omitted
+- `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 - `workspace` (string): Workspace name
 
 **Returns:** Both disk and partition information in a single response.
@@ -341,7 +341,7 @@ Get system time and uptime information.
 
 **Parameters:**
 - `server_id` (string): Server ID
-- `region` (string, optional): Region name; resolved from the workspace when omitted
+- `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 - `workspace` (string): Workspace name
 
 ### `get_server_overview`
@@ -349,7 +349,7 @@ Get comprehensive overview of server system information.
 
 **Parameters:**
 - `server_id` (string): Server ID
-- `region` (string, optional): Region name; resolved from the workspace when omitted
+- `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 - `workspace` (string): Workspace name
 
 **Returns:** Combined system info, OS version, time, network interfaces, and disk info.
@@ -365,7 +365,7 @@ List server events.
 - `server_id` (string, optional): Server ID to filter events
 - `reporter` (string, optional): Reporter name to filter events
 - `limit` (integer, default: 50): Maximum number of events to return
-- `region` (string, optional): Region name; resolved from the workspace when omitted
+- `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 - `workspace` (string): Workspace name
 
 ### `get_event`
@@ -373,7 +373,7 @@ Get detailed information about a specific event.
 
 **Parameters:**
 - `event_id` (string): Event ID to get details for
-- `region` (string, optional): Region name; resolved from the workspace when omitted
+- `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 - `workspace` (string): Workspace name
 
 ### `search_events`
@@ -383,7 +383,7 @@ Search events by criteria.
 - `search_query` (string): Search term to look for in events
 - `server_id` (string, optional): Server ID to limit search scope
 - `limit` (integer, default: 20): Maximum number of results to return
-- `region` (string, optional): Region name; resolved from the workspace when omitted
+- `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 - `workspace` (string): Workspace name
 
 ---
@@ -409,7 +409,7 @@ Execute a command on a server and wait for the result.
 - `timeout` (integer, default: 300): Timeout in seconds
 - `work_session_id` (string, optional): Work Session to run under; falls back to `ALPACON_WORK_SESSION`
 - `purpose` (string, optional): What this particular command is for (ADR 0052). The assessor judges the command with it in hand, so one that would otherwise queue for a human may clear on its own. State a fact local to this host that the Work Session description does not already imply; general knowledge adds nothing the assessor lacks, and a purpose cannot lower a command's intrinsic risk. Trimmed to 2000 characters rather than refused, and the response then carries `purpose_truncated: true`
-- `region` (string, optional): Region name; resolved from the workspace when omitted
+- `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 
 **Held for its purpose:** when no `purpose` was stated and the gate holds the command, the response is
 `status: "purpose_required"` rather than a result. It carries `command_id`, `requires_human_approval: false`,
@@ -483,7 +483,7 @@ human, which a `bash /path` line on `execute_command` never is.
 - `timeout` (integer, default: 300): Timeout in seconds
 - `work_session_id` (string, optional): Work Session to run under; falls back to `ALPACON_WORK_SESSION`. With `write_file` or `read_from_server`, the transfer is linked to it too
 - `purpose` (string, optional): Same semantics as on `execute_command`
-- `region` (string, optional): Region name; resolved from the workspace when omitted
+- `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 
 **Writing the file:** with `write_file: true`, the call uploads `content`, encoded as UTF-8 with no
 normalization, to `path`, waits until the host reports the file written, and only then submits the
@@ -566,7 +566,7 @@ List recent command history.
 - `server_id` (string, optional): Filter by server ID
 - `limit` (integer, default: 20): Maximum number of recent commands to return
 - `workspace` (string): Workspace name
-- `region` (string, optional): Region name; resolved from the workspace when omitted
+- `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 
 An entry whose `error_phase` starts with `file_` gains `error_phase_hint`, as on `execute_file`.
 An entry whose `rejection_cause` is `use_file_execution` gains `error_code: "use_file_execution"` and
@@ -587,7 +587,7 @@ Execute a command on multiple servers simultaneously.
 - `parallel` (boolean, default: true): Execute in parallel
 - `work_session_id` (string, optional): Work Session to run under
 - `purpose` (string, optional): What this particular command is for (ADR 0052). The assessor judges the command with it in hand, so one that would otherwise queue for a human may clear on its own. State a fact local to this host that the Work Session description does not already imply; general knowledge adds nothing the assessor lacks, and a purpose cannot lower a command's intrinsic risk. Trimmed to 2000 characters rather than refused, and the response then carries `purpose_truncated: true`. This tool never waits, so it is never asked for a purpose after the fact—stating it up front is the only chance
-- `region` (string, optional): Region name; resolved from the workspace when omitted
+- `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 
 **Refused as a script body:** the `use_file_execution` refusal described under `execute_command`, which
 applies when the workspace approval policy blocks script bodies, is decided per server command after verification, so this tool's submit result never shows it and only
@@ -615,7 +615,7 @@ principal share one server error, so a refusal cannot say which happened: read t
 - `purpose` (string): What the command is for. Trimmed to 2000 characters rather than refused, and the response then carries `purpose_truncated: true`
 - `workspace` (string): Workspace name
 - `timeout` (integer, default: 300): Timeout in seconds for the wait after the answer
-- `region` (string, optional): Region name; resolved from the workspace when omitted
+- `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 
 ---
 
@@ -629,14 +629,14 @@ Create a new WebFTP session for file transfer.
 - `workspace` (string): Workspace name
 - `username` (string, optional): Username for FTP access (defaults to the authenticated user)
 - `work_session_id` (string, optional): Work Session to attribute the session to
-- `region` (string, optional): Region name; resolved from the workspace when omitted
+- `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 
 ### `webftp_sessions_list`
 Get list of WebFTP sessions.
 
 **Parameters:**
 - `server_id` (string, optional): Filter by server ID
-- `region` (string, optional): Region name; resolved from the workspace when omitted
+- `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 - `workspace` (string): Workspace name
 
 ### `webftp_upload_file`
@@ -648,7 +648,7 @@ Upload a local file to a server using S3 presigned URLs.
 - `remote_file_path` (string): Absolute path on server
 - `workspace` (string): Workspace name
 - `username` (string, optional): Username (defaults to authenticated user)
-- `region` (string, optional): Region name; resolved from the workspace when omitted
+- `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 - `allow_overwrite` (boolean, default: true): Allow overwriting existing files
 
 ### `webftp_download_file`
@@ -668,7 +668,7 @@ A scoped API or service token without `command:read` (the `file_download` and `f
 - `workspace` (string): Workspace name
 - `resource_type` (string, default: "file"): "file" or "folder" (folders download as .zip)
 - `username` (string, optional): Username (defaults to authenticated user)
-- `region` (string, optional): Region name; resolved from the workspace when omitted
+- `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 
 ### `webftp_upload_content`
 Upload base64-encoded bytes as a file, with no local file on disk. Useful in hosted mode, where the server has no access to your filesystem.
@@ -684,7 +684,7 @@ On streamable-http and SSE, `file_content` is capped at 3 MiB of decoded (origin
 - `username` (string, optional): Username (defaults to authenticated user)
 - `work_session_id` (string, optional): Work Session to attribute the transfer to
 - `allow_overwrite` (boolean, default: true)
-- `region` (string, optional): Region name
+- `region` (`ap1` or `us1`, optional): Region name
 
 ### `webftp_bulk_upload`
 Upload several local files to one directory in a single operation.
@@ -707,7 +707,7 @@ List uploaded files (upload history).
 **Parameters:**
 - `workspace` (string): Workspace name
 - `server_id` (string, optional): Filter by server ID
-- `region` (string, optional): Region name; resolved from the workspace when omitted
+- `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 
 ### `webftp_downloads_list`
 List download requests (download history).
@@ -715,7 +715,7 @@ List download requests (download history).
 **Parameters:**
 - `workspace` (string): Workspace name
 - `server_id` (string, optional): Filter by server ID
-- `region` (string, optional): Region name; resolved from the workspace when omitted
+- `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 
 ---
 
@@ -730,7 +730,7 @@ List all IAM users in workspace with pagination support.
 
 **Parameters:**
 - `workspace` (string): Workspace name
-- `region` (string, optional): Region name; resolved from the workspace when omitted
+- `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 - `page` (integer, optional): Page number for pagination
 - `page_size` (integer, optional): Users per page
 
@@ -751,7 +751,7 @@ Get detailed information about a specific IAM user.
 **Parameters:**
 - `user_id` (string): IAM user ID
 - `workspace` (string): Workspace name
-- `region` (string, optional): Region name; resolved from the workspace when omitted
+- `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 
 **Returns:** Complete user profile including permissions and group memberships.
 
@@ -765,7 +765,7 @@ Create new IAM user with optional group assignment.
 - `first_name` (string, optional): First name
 - `last_name` (string, optional): Last name
 - `is_active` (boolean, default: true): Active status
-- `region` (string, optional): Region name; resolved from the workspace when omitted
+- `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 
 **Example:**
 ```json
@@ -790,7 +790,7 @@ Update an existing user profile.
 - `first_name` (string, optional): New first name
 - `last_name` (string, optional): New last name
 - `is_active` (boolean, optional): New active status
-- `region` (string, optional): Region name; resolved from the workspace when omitted
+- `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 
 **Note:** Only provided fields will be updated. Omitted fields remain unchanged. Group membership is changed through `add_iam_member`/`remove_iam_member`, not here.
 
@@ -800,7 +800,7 @@ Delete IAM user from workspace.
 **Parameters:**
 - `user_id` (string): User ID to delete
 - `workspace` (string): Workspace name
-- `region` (string, optional): Region name; resolved from the workspace when omitted
+- `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 
 **⚠️ Warning:** This action is irreversible and will remove all user permissions and group memberships.
 
@@ -811,7 +811,7 @@ List all IAM groups in workspace with pagination support.
 
 **Parameters:**
 - `workspace` (string): Workspace name
-- `region` (string, optional): Region name; resolved from the workspace when omitted
+- `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 - `page` (integer, optional): Page number
 - `page_size` (integer, optional): Groups per page
 
@@ -825,7 +825,7 @@ Create a new IAM group.
 - `workspace` (string): Workspace name
 - `display_name` (string, optional): Human-readable name
 - `description` (string, optional): Group description
-- `region` (string, optional): Region name; resolved from the workspace when omitted
+- `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 
 **Example:**
 ```json
@@ -1050,7 +1050,7 @@ Webhook tools need an admin account, and creating or updating a webhook needs a 
 Get list of available workspaces. Takes no `workspace`—it is how you find the name every other tool needs.
 
 **Parameters:**
-- `region` (string, optional): Restrict the listing to one region; omit to list every configured region; an unknown region is rejected as a validation error, not answered with an empty list
+- `region` (`ap1` or `us1`, optional): Restrict the listing to one region; omit to list every configured region; an unknown region is rejected as a validation error, not answered with an empty list
 
 **Note:** `data.unusable_entries` counts the JWT workspace claim entries that named no workspace or no region and were therefore left out of `data.workspaces`. A non-zero count means the Auth0 organization metadata is missing a `region`, not that access was denied: such an entry authorizes nothing either way. A `region` filter does not narrow the count, since a dropped entry belongs to no region, and the count is always 0 in local mode, which reads `token.json` instead of a JWT.
 
@@ -1059,7 +1059,7 @@ Get the authenticated user: username, email, role, UID, shell, home directory.
 
 **Parameters:**
 - `workspace` (string): Workspace name
-- `region` (string, optional): Region name
+- `region` (`ap1` or `us1`, optional): Region name
 
 ### `health_check`
 Check MCP server health: version, uptime, authentication mode, connection pool. Takes no parameters.
@@ -1069,7 +1069,7 @@ Get the workspace access control settings: sudo/root access policy (`allow_sudo_
 
 **Parameters:**
 - `workspace` (string): Workspace name
-- `region` (string, optional): Region name; resolved from the workspace when omitted
+- `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 
 **Note:** On-premise deployments omit the MFA-related fields (`allow_sudo_with_mfa`, `block_local_sudo`, `sudo_timeout`).
 
@@ -1078,7 +1078,7 @@ Get the workspace authentication/security settings: `mfa_required`, `allowed_mfa
 
 **Parameters:**
 - `workspace` (string): Workspace name
-- `region` (string, optional): Region name; resolved from the workspace when omitted
+- `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 
 **Note:** Requires JWT (OAuth/SSO) authentication. The upstream `SecuritySettingsViewSet` has no `APITokenAuthentication`, so a static API token (stdio mode) is rejected before any request is sent; use remote/streamable-http (browser SSO) mode to read these settings.
 
@@ -1089,7 +1089,7 @@ List the MFA methods allowed for the workspace (`allowed_mfa_methods`, `passkey_
 
 **Parameters:**
 - `workspace` (string): Workspace name
-- `region` (string, optional): Region name; resolved from the workspace when omitted
+- `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 
 **Note:** Like `get_workspace_security`, this requires JWT (OAuth/SSO) authentication (a static API token is rejected up front) and the route is SaaS-only.
 
@@ -1098,7 +1098,7 @@ Get the workspace-wide preferences: timezone, locale, `front_url`, `invite_ttl`,
 
 **Parameters:**
 - `workspace` (string): Workspace name
-- `region` (string, optional): Region name; resolved from the workspace when omitted
+- `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 
 **Note:** The response also includes `auto_agent_upgrade`, a deprecated boolean derived from `agent_rollout_policy` (`true` unless `mode` is `manual`) that will be removed from the server response. Read `agent_rollout_policy`.
 
@@ -1117,7 +1117,7 @@ Update workspace-wide preferences. Only the fields you provide are sent (partial
 - `agent_rollout_policy` (object, optional): The agent-upgrade rollout policy: `{"mode": "latest"|"n_minus_1"|"manual", "window": {"days": [0-6, Monday is 0], "start_hour": 0-23, "length_hours": 1-24, "timezone": "<IANA>"}}`. A write may name only part of the object (just `mode`, or just one `window` key); whatever it leaves out keeps its current value. `manual` runs no automatic upgrade; `latest` and `n_minus_1` (one release behind) run the scheduled upgrade inside the window. The shape is validated locally before the request is sent
 - `package_proxy` (string, optional): Proxy server URL for package installation
 - `billing_email` (string, optional): Billing contact email; SaaS-only field
-- `region` (string, optional): Region name; resolved from the workspace when omitted
+- `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 
 **⚠️ Warning:** `timezone` is the workspace's billing clock—changing it shifts the daily usage-aggregation boundary. `enabled_extensions` replaces the whole list rather than appending—read the current value, merge, then send. `billing_email` is only accepted by the server on SaaS deployments.
 

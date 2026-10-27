@@ -130,7 +130,7 @@ class TestListWorkspaces:
         region gate as every other one, so a typo reads as a typo instead of
         as "that region has no workspaces".
         """
-        result = await list_workspaces(region='nonexistent')
+        result = await list_workspaces(region='nonexistent')  # type: ignore[arg-type]
 
         assert result['status'] == 'error'
         assert result['error_code'] == 'validation'

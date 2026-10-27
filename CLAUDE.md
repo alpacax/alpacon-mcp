@@ -59,7 +59,9 @@ Things the code will not tell you at a glance:
   `requires_workspace=False` is for a tool that answers before a workspace is
   known: it drops the workspace checks, the workspace-keyed region resolution,
   the JWT workspace authorization, the MFA pre-check, and the stdio token
-  injection. `list_workspaces` is the only tool using it. The decorator also
+  injection. `list_workspaces` is the only tool using it. Whatever a tool
+  declares, the decorator publishes `region` as `ap1`, `us1` or null, so the
+  SDK refuses anything else, `''` and `dev` included. The decorator also
   rewrites the published signature, dropping the `**kwargs` it injects the token
   into: the SDK reads that catch-all as an ordinary required field and would
   publish it to clients. Two rules follow: a tool must declare `**kwargs`

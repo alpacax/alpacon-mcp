@@ -19,6 +19,7 @@ from unittest.mock import patch
 
 import httpx
 import pytest
+from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import CallToolResult, InputRequiredResult
 
 import utils.decorators as decorators
@@ -488,6 +489,66 @@ class TestPublishedSchema:
         structured = _structured(await mcp.call_tool('list_workspaces', {}))
 
         assert structured['status'] == 'success'
+
+    async def test_every_tool_advertises_the_served_regions_as_optional(self):
+        _tool_functions()
+        schemas = {t.name: t.input_schema for t in await mcp.list_tools()}
+        expected = {
+            'anyOf': [{'enum': ['ap1', 'us1'], 'type': 'string'}, {'type': 'null'}],
+            'default': None,
+            'title': 'Region',
+        }
+
+        regions = {
+            name: (s['properties']['region'], s.get('required', []))
+            for name, s in schemas.items()
+            if 'region' in s.get('properties', {})
+        }
+
+        assert set(schemas) - set(regions) == {'health_check'}  # answers before any JWT
+        assert not {
+            name: schema
+            for name, (schema, required) in regions.items()
+            if schema != expected or 'region' in required
+        }
+
+    @pytest.mark.parametrize('region', ['dev', '', 'AP1'])
+    async def test_call_tool_refuses_a_region_outside_the_served_set(
+        self, region, patched_http_client, mock_token_for_integration
+    ):
+        sent: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            sent.append(request)
+            return httpx.Response(HTTPStatus.OK, json={})
+
+        patched_http_client.set_handler(handler)
+
+        with pytest.raises(ToolError, match="region\n  Input should be 'ap1' or 'us1'"):
+            await mcp.call_tool(
+                'list_servers', {'workspace': 'testworkspace', 'region': region}
+            )
+
+        assert not sent
+
+    async def test_call_tool_resolves_an_omitted_region(
+        self, patched_http_client, mock_token_for_integration, sample_api_responses
+    ):
+        servers_payload = sample_api_responses()['servers_list']
+        hosts: list[str] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            hosts.append(request.url.host)
+            return httpx.Response(HTTPStatus.OK, json=servers_payload)
+
+        patched_http_client.set_handler(handler)
+
+        structured = _structured(
+            await mcp.call_tool('list_servers', {'workspace': 'testworkspace'})
+        )
+
+        assert structured['status'] == 'success'
+        assert hosts == ['testworkspace.ap1.alpacon.io']
 
 
 class TestLoggedParameterSurface:
