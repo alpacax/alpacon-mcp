@@ -12,7 +12,7 @@ this restriction.
 """
 
 from utils.api_call import http_call_response
-from utils.common import build_list_params, error_response
+from utils.common import build_list_params, error_response, exclude_none
 from utils.decorators import mcp_tool_handler, require_jwt_auth
 from utils.error_handler import uuid_field_error
 from utils.http_client import http_client
@@ -176,15 +176,12 @@ async def create_api_token(
     """
     token = kwargs.get('token')
 
-    token_data: dict[str, object] = {'name': name}
-    if scopes is not None:
-        token_data['scopes'] = scopes
-    if expires_at is not None:
-        token_data['expires_at'] = expires_at
-    if enabled is not None:
-        token_data['enabled'] = enabled
-    if presets is not None:
-        token_data['presets'] = presets
+    token_data: dict[str, object] = {
+        'name': name,
+        **exclude_none(
+            scopes=scopes, expires_at=expires_at, enabled=enabled, presets=presets
+        ),
+    }
 
     return await http_call_response(
         http_client.post,
@@ -252,17 +249,13 @@ async def update_api_token(
     if expires_at is not None and clear_expires_at:
         return error_response('expires_at and clear_expires_at are mutually exclusive')
 
-    update_data: dict[str, object] = {}
-    if name is not None:
-        update_data['name'] = name
-    if enabled is not None:
-        update_data['enabled'] = enabled
+    update_data: dict[str, object] = exclude_none(
+        name=name, enabled=enabled, scopes=scopes
+    )
     if expires_at is not None:
         update_data['expires_at'] = expires_at
     elif clear_expires_at:
         update_data['expires_at'] = None
-    if scopes is not None:
-        update_data['scopes'] = scopes
 
     if not update_data:
         return error_response('No update data provided')
@@ -364,9 +357,7 @@ async def duplicate_api_token(
     if err:
         return err
 
-    data: dict[str, object] = {}
-    if name is not None:
-        data['name'] = name
+    data: dict[str, object] = exclude_none(name=name)
 
     return await http_call_response(
         http_client.post,

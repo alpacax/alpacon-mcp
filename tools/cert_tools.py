@@ -1,7 +1,7 @@
 """Certificate and PKI management tools for Alpacon MCP server."""
 
 from utils.api_call import http_call_response
-from utils.common import build_list_params, error_response
+from utils.common import build_list_params, error_response, exclude_none
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ_ONLY
@@ -99,20 +99,15 @@ async def create_certificate_authority(
         'organization': organization,
         'agent': server_id,
         'owner': owner,
+        **exclude_none(
+            root_valid_days=root_valid_days,
+            default_valid_days=default_valid_days,
+            max_valid_days=max_valid_days,
+            key_algorithm=key_algorithm,
+            key_size=key_size,
+            install=install,
+        ),
     }
-
-    if root_valid_days is not None:
-        ca_data['root_valid_days'] = root_valid_days
-    if default_valid_days is not None:
-        ca_data['default_valid_days'] = default_valid_days
-    if max_valid_days is not None:
-        ca_data['max_valid_days'] = max_valid_days
-    if key_algorithm is not None:
-        ca_data['key_algorithm'] = key_algorithm
-    if key_size is not None:
-        ca_data['key_size'] = key_size
-    if install is not None:
-        ca_data['install'] = install
 
     return await http_call_response(
         http_client.post,
@@ -188,13 +183,11 @@ async def update_certificate_authority(
     """
     token = kwargs.get('token')
 
-    patch_data: dict[str, object] = {}
-    if default_valid_days is not None:
-        patch_data['default_valid_days'] = default_valid_days
-    if max_valid_days is not None:
-        patch_data['max_valid_days'] = max_valid_days
-    if owner is not None:
-        patch_data['owner'] = owner
+    patch_data: dict[str, object] = exclude_none(
+        default_valid_days=default_valid_days,
+        max_valid_days=max_valid_days,
+        owner=owner,
+    )
 
     if not patch_data:
         return error_response('No update data provided')
@@ -338,10 +331,8 @@ async def create_sign_request(
     csr_data: dict[str, object] = {
         'domain_list': domains,
         'ip_list': ips,
+        **exclude_none(valid_days=valid_days),
     }
-
-    if valid_days is not None:
-        csr_data['valid_days'] = valid_days
 
     return await http_call_response(
         http_client.post,
@@ -645,11 +636,8 @@ async def revoke_certificate(
 
     data: dict[str, object] = {
         'certificate': certificate_id,
+        **exclude_none(reason=reason, requested_reason=requested_reason),
     }
-    if reason is not None:
-        data['reason'] = reason
-    if requested_reason is not None:
-        data['requested_reason'] = requested_reason
 
     return await http_call_response(
         http_client.post,

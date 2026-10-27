@@ -1,7 +1,7 @@
 """Server management tools for Alpacon MCP server - Refactored version."""
 
 from utils.api_call import http_call_response
-from utils.common import build_list_params
+from utils.common import build_list_params, exclude_none
 from utils.decorators import mcp_tool_handler
 from utils.error_handler import format_validation_error, uuid_field_error
 from utils.http_client import http_client
@@ -237,13 +237,11 @@ async def create_server_note(
 
     token = kwargs.get('token')
 
-    note_data: dict[str, object] = {'server': server_id, 'content': content}
-    if private is not None:
-        note_data['private'] = private
-    if pinned is not None:
-        note_data['pinned'] = pinned
-    if mentioned_users is not None:
-        note_data['mentioned_users'] = mentioned_users
+    note_data: dict[str, object] = {
+        'server': server_id,
+        'content': content,
+        **exclude_none(private=private, pinned=pinned, mentioned_users=mentioned_users),
+    }
 
     # Make async call to create note
     return await http_call_response(
@@ -334,13 +332,9 @@ async def update_server_note(
 
     token = kwargs.get('token')
 
-    update_data: dict[str, object] = {}
-    if content is not None:
-        update_data['content'] = content
-    if private is not None:
-        update_data['private'] = private
-    if pinned is not None:
-        update_data['pinned'] = pinned
+    update_data: dict[str, object] = exclude_none(
+        content=content, private=private, pinned=pinned
+    )
 
     if not update_data:
         return format_validation_error(
@@ -614,13 +608,9 @@ async def update_server(
     """
     token = kwargs.get('token')
 
-    update_data: dict[str, object] = {}
-    if name is not None:
-        update_data['name'] = name
-    if description is not None:
-        update_data['description'] = description
-    if offline_alert_enabled is not None:
-        update_data['offline_alert_enabled'] = offline_alert_enabled
+    update_data: dict[str, object] = exclude_none(
+        name=name, description=description, offline_alert_enabled=offline_alert_enabled
+    )
 
     if not update_data:
         return format_validation_error(
@@ -810,9 +800,7 @@ async def create_registration_token(
     """
     token = kwargs.get('token')
 
-    data: dict[str, object] = {'name': name}
-    if description is not None:
-        data['description'] = description
+    data: dict[str, object] = {'name': name, **exclude_none(description=description)}
 
     return await http_call_response(
         http_client.post,
@@ -908,9 +896,11 @@ async def get_registration_guide(
     if err:
         return err
 
-    data: dict[str, object] = {'platform': platform, 'token': token_id}
-    if server_name is not None:
-        data['server_name'] = server_name
+    data: dict[str, object] = {
+        'platform': platform,
+        'token': token_id,
+        **exclude_none(server_name=server_name),
+    }
 
     return await http_call_response(
         http_client.post,

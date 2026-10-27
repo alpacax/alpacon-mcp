@@ -1,7 +1,7 @@
 """Webhook and event subscription tools for Alpacon MCP server."""
 
 from utils.api_call import http_call_response
-from utils.common import build_list_params
+from utils.common import build_list_params, exclude_none
 from utils.decorators import mcp_tool_handler
 from utils.error_handler import format_validation_error, validate_uuid_format
 from utils.http_client import http_client
@@ -100,10 +100,8 @@ async def create_event_subscription(
     subscription_data: dict[str, object] = {
         'channel': channel,
         'event_type': event_type,
+        **exclude_none(target_id=target_id),
     }
-
-    if target_id is not None:
-        subscription_data['target_id'] = target_id
 
     return await http_call_response(
         http_client.post,
@@ -291,9 +289,8 @@ async def create_webhook(
         'owner': owner,
         'ssl_verify': ssl_verify,
         'enabled': enabled,
+        **exclude_none(provider=provider),
     }
-    if provider is not None:
-        webhook_data['provider'] = provider
 
     return await http_call_response(
         http_client.post,
@@ -337,15 +334,9 @@ async def update_webhook(
     """
     token = kwargs.get('token')
 
-    update_data: dict[str, object] = {}
-    if name is not None:
-        update_data['name'] = name
-    if url is not None:
-        update_data['url'] = url
-    if ssl_verify is not None:
-        update_data['ssl_verify'] = ssl_verify
-    if enabled is not None:
-        update_data['enabled'] = enabled
+    update_data: dict[str, object] = exclude_none(
+        name=name, url=url, ssl_verify=ssl_verify, enabled=enabled
+    )
 
     if not update_data:
         return format_validation_error(

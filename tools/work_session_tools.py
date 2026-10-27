@@ -4,6 +4,7 @@ from utils.api_call import http_call_response
 from utils.common import (
     build_list_params,
     error_response,
+    exclude_none,
     pending_approval_response,
     success_response,
     unwrap_http_result,
@@ -263,17 +264,13 @@ async def work_session_update(
     """Partially update a Work Session."""
     token = kwargs.get('token')
 
-    data: dict[str, str | list[str]] = {}
-    if title is not None:
-        data['title'] = title
-    if description is not None:
-        data['description'] = description
-    if scopes is not None:
-        data['scopes'] = scopes
-    if servers is not None:
-        data['servers'] = servers
-    if expires_at is not None:
-        data['expires_at'] = expires_at
+    data: dict[str, str | list[str]] = exclude_none(
+        title=title,
+        description=description,
+        scopes=scopes,
+        servers=servers,
+        expires_at=expires_at,
+    )
 
     if not data:
         return error_response(

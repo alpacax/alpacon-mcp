@@ -1,7 +1,7 @@
 """Package management tools for Alpacon MCP server."""
 
 from utils.api_call import http_call_response
-from utils.common import build_list_params
+from utils.common import build_list_params, exclude_none
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, READ_ONLY
@@ -83,10 +83,8 @@ async def install_system_package(
     package_data: dict[str, object] = {
         'server': server_id,
         'name': package_name,
+        **exclude_none(version=version),
     }
-
-    if version is not None:
-        package_data['version'] = version
 
     return await http_call_response(
         http_client.post,
@@ -207,10 +205,8 @@ async def install_python_package(
     package_data: dict[str, object] = {
         'server': server_id,
         'name': package_name,
+        **exclude_none(version=version),
     }
-
-    if version is not None:
-        package_data['version'] = version
 
     return await http_call_response(
         http_client.post,

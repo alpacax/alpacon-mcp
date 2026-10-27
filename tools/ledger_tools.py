@@ -20,6 +20,7 @@ from typing import Annotated, Literal, NotRequired, TypedDict
 from pydantic import Field
 
 from utils.common import (
+    build_list_params,
     error_response,
     is_auth_enabled,
     is_stdio_transport,
@@ -36,7 +37,6 @@ from utils.ledger_auth import (
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ_ONLY
 from utils.types import (
     JsonValue,
-    QueryParam,
     QueryParams,
     RequestBody,
     ToolErrorResponse,
@@ -368,15 +368,12 @@ async def list_ledger_entries(
     Returns:
         A page with `count`, `current`, `next`, `previous`, `last`, `results`
     """
-    params: dict[str, QueryParam] = {}
-    for name, value in (
-        ('principal_type', principal_type),
-        ('principal_id', principal_id),
-        ('page', page),
-        ('page_size', page_size),
-    ):
-        if value is not None:
-            params[name] = value
+    params = build_list_params(
+        page=page,
+        page_size=page_size,
+        principal_type=principal_type,
+        principal_id=principal_id,
+    )
 
     return await _ledger_call(
         'GET',
@@ -630,11 +627,7 @@ async def list_ledger_admins(
     Returns:
         A page of admins, each with `id`, `subject` and `email`
     """
-    params: dict[str, QueryParam] = {}
-    if page is not None:
-        params['page'] = page
-    if page_size is not None:
-        params['page_size'] = page_size
+    params = build_list_params(page=page, page_size=page_size)
 
     return await _ledger_call(
         'GET',

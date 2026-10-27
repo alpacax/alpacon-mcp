@@ -449,10 +449,6 @@ def build_list_params(
 ) -> dict[str, QueryParam]:
     """Assemble the query params of a list endpoint from its optional arguments.
 
-    One rule decides every field: a value is omitted only when it is None. A
-    truthiness check would instead swallow a filter the caller meant, such as
-    ``acknowledged=False`` or a numeric ``0``.
-
     Args:
         page: Page number
         page_size: Number of items per page
@@ -462,8 +458,15 @@ def build_list_params(
     Returns:
         Query params carrying only the arguments that were supplied
     """
-    supplied = {'page': page, 'page_size': page_size, **filters}
-    return {name: value for name, value in supplied.items() if value is not None}
+    return exclude_none(page=page, page_size=page_size, **filters)
+
+
+def exclude_none[T](**fields: T | None) -> dict[str, T]:
+    """Drop the fields whose value is None, keeping argument order.
+
+    Only None means omitted: ``acknowledged=False`` or ``0`` is a value the caller meant.
+    """
+    return {name: value for name, value in fields.items() if value is not None}
 
 
 def resolve_time_window(
