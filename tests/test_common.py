@@ -4,7 +4,7 @@ import json
 import traceback
 from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
-from typing import Any, TypedDict
+from typing import TypedDict
 from unittest.mock import patch
 
 import pytest
@@ -32,12 +32,14 @@ from utils.common import (
     validate_response,
     work_session_gate_response,
 )
-from utils.types import JsonValue
+from utils.types import JsonValue, ToolErrorResponse
 
 
-def _unwrap_error(result: object, **kwargs: Any) -> dict[str, Any]:
+def _unwrap_error(
+    result: object, *, default_message: str, **id_context: object
+) -> ToolErrorResponse:
     """unwrap_http_result on an envelope the test expects to be an error."""
-    out = unwrap_http_result(result, **kwargs)
+    out = unwrap_http_result(result, default_message=default_message, **id_context)
     assert out is not None
     return out
 
@@ -456,8 +458,8 @@ class TestUnwrapHttpResultPlanLimit:
         axis: str | None = None,
         next: str | None = None,  # noqa: A002 - mirrors the body's own field name
         status_code: HTTPStatus = HTTPStatus.PAYMENT_REQUIRED,
-    ) -> dict[str, Any]:
-        body: dict[str, Any] = {'code': code}
+    ) -> dict[str, JsonValue]:
+        body: dict[str, JsonValue] = {'code': code}
         if gate is not None:
             body['gate'] = gate
         if axis is not None:

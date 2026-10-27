@@ -1,8 +1,9 @@
 """Unit tests for command tools module."""
 
+from collections.abc import Awaitable, Iterator
 from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
-from typing import Any
+from typing import Protocol
 from unittest.mock import patch
 
 import httpx
@@ -38,6 +39,7 @@ from utils.common import (
     FILE_EXEC_REFUSAL_HINTS,
     INLINE_CREDENTIAL_HINT,
 )
+from utils.types import JsonValue, ToolResponse
 
 _GATE_ENVELOPE_REQUIRED = {
     'error': 'HTTP Error',
@@ -1664,8 +1666,8 @@ class TestPurposeDemandWindow:
     """What the response says about how long is left."""
 
     @staticmethod
-    def _parked(expires_at: str | None) -> dict[str, Any]:
-        row: dict[str, Any] = {
+    def _parked(expires_at: str | None) -> dict[str, JsonValue]:
+        row: dict[str, JsonValue] = {
             'id': 'cmd-600',
             'status': 'awaiting_purpose',
             'handled_at': None,
@@ -1674,7 +1676,7 @@ class TestPurposeDemandWindow:
             row['purpose_expires_at'] = expires_at
         return row
 
-    async def _demand(self, row: dict[str, Any]) -> dict[str, Any]:
+    async def _demand(self, row: dict[str, JsonValue]) -> ToolResponse:
         with (
             patch('tools.command_tools._submit_command') as mock_submit,
             patch('tools.command_tools._get_command_result') as mock_poll,
@@ -2043,7 +2045,7 @@ class TestEmptyCommandRejected:
         mock_http_client.post.assert_not_called()
 
 
-def _file_exec_envelope(code: str) -> dict[str, Any]:
+def _file_exec_envelope(code: str) -> dict[str, JsonValue]:
     return {
         'error': 'HTTP Error',
         'status_code': HTTPStatus.BAD_REQUEST,
@@ -2309,7 +2311,7 @@ class TestExecuteFileLocalValidation:
     async def test_relative_path_or_interpreter_is_refused_locally(
         self, mock_http_client, mock_token_manager, field, override
     ):
-        kwargs: dict[str, Any] = {
+        kwargs: dict[str, str] = {
             'path': '/opt/deploy.sh',
             'interpreter': '/bin/bash',
             **override,
@@ -2320,7 +2322,8 @@ class TestExecuteFileLocalValidation:
             content=_FILE_SCRIPT,
             workspace='testworkspace',
             region='ap1',
-            **kwargs,
+            path=kwargs['path'],
+            interpreter=kwargs['interpreter'],
         )
 
         assert result['status'] == 'error'
@@ -2732,13 +2735,17 @@ class TestExecuteFileRun:
         assert result['purpose_truncated'] is True
 
 
+class _Route(Protocol):  # an http_client.get side effect
+    def __call__(self, *, endpoint: str, **kw: object) -> Awaitable[JsonValue]: ...
+
+
 _UPLOAD_ROW = {'id': 'up-1', 'upload_url': 'https://s3.example/put'}
 
 
-def _route_get(status: Any = None):
+def _route_get(status: JsonValue = None) -> _Route:
     """Answer the WebFTP trigger and status GETs the write path makes."""
 
-    async def _get(*, endpoint: str, **_: Any) -> Any:
+    async def _get(*, endpoint: str, **_: object) -> JsonValue:
         if endpoint.endswith('/status/'):
             return {'success': True} if status is None else status
         return {}
@@ -2787,17 +2794,17 @@ class TestExecuteFileWriteFile:
         mock_http_client.post.side_effect = _post
         route = _route_get()
 
-        async def _get(*, endpoint: str, **kw: Any) -> Any:
+        async def _get(*, endpoint: str, **kw: object) -> JsonValue:
             calls.append('status' if endpoint.endswith('/status/') else 'trigger')
             return await route(endpoint=endpoint, **kw)
 
-        async def _put(*_: Any) -> None:
+        async def _put(*_: object) -> None:
             calls.append('put')
 
         mock_http_client.get.side_effect = _get
         script = '#!/bin/bash\r\necho é\n'
 
-        async def _submit(**kw: Any) -> Any:
+        async def _submit(**kw: object) -> dict[str, JsonValue]:
             calls.append('submit')
             return _file_exec_envelope('file_exec_empty_content')
 
@@ -3183,7 +3190,7 @@ _DOWNLOAD_ROW = {
     'download_url': 'https://s3.example/get',
     'command': 'cmd-d1',
 }
-_DOWNLOAD_COMMAND_DONE = {
+_DOWNLOAD_COMMAND_DONE: dict[str, JsonValue] = {
     'id': 'cmd-d1',
     'status': 'success',
     'success': True,
@@ -3192,17 +3199,17 @@ _DOWNLOAD_COMMAND_DONE = {
 
 
 def _route_download_status(
-    status: Any = None,
-    command: Any = None,
+    status: JsonValue = None,
+    command: JsonValue = None,
     *,
-    commands: list[Any] | None = None,
+    commands: list[JsonValue] | None = None,
     log: list[str] | None = None,
-):
+) -> _Route:
     """Answer the transfer command and download status GETs the read path makes.
 
     ``commands`` answers the command polls in order, its last entry repeating."""
 
-    async def _get(*, endpoint: str, **_: Any) -> Any:
+    async def _get(*, endpoint: str, **_: object) -> JsonValue:
         if log is not None:
             log.append(endpoint)
         if endpoint == '/api/events/commands/cmd-d1/':
@@ -3277,10 +3284,10 @@ class TestExecuteFileReadFromServer:
     ):
         calls: list[str] = []
         mock_http_client.post.return_value = _DOWNLOAD_ROW
-        answers = iter([{'status': 'running', 'handled_at': None}])
+        answers: Iterator[JsonValue] = iter([{'status': 'running', 'handled_at': None}])
         route = _route_download_status()
 
-        async def _get(*, endpoint: str, **kw: Any) -> Any:
+        async def _get(*, endpoint: str, **kw: object) -> JsonValue:
             if endpoint.startswith('/api/events/commands/'):
                 calls.append('command')
                 if (answer := next(answers, None)) is not None:
@@ -3289,11 +3296,11 @@ class TestExecuteFileReadFromServer:
                 calls.append('status')
             return await route(endpoint=endpoint, **kw)
 
-        async def _fetch(*_: Any) -> bytes:
+        async def _fetch(*_: object) -> bytes:
             calls.append('fetch')
             return b'echo hi\n'
 
-        async def _submit(**kw: Any) -> Any:
+        async def _submit(**kw: object) -> dict[str, JsonValue]:
             calls.append('submit')
             return _file_exec_envelope('file_exec_empty_content')
 
@@ -3782,8 +3789,14 @@ class TestHeldCommandSuggestsTheFileLane:
     """A held shell line is pointed at execute_file with read_from_server."""
 
     async def _held(
-        self, row_extra: dict[str, Any], **call_extra: Any
-    ) -> dict[str, Any]:
+        self,
+        row_extra: dict[str, JsonValue],
+        *,
+        username: str | None = None,
+        groupname: str = 'alpacon',
+        work_session_id: str | None = None,
+        data: str | None = None,
+    ) -> ToolResponse:
         with (
             patch(
                 'tools.command_tools._submit_command',
@@ -3805,7 +3818,10 @@ class TestHeldCommandSuggestsTheFileLane:
                 workspace='testworkspace',
                 region='ap1',
                 timeout=10,
-                **call_extra,
+                username=username,
+                groupname=groupname,
+                work_session_id=work_session_id,
+                data=data,
             )
 
     @pytest.mark.asyncio

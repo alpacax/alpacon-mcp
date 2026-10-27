@@ -10,8 +10,8 @@ This file covers additional scenarios like region variations,
 error conditions, and parameter handling.
 """
 
-from collections.abc import Awaitable, Callable
-from typing import Any
+from collections.abc import Awaitable
+from typing import Protocol
 
 import pytest
 
@@ -22,6 +22,14 @@ from tools.system_info_tools import (
     list_system_packages,
     list_system_users,
 )
+from utils.types import ToolResponse
+
+
+class _ServerTool(Protocol):
+    def __call__(
+        self, *, server_id: str, workspace: str, region: str
+    ) -> Awaitable[ToolResponse]: ...
+
 
 mock_http_client = http_client_fixture('tools.system_info_tools')
 
@@ -339,7 +347,7 @@ class TestCrossFunctionScenarios:
         mock_http_client.get.return_value = {'test': 'data'}
 
         # Test with different regions
-        tools: list[Callable[..., Awaitable[dict[str, Any]]]] = [
+        tools: list[_ServerTool] = [
             get_system_info,
             list_system_users,
         ]

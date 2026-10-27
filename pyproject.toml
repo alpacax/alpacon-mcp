@@ -169,6 +169,7 @@ disallow_untyped_calls = false  # test helpers stay untyped until the tests are 
 # Modules cleared of explicit Any; each stays that way.
 [[tool.mypy.overrides]]
 module = [
+    "tests.*",
     "tools.*",
     "utils.auth",
     "utils.common",
