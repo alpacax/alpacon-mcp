@@ -6,7 +6,7 @@ from typing import Literal, TypeGuard
 
 from mcp.server.mcpserver.exceptions import ToolError
 
-# 'dev' is internal-only: the validator accepts it, but it is never advertised.
+# 'dev' is internal-only: tool schemas refuse it, so only region resolution yields it.
 type ServedRegion = Literal['ap1', 'us1']
 type Region = ServedRegion | Literal['dev']
 SERVED_REGIONS: tuple[ServedRegion, ...] = ('ap1', 'us1')
