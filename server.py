@@ -87,7 +87,7 @@ ALWAYS_ON_TOOLSET_NAMES: frozenset[str] = frozenset(ALWAYS_ON)
 
 
 @asynccontextmanager
-async def app_lifespan(app: MCPServer) -> AsyncIterator[None]:
+async def app_lifespan(app: MCPServer[None]) -> AsyncIterator[None]:
     """Manage application startup and shutdown lifecycle.
 
     On startup: install SIGTERM handler (Unix only).
@@ -143,7 +143,7 @@ def resolve_port() -> int:
     return int(os.getenv('ALPACON_MCP_PORT', str(DEFAULT_PORT)))
 
 
-def _create_mcp_server() -> MCPServer:
+def _create_mcp_server() -> MCPServer[None]:
     """Create the MCP server instance with optional JWT auth.
 
     When ALPACON_MCP_AUTH_ENABLED=true (set by main_http.py before import),
