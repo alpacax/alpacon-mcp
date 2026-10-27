@@ -3312,7 +3312,7 @@ class TestExecuteFileReadFromServer:
                 region='ap1',
             )
 
-        assert calls == ['command', 'command', 'fetch', 'status', 'submit']
+        assert calls == ['command', 'command', 'status', 'fetch', 'submit']
         assert mock_submit.call_args.kwargs['content'] == 'echo hi\n'
 
     @pytest.mark.asyncio
@@ -3669,7 +3669,7 @@ class TestExecuteFileReadFromServer:
         ]
 
     @pytest.mark.asyncio
-    async def test_a_failed_fetch_is_reported_without_checking_the_transfer(
+    async def test_a_failed_fetch_after_a_confirmed_transfer_is_reported(
         self, mock_http_client, mock_token_manager
     ):
         mock_http_client.post.return_value = _DOWNLOAD_ROW
@@ -3693,7 +3693,10 @@ class TestExecuteFileReadFromServer:
 
         assert result['error_code'] == 'file_read_failed'
         assert '404 - Not Found' in result['message']
-        assert calls == ['/api/events/commands/cmd-d1/']
+        assert calls == [
+            '/api/events/commands/cmd-d1/',
+            '/api/webftp/downloads/down-1/status/',
+        ]
         mock_submit.assert_not_called()
 
     @pytest.mark.asyncio

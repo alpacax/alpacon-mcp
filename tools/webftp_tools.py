@@ -209,8 +209,15 @@ def _host_download(request: TransferRequest) -> _HostDownload | ToolErrorRespons
 
 
 def _download_stalled(
-    outcome: Stalled, poll_message: str, *, file_id: str, workspace: str, region: str
+    outcome: Stalled,
+    poll_message: str,
+    download: _HostDownload,
+    *,
+    workspace: str,
+    region: str,
+    remote: bool,
 ) -> ToolErrorResponse:
+    file_id = download.file_id
     match outcome:
         case Refused(response):
             refused = unwrap_http_result(
@@ -226,19 +233,27 @@ def _download_stalled(
                 reason or 'the host refused the download', file_id=file_id
             )
         case TimedOut():
-            return error_response(
+            message = (
                 'Download timed out waiting for server. '
-                f'Use webftp_check_status("{file_id}", "download", workspace="{workspace}", region="{region}") to poll manually.',
+                f'Use webftp_check_status("{file_id}", "download", workspace="{workspace}", region="{region}") to poll manually.'
+            )
+            if not remote:
+                return error_response(message, file_id=file_id, code='download_timeout')
+            return error_response(  # the transfer may still land
+                message
+                + ' Once it reports the download completed, fetch download_url.',
                 file_id=file_id,
                 code='download_timeout',
+                download_url=download.url,
             )
 
 
-async def _download_handled(
-    download: _HostDownload, *, deadline: float, region: str, workspace: str, token: str
-) -> ToolErrorResponse | CommandHidden | None:
-    """None once the host has handled the download command."""
-    outcome = await await_command_handled(
+async def _download_ready(
+    download: _HostDownload, *, region: str, workspace: str, token: str, remote: bool
+) -> ToolErrorResponse | None:
+    """None once the server reports the file is behind the presigned URL."""
+    deadline = deadline_after(_DOWNLOAD_TIMEOUT)
+    command = await await_command_handled(
         download.command_id,
         region=region,
         workspace=workspace,
@@ -246,38 +261,32 @@ async def _download_handled(
         deadline=deadline,
         interval=_DOWNLOAD_POLL_INTERVAL,
     )
-    if outcome is None or isinstance(outcome, CommandHidden):
-        return outcome
-    return _download_stalled(
-        outcome,
-        'Failed to poll the download command',
-        file_id=download.file_id,
-        workspace=workspace,
-        region=region,
-    )
-
-
-async def _download_transferred(
-    download: _HostDownload, *, deadline: float, region: str, workspace: str, token: str
-) -> ToolErrorResponse | None:
-    """None once the server reports the file is behind the presigned URL."""
-    stalled = await await_transfer_success(
+    if command is not None and not isinstance(command, CommandHidden):
+        return _download_stalled(
+            command,
+            'Failed to poll the download command',
+            download,
+            workspace=workspace,
+            region=region,
+            remote=remote,
+        )
+    if transfer := await await_transfer_success(
         _API_DOWNLOAD_STATUS.format(download.file_id),
         region=region,
         workspace=workspace,
         token=token,
         deadline=deadline,
         interval=_DOWNLOAD_POLL_INTERVAL,
-    )
-    if stalled is None:
-        return None
-    return _download_stalled(
-        stalled,
-        'Failed to poll download status',
-        file_id=download.file_id,
-        workspace=workspace,
-        region=region,
-    )
+    ):
+        return _download_stalled(
+            transfer,
+            'Failed to poll download status',
+            download,
+            workspace=workspace,
+            region=region,
+            remote=remote,
+        )
+    return None
 
 
 def _create_part(part_path: str, local_file_path: str) -> None:
@@ -349,18 +358,10 @@ async def _download_remote_mode(
     download = _host_download(validate_response(TRANSFER_REQUEST, result))
     if not isinstance(download, _HostDownload):
         return download
-    deadline = deadline_after(_DOWNLOAD_TIMEOUT)
-    for wait in (_download_handled, _download_transferred):
-        failed = await wait(
-            download, deadline=deadline, region=region, workspace=workspace, token=token
-        )
-        if isinstance(failed, dict):
-            if failed.get('code') == 'download_timeout':  # the transfer may still land
-                failed['download_url'] = download.url
-                failed['message'] += (
-                    ' Once it reports the download completed, fetch download_url.'
-                )
-            return failed
+    if failed := await _download_ready(
+        download, region=region, workspace=workspace, token=token, remote=True
+    ):
+        return failed
 
     return success_response(
         message=f'File ready for download: {file_name}',
@@ -787,23 +788,12 @@ async def webftp_download_file(
     download = _host_download(validate_response(TRANSFER_REQUEST, result))
     if not isinstance(download, _HostDownload):
         return download
-    deadline = deadline_after(_DOWNLOAD_TIMEOUT)
-    command = await _download_handled(
-        download, deadline=deadline, region=region, workspace=workspace, token=token
-    )
-    if isinstance(command, dict):
-        return command
-
-    async def _confirm() -> ToolErrorResponse | None:
-        return await _download_transferred(
-            download, deadline=deadline, region=region, workspace=workspace, token=token
-        )
-
-    # Without the command to watch, only a confirmed transfer says the file is there.
-    if isinstance(command, CommandHidden) and (failed := await _confirm()):
+    if failed := await _download_ready(
+        download, region=region, workspace=workspace, token=token, remote=False
+    ):
         return failed
 
-    # The file lands under a temporary name, so a failed transfer never
+    # The file lands under a temporary name, so a failed fetch never
     # replaces what is already at local_file_path.
     part_path = f'{local_file_path}.{secrets.token_hex(4)}.part'
     try:
@@ -819,8 +809,6 @@ async def webftp_download_file(
             )
         except _LocalSaveError as e:
             return error_response(f'Failed to save file locally: {e}')
-        if command is None and (failed := await _confirm()):
-            return failed
         try:
             await asyncio.to_thread(_move_into_place, part_path, local_file_path)
         except OSError as e:

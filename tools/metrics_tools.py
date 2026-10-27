@@ -13,6 +13,7 @@ from utils.common import (
     build_list_params,
     error_response,
     expect_json_object,
+    is_http_error,
     json_records,
     resolve_time_window,
     success_response,
@@ -930,10 +931,6 @@ async def get_alert_rules(
     )
 
 
-def _is_http_error(result: object) -> bool:
-    return isinstance(result, dict) and 'error' in result
-
-
 def _find_record_id(
     result: object, predicate: Callable[[_ProcRecord], bool]
 ) -> str | None:
@@ -941,7 +938,7 @@ def _find_record_id(
 
     Those endpoints answer with a plain list or a paginated `results` dict.
     """
-    if isinstance(result, dict) and not _is_http_error(result):
+    if isinstance(result, dict) and not is_http_error(result):
         result = result.get('results')
     if not isinstance(result, list):
         return None
@@ -1180,7 +1177,7 @@ async def get_server_metrics_summary(
 
     if root_partition_id:
         disk_summary = extract_summary(metric_results['disk'], 'disk')
-    elif _is_http_error(partitions_result):
+    elif is_http_error(partitions_result):
         disk_summary = extract_summary(partitions_result, 'partition lookup')
         disk_summary['error'] = f'Partition lookup failed: {disk_summary["error"]}'
     else:
@@ -1191,7 +1188,7 @@ async def get_server_metrics_summary(
 
     if interface_id:
         network_summary = extract_summary(metric_results['network'], 'network')
-    elif _is_http_error(interfaces_result):
+    elif is_http_error(interfaces_result):
         network_summary = extract_summary(interfaces_result, 'interface lookup')
         network_summary['error'] = (
             f'Interface lookup failed: {network_summary["error"]}'

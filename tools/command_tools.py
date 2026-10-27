@@ -18,6 +18,7 @@ from utils.common import (
     empty_value_error,
     error_response,
     exclude_none,
+    is_http_error,
     pending_approval_response,
     resolve_work_session_id,
     success_response,
@@ -821,7 +822,7 @@ async def _settle_submission(
     ``command`` and ``shell`` are echoed only when the caller has them—the file
     lane has neither, and ``_poll_command_result`` omits an empty echo.
     """
-    if isinstance(exec_data, dict) and 'error' in exec_data:
+    if is_http_error(exec_data):
         # unwrap_http_result returns non-None whenever 'error' is in the dict
         return cast(
             ToolErrorResponse,
@@ -1044,28 +1045,20 @@ async def _read_file_from_host(
     )
     if command is not None and not isinstance(command, CommandHidden):
         return _stalled(command, 'Failed to poll the download command')
+    # Only a confirmed transfer says the file is behind the URL.
+    if transfer := await await_transfer_success(
+        f'{_API_WEBFTP_DOWNLOADS}{download_id}/status/',
+        region=region,
+        workspace=workspace,
+        token=token,
+        deadline=deadline,
+        interval=_FILE_READ_POLL_INTERVAL,
+    ):
+        return _stalled(transfer, 'Failed to poll download status')
 
-    async def _confirm() -> ToolErrorResponse | None:
-        stalled = await await_transfer_success(
-            f'{_API_WEBFTP_DOWNLOADS}{download_id}/status/',
-            region=region,
-            workspace=workspace,
-            token=token,
-            deadline=deadline,
-            interval=_FILE_READ_POLL_INTERVAL,
-        )
-        if stalled is None:
-            return None
-        return _stalled(stalled, 'Failed to poll download status')
-
-    # Without the command to watch, only a confirmed transfer says the file is there.
-    if isinstance(command, CommandHidden) and (failed := await _confirm()):
-        return failed
     body = await _get_capped(download_url, FILE_CONTENT_MAX_BYTES)
     if isinstance(body, str):
         return _failed(body, download_id=download_id)
-    if command is None and (failed := await _confirm()):
-        return failed
 
     if not body:
         return error_response(
@@ -1804,7 +1797,7 @@ async def execute_command_multi_server(
                     'message': str(result),
                 }
                 failed_count += 1
-            elif isinstance(result, dict) and 'error' in result:
+            elif is_http_error(result):
                 # unwrap_http_result returns non-None whenever 'error' is in the dict
                 deploy_results[sid] = unwrap_http_result(
                     result,
@@ -1821,7 +1814,7 @@ async def execute_command_multi_server(
         for sid in server_ids:
             try:
                 result = await _submit_one(sid)
-                if isinstance(result, dict) and 'error' in result:
+                if is_http_error(result):
                     # unwrap_http_result returns non-None whenever 'error' is in the dict
                     deploy_results[sid] = unwrap_http_result(
                         result,

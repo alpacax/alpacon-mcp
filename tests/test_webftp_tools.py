@@ -588,7 +588,10 @@ class TestWebFtpDownloadFile:
 
         assert result['status'] == _STATUS_ERROR
         assert 'Failed to download from S3: 404 - Not Found' in result['message']
-        assert calls == ['/api/events/commands/cmd-dl/']
+        assert calls == [
+            '/api/events/commands/cmd-dl/',
+            '/api/webftp/downloads/dl-abc/status/',
+        ]
         assert list(tmp_path.iterdir()) == []
 
     @pytest.mark.asyncio
@@ -608,7 +611,7 @@ class TestWebFtpDownloadFile:
         assert 'Failed to save file locally: Permission denied' in result['message']
 
     @pytest.mark.asyncio
-    async def test_local_download_fetches_only_after_the_host_handles_the_command(
+    async def test_local_download_fetches_only_after_the_transfer_is_confirmed(
         self, mock_http_client, mock_token_manager, tmp_path
     ):
         mock_http_client.post.return_value = _DOWNLOAD_ROW
@@ -628,8 +631,8 @@ class TestWebFtpDownloadFile:
             '/api/events/commands/cmd-dl/',
             '/api/events/commands/cmd-dl/',
             '/api/events/commands/cmd-dl/',
-            'GET ' + _DOWNLOAD_URL,
             '/api/webftp/downloads/dl-abc/status/',
+            'GET ' + _DOWNLOAD_URL,
         ]
 
     @pytest.mark.asyncio
