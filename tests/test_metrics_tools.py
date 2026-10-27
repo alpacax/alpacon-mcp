@@ -5,10 +5,11 @@ Tests metrics and monitoring functionality including CPU, memory, disk,
 network traffic monitoring and server performance analytics.
 """
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable
 from datetime import UTC, datetime, timedelta
+from functools import partial
 from http import HTTPStatus
-from typing import Any
+from typing import Protocol
 from unittest.mock import patch
 
 import pytest
@@ -36,6 +37,20 @@ from tools.metrics_tools import (
     parse_memory_metrics,
     parse_network_metrics,
 )
+from utils.types import ToolResponse
+
+
+class _UsageTool(Protocol):
+    def __call__(
+        self,
+        *,
+        server_id: str,
+        workspace: str,
+        start_date: str,
+        end_date: str,
+        region: str,
+    ) -> Awaitable[ToolResponse]: ...
+
 
 mock_http_client = http_client_fixture('tools.metrics_tools')
 
@@ -2004,25 +2019,21 @@ if __name__ == '__main__':
 class TestMetricsToolsBodyShapes:
     """The four usage tools read a list or a paginated object alike, and refuse a scalar."""
 
-    CALLS: dict[
-        str, tuple[Callable[..., Awaitable[dict[str, Any]]], dict[str, str]]
-    ] = {
-        'cpu': (get_cpu_usage, {}),
-        'memory': (get_memory_usage, {}),
-        'disk': (get_disk_usage, {'device': '/dev/sda1', 'partition': '/'}),
-        'network': (get_network_traffic, {'interface': INTERFACE_ID}),
+    CALLS: dict[str, _UsageTool] = {
+        'cpu': get_cpu_usage,
+        'memory': get_memory_usage,
+        'disk': partial(get_disk_usage, device='/dev/sda1', partition='/'),
+        'network': partial(get_network_traffic, interface=INTERFACE_ID),
     }
 
     @staticmethod
     def _call(name):
-        tool, extra = TestMetricsToolsBodyShapes.CALLS[name]
-        return tool(
+        return TestMetricsToolsBodyShapes.CALLS[name](
             server_id=SERVER_ID,
             workspace='testworkspace',
             start_date=START,
             end_date=END,
             region='ap1',
-            **extra,
         )
 
     @pytest.mark.asyncio

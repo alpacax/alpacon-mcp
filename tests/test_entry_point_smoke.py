@@ -15,14 +15,26 @@ import time
 from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import TypedDict
 
 import httpx
 import pytest
 
 pytestmark = pytest.mark.smoke
 
-type _JsonRpcReply = dict[str, Any]  # parsed JSON-RPC reply; read by nested keys
+
+class _ServerInfo(TypedDict):
+    name: str
+
+
+class _InitializeResult(TypedDict):
+    serverInfo: _ServerInfo  # noqa: N815 - the JSON-RPC field name
+
+
+class _JsonRpcReply(TypedDict):  # the parts of the initialize reply the tests read
+    id: int
+    result: _InitializeResult
+
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BOOT_TIMEOUT = 60

@@ -13,9 +13,8 @@ import base64
 import importlib
 import inspect
 import logging
-from collections.abc import Callable
 from http import HTTPStatus
-from types import ModuleType
+from types import FunctionType, ModuleType
 from unittest.mock import patch
 
 import httpx
@@ -380,12 +379,16 @@ def _tool_modules() -> list[ModuleType]:
     ]
 
 
-def _tool_functions() -> dict[str, Callable[..., object]]:
+def _tool_functions() -> dict[str, FunctionType]:
     """Every decorated tool on the surface, by name."""
-    functions: dict[str, Callable[..., object]] = {}
+    functions: dict[str, FunctionType] = {}
     for imported in _tool_modules():
         for name, attr in vars(imported).items():
-            if inspect.iscoroutinefunction(attr) and hasattr(attr, '__wrapped__'):
+            if (
+                inspect.iscoroutinefunction(attr)
+                and hasattr(attr, '__wrapped__')
+                and isinstance(attr, FunctionType)
+            ):
                 functions[name] = attr
     return functions
 
