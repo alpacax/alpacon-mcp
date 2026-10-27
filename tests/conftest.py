@@ -67,12 +67,42 @@ def http_client_fixture(module_name: str):
 
     @pytest.fixture
     def _mock_http_client():
-        with patch(f'{module_name}.http_client') as mock_client:
-            for verb in HTTP_VERBS:  # patch() alone leaves these un-awaitable
-                setattr(mock_client, verb, AsyncMock())
+        mock_client = MagicMock()
+        for verb in HTTP_VERBS:  # patch() alone leaves these un-awaitable
+            setattr(mock_client, verb, AsyncMock())
+        # The host-transfer waits poll through their own module's reference.
+        with (
+            patch(f'{module_name}.http_client', mock_client),
+            patch('utils.host_transfer.http_client', mock_client),
+        ):
             yield mock_client
 
     return _mock_http_client
+
+
+class FakeClock:
+    """A monotonic clock that moves only when the host-transfer waits sleep."""
+
+    def __init__(self):
+        self.now = 0.0
+        self.sleeps: list[float] = []
+
+    def monotonic(self):
+        return self.now
+
+    async def sleep(self, seconds):
+        self.sleeps.append(seconds)
+        self.now += seconds
+
+
+@pytest.fixture
+def fake_clock():
+    clock = FakeClock()
+    with (
+        patch('utils.host_transfer.monotonic', clock.monotonic),
+        patch('utils.host_transfer.sleep', clock.sleep),
+    ):
+        yield clock
 
 
 @pytest.fixture

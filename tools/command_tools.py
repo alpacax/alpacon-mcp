@@ -18,6 +18,7 @@ from utils.common import (
     empty_value_error,
     error_response,
     exclude_none,
+    is_http_error,
     pending_approval_response,
     resolve_work_session_id,
     success_response,
@@ -26,10 +27,21 @@ from utils.common import (
 )
 from utils.decorators import mcp_tool_handler
 from utils.error_handler import validate_file_path
+from utils.host_transfer import (
+    COMMAND_NEVER_RAN,
+    CommandHidden,
+    Failed,
+    Refused,
+    Stalled,
+    TimedOut,
+    await_command_handled,
+    await_transfer_success,
+    deadline_after,
+)
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, READ_ONLY
 from utils.types import JsonValue, ToolErrorResponse, ToolResponse
-from utils.webftp_shapes import TRANSFER_REQUEST, TRANSFER_STATE
+from utils.webftp_shapes import TRANSFER_REQUEST
 
 #: Ceiling the server puts on a stated purpose, on both write paths (ADR 0052).
 #: Truncating here rather than letting the server refuse keeps a long purpose
@@ -62,12 +74,12 @@ _API_WEBFTP_DOWNLOADS = '/api/webftp/downloads/'
 #: How long write_file waits for the host to report the file written: the
 #: upload lands asynchronously, and submitting before it does would hash
 #: whatever was there before.
-_FILE_WRITE_POLL_ATTEMPTS = 60
+_FILE_WRITE_TIMEOUT = 60.0  # seconds
 _FILE_WRITE_POLL_INTERVAL = 1.0
 
 #: How long read_from_server waits for the host to hand the file over. Same
 #: budget as a write: both wait on the host, not on this process.
-_FILE_READ_POLL_ATTEMPTS = 60
+_FILE_READ_TIMEOUT = 60.0  # seconds
 _FILE_READ_POLL_INTERVAL = 1.0
 
 #: The one prohibition every held-command response repeats. Each site appends
@@ -195,16 +207,7 @@ class _SubmittedCommand(TypedDict, total=False):
     id: str | None
 
 
-# A command as /api/events/commands/{id}/ reports it.
-class _CommandState(TypedDict, total=False):
-    status: str
-    handled_at: str | None
-    success: bool | None
-    result: str | None
-
-
 _SUBMITTED_COMMAND = TypeAdapter(_SubmittedCommand)
-_COMMAND_STATE = TypeAdapter(_CommandState)
 
 
 def _sudo_denial(result: _CommandRecord) -> tuple[str, str] | None:
@@ -819,7 +822,7 @@ async def _settle_submission(
     ``command`` and ``shell`` are echoed only when the caller has them—the file
     lane has neither, and ``_poll_command_result`` omits an empty echo.
     """
-    if isinstance(exec_data, dict) and 'error' in exec_data:
+    if is_http_error(exec_data):
         # unwrap_http_result returns non-None whenever 'error' is in the dict
         return cast(
             ToolErrorResponse,
@@ -1019,71 +1022,43 @@ async def _read_file_from_host(
         download_id=download_id,
     )
 
-    # Both waits below share one budget, so the read waits about a minute in all.
-    polls = iter(range(_FILE_READ_POLL_ATTEMPTS))
-
-    # The URL is minted before the host has put the file behind it, so the
-    # GET waits for the transfer command the server sent the host, as the
-    # CLI's download does.
-    for _ in polls:
-        command = await _get_command_result(
-            command_id=command_id, workspace=workspace, region=region, token=token
-        )
-        if refused := _refused(
-            command, 'Failed to poll the download command', download_id=download_id
-        ):
-            return refused
-        try:
-            state = validate_response(_COMMAND_STATE, command)
-        except UnexpectedResponseShapeError as e:
-            return _failed(str(e), download_id=download_id)
-        if (outcome := state.get('status')) in ('denied', 'rejected', 'stuck'):
-            return _failed(
-                f'the download command ended as {outcome}',
-                download_id=download_id,
-            )
-        if state.get('handled_at') is not None:
-            if state.get('success') is False:
+    def _stalled(outcome: Stalled, poll_message: str) -> ToolErrorResponse:
+        match outcome:
+            case Refused(response):
+                refused = _refused(response, poll_message, download_id=download_id)
+                return refused or _failed(poll_message, download_id=download_id)
+            case Failed(reason):
                 return _failed(
-                    state.get('result') or 'the host refused the read',
-                    download_id=download_id,
+                    reason or 'the host refused the read', download_id=download_id
                 )
-            break
-        await asyncio.sleep(_FILE_READ_POLL_INTERVAL)
-    else:
-        return timed_out
+            case TimedOut():
+                return timed_out
+
+    deadline = deadline_after(_FILE_READ_TIMEOUT)
+    command = await await_command_handled(
+        command_id,
+        region=region,
+        workspace=workspace,
+        token=token,
+        deadline=deadline,
+        interval=_FILE_READ_POLL_INTERVAL,
+    )
+    if command is not None and not isinstance(command, CommandHidden):
+        return _stalled(command, 'Failed to poll the download command')
+    # Only a confirmed transfer says the file is behind the URL.
+    if transfer := await await_transfer_success(
+        f'{_API_WEBFTP_DOWNLOADS}{download_id}/status/',
+        region=region,
+        workspace=workspace,
+        token=token,
+        deadline=deadline,
+        interval=_FILE_READ_POLL_INTERVAL,
+    ):
+        return _stalled(transfer, 'Failed to poll download status')
 
     body = await _get_capped(download_url, FILE_CONTENT_MAX_BYTES)
     if isinstance(body, str):
         return _failed(body, download_id=download_id)
-
-    # The server leaves `success` null until the host reports the transfer
-    # either way; only a reported success lets the bytes go to review.
-    for _ in polls:
-        status = await http_client.get(
-            region=region,
-            workspace=workspace,
-            endpoint=f'{_API_WEBFTP_DOWNLOADS}{download_id}/status/',
-            token=token,
-        )
-        if refused := _refused(
-            status, 'Failed to poll download status', download_id=download_id
-        ):
-            return refused
-        try:
-            transfer = validate_response(TRANSFER_STATE, status)
-        except UnexpectedResponseShapeError as e:
-            return _failed(str(e), download_id=download_id)
-        if transfer.get('success') is True:
-            break
-        if transfer.get('success') is False:
-            return _failed(
-                transfer.get('message') or 'the host refused the read',
-                download_id=download_id,
-            )
-        await asyncio.sleep(_FILE_READ_POLL_INTERVAL)
-    else:
-        return timed_out
 
     if not body:
         return error_response(
@@ -1197,26 +1172,25 @@ async def _write_file_to_host(
     if refused := _refused(trigger, 'Upload trigger failed', upload_id=upload_id):
         return refused
 
-    # The server leaves `success` null until the host reports the write either way.
-    for _ in range(_FILE_WRITE_POLL_ATTEMPTS):
-        status = await http_client.get(
-            region=region,
-            workspace=workspace,
-            endpoint=f'{_API_WEBFTP_UPLOADS}{upload_id}/status/',
-            token=token,
-        )
-        if refused := _refused(
-            status, 'Failed to poll upload status', upload_id=upload_id
-        ):
-            return refused
-        try:
-            transfer = validate_response(TRANSFER_STATE, status)
-        except UnexpectedResponseShapeError as e:
-            return _failed(str(e), upload_id=upload_id)
-        if transfer.get('success') is True:
+    match await await_transfer_success(
+        f'{_API_WEBFTP_UPLOADS}{upload_id}/status/',
+        region=region,
+        workspace=workspace,
+        token=token,
+        deadline=deadline_after(_FILE_WRITE_TIMEOUT),
+        interval=_FILE_WRITE_POLL_INTERVAL,
+    ):
+        case None:
             return None
-        if transfer.get('success') is False:
-            reason = transfer.get('message') or 'the host refused the write'
+        case Refused(response):
+            refused = _refused(
+                response, 'Failed to poll upload status', upload_id=upload_id
+            )
+            return refused or _failed(
+                'Failed to poll upload status', upload_id=upload_id
+            )
+        case Failed(reason):
+            reason = reason or 'the host refused the write'
             # The agent answers "PATH already exists." for an existing file.
             if not overwrite and 'already exists' in reason:
                 reason += (
@@ -1224,16 +1198,15 @@ async def _write_file_to_host(
                     ' without content to run the file already there.'
                 )
             return _failed(reason, upload_id=upload_id)
-        await asyncio.sleep(_FILE_WRITE_POLL_INTERVAL)
-
-    return error_response(
-        f'{path} was not reported written on the host in time, so nothing was '
-        'submitted. Re-run execute_file with write_file once the host is '
-        'reachable; if the write landed late, the file is now there, so pass '
-        'overwrite=true or run it with read_from_server.',
-        error_code='file_write_timeout',
-        upload_id=upload_id,
-    )
+        case TimedOut():
+            return error_response(
+                f'{path} was not reported written on the host in time, so nothing '
+                'was submitted. Re-run execute_file with write_file once the host '
+                'is reachable; if the write landed late, the file is now there, so '
+                'pass overwrite=true or run it with read_from_server.',
+                error_code='file_write_timeout',
+                upload_id=upload_id,
+            )
 
 
 def _file_exec_refusal(code: str, **kwargs: object) -> ToolErrorResponse:
@@ -1662,7 +1635,7 @@ async def _poll_command_result(
                 # fast instead of polling until timeout. ('error' is omitted:
                 # the server's compute_status never emits it given the
                 # scheduled_at default, so it is unreachable here.)
-                case 'denied' | 'rejected' | 'stuck':
+                case str() if status in COMMAND_NEVER_RAN:
                     return error_response(
                         f'Command failed with status: {status}',
                         command_id=command_id,
@@ -1824,7 +1797,7 @@ async def execute_command_multi_server(
                     'message': str(result),
                 }
                 failed_count += 1
-            elif isinstance(result, dict) and 'error' in result:
+            elif is_http_error(result):
                 # unwrap_http_result returns non-None whenever 'error' is in the dict
                 deploy_results[sid] = unwrap_http_result(
                     result,
@@ -1841,7 +1814,7 @@ async def execute_command_multi_server(
         for sid in server_ids:
             try:
                 result = await _submit_one(sid)
-                if isinstance(result, dict) and 'error' in result:
+                if is_http_error(result):
                     # unwrap_http_result returns non-None whenever 'error' is in the dict
                     deploy_results[sid] = unwrap_http_result(
                         result,

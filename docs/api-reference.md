@@ -652,7 +652,14 @@ Upload a local file to a server using S3 presigned URLs.
 - `allow_overwrite` (boolean, default: true): Allow overwriting existing files
 
 ### `webftp_download_file`
-Download a file or folder from a server to local storage.
+Download a file or folder from a server. The call waits until the host has run the transfer command and the server reports the transfer succeeded, up to `ALPACON_MCP_WEBFTP_DOWNLOAD_TIMEOUT` seconds (default 60), checking the transfer once more at the deadline.
+
+- Local mode: once the transfer is confirmed, streams the file to a temporary name beside `local_file_path` and moves it into place. A failed download leaves any file already at `local_file_path` untouched.
+- Remote mode (streamable-http): returns `download_url`, a presigned URL valid for 24 hours, with a `curl` command in `tip`. The URL is returned only once the file is in place, so it can be fetched at once.
+
+A transfer the host or server reports as failed returns `code: "download_failed"` with the server's message, and so does a create response with no download URL, which most likely means the token lacks the WebFTP download scope. A transfer still running when the wait ends returns `code: "download_timeout"` with `file_id`; follow it with `webftp_check_status`. In remote mode that error also carries `download_url`, which works once `webftp_check_status` reports the download completed.
+
+A scoped API or service token without `command:read` (the `file_download` and `file_transfer` presets) cannot read the host's transfer command. The call then waits on the transfer status alone and fetches the file only after it reports success, so a command the host never runs ends in `download_timeout` rather than an early `download_failed`. `execute_file` with `read_from_server` behaves the same way.
 
 **Parameters:**
 - `server_id` (string): Server ID
