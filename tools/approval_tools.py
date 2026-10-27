@@ -10,7 +10,7 @@ who approves out-of-band (Alpacon web console or Slack).
 """
 
 from utils.api_call import http_call_response
-from utils.common import build_list_params, pending_approval_response
+from utils.common import build_list_params, exclude_none, pending_approval_response
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, READ_ONLY
@@ -131,9 +131,11 @@ async def explain_approval_decision(
     Returns:
         Structured pending-approval guidance (no approve/reject is performed)
     """
-    context: dict[str, object] = {'region': region, 'workspace': workspace}
-    if request_id is not None:
-        context['request_id'] = request_id
+    context: dict[str, object] = {
+        'region': region,
+        'workspace': workspace,
+        **exclude_none(request_id=request_id),
+    }
 
     return pending_approval_response(
         'Approval requests can only be approved or rejected by a human, '
@@ -247,13 +249,8 @@ async def request_sudo_policy(
         'servers': servers,
         'commands': commands,
         'reason': reason,
+        **exclude_none(users=users, valid_from=valid_from, valid_until=valid_until),
     }
-    if users is not None:
-        policy_request['users'] = users
-    if valid_from is not None:
-        policy_request['valid_from'] = valid_from
-    if valid_until is not None:
-        policy_request['valid_until'] = valid_until
 
     result = await http_call_response(
         http_client.post,

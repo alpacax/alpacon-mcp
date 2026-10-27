@@ -5,6 +5,7 @@ from utils.common import (
     build_list_params,
     empty_value_error,
     error_response,
+    exclude_none,
     is_stdio_transport,
 )
 from utils.decorators import mcp_tool_handler
@@ -219,13 +220,9 @@ async def update_command_acl(
 
     token = kwargs.get('token')
 
-    update_data: dict[str, object] = {}
-    if command is not None:
-        update_data['command'] = command
-    if username is not None:
-        update_data['username'] = username
-    if groupname is not None:
-        update_data['groupname'] = groupname
+    update_data: dict[str, object] = exclude_none(
+        command=command, username=username, groupname=groupname
+    )
 
     if not update_data:
         return error_response('No update data provided')
@@ -410,9 +407,7 @@ async def update_server_acl(
 
     token = kwargs.get('token')
 
-    update_data: dict[str, object] = {}
-    if server_id is not None:
-        update_data['server'] = server_id
+    update_data: dict[str, object] = exclude_none(server=server_id)
     # When rebinding, null the opposing field explicitly: the server enforces
     # exactly-one-token-type, and PATCH keeps the old binding otherwise.
     if api_token_id is not None:
@@ -695,15 +690,9 @@ async def update_file_acl(
 
     token = kwargs.get('token')
 
-    update_data: dict[str, object] = {}
-    if path is not None:
-        update_data['path'] = path
-    if action is not None:
-        update_data['action'] = action
-    if username is not None:
-        update_data['username'] = username
-    if groupname is not None:
-        update_data['groupname'] = groupname
+    update_data: dict[str, object] = exclude_none(
+        path=path, action=action, username=username, groupname=groupname
+    )
 
     if not update_data:
         return error_response('No update data provided')

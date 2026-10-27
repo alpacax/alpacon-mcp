@@ -4,7 +4,7 @@ Lives in its own module to keep the call pipeline out of the grab-bag
 utils.common module.
 """
 
-from utils.common import success_response, unwrap_http_result
+from utils.common import exclude_none, success_response, unwrap_http_result
 from utils.types import ApiMethod, QueryParams, RequestBody, ToolResponse
 
 
@@ -49,11 +49,8 @@ async def http_call_response(
         'workspace': workspace,
         'endpoint': endpoint,
         'token': token,
+        **exclude_none(data=data, params=params),
     }
-    if data is not None:
-        call_kwargs['data'] = data
-    if params is not None:
-        call_kwargs['params'] = params
 
     result = await method(**call_kwargs)
 

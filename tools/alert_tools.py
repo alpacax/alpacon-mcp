@@ -3,7 +3,7 @@
 from typing import TypedDict
 
 from utils.api_call import http_call_response
-from utils.common import build_list_params
+from utils.common import build_list_params, exclude_none
 from utils.decorators import mcp_tool_handler
 from utils.error_handler import format_validation_error
 from utils.http_client import http_client
@@ -286,23 +286,17 @@ async def create_alert_rule(
         'target': target,
         'threshold': threshold,
         'is_default': is_default,
+        **exclude_none(
+            operator=operator,
+            duration_s=duration_s,
+            recovery_threshold=recovery_threshold,
+            no_data_after_s=no_data_after_s,
+            device=device,
+            severity=severity,
+            notify_email=notify_email,
+            notify_slack_channel=notify_slack_channel,
+        ),
     }
-    if operator is not None:
-        rule_data['operator'] = operator
-    if duration_s is not None:
-        rule_data['duration_s'] = duration_s
-    if recovery_threshold is not None:
-        rule_data['recovery_threshold'] = recovery_threshold
-    if no_data_after_s is not None:
-        rule_data['no_data_after_s'] = no_data_after_s
-    if device is not None:
-        rule_data['device'] = device
-    if severity is not None:
-        rule_data['severity'] = severity
-    if notify_email is not None:
-        rule_data['notify_email'] = notify_email
-    if notify_slack_channel is not None:
-        rule_data['notify_slack_channel'] = notify_slack_channel
 
     return await http_call_response(
         http_client.post,
@@ -399,31 +393,20 @@ async def update_alert_rule(
 
     token = kwargs.get('token')
 
-    update_data: dict[str, object] = {}
-    if name is not None:
-        update_data['name'] = name
-    if target is not None:
-        update_data['target'] = target
-    if threshold is not None:
-        update_data['threshold'] = threshold
-    if is_default is not None:
-        update_data['is_default'] = is_default
-    if operator is not None:
-        update_data['operator'] = operator
-    if duration_s is not None:
-        update_data['duration_s'] = duration_s
-    if recovery_threshold is not None:
-        update_data['recovery_threshold'] = recovery_threshold
-    if no_data_after_s is not None:
-        update_data['no_data_after_s'] = no_data_after_s
-    if device is not None:
-        update_data['device'] = device
-    if severity is not None:
-        update_data['severity'] = severity
-    if notify_email is not None:
-        update_data['notify_email'] = notify_email
-    if notify_slack_channel is not None:
-        update_data['notify_slack_channel'] = notify_slack_channel
+    update_data: dict[str, object] = exclude_none(
+        name=name,
+        target=target,
+        threshold=threshold,
+        is_default=is_default,
+        operator=operator,
+        duration_s=duration_s,
+        recovery_threshold=recovery_threshold,
+        no_data_after_s=no_data_after_s,
+        device=device,
+        severity=severity,
+        notify_email=notify_email,
+        notify_slack_channel=notify_slack_channel,
+    )
 
     if not update_data:
         return format_validation_error(
@@ -731,31 +714,23 @@ async def preview_alert_rule(
 
     token = kwargs.get('token')
 
-    rule_fields = {
-        'target': target,
-        'threshold': threshold,
-        'operator': operator,
-        'duration_s': duration_s,
-        'recovery_threshold': recovery_threshold,
-        'no_data_after_s': no_data_after_s,
-        'device': device,
-        'severity': severity,
-        'notify_email': notify_email,
-        'notify_slack_channel': notify_slack_channel,
-    }
     # The server always requires the rule object; an empty one previews the
     # rule_id rule unchanged.
     body: dict[str, object] = {
-        'rule': {
-            field: value for field, value in rule_fields.items() if value is not None
-        }
+        'rule': exclude_none(
+            target=target,
+            threshold=threshold,
+            operator=operator,
+            duration_s=duration_s,
+            recovery_threshold=recovery_threshold,
+            no_data_after_s=no_data_after_s,
+            device=device,
+            severity=severity,
+            notify_email=notify_email,
+            notify_slack_channel=notify_slack_channel,
+        ),
+        **exclude_none(rule_id=rule_id, servers=servers, window_s=window_s),
     }
-    if rule_id is not None:
-        body['rule_id'] = rule_id
-    if servers is not None:
-        body['servers'] = servers
-    if window_s is not None:
-        body['window_s'] = window_s
     id_context: _RuleContext = {} if rule_id is None else {'rule_id': rule_id}
 
     return await http_call_response(
@@ -920,15 +895,16 @@ async def create_rule_override(
     """
     token = kwargs.get('token')
 
-    override_data: dict[str, object] = {'server': server_id, 'rule': rule_id}
-    if threshold is not None:
-        override_data['threshold'] = threshold
-    if recovery_threshold is not None:
-        override_data['recovery_threshold'] = recovery_threshold
-    if duration_s is not None:
-        override_data['duration_s'] = duration_s
-    if enabled is not None:
-        override_data['enabled'] = enabled
+    override_data: dict[str, object] = {
+        'server': server_id,
+        'rule': rule_id,
+        **exclude_none(
+            threshold=threshold,
+            recovery_threshold=recovery_threshold,
+            duration_s=duration_s,
+            enabled=enabled,
+        ),
+    }
 
     return await http_call_response(
         http_client.post,
@@ -985,19 +961,14 @@ async def update_rule_override(
     """
     token = kwargs.get('token')
 
-    update_data: dict[str, object] = {}
-    if server_id is not None:
-        update_data['server'] = server_id
-    if rule_id is not None:
-        update_data['rule'] = rule_id
-    if threshold is not None:
-        update_data['threshold'] = threshold
-    if recovery_threshold is not None:
-        update_data['recovery_threshold'] = recovery_threshold
-    if duration_s is not None:
-        update_data['duration_s'] = duration_s
-    if enabled is not None:
-        update_data['enabled'] = enabled
+    update_data: dict[str, object] = exclude_none(
+        server=server_id,
+        rule=rule_id,
+        threshold=threshold,
+        recovery_threshold=recovery_threshold,
+        duration_s=duration_s,
+        enabled=enabled,
+    )
 
     if not update_data:
         return format_validation_error(

@@ -3,7 +3,7 @@
 import re
 
 from utils.api_call import http_call_response
-from utils.common import build_list_params, error_response
+from utils.common import build_list_params, error_response, exclude_none
 from utils.decorators import mcp_tool_handler
 from utils.error_handler import format_validation_error, uuid_field_error
 from utils.http_client import http_client
@@ -131,12 +131,12 @@ async def create_iam_user(
     """
     token = kwargs.get('token')
 
-    user_data = {'username': username, 'email': email, 'is_active': is_active}
-
-    if first_name is not None:
-        user_data['first_name'] = first_name
-    if last_name is not None:
-        user_data['last_name'] = last_name
+    user_data = {
+        'username': username,
+        'email': email,
+        'is_active': is_active,
+        **exclude_none(first_name=first_name, last_name=last_name),
+    }
 
     return await http_call_response(
         http_client.post,
@@ -188,15 +188,9 @@ async def update_iam_user(
 
     token = kwargs.get('token')
 
-    update_data: dict[str, object] = {}
-    if email is not None:
-        update_data['email'] = email
-    if first_name is not None:
-        update_data['first_name'] = first_name
-    if last_name is not None:
-        update_data['last_name'] = last_name
-    if is_active is not None:
-        update_data['is_active'] = is_active
+    update_data: dict[str, object] = exclude_none(
+        email=email, first_name=first_name, last_name=last_name, is_active=is_active
+    )
 
     if not update_data:
         return error_response('No update data provided')
@@ -325,12 +319,10 @@ async def create_iam_group(
 
     token = kwargs.get('token')
 
-    group_data: dict[str, object] = {'name': name}
-
-    if display_name is not None:
-        group_data['display_name'] = display_name
-    if description is not None:
-        group_data['description'] = description
+    group_data: dict[str, object] = {
+        'name': name,
+        **exclude_none(display_name=display_name, description=description),
+    }
 
     return await http_call_response(
         http_client.post,
@@ -428,11 +420,9 @@ async def update_iam_group(
 
     token = kwargs.get('token')
 
-    update_data: dict[str, object] = {}
-    if display_name is not None:
-        update_data['display_name'] = display_name
-    if description is not None:
-        update_data['description'] = description
+    update_data: dict[str, object] = exclude_none(
+        display_name=display_name, description=description
+    )
 
     if not update_data:
         return error_response('No update data provided')
@@ -740,11 +730,10 @@ async def create_iam_application(
 
     token = kwargs.get('token')
 
-    app_data: dict[str, object] = {'name': name}
-    if description is not None:
-        app_data['description'] = description
-    if service_type is not None:
-        app_data['service_type'] = service_type
+    app_data: dict[str, object] = {
+        'name': name,
+        **exclude_none(description=description, service_type=service_type),
+    }
 
     return await http_call_response(
         http_client.post,
@@ -826,11 +815,7 @@ async def update_iam_application(
 
     token = kwargs.get('token')
 
-    update_data: dict[str, object] = {}
-    if name is not None:
-        update_data['name'] = name
-    if description is not None:
-        update_data['description'] = description
+    update_data: dict[str, object] = exclude_none(name=name, description=description)
 
     if not update_data:
         return error_response('No update data provided')

@@ -8,6 +8,7 @@ from utils.api_call import http_call_response
 from utils.auth import get_token_workspaces_with_dropped
 from utils.common import (
     error_response,
+    exclude_none,
     is_auth_enabled,
     success_response,
     unwrap_http_result,
@@ -558,25 +559,17 @@ async def update_workspace_preferences(
     """
     token = kwargs.get('token')
 
-    update_data: dict[str, object] = {}
-    if front_url is not None:
-        update_data['front_url'] = front_url
-    if country is not None:
-        update_data['country'] = country
-    if language is not None:
-        update_data['language'] = language
-    if timezone is not None:
-        update_data['timezone'] = timezone
-    if invite_ttl is not None:
-        update_data['invite_ttl'] = invite_ttl
-    if enabled_extensions is not None:
-        update_data['enabled_extensions'] = enabled_extensions
-    if websh_session_timeout is not None:
-        update_data['websh_session_timeout'] = websh_session_timeout
-    if package_proxy is not None:
-        update_data['package_proxy'] = package_proxy
-    if billing_email is not None:
-        update_data['billing_email'] = billing_email
+    update_data: dict[str, object] = exclude_none(
+        front_url=front_url,
+        country=country,
+        language=language,
+        timezone=timezone,
+        invite_ttl=invite_ttl,
+        enabled_extensions=enabled_extensions,
+        websh_session_timeout=websh_session_timeout,
+        package_proxy=package_proxy,
+        billing_email=billing_email,
+    )
 
     if agent_rollout_policy is not None:
         validation_error = _validate_rollout_policy(agent_rollout_policy)

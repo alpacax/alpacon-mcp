@@ -22,6 +22,7 @@ from utils.common import (
     _plan_limit_axis,
     _plan_limit_billing_link,
     build_list_params,
+    exclude_none,
     expect_json_object,
     json_records,
     plan_limit_response,
@@ -712,6 +713,26 @@ class TestBuildListParams:
     @pytest.mark.parametrize('value', [False, 0, '', []])
     def test_falsy_but_supplied_values_are_forwarded(self, value):
         assert build_list_params(acknowledged=value) == {'acknowledged': value}
+
+
+class TestExcludeNone:
+    """Only None means omitted; every other value reaches the request."""
+
+    def test_no_fields_give_an_empty_dict(self):
+        assert exclude_none() == {}
+
+    def test_none_field_is_dropped_while_its_siblings_stay(self):
+        assert exclude_none(name='web', description=None, enabled=True) == {
+            'name': 'web',
+            'enabled': True,
+        }
+
+    @pytest.mark.parametrize('value', [False, 0, '', []])
+    def test_falsy_values_are_kept(self, value):
+        assert exclude_none(field=value) == {'field': value}
+
+    def test_fields_keep_argument_order(self):
+        assert list(exclude_none(c=3, a=None, b=2, d=4)) == ['c', 'b', 'd']
 
 
 class TestResolveTimeWindow:

@@ -17,6 +17,7 @@ from utils.common import (
     build_list_params,
     empty_value_error,
     error_response,
+    exclude_none,
     pending_approval_response,
     resolve_work_session_id,
     success_response,
@@ -519,9 +520,8 @@ async def _submit_file_execution(
         'interpreter': interpreter,
         'args': list(args or []),
         'content': content,
+        **exclude_none(reuse_days=reuse_days),
     }
-    if reuse_days is not None:
-        file_spec['reuse_days'] = reuse_days
     command_data: dict[str, object] = {
         'server': server_id,
         'groupname': groupname,
