@@ -4,7 +4,7 @@ import asyncio
 import re
 from collections.abc import Mapping, MutableMapping
 from datetime import UTC, datetime
-from typing import Annotated, TypedDict, cast
+from typing import Annotated, TypedDict
 
 import httpx
 from pydantic import Strict, TypeAdapter
@@ -822,18 +822,14 @@ async def _settle_submission(
     ``command`` and ``shell`` are echoed only when the caller has them—the file
     lane has neither, and ``_poll_command_result`` omits an empty echo.
     """
-    if is_http_error(exec_data):
-        # unwrap_http_result returns non-None whenever 'error' is in the dict
-        return cast(
-            ToolErrorResponse,
-            unwrap_http_result(
-                exec_data,
-                default_message='Command execution failed',
-                server_id=server_id,
-                region=region,
-                workspace=workspace,
-            ),
-        )
+    if err := unwrap_http_result(
+        exec_data,
+        default_message='Command execution failed',
+        server_id=server_id,
+        region=region,
+        workspace=workspace,
+    ):
+        return err
 
     if isinstance(exec_data, list):
         if exec_data:
