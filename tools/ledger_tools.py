@@ -1,5 +1,5 @@
 """Command pre-approval ledger tools, for workspaces whose command ACL surface is `ai`.
-Stdio only, on the person's own sign-in (`utils.ledger_auth`); `upstream` is refused."""
+Stdio only, via `utils.ledger_auth`; only get_ledger_capability answers `upstream`."""
 
 import json
 from http import HTTPStatus

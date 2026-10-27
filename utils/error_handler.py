@@ -53,8 +53,8 @@ def validate_uuid_format(value: str) -> bool:
 
 
 def validate_file_path(file_path: str, allow_relative: bool = False) -> bool:
-    """True only for a safe path: absolute unless allow_relative, no traversal, no null
-    byte or <>|*? characters."""
+    """True only for a path that is absolute unless allow_relative, holds no ../ or /./
+    (either slash), no null byte and none of <>|*?."""
     if not file_path or not isinstance(file_path, str):
         return False
 

@@ -38,7 +38,7 @@ def get_local_config_path() -> Path:
 
 
 def load_existing_config(config_path: Path) -> dict[str, dict[str, str]]:
-    """Load a token.json; an absent or malformed file reads as empty."""
+    """Load a token.json; an absent or unparseable file reads as empty."""
     if config_path.exists():
         try:
             with open(config_path) as f:

@@ -136,7 +136,7 @@ def _report(
     next_cursor: str | None,
 ) -> dict[str, object]:
     """The walk's report minus per-outcome fields; complete means the response holds the
-    whole list, never so for a resumed walk."""
+    whole list, so a resumed walk never is unless the server ignored pagination."""
     return {
         'pages_read': pages,
         'max_pages': MAX_CURSOR_PAGES,

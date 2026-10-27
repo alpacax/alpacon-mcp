@@ -86,7 +86,7 @@ async def lookup_schema_name(slug: str) -> str | None:
 async def resolve_workspace(
     workspace: str, claim_workspaces: list[WorkspaceClaim]
 ) -> str:
-    """Map workspace to a claim's schema_name when it is a renamed slug. Returned
+    """Map workspace to a claim's schema_name when it is a renamed slug. Returns it
     unchanged when already a claim, or when the lookup fails or is not granted."""
     schema_names = {ws.get('schema_name') for ws in claim_workspaces}
     if not schema_names:
