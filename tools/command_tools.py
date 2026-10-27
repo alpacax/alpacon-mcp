@@ -762,6 +762,8 @@ def _submission_error(
             f' {DO_NOT_RESUBMIT} until list_commands for this server shows it '
             'is not there, read back past this call: raise limit until the oldest '
             'entry predates it, since a page of newer commands proves nothing. '
+            'The server returns at most 100 commands, so if 100 newer ones fill '
+            'the page, ask a human to check before resubmitting. '
             'A resubmission may run it twice.'
         )
     return response

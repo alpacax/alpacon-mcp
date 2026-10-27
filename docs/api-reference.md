@@ -454,7 +454,7 @@ The refused command did not run, so nothing needs cancelling. The server attache
 `execute_file_suggestion` here: the script body is on the command line, so there is no path to read.
 `state_command_purpose` returns the same refusal when the re-judged command lands on it.
 
-**Lost submission:** the command is submitted once and never resent after its request may have reached the server (#392). The response is then `status: "error"` with `outcome_unknown: true`, as described under Response structure, and the command may have been created and may have run. Do not resubmit it until `list_commands` for that server shows it is not there, since a resubmission may run the command twice. Read back past the time of the call: `list_commands` returns the newest commands first, 20 by default, so raise `limit` until the oldest entry predates the call. A page holding only newer commands does not show the command is missing.
+**Lost submission:** the command is submitted once and never resent after its request may have reached the server (#392). The response is then `status: "error"` with `outcome_unknown: true`, as described under Response structure, and the command may have been created and may have run. Do not resubmit it until `list_commands` for that server shows it is not there, since a resubmission may run the command twice. Read back past the time of the call: `list_commands` returns the newest commands first, 20 by default, so raise `limit` until the oldest entry predates the call. A page holding only newer commands does not show the command is missing. The server returns at most 100 commands whatever `limit` asks for, so when 100 newer commands fill the page, ask a human to check before resubmitting.
 
 ### `execute_file`
 Run a script on a server as a verified file, and wait for the result. With `write_file`,
@@ -541,7 +541,7 @@ denials, and the result all follow the same rules—plus a `file` object echoing
 and `args` (never `content`). `command` and `shell` are not echoed; the polled command row carries the
 server-rendered line.
 
-**Lost submission:** the command submission follows the `execute_command` rule: with `outcome_unknown: true` the command may exist and may have run, so check `list_commands` for that server, read back past the time of the call, before resubmitting. The `write_file` upload and the `read_from_server` download are POSTs too, and a failed one carries the same field, but there the call can be repeated: the upload's bytes go up and the host writes them only in later steps that never ran, and a download only reads, so no file was written and nothing was submitted.
+**Lost submission:** the command submission follows the `execute_command` rule: with `outcome_unknown: true` the command may exist and may have run, so check `list_commands` for that server, read back past the time of the call, before resubmitting, and ask a human once 100 newer commands fill the page. The `write_file` upload and the `read_from_server` download are POSTs too, and a failed one carries the same field, but there the call can be repeated: the upload's bytes go up and the host writes them only in later steps that never ran, and a download only reads, so no file was written and nothing was submitted.
 
 **Refusals** come back as `status: "error"` with `error_code` set, and a message stating the fix. None
 has a request waiting behind it, so a client acts on them rather than waiting or retrying as-is:
@@ -603,7 +603,7 @@ refused servers only, with the same account: the file lane needs every target se
 so resubmitting the original target set can fail with `file_exec_unsupported_agent` on a server that
 was never refused.
 
-**Lost submission:** a server whose entry in `deploy_shell_results` carries `outcome_unknown: true` follows the `execute_command` rule: its command may exist and may have run, so check `list_commands` for that server, read back past the time of the call, before resubmitting to it.
+**Lost submission:** a server whose entry in `deploy_shell_results` carries `outcome_unknown: true` follows the `execute_command` rule: its command may exist and may have run, so check `list_commands` for that server, read back past the time of the call, before resubmitting to it, and ask a human once 100 newer commands fill the page.
 
 ### `state_command_purpose`
 Answer the purpose demand on a command the verification gate is holding, then wait for the outcome.
