@@ -31,6 +31,21 @@ _ERR_UNEXPECTED = 'Unexpected Error'
 # demands, or the workspace's sign-in MFA the token lacks (a refresh keeps it lacking).
 _MFA_REAUTH_CODES = frozenset({'auth_mfa_required', 'auth_token_mfa_missing'})
 
+# A replay of these can repeat a side effect, and alpacon-server takes no idempotency key:
+# they are resent only after an error raised before the request reached the server.
+_NON_IDEMPOTENT_METHODS = frozenset({'POST', 'PATCH'})
+# Raised before the request reaches Alpacon.
+# LocalProtocolError is left out: h11 can raise it mid-body.
+_NEVER_SENT_ERRORS = (
+    httpx.ConnectError,
+    httpx.ConnectTimeout,
+    httpx.PoolTimeout,
+    httpx.ProxyError,
+    httpx.UnsupportedProtocol,
+)
+# 5xx codes alpacon-server answers while checking the credential, before any view runs.
+_REJECTED_BEFORE_VIEW_CODES = frozenset({'auth_verification_unavailable'})
+
 
 def _error_code_of(text: str) -> str | None:
     """The `code` of a JSON object error body; None for HTML, arrays or no code."""
@@ -48,6 +63,32 @@ def _error_body_for_log(response: httpx.Response) -> object:
         return redact_for_log(response.json())
     except ValueError:
         return redact_for_log(response.text)
+
+
+def _may_act_twice(
+    idempotent: bool, error: httpx.HTTPError, code: str | None = None
+) -> bool:
+    """Whether resending after `error` could repeat what the server already did;
+    ``code`` is the 5xx body's error code, already parsed by the caller."""
+    if idempotent or isinstance(error, _NEVER_SENT_ERRORS):
+        return False
+    if isinstance(error, httpx.HTTPStatusError):
+        return code not in _REJECTED_BEFORE_VIEW_CODES
+    return True
+
+
+def _outcome_unknown(
+    method: str, reason: str, **fields: JsonValue
+) -> dict[str, JsonValue]:
+    """Error dict for a POST or PATCH that may have reached the server."""
+    return {
+        **fields,
+        'message': (
+            f'{reason}. The {method} was not resent: the server may already '
+            'have acted on it.'
+        ),
+        'outcome_unknown': True,
+    }
 
 
 class AlpaconHTTPClient:
@@ -128,8 +169,8 @@ class AlpaconHTTPClient:
         params: QueryParams | None = None,
         timeout: float | None = None,
     ) -> JsonValue:
-        """Send with retry on 5xx, timeouts and network errors; returns the JSON body or
-        an error dict. Raises UpstreamAuthError on a 401 in remote JWT mode."""
+        """Send with retry, but never resend a POST or PATCH that may have reached the
+        server. Raises UpstreamAuthError on a 401 in remote JWT mode."""
         # Prepare headers
         request_headers = {
             'Content-Type': 'application/json',
@@ -150,6 +191,7 @@ class AlpaconHTTPClient:
 
         # Set timeout
         request_timeout = httpx.Timeout(timeout or 10.0, connect=5.0)
+        idempotent = method.upper() not in _NON_IDEMPOTENT_METHODS
 
         # Retry logic
         retry_count = 0
@@ -234,6 +276,19 @@ class AlpaconHTTPClient:
                     logger.error('Response body: %s', _error_body_for_log(e.response))
 
                 if e.response.status_code >= HTTPStatus.INTERNAL_SERVER_ERROR:
+                    code = _error_code_of(e.response.text)
+                    code_field: dict[str, JsonValue] = (
+                        {'error_code': code} if code else {}
+                    )
+                    if _may_act_twice(idempotent, e, code):  # already logged above
+                        return _outcome_unknown(
+                            method,
+                            f'Server error {e.response.status_code}',
+                            error=_ERR_HTTP,
+                            status_code=e.response.status_code,
+                            **code_field,
+                        )
+
                     # Server error - retry
                     if await backoff('Server error'):
                         continue
@@ -242,10 +297,9 @@ class AlpaconHTTPClient:
                         'error': _ERR_MAX_RETRIES,
                         'status_code': e.response.status_code,
                         'message': f'Server error after {self.max_retries} attempts',
+                        **code_field,
                     }
                     logger.error('Server error after all retries: %s', error_response)
-                    if code := _error_code_of(e.response.text):
-                        error_response['error_code'] = code
                     return error_response
                 else:
                     # Client error - don't retry
@@ -264,32 +318,43 @@ class AlpaconHTTPClient:
                     )
                     return error_response
 
-            except httpx.TimeoutException:
-                # Timeout - retry
-                if await backoff('Request timeout'):
-                    continue
-
-                error_response = {
-                    'error': _ERR_TIMEOUT,
-                    'message': f'Request timed out after {self.max_retries} retries',
-                }
-                logger.error('Request timeout after all retries: %s', error_response)
-                return error_response
-
             except httpx.RequestError as e:
-                # Network error - retry
-                if await backoff(f'Network error: {e}'):
+                timed_out = isinstance(e, httpx.TimeoutException)
+                reason = 'Request timed out' if timed_out else f'Network error: {e}'
+                if _may_act_twice(idempotent, e):
+                    logger.error('%s: %s, not resending', method, reason)
+                    return _outcome_unknown(
+                        method,
+                        reason,
+                        error=_ERR_TIMEOUT if timed_out else _ERR_REQUEST,
+                    )
+
+                # Timeout or network error - retry
+                if await backoff(reason):
                     continue
 
-                error_response = {'error': _ERR_REQUEST, 'message': str(e)}
-                logger.error('Network error after all retries: %s', error_response)
+                if timed_out:
+                    error_response = {
+                        'error': _ERR_TIMEOUT,
+                        'message': f'Request timed out after {self.max_retries} retries',
+                    }
+                    logger.error(
+                        'Request timeout after all retries: %s', error_response
+                    )
+                else:
+                    error_response = {'error': _ERR_REQUEST, 'message': str(e)}
+                    logger.error('Network error after all retries: %s', error_response)
                 return error_response
 
             except Exception as e:
                 # Unexpected error - don't retry
-                error_response = {'error': _ERR_UNEXPECTED, 'message': str(e)}
-                logger.exception('Unexpected error: %s', error_response)
-                return error_response
+                logger.exception('Unexpected error: %s', e)
+                # It may have run: a 2xx whose body failed to parse lands here.
+                if not idempotent:
+                    return _outcome_unknown(
+                        method, f'Unexpected error: {e}', error=_ERR_UNEXPECTED
+                    )
+                return {'error': _ERR_UNEXPECTED, 'message': str(e)}
 
         # Every branch above returns, so this is only reached when max_retries <= 0
         error_response = {

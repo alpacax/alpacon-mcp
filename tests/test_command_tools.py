@@ -1,5 +1,6 @@
 """Unit tests for command tools module."""
 
+import json
 from collections.abc import Awaitable, Iterator
 from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
@@ -17,6 +18,7 @@ from tools.command_tools import (
     _FILE_PHASE_GENERIC_HINT,
     _FILE_PHASE_HINTS,
     _SUDO_DENIAL_HINTS,
+    DO_NOT_RESUBMIT,
     FILE_CONTENT_MAX_BYTES,
     FILE_REUSE_DAYS_MAX,
     FILE_REUSE_DAYS_MIN,
@@ -40,6 +42,7 @@ from utils.common import (
     FILE_EXEC_REFUSAL_HINTS,
     INLINE_CREDENTIAL_HINT,
 )
+from utils.http_client import AlpaconHTTPClient
 from utils.types import JsonValue, ToolResponse
 
 _GATE_ENVELOPE_REQUIRED = {
@@ -1273,6 +1276,123 @@ class TestExecuteCommandMultiServerGateTranslation:
         server_entry = result['deploy_shell_results'][VALID_SERVER_ID]
         assert server_entry.get('code') == 'work_session_required'
         assert 'next_action' in server_entry
+
+
+@pytest.fixture
+async def lost_command_posts():
+    """A real client whose every command POST loses its response; yields what was sent."""
+    posts: list[httpx.Request] = []
+
+    def answer(request: httpx.Request) -> httpx.Response:
+        posts.append(request)
+        raise httpx.ReadTimeout('read timed out', request=request)
+
+    client = AlpaconHTTPClient(transport=httpx.MockTransport(answer))
+    client.retry_delay = 0
+    with patch('tools.command_tools.http_client', client):
+        yield posts
+    await client.close()
+
+
+class TestLostSubmissionIsNotResubmitted:
+    """A command POST whose response was lost may have run; it is sent once."""
+
+    @pytest.mark.asyncio
+    async def test_execute_command_sends_once_and_points_at_list_commands(
+        self, lost_command_posts, mock_token_manager
+    ):
+        result = await execute_command(
+            server_id=VALID_SERVER_ID,
+            command='rm -rf /tmp/x',
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert [r.method for r in lost_command_posts] == ['POST']
+        assert result['status'] == 'error'
+        assert result['outcome_unknown'] is True
+        assert DO_NOT_RESUBMIT in result['message']
+        assert 'list_commands' in result['message']
+        assert 'raise limit until the oldest entry predates it' in result['message']
+        assert 'if 100 newer ones fill the page, ask a human' in result['message']
+
+    @pytest.mark.asyncio
+    async def test_execute_file_sends_once_and_points_at_list_commands(
+        self, lost_command_posts, mock_token_manager
+    ):
+        result = await execute_file(
+            server_id=VALID_SERVER_ID,
+            path='/opt/deploy.sh',
+            content='echo deploy\n',
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert [r.method for r in lost_command_posts] == ['POST']
+        assert result['status'] == 'error'
+        assert result['outcome_unknown'] is True
+        assert DO_NOT_RESUBMIT in result['message']
+        assert 'list_commands' in result['message']
+
+    @pytest.mark.asyncio
+    async def test_execute_file_lost_upload_is_not_resent_and_runs_nothing(
+        self, lost_command_posts, mock_token_manager
+    ):
+        result = await execute_file(
+            server_id=VALID_SERVER_ID,
+            path='/opt/deploy.sh',
+            content='echo deploy\n',
+            write_file=True,
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert [r.url.path for r in lost_command_posts] == ['/api/webftp/uploads/']
+        assert result['status'] == 'error'
+        assert result['outcome_unknown'] is True
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('parallel', [True, False])
+    async def test_multi_server_marks_each_lost_submission(
+        self, lost_command_posts, mock_token_manager, parallel
+    ):
+        other_server = '22222222-2222-2222-2222-222222222222'
+
+        result = await execute_command_multi_server(
+            server_ids=[VALID_SERVER_ID, other_server],
+            command='ls',
+            workspace='testworkspace',
+            region='ap1',
+            parallel=parallel,
+        )
+
+        sent_to = sorted(json.loads(r.content)['server'] for r in lost_command_posts)
+        assert sent_to == sorted([VALID_SERVER_ID, other_server])
+        assert result['failed_count'] == 2
+        for entry in result['deploy_shell_results'].values():
+            assert entry['outcome_unknown'] is True
+            assert DO_NOT_RESUBMIT in entry['message']
+
+    @pytest.mark.asyncio
+    async def test_refused_submission_does_not_claim_the_command_may_have_run(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = {
+            'error': 'HTTP Error',
+            'status_code': HTTPStatus.FORBIDDEN,
+            'message': 'Permission denied',
+        }
+
+        result = await execute_command(
+            server_id=VALID_SERVER_ID,
+            command='ls',
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert result['status'] == 'error'
+        assert 'outcome_unknown' not in result
+        assert 'list_commands' not in result['message']
 
 
 class TestSudoGuidanceInToolDescriptions:
