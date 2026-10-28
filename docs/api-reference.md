@@ -715,12 +715,27 @@ On streamable-http and SSE, `file_content` is capped at 3 MiB of decoded (origin
 ### `webftp_bulk_upload`
 Upload several local files to one directory in a single operation.
 
-**Parameters:** `server_id`, `local_file_paths` (array), `remote_directory`, `workspace`, `username` (optional), `work_session_id` (optional), `allow_overwrite`, `region` (`ap1` or `us1`, optional)
+**Parameters:**
+- `server_id` (string): Server UUID
+- `local_file_paths` (array): Absolute paths to local files; must not be empty
+- `remote_directory` (string): Absolute directory on server that receives every file
+- `workspace` (string): Workspace name
+- `username` (string, optional): Username (defaults to authenticated user)
+- `work_session_id` (string, optional): Work Session to link the call to for audit; required for MCP OAuth and browser-login callers, optional for static API and service tokens; falls back to `ALPACON_WORK_SESSION` in the MCP server's environment when omitted, and an explicit value wins
+- `allow_overwrite` (boolean, default: true): Allow overwriting existing files
+- `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 
 ### `webftp_bulk_download`
 Download several files or folders as one ZIP archive.
 
-**Parameters:** `server_id`, `remote_paths` (array), `local_file_path`, `workspace`, `username` (optional), `work_session_id` (optional), `region` (`ap1` or `us1`, optional)
+**Parameters:**
+- `server_id` (string): Server UUID
+- `remote_paths` (array): Absolute paths on server sharing one parent directory; must not be empty
+- `local_file_path` (string): Absolute path for the local ZIP archive
+- `workspace` (string): Workspace name
+- `username` (string, optional): Username (defaults to authenticated user)
+- `work_session_id` (string, optional): Work Session to link the call to for audit; required for MCP OAuth and browser-login callers, optional for static API and service tokens; falls back to `ALPACON_WORK_SESSION` in the MCP server's environment when omitted, and an explicit value wins
+- `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 
 ### `webftp_check_status`
 Check the status of an in-flight transfer.
