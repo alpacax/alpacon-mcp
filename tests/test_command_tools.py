@@ -13,6 +13,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 from server import mcp
 from tests.conftest import VALID_SERVER_ID, http_client_fixture, tool_descriptions
 from tools.command_tools import (
+    _COMMAND_DESCRIPTION,
     _FILE_PHASE_GENERIC_HINT,
     _FILE_PHASE_HINTS,
     _SUDO_DENIAL_HINTS,
@@ -1286,13 +1287,32 @@ class TestSudoGuidanceInToolDescriptions:
     async def test_description_states_the_sudo_cost(self, tool_name):
         descriptions = await tool_descriptions()
         text = descriptions[tool_name]
-        assert 'Do not prefix the command with sudo by default' in text
         assert 'human-in-the-loop' in text
-        # The carve-out and the hard-denial path are the reason the rule is
-        # qualified rather than absolute; pin both so neither regresses.
+        # The carve-out and the hard-denial path qualify the parameter's sudo rule;
+        # pin both on the tool so neither regresses.
         assert 'sudo policy already covers' in text
         assert 'denied outright' in text
         assert 'sudo_denial.category' in text
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        'tool_name', ['execute_command', 'execute_command_multi_server']
+    )
+    async def test_command_parameter_carries_the_sudo_rule(self, tool_name):
+        # Given the published tool list
+        tools = {t.name: t for t in await mcp.list_tools()}
+        descriptions = await tool_descriptions()
+
+        # When reading the command property
+        command = tools[tool_name].input_schema['properties']['command']
+
+        # Then the parameter carries the rule and the tool description does not
+        assert command['description'] == _COMMAND_DESCRIPTION
+        assert 'whitespace-only' in command['description']
+        assert 'with sudo by default' in command['description']
+        assert _COMMAND_DESCRIPTION not in descriptions[tool_name]
+        assert 'with sudo by default' not in descriptions[tool_name]
+        assert 'use sudo only when' not in descriptions[tool_name].lower()
 
 
 def test_no_worksession_policy_hint_names_the_request_tool():

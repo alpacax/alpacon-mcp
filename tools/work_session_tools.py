@@ -1,5 +1,9 @@
 """Work Session management tools for Alpacon MCP server."""
 
+from typing import Annotated
+
+from pydantic import Field
+
 from utils.api_call import http_call_response
 from utils.common import (
     build_list_params,
@@ -35,6 +39,20 @@ _INCLUDE_RECORDS_REFUSED = (
 _RECORD_MAX_PAGE_SIZE = 16
 _RECORD_DEFAULT_PAGE_SIZE = 8
 
+_SCOPES_DESCRIPTION = (
+    'Operations the session allows: "command" (execute_command, execute_file), '
+    '"webftp" (file transfers), "tunnel" (port forwarding), "sudo" (privilege elevation). '
+    'Request "sudo" only when the work genuinely requires root.'
+)
+
+_SESSION_DESCRIPTION = (
+    'What you are doing and why, written as prose for the human who approves the '
+    'session. It is NOT a command list and nothing in it is executed—commands run '
+    'via execute_command once the session is active. Be specific: name the targets, '
+    'the action, and what will not be touched; a bare word like "maintenance" gives '
+    'the approver nothing to decide on. Markdown supported.'
+)
+
 
 @mcp_tool_handler(
     description=(
@@ -47,14 +65,6 @@ _RECORD_DEFAULT_PAGE_SIZE = 8
         'human approves out-of-band (Alpacon web console or Slack). Do not open another '
         'session; call work_session_get and proceed once data.status is active, or stop '
         'if it is rejected, cancelled, expired, revoked, or completed, since those never become active. '
-        'description: what you are doing and why, written as prose for the human who '
-        'approves the session. It is NOT a command list and nothing in it is executed—'
-        'commands run via execute_command once the session is active. Be specific: '
-        'name the targets, the action, and what will not be touched; a bare word like '
-        '"maintenance" gives the approver nothing to decide on. Markdown supported. '
-        'scopes declares which operations are allowed: '
-        '"command" (execute_command, execute_file), "webftp" (file transfers), '
-        '"tunnel" (port forwarding), "sudo" (privilege elevation). '
         'servers is the list of target server UUIDs. '
         'expires_at is an ISO 8601 datetime string. '
         'target_account_username (optional) is the single OS account the commands will run '
@@ -70,10 +80,10 @@ _RECORD_DEFAULT_PAGE_SIZE = 8
 )
 async def work_session_create(
     workspace: str,
-    scopes: list[str],
+    scopes: Annotated[list[str], Field(description=_SCOPES_DESCRIPTION)],
     servers: list[str],
     expires_at: str,
-    description: str,
+    description: Annotated[str, Field(description=_SESSION_DESCRIPTION)],
     title: str | None = None,
     region: str = '',
     target_account_username: str | None = None,
@@ -241,8 +251,6 @@ async def work_session_list(
         'expires_at is only honored for pending sessions—for approved/active sessions '
         'it is ignored, so use work_session_extend instead. '
         'Terminal sessions (completed/rejected/cancelled/expired/revoked) cannot be updated. '
-        'description stays prose for the human approver—it is NOT a command list and '
-        'nothing in it is executed; commands run via execute_command. '
         'Related: work_session_get (check status), work_session_extend (extend expiry only).'
     ),
     annotations=IDEMPOTENT_WRITE,
@@ -254,8 +262,14 @@ async def work_session_update(
     session_id: str,
     workspace: str,
     title: str | None = None,
-    description: str | None = None,
-    scopes: list[str] | None = None,
+    description: Annotated[str | None, Field(description=_SESSION_DESCRIPTION)] = None,
+    scopes: Annotated[
+        list[str] | None,
+        Field(
+            description='Replaces the whole scope list, so list every scope the '
+            'session keeps. ' + _SCOPES_DESCRIPTION
+        ),
+    ] = None,
     servers: list[str] | None = None,
     expires_at: str | None = None,
     region: str = '',
