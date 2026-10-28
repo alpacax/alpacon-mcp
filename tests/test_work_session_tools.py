@@ -8,6 +8,8 @@ from mcp.types import CallToolResult
 from server import mcp
 from tests.conftest import http_client_fixture, tool_descriptions
 from tools.work_session_tools import (
+    _SCOPES_DESCRIPTION,
+    _SESSION_DESCRIPTION,
     work_session_analyze,
     work_session_close,
     work_session_create,
@@ -1257,10 +1259,24 @@ class TestDescriptionIsNotAnExecutionChannel:
         'tool_name', ['work_session_create', 'work_session_update']
     )
     async def test_description_field_is_declared_non_executable(self, tool_name):
+        # Given the published tool list
+        tools = {t.name: t for t in await mcp.list_tools()}
         descriptions = await tool_descriptions()
-        text = descriptions[tool_name]
-        assert 'NOT a command list' in text
-        assert 'nothing in it is executed' in text
+
+        # When reading the description property
+        field = tools[tool_name].input_schema['properties']['description']
+
+        # Then the parameter carries the rule and the tool description does not
+        assert field['description'] == _SESSION_DESCRIPTION
+        assert 'NOT a command list' in field['description']
+        assert 'nothing in it is executed' in field['description']
+        assert '"maintenance"' in field['description']
+        for phrase in (
+            'NOT a command list',
+            'nothing in it is executed',
+            '"maintenance"',
+        ):
+            assert phrase not in descriptions[tool_name]
 
     @pytest.mark.asyncio
     async def test_create_description_names_work_session_id_pending_approval_and_stop_states(
@@ -1276,6 +1292,52 @@ class TestDescriptionIsNotAnExecutionChannel:
         for state in ('rejected', 'cancelled', 'expired', 'revoked', 'completed'):
             assert state in text
         assert 'pass session_id' not in text
+
+
+class TestWorkSessionParameterDescriptions:
+    """Each scope's meaning is read when `scopes` is filled, so it sits on the field."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        'tool_name', ['work_session_create', 'work_session_update']
+    )
+    async def test_scopes_field_pairs_each_scope_with_what_it_allows(self, tool_name):
+        # Given the published tool list
+        tools = {t.name: t for t in await mcp.list_tools()}
+        descriptions = await tool_descriptions()
+
+        # When reading the scopes property
+        field = tools[tool_name].input_schema['properties']['scopes']
+
+        # Then the parameter carries each scope's meaning and the tool description does not
+        assert _SCOPES_DESCRIPTION in field['description']
+        for meaning in (
+            '"command" (execute_command, execute_file)',
+            '"webftp" (file transfers)',
+            '"tunnel" (port forwarding)',
+            '"sudo" (privilege elevation)',
+        ):
+            assert meaning in field['description']
+        assert 'Request "sudo" only when' in field['description']
+        for phrase in (
+            '(execute_command, execute_file)',
+            '(file transfers)',
+            '(port forwarding)',
+            '(privilege elevation)',
+            'Request "sudo" only when',
+        ):
+            assert phrase not in descriptions[tool_name]
+
+    @pytest.mark.asyncio
+    async def test_update_scopes_field_says_the_list_is_replaced(self):
+        # Given the published tool list
+        tools = {t.name: t for t in await mcp.list_tools()}
+
+        # When reading work_session_update's scopes property
+        field = tools['work_session_update'].input_schema['properties']['scopes']
+
+        # Then it warns that the list replaces the session's scopes
+        assert 'Replaces the whole scope list' in field['description']
 
 
 class TestWorkSessionListParams:
