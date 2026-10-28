@@ -19,6 +19,7 @@ import httpx
 from starlette.requests import Request
 from starlette.responses import JSONResponse, RedirectResponse, Response
 
+from utils.auth0_env import get_auth0_env
 from utils.logger import escape_for_log, get_logger
 from utils.routes import RouteHandler, RouteRegistry
 
@@ -311,19 +312,25 @@ def _build_redirect_url(base_url: str, extra_params: dict[str, str]) -> str:
 
 
 def _get_oauth_config() -> dict[str, str]:
-    """Read the AUTH0_* settings; raises ValueError if domain, id or secret is unset."""
-    domain = os.getenv('AUTH0_DOMAIN', '')
-    client_id = os.getenv('AUTH0_CLIENT_ID', '')
-    client_secret = os.getenv('AUTH0_CLIENT_SECRET', '')
-    audience = os.getenv('AUTH0_AUDIENCE', 'https://alpacon.io/access/')
-    mfa_audience = os.getenv('AUTH0_MFA_AUDIENCE', '')
+    """Read the Auth0 login settings; raises ValueError if domain, id or secret is unset."""
+    domain = get_auth0_env('AUTH0_ALPACON_DOMAIN', '')
+    client_id = get_auth0_env('AUTH0_ALPACON_LOGIN_CLIENT_ID', '')
+    client_secret = get_auth0_env('AUTH0_ALPACON_LOGIN_CLIENT_SECRET', '')
+    audience = get_auth0_env(
+        'AUTH0_ALPACON_USER_AUDIENCE', 'https://alpacon.io/access/'
+    )
+    mfa_audience = get_auth0_env('AUTH0_ALPACON_MFA_AUDIENCE', '')
 
     if not domain:
-        raise ValueError('AUTH0_DOMAIN environment variable is required')
+        raise ValueError('AUTH0_ALPACON_DOMAIN environment variable is required')
     if not client_id:
-        raise ValueError('AUTH0_CLIENT_ID environment variable is required')
+        raise ValueError(
+            'AUTH0_ALPACON_LOGIN_CLIENT_ID environment variable is required'
+        )
     if not client_secret:
-        raise ValueError('AUTH0_CLIENT_SECRET environment variable is required')
+        raise ValueError(
+            'AUTH0_ALPACON_LOGIN_CLIENT_SECRET environment variable is required'
+        )
 
     # Derive MFA audience from domain if not explicitly set
     if not mfa_audience:
@@ -362,8 +369,8 @@ def _explicit_hex_secret(env_name: str) -> bytes | None:
 
 
 def _derived_secret(info: bytes) -> bytes:
-    """Key derived from AUTH0_CLIENT_SECRET: nothing to provision, and identical across
-    replicas so a signed value verifies without shared storage."""
+    """Key derived from AUTH0_ALPACON_LOGIN_CLIENT_SECRET: nothing to provision, and
+    identical across replicas so a signed value verifies without shared storage."""
     client_secret = _get_oauth_config()['client_secret']
     return hmac.new(client_secret.encode(), info, hashlib.sha256).digest()
 

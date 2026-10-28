@@ -2,7 +2,6 @@
 
 import asyncio
 import json
-import os
 import time
 from collections.abc import Mapping
 from typing import NotRequired, TypedDict
@@ -12,6 +11,7 @@ import jwt
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicKey
 from mcp.server.auth.provider import AccessToken
 
+from utils.auth0_env import get_auth0_env
 from utils.logger import escape_for_log, get_logger
 from utils.types import JsonValue
 
@@ -48,14 +48,19 @@ def _get_jwks_lock() -> asyncio.Lock:
 
 
 def _get_auth0_config() -> dict[str, str]:
-    """Read the Auth0 settings from the environment; raises ValueError when AUTH0_DOMAIN
-    is unset."""
-    domain = os.getenv('AUTH0_DOMAIN', '')
-    audience = os.getenv('AUTH0_AUDIENCE', 'https://alpacon.io/access/')
-    namespace = os.getenv('AUTH0_NAMESPACE', 'https://alpacon.io/').rstrip('/') + '/'
+    """Read the Auth0 settings from the environment; raises ValueError when
+    AUTH0_ALPACON_DOMAIN (or the old AUTH0_DOMAIN) is unset."""
+    domain = get_auth0_env('AUTH0_ALPACON_DOMAIN', '')
+    audience = get_auth0_env(
+        'AUTH0_ALPACON_USER_AUDIENCE', 'https://alpacon.io/access/'
+    )
+    namespace = (
+        get_auth0_env('AUTH0_ALPACON_NAMESPACE', 'https://alpacon.io/').rstrip('/')
+        + '/'
+    )
 
     if not domain:
-        raise ValueError('AUTH0_DOMAIN environment variable is required')
+        raise ValueError('AUTH0_ALPACON_DOMAIN environment variable is required')
 
     return {
         'domain': domain,
@@ -188,7 +193,7 @@ def decode_claims_unverified(jwt_token: str) -> JwtClaims | None:
 
 def get_token_workspaces(jwt_token: str) -> list[WorkspaceClaim]:
     """List the workspaces a verified JWT grants; the claim key comes from
-    AUTH0_NAMESPACE."""
+    AUTH0_ALPACON_NAMESPACE."""
     return get_token_workspaces_with_dropped(jwt_token)[0]
 
 
@@ -201,7 +206,10 @@ def get_token_workspaces_with_dropped(
     if not claims:
         return [], 0
 
-    namespace = os.getenv('AUTH0_NAMESPACE', 'https://alpacon.io/').rstrip('/') + '/'
+    namespace = (
+        get_auth0_env('AUTH0_ALPACON_NAMESPACE', 'https://alpacon.io/').rstrip('/')
+        + '/'
+    )
     return _partition_workspaces(claims, namespace)
 
 

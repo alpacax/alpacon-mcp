@@ -1,11 +1,12 @@
-"""Streamable-http entry point with Auth0 JWT auth. Needs AUTH0_DOMAIN and
-AUTH0_CLIENT_ID."""
+"""Streamable-http entry point with Auth0 JWT auth. Needs AUTH0_ALPACON_DOMAIN and
+AUTH0_ALPACON_LOGIN_CLIENT_ID (the old AUTH0_DOMAIN and AUTH0_CLIENT_ID still work)."""
 
 import os
 import sys
 
 import uvicorn
 
+from utils.auth0_env import get_auth0_env
 from utils.auth_error_middleware import UpstreamAuthErrorMiddleware
 from utils.logger import get_logger, json_logs_requested, logger_manager
 
@@ -19,14 +20,16 @@ def main() -> None:
 
     # Validate required Auth0 configuration (fail fast on missing env vars)
     missing = [
-        var for var in ('AUTH0_DOMAIN', 'AUTH0_CLIENT_ID') if not os.getenv(var, '')
+        var
+        for var in ('AUTH0_ALPACON_DOMAIN', 'AUTH0_ALPACON_LOGIN_CLIENT_ID')
+        if not get_auth0_env(var)
     ]
 
     if missing:
         # One record, not print(): JSON mode owns stdout, and Datadog reads the level.
         logger.error(
-            'Required environment variable(s) not set: %s. AUTH0_DOMAIN is the '
-            'Auth0 tenant domain and AUTH0_CLIENT_ID the application client ID; '
+            'Required environment variable(s) not set: %s. AUTH0_ALPACON_DOMAIN is the '
+            'Auth0 tenant domain and AUTH0_ALPACON_LOGIN_CLIENT_ID the application client ID; '
             'see docs/configuration.md',
             ', '.join(missing),
         )

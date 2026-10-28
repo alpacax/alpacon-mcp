@@ -134,6 +134,8 @@ Print the workspace names and a boolean, never the token values—this output us
 
 ### 2a. The log repeats `No matching key found for kid`
 
+The legacy Auth0 environment variable names still work as fallbacks and will be removed in a later release; see [environment configuration](configuration.md#environment-configuration).
+
 Remote mode verifies a client JWT against Auth0's JWKS, and the fetched keys are cached in the process for one hour. When Auth0 rotates its signing key, every token issued afterwards carries a `kid` the cached keys do not have, and the server rejects it with 401.
 
 The server now handles this on its own: an unknown `kid` triggers one forced JWKS refetch, bounded by a 60-second cooldown so a flood of bad tokens cannot hammer Auth0. The first miss, the one that triggers the refetch, logs at info as `No matching key for kid in cached JWKS: <kid>`—that line followed by successful verifications is the recovery working, and needs no action.
@@ -142,7 +144,7 @@ The server now handles this on its own: an unknown `kid` triggers one forced JWK
 
 ```bash
 # Read the JWKS the server sees and list the kids it offers
-curl -s "https://${AUTH0_DOMAIN}/.well-known/jwks.json" | python -c "import json,sys; print([k['kid'] for k in json.load(sys.stdin)['keys']])"
+curl -s "https://${AUTH0_ALPACON_DOMAIN:-$AUTH0_DOMAIN}/.well-known/jwks.json" | python -c "import json,sys; print([k['kid'] for k in json.load(sys.stdin)['keys']])"
 
 # Read the kid the rejected token carries (header only, no verification).
 # `read -rs` keeps the token out of both shell history and `ps`. A here-string
@@ -151,7 +153,7 @@ read -rs ALPACON_JWT
 printf '%s' "$ALPACON_JWT" | python -c "import jwt,sys; print(jwt.get_unverified_header(sys.stdin.read().strip()))"
 ```
 
-- The token's `kid` is absent from the live JWKS: the token was issued by a different tenant or a different Auth0 application. Check `AUTH0_DOMAIN` against the domain that issued the token
+- The token's `kid` is absent from the live JWKS: the token was issued by a different tenant or a different Auth0 application. Check `AUTH0_ALPACON_DOMAIN` against the domain that issued the token
 - The `kid` is present in the live JWKS but the server keeps rejecting it: look for `Skipping forced JWKS fetch: cooldown active` in the log. The refetch was suppressed, and the next attempt after the cooldown resolves it
 - The `kid` is missing from the token header entirely: the log says `JWT header missing kid` instead, and no refetch is attempted. That token is malformed and re-issuing it is the fix
 

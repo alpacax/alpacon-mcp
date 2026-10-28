@@ -13,6 +13,7 @@ from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
+from utils.auth0_env import get_auth0_env
 from utils.common import MCP_VERSION, is_auth_enabled
 from utils.declared_agent import capture_declared_agent, use_environment_fallback
 from utils.health import get_health_info
@@ -151,12 +152,12 @@ def _create_mcp_server() -> MCPServer[None]:
 
         from utils.auth import Auth0TokenVerifier
 
-        auth0_domain = os.getenv('AUTH0_DOMAIN', '')
+        auth0_domain = get_auth0_env('AUTH0_ALPACON_DOMAIN', '')
         resource_url = os.getenv('ALPACON_MCP_RESOURCE_URL', 'https://mcp.alpacon.io')
 
         if not auth0_domain or not auth0_domain.strip():
             message = (
-                'AUTH0_DOMAIN environment variable must be set when '
+                'AUTH0_ALPACON_DOMAIN environment variable must be set when '
                 'ALPACON_MCP_AUTH_ENABLED=true.'
             )
             logger.error(message)
@@ -164,7 +165,7 @@ def _create_mcp_server() -> MCPServer[None]:
 
         if '://' in auth0_domain or '/' in auth0_domain:
             message = (
-                'AUTH0_DOMAIN must be a bare domain such as '
+                'AUTH0_ALPACON_DOMAIN must be a bare domain such as '
                 "'example.us.auth0.com', without scheme or path."
             )
             logger.error(message)
@@ -334,10 +335,10 @@ def prepare(
 
     if remote_mode:
         # Remote (streamable-http) mode: register OAuth routes
-        auth0_client_id = os.getenv('AUTH0_CLIENT_ID', '')
+        auth0_client_id = get_auth0_env('AUTH0_ALPACON_LOGIN_CLIENT_ID', '')
         if not auth0_client_id:
             raise RuntimeError(
-                'AUTH0_CLIENT_ID environment variable is required when '
+                'AUTH0_ALPACON_LOGIN_CLIENT_ID environment variable is required when '
                 'ALPACON_MCP_AUTH_ENABLED=true.'
             )
 

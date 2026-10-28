@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 
 import httpx
 
+from utils.auth0_env import get_auth0_env
 from utils.logger import escape_for_log, get_logger
 from utils.types import JsonValue
 
@@ -195,7 +196,10 @@ def check_mfa_completed(
 ) -> bool:
     """True when a non-expired MFA completion in the JWT satisfies the settings; mirrors
     alpacon-server's check_mfa_completed()."""
-    namespace = os.getenv('AUTH0_NAMESPACE', 'https://alpacon.io/').rstrip('/') + '/'
+    namespace = (
+        get_auth0_env('AUTH0_ALPACON_NAMESPACE', 'https://alpacon.io/').rstrip('/')
+        + '/'
+    )
     mfa_claim_key = f'{namespace}completed_mfa_methods'
     completed_mfa = jwt_claims.get(mfa_claim_key, {})
 

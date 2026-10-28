@@ -49,7 +49,7 @@ from utils.oauth import (
 )
 
 # Test configuration constants
-TEST_AUTH0_DOMAIN = 'test.us.auth0.com'
+TEST_AUTH0_ALPACON_DOMAIN = 'test.us.auth0.com'
 TEST_CLIENT_ID = 'test-client-id'
 TEST_CLIENT_SECRET = 'test-client-secret'
 TEST_RESOURCE_URL = 'https://mcp.test.alpacon.io'
@@ -72,10 +72,16 @@ CONNECTOR_REDIRECT_URI = 'https://chatgpt.com/connector/oauth/abc123'
 
 # Environment variables needed for OAuth config
 OAUTH_ENV = {
-    'AUTH0_DOMAIN': TEST_AUTH0_DOMAIN,
-    'AUTH0_CLIENT_ID': TEST_CLIENT_ID,
-    'AUTH0_CLIENT_SECRET': TEST_CLIENT_SECRET,
-    'AUTH0_AUDIENCE': 'https://alpacon.io/access/',
+    'AUTH0_ALPACON_DOMAIN': TEST_AUTH0_ALPACON_DOMAIN,
+    'AUTH0_ALPACON_LOGIN_CLIENT_ID': TEST_CLIENT_ID,
+    'AUTH0_ALPACON_LOGIN_CLIENT_SECRET': TEST_CLIENT_SECRET,
+    'AUTH0_ALPACON_USER_AUDIENCE': 'https://alpacon.io/access/',
+    'AUTH0_DOMAIN': '',
+    'AUTH0_CLIENT_ID': '',
+    'AUTH0_CLIENT_SECRET': '',
+    'AUTH0_AUDIENCE': '',
+    'AUTH0_MFA_AUDIENCE': '',
+    'AUTH0_NAMESPACE': '',
     'ALPACON_MCP_AUTH_ENABLED': 'true',
     'ALPACON_MCP_RESOURCE_URL': TEST_RESOURCE_URL,
     # Pinned empty so a developer's exported redirect_uri settings cannot
@@ -466,7 +472,8 @@ class TestStateSecret:
         """Without an explicit key the check stays off, so a deployment that
         starts with OAuth unconfigured keeps starting."""
         with patch.dict(
-            'os.environ', {_STATE_SECRET_ENV: '', 'AUTH0_CLIENT_SECRET': ''}
+            'os.environ',
+            {_STATE_SECRET_ENV: '', 'AUTH0_ALPACON_LOGIN_CLIENT_SECRET': ''},
         ):
             register_oauth_routes(MockMCPServer())
 
@@ -669,7 +676,10 @@ class TestOAuthMetadata:
         assert data['authorization_endpoint'] == f'{TEST_RESOURCE_URL}/oauth/authorize'
         assert data['token_endpoint'] == f'{TEST_RESOURCE_URL}/oauth/token'
         assert data['registration_endpoint'] == f'{TEST_RESOURCE_URL}/oauth/register'
-        assert data['jwks_uri'] == f'https://{TEST_AUTH0_DOMAIN}/.well-known/jwks.json'
+        assert (
+            data['jwks_uri']
+            == f'https://{TEST_AUTH0_ALPACON_DOMAIN}/.well-known/jwks.json'
+        )
         assert 'code' in data['response_types_supported']
         assert 'S256' in data['code_challenge_methods_supported']
 
@@ -696,7 +706,7 @@ class TestOAuthMetadata:
 
     def test_metadata_error_is_readable_cross_origin(self, oauth_app):
         """Without the header a misconfigured deployment reads as a CORS failure."""
-        with patch.dict('os.environ', {'AUTH0_DOMAIN': ''}):
+        with patch.dict('os.environ', {'AUTH0_ALPACON_DOMAIN': ''}):
             response = oauth_app.get('/.well-known/oauth-authorization-server')
         assert response.status_code == HTTPStatus.INTERNAL_SERVER_ERROR
         assert response.headers['access-control-allow-origin'] == '*'
@@ -715,7 +725,7 @@ class TestOAuthAuthorize:
         )
         assert response.status_code == HTTPStatus.FOUND
         location = response.headers['location']
-        assert location.startswith(f'https://{TEST_AUTH0_DOMAIN}/authorize')
+        assert location.startswith(f'https://{TEST_AUTH0_ALPACON_DOMAIN}/authorize')
 
     def test_authorize_overrides_redirect_uri_to_server_callback(self, oauth_app):
         """redirect_uri sent to Auth0 should be the MCP server's own callback."""
@@ -1895,20 +1905,22 @@ class TestOAuthToken:
         }
 
     def test_token_fails_without_client_secret(self):
-        """Token endpoint should return 500 when AUTH0_CLIENT_SECRET is missing."""
+        """Token endpoint should return 500 when AUTH0_ALPACON_LOGIN_CLIENT_SECRET is missing."""
         sealed_code = _seal_code('test-code', DEVICE_ID)
         env_without_secret = {
-            'AUTH0_DOMAIN': TEST_AUTH0_DOMAIN,
-            'AUTH0_CLIENT_ID': TEST_CLIENT_ID,
-            'AUTH0_AUDIENCE': 'https://alpacon.io/access/',
+            'AUTH0_ALPACON_DOMAIN': TEST_AUTH0_ALPACON_DOMAIN,
+            'AUTH0_ALPACON_LOGIN_CLIENT_ID': TEST_CLIENT_ID,
+            'AUTH0_ALPACON_USER_AUDIENCE': 'https://alpacon.io/access/',
             'ALPACON_MCP_AUTH_ENABLED': 'true',
             'ALPACON_MCP_RESOURCE_URL': TEST_RESOURCE_URL,
         }
 
         mock_server = MockMCPServer()
         with patch.dict('os.environ', env_without_secret, clear=False):
-            # Unset AUTH0_CLIENT_SECRET if present
-            with patch.dict('os.environ', {'AUTH0_CLIENT_SECRET': ''}, clear=False):
+            # Unset AUTH0_ALPACON_LOGIN_CLIENT_SECRET if present
+            with patch.dict(
+                'os.environ', {'AUTH0_ALPACON_LOGIN_CLIENT_SECRET': ''}, clear=False
+            ):
                 register_oauth_routes(mock_server)
                 app = Starlette(routes=mock_server.routes)
                 client = TestClient(app, raise_server_exceptions=False)
@@ -1921,7 +1933,7 @@ class TestOAuthToken:
                 )
         assert response.status_code == HTTPStatus.INTERNAL_SERVER_ERROR
         data = response.json()
-        assert 'AUTH0_CLIENT_SECRET' in data.get('error', '')
+        assert 'AUTH0_ALPACON_LOGIN_CLIENT_SECRET' in data.get('error', '')
 
     def test_token_overrides_redirect_uri_for_auth_code(self, oauth_app):
         """Token exchange should use server's callback URL, not client's."""
@@ -2220,7 +2232,7 @@ class TestOAuthFallbackRoutes:
         )
         assert response.status_code == HTTPStatus.FOUND
         location = response.headers['location']
-        assert location.startswith(f'https://{TEST_AUTH0_DOMAIN}/authorize')
+        assert location.startswith(f'https://{TEST_AUTH0_ALPACON_DOMAIN}/authorize')
 
     def test_register_fallback_returns_client_id(self, oauth_app):
         """POST /register should return the configured client_id."""
@@ -2483,13 +2495,13 @@ class TestOAuthCallback:
 
     def test_callback_reports_missing_config_instead_of_crashing(self, oauth_app):
         """Missing client secret: same JSON 500 as other handlers, not a stack trace."""
-        with patch.dict('os.environ', {'AUTH0_CLIENT_SECRET': ''}):
+        with patch.dict('os.environ', {'AUTH0_ALPACON_LOGIN_CLIENT_SECRET': ''}):
             response = oauth_app.get(
                 '/oauth/callback',
                 params={'code': 'auth-code', 'state': 'aGVsbG8.c2ln'},
             )
         assert response.status_code == HTTPStatus.INTERNAL_SERVER_ERROR
-        assert 'AUTH0_CLIENT_SECRET' in response.json()['error']
+        assert 'AUTH0_ALPACON_LOGIN_CLIENT_SECRET' in response.json()['error']
 
     def test_callback_returns_json_without_redirect_uri(self, oauth_app):
         """Without a client redirect_uri in state, return JSON as fallback."""

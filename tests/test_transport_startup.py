@@ -40,7 +40,7 @@ def test_server_module_imports_in_auth_mode():
         'server',
         {
             'ALPACON_MCP_AUTH_ENABLED': 'true',
-            'AUTH0_DOMAIN': 'example.us.auth0.com',
+            'AUTH0_ALPACON_DOMAIN': 'example.us.auth0.com',
             'ALPACON_MCP_RESOURCE_URL': 'https://mcp.example.com',
         },
     )
