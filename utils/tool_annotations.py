@@ -1,10 +1,5 @@
-"""Reusable MCP tool annotation presets.
-
-Centralizes common tool classifications so tool files can import shared
-presets instead of duplicating the same ToolAnnotations values inline.
-Prefer these presets for reusable patterns, and add new presets here when
-a classification is shared by multiple tools.
-"""
+"""Shared ToolAnnotations presets for tool classifications; add a new one here when
+several tools share it."""
 
 from mcp.types import ToolAnnotations
 

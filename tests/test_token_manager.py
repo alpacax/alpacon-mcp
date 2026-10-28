@@ -1,9 +1,5 @@
-"""Unit tests for TokenManager token and base-URL resolution.
-
-Covers the legacy bare-string token form, the object form
-``{"token": "...", "url": "..."}`` (used to pin a workspace's API host across a
-slug change, ADR 0027), and the environment-variable overrides for both token
-and base URL.
+"""TokenManager token and base-URL resolution: the legacy string form, the object form
+{"token", "url"} (pins an API host across a slug change, ADR 0027), and env overrides.
 """
 
 import json

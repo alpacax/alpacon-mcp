@@ -8,7 +8,6 @@ logger = get_logger('main_sse')
 
 
 def main() -> None:
-    """Entry point for the alpacon-mcp-sse console script."""
     parser = argparse.ArgumentParser(description='Alpacon MCP Server (SSE mode)')
     parser.add_argument(
         '--config-file',

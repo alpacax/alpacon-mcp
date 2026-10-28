@@ -1,7 +1,5 @@
-"""Shared fixtures for integration tests.
-
-Provides MockTransport-based fixtures that inject mock HTTP responses at the
-httpx transport layer, letting the full request path execute end-to-end.
+"""Shared fixtures that inject mock HTTP responses at the httpx transport layer.
+The full request path runs end to end.
 """
 
 from http import HTTPStatus
@@ -18,13 +16,7 @@ SECOND_SERVER_ID = '550e8400-e29b-41d4-a716-446655440002'
 
 @pytest.fixture
 def make_mock_transport():
-    """Factory to create httpx.MockTransport with a custom handler.
-
-    The handler receives an httpx.Request and must return an httpx.Response.
-
-    Usage:
-        transport = make_mock_transport(my_handler)
-    """
+    """Build an httpx.MockTransport from a handler(httpx.Request) -> httpx.Response."""
 
     def _factory(handler):
         return httpx.MockTransport(handler)
@@ -34,12 +26,8 @@ def make_mock_transport():
 
 @pytest.fixture
 def patched_http_client(make_mock_transport):
-    """Patch AlpaconHTTPClient._get_client to return a client with MockTransport.
-
-    Yields a helper that accepts a handler function. The handler receives
-    an httpx.Request and returns an httpx.Response.
-
-    Clears the HTTP client cache on teardown for test isolation.
+    """Patch AlpaconHTTPClient._get_client to return a MockTransport client.
+    Yields a patcher whose set_handler(handler) installs the request handler.
     """
 
     class _Patcher:
@@ -77,14 +65,8 @@ def patched_http_client(make_mock_transport):
 
 @pytest.fixture
 def mock_token_for_integration():
-    """Patch utils.common.token_manager to return a test token.
-
-    All decorated tool functions use validate_token() from utils.common,
-    which delegates to token_manager.get_token(). This fixture makes
-    that call return 'integration-test-token'.
-
-    Note: utils.token_manager.get_token_manager is already patched by the
-    autouse fixture in tests/conftest.py for region auto-detection.
+    """Patch utils.common.token_manager so validate_token() returns
+    'integration-test-token'.
     """
     with patch('utils.common.token_manager') as mock_tm:
         mock_tm.get_token.return_value = 'integration-test-token'
@@ -93,11 +75,8 @@ def mock_token_for_integration():
 
 @pytest.fixture
 def sample_api_responses():
-    """Factory returning realistic API response payloads.
-
-    Usage:
-        data = sample_api_responses()
-        servers = data['servers_list']
+    """Factory returning realistic API response payloads, keyed by name.
+    E.g. data = sample_api_responses(); data['servers_list'].
     """
 
     def _factory():
@@ -200,10 +179,8 @@ def sample_api_responses():
 
 @pytest.fixture(autouse=True)
 def no_sleep():
-    """Patch asyncio.sleep in http_client module to make retry tests fast.
-
-    This is autouse so all integration tests run without actual sleep delays.
-    Records delay values in mock_sleep.recorded_delays for backoff verification.
+    """Autouse: patch asyncio.sleep in http_client so retries run instantly.
+    The delays land on mock_sleep.recorded_delays for backoff checks.
     """
     recorded_delays = []
 

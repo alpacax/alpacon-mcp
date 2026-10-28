@@ -1,6 +1,4 @@
-"""
-Start each transport entry point as a real process and observe it boot.
-
+"""Start each transport entry point as a real process and observe it boot.
 Deselected by default; run with ``pytest -m smoke``.
 """
 

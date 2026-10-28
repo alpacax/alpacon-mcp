@@ -1,12 +1,5 @@
-"""Resolve a workspace URL slug to its fixed ``schema_name``.
-
-A workspace's URL slug can be renamed while its ``schema_name`` stays fixed,
-and the JWT workspace claims only carry the ``schema_name``. When the
-``workspace`` argument is not a claim's ``schema_name``, ask the account
-service's public lookup which workspace the segment belongs to.
-
-The lookup is skipped when ``ALPACON_ACCOUNT_URL`` is unset. Every failure resolves to ``None`` so the caller keeps rejecting the argument.
-"""
+"""Resolve a renamed workspace URL slug to its fixed schema_name via the account
+service. Skipped when ALPACON_ACCOUNT_URL is unset; every failure resolves to None."""
 
 import os
 import re
@@ -50,7 +43,7 @@ def _store(slug: str, value: str | None, now: float) -> None:
 
 
 async def lookup_schema_name(slug: str) -> str | None:
-    """Return the ``schema_name`` for a slug, or None on any failure."""
+    """Return the schema_name for a slug, or None on any failure."""
     base_url = _account_base_url()
     if not base_url or not _SLUG_PATTERN.fullmatch(slug):
         return None
@@ -93,12 +86,8 @@ async def lookup_schema_name(slug: str) -> str | None:
 async def resolve_workspace(
     workspace: str, claim_workspaces: list[WorkspaceClaim]
 ) -> str:
-    """Map ``workspace`` to a claim's ``schema_name`` when it is a renamed slug.
-
-    Returns ``workspace`` unchanged when it already is a ``schema_name`` in the
-    claims (no network call), and also when the lookup fails or names a
-    workspace the token does not grant, so the usual rejection applies.
-    """
+    """Map workspace to a claim's schema_name when it is a renamed slug. Returns it
+    unchanged when already a claim, or when the lookup fails or is not granted."""
     schema_names = {ws.get('schema_name') for ws in claim_workspaces}
     if not schema_names:
         return workspace

@@ -1,4 +1,4 @@
-"""Event management tools for Alpacon MCP server - Refactored version."""
+"""Event tools for Alpacon MCP server."""
 
 from utils.api_call import http_call_response
 from utils.common import build_list_params

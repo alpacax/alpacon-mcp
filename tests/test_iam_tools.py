@@ -1,8 +1,4 @@
-"""
-Unit tests for IAM tools module.
-
-Tests all IAM management functions including user and group management.
-"""
+"""Unit tests for IAM tools: users, groups, memberships, and applications."""
 
 import pytest
 
@@ -90,13 +86,10 @@ def sample_users_list():
 
 
 class TestIAMUsersManagement:
-    """Test user management functions."""
-
     @pytest.mark.asyncio
     async def test_list_iam_users_success(
         self, mock_http_client, mock_token_manager, sample_users_list
     ):
-        """Test successful users list retrieval."""
         mock_http_client.get.return_value = sample_users_list
 
         result = await list_iam_users(
@@ -117,7 +110,6 @@ class TestIAMUsersManagement:
 
     @pytest.mark.asyncio
     async def test_list_iam_users_no_token(self, mock_http_client, mock_token_manager):
-        """Test users list with no token."""
         mock_token_manager.get_token.return_value = None
 
         result = await list_iam_users(workspace='testworkspace')
@@ -130,7 +122,6 @@ class TestIAMUsersManagement:
     async def test_list_iam_users_pagination(
         self, mock_http_client, mock_token_manager, sample_users_list
     ):
-        """Test users list with pagination."""
         mock_http_client.get.return_value = sample_users_list
 
         result = await list_iam_users(workspace='testworkspace', page=2, page_size=50)
@@ -148,7 +139,6 @@ class TestIAMUsersManagement:
     async def test_get_iam_user_success(
         self, mock_http_client, mock_token_manager, sample_user
     ):
-        """Test successful user retrieval."""
         mock_http_client.get.return_value = sample_user
 
         result = await get_iam_user(user_id=USER_ID, workspace='testworkspace')
@@ -165,7 +155,6 @@ class TestIAMUsersManagement:
 
     @pytest.mark.asyncio
     async def test_get_iam_user_invalid_id(self, mock_http_client, mock_token_manager):
-        """Test user retrieval rejects a non-UUID user ID locally."""
         result = await get_iam_user(user_id='not-a-uuid', workspace='testworkspace')
 
         assert result['status'] == 'error'
@@ -175,7 +164,6 @@ class TestIAMUsersManagement:
     async def test_create_iam_user_success(
         self, mock_http_client, mock_token_manager, sample_user
     ):
-        """Test successful user creation."""
         mock_http_client.post.return_value = sample_user
 
         result = await create_iam_user(
@@ -209,7 +197,6 @@ class TestIAMUsersManagement:
     async def test_update_iam_user_success(
         self, mock_http_client, mock_token_manager, sample_user
     ):
-        """Test successful user update."""
         updated_user = sample_user.copy()
         updated_user['first_name'] = 'Updated'
         mock_http_client.patch.return_value = updated_user
@@ -238,7 +225,6 @@ class TestIAMUsersManagement:
     async def test_update_iam_user_invalid_id(
         self, mock_http_client, mock_token_manager
     ):
-        """Test user update rejects a non-UUID user ID locally."""
         result = await update_iam_user(
             user_id='not-a-uuid', workspace='testworkspace', first_name='Updated'
         )
@@ -248,7 +234,6 @@ class TestIAMUsersManagement:
 
     @pytest.mark.asyncio
     async def test_delete_iam_user_success(self, mock_http_client, mock_token_manager):
-        """Test successful user deletion."""
         mock_http_client.delete.return_value = {'message': 'User deleted successfully'}
 
         result = await delete_iam_user(user_id=USER_ID, workspace='testworkspace')
@@ -268,7 +253,6 @@ class TestIAMUsersManagement:
     async def test_delete_iam_user_invalid_id(
         self, mock_http_client, mock_token_manager
     ):
-        """Test user deletion rejects a non-UUID user ID locally."""
         result = await delete_iam_user(user_id='not-a-uuid', workspace='testworkspace')
 
         assert result['status'] == 'error'
@@ -276,11 +260,8 @@ class TestIAMUsersManagement:
 
 
 class TestIAMGroupsManagement:
-    """Test group management functions."""
-
     @pytest.mark.asyncio
     async def test_list_iam_groups_success(self, mock_http_client, mock_token_manager):
-        """Test successful groups list retrieval."""
         groups_data = {
             'count': 3,
             'results': [
@@ -307,7 +288,6 @@ class TestIAMGroupsManagement:
 
     @pytest.mark.asyncio
     async def test_create_iam_group_success(self, mock_http_client, mock_token_manager):
-        """Test successful group creation."""
         group_data = {
             'id': GROUP_ID,
             'name': 'developers',
@@ -344,7 +324,6 @@ class TestIAMGroupsManagement:
     async def test_create_iam_group_invalid_name(
         self, mock_http_client, mock_token_manager
     ):
-        """Test group creation rejects an invalid name locally."""
         for invalid_name in ('Developers', 'dev team', 'dev.team', ''):
             result = await create_iam_group(
                 name=invalid_name, workspace='testworkspace'
@@ -370,8 +349,6 @@ class TestErrorHandling:
 
 
 class TestHTTPErrorEnvelope:
-    """Test that http_client error envelopes surface as error responses."""
-
     @pytest.mark.asyncio
     async def test_get_iam_user_http_error(self, mock_http_client, mock_token_manager):
         """get_iam_user reports error when http_client returns an error envelope."""
@@ -411,7 +388,6 @@ class TestParameterValidation:
     async def test_optional_parameters(
         self, mock_http_client, mock_token_manager, sample_user
     ):
-        """Test functions with optional parameters."""
         mock_http_client.post.return_value = sample_user
 
         await create_iam_user(
@@ -434,7 +410,6 @@ class TestParameterValidation:
 
     @pytest.mark.asyncio
     async def test_different_regions(self, mock_http_client, mock_token_manager):
-        """Test with different regions."""
         mock_http_client.get.return_value = {'count': 0, 'results': []}
 
         await list_iam_users(workspace='test', region='us1')
@@ -453,7 +428,6 @@ class TestIAMGroupExtendedManagement:
 
     @pytest.mark.asyncio
     async def test_get_iam_group_success(self, mock_http_client, mock_token_manager):
-        """Test successful group retrieval."""
         group_data = {
             'id': GROUP_ID,
             'name': 'admins',
@@ -476,7 +450,6 @@ class TestIAMGroupExtendedManagement:
 
     @pytest.mark.asyncio
     async def test_update_iam_group_success(self, mock_http_client, mock_token_manager):
-        """Test successful group update."""
         updated_group = {
             'id': GROUP_ID,
             'name': 'admins',
@@ -509,7 +482,6 @@ class TestIAMGroupExtendedManagement:
 
     @pytest.mark.asyncio
     async def test_get_iam_group_invalid_id(self, mock_http_client, mock_token_manager):
-        """Test group retrieval rejects a non-UUID group ID locally."""
         result = await get_iam_group(group_id='not-a-uuid', workspace='testworkspace')
 
         assert result['status'] == 'error'
@@ -517,7 +489,6 @@ class TestIAMGroupExtendedManagement:
 
     @pytest.mark.asyncio
     async def test_update_iam_group_no_data(self, mock_http_client, mock_token_manager):
-        """Test update group with no fields returns error."""
         result = await update_iam_group(group_id=GROUP_ID, workspace='testworkspace')
 
         assert result['status'] == 'error'
@@ -527,7 +498,6 @@ class TestIAMGroupExtendedManagement:
     async def test_update_iam_group_invalid_id(
         self, mock_http_client, mock_token_manager
     ):
-        """Test group update rejects a non-UUID group ID locally."""
         result = await update_iam_group(
             group_id='not-a-uuid',
             display_name='Senior Admins',
@@ -539,7 +509,6 @@ class TestIAMGroupExtendedManagement:
 
     @pytest.mark.asyncio
     async def test_delete_iam_group_success(self, mock_http_client, mock_token_manager):
-        """Test successful group deletion."""
         mock_http_client.delete.return_value = {'message': 'Group deleted successfully'}
 
         result = await delete_iam_group(group_id=GROUP_ID, workspace='testworkspace')
@@ -558,7 +527,6 @@ class TestIAMGroupExtendedManagement:
     async def test_delete_iam_group_invalid_id(
         self, mock_http_client, mock_token_manager
     ):
-        """Test group deletion rejects a non-UUID group ID locally."""
         result = await delete_iam_group(
             group_id='not-a-uuid', workspace='testworkspace'
         )
@@ -568,13 +536,10 @@ class TestIAMGroupExtendedManagement:
 
 
 class TestIAMMembershipManagement:
-    """Test IAM membership management functions."""
-
     @pytest.mark.asyncio
     async def test_list_iam_memberships_success(
         self, mock_http_client, mock_token_manager
     ):
-        """Test successful memberships list retrieval."""
         memberships_data = {
             'count': 2,
             'results': [
@@ -602,7 +567,6 @@ class TestIAMMembershipManagement:
     async def test_list_iam_memberships_with_group_filter(
         self, mock_http_client, mock_token_manager
     ):
-        """Test memberships list filtered by group ID."""
         mock_http_client.get.return_value = {'count': 1, 'results': []}
 
         await list_iam_memberships(
@@ -621,7 +585,6 @@ class TestIAMMembershipManagement:
     async def test_list_iam_memberships_invalid_group_filter(
         self, mock_http_client, mock_token_manager
     ):
-        """Test membership listing rejects a non-UUID group filter locally."""
         result = await list_iam_memberships(
             workspace='testworkspace', group_id='not-a-uuid'
         )
@@ -631,7 +594,6 @@ class TestIAMMembershipManagement:
 
     @pytest.mark.asyncio
     async def test_add_iam_member_success(self, mock_http_client, mock_token_manager):
-        """Test successful member addition to group."""
         membership_data = {'id': MEMBERSHIP_ID, 'group': GROUP_ID, 'user': USER_ID}
         mock_http_client.post.return_value = membership_data
 
@@ -654,7 +616,6 @@ class TestIAMMembershipManagement:
 
     @pytest.mark.asyncio
     async def test_add_iam_member_with_role(self, mock_http_client, mock_token_manager):
-        """Test member addition with an explicit role."""
         mock_http_client.post.return_value = {
             'id': SECOND_MEMBERSHIP_ID,
             'role': 'manager',
@@ -680,7 +641,6 @@ class TestIAMMembershipManagement:
     async def test_add_iam_member_invalid_role(
         self, mock_http_client, mock_token_manager
     ):
-        """Test member addition rejects an unknown role locally."""
         result = await add_iam_member(
             group_id=GROUP_ID,
             user_id=USER_ID,
@@ -695,7 +655,6 @@ class TestIAMMembershipManagement:
     async def test_add_iam_member_invalid_group_id(
         self, mock_http_client, mock_token_manager
     ):
-        """Test member addition rejects a non-UUID group ID locally."""
         result = await add_iam_member(
             group_id='not-a-uuid',
             user_id=USER_ID,
@@ -709,7 +668,6 @@ class TestIAMMembershipManagement:
     async def test_add_iam_member_invalid_user_id(
         self, mock_http_client, mock_token_manager
     ):
-        """Test member addition rejects a non-UUID user ID locally."""
         result = await add_iam_member(
             group_id=GROUP_ID,
             user_id='not-a-uuid',
@@ -723,7 +681,6 @@ class TestIAMMembershipManagement:
     async def test_remove_iam_member_success(
         self, mock_http_client, mock_token_manager
     ):
-        """Test successful member removal from group."""
         mock_http_client.delete.return_value = {'message': 'Membership removed'}
 
         result = await remove_iam_member(
@@ -744,7 +701,6 @@ class TestIAMMembershipManagement:
     async def test_remove_iam_member_invalid_id(
         self, mock_http_client, mock_token_manager
     ):
-        """Test member removal rejects a non-UUID membership ID locally."""
         result = await remove_iam_member(
             membership_id='not-a-uuid', workspace='testworkspace'
         )
@@ -754,13 +710,10 @@ class TestIAMMembershipManagement:
 
 
 class TestWorkspaceUserInvitation:
-    """Test workspace user invitation function."""
-
     @pytest.mark.asyncio
     async def test_invite_workspace_user_success(
         self, mock_http_client, mock_token_manager
     ):
-        """Test successful workspace invitation."""
         invite_data = {'detail': ['User invitation sent.']}
         mock_http_client.post.return_value = invite_data
 
@@ -785,7 +738,6 @@ class TestWorkspaceUserInvitation:
     async def test_invite_workspace_user_different_region(
         self, mock_http_client, mock_token_manager
     ):
-        """Test workspace invitation with a specific region."""
         mock_http_client.post.return_value = {'detail': ['User invitation sent.']}
 
         result = await invite_workspace_user(
@@ -805,8 +757,6 @@ class TestWorkspaceUserInvitation:
 
 
 class TestIAMApplicationManagement:
-    """Test IAM application management functions."""
-
     @pytest.fixture
     def sample_application(self):
         """Sample application data for testing."""
@@ -821,7 +771,6 @@ class TestIAMApplicationManagement:
     async def test_list_iam_applications_success(
         self, mock_http_client, mock_token_manager
     ):
-        """Test successful applications list retrieval."""
         apps_data = {
             'count': 2,
             'results': [
@@ -849,7 +798,6 @@ class TestIAMApplicationManagement:
     async def test_list_iam_applications_pagination(
         self, mock_http_client, mock_token_manager
     ):
-        """Test applications list with pagination parameters."""
         mock_http_client.get.return_value = {'count': 0, 'results': []}
 
         await list_iam_applications(workspace='testworkspace', page=2, page_size=5)
@@ -866,7 +814,6 @@ class TestIAMApplicationManagement:
     async def test_create_iam_application_success(
         self, mock_http_client, mock_token_manager, sample_application
     ):
-        """Test successful application creation."""
         mock_http_client.post.return_value = sample_application
 
         result = await create_iam_application(
@@ -891,7 +838,6 @@ class TestIAMApplicationManagement:
     async def test_create_iam_application_no_description(
         self, mock_http_client, mock_token_manager, sample_application
     ):
-        """Test application creation without optional description."""
         mock_http_client.post.return_value = sample_application
 
         await create_iam_application(name='my-service', workspace='testworkspace')
@@ -908,7 +854,6 @@ class TestIAMApplicationManagement:
     async def test_create_iam_application_invalid_service_type(
         self, mock_http_client, mock_token_manager
     ):
-        """Test application creation rejects an unknown service type locally."""
         result = await create_iam_application(
             name='my-service',
             workspace='testworkspace',
@@ -922,7 +867,6 @@ class TestIAMApplicationManagement:
     async def test_get_iam_application_success(
         self, mock_http_client, mock_token_manager, sample_application
     ):
-        """Test successful application retrieval."""
         mock_http_client.get.return_value = sample_application
 
         result = await get_iam_application(app_id=APP_ID, workspace='testworkspace')
@@ -942,7 +886,6 @@ class TestIAMApplicationManagement:
     async def test_update_iam_application_success(
         self, mock_http_client, mock_token_manager, sample_application
     ):
-        """Test successful application update."""
         updated_app = sample_application.copy()
         updated_app['name'] = 'my-service-v2'
         mock_http_client.patch.return_value = updated_app
@@ -969,7 +912,6 @@ class TestIAMApplicationManagement:
     async def test_get_iam_application_invalid_id(
         self, mock_http_client, mock_token_manager
     ):
-        """Test application retrieval rejects a non-UUID app ID locally."""
         result = await get_iam_application(
             app_id='not-a-uuid', workspace='testworkspace'
         )
@@ -981,7 +923,6 @@ class TestIAMApplicationManagement:
     async def test_update_iam_application_no_data(
         self, mock_http_client, mock_token_manager
     ):
-        """Test update application with no fields returns error."""
         result = await update_iam_application(app_id=APP_ID, workspace='testworkspace')
 
         assert result['status'] == 'error'
@@ -991,7 +932,6 @@ class TestIAMApplicationManagement:
     async def test_update_iam_application_invalid_id(
         self, mock_http_client, mock_token_manager
     ):
-        """Test application update rejects a non-UUID app ID locally."""
         result = await update_iam_application(
             app_id='not-a-uuid', workspace='testworkspace', name='new-name'
         )
@@ -1003,7 +943,6 @@ class TestIAMApplicationManagement:
     async def test_delete_iam_application_success(
         self, mock_http_client, mock_token_manager
     ):
-        """Test successful application deletion."""
         mock_http_client.delete.return_value = {'message': 'Application deleted'}
 
         result = await delete_iam_application(app_id=APP_ID, workspace='testworkspace')
@@ -1022,7 +961,6 @@ class TestIAMApplicationManagement:
     async def test_delete_iam_application_invalid_id(
         self, mock_http_client, mock_token_manager
     ):
-        """Test application deletion rejects a non-UUID app ID locally."""
         result = await delete_iam_application(
             app_id='not-a-uuid', workspace='testworkspace'
         )
@@ -1034,7 +972,6 @@ class TestIAMApplicationManagement:
     async def test_assign_application_system_users_success(
         self, mock_http_client, mock_token_manager
     ):
-        """Test successful system user assignment to an application."""
         assigned = [{'id': SYSTEM_USER_ID, 'username': 'svc-my-service'}]
         mock_http_client.post.return_value = assigned
 
@@ -1060,7 +997,6 @@ class TestIAMApplicationManagement:
     async def test_unassign_application_system_users_success(
         self, mock_http_client, mock_token_manager
     ):
-        """Test successful system user unassignment from an application."""
         unassigned = {'unassigned': 1, 'system_user_ids': [SYSTEM_USER_ID]}
         mock_http_client.post.return_value = unassigned
 
@@ -1086,7 +1022,6 @@ class TestIAMApplicationManagement:
     async def test_assign_application_system_users_empty_list(
         self, mock_http_client, mock_token_manager
     ):
-        """Test assignment rejects an empty system user list locally."""
         result = await assign_application_system_users(
             app_id=APP_ID,
             system_user_ids=[],
@@ -1100,7 +1035,6 @@ class TestIAMApplicationManagement:
     async def test_assign_application_system_users_invalid_system_user_id(
         self, mock_http_client, mock_token_manager
     ):
-        """Test assignment rejects a non-UUID system user ID locally."""
         result = await assign_application_system_users(
             app_id=APP_ID,
             system_user_ids=['not-a-uuid'],
@@ -1114,7 +1048,6 @@ class TestIAMApplicationManagement:
     async def test_unassign_application_system_users_invalid_system_user_id(
         self, mock_http_client, mock_token_manager
     ):
-        """Test unassignment rejects a non-UUID system user ID locally."""
         result = await unassign_application_system_users(
             app_id=APP_ID,
             system_user_ids=['not-a-uuid'],
@@ -1128,7 +1061,6 @@ class TestIAMApplicationManagement:
     async def test_assign_application_system_users_invalid_app_id(
         self, mock_http_client, mock_token_manager
     ):
-        """Test assignment rejects a non-UUID application ID locally."""
         result = await assign_application_system_users(
             app_id='not-a-uuid',
             system_user_ids=[SYSTEM_USER_ID],
@@ -1142,7 +1074,6 @@ class TestIAMApplicationManagement:
     async def test_unassign_application_system_users_invalid_app_id(
         self, mock_http_client, mock_token_manager
     ):
-        """Test unassignment rejects a non-UUID application ID locally."""
         result = await unassign_application_system_users(
             app_id='not-a-uuid',
             system_user_ids=[SYSTEM_USER_ID],

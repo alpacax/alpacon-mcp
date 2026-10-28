@@ -1,4 +1,4 @@
-"""Wait for a WebFTP transfer the host runs: the presigned URL is minted before the file is behind it."""
+"""Wait for a WebFTP transfer the host runs; its URL exists before the file."""
 
 from asyncio import sleep
 from collections.abc import Awaitable, Callable
@@ -95,7 +95,7 @@ async def await_command_handled(
     deadline: float,
     interval: float,
 ) -> Stalled | CommandHidden | None:
-    """Wait until the host has handled ``command_id``; None once it has, successfully."""
+    """Wait until the host has handled command_id; None once it succeeded."""
 
     async def check() -> Stalled | CommandHidden | _Pending | None:
         command = await http_client.get(

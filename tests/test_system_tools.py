@@ -1,13 +1,5 @@
-"""
-Unit tests for system_info_tools module - additional edge case tests.
-
-Tests additional edge cases and cross-function scenarios for
-system information tools. The module was previously named system_tools
-and has been refactored to system_info_tools.
-
-Note: Core function tests are in test_system_info_tools.py.
-This file covers additional scenarios like region variations,
-error conditions, and parameter handling.
+"""Edge cases and cross-function scenarios for system_info_tools. Core tests are in
+test_system_info_tools.py; this adds region, error and parameter cases.
 """
 
 from collections.abc import Awaitable
@@ -38,12 +30,8 @@ US_REGION_SERVER_ID = '660e8400-e29b-41d4-a716-446655440001'
 
 
 class TestSystemInfoEdgeCases:
-    """Test get_system_info edge cases."""
-
     @pytest.mark.asyncio
     async def test_system_info_success(self, mock_http_client, mock_token_manager):
-        """Test successful system info retrieval."""
-
         # Mock successful response
         mock_http_client.get.return_value = {
             'hostname': 'web-server-01',
@@ -79,8 +67,6 @@ class TestSystemInfoEdgeCases:
 
     @pytest.mark.asyncio
     async def test_system_info_no_token(self, mock_http_client, mock_token_manager):
-        """Test system info when no token is available."""
-
         mock_token_manager.get_token.return_value = None
 
         result = await get_system_info(server_id=SERVER_ID, workspace='testworkspace')
@@ -93,8 +79,6 @@ class TestSystemInfoEdgeCases:
     async def test_system_info_different_region(
         self, mock_http_client, mock_token_manager
     ):
-        """Test system info with different region."""
-
         mock_http_client.get.return_value = {'hostname': 'us-server'}
 
         result = await get_system_info(
@@ -116,12 +100,8 @@ class TestSystemInfoEdgeCases:
 
 
 class TestListSystemUsersEdgeCases:
-    """Test list_system_users edge cases."""
-
     @pytest.mark.asyncio
     async def test_users_list_success(self, mock_http_client, mock_token_manager):
-        """Test successful users list retrieval."""
-
         # Mock successful response
         mock_http_client.get.return_value = {
             'count': 3,
@@ -178,8 +158,6 @@ class TestListSystemUsersEdgeCases:
 
     @pytest.mark.asyncio
     async def test_users_list_no_token(self, mock_http_client, mock_token_manager):
-        """Test users list when no token is available."""
-
         mock_token_manager.get_token.return_value = None
 
         result = await list_system_users(server_id=SERVER_ID, workspace='testworkspace')
@@ -192,8 +170,6 @@ class TestListSystemUsersEdgeCases:
 class TestListSystemPackagesEdgeCases:
     @pytest.mark.asyncio
     async def test_packages_list_success(self, mock_http_client, mock_token_manager):
-        """Test successful packages list retrieval."""
-
         # Mock successful response
         mock_http_client.get.return_value = {
             'count': 2,
@@ -229,8 +205,6 @@ class TestListSystemPackagesEdgeCases:
 
     @pytest.mark.asyncio
     async def test_packages_list_empty(self, mock_http_client, mock_token_manager):
-        """Test packages list with empty response."""
-
         mock_http_client.get.return_value = {'count': 0, 'results': []}
 
         result = await list_system_packages(
@@ -242,8 +216,6 @@ class TestListSystemPackagesEdgeCases:
 
     @pytest.mark.asyncio
     async def test_packages_list_no_token(self, mock_http_client, mock_token_manager):
-        """Test packages list when no token is available."""
-
         mock_token_manager.get_token.return_value = None
 
         result = await list_system_packages(
@@ -258,8 +230,6 @@ class TestListSystemPackagesEdgeCases:
 class TestGetDiskInfoEdgeCases:
     @pytest.mark.asyncio
     async def test_disk_info_success(self, mock_http_client, mock_token_manager):
-        """Test successful disk info retrieval."""
-
         # Mock successful responses for both disks and partitions
         disks_data = {
             'disks': [
@@ -311,8 +281,6 @@ class TestGetDiskInfoEdgeCases:
 
     @pytest.mark.asyncio
     async def test_disk_info_no_token(self, mock_http_client, mock_token_manager):
-        """Test disk info when no token is available."""
-
         mock_token_manager.get_token.return_value = None
 
         result = await get_disk_info(server_id=SERVER_ID, workspace='testworkspace')
@@ -323,8 +291,6 @@ class TestGetDiskInfoEdgeCases:
 
     @pytest.mark.asyncio
     async def test_disk_info_http_error(self, mock_http_client, mock_token_manager):
-        """Test disk info with HTTP error from both endpoints."""
-
         mock_http_client.get.side_effect = Exception('Disk service unavailable')
 
         result = await get_disk_info(server_id=SERVER_ID, workspace='testworkspace')
@@ -335,14 +301,10 @@ class TestGetDiskInfoEdgeCases:
 
 
 class TestCrossFunctionScenarios:
-    """Test cross-function scenarios and edge cases."""
-
     @pytest.mark.asyncio
     async def test_different_regions_and_workspaces(
         self, mock_http_client, mock_token_manager
     ):
-        """Test functions with different regions and workspaces."""
-
         # Mock successful responses
         mock_http_client.get.return_value = {'test': 'data'}
 

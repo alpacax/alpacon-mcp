@@ -1,7 +1,5 @@
 """Shared fixtures for all tests.
-
-Provides autouse fixtures that prevent tests from hitting the real
-TokenManager (which requires ~/.alpacon-mcp/token.json to exist).
+Autouse fixtures keep tests off the real TokenManager and its token.json.
 """
 
 from collections.abc import AsyncIterator
@@ -115,14 +113,8 @@ def mock_token_manager():
 
 @pytest.fixture(autouse=True)
 def mock_region_auto_detect():
-    """Prevent _resolve_region from accessing real token.json in all tests.
-
-    The with_token_validation decorator calls get_token_manager() when region
-    is empty to auto-detect it. Without this fixture, tests that omit region
-    fail in CI where no token.json exists.
-
-    Tests that need custom get_token_manager behavior (e.g. TestRegionAutoDetection)
-    apply their own @patch which takes precedence over this fixture.
+    """Keep _resolve_region_local off the real token.json when a test omits region.
+    A test needing its own get_token_manager behavior patches it over this one.
     """
     mock_tm = MagicMock()
     mock_tm.find_region_for_workspace.return_value = 'ap1'

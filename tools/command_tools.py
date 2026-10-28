@@ -211,13 +211,8 @@ _SUBMITTED_COMMAND = TypeAdapter(_SubmittedCommand)
 
 
 def _sudo_denial(result: _CommandRecord) -> tuple[str, str] | None:
-    """Detect a non-interactive sudo denial in the command output.
-
-    Returns ``(code, hint)`` for the matched denial category so the caller can
-    surface category-level guidance—and, for human-resolvable categories, a
-    structured pending-approval signal—without the agent parsing free text.
-    Returns None when no denial is present.
-    """
+    """Return `(code, hint)` for a non-interactive sudo denial in the output,
+    or None when there is none."""
     output = result.get('result') or ''
     if not isinstance(output, str):
         return None
@@ -232,12 +227,8 @@ def _sudo_denial(result: _CommandRecord) -> tuple[str, str] | None:
 def _attach_sudo_denial(
     target: MutableMapping[str, JsonValue], source: _CommandRecord | None = None
 ) -> None:
-    """Attach denial guidance found in ``source`` onto ``target``.
-
-    ``source`` defaults to ``target``: a listing entry carries its own output,
-    while a single command's guidance goes on the tool response rather than on
-    the raw API result it was read from.
-    """
+    """Attach denial guidance read from `source` onto `target`; `source`
+    defaults to `target`."""
     denial = _sudo_denial(target if source is None else source)
     if not denial:
         return
@@ -330,11 +321,8 @@ _ONLY_REFUSED_SERVERS = (
 
 
 def _rerun_coordinates(result: _CommandRecord) -> dict[str, str]:
-    """The polled row's server, account and Work Session, keyed as tool arguments.
-
-    A rerun has to keep the held or refused command's account and Work Session,
-    or following the hint would submit a run other than the one the server saw.
-    """
+    """The polled row's server, account and Work Session as tool arguments; a
+    rerun must keep them or it submits a run the server never saw."""
     server = result.get('server')
     work_session = result.get('work_session')
     groupname = result.get('groupname')
@@ -351,7 +339,7 @@ def _rerun_coordinates(result: _CommandRecord) -> dict[str, str]:
 
 
 def _stdin_was_fed(result: _CommandRecord, stdin_fed: bool) -> bool:
-    """Data is withheld on some rows, so the submitting call's word counts too."""
+    """Whether stdin was fed; some rows withhold data, so the caller's word counts."""
     return stdin_fed or bool(result.get('data'))
 
 
@@ -364,7 +352,8 @@ class _FileExecutionRefusal(TypedDict):
 def _use_file_execution_refusal(
     result: _CommandRecord, stdin_fed: bool = False
 ) -> _FileExecutionRefusal | None:
-    """message, error_code and next_action for this refusal; None otherwise."""
+    """The message, error_code and next_action for a use_file_execution
+    refusal, or None."""
     if result.get('rejection_cause') != USE_FILE_EXECUTION:
         return None
     guidance = result.get('result')
@@ -405,13 +394,8 @@ def _requester_fields(
     purpose: str | None,
     purpose_demand_supported: bool,
 ) -> dict[str, object]:
-    """The submit-body fields that describe the requester, not what runs.
-
-    Shared by the shell lane and the file lane (ADR 0053): the server reads
-    these identically whichever lane the body selects, so one builder keeps a
-    rule such as the blank-purpose one from being applied on one lane and
-    forgotten on the other.
-    """
+    """Submit-body fields describing the requester, shared by the shell and file
+    lanes (ADR 0053) so a rule such as the blank-purpose one holds on both."""
     fields: dict[str, object] = {}
     if username:
         fields['username'] = username
@@ -504,20 +488,8 @@ async def _submit_file_execution(
     *,
     token: str | None = None,
 ) -> JsonValue:
-    """Submit a verified file execution (ADR 0053).
-
-    Same endpoint as ``_submit_command``; the ``file`` object is what selects
-    the lane. The body carries no ``shell``, ``line``, ``data``, or ``env`` key
-    at all: the server refuses ``line`` and ``data`` on key presence (an empty
-    string included), refuses a non-empty ``env``, and overwrites ``shell``
-    itself, so none of them has anything to say here.
-    ``content`` goes out byte-for-byte—the agent hashes the file on the host's
-    disk with no normalization, so a stripped trailing newline here would fail
-    every execution closed.
-    ``reuse_days`` rides inside the ``file`` object only when given: a server
-    that predates the field ignores the key, and a run with no
-    proposal sends the same body it always did.
-    """
+    """Submit a verified file execution (ADR 0053): `content` goes out
+    byte-for-byte and the body carries no shell, line, data or env key."""
     file_spec: dict[str, object] = {
         'path': path,
         'interpreter': interpreter,
@@ -585,19 +557,8 @@ async def _answer_purpose_demand(
 def _purpose_required_response(
     deadline_seconds: int | None = None, **kwargs: object
 ) -> ToolResponse:
-    """Report an open purpose demand as something this agent must answer itself.
-
-    Deliberately not ``pending_approval_response``: that shape says a human
-    holds the next move (``requires_human_approval``, ``approvable_by_agent:
-    False``), and here the opposite is true. No approval request exists yet—the
-    whole point of ADR 0052 is that the approver is not notified while the
-    demand is open—so an agent that reads this as "wait for a human" strands a
-    command nobody was asked about.
-
-    The response carries the instructions rather than leaving them to the tool
-    description. An agent reads the answer to its own call far more reliably
-    than it recalls a description that context compaction may have dropped.
-    """
+    """Report an open purpose demand as the agent's own move, deliberately not
+    `pending_approval_response`: no approver has been asked yet (ADR 0052)."""
     response: ToolResponse = {**kwargs}
     response.update(
         {
@@ -633,29 +594,14 @@ def _purpose_required_response(
 
 
 def _purpose_was_truncated(purpose: str | None) -> bool:
-    """Whether trimming to the ceiling actually cut anything off.
-
-    Trimming avoids a 400 that would cost the command its one demand, but a
-    purpose cut mid-sentence is what the assessor then judges. The caller has to
-    be told, or it reads a verdict on words it did not write.
-    """
+    """Whether trimming to PURPOSE_MAX_LENGTH cut anything, so the caller can
+    say the assessor judged words it did not write."""
     return len((purpose or '').strip()) > PURPOSE_MAX_LENGTH
 
 
 def _remaining_purpose_window(expires_at: JsonValue) -> int | None:
-    """Seconds left before the demand expires, or None when unknowable.
-
-    Measured against the expiry the server derived. The window's length is
-    ``COMMAND_PURPOSE_DEADLINE`` and no endpoint publishes it, so a client given
-    only a start time would still be guessing the length—which is the
-    deadline-that-does-not-exist problem, one step removed. With the expiry
-    itself there is nothing here to be wrong about, and a workspace that raises
-    the setting needs no release of this client.
-
-    Returns None when the server sends no expiry, so the response omits the
-    field instead of inventing one. A window already gone reports 0, never a
-    negative, which would invite arithmetic on it.
-    """
+    """Seconds left until the server-derived expiry (floored at 0), or None
+    when the server sends none; the deadline's length is never guessed."""
     if not isinstance(expires_at, str):
         return None
     try:
@@ -743,7 +689,7 @@ async def execute_command(
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
-    """Execute a command on a server and wait for the result (requires ACL permission)."""
+    """Run a command on a server and wait for the result (needs ACL permission)."""
     if not command.strip():
         return empty_value_error('command')
 
@@ -814,14 +760,8 @@ async def _settle_submission(
     shell: str = '',
     stdin_fed: bool = False,
 ) -> ToolResponse:
-    """Turn a submit response into the tool's answer: refusal, id, then the wait.
-
-    Shared by ``execute_command`` and ``execute_file``. The server answers both
-    lanes with the same command object and the same follow flow (ADR 0053), so
-    everything after the POST is one path; only the body that went out differs.
-    ``command`` and ``shell`` are echoed only when the caller has them—the file
-    lane has neither, and ``_poll_command_result`` omits an empty echo.
-    """
+    """Turn a submit response into the tool's answer (refusal, id, then the
+    wait); shared by the shell and file lanes (ADR 0053)."""
     if err := unwrap_http_result(
         exec_data,
         default_message='Command execution failed',
@@ -896,7 +836,7 @@ def _transfer_refusal(
     workspace: str,
     **extra: object,
 ) -> ToolErrorResponse | None:
-    """Render a refused WebFTP call on the file lane, or None when it was not refused."""
+    """Render a refused WebFTP call on the file lane, or None if not refused."""
     # Only a bare refusal gets error_code: beside a gate's `code` or `gate`, or
     # a pending_approval, it would read as a separate transfer failure.
     # region and workspace let a plan-limit answer build its billing link.
@@ -915,11 +855,8 @@ def _transfer_refusal(
 
 
 async def _get_capped(url: str, limit: int) -> bytes | str:
-    """GET a presigned URL, reading at most ``limit + 1`` bytes.
-
-    Returns the bytes, or an error message. One byte past ``limit`` is enough
-    to tell the caller the file is over it without pulling the rest.
-    """
+    """GET a presigned URL, reading at most `limit + 1` bytes; return the bytes
+    or an error message."""
     # Like _put_to_s3, this bypasses http_client, so a transport error is
     # caught here to keep it a file_read_failed answer.
     try:
@@ -950,13 +887,8 @@ async def _read_file_from_host(
     region: str,
     token: str | None,
 ) -> str | ToolErrorResponse:
-    """Read ``path`` from the host through WebFTP, as ``username``.
-
-    Returns the file's contents, decoded as UTF-8 with no normalization, or an
-    error response. The bytes go to review unchanged and the agent still
-    hashes the on-disk file at execution, so a file changed after this read
-    fails closed.
-    """
+    """Read `path` from the host through WebFTP, returning its UTF-8 contents
+    unnormalized or an error response."""
     download_data: dict[str, object] = {
         'server': server_id,
         'name': path.rsplit('/', 1)[-1],
@@ -1093,13 +1025,8 @@ async def _write_file_to_host(
     region: str,
     token: str | None,
 ) -> ToolErrorResponse | None:
-    """Write ``content`` to ``path`` on the host through WebFTP and wait for it.
-
-    Returns an error response, or None once the host reports the file written.
-    The bytes are ``content`` encoded as UTF-8 and nothing else, the same bytes
-    the submit sends for review. An existing file is replaced only with
-    ``overwrite``; otherwise the host refuses it, as the CLI's upload does.
-    """
+    """Write `content` (UTF-8) to `path` through WebFTP and wait; return an
+    error response, or None once written. An existing file needs `overwrite`."""
     upload_data: dict[str, object] = {
         'server': server_id,
         'name': path.rsplit('/', 1)[-1],
@@ -1206,12 +1133,8 @@ async def _write_file_to_host(
 
 
 def _file_exec_refusal(code: str, **kwargs: object) -> ToolErrorResponse:
-    """Refuse a file execution locally with the wording the server's 400 gets.
-
-    Same ``error_code`` and the same hint text as ``unwrap_http_result`` renders
-    for the server-side refusal, so a caller switching on the code, or a human
-    reading the message, sees one contract whichever side caught it.
-    """
+    """Refuse a file execution locally with the same error_code and hint text
+    the server's 400 gets."""
     return error_response(FILE_EXEC_REFUSAL_HINTS[code], error_code=code, **kwargs)
 
 
@@ -1244,7 +1167,7 @@ async def execute_file(
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
-    """Run a file on the host as a verified execution and wait for the result (ADR 0053)."""
+    """Run a file on the host as a verified execution and wait (ADR 0053)."""
     token = kwargs.get('token')
     # Echo what was asked for, minus the content: the polled row already
     # carries the server-rendered line, and 64 KB of script belongs in the
@@ -1418,18 +1341,8 @@ def _attach_file_execution_suggestion(
     shell_lane: bool,
     stdin_fed: bool = False,
 ) -> None:
-    """Point a held shell-lane command at execute_file with read_from_server.
-
-    When the server names the script the line runs, in
-    ``file_execution_suggestion``, the response carries an ``execute_file``
-    call. It is ready to call when the line named an absolute interpreter.
-    When the line named a bare one, ``interpreter`` is left null with an
-    instruction to fill in its absolute path on the host: the host's PATH
-    decides what a bare name runs, so nothing is guessed. Without the field,
-    a caller that submitted a shell line still gets the hint in prose. A
-    malformed suggestion is dropped whole: patching one field would suggest
-    a run other than the one held.
-    """
+    """Point a held shell-lane command at execute_file with read_from_server;
+    a malformed `file_execution_suggestion` is dropped whole."""
     suggestion = result.get('file_execution_suggestion')
     if not isinstance(suggestion, dict):
         suggestion = {}
@@ -1508,12 +1421,8 @@ async def _poll_command_result(
     # Whether the submitting call fed stdin, which some rows do not echo back.
     stdin_fed: bool = False,
 ) -> ToolResponse:
-    """Wait for a submitted command to reach a state worth reporting.
-
-    Shared by ``execute_command`` and ``state_command_purpose``: answering a
-    purpose demand puts the command back on exactly the path a never-parked one
-    takes, so the wait after the answer has to be the same wait.
-    """
+    """Wait for a submitted command to reach a reportable state; shared by
+    execute_command and state_command_purpose."""
     # A caller that did not submit the command—state_command_purpose—knows
     # neither the server nor the line. Echo only what is known: the polled row
     # carries both anyway, and an empty string reads as a real value where an
@@ -1750,7 +1659,8 @@ async def execute_command_multi_server(
     purpose: str | None = None,
     **kwargs: str,
 ) -> ToolResponse:
-    """Execute a command on multiple servers using Command API (requires ACL permission)."""
+    """Submit a command to many servers without waiting; read results via
+    list_commands (needs ACL permission)."""
     token = kwargs.get('token')
 
     if not server_ids:

@@ -1,9 +1,4 @@
-"""
-Unit tests for HTTP client utility.
-
-Tests the HTTP client functionality including GET, POST, PATCH, DELETE operations
-and error handling.
-"""
+"""Unit tests for the HTTP client: GET, POST, PATCH, DELETE, and error handling."""
 
 import inspect
 import logging
@@ -55,9 +50,7 @@ def mock_httpx_client(monkeypatch):
 @pytest.fixture
 def no_retry_delay(monkeypatch):
     """Drop the backoff sleep for tests that exhaust the retries.
-
-    monkeypatch, not assignment: http_client is a module-level singleton, so
-    the value would leak into the rest of the suite.
+    monkeypatch, not assignment: http_client is a singleton, so a set value would leak.
     """
     monkeypatch.setattr(http_client, 'retry_delay', 0)
 
@@ -93,11 +86,8 @@ def create_mock_response(
 
 
 class TestHTTPClientGet:
-    """Test HTTP GET operations."""
-
     @pytest.mark.asyncio
     async def test_get_success(self, mock_httpx_client):
-        """Test successful GET request."""
         mock_response = create_mock_response(
             status_code=HTTPStatus.OK, json_data={'result': 'success'}
         )
@@ -114,7 +104,6 @@ class TestHTTPClientGet:
 
     @pytest.mark.asyncio
     async def test_get_with_params(self, mock_httpx_client):
-        """Test GET request with query parameters."""
         mock_response = create_mock_response(
             status_code=HTTPStatus.OK, json_data={'results': []}
         )
@@ -133,7 +122,6 @@ class TestHTTPClientGet:
 
     @pytest.mark.asyncio
     async def test_get_404_error(self, mock_httpx_client):
-        """Test GET request with 404 error."""
         mock_response = create_mock_response(status_code=HTTPStatus.NOT_FOUND)
         mock_httpx_client.request.return_value = mock_response
 
@@ -181,9 +169,8 @@ class TestHTTPClientGet:
     async def test_get_500_exhaustion_enriches_across_tool_domains(
         self, mock_httpx_client, no_retry_delay, tool_name, domain
     ):
-        """tool_name mirrors the live enrich call and outranks the message, so the
-        domain varies by caller; 500 has only a (500, 'general') entry so the hints
-        converge, and a domain-specific one would split them here.
+        """tool_name mirrors the live enrich call and outranks the message. 500 has one
+        (500, 'general') entry, so hints converge; a domain-specific one would split.
         """
         mock_response = create_mock_response(
             status_code=HTTPStatus.INTERNAL_SERVER_ERROR
@@ -212,11 +199,8 @@ class TestHTTPClientGet:
 
 
 class TestHTTPClientPost:
-    """Test HTTP POST operations."""
-
     @pytest.mark.asyncio
     async def test_post_success(self, mock_httpx_client):
-        """Test successful POST request."""
         mock_response = create_mock_response(
             status_code=HTTPStatus.CREATED, json_data={'id': 123, 'created': True}
         )
@@ -234,7 +218,6 @@ class TestHTTPClientPost:
 
     @pytest.mark.asyncio
     async def test_post_validation_error(self, mock_httpx_client):
-        """Test POST request with validation error."""
         mock_response = create_mock_response(status_code=HTTPStatus.BAD_REQUEST)
         mock_httpx_client.request.return_value = mock_response
 
@@ -252,11 +235,8 @@ class TestHTTPClientPost:
 
 
 class TestHTTPClientPatch:
-    """Test HTTP PATCH operations."""
-
     @pytest.mark.asyncio
     async def test_patch_success(self, mock_httpx_client):
-        """Test successful PATCH request."""
         mock_response = create_mock_response(
             status_code=HTTPStatus.OK, json_data={'updated': True}
         )
@@ -305,8 +285,6 @@ class TestHTTPClientBodyShapes:
 
 
 class TestHTTPClientDelete:
-    """Test HTTP DELETE operations."""
-
     @pytest.mark.asyncio
     async def test_delete_success(self, mock_httpx_client):
         """Test successful DELETE request (no content)."""
@@ -326,7 +304,6 @@ class TestHTTPClientDelete:
 
     @pytest.mark.asyncio
     async def test_delete_with_response(self, mock_httpx_client):
-        """Test DELETE request with response body."""
         mock_response = create_mock_response(
             status_code=HTTPStatus.OK, json_data={'deleted': True, 'id': 123}
         )
@@ -343,11 +320,8 @@ class TestHTTPClientDelete:
 
 
 class TestURLConstruction:
-    """Test URL construction for different regions."""
-
     @pytest.mark.asyncio
     async def test_url_construction_all_regions(self, mock_httpx_client):
-        """Test URL construction for all supported regions."""
         mock_response = create_mock_response(
             status_code=HTTPStatus.OK, json_data={'region': 'test'}
         )
@@ -373,10 +347,8 @@ class TestURLConstruction:
 
     @pytest.mark.asyncio
     async def test_configured_base_url_override_is_used(self, mock_httpx_client):
-        """A pinned base URL is used verbatim instead of the derived host.
-
-        This keeps a workspace addressable across a URL slug change (ADR 0027):
-        the host is a persisted value, not re-derived from the workspace label.
+        """A pinned base URL is used verbatim instead of the derived host (ADR 0027).
+        The host is persisted, so a workspace survives a URL slug change.
         """
         mock_response = create_mock_response(
             status_code=HTTPStatus.OK, json_data={'ok': True}
@@ -441,11 +413,8 @@ class TestURLConstruction:
 
 
 class TestErrorHandling:
-    """Test error handling scenarios."""
-
     @pytest.mark.asyncio
     async def test_network_timeout(self, mock_httpx_client, no_retry_delay):
-        """Test network timeout handling."""
         mock_httpx_client.request.side_effect = httpx.TimeoutException(
             'Request timeout'
         )
@@ -462,7 +431,6 @@ class TestErrorHandling:
 
     @pytest.mark.asyncio
     async def test_connection_error(self, mock_httpx_client, no_retry_delay):
-        """Test connection error handling."""
         mock_httpx_client.request.side_effect = httpx.ConnectError('Connection failed')
 
         result = await http_client.get(
@@ -477,7 +445,6 @@ class TestErrorHandling:
 
     @pytest.mark.asyncio
     async def test_invalid_json_response(self, mock_httpx_client):
-        """Test handling of invalid JSON response."""
         # Create a response that will cause json() to fail
         mock_response = MagicMock()
         mock_response.status_code = HTTPStatus.OK
@@ -501,11 +468,8 @@ class TestErrorHandling:
 
 
 class TestHTTPClientJWTAuth:
-    """Test JWT vs API token authentication header selection."""
-
     @pytest.mark.asyncio
     async def test_jwt_token_uses_bearer_header(self, mock_httpx_client):
-        """Test that JWT-like tokens use Bearer authorization header."""
         mock_response = create_mock_response(
             status_code=HTTPStatus.OK, json_data={'result': 'success'}
         )
@@ -526,7 +490,6 @@ class TestHTTPClientJWTAuth:
 
     @pytest.mark.asyncio
     async def test_api_token_uses_token_header(self, mock_httpx_client):
-        """Test that API tokens use token= authorization header."""
         mock_response = create_mock_response(
             status_code=HTTPStatus.OK, json_data={'result': 'success'}
         )
@@ -545,7 +508,6 @@ class TestHTTPClientJWTAuth:
         assert call_kwargs.kwargs['headers']['Authorization'] == f'token={api_token}'
 
     def test_is_jwt_detection(self):
-        """Test JWT format detection logic."""
         assert AlpaconHTTPClient._is_jwt('a.b.c') is True
         assert AlpaconHTTPClient._is_jwt('eyJ.eyJ.sig') is True
         assert AlpaconHTTPClient._is_jwt('simple-token') is False
@@ -554,8 +516,6 @@ class TestHTTPClientJWTAuth:
 
 
 class TestHandleUpstream401:
-    """Test _handle_upstream_401 MFA detection and flag signaling."""
-
     def _make_401_exc(self, json_body=None, text=''):
         """Create a mock HTTPStatusError with 401 response."""
         mock_response = MagicMock()
@@ -703,11 +663,8 @@ class TestHandleUpstream401:
 
 
 class TestNoResponseCache:
-    """The client must not answer a read from an earlier response.
-
-    Every read worth caching comes back filtered by the caller's permissions,
-    and a grant revoked outside this process is invisible here, so a cached
-    read would keep serving access the caller has already lost.
+    """A read is never answered from an earlier response. Reads come back filtered by
+    the caller's permissions; a cache would keep serving revoked access.
     """
 
     LIST_URL = 'https://ws.ap1.alpacon.io/api/servers/servers/'

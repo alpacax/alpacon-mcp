@@ -1,4 +1,4 @@
-"""Types for registering Starlette routes on an MCPServer; import-time side-effect free."""
+"""Types for registering Starlette routes on an MCPServer."""
 
 from collections.abc import Awaitable, Callable
 from typing import Protocol

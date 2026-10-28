@@ -1,8 +1,5 @@
-"""End-to-end integration tests for MCP tool functions.
-
-Tests tool functions from call through the full decorator chain, HTTP client,
-MockTransport, and back to response parsing. Verifies that realistic API
-payloads produce correct success/error responses.
+"""Tool end-to-end tests: decorator chain, HTTP client and MockTransport, then parsing.
+Realistic API payloads must produce correct success and error responses.
 """
 
 import json
@@ -296,12 +293,8 @@ class TestSystemInfoEndToEnd:
     async def test_get_server_overview_fans_out_to_every_section(
         self, patched_http_client, mock_token_for_integration
     ):
-        """Every section is filled over HTTP, not from a swallowed exception.
-
-        The five calls this tool fans out to are decorated tools themselves, so
-        an argument their published signature rejects arrives here as a
-        per-section error string under an overall status of success. Mocking the
-        five out, as the unit tests do, hides exactly that.
+        """Every section is filled over HTTP, not from a swallowed exception. A rejected
+        argument becomes a per-section error under status success; mocks hide it.
         """
         requested = []
 

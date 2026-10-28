@@ -1,11 +1,5 @@
-"""Integration tests for the decorator chain.
-
-Tests the full decorator stack: with_logging -> with_token_validation -> with_error_handling.
-Uses MockTransport at the httpx transport layer so the real HTTP client code runs.
-
-The decorators' own contracts—the error shape, the exceptions that propagate,
-the marker every registered tool carries—are unit-tested in
-``tests/test_decorators.py``.
+"""The decorator chain end to end over MockTransport, so the real HTTP client runs.
+The decorators' own contracts are unit-tested in tests/test_decorators.py.
 """
 
 import ast
@@ -74,8 +68,6 @@ async def _request_sudo_policy(
 
 
 class TestDecoratorChainSuccess:
-    """Test successful flow through the full decorator chain."""
-
     async def test_full_chain_success_flow(
         self, patched_http_client, mock_token_for_integration, sample_api_responses
     ):
@@ -113,8 +105,6 @@ class TestDecoratorChainSuccess:
 
 
 class TestTokenValidation:
-    """Test token validation decorator rejects invalid inputs."""
-
     async def test_invalid_region_rejected(self, patched_http_client):
         """Invalid region format returns validation error before any HTTP call."""
         handler_called = False
@@ -165,8 +155,6 @@ class TestTokenValidation:
 
 
 class TestErrorHandlingDecorator:
-    """Test that with_error_handling catches exceptions from HTTP layer."""
-
     async def test_http_exception_caught_by_error_handler(
         self, patched_http_client, mock_token_for_integration
     ):
@@ -185,10 +173,8 @@ class TestErrorHandlingDecorator:
 
 
 class TestLoggingDecorator:
-    """Test that with_logging decorator logs entry and exit.
-
-    Every test below that passes ``region='invalid'`` does so to stop the call
-    right after the entry log, before any HTTP.
+    """with_logging writes the entry and exit records.
+    Tests passing region='invalid' stop right after the entry log, before any HTTP.
     """
 
     async def test_logging_logs_entry_and_success(
@@ -370,9 +356,7 @@ class TestCredentialsStayOutOfLogs:
 
 def _tool_modules() -> list[ModuleType]:
     """Every toolset module, imported.
-
-    Registration is an import-time side effect on the process-global ``mcp``,
-    so this widens ``list_tools()`` for whatever test runs next.
+    Registration is an import-time side effect on the global mcp, widening list_tools().
     """
     return [
         importlib.import_module(f'{TOOLS_PACKAGE}.{module}')
@@ -395,11 +379,8 @@ def _tool_functions() -> dict[str, FunctionType]:
 
 
 def _structured(result: CallToolResult | InputRequiredResult) -> ToolPayload:
-    """Pull structured_content out of a CallToolResult, refusing anything else.
-
-    SDK 2.x returns CallToolResult | InputRequiredResult where 1.x returned a
-    2-tuple. A multi-round result here would mean the tool asked for input,
-    which none of these tools do.
+    """Return structured_content from a CallToolResult; anything else fails the test.
+    SDK 2.x may return InputRequiredResult, which none of these tools should.
     """
     assert isinstance(result, CallToolResult), f'unexpected result type: {type(result)}'
     assert isinstance(result.structured_content, dict), (
@@ -552,9 +533,8 @@ class TestPublishedSchema:
 
 
 class TestLoggedParameterSurface:
-    """The entry log writes an argument's value only when its name is in
-    ``_LOGGED_VERBATIM_KEYS``; every other argument keeps its key and is
-    recorded by type and size, so a new parameter is safe until reviewed.
+    """The entry log keeps an argument's value only if its name is in
+    _LOGGED_VERBATIM_KEYS; others keep the key and log type and size.
     """
 
     # Reviewed out of the verbatim set: a value here can carry a credential
@@ -618,11 +598,8 @@ class TestLoggedParameterSurface:
 
 
 class TestCatchAllForwarding:
-    """``with_logging`` binds the published signature and so refuses a
-    forwarded catch-all, but only while INFO is enabled. The rule that no tool
-    forwards its own ``**kwargs`` into another tool—the catch-all holds the
-    resolved credential (#211)—is pinned here instead, independently of the
-    log level.
+    """Pins, at any log level, that no tool forwards its own **kwargs (#211).
+    with_logging catches it only while INFO is on; the catch-all holds the credential.
     """
 
     async def test_no_tool_forwards_its_catch_all_to_another_tool(self):

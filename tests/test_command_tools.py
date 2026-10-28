@@ -212,8 +212,6 @@ class TestSudoDenialHint:
 
 
 class TestSubmitCommand:
-    """Test _submit_command internal helper."""
-
     @pytest.mark.asyncio
     async def test_submit_basic(self, mock_http_client):
         mock_http_client.post.return_value = {'id': 'cmd-123', 'status': 'running'}
@@ -361,8 +359,6 @@ class TestSubmitCommand:
 
 
 class TestListCommands:
-    """Test list_commands function."""
-
     @pytest.mark.asyncio
     async def test_list_commands_success(self, mock_http_client, mock_token_manager):
         mock_http_client.get.return_value = {
@@ -605,8 +601,6 @@ class TestListCommandsSudoDenialAnnotation:
 
 
 class TestExecuteCommand:
-    """Test execute_command function (renamed from execute_command_sync)."""
-
     @pytest.mark.asyncio
     async def test_success(self, mock_http_client, mock_token_manager):
         with (
@@ -1086,8 +1080,6 @@ class TestExecuteCommand:
 
 
 class TestSubmitCommandWithSession:
-    """Test _submit_command forwards work_session to API payload."""
-
     @pytest.mark.asyncio
     async def test_submit_includes_work_session_when_provided(self, mock_http_client):
         mock_http_client.post.return_value = {'id': 'cmd-ws-001'}
@@ -3206,8 +3198,8 @@ def _route_download_status(
     log: list[str] | None = None,
 ) -> _Route:
     """Answer the transfer command and download status GETs the read path makes.
-
-    ``commands`` answers the command polls in order, its last entry repeating."""
+    `commands` answers the command polls in order, its last entry repeating.
+    """
 
     async def _get(*, endpoint: str, **_: object) -> JsonValue:
         if log is not None:

@@ -27,13 +27,10 @@ SERVER_ID = '550e8400-e29b-41d4-a716-446655440002'
 
 
 class TestListApprovalRequests:
-    """Test approval requests listing."""
-
     @pytest.mark.asyncio
     async def test_list_approval_requests_success(
         self, mock_http_client, mock_token_manager
     ):
-        """Test successful approval requests list retrieval."""
         mock_http_client.get.return_value = {
             'count': 2,
             'results': [{'id': 'req-1'}, {'id': 'req-2'}],
@@ -55,7 +52,6 @@ class TestListApprovalRequests:
     async def test_list_approval_requests_with_status_filter(
         self, mock_http_client, mock_token_manager
     ):
-        """Test approval requests list with status filter."""
         mock_http_client.get.return_value = {'count': 1, 'results': [{'id': 'req-1'}]}
 
         result = await list_approval_requests(
@@ -75,7 +71,6 @@ class TestListApprovalRequests:
     async def test_list_approval_requests_with_pagination(
         self, mock_http_client, mock_token_manager
     ):
-        """Test approval requests list with pagination."""
         mock_http_client.get.return_value = {'count': 10, 'results': []}
 
         result = await list_approval_requests(
@@ -93,13 +88,10 @@ class TestListApprovalRequests:
 
 
 class TestGetApprovalRequest:
-    """Test approval request details."""
-
     @pytest.mark.asyncio
     async def test_get_approval_request_success(
         self, mock_http_client, mock_token_manager
     ):
-        """Test successful approval request retrieval."""
         mock_http_client.get.return_value = {
             'id': 'req-1',
             'status': 'pending',
@@ -183,8 +175,6 @@ class TestApprovalDecisionIsHumanOnly:
 
 
 class TestSudoPolicies:
-    """Test sudo policy tools."""
-
     @pytest.mark.asyncio
     async def test_list_sudo_policies_success(
         self, mock_http_client, mock_token_manager
@@ -261,8 +251,6 @@ class TestSudoPolicies:
 
 
 class TestRequestSudoPolicy:
-    """Tests for request_sudo_policy tool."""
-
     @pytest.mark.asyncio
     async def test_request_sudo_policy_posts_required_fields(
         self, mock_http_client, mock_token_manager

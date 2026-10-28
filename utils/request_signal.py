@@ -1,9 +1,5 @@
-"""Per-request carrying of the upstream authentication signal.
-
-The tool handler runs in a task the transport spawns, so rebinding a ContextVar
-there never reaches the ASGI middleware. Mutating the dict the middleware put in
-the ContextVar does, and it keeps one request's signal out of another's response.
-"""
+"""Carry the upstream authentication signal per request.
+Handlers must mutate the middleware's dict; rebinding never reaches it."""
 
 from contextvars import ContextVar
 
@@ -22,7 +18,6 @@ def begin_request() -> AuthSignal:
 
 
 def end_request() -> None:
-    """Clear the signal. Symmetric counterpart to begin_request()."""
     _signal.set(None)
 
 
@@ -31,10 +26,8 @@ def current_signal() -> AuthSignal | None:
 
 
 def signal_upstream_auth_error(error_info: AuthSignal) -> None:
-    """Record an upstream 401 for the request in flight.
-
-    Does nothing outside a request: stdio and SSE never install a signal.
-    """
+    """Record an upstream 401 for the request in flight; a no-op outside a request
+    (stdio, SSE)."""
     holder = _signal.get()
     if holder is None:
         return

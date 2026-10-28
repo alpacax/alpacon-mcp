@@ -75,26 +75,8 @@ async def create_event_subscription(
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
-    """Create an event subscription.
-
-    Args:
-        workspace: Workspace name. Required parameter
-        channel: Notification channel ID to deliver events to
-        event_type: Type of event to subscribe to, e.g. command_fin,
-            servers_commit, sudo, metric_threshold_crossed (a rule's
-            threshold or no-data condition was met), or
-            metric_threshold_resolved (the condition cleared). The two
-            metric events both carry an alert_id pairing the crossing to its
-            resolution, need the workspace's metrics extension enabled, and
-            an omitted target_id (every server, rather than one) needs an
-            admin account
-        target_id: Target resource ID to filter events for; for the two
-            metric events this is a server ID (optional)
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        Event subscription creation response
-    """
+    """metric_threshold_crossed and metric_threshold_resolved need the metrics
+    extension and take a server `target_id`; omitting it needs an admin."""
     token = kwargs.get('token')
 
     subscription_data: dict[str, object] = {
@@ -122,16 +104,6 @@ async def create_event_subscription(
 async def delete_event_subscription(
     subscription_id: str, workspace: str, region: str = '', **kwargs: str
 ) -> ToolResponse:
-    """Delete an event subscription.
-
-    Args:
-        subscription_id: Event subscription ID to delete
-        workspace: Workspace name. Required parameter
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        Event subscription deletion response
-    """
     token = kwargs.get('token')
 
     return await http_call_response(
@@ -260,21 +232,8 @@ async def create_webhook(
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
-    """Create a webhook.
-
-    Args:
-        workspace: Workspace name. Required parameter
-        name: Name of the webhook
-        url: URL to receive webhook callbacks
-        owner: Owning user's UUID; the server looks it up by primary key
-        provider: One of WEBHOOK_PROVIDERS; detected from the URL when omitted
-        ssl_verify: Whether to verify SSL certificates (default: True)
-        enabled: Whether the webhook is enabled (default: True)
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        Webhook creation response
-    """
+    """`owner` must be a user UUID; `provider` is checked against WEBHOOK_PROVIDERS and
+    detected from the URL when omitted."""
     if not validate_uuid_format(owner):
         return format_validation_error('owner', owner, _OWNER_SENTENCE)
 
@@ -318,20 +277,7 @@ async def update_webhook(
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
-    """Update an existing webhook.
-
-    Args:
-        webhook_id: Webhook ID to update
-        workspace: Workspace name. Required parameter
-        name: Name of the webhook (optional)
-        url: URL to receive webhook callbacks (optional)
-        ssl_verify: Whether to verify SSL certificates (optional)
-        enabled: Whether the webhook is enabled (optional)
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        Webhook update response
-    """
+    """Partial update; at least one of name, url, ssl_verify or enabled is required."""
     token = kwargs.get('token')
 
     update_data: dict[str, object] = exclude_none(
@@ -365,16 +311,7 @@ async def update_webhook(
 async def delete_webhook(
     webhook_id: str, workspace: str, region: str = '', **kwargs: str
 ) -> ToolResponse:
-    """Delete a webhook.
-
-    Args:
-        webhook_id: Webhook ID to delete
-        workspace: Workspace name. Required parameter
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        Webhook deletion response
-    """
+    """Delete a webhook, stopping callbacks for its subscriptions."""
     token = kwargs.get('token')
 
     return await http_call_response(

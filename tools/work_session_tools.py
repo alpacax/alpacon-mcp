@@ -419,23 +419,8 @@ async def work_session_timeline(
     include_records: bool | None = None,
     **kwargs: str,
 ) -> ToolResponse:
-    """Get the timeline of a Work Session, following the server's cursor.
-
-    Args:
-        session_id: Work Session ID
-        workspace: Workspace name. Required parameter
-        region: Region (ap1, us1). Auto-detected if not provided
-        cursor: Opaque cursor from a previous call's `pagination.next_cursor`,
-            which resumes the walk where the bound stopped it (optional)
-        page_size: Items per request, 1 to 500 (optional); the server's
-            default is 100
-        include_records: Retired, and declared only to be refused. Any value,
-            true or false, is answered with a validation error
-
-    Returns:
-        The merged timeline, plus a `pagination` report saying whether the walk
-        read the session to its end
-    """
+    """Read the timeline, following the cursor up to the request bound; `page_size`
+    is 1 to 500. `include_records` is refused: use work_session_records."""
     if include_records is not None:
         return format_validation_error(
             'include_records', include_records, _INCLUDE_RECORDS_REFUSED
@@ -503,24 +488,8 @@ async def work_session_records(
     page_size: int = _RECORD_DEFAULT_PAGE_SIZE,
     **kwargs: str,
 ) -> ToolResponse:
-    """Read one page of one websh session's recording in a Work Session.
-
-    Args:
-        session_id: Work Session ID
-        websh_session_id: The websh session whose recording to read, as the
-            `id` of a `websh_session` item on work_session_timeline
-        workspace: Workspace name. Required parameter
-        region: Region (ap1, us1). Auto-detected if not provided
-        cursor: Opaque cursor from the previous page's `next` (optional);
-            omitted, the page starts at the beginning of the recording
-        page_size: Chunks asked for, 1 to 16 (optional, default 8); a byte
-            budget can still cut the page shorter
-
-    Returns:
-        The server's page as it answered it—`count`, `next`, `previous` and
-        the `results` chunks—where `next` is the cursor of the page after
-        this one and null only at the end of the recording
-    """
+    """Read one page of a Websh recording; pass `next` back as `cursor`, and only
+    `next: null` ends it. `page_size` is 1 to 16 (default 8); a byte cap can cut it."""
     if not 1 <= page_size <= _RECORD_MAX_PAGE_SIZE:
         return format_validation_error(
             'page_size', page_size, f'An integer from 1 to {_RECORD_MAX_PAGE_SIZE}.'

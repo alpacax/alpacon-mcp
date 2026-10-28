@@ -112,23 +112,8 @@ async def create_iam_user(
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
-    """Create a new IAM user.
-
-    Group assignment is handled separately via add_iam_member
-    (the user serializer has no groups field).
-
-    Args:
-        username: Username for the new user
-        email: Email address for the new user
-        workspace: Workspace name. Required parameter
-        first_name: First name (optional)
-        last_name: Last name (optional)
-        is_active: Whether user is active (default: True)
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        User creation response
-    """
+    """Create an IAM user. Groups are assigned separately via
+    add_iam_member."""
     token = kwargs.get('token')
 
     user_data = {
@@ -165,23 +150,8 @@ async def update_iam_user(
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
-    """Update an existing IAM user.
-
-    Group membership changes are handled separately via
-    add_iam_member/remove_iam_member (the user serializer has no groups field).
-
-    Args:
-        user_id: IAM user ID to update
-        workspace: Workspace name. Required parameter
-        email: New email address (optional)
-        first_name: New first name (optional)
-        last_name: New last name (optional)
-        is_active: New active status (optional)
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        User update response
-    """
+    """Partially update an IAM user; errors when no field is given. Group
+    changes go through add_iam_member/remove_iam_member."""
     err = uuid_field_error('user_id', user_id)
     if err:
         return err
@@ -215,16 +185,7 @@ async def update_iam_user(
 async def delete_iam_user(
     user_id: str, workspace: str, region: str = '', **kwargs: str
 ) -> ToolResponse:
-    """Delete an IAM user.
-
-    Args:
-        user_id: IAM user ID to delete
-        workspace: Workspace name. Required parameter
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        User deletion response
-    """
+    """Delete an IAM user."""
     err = uuid_field_error('user_id', user_id)
     if err:
         return err
@@ -298,18 +259,8 @@ async def create_iam_group(
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
-    """Create a new IAM group.
-
-    Args:
-        name: Name for the new group (lowercase letters, digits, hyphens, and underscores only)
-        workspace: Workspace name. Required parameter
-        display_name: Human-readable display name (optional)
-        description: Description of the group (optional)
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        Group creation response
-    """
+    """Create an IAM group; name must match lowercase letters, digits,
+    hyphens and underscores."""
     if not GROUP_NAME_PATTERN.match(name):
         return format_validation_error(
             'name',
@@ -399,21 +350,8 @@ async def update_iam_group(
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
-    """Update an existing IAM group.
-
-    The group name is read-only on the server (GroupUpdateSerializer);
-    only display_name and description are exposed here.
-
-    Args:
-        group_id: Group ID to update
-        workspace: Workspace name. Required parameter
-        display_name: New display name (optional)
-        description: New group description (optional)
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        IAM group update response
-    """
+    """Update an IAM group's display_name or description; errors when none
+    is given. The name is read-only."""
     err = uuid_field_error('group_id', group_id)
     if err:
         return err
@@ -450,16 +388,7 @@ async def delete_iam_group(
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
-    """Delete an IAM group.
-
-    Args:
-        group_id: Group ID to delete
-        workspace: Workspace name. Required parameter
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        IAM group deletion response
-    """
+    """Delete an IAM group."""
     err = uuid_field_error('group_id', group_id)
     if err:
         return err
@@ -539,18 +468,7 @@ async def add_iam_member(
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
-    """Add a user to an IAM group.
-
-    Args:
-        group_id: Group ID to add the user to
-        user_id: User ID to add to the group
-        workspace: Workspace name. Required parameter
-        role: Role in the group: member, manager, or owner (default: member)
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        IAM membership creation response
-    """
+    """Add a user to an IAM group."""
     err = uuid_field_error('group_id', group_id) or uuid_field_error('user_id', user_id)
     if err:
         return err
@@ -584,16 +502,7 @@ async def remove_iam_member(
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
-    """Remove a user from an IAM group.
-
-    Args:
-        membership_id: Membership ID to delete
-        workspace: Workspace name. Required parameter
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        IAM membership deletion response
-    """
+    """Remove a user from an IAM group."""
     err = uuid_field_error('membership_id', membership_id)
     if err:
         return err
@@ -626,19 +535,8 @@ async def invite_workspace_user(
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
-    """Invite a user to the workspace by email.
-
-    Sends an Auth0 organization invitation and records a pending
-    InvitedUser entry. The invitee is identified by email only.
-
-    Args:
-        email: Email address to send the invitation to
-        workspace: Workspace name. Required parameter
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        Invitation response
-    """
+    """Send an Auth0 organization invitation and record a pending
+    InvitedUser; the invitee is identified by email only."""
     token = kwargs.get('token')
     return await http_call_response(
         http_client.post,
@@ -708,19 +606,8 @@ async def create_iam_application(
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
-    """Create a new IAM application.
-
-    Args:
-        name: Name of the new application
-        workspace: Workspace name. Required parameter
-        description: Description of the application (optional)
-        service_type: ci_cd, monitoring, automation, or integration
-            (optional; server defaults to integration)
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        IAM application creation response
-    """
+    """Create an IAM application; service_type must be ci_cd, monitoring,
+    automation or integration (server default: integration)."""
     if service_type is not None and service_type not in VALID_SERVICE_TYPES:
         return format_validation_error(
             'service_type',
@@ -797,18 +684,7 @@ async def update_iam_application(
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
-    """Update an existing IAM application.
-
-    Args:
-        app_id: Application ID to update
-        workspace: Workspace name. Required parameter
-        name: New application name (optional)
-        description: New application description (optional)
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        IAM application update response
-    """
+    """Update an existing IAM application."""
     err = uuid_field_error('app_id', app_id)
     if err:
         return err
@@ -843,16 +719,7 @@ async def delete_iam_application(
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
-    """Delete an IAM application.
-
-    Args:
-        app_id: Application ID to delete
-        workspace: Workspace name. Required parameter
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        IAM application deletion response
-    """
+    """Delete an IAM application."""
     err = uuid_field_error('app_id', app_id)
     if err:
         return err
@@ -883,17 +750,8 @@ async def assign_application_system_users(
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
-    """Assign system users to an IAM application.
-
-    Args:
-        app_id: Application ID to assign system users to
-        system_user_ids: List of system user IDs (UUIDs) to bind
-        workspace: Workspace name. Required parameter
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        Assigned system users response
-    """
+    """Bind system users to an IAM application; system_user_ids must be a
+    non-empty list of UUIDs."""
     err = uuid_field_error('app_id', app_id)
     if err:
         return err
@@ -935,17 +793,8 @@ async def unassign_application_system_users(
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
-    """Unassign system users from an IAM application.
-
-    Args:
-        app_id: Application ID to unassign system users from
-        system_user_ids: List of system user IDs (UUIDs) to release
-        workspace: Workspace name. Required parameter
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        Unassigned system users response
-    """
+    """Release system users from an IAM application; system_user_ids must be a
+    non-empty list of UUIDs."""
     err = uuid_field_error('app_id', app_id)
     if err:
         return err

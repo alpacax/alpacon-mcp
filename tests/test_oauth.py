@@ -1,9 +1,5 @@
-"""
-Unit tests for OAuth proxy endpoints.
-
-Tests the OAuth metadata, authorize, token, and callback endpoints
-including security constraints (grant_type allowlist, client_id enforcement,
-error handling).
+"""OAuth proxy endpoints: metadata, authorize, token, and callback. Includes security
+constraints: grant_type allowlist, client_id enforcement, error handling.
 """
 
 import base64
@@ -130,10 +126,8 @@ class MockMCPServer:
 
 @pytest.fixture
 def oauth_app():
-    """Create a minimal Starlette app with OAuth routes registered.
-
-    The client carries the nonce cookie a real browser would have, so callback
-    tests exercise the success path; use oauth_app_no_cookie for the negative.
+    """Minimal Starlette app with the OAuth routes registered. Its client carries the
+    nonce cookie a browser would; oauth_app_no_cookie is the negative.
     """
     mock_server = MockMCPServer()
     register_oauth_routes(mock_server)
@@ -218,8 +212,6 @@ def _authorize(oauth_app, scope='openid profile'):
 
 
 class TestAllowedRedirectUris:
-    """Tests for the endpoint-level redirect_uri allowlist configuration."""
-
     def test_defaults_cover_known_remote_clients(self):
         uris = _get_allowed_redirect_uris()
         assert 'https://claude.ai/api/mcp/auth_callback' in uris
@@ -270,8 +262,6 @@ class TestAllowedRedirectUris:
 
 
 class TestExactRedirectUriMatch:
-    """Tests for endpoint-level redirect_uri matching."""
-
     def test_listed_uri_matches(self):
         assert _is_exact_allowed_redirect_uri(LISTED_REDIRECT_URI)
         assert _is_exact_allowed_redirect_uri(
@@ -321,8 +311,6 @@ class TestExactRedirectUriMatch:
 
 
 class TestPkceExemption:
-    """Tests for the one redirect_uri that may skip PKCE."""
-
     def test_pkce_exempt_uri_is_the_copilot_studio_callback(self):
         assert _is_pkce_exempt_redirect_uri(EXEMPT_REDIRECT_URI)
 
@@ -353,8 +341,6 @@ class TestPkceExemption:
 
 
 class TestRedirectUriGate:
-    """Tests for the redirect_uri endpoint gate."""
-
     def test_rejects_untracked_path_by_default(self):
         assert not _check_redirect_uri(UNLISTED_PATH_URI)
 
@@ -394,8 +380,6 @@ class TestRedirectUriGate:
 
 
 class TestAuthorizeObservation:
-    """Tests for the observation-window log line."""
-
     def test_logs_redirect_uri_and_pkce_method(self, oauth_app, caplog):
         with caplog.at_level('INFO'):
             oauth_app.get(
@@ -442,8 +426,6 @@ class TestAuthorizeObservation:
 
 
 class TestStateSecret:
-    """Tests for state signing key derivation."""
-
     def test_explicit_env_secret_wins(self):
         with patch.dict('os.environ', {_STATE_SECRET_ENV: 'a1' * 32}):
             assert _get_state_secret() == b'\xa1' * 32
@@ -524,10 +506,8 @@ class TestGrantSecret:
 
 class TestMintedDeviceId:
     def test_mint_is_unpredictable(self):
-        """The per-grant property rests on the CSPRNG, not on a call count.
-
-        Every other minting test patches `_mint_device_id`, so this is the one
-        that would fail if its body became a constant.
+        """The per-grant property rests on the CSPRNG, not on a call count. Every other
+        minting test patches `_mint_device_id`; this one fails if it became a constant.
         """
         assert _mint_device_id() != _mint_device_id()
 
@@ -584,8 +564,6 @@ class TestSealedGrants:
 
 
 class TestNonceHelpers:
-    """Tests for the per-flow nonce that binds a state to one browser."""
-
     def test_new_nonce_differs_every_call(self):
         assert _new_nonce() != _new_nonce()
 
@@ -607,8 +585,6 @@ class TestNonceHelpers:
 
 
 class TestStateEnvelope:
-    """Tests for state signing and verification."""
-
     def test_round_trip_preserves_payload(self):
         signed = _sign_state({'redirect_uri': TRUSTED_REDIRECT_URI, 'state': 'xyz'})
         payload = _verify_state(signed)
@@ -668,8 +644,6 @@ class TestStateEnvelope:
 
 
 class TestBuildState:
-    """Tests for state payload assembly."""
-
     def test_carries_redirect_uri_and_client_state(self):
         decoded = _verify_state(_build_state(TRUSTED_REDIRECT_URI, 'xyz'))
         assert decoded is not None
@@ -686,8 +660,6 @@ class TestBuildState:
 
 
 class TestOAuthMetadata:
-    """Tests for /.well-known/oauth-authorization-server endpoint."""
-
     def test_metadata_returns_correct_endpoints(self, oauth_app):
         response = oauth_app.get('/.well-known/oauth-authorization-server')
         assert response.status_code == HTTPStatus.OK
@@ -731,8 +703,6 @@ class TestOAuthMetadata:
 
 
 class TestOAuthAuthorize:
-    """Tests for /oauth/authorize endpoint."""
-
     def test_authorize_redirects_to_auth0(self, oauth_app):
         response = oauth_app.get(
             '/oauth/authorize',
@@ -904,10 +874,8 @@ class TestOAuthAuthorize:
             assert response.status_code == HTTPStatus.BAD_REQUEST
 
     def test_authorize_rejects_domain_override_without_uri_override(self, oauth_app):
-        """ALLOWED_REDIRECT_DOMAINS alone no longer admits a host.
-
-        Breaking change: the domain list clears the host check, but the endpoint
-        allowlist still has to list the callback URI.
+        """ALLOWED_REDIRECT_DOMAINS alone no longer admits a host. The domain list
+        clears the host check, but the endpoint allowlist must list the URI.
         """
         with patch.dict(
             'os.environ', {'ALLOWED_REDIRECT_DOMAINS': 'custom.example.com'}
@@ -1159,8 +1127,6 @@ class TestOAuthAuthorize:
 
 
 class TestAuthorizePkce:
-    """Tests for the S256 PKCE requirement at /oauth/authorize."""
-
     def test_pkce_missing_challenge_is_rejected(self, oauth_app):
         response = oauth_app.get(
             '/oauth/authorize',
@@ -1397,10 +1363,8 @@ class TestAuthorizePkceChallengeFormat:
 
     @pytest.mark.parametrize('method', ['s256', 'S256 ', ' S256', 'SHA256'])
     def test_pkce_method_comparison_is_exact(self, oauth_app, method):
-        """RFC 7636 §4.3 makes the method case-sensitive.
-
-        These pass only because the comparison is != on the raw string. A later
-        .strip().upper() cleanup would start accepting all four.
+        """RFC 7636 §4.3 makes the method case-sensitive. These pass only because the
+        comparison is != on the raw string; .strip().upper() would accept them.
         """
         response = oauth_app.get(
             '/oauth/authorize',
@@ -1418,10 +1382,7 @@ class TestAuthorizePkceChallengeFormat:
 
 class TestAuthorizePkceDuplicateParams:
     """The value the gate checks must be the value forwarded upstream.
-
-    dict(request.query_params) is last-wins and urlencode re-encodes that same
-    dict, so the two agree. The agreement is load-bearing and incidental: a move
-    to getlist, or a framework with first-wins semantics, would break it.
+    request.query_params is last-wins and urlencode reuses it; getlist would break that.
     """
 
     def test_pkce_duplicate_challenge_checks_the_forwarded_value(self, oauth_app):
@@ -1487,8 +1448,6 @@ class TestAuthorizePkceDuplicateParams:
 
 
 class TestOAuthToken:
-    """Tests for /oauth/token endpoint."""
-
     def test_token_allows_authorization_code_grant(self, oauth_app):
         mock_client = _mock_auth0_response()
         with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
@@ -1759,9 +1718,9 @@ class TestOAuthToken:
         mock_client.post.assert_not_called()
 
     def test_token_refresh_rejects_a_bare_refresh_token(self, oauth_app, caplog):
-        """A refresh token issued before sealing would refresh under a shared
-        key, so it is refused and the client logs in again. Every pre-sealing
-        session hits this once at rollout, so it is not a warning."""
+        """A refresh token issued before sealing would refresh under a shared key, so it
+        is refused. Every pre-sealing session hits this once at rollout; not a warning.
+        """
         mock_client = _mock_auth0_response()
         with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
             with caplog.at_level('INFO'):
@@ -1821,9 +1780,7 @@ class TestOAuthToken:
 
     def test_token_auth_code_unseals_the_code(self, oauth_app):
         """Auth0 sees the code it issued, and no client device id on this grant.
-
-        The scope sent to /authorize already carried the id, so neither the body
-        field nor a `device:` scope has anything to replace here.
+        The scope sent to /authorize already carried the id, so no body field is needed.
         """
         mock_client = _mock_auth0_response(
             json_data={'access_token': 'jwt', 'refresh_token': 'v1.first'}
@@ -2300,9 +2257,7 @@ class TestOAuthCors:
     @pytest.mark.parametrize('path', ['/register', '/token'])
     def test_fallback_preflight_is_answered(self, oauth_app, path, caplog):
         """A client that never read the metadata preflights the fallback path.
-
-        The log there flags a client that lost its metadata; a preflight is not
-        that, so it must not appear in the log.
+        The log there flags a client that lost its metadata; a preflight is not that.
         """
         with caplog.at_level(logging.INFO, logger='alpacon_mcp.oauth'):
             response = oauth_app.options(path)
@@ -2360,11 +2315,8 @@ def _make_composite_state(redirect_uri='', state='', **extra):
 
 
 class TestMfaPkceReplay:
-    """The client's challenge has to survive the two-stage MFA flow.
-
-    Stage 1 authorizes against the MFA audience without the challenge, so the
-    signed state holds the only copy. Losing it strands the client: it still
-    holds a verifier, and the code it finally exchanges was issued without one.
+    """The client's PKCE challenge must survive the two-stage MFA flow.
+    Stage 1 authorizes without it, so the signed state holds the only copy.
     """
 
     def test_stage1_stashes_the_challenge_in_the_state(self, oauth_app):
@@ -2458,8 +2410,6 @@ class TestMfaPkceReplay:
 
 
 class TestOAuthCallback:
-    """Tests for /oauth/callback endpoint."""
-
     def test_callback_redirects_to_client(self, oauth_app):
         """Callback should redirect to the client's original redirect_uri."""
         composite = _make_composite_state(

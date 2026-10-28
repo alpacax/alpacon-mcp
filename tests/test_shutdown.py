@@ -1,8 +1,4 @@
-"""
-Unit tests for graceful shutdown functionality.
-
-Tests http_client.close() idempotency and the app_lifespan teardown sequence.
-"""
+"""Graceful shutdown: http_client.close() idempotency and the app_lifespan teardown."""
 
 import signal
 import sys
@@ -65,11 +61,8 @@ class TestHTTPClientClose:
 
 
 class TestAppLifespan:
-    """Test the app_lifespan context manager in server.py."""
-
     @pytest.mark.asyncio
     async def test_lifespan_teardown_calls_cleanup(self):
-        """Test that lifespan teardown calls cleanup functions."""
         mock_app = MagicMock()
 
         with patch('server.http_client') as mock_http:
@@ -99,7 +92,6 @@ class TestAppLifespan:
 
     @pytest.mark.asyncio
     async def test_lifespan_teardown_on_exception(self):
-        """Test that lifespan teardown runs even after an exception."""
         mock_app = MagicMock()
 
         with patch('server.http_client') as mock_http:
@@ -114,7 +106,6 @@ class TestAppLifespan:
 
     @pytest.mark.asyncio
     async def test_sigterm_handler_installed_on_unix(self):
-        """Test that SIGTERM handler is installed on non-Windows platforms."""
         mock_app = MagicMock()
 
         if sys.platform == 'win32':

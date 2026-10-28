@@ -140,10 +140,8 @@ class TestListSessionAnalysesFilterRule:
     async def test_supplied_but_falsy_filters_are_forwarded(
         self, mock_http_client, mock_token_manager
     ):
-        """A supplied filter reaches the server even when it is falsy.
-
-        Dropping it here would silently widen the listing to every session
-        instead of letting the server reject the value the caller passed.
+        """A supplied filter reaches the server even when falsy. Dropping it would
+        silently widen the listing instead of letting the server reject it.
         """
         mock_http_client.get.return_value = {'next': None, 'results': []}
 
@@ -169,10 +167,8 @@ CURSOR_TOOLS = [list_activity_logs, list_server_logs, list_webftp_logs]
 
 @pytest.mark.parametrize('func', CURSOR_TOOLS, ids=[f.__name__ for f in CURSOR_TOOLS])
 def test_cursor_tool_offers_cursor_and_not_page(func):
-    """A `page` argument here is a promise the endpoint does not keep.
-
-    The server ignores an unknown query parameter, so a documented `page` would
-    answer page two with page one and present the repeat as the whole list.
+    """A `page` argument would be a promise the endpoint does not keep.
+    The server ignores unknown query params, so page two would answer with page one.
     """
     params = inspect.signature(func).parameters
 
