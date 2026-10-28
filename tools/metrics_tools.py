@@ -24,7 +24,7 @@ from utils.decorators import mcp_tool_handler
 from utils.error_handler import UpstreamAuthError, format_validation_error
 from utils.http_client import http_client
 from utils.tool_annotations import READ_ONLY
-from utils.types import JsonValue, QueryParam, ToolResponse
+from utils.types import JsonValue, OptionalServerId, QueryParam, ServerId, ToolResponse
 
 #: `?state=` values `/api/metrics/latest/` accepts; mirrors alpacon-server's
 #: `metrics.latest.LATEST_STATES`. `stale` covers `no_data`: never-stored is overdue.
@@ -189,7 +189,7 @@ def parse_cpu_metrics(results: list[_UsageRow]) -> dict[str, object]:
     meta={'anthropic/searchHint': 'cpu usage load processor utilization performance'},
 )
 async def get_cpu_usage(
-    server_id: str,
+    server_id: ServerId,
     workspace: str,
     start_date: str | None = None,
     end_date: str | None = None,
@@ -306,7 +306,7 @@ def parse_memory_metrics(results: list[_UsageRow]) -> dict[str, object]:
     meta={'anthropic/searchHint': 'memory ram usage utilization'},
 )
 async def get_memory_usage(
-    server_id: str,
+    server_id: ServerId,
     workspace: str,
     start_date: str | None = None,
     end_date: str | None = None,
@@ -414,7 +414,7 @@ def parse_disk_metrics(results: list[_DiskUsageRow]) -> dict[str, object]:
     meta={'anthropic/searchHint': 'disk space storage partition mount usage'},
 )
 async def get_disk_usage(
-    server_id: str,
+    server_id: ServerId,
     workspace: str,
     device: str | None = None,
     partition: str | None = None,
@@ -624,7 +624,7 @@ def parse_network_metrics(results: list[_TrafficRow]) -> dict[str, object]:
     },
 )
 async def get_disk_io(
-    server_id: str,
+    server_id: ServerId,
     workspace: str,
     device: str | None = None,
     start_date: str | None = None,
@@ -693,7 +693,7 @@ async def get_disk_io(
     meta={'anthropic/searchHint': 'network traffic bandwidth interface bps packets'},
 )
 async def get_network_traffic(
-    server_id: str,
+    server_id: ServerId,
     workspace: str,
     interface: str,
     start_date: str | None = None,
@@ -880,7 +880,7 @@ async def get_top_servers(
     },
 )
 async def get_alert_rules(
-    workspace: str, server_id: str | None = None, region: str = '', **kwargs: str
+    workspace: str, server_id: OptionalServerId = None, region: str = '', **kwargs: str
 ) -> ToolResponse:
     """Get alert rules for servers.
 
@@ -988,7 +988,11 @@ async def _list_all_interfaces(
     },
 )
 async def get_server_metrics_summary(
-    server_id: str, workspace: str, hours: int = 12, region: str = '', **kwargs: str
+    server_id: ServerId,
+    workspace: str,
+    hours: int = 12,
+    region: str = '',
+    **kwargs: str,
 ) -> ToolResponse:
     """Get comprehensive metrics summary for a server.
 

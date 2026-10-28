@@ -5,7 +5,7 @@ from utils.common import build_list_params, error_response, exclude_none
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ_ONLY
-from utils.types import ToolResponse
+from utils.types import ServerId, ToolResponse
 
 # ===============================
 # CERTIFICATE AUTHORITY TOOLS
@@ -60,7 +60,7 @@ async def create_certificate_authority(
     name: str,
     domain: str,
     organization: str,
-    server_id: str,
+    server_id: ServerId,
     owner: str,
     root_valid_days: int | None = None,
     default_valid_days: int | None = None,

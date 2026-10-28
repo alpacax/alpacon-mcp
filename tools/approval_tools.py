@@ -6,7 +6,7 @@ from utils.common import build_list_params, exclude_none, pending_approval_respo
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, READ_ONLY
-from utils.types import ToolResponse
+from utils.types import OptionalServerId, ToolResponse
 
 # ===============================
 # APPROVAL REQUEST TOOLS
@@ -142,7 +142,7 @@ async def list_sudo_policies(
     page: int | None = None,
     page_size: int | None = None,
     user: str | None = None,
-    server_id: str | None = None,
+    server_id: OptionalServerId = None,
     **kwargs: str,
 ) -> ToolResponse:
     """List sudo policies.

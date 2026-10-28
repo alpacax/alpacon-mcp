@@ -9,7 +9,7 @@ Complete reference for all Alpacon MCP Server tools and capabilities.
 - **Server IDs are UUIDs**, never names. Get them from `list_servers`.
 - **Every other `*_id` is checked before the request is built.** A value must be a string of letters, digits, `.`, `_`, `~`, or `-`, and must not be `.` or `..`. Most of these identifiers are interpolated into the endpoint path, where a `/` or a `..` retargets the request; the ones that only reach a query parameter or a request body are held to the same rule, because the check goes by the argument name rather than by where the value ends up. Anything else—a `/`, a `?`, a `#`, a percent-encoded spelling of one, or a value that is not a string at all—comes back as a validation error naming the field, and no request is sent. `work_session_id` is the one exception: its surrounding whitespace is stripped on purpose, so the rule would reject values the `ALPACON_WORK_SESSION` route accepts.
 - **`limit` and `page_size` must be positive integers.** Both name a page size and reach the API as `page_size`, where a zero or a negative asks for a page that cannot exist. Either one comes back as a validation error naming the field, and no request is sent. Omitting the argument still gets the tool's own default.
-- **Work Session gate**: OAuth/browser callers must run command execution and file transfers inside an active Work Session; static API tokens bypass it. Blocked calls return `status="pending_approval"` or a `status="error"` with a `code` and `next_action`—see [Work session tools](#-work-session-tools).
+- **Work Session gate**: OAuth/browser callers must run command execution and file transfers inside an active Work Session; static API and service tokens bypass it. Blocked calls return `status="pending_approval"` or a `status="error"` with a `code` and `next_action`—see [Work session tools](#-work-session-tools).
 
 ## 📋 Response structure
 
@@ -61,7 +61,7 @@ List all servers in a region and workspace.
 Get detailed information about a specific server.
 
 **Parameters:**
-- `server_id` (string): Server ID to get details for
+- `server_id` (string): Server UUID to get details for
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 - `workspace` (string): Workspace name
 
@@ -71,7 +71,7 @@ Get detailed information about a specific server.
 List notes for a specific server.
 
 **Parameters:**
-- `server_id` (string): Server ID
+- `server_id` (string): Server UUID
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 - `workspace` (string): Workspace name
 
@@ -79,7 +79,7 @@ List notes for a specific server.
 Create a new note for a server.
 
 **Parameters:**
-- `server_id` (string): Server ID
+- `server_id` (string): Server UUID
 - `content` (string): Note content; capped at 512 characters
 - `private` (boolean, optional): Hide the note from other workspace members
 - `pinned` (boolean, optional): Pin the note; a server holds at most three pinned notes
@@ -99,13 +99,13 @@ Rename or relabel a server's Alpacon entry, or toggle its own offline-alert deli
 - `name` (string, optional): New display name
 - `description` (string, optional): New description
 - `offline_alert_enabled` (boolean, optional): This server's own offline-alert toggle, independent of any workspace rule; defaults to `true` on the server. Refused when the caller is the server's own agent credential
-- `region` (`ap1` or `us1`, optional): Region name
+- `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 
 ### `get_collection_profile`
 What a server collects and at what cadence, and what it does not collect. Not gated behind the metrics extension, so it answers on every plan.
 
 **Parameters:**
-- `server_id` (string): Server ID
+- `server_id` (string): Server UUID
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 - `workspace` (string): Workspace name
 
@@ -159,7 +159,7 @@ They run through a Work Session and `execute_command`—see "Keeping hosts curre
 Get CPU usage metrics for a server.
 
 **Parameters:**
-- `server_id` (string): Server ID to get metrics for
+- `server_id` (string): Server UUID to get metrics for
 - `start_date` (string, optional, default: 12 hours ago): Start date in ISO format; the server returns at most the last 12 hours
 - `end_date` (string, optional): End date in ISO format
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
@@ -183,7 +183,7 @@ Get memory usage metrics for a server.
 Get disk usage metrics for a server.
 
 **Parameters:**
-- `server_id` (string): Server ID
+- `server_id` (string): Server UUID
 - `device` (string, optional): Device path (e.g., '/dev/sda1')
 - `partition` (string, optional): Partition ID (UUID) from `/api/proc/partitions/`
 - `start_date` (string, optional, default: 12 hours ago): Start date; the server returns at most the last 12 hours
@@ -195,7 +195,7 @@ Get disk usage metrics for a server.
 Get network traffic metrics for a server.
 
 **Parameters:**
-- `server_id` (string): Server ID
+- `server_id` (string): Server UUID
 - `interface` (string): Interface ID (UUID) from `/api/proc/interfaces/`, required; the endpoint returns HTTP 400 when it is missing or is an interface name such as `eth0`
 - `start_date` (string, optional, default: 12 hours ago): Start date; the server returns at most the last 12 hours
 - `end_date` (string, optional): End date
@@ -206,7 +206,7 @@ Get network traffic metrics for a server.
 Get disk I/O performance metrics for a server.
 
 **Parameters:**
-- `server_id` (string): Server ID
+- `server_id` (string): Server UUID
 - `device` (string): Disk device name (e.g., 'sda', 'nvme0n1'); the schema marks it optional, but the endpoint returns HTTP 400 `api_insufficient_data` when it is missing (#413)
 - `start_date` (string, optional, default: 12 hours ago): Start date in ISO format; the server returns at most the last 12 hours
 - `end_date` (string, optional): End date in ISO format
@@ -269,7 +269,7 @@ servers counted as critical.
 Get alert rules for servers.
 
 **Parameters:**
-- `server_id` (string, optional): Server ID to filter rules
+- `server_id` (string, optional): Server UUID to filter rules
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 - `workspace` (string): Workspace name
 
@@ -277,7 +277,7 @@ Get alert rules for servers.
 Comprehensive health overview for one server; for many servers at once, use `list_latest_metrics`.
 
 **Parameters:**
-- `server_id` (string): Server ID
+- `server_id` (string): Server UUID
 - `hours` (integer, default: 12, max: 12): Number of hours back to get metrics; the realtime endpoints keep only the last 12 hours, so a larger value is clamped to 12
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 - `workspace` (string): Workspace name
@@ -292,7 +292,7 @@ Comprehensive health overview for one server; for many servers at once, use `lis
 Get detailed system information for a server.
 
 **Parameters:**
-- `server_id` (string): Server ID
+- `server_id` (string): Server UUID
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 - `workspace` (string): Workspace name
 
@@ -302,7 +302,7 @@ Get detailed system information for a server.
 Get operating system version information.
 
 **Parameters:**
-- `server_id` (string): Server ID
+- `server_id` (string): Server UUID
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 - `workspace` (string): Workspace name
 
@@ -310,7 +310,7 @@ Get operating system version information.
 List system users on a server.
 
 **Parameters:**
-- `server_id` (string): Server ID
+- `server_id` (string): Server UUID
 - `username_filter` (string, optional): Username to search for
 - `login_enabled_only` (boolean, default: false): Only return users that can login
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
@@ -320,7 +320,7 @@ List system users on a server.
 List system groups on a server.
 
 **Parameters:**
-- `server_id` (string): Server ID
+- `server_id` (string): Server UUID
 - `groupname_filter` (string, optional): Group name to search for
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 - `workspace` (string): Workspace name
@@ -329,7 +329,7 @@ List system groups on a server.
 List installed system packages on a server.
 
 **Parameters:**
-- `server_id` (string): Server ID
+- `server_id` (string): Server UUID
 - `package_name` (string, optional): Package name to search for
 - `architecture` (string, optional): Architecture filter (e.g., 'x86_64')
 - `limit` (integer, default: 100): Maximum number of packages to return
@@ -340,7 +340,7 @@ List installed system packages on a server.
 Get network interfaces information for a server.
 
 **Parameters:**
-- `server_id` (string): Server ID
+- `server_id` (string): Server UUID
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 - `workspace` (string): Workspace name
 
@@ -348,7 +348,7 @@ Get network interfaces information for a server.
 Get disk and partition information for a server.
 
 **Parameters:**
-- `server_id` (string): Server ID
+- `server_id` (string): Server UUID
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 - `workspace` (string): Workspace name
 
@@ -358,7 +358,7 @@ Get disk and partition information for a server.
 Get system time and uptime information.
 
 **Parameters:**
-- `server_id` (string): Server ID
+- `server_id` (string): Server UUID
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 - `workspace` (string): Workspace name
 
@@ -366,7 +366,7 @@ Get system time and uptime information.
 Get comprehensive overview of server system information.
 
 **Parameters:**
-- `server_id` (string): Server ID
+- `server_id` (string): Server UUID
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 - `workspace` (string): Workspace name
 
@@ -380,7 +380,7 @@ Get comprehensive overview of server system information.
 List server events.
 
 **Parameters:**
-- `server_id` (string, optional): Server ID to filter events
+- `server_id` (string, optional): Server UUID to filter events
 - `reporter` (string, optional): Reporter name to filter events
 - `limit` (integer, default: 50): Maximum number of events to return
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
@@ -399,7 +399,7 @@ Search events by criteria.
 
 **Parameters:**
 - `search_query` (string): Search term to look for in events
-- `server_id` (string, optional): Server ID to limit search scope
+- `server_id` (string, optional): Server UUID to limit search scope
 - `limit` (integer, default: 20): Maximum number of results to return
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 - `workspace` (string): Workspace name
@@ -414,7 +414,7 @@ Search events by criteria.
 Execute a command on a server and wait for the result.
 
 **Parameters:**
-- `server_id` (string): Server ID
+- `server_id` (string): Server UUID
 - `command` (string): Command to execute; must not be empty or whitespace-only. Do not prefix it with `sudo` by default; use `sudo` only when the command genuinely requires root and the Work Session carries the `sudo` scope. Unless a Work Session sudo policy already covers the command, a sudo invocation either routes to human approval and blocks until a human acts, or is denied outright with no request anyone can approve. Check `sudo_denial.category` before waiting—a `sudo_hint` with no `sudo_denial` is a hard denial that creates no request
 - `workspace` (string): Workspace name
 - `shell` (string, default: "system"): Shell type
@@ -425,7 +425,7 @@ Execute a command on a server and wait for the result.
 - `scheduled_at` (string, optional): ISO 8601 datetime for scheduled execution
 - `data` (string, optional): Stdin data
 - `timeout` (integer, default: 300): Timeout in seconds
-- `work_session_id` (string, optional): Work Session to run under; falls back to `ALPACON_WORK_SESSION`
+- `work_session_id` (string, optional): Work Session to link the call to for audit; required for MCP OAuth and browser-login callers, optional for static API and service tokens; falls back to `ALPACON_WORK_SESSION` in the MCP server's environment when omitted, and an explicit value wins
 - `purpose` (string, optional): What this particular command is for (ADR 0052). The assessor judges the command with it in hand, so one that would otherwise queue for a human may clear on its own. State a fact local to this host that the Work Session description does not already imply; general knowledge adds nothing the assessor lacks, and a purpose cannot lower a command's intrinsic risk. Trimmed to 2000 characters rather than refused, and the response then carries `purpose_truncated: true`
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 
@@ -486,7 +486,7 @@ Once an approver marks a verified file standing, an unchanged re-run is admitted
 human, which a `bash /path` line on `execute_command` never is.
 
 **Parameters:**
-- `server_id` (string): Server ID
+- `server_id` (string): Server UUID
 - `path` (string): Absolute path of the file on the target host. Without `write_file` it must already exist there; the agent reads it from disk, and `content` is never shipped to the host
 - `workspace` (string): Workspace name
 - `content` (string, optional): The file's contents, byte-for-byte as they are on disk. Never stripped, trimmed, or normalized—the agent hashes the on-disk file with no normalization, so a dropped trailing newline fails closed. Non-empty, at most 64 KB (65536 UTF-8 bytes). Required unless `read_from_server` is true, and refused alongside it
@@ -501,7 +501,7 @@ human, which a `bash /path` line on `execute_command` never is.
 - `run_after` (array, optional): Command IDs to wait for before executing
 - `scheduled_at` (string, optional): ISO 8601 datetime for scheduled execution
 - `timeout` (integer, default: 300): Timeout in seconds
-- `work_session_id` (string, optional): Work Session to run under; falls back to `ALPACON_WORK_SESSION`. With `write_file` or `read_from_server`, the transfer is linked to it too
+- `work_session_id` (string, optional): Work Session to link the call to for audit; required for MCP OAuth and browser-login callers, optional for static API and service tokens; falls back to `ALPACON_WORK_SESSION` in the MCP server's environment when omitted, and an explicit value wins. With `write_file` or `read_from_server`, the transfer is linked to it too
 - `purpose` (string, optional): Same semantics as on `execute_command`
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 
@@ -585,7 +585,7 @@ and to `execute_command` results; other phases carry no hint.
 List recent command history.
 
 **Parameters:**
-- `server_id` (string, optional): Filter by server ID
+- `server_id` (string, optional): Filter by server UUID
 - `limit` (integer, default: 20): Maximum number of recent commands to return
 - `workspace` (string): Workspace name
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
@@ -607,7 +607,7 @@ Execute a command on multiple servers simultaneously.
 - `groupname` (string, default: "alpacon"): Group name
 - `env` (object, optional): Environment variables
 - `parallel` (boolean, default: true): Execute in parallel
-- `work_session_id` (string, optional): Work Session to run under
+- `work_session_id` (string, optional): Work Session to link the call to for audit; required for MCP OAuth and browser-login callers, optional for static API and service tokens; falls back to `ALPACON_WORK_SESSION` in the MCP server's environment when omitted, and an explicit value wins
 - `purpose` (string, optional): What this particular command is for (ADR 0052). The assessor judges the command with it in hand, so one that would otherwise queue for a human may clear on its own. State a fact local to this host that the Work Session description does not already imply; general knowledge adds nothing the assessor lacks, and a purpose cannot lower a command's intrinsic risk. Trimmed to 2000 characters rather than refused, and the response then carries `purpose_truncated: true`. This tool never waits, so it is never asked for a purpose after the fact—stating it up front is the only chance
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 
@@ -649,17 +649,17 @@ principal share one server error, so a refusal cannot say which happened: read t
 Create a new WebFTP session for file transfer.
 
 **Parameters:**
-- `server_id` (string): Server ID
+- `server_id` (string): Server UUID
 - `workspace` (string): Workspace name
 - `username` (string, optional): Username for FTP access (defaults to the authenticated user)
-- `work_session_id` (string, optional): Work Session to attribute the session to
+- `work_session_id` (string, optional): Work Session to link the call to for audit; required for MCP OAuth and browser-login callers, optional for static API and service tokens; falls back to `ALPACON_WORK_SESSION` in the MCP server's environment when omitted, and an explicit value wins
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 
 ### `webftp_sessions_list`
 Get list of WebFTP sessions.
 
 **Parameters:**
-- `server_id` (string, optional): Filter by server ID
+- `server_id` (string, optional): Filter by server UUID
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 - `workspace` (string): Workspace name
 
@@ -667,11 +667,12 @@ Get list of WebFTP sessions.
 Upload a local file to a server using S3 presigned URLs.
 
 **Parameters:**
-- `server_id` (string): Server ID
+- `server_id` (string): Server UUID
 - `local_file_path` (string): Absolute path to local file
 - `remote_file_path` (string): Absolute path on server
 - `workspace` (string): Workspace name
 - `username` (string, optional): Username (defaults to authenticated user)
+- `work_session_id` (string, optional): Work Session to link the call to for audit; required for MCP OAuth and browser-login callers, optional for static API and service tokens; falls back to `ALPACON_WORK_SESSION` in the MCP server's environment when omitted, and an explicit value wins
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 - `allow_overwrite` (boolean, default: true): Allow overwriting existing files
 
@@ -686,12 +687,13 @@ A transfer the host or server reports as failed returns `code: "download_failed"
 A scoped API or service token without `command:read` (the `file_download` and `file_transfer` presets) cannot read the host's transfer command. The call then waits on the transfer status alone and fetches the file only after it reports success, so a command the host never runs ends in `download_timeout` rather than an early `download_failed`. `execute_file` with `read_from_server` behaves the same way.
 
 **Parameters:**
-- `server_id` (string): Server ID
+- `server_id` (string): Server UUID
 - `remote_file_path` (string): Absolute path on server
 - `local_file_path` (string): Absolute path for local download
 - `workspace` (string): Workspace name
 - `resource_type` (string, default: "file"): "file" or "folder" (folders download as .zip)
 - `username` (string, optional): Username (defaults to authenticated user)
+- `work_session_id` (string, optional): Work Session to link the call to for audit; required for MCP OAuth and browser-login callers, optional for static API and service tokens; falls back to `ALPACON_WORK_SESSION` in the MCP server's environment when omitted, and an explicit value wins
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 
 ### `webftp_upload_content`
@@ -700,25 +702,40 @@ Upload base64-encoded bytes as a file, with no local file on disk. Useful in hos
 On streamable-http and SSE, `file_content` is capped at 3 MiB of decoded (original) file bytes—base64 inflates bytes 4/3x, so the encoded string is larger. A file over this limit gets a tool error naming the limit and the size sent; use `webftp_upload_file` in local mode instead. A request far larger than that never reaches the tool at all—MCP SDK 2.x caps the streamable-http/SSE request body itself, and an oversized request fails as a plain-text HTTP 413 before any MCP error is produced. This limit is a stopgap around that SDK change; the upload path's design is being reconsidered in #275. Under stdio, no such request-body cap exists, so this tool imposes none either.
 
 **Parameters:**
-- `server_id` (string): Server ID
+- `server_id` (string): Server UUID
 - `file_content` (string): Base64-encoded content
 - `remote_file_path` (string): Absolute path on server
 - `workspace` (string): Workspace name
 - `file_name` (string, optional): Name to record for the upload
 - `username` (string, optional): Username (defaults to authenticated user)
-- `work_session_id` (string, optional): Work Session to attribute the transfer to
+- `work_session_id` (string, optional): Work Session to link the call to for audit; required for MCP OAuth and browser-login callers, optional for static API and service tokens; falls back to `ALPACON_WORK_SESSION` in the MCP server's environment when omitted, and an explicit value wins
 - `allow_overwrite` (boolean, default: true)
-- `region` (`ap1` or `us1`, optional): Region name
+- `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 
 ### `webftp_bulk_upload`
 Upload several local files to one directory in a single operation.
 
-**Parameters:** `server_id`, `local_file_paths` (array), `remote_directory`, `workspace`, `username` (optional), `work_session_id` (optional), `allow_overwrite`, `region` (`ap1` or `us1`, optional)
+**Parameters:**
+- `server_id` (string): Server UUID
+- `local_file_paths` (array): Absolute paths to local files; must not be empty
+- `remote_directory` (string): Absolute directory on server that receives every file
+- `workspace` (string): Workspace name
+- `username` (string, optional): Username (defaults to authenticated user)
+- `work_session_id` (string, optional): Work Session to link the call to for audit; required for MCP OAuth and browser-login callers, optional for static API and service tokens; falls back to `ALPACON_WORK_SESSION` in the MCP server's environment when omitted, and an explicit value wins
+- `allow_overwrite` (boolean, default: true): Allow overwriting existing files
+- `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 
 ### `webftp_bulk_download`
 Download several files or folders as one ZIP archive.
 
-**Parameters:** `server_id`, `remote_paths` (array), `local_file_path`, `workspace`, `username` (optional), `work_session_id` (optional), `region` (`ap1` or `us1`, optional)
+**Parameters:**
+- `server_id` (string): Server UUID
+- `remote_paths` (array): Absolute paths on server sharing one parent directory; must not be empty
+- `local_file_path` (string): Absolute path for the local ZIP archive
+- `workspace` (string): Workspace name
+- `username` (string, optional): Username (defaults to authenticated user)
+- `work_session_id` (string, optional): Work Session to link the call to for audit; required for MCP OAuth and browser-login callers, optional for static API and service tokens; falls back to `ALPACON_WORK_SESSION` in the MCP server's environment when omitted, and an explicit value wins
+- `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 
 ### `webftp_check_status`
 Check the status of an in-flight transfer.
@@ -730,7 +747,7 @@ List uploaded files (upload history).
 
 **Parameters:**
 - `workspace` (string): Workspace name
-- `server_id` (string, optional): Filter by server ID
+- `server_id` (string, optional): Filter by server UUID
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 
 ### `webftp_downloads_list`
@@ -738,7 +755,7 @@ List download requests (download history).
 
 **Parameters:**
 - `workspace` (string): Workspace name
-- `server_id` (string, optional): Filter by server ID
+- `server_id` (string, optional): Filter by server UUID
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 
 ---
@@ -1083,7 +1100,7 @@ Get the authenticated user: username, email, role, UID, shell, home directory.
 
 **Parameters:**
 - `workspace` (string): Workspace name
-- `region` (`ap1` or `us1`, optional): Region name
+- `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 
 ### `health_check`
 Check MCP server health: version, uptime, authentication mode, connection pool. Takes no parameters.
