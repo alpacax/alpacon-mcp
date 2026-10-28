@@ -154,7 +154,7 @@ def _saas_only_security_404(
 
 
 @mcp_tool_handler(
-    description='List all available workspaces and their regions. Returns workspace names, region codes, domain hostnames, and unusable_entries: the count of workspace claim entries left out because they name no workspace or region, which is non-zero when an Auth0 organization has no region in its metadata. In local mode reads from token.json; in server mode extracts from JWT claims. When to use: first tool to call to discover which workspaces are configured. Related: list_servers (find servers in a workspace). Note: Most other tools require a workspace parameter from this list.',
+    description='List all available workspaces and their regions. Returns workspace names, region codes, domain hostnames, and unusable_entries: the count of workspace claim entries left out because they name no workspace or region, which is non-zero when an Auth0 organization has no region in its metadata; a region filter does not narrow it, and it is always 0 in local mode. In local mode reads from token.json; in server mode extracts from JWT claims. When to use: first tool to call to discover which workspaces are configured. Related: list_servers (find servers in a workspace). Note: Most other tools require a workspace parameter from this list.',
     annotations=READ_ONLY,
     meta={
         'anthropic/alwaysLoad': True,

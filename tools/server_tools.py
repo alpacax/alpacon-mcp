@@ -73,6 +73,7 @@ async def list_servers(
 @mcp_tool_handler(
     description=(
         'Get detailed information about a specific server by its UUID. Returns hostname, IP address, OS, agent version, and online status. '
+        "Carries `offline_alert_enabled`, the server's own offline-alert toggle (see update_server). "
         'Use this when you need full details about a single server rather than the summary list. '
         'Related: list_servers (find server UUID first), get_server_overview (includes hardware and OS details).'
     ),
@@ -119,7 +120,10 @@ async def get_server(
         '`latest[]` reading per volume), `metrics[]` (the workspace metrics-'
         'extension families, each with `retention_days`), and `not_collected[]` '
         '(families this workspace does not collect, with `reason` and the '
-        '`unlocked_by` extension). Not gated behind the metrics extension '
+        '`unlocked_by` extension). `enabled` says whether the metrics extension '
+        'is on for this workspace; each `core[]` and `metrics[]` entry carries '
+        '`name`, `interval_s`, `last_sample_at`, `collected`, `scope`, and '
+        '`reason` when not collected. Not gated behind the metrics extension '
         'itself, unlike the metric-data tools, so it answers on every plan. '
         'When to use: explaining an empty chart, or checking whether a family '
         'is collected before asking for its data. '

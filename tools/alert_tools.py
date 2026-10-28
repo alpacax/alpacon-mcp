@@ -42,7 +42,7 @@ _TARGETS_SENTENCE = (
 
 
 @mcp_tool_handler(
-    description='List alerts with optional filtering by server, alert type, severity, resolution state, or server name. When to use: checking active alerts, or pass resolved=true to review resolved history. Without resolved, only open alerts are returned. Related: get_alert (full details), get_alert_rules (threshold configuration), acknowledge_alert (mark one as seen).',
+    description='List alerts with optional filtering by server, alert type, severity, resolution state, or server name. When to use: checking active alerts, or pass resolved=true to review resolved history. Without resolved, only open alerts are returned; acknowledged=false selects the active, unacknowledged ones. Each alert can carry device and severity from the rule that raised it, and resolved_at once the condition clears. Related: get_alert (full details), get_alert_rules (threshold configuration), acknowledge_alert (mark one as seen).',
     annotations=READ_ONLY,
     meta={
         'anthropic/alwaysLoad': True,
@@ -111,7 +111,7 @@ async def list_alerts(
 
 
 @mcp_tool_handler(
-    description='Get detailed information about a specific alert. When to use: need full context about a triggered alert. Related: list_alerts (browse alerts), acknowledge_alert (mark this alert as seen).',
+    description='Get detailed information about a specific alert. When to use: need full context about a triggered alert. The alert can carry device and severity from the rule that raised it, and resolved_at once the condition clears. Related: list_alerts (browse alerts), acknowledge_alert (mark this alert as seen).',
     annotations=READ_ONLY,
     meta={'anthropic/searchHint': 'alert detail info specific'},
 )
@@ -435,7 +435,12 @@ async def delete_alert_rule(
         'info-severity rule, which posts to neither channel regardless. A '
         '404 here while the rule itself reads fine through get_alert_rules '
         'means every server the rule is attached to is outside what you can '
-        'see—not that the rule is gone. Related: get_alert_rules, '
+        'see—not that the rule is gone. On an alpacon-server older than '
+        '2.36.0, a 404 instead means it has no recipients preview at all. A '
+        'rule attached to no server answers zeros, not a 404. The response holds email (mode, count, reasons: admins, '
+        'group_members, owner), slack_channel (enabled, connected), and '
+        'event_subscriptions, a count of machine listeners that neither '
+        'destination affects. Related: get_alert_rules, '
         'create_alert_rule, update_alert_rule (set the destinations).'
     ),
     annotations=READ_ONLY,
@@ -581,7 +586,8 @@ async def preview_alert_rule(
         'List per-server departures from workspace alert rules. When to use: '
         'auditing which servers exempt themselves from a rule or run a '
         'different threshold than the fleet. Filter by server, rule, or '
-        'enabled state. Related: get_rule_override (full details), '
+        'enabled state; an override with enabled=false exempts its server '
+        'from the whole rule. Related: get_rule_override (full details), '
         'create_rule_override, get_alert_rules (the workspace-wide rules '
         'these depart from).'
     ),
