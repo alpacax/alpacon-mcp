@@ -207,10 +207,13 @@ Get disk I/O performance metrics for a server.
 
 **Parameters:**
 - `server_id` (string): Server ID
+- `device` (string): Disk device name (e.g., 'sda', 'nvme0n1'); the schema marks it optional, but the endpoint returns HTTP 400 `api_insufficient_data` when it is missing (#413)
 - `start_date` (string, optional, default: 12 hours ago): Start date in ISO format; the server returns at most the last 12 hours
 - `end_date` (string, optional): End date in ISO format
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 - `workspace` (string): Workspace name
+
+**Response:** `data` is the unpaginated list of rows the Alpacon API server returns, newest first, one per device and sample: `id`, `device`, `disk`, `timestamp`, and that sample's `peak_read_bps`, `peak_write_bps`, `avg_read_bps` and `avg_write_bps` in bytes per second.
 
 ### `get_top_servers`
 Rank the top five servers by resource usage over the last 24 hours.
