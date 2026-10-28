@@ -2,7 +2,6 @@
 Tool refs resolve lazily: importing this module must not import any tool module."""
 
 import importlib
-import inspect
 import re
 from collections.abc import Awaitable, Callable
 from types import FunctionType
@@ -452,10 +451,11 @@ def build_resource_wrapper(
 def register_resource(
     uri: str, fn: _ToolFn, name: str, extra: dict[str, object] | None = None
 ) -> None:
-    """Register an alpacon:// resource over a read-only tool; its published description
-    is the tool's docstring plus a line naming any filter `extra` pins."""
+    """Register an alpacon:// resource over a read-only tool; it publishes the tool's own
+    description, or `name` for a non-tool, plus a line naming any filter `extra` pins."""
     wrapper = build_resource_wrapper(uri, fn, name, extra)
-    doc = inspect.getdoc(fn) or name
+    tool = mcp._tool_manager.get_tool(fn.__name__)  # SDK 2.x has no sync public lookup
+    doc = tool.description if tool and tool.description else name
     if extra:
         # Surface the pinned filter so a filtered resource isn't mistaken for the bare one.
         pinned = ', '.join(f'{k}={v!r}' for k, v in extra.items())

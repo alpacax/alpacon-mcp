@@ -8,7 +8,7 @@ from mcp.shared.uri_template import UriTemplate
 
 import tools.resources as res
 from server import ALL_TOOL_MODULES, ALWAYS_ON_MODULES, mcp
-from tests.conftest import http_client_fixture
+from tests.conftest import http_client_fixture, tool_descriptions
 
 mock_metrics_http_client = http_client_fixture('tools.metrics_tools')
 
@@ -93,9 +93,52 @@ class TestResourceRegistration:
         assert len(table_uris) == len(res.RESOURCES)
 
     @pytest.mark.asyncio
+    async def test_every_resource_publishes_its_tool_description(self):
+        """A resource reads the text its tool publishes in tools/list, never the
+        tool's docstring, so the two cannot drift apart."""
+        tools = await tool_descriptions()
+        published = {
+            t.uri_template: t.description for t in await mcp.list_resource_templates()
+        }
+        published |= {str(r.uri): r.description for r in await mcp.list_resources()}
+
+        drifted = []
+        for name, ref, uri, extra in res.REGISTRATIONS:
+            want = tools[ref.split('.', 1)[1]]
+            if extra:
+                pinned = ', '.join(f'{k}={v!r}' for k, v in extra.items())
+                want = f'{want}\n\nThis resource pins: {pinned}.'
+            if published[uri] != want:
+                drifted.append(name)
+
+        assert not drifted, f'drifted from their tool description: {drifted}'
+
+    @pytest.mark.asyncio
+    async def test_resource_over_a_non_tool_is_described_by_its_name(self):
+        """A callable no tool registration knows falls back to the resource name,
+        not to its docstring."""
+
+        async def untracked_fn(region, workspace):
+            """Developer-only docstring."""
+            return {'ok': True}
+
+        res.register_resource(
+            'alpacon://test-untracked/{region}/{workspace}',
+            untracked_fn,
+            'untracked_probe',
+        )
+
+        template = next(
+            t
+            for t in await mcp.list_resource_templates()
+            if t.uri_template == 'alpacon://test-untracked/{region}/{workspace}'
+        )
+        assert template.description == 'untracked_probe'
+
+    @pytest.mark.asyncio
     async def test_filtered_resource_describes_its_pin(self):
         """A resource registered with extra kwargs must surface the pinned
-        filter in its description, not just inherit the tool docstring."""
+        filter in its description, not just inherit the tool description."""
         active = next(
             t
             for t in await mcp.list_resource_templates()

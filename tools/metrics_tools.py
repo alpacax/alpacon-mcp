@@ -756,7 +756,7 @@ async def get_network_traffic(
 
 
 @mcp_tool_handler(
-    description='Get the top servers ranked by resource usage in the last 24 hours. When to use: finding the busiest or most loaded servers in a workspace, comparing resource usage across servers. Related: get_cpu_usage, get_memory_usage (detailed metrics for a specific server). Note: Supports cpu, memory, disk_io, traffic. Pass comma-separated or leave empty for all.',
+    description='Get the top servers ranked by resource usage in the last 24 hours. When to use: finding the busiest or most loaded servers in a workspace, comparing resource usage across servers. Related: get_cpu_usage, get_memory_usage (detailed metrics for a specific server). Note: Supports cpu, memory, disk_io, traffic. Pass comma-separated or leave empty for all. Several types come back as `data` keyed by metric type, where a type that failed holds `{error, available: false}` instead of failing the call; a single type comes back as `data` directly, with `metric_type` set to `<type>_top` (e.g. `cpu_top`).',
     annotations=READ_ONLY,
     meta={
         'anthropic/searchHint': 'top servers ranking busiest compare metrics workspace'
@@ -980,7 +980,7 @@ async def _list_all_interfaces(
 
 
 @mcp_tool_handler(
-    description="Get one server's detail: a comprehensive monitoring overview combining CPU, memory, disk, and network metrics for that single server. Returns a compact summary with data availability status. When to use: quick health check of one server or starting point for investigation. Related: get_cpu_usage, get_memory_usage, get_disk_usage, get_network_traffic (full detailed data per metric), list_latest_metrics (latest reading for many servers at once). Note: Use individual metric tools for time-series data.",
+    description="Get one server's detail: a comprehensive monitoring overview combining CPU, memory, disk, and network metrics for that single server. Returns a compact summary with data availability status, read over the last `hours` (default and max 12, all the realtime endpoints keep). When to use: quick health check of one server or starting point for investigation. Related: get_cpu_usage, get_memory_usage, get_disk_usage, get_network_traffic (full detailed data per metric), list_latest_metrics (latest reading for many servers at once). Note: Use individual metric tools for time-series data.",
     annotations=READ_ONLY,
     meta={
         'anthropic/searchHint': 'server metrics summary overview health monitoring dashboard single server detail',
@@ -1198,7 +1198,15 @@ async def get_server_metrics_summary(
     description=(
         'Latest CPU, memory, disk usage, disk I/O and network reading for many '
         'servers in one request; each cell says whether the value is missing, '
-        'stale or not collected. Order by metric_severity or -metric_severity '
+        'stale or not collected. Each row carries the cells `cpu`, `memory`, '
+        '`disk-usage`, `disk-io`, and `net`, each holding `value`, `unit` '
+        '("percent" or "bytes_per_sec"), `sampled_at`, `device`, `collected`, '
+        '`reason`, and `interval_s`; `value`, `sampled_at`, and `device` are '
+        'null when no sample is stored for that family. Results are paginated '
+        "like list_servers', so compare `count` with `results` and follow "
+        "`next`. state='stale' selects servers where some family is overdue, "
+        "including one storing nothing at all, so it includes every 'no_data' "
+        'server. Order by metric_severity or -metric_severity '
         '(critical first descending; ties keep the default order). Rows include '
         'metric_severity (critical, warning, info or null without alert:read). '
         'Cells include threshold (number or null) and operator (gte, lte or null); '
