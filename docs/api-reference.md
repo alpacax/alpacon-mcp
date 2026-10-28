@@ -207,7 +207,7 @@ Get disk I/O performance metrics for a server.
 
 **Parameters:**
 - `server_id` (string): Server ID
-- `device` (string, optional): Disk device name (e.g., 'sda', 'nvme0n1')
+- `device` (string): Disk device name (e.g., 'sda', 'nvme0n1'); the schema marks it optional, but the endpoint returns HTTP 400 `api_insufficient_data` when it is missing (#413)
 - `start_date` (string, optional, default: 12 hours ago): Start date in ISO format; the server returns at most the last 12 hours
 - `end_date` (string, optional): End date in ISO format
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
