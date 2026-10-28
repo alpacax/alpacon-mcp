@@ -346,6 +346,103 @@ _ERROR_CODE_HINT: dict[str, str] = {
     'work_session_extension_reason_required': WORK_SESSION_EXTENSION_REASON_REQUIRED_HINT,
 }
 
+#: Guidance by the class of control that refused (`gate`, #242), for a refusal
+#: whose code has no entry above. Each names whom to ask or where to wait, never
+#: a tool that creates what is missing. `plan` and `rate` stay with the 402 and
+#: 429 status hints, which say more.
+REFUSAL_GATE_HINT: dict[str, str] = {
+    'work_session': (
+        'A Work Session gate refused this: the attached session is missing, '
+        'no longer active, or does not cover it. Check the session with '
+        'work_session_get; a human approves a new or changed session out-of-band.'
+    ),
+    'role': (
+        'Your role in this workspace does not allow this. Ask a workspace admin '
+        'for a role that does; you cannot change your own role.'
+    ),
+    'token_scope': (
+        "The credential's scopes do not cover this. Ask a workspace admin for a "
+        'token that carries the scope; you cannot add one yourself.'
+    ),
+    'server_reach': (
+        'This credential cannot reach the server. Ask its owner or a workspace '
+        'admin for access; list_servers shows the servers you can reach.'
+    ),
+    'command_acl': (
+        'No command pre-approval admits this. A Command ACL admin grants it under '
+        "Pre-approved commands on the service token's page in the web console; "
+        'you cannot grant it yourself.'
+    ),
+    'file_acl': (
+        'No file transfer rule on the token covers this path, account and action. '
+        'Ask a workspace admin to add one; you cannot grant it yourself.'
+    ),
+    'approval': (
+        'This needs a human decision, made out-of-band (Alpacon web console or '
+        'Slack). You cannot approve it yourself; wait for the decision.'
+    ),
+    'presence': (
+        'This needs a fresh MFA step-up by a human. You cannot complete MFA '
+        'yourself; wait for the human to do it.'
+    ),
+    'risk': (
+        'The risk assessor refused this. Tell the user; a human reviewer decides '
+        'whether it may run.'
+    ),
+    'sudo': (
+        'The sudo policy refused this. A human must change the Work Session sudo '
+        'policy in the Alpacon web console; you cannot grant it yourself.'
+    ),
+}
+
+#: The same by the class of prerequisite absent (`missing`), which is more
+#: specific than the gate and so read first.
+_MISSING_CLASS_HINT: dict[str, str] = {
+    'command_preapproval': REFUSAL_GATE_HINT['command_acl'],
+    'file_preapproval': REFUSAL_GATE_HINT['file_acl'],
+    'approval': REFUSAL_GATE_HINT['approval'],
+    'presence': REFUSAL_GATE_HINT['presence'],
+    'work_session': REFUSAL_GATE_HINT['work_session'],
+    'role': REFUSAL_GATE_HINT['role'],
+    'approved_account': (
+        "The Work Session's approval does not cover this account. Use an "
+        'account the approval covers, or ask a human for an approval that does.'
+    ),
+    'other_approver': (
+        'Nobody but the requester could decide this, and a requester cannot '
+        'approve their own request. Ask another member with approval rights.'
+    ),
+    'allowed_agent': (
+        "The workspace's approval policy does not allow this agent. Ask a "
+        'workspace admin to allow it in the approval policy.'
+    ),
+}
+
+#: What marks a `missing` value as a scope literal rather than a class.
+_SCOPE_LITERAL_PREFIX = 'scope:'
+
+
+def refusal_hint(gate: object, missing: object) -> str | None:
+    """Local guidance for a refusal's `gate` and `missing` classes, or None when
+    neither is known here; a scope literal is named in the text."""
+    named = [missing] if isinstance(missing, str) else missing
+    items = [m for m in named if isinstance(m, str)] if isinstance(named, list) else []
+    scopes = [
+        m.removeprefix(_SCOPE_LITERAL_PREFIX)
+        for m in items
+        if m.startswith(_SCOPE_LITERAL_PREFIX)
+    ]
+    if scopes:
+        return (
+            f'The credential lacks the {", ".join(scopes)} scope. Ask a workspace '
+            'admin for a token that carries it; you cannot add a scope yourself.'
+        )
+    for item in items:
+        if hint := _MISSING_CLASS_HINT.get(item):
+            return hint
+    return REFUSAL_GATE_HINT.get(gate) if isinstance(gate, str) else None
+
+
 # Replaces an _ERROR_CODE_HINT entry on a stdio server, the only transport that
 # registers the tools these name.
 _STDIO_ERROR_CODE_HINT: dict[str, str] = {
@@ -668,7 +765,8 @@ def unwrap_http_result(
     **id_context: object,
 ) -> ToolErrorResponse | None:
     """Return an error result for an http_client 4xx/5xx envelope, else None.
-    Gate codes and 402 plan limits get dedicated results; other codes set error_code."""
+    Gate codes and 402 plan limits get dedicated results; other codes set error_code.
+    The body's gate, missing, next and hint ride every result; a server hint wins."""
     if not (isinstance(result, dict) and 'error' in result):
         return None
 
@@ -678,6 +776,9 @@ def unwrap_http_result(
         error_kwargs['status_code'] = status_code
     if result.get('outcome_unknown') is True:  # a POST or PATCH that may have acted
         error_kwargs['outcome_unknown'] = True
+    body = _parse_error_body(result)
+    refusal = _refusal_fields(body)
+    error_kwargs.update(refusal)
 
     code = http_error_code(result)
     if code is not None and _is_work_session_gate_code(code):
@@ -689,7 +790,6 @@ def unwrap_http_result(
     # different status that happens to carry a similarly shaped body (e.g. a
     # 400 or 500) is never misclassified as a plan limit.
     if status_code == HTTPStatus.PAYMENT_REQUIRED:
-        body = _parse_error_body(result)
         axis = _plan_limit_axis(body, code)
         if axis is not None:
             next_value = body.get('next') if body is not None else None
@@ -701,15 +801,39 @@ def unwrap_http_result(
             )
 
     message = result.get('message', default_message)
+    hint = refusal.get('hint')
     if code is not None:
         error_kwargs['error_code'] = code
-        hint = _ERROR_CODE_HINT.get(code)
-        if is_stdio_transport():
-            hint = _STDIO_ERROR_CODE_HINT.get(code, hint)
-        if hint is not None:
-            message = f'{message} {hint}'
+        if hint is None:
+            hint = _ERROR_CODE_HINT.get(code)
+            if is_stdio_transport():
+                hint = _STDIO_ERROR_CODE_HINT.get(code, hint)
+    if hint is None:
+        hint = refusal_hint(refusal.get('gate'), refusal.get('missing'))
+    if hint is not None:
+        message = f'{message} {hint}'
 
     return error_response(message, **error_kwargs)
+
+
+def _refusal_fields(body: Mapping[str, JsonValue] | None) -> dict[str, JsonValue]:
+    """The refusal envelope's gate, missing, next and hint as sent (#242); a field
+    absent, empty or of another type is left out, and so is every unknown one."""
+    if body is None:
+        return {}
+    fields: dict[str, JsonValue] = {
+        name: value
+        for name in ('gate', 'next', 'hint')
+        if isinstance(value := body.get(name), str) and value
+    }
+    missing = body.get('missing')
+    if (isinstance(missing, str) and missing) or (
+        isinstance(missing, list)
+        and missing
+        and all(isinstance(m, str) and m for m in missing)
+    ):
+        fields['missing'] = missing
+    return fields
 
 
 def _parse_error_body(result: Mapping[str, object]) -> dict[str, JsonValue] | None:

@@ -2,7 +2,7 @@
 
 from http import HTTPStatus
 
-from utils.common import is_stdio_transport
+from utils.common import is_stdio_transport, refusal_hint
 from utils.types import ToolResponse
 
 # Closing advice every plan gate shares: the call is settled, only a plan change moves it.
@@ -263,6 +263,12 @@ def enrich_error_response(
 
     # The 5xx hints say try again, and resending a write that may have acted can repeat it.
     if response.get('outcome_unknown') is True:
+        return response
+
+    # A server hint, or a gate or missing class known here, says more than a status guess.
+    if 'hint' in response or refusal_hint(
+        response.get('gate'), response.get('missing')
+    ):
         return response
 
     status_code = response.get('status_code') or response.get('error_code')

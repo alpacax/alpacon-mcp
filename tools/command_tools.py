@@ -9,6 +9,7 @@ from typing import Annotated, TypedDict
 import httpx
 from pydantic import Field, Strict, TypeAdapter
 
+from utils.command_rejection import attach_rejection
 from utils.common import (
     FILE_EXEC_INLINE_CREDENTIAL_HINT,
     FILE_EXEC_REFUSAL_HINTS,
@@ -627,7 +628,7 @@ def _remaining_purpose_window(expires_at: JsonValue) -> int | None:
 
 
 @mcp_tool_handler(
-    description="List recent command execution history with status, output, and timestamps. Filterable by server ID. An entry whose output is a sudo denial also carries sudo_hint and, when a human can clear it, a structured sudo_denial block. When to use: reviewing past commands, retrieving the result of a command whose execute_command call timed out, or reading the results of an execute_command_multi_server batch. An entry the server refused because its line carries a script body (rejection_cause use_file_execution) also carries error_code use_file_execution and a next_action: rerun that script with execute_file (write_file=true) on that entry's server and account only. Related: execute_command (run a command and wait), execute_file.",
+    description="List recent command execution history with status, output, and timestamps. Filterable by server ID. An entry whose output is a sudo denial also carries sudo_hint and, when a human can clear it, a structured sudo_denial block. When to use: reviewing past commands, retrieving the result of a command whose execute_command call timed out, or reading the results of an execute_command_multi_server batch. An entry the server refused because its line carries a script body (rejection_cause use_file_execution) also carries error_code use_file_execution and a next_action: rerun that script with execute_file (write_file=true) on that entry's server and account only. A rejected entry also carries rejection_hint, saying whom to ask; do not resubmit it. Related: execute_command (run a command and wait), execute_file.",
     annotations=READ_ONLY,
     meta={'anthropic/searchHint': 'command history list recent'},
 )
@@ -667,6 +668,7 @@ async def list_commands(
             _attach_sudo_denial(entry)
             _attach_file_phase_hint(entry)
             _attach_use_file_execution(entry)
+            attach_rejection(entry)
 
     return success_response(
         data=result,
@@ -678,7 +680,7 @@ async def list_commands(
 
 
 @mcp_tool_handler(
-    description="Run a shell command on a server and wait for the result (up to 5 minutes by default). Returns stdout, stderr, and exit code in a single call. Requires ACL permission. Unless a Work Session sudo policy already covers the command, a sudo invocation either routes to human-in-the-loop approval and blocks until a human acts, or is denied outright with no request anyone can approve. Check sudo_denial.category before waiting; a sudo_hint with no sudo_denial is a hard denial that creates no request, so do not wait on it. The timeout resets when the command is actively running. Supports dependency chains (run_after), scheduled execution (scheduled_at), and stdin data. Pass purpose to say what this particular command is for, in one or two sentences, whenever the command is not trivially routine: the assessor judges it with the purpose in hand, and a command that would otherwise queue for a human may clear on its own. State a fact local to this host that the Work Session description does not already imply; general knowledge adds nothing the assessor does not have, and a purpose cannot lower a command's intrinsic risk. If you omit it the gate may hold the command and ask—a status of purpose_required, which you answer with state_command_purpose within about a minute. A purpose over 2000 characters is trimmed to fit rather than refused, and the response then carries purpose_truncated: true—the assessor judges what was sent, so keep it short enough to survive whole. For a script, a heredoc, or any \"bash /path/to/file\" line, use execute_file instead: with write_file=true when you have the script's text, so one call writes it to the host and runs it as a verified file, or with read_from_server=true when the script already exists on the host, so one call reads its exact bytes from there and submits them. A verified file an approver has marked standing is re-run unchanged without paging a human, which a shell line never is. A line that carries a script body can be refused after verification when the workspace approval policy blocks script bodies, with error_code use_file_execution; it did not run, and next_action names the execute_file call. When to use: the recommended way to run a one-off command on a server. Related: execute_file (write and run a script whose bytes are reviewed and hashed), execute_command_multi_server (run on multiple servers), state_command_purpose (answer a held command's purpose demand), list_commands (browse history), work_session_create (create a Work Session). Note: Default timeout is 300 seconds (5 minutes).",
+    description="Run a shell command on a server and wait for the result (up to 5 minutes by default). Returns stdout, stderr, and exit code in a single call. Requires ACL permission. Unless a Work Session sudo policy already covers the command, a sudo invocation either routes to human-in-the-loop approval and blocks until a human acts, or is denied outright with no request anyone can approve. Check sudo_denial.category before waiting; a sudo_hint with no sudo_denial is a hard denial that creates no request, so do not wait on it. The timeout resets when the command is actively running. Supports dependency chains (run_after), scheduled execution (scheduled_at), and stdin data. Pass purpose to say what this particular command is for, in one or two sentences, whenever the command is not trivially routine: the assessor judges it with the purpose in hand, and a command that would otherwise queue for a human may clear on its own. State a fact local to this host that the Work Session description does not already imply; general knowledge adds nothing the assessor does not have, and a purpose cannot lower a command's intrinsic risk. If you omit it the gate may hold the command and ask—a status of purpose_required, which you answer with state_command_purpose within about a minute. A purpose over 2000 characters is trimmed to fit rather than refused, and the response then carries purpose_truncated: true—the assessor judges what was sent, so keep it short enough to survive whole. For a script, a heredoc, or any \"bash /path/to/file\" line, use execute_file instead: with write_file=true when you have the script's text, so one call writes it to the host and runs it as a verified file, or with read_from_server=true when the script already exists on the host, so one call reads its exact bytes from there and submits them. A verified file an approver has marked standing is re-run unchanged without paging a human, which a shell line never is. A line that carries a script body can be refused after verification when the workspace approval policy blocks script bodies, with error_code use_file_execution; it did not run, and next_action names the execute_file call. A command a gate refused before it ran fails with rejection_cause, rejection_gate and rejection_hint: follow the hint and do not resubmit it, since the same command gets the same answer. When to use: the recommended way to run a one-off command on a server. Related: execute_file (write and run a script whose bytes are reviewed and hashed), execute_command_multi_server (run on multiple servers), state_command_purpose (answer a held command's purpose demand), list_commands (browse history), work_session_create (create a Work Session). Note: Default timeout is 300 seconds (5 minutes).",
     annotations=ADDITIVE,
     meta={
         'anthropic/alwaysLoad': True,
@@ -1498,7 +1500,7 @@ async def _poll_command_result(
             # Checked ahead of the status match so the refusal keeps its own
             # error_code instead of reading as a bare 'rejected'.
             if refusal := _use_file_execution_refusal(result, stdin_fed):
-                return error_response(
+                response = error_response(
                     refusal['message'],
                     error_code=refusal['error_code'],
                     next_action=refusal['next_action'],
@@ -1508,6 +1510,8 @@ async def _poll_command_result(
                     details=result,
                     **echo,
                 )
+                attach_rejection(response, result)  # message already says it
+                return response
 
             # handled_at is set once the agent reports the result (status then
             # becomes 'success'/'failed'); the Command API has no 'finished_at'.
@@ -1573,7 +1577,7 @@ async def _poll_command_result(
                 # the server's compute_status never emits it given the
                 # scheduled_at default, so it is unreachable here.)
                 case str() if status in COMMAND_NEVER_RAN:
-                    return error_response(
+                    response = error_response(
                         f'Command failed with status: {status}',
                         command_id=command_id,
                         region=region,
@@ -1581,6 +1585,9 @@ async def _poll_command_result(
                         details=result,
                         **echo,
                     )
+                    if hint := attach_rejection(response, result):
+                        response['message'] += f'. {hint}'
+                    return response
 
                 # Command still in progress—reset deadline (within hard cap) so
                 # a slow AI verification or delayed delivery does not time out a

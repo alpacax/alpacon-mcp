@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- A coded refusal's `gate`, `missing`, `next` and `hint` now ride the error result as sent, and a server `hint` replaces the local hints, `recovery_hints` included; without one, a known `gate` or `missing` class picks a local hint that says whom to ask (#242). A rejected command on `execute_command`, `execute_file` and `list_commands` carries `rejection_cause`, `rejection_gate` and a new `rejection_hint`, and a rejected `command` item on `work_session_timeline` carries `rejection_hint`. A client parsing `message` sees two changes: a rejected command's message ends with its hint, an older server's rejected command included, and a refusal whose `gate` or `missing` this client recognizes no longer carries `recovery_hints` or `related_tools`. An older server's other errors are unchanged, and a current server's feature-lock 402 now also carries the `gate: "plan"` it sends.
 - `list_latest_metrics` accepts `metric_severity` and `-metric_severity` ordering and preserves
   row `metric_severity`, cell `threshold` and `operator`, and envelope `summary` fields (#397).
   Clients parsing responses see these new keys, including permission-dependent nulls; no
