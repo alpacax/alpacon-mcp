@@ -1500,7 +1500,7 @@ async def _poll_command_result(
             # Checked ahead of the status match so the refusal keeps its own
             # error_code instead of reading as a bare 'rejected'.
             if refusal := _use_file_execution_refusal(result, stdin_fed):
-                return error_response(
+                response = error_response(
                     refusal['message'],
                     error_code=refusal['error_code'],
                     next_action=refusal['next_action'],
@@ -1510,6 +1510,8 @@ async def _poll_command_result(
                     details=result,
                     **echo,
                 )
+                attach_rejection(response, result)  # message already says it
+                return response
 
             # handled_at is set once the agent reports the result (status then
             # becomes 'success'/'failed'); the Command API has no 'finished_at'.

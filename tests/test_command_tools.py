@@ -4349,6 +4349,10 @@ class TestUseFileExecutionRefusal:
         assert result['error_code'] == 'use_file_execution'
         assert result['command_id'] == 'cmd-uf1'
         assert result['message'].startswith('Run this script as a file instead.')
+        assert result['rejection_cause'] == 'use_file_execution'
+        assert result['rejection_gate'] == 'approval'
+        assert 'execute_file' in result['rejection_hint']
+        assert result['rejection_hint'] not in result['message']
         next_action = result['next_action']
         assert 'execute_file' in next_action
         assert 'write_file=true' in next_action
