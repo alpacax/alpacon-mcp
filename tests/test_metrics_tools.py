@@ -1865,6 +1865,67 @@ class TestListLatestMetrics:
             params={'ordering': '-disk_io'},
         )
 
+    @pytest.mark.parametrize('ordering', ['metric_severity', '-metric_severity'])
+    @pytest.mark.asyncio
+    async def test_list_latest_metrics_ordering_accepts_metric_severity(
+        self, mock_http_client, mock_token_manager, ordering
+    ):
+        mock_http_client.get.return_value = {'count': 0, 'results': []}
+
+        result = await list_latest_metrics(
+            workspace='testworkspace', region='ap1', ordering=ordering
+        )
+
+        assert result['status'] == 'success'
+        mock_http_client.get.assert_called_once_with(
+            region='ap1',
+            workspace='testworkspace',
+            endpoint='/api/metrics/latest/',
+            token='test-token',
+            params={'ordering': ordering},
+        )
+
+    @pytest.mark.parametrize('restricted', [False, True])
+    @pytest.mark.asyncio
+    async def test_list_latest_metrics_preserves_severity_fields(
+        self, mock_http_client, mock_token_manager, restricted
+    ):
+        payload = {
+            'count': 5,
+            'current': 1,
+            'next': 2,
+            'previous': None,
+            'last': 5,
+            'summary': {
+                'critical': None if restricted else 2,
+                'warning': None if restricted else 1,
+                'stale': 2,
+                'no_data': 1,
+            },
+            'results': [
+                {
+                    'id': SERVER_ID,
+                    'metric_severity': None if restricted else 'critical',
+                    'cpu': {
+                        'threshold': None if restricted else 90,
+                        'operator': None if restricted else 'gte',
+                    },
+                    'memory': {
+                        'threshold': None if restricted else 10.5,
+                        'operator': None if restricted else 'lte',
+                    },
+                    'disk-io': {'threshold': None, 'operator': None},
+                    'net': {'threshold': None, 'operator': None},
+                }
+            ],
+        }
+        mock_http_client.get.return_value = payload
+
+        result = await list_latest_metrics(workspace='testworkspace', region='ap1')
+
+        assert result['status'] == 'success'
+        assert result['data'] == payload
+
     @pytest.mark.asyncio
     async def test_list_latest_metrics_invalid_state_rejected(
         self, mock_http_client, mock_token_manager

@@ -47,6 +47,7 @@ VALID_LATEST_METRIC_ORDERING_FIELDS = frozenset(
         'disk_io',
         'disk-io',
         'net',
+        'metric_severity',
     }
 )
 _LATEST_ORDERING_SENTENCE = (
@@ -1193,9 +1194,20 @@ async def get_server_metrics_summary(
     description=(
         'Latest CPU, memory, disk usage, disk I/O and network reading for many '
         'servers in one request; each cell says whether the value is missing, '
-        "stale or not collected. For one server's time series use get_cpu_usage "
+        'stale or not collected. Order by metric_severity or -metric_severity '
+        '(critical first descending; ties keep the default order). Rows include '
+        'metric_severity (critical, warning, info or null without alert:read). '
+        'Cells include threshold (number or null) and operator (gte, lte or null); '
+        'both are null for disk-io and net, or without rule override read access. '
+        'summary counts critical, warning, stale and no_data over the filtered '
+        'set before pagination; critical and warning are null without alert:read, '
+        'and warning excludes critical servers. '
+        "For one server's time series use get_cpu_usage "
         "etc.; for one server's detail use get_server_metrics_summary. Requires "
-        'alpacon-server 2.37.0 or later.'
+        'alpacon-server 2.37.0 or later. Severity ordering, metric_severity, '
+        'threshold, operator and summary require server support; earlier '
+        'deployments ignore that ordering (default order) and omit those fields; '
+        'without alert:read the ordering is ignored too.'
     ),
     annotations=READ_ONLY,
     meta={
@@ -1221,6 +1233,10 @@ async def list_latest_metrics(
     metric cells added: the filters, search, and pagination are `list_servers`'
     own, plus `state` and `ordering`.
 
+    Severity ordering, metric_severity, threshold, operator, and summary require
+    server support; earlier deployments ignore that ordering (default order) and
+    omit those fields, and without alert:read the ordering is ignored too.
+
     Args:
         workspace: Workspace name. Required parameter
         region: Region (ap1, us1). Auto-detected if not provided
@@ -1234,18 +1250,28 @@ async def list_latest_metrics(
             server. (optional)
         ordering: Sort field, one of VALID_LATEST_METRIC_ORDERING_FIELDS
             (name, starred, sampled_at, cpu, memory, disk_usage/disk-usage,
-            disk_io/disk-io, net), optionally prefixed with "-" for descending.
-            A server with no value for the field sorts last. (optional)
+            disk_io/disk-io, net, metric_severity), optionally prefixed with "-"
+            for descending. A server with no value for the field sorts last.
+            -metric_severity puts critical first; ties keep the default order.
+            (optional)
         page: Page number for pagination (optional)
         page_size: Number of results per page, up to 100 (optional)
 
     Returns:
-        Paginated response: `count`, `current`, `next`, `previous`, `last`, and
-        `results` — each result an `{id, name, is_connected, cpu, memory,
-        "disk-usage", "disk-io", net}` row, every metric cell an object with
+        Paginated response: `count`, `current`, `next`, `previous`, `last`,
+        `summary`, and `results`—each result an `{id, name, is_connected,
+        metric_severity, cpu, memory, "disk-usage", "disk-io", net}` row,
+        every metric cell an object with
         `value`, `unit` ("percent" or "bytes_per_sec"), `sampled_at`, `device`,
-        `collected`, `reason`, and `interval_s` (`value`, `sampled_at`, and
-        `device` are null when no sample is stored for that family).
+        `collected`, `reason`, `interval_s`, `threshold`, and `operator`
+        (`value`, `sampled_at`, and `device` are null when no sample is stored
+        for that family).
+        `metric_severity` is critical, warning, info, or null without alert:read.
+        `threshold` is a number or null; `operator` is gte, lte, or null. Both
+        are null for disk-io and net, or without rule override read access.
+        `summary` counts critical, warning, stale, and no_data over the filtered
+        set before pagination. `critical` and `warning` are null without
+        alert:read; `warning` excludes servers counted as critical.
     """
     if state is not None and state not in VALID_LATEST_METRIC_STATES:
         return format_validation_error('state', state, _LATEST_STATE_SENTENCE)

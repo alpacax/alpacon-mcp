@@ -228,6 +228,10 @@ value is missing, stale, or not collected — use `get_cpu_usage` etc. for one s
 or `get_server_metrics_summary` for one server's detail. **Requires alpacon-server 2.37.0 or
 later.**
 
+Severity ordering and the `metric_severity`, `threshold`, `operator`, and `summary` fields
+require a server deployment that supports them. Earlier deployments ignore severity ordering
+(the default order applies) and omit those fields; without `alert:read` the ordering is ignored too.
+
 **Parameters:**
 - `workspace` (string): Workspace name
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
@@ -238,16 +242,25 @@ later.**
 - `state` (string, optional): `stale` (some family overdue, including a server storing nothing) or
   `no_data` (nothing stored at all); `stale` includes every `no_data` server
 - `ordering` (string, optional): `name`, `starred`, `sampled_at`, `cpu`, `memory`, `disk_usage` (or
-  `disk-usage`), `disk_io` (or `disk-io`), `net`, optionally prefixed with `-` for descending; a
-  server with no value for the field sorts last
+  `disk-usage`), `disk_io` (or `disk-io`), `net`, `metric_severity`, optionally prefixed with `-`
+  for descending; a server with no value for the field sorts last. `-metric_severity` puts
+  critical first; ties keep the default order
 - `page` (integer, optional): Page number for pagination
 - `page_size` (integer, optional): Number of results per page, up to 100
 
-**Response:** `count`, `current`, `next`, `previous`, `last`, and `results` — each result an
-`{id, name, is_connected, cpu, memory, "disk-usage", "disk-io", net}` row, every metric cell an
-object with `value`, `unit` (`percent` or `bytes_per_sec`), `sampled_at`, `device`, `collected`,
-`reason`, and `interval_s` (`value`, `sampled_at`, and `device` are null when no sample is stored
-for that family).
+**Response:** `count`, `current`, `next`, `previous`, `last`, `summary`, and `results`—each result an
+`{id, name, is_connected, metric_severity, cpu, memory, "disk-usage", "disk-io", net}` row, every
+metric cell an object with `value`, `unit` (`percent` or `bytes_per_sec`), `sampled_at`, `device`, `collected`,
+`reason`, `interval_s`, `threshold`, and `operator` (`value`, `sampled_at`, and `device` are null
+when no sample is stored for that family).
+
+`metric_severity` is `critical`, `warning`, `info`, or null without `alert:read`. Each cell's
+`threshold` is a number or null and `operator` is `gte`, `lte`, or null; both are always null
+for `disk-io` and `net`, and null when the caller cannot read rule overrides.
+
+`summary` contains server counts `{critical, warning, stale, no_data}` over the filtered set
+before pagination. `critical` and `warning` are null without `alert:read`; `warning` excludes
+servers counted as critical.
 
 ### `get_alert_rules`
 Get alert rules for servers.
