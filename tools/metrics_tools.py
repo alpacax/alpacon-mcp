@@ -3,7 +3,8 @@
 import asyncio
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime, timedelta
-from typing import Literal, TypedDict
+from enum import Enum
+from typing import TypedDict
 
 from pydantic import TypeAdapter
 
@@ -29,8 +30,8 @@ from utils.types import (
     OptionalServerId,
     QueryParam,
     ServerId,
-    ToolErrorResponse,
     ToolResponse,
+    ToolResult,
 )
 
 #: `?state=` values `/api/metrics/latest/` accepts; mirrors alpacon-server's
@@ -102,6 +103,23 @@ class _DiskDevices(TypedDict, total=False):
 
 class _NextPage(TypedDict, total=False):  # a page-number list envelope
     next: int | None
+
+
+class _DiskMetric(Enum):
+    """A realtime disk metric whose list endpoint needs a device."""
+
+    USAGE = (
+        '/api/metrics/realtime/disk-usage/device/',
+        'No disk devices found for this server',
+    )
+    IO = (
+        '/api/metrics/realtime/disk-io/device/',
+        'No disk I/O devices found for this server',
+    )
+
+    def __init__(self, device_endpoint: str, empty_message: str) -> None:
+        self.device_endpoint = device_endpoint
+        self.empty_message = empty_message
 
 
 _USAGE_ROWS = TypeAdapter(list[_UsageRow])
@@ -415,21 +433,6 @@ def parse_disk_metrics(results: list[_DiskUsageRow]) -> dict[str, object]:
     }
 
 
-type _DiskMetric = Literal['disk-usage', 'disk-io']
-
-#: Each disk metric's `device/` action and the error when it lists no device.
-_DISK_DEVICE_LOOKUPS: dict[_DiskMetric, tuple[str, str]] = {
-    'disk-usage': (
-        '/api/metrics/realtime/disk-usage/device/',
-        'No disk devices found for this server',
-    ),
-    'disk-io': (
-        '/api/metrics/realtime/disk-io/device/',
-        'No disk I/O devices found for this server',
-    ),
-}
-
-
 async def _disk_devices(
     metric: _DiskMetric,
     *,
@@ -437,13 +440,13 @@ async def _disk_devices(
     workspace: str,
     region: str,
     token: str | None,
-) -> list[str] | ToolErrorResponse:
+) -> ToolResult[list[str]]:
     """Sorted devices with `metric` data in the last day, or an error result when
     the lookup fails or finds none."""
     result = await http_client.get(
         region=region,
         workspace=workspace,
-        endpoint=_DISK_DEVICE_LOOKUPS[metric][0],
+        endpoint=metric.device_endpoint,
         token=token,
         params={'server': server_id},
     )
@@ -459,7 +462,7 @@ async def _disk_devices(
     devices = sorted(validate_response(_DISK_DEVICES, result).get('devices', []))
     if not devices:
         return error_response(
-            message=_DISK_DEVICE_LOOKUPS[metric][1],
+            message=metric.empty_message,
             server_id=server_id,
             region=region,
             workspace=workspace,
@@ -503,7 +506,7 @@ async def get_disk_usage(
 
     if not device and not partition:
         devices = await _disk_devices(
-            'disk-usage',
+            _DiskMetric.USAGE,
             server_id=server_id,
             workspace=workspace,
             region=region,
@@ -676,7 +679,7 @@ async def get_disk_io(
     devices: list[str] | None = None
     if not device:
         discovered = await _disk_devices(
-            'disk-io',
+            _DiskMetric.IO,
             server_id=server_id,
             workspace=workspace,
             region=region,
