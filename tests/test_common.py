@@ -17,6 +17,10 @@ from utils.common import (
     _NEXT_ACTION_BY_CATEGORY,
     _PLAN_LIMIT_AXIS_NAME,
     _WORK_SESSION_GATE_CODES,
+    COMMAND_ACL_MOVED_HINT,
+    COMMAND_ACL_MOVED_STDIO_HINT,
+    INLINE_CREDENTIAL_HINT,
+    REFUSAL_GATE_HINT,
     UnexpectedResponseShapeError,
     _plan_limit_axis,
     _plan_limit_billing_link,
@@ -563,7 +567,7 @@ class TestUnwrapHttpResultPlanLimit:
         assert 'next' not in out
         assert 'next_action' not in out
         assert 'requires_human_approval' not in out
-        assert 'gate' not in out
+        assert out['gate'] == 'plan'  # carried through as sent (#242)
 
     def test_feature_lock_keeps_its_existing_error_code_hint(self):
         # workspace_extension_plan_required already had a curated hint before
@@ -633,7 +637,7 @@ class TestUnwrapHttpResultPlanLimit:
         assert out['error_code'] == 'server_limit_exceeded'
         assert 'axis' not in out
         assert 'next_action' not in out
-        assert 'gate' not in out
+        assert out['gate'] == 'plan'  # carried through as sent (#242)
 
     def test_workspace_axis_does_not_crash(self):
         # workspace_free_limit_exceeded is not one of the six legacy codes
@@ -893,3 +897,188 @@ class TestValidateResponse:
     def test_non_object_body_raises(self, body):
         with pytest.raises(UnexpectedResponseShapeError, match='<root>'):
             validate_response(_ROW, body)
+
+
+def _refusal(status_code=HTTPStatus.FORBIDDEN, **body: object) -> dict[str, object]:
+    """An http_client error envelope whose body is `body` as JSON."""
+    return {
+        'error': 'HTTP Error',
+        'status_code': status_code,
+        'message': f'HTTP {int(status_code)}',
+        'response': json.dumps(body),
+    }
+
+
+class TestUnwrapHttpResultRefusalFields:
+    """The refusal envelope's gate, missing, next and hint (#242)."""
+
+    def test_gate_and_missing_scope_are_named_without_an_endpoint_to_create_it(self):
+        out = _unwrap_error(
+            _refusal(
+                code='auth_token_scope_insufficient',
+                gate='token_scope',
+                missing='scope:command:execute',
+            ),
+            default_message='failed',
+        )
+
+        assert out['status'] == 'error'
+        assert out['status_code'] == HTTPStatus.FORBIDDEN
+        assert out['gate'] == 'token_scope'
+        assert out['missing'] == 'scope:command:execute'
+        assert 'lacks the command:execute scope' in out['message']
+        assert 'create_' not in out['message']
+        assert 'hint' not in out
+
+    def test_missing_class_outranks_the_gate(self):
+        out = _unwrap_error(
+            _refusal(
+                code='command_not_preapproved',
+                gate='command_acl',
+                missing='command_preapproval',
+            ),
+            default_message='failed',
+        )
+
+        assert out['status'] == 'error'
+        assert out['error_code'] == 'command_not_preapproved'
+        assert 'No command pre-approval admits this' in out['message']
+        assert 'create_command_acl' not in out['message']
+
+    def test_several_scope_literals_are_all_named(self):
+        out = _unwrap_error(
+            _refusal(gate='token_scope', missing=['scope:a:read', 'scope:b:write']),
+            default_message='failed',
+        )
+
+        assert out['missing'] == ['scope:a:read', 'scope:b:write']
+        assert 'lacks the a:read, b:write scope' in out['message']
+
+    def test_server_hint_passes_through_and_replaces_the_local_code_hint(self):
+        server_hint = 'Ask a Command ACL admin on the web console.'
+
+        out = _unwrap_error(
+            _refusal(
+                status_code=HTTPStatus.METHOD_NOT_ALLOWED,
+                code='command_acl_moved',
+                hint=server_hint,
+            ),
+            default_message='failed',
+        )
+
+        assert out['status'] == 'error'
+        assert out['hint'] == server_hint
+        assert out['message'] == f'HTTP 405 {server_hint}'
+        assert COMMAND_ACL_MOVED_HINT not in out['message']
+
+    def test_server_hint_outranks_the_stdio_code_hint(self, monkeypatch):
+        monkeypatch.setenv('ALPACON_MCP_TRANSPORT', 'stdio')
+
+        out = _unwrap_error(
+            _refusal(
+                status_code=HTTPStatus.METHOD_NOT_ALLOWED,
+                code='command_acl_moved',
+                hint='Ask.',
+            ),
+            default_message='failed',
+        )
+
+        assert out['status_code'] == HTTPStatus.METHOD_NOT_ALLOWED
+        assert out['message'] == 'HTTP 405 Ask.'
+        assert COMMAND_ACL_MOVED_STDIO_HINT not in out['message']
+
+    def test_stdio_code_hint_outranks_the_gate_hint(self, monkeypatch):
+        monkeypatch.setenv('ALPACON_MCP_TRANSPORT', 'stdio')
+
+        out = _unwrap_error(
+            _refusal(
+                status_code=HTTPStatus.METHOD_NOT_ALLOWED,
+                code='command_acl_moved',
+                gate='command_acl',
+            ),
+            default_message='failed',
+        )
+
+        assert out['status_code'] == HTTPStatus.METHOD_NOT_ALLOWED
+        assert out['gate'] == 'command_acl'
+        assert out['message'] == f'HTTP 405 {COMMAND_ACL_MOVED_STDIO_HINT}'
+
+    def test_server_hint_replaces_the_local_gate_hint(self):
+        out = _unwrap_error(
+            _refusal(code='role_required', gate='role', missing='role', hint='Ask.'),
+            default_message='failed',
+        )
+
+        assert out['message'] == 'HTTP 403 Ask.'
+        assert REFUSAL_GATE_HINT['role'] not in out['message']
+
+    def test_next_rides_the_result_as_sent(self):
+        out = _unwrap_error(
+            _refusal(code='held', gate='approval', next='/api/approvals/requests/1/'),
+            default_message='failed',
+        )
+
+        assert out['next'] == '/api/approvals/requests/1/'
+
+    def test_work_session_gate_result_carries_the_server_hint(self):
+        out = _unwrap_error(
+            _refusal(
+                status_code=HTTPStatus.BAD_REQUEST,
+                code='work_session_required',
+                gate='work_session',
+                hint='Open a session first.',
+            ),
+            default_message='failed',
+        )
+
+        assert out['code'] == 'work_session_required'
+        assert (
+            out['next_action']
+            == work_session_gate_response('work_session_required')['next_action']
+        )
+        assert out['hint'] == 'Open a session first.'
+        assert out['gate'] == 'work_session'
+
+    def test_an_older_server_body_keeps_todays_result(self):
+        out = _unwrap_error(
+            _refusal(
+                status_code=HTTPStatus.BAD_REQUEST, code='command_inline_credential'
+            ),
+            default_message='failed',
+        )
+
+        assert out == {
+            'status': 'error',
+            'status_code': HTTPStatus.BAD_REQUEST,
+            'error_code': 'command_inline_credential',
+            'message': f'HTTP 400 {INLINE_CREDENTIAL_HINT}',
+        }
+
+    def test_unknown_and_malformed_fields_are_ignored(self):
+        out = _unwrap_error(
+            _refusal(
+                code='some_code',
+                gate=3,
+                missing=['scope:a', 7],
+                hint='',
+                next=None,
+                reason='internal',
+            ),
+            default_message='failed',
+        )
+
+        assert out == {
+            'status': 'error',
+            'status_code': HTTPStatus.FORBIDDEN,
+            'error_code': 'some_code',
+            'message': 'HTTP 403',
+        }
+
+    def test_an_unknown_gate_rides_through_with_no_local_hint(self):
+        out = _unwrap_error(
+            _refusal(code='new_code', gate='some_future_gate'),
+            default_message='failed',
+        )
+
+        assert out['gate'] == 'some_future_gate'
+        assert out['message'] == 'HTTP 403'

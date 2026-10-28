@@ -41,6 +41,7 @@ from utils.common import (
     FILE_EXEC_INLINE_CREDENTIAL_HINT,
     FILE_EXEC_REFUSAL_HINTS,
     INLINE_CREDENTIAL_HINT,
+    REFUSAL_GATE_HINT,
 )
 from utils.http_client import AlpaconHTTPClient
 from utils.types import JsonValue, ToolResponse
@@ -4569,3 +4570,252 @@ class TestUseFileExecutionRefusal:
             'file_exec_unsupported_agent'
             in descriptions['execute_command_multi_server']
         )
+
+
+def _rejected_row(**fields: object) -> dict[str, object]:
+    return {'id': 'cmd-r1', 'status': 'rejected', 'handled_at': None, **fields}
+
+
+class TestRejectionCause:
+    """A command a gate refused before it ran says why and whom to ask (#242)."""
+
+    async def _run(self, row: dict[str, object]) -> ToolResponse:
+        with (
+            patch('tools.command_tools._submit_command') as mock_submit,
+            patch('tools.command_tools._get_command_result') as mock_poll,
+        ):
+            mock_submit.return_value = {'id': 'cmd-r1'}
+            mock_poll.return_value = row
+            return await execute_command(
+                server_id=VALID_SERVER_ID,
+                command='systemctl restart nginx',
+                workspace='testworkspace',
+                timeout=10,
+            )
+
+    @pytest.mark.asyncio
+    async def test_a_known_cause_names_cause_gate_and_hint(self, mock_token_manager):
+        result = await self._run(
+            _rejected_row(
+                rejection_cause='approval_rejected', rejection_gate='approval'
+            )
+        )
+
+        assert result['status'] == 'error'
+        assert result['rejection_cause'] == 'approval_rejected'
+        assert result['rejection_gate'] == 'approval'
+        assert 'A human approver rejected this command' in result['rejection_hint']
+        assert result['rejection_hint'] in result['message']
+        assert result['message'].startswith('Command failed with status: rejected')
+
+    @pytest.mark.asyncio
+    async def test_a_null_cause_means_not_recorded(self, mock_token_manager):
+        result = await self._run(
+            _rejected_row(rejection_cause=None, rejection_gate=None)
+        )
+
+        assert result['status'] == 'error'
+        assert result['rejection_cause'] is None
+        assert 'did not record why' in result['rejection_hint']
+
+    @pytest.mark.asyncio
+    async def test_an_older_server_row_without_the_fields_is_not_recorded(
+        self, mock_token_manager
+    ):
+        result = await self._run(_rejected_row())
+
+        assert result['status'] == 'error'
+        assert result['rejection_cause'] is None
+        assert 'did not record why' in result['rejection_hint']
+
+    @pytest.mark.asyncio
+    async def test_an_unknown_cause_falls_back_to_its_gate(self, mock_token_manager):
+        result = await self._run(
+            _rejected_row(rejection_cause='risk_new_reason', rejection_gate='risk')
+        )
+
+        assert result['rejection_cause'] == 'risk_new_reason'
+        assert result['rejection_hint'].startswith(REFUSAL_GATE_HINT['risk'])
+        assert (
+            'Resubmitting the same command gets the same answer'
+            in (result['rejection_hint'])
+        )
+
+    @pytest.mark.asyncio
+    async def test_an_unknown_cause_and_gate_gets_the_generic_hint(
+        self, mock_token_manager
+    ):
+        result = await self._run(
+            _rejected_row(rejection_cause='brand_new', rejection_gate='brand_new_gate')
+        )
+
+        assert 'A gate refused this command before it ran' in result['rejection_hint']
+
+    @pytest.mark.asyncio
+    async def test_a_denied_command_without_a_cause_keeps_todays_error(
+        self, mock_token_manager
+    ):
+        result = await self._run(
+            {'id': 'cmd-r1', 'status': 'denied', 'handled_at': None}
+        )
+
+        assert result['status'] == 'error'
+        assert result['message'] == 'Command failed with status: denied'
+        assert 'rejection_hint' not in result
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        'cause',
+        [
+            'command_acl_denied',
+            'command_acl_unavailable',
+            'risk_denied',
+            'risk_unavailable',
+            'approval_policy_denied',
+            'approval_rejected',
+            'approval_expired',
+            'approval_cancelled',
+            'work_session_terminated',
+            'account_bound_to_other_person',
+            'unsigned_file',
+            'signature_invalid',
+        ],
+    )
+    async def test_every_known_cause_never_says_to_retry(
+        self, cause, mock_token_manager
+    ):
+        result = await self._run(_rejected_row(rejection_cause=cause))
+
+        assert (
+            'A gate refused this command before it ran' not in result['rejection_hint']
+        )
+        assert 'retry' not in result['rejection_hint'].lower()
+
+    @pytest.mark.asyncio
+    async def test_execute_file_carries_the_same_fields(self, mock_token_manager):
+        with (
+            patch('tools.command_tools._submit_file_execution') as mock_submit,
+            patch('tools.command_tools._get_command_result') as mock_poll,
+        ):
+            mock_submit.return_value = {'id': 'cmd-r1'}
+            mock_poll.return_value = _rejected_row(
+                rejection_cause='signature_invalid', rejection_gate=None
+            )
+
+            result = await execute_file(
+                server_id=VALID_SERVER_ID,
+                path='/opt/run.sh',
+                interpreter='/bin/bash',
+                content='echo hi\n',
+                workspace='testworkspace',
+                timeout=10,
+            )
+
+        assert result['status'] == 'error'
+        assert result['rejection_cause'] == 'signature_invalid'
+        assert result['rejection_gate'] is None
+        assert 'could not verify' in result['rejection_hint']
+
+    @pytest.mark.asyncio
+    async def test_list_commands_annotates_rejected_entries_only(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.get.return_value = {
+            'count': 2,
+            'results': [
+                {
+                    'id': 'cmd-1',
+                    'status': 'rejected',
+                    'rejection_cause': 'approval_expired',
+                    'rejection_gate': 'approval',
+                },
+                {'id': 'cmd-2', 'status': 'success', 'rejection_cause': None},
+            ],
+        }
+
+        result = await list_commands(workspace='testworkspace', region='ap1')
+
+        rejected, succeeded = result['data']['results']
+        assert result['status'] == 'success'
+        assert 'expired with no decision' in rejected['rejection_hint']
+        assert 'rejection_hint' not in succeeded
+
+
+class TestRefusalEnvelopeThroughTheTool:
+    """A coded refusal reaches the caller with its gate and missing (#242)."""
+
+    @pytest.mark.asyncio
+    async def test_a_403_with_gate_and_missing_suggests_no_endpoint(
+        self, mock_token_manager
+    ):
+        with patch('tools.command_tools._submit_command') as mock_submit:
+            mock_submit.return_value = {
+                'error': 'HTTP Error',
+                'status_code': HTTPStatus.FORBIDDEN,
+                'message': 'HTTP 403',
+                'response': json.dumps(
+                    {
+                        'code': 'command_not_preapproved',
+                        'gate': 'command_acl',
+                        'missing': 'command_preapproval',
+                    }
+                ),
+            }
+
+            result = await execute_command(
+                server_id=VALID_SERVER_ID,
+                command='ls',
+                workspace='testworkspace',
+                timeout=10,
+            )
+
+        assert result['status'] == 'error'
+        assert result['status_code'] == HTTPStatus.FORBIDDEN
+        assert result['gate'] == 'command_acl'
+        assert result['missing'] == 'command_preapproval'
+        assert 'create_command_acl' not in json.dumps(result)
+
+    @pytest.mark.asyncio
+    async def test_a_server_hint_reaches_the_caller_as_sent(self, mock_token_manager):
+        with patch('tools.command_tools._submit_command') as mock_submit:
+            mock_submit.return_value = {
+                'error': 'HTTP Error',
+                'status_code': HTTPStatus.FORBIDDEN,
+                'message': 'HTTP 403',
+                'response': json.dumps(
+                    {'code': 'some_new_code', 'hint': 'Ask your admin for X.'}
+                ),
+            }
+
+            result = await execute_command(
+                server_id=VALID_SERVER_ID,
+                command='ls',
+                workspace='testworkspace',
+                timeout=10,
+            )
+
+        assert result['status'] == 'error'
+        assert result['hint'] == 'Ask your admin for X.'
+        assert result['error_code'] == 'some_new_code'
+        assert 'recovery_hints' not in result
+
+    @pytest.mark.asyncio
+    async def test_an_older_server_403_keeps_its_status_hints(self, mock_token_manager):
+        with patch('tools.command_tools._submit_command') as mock_submit:
+            mock_submit.return_value = {
+                'error': 'HTTP Error',
+                'status_code': HTTPStatus.FORBIDDEN,
+                'message': 'HTTP 403',
+                'response': json.dumps({'code': 'permission_denied'}),
+            }
+
+            result = await execute_command(
+                server_id=VALID_SERVER_ID,
+                command='ls',
+                workspace='testworkspace',
+                timeout=10,
+            )
+
+        assert result['status'] == 'error'
+        assert 'gate' not in result
+        assert 'create_command_acl' in result['related_tools']

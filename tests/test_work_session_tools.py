@@ -1378,3 +1378,37 @@ class TestWorkSessionListParams:
             token='test-token',
             params=expected_params,
         )
+
+
+class TestWorkSessionTimelineRejection:
+    """A rejected command on the timeline says why and whom to ask (#242)."""
+
+    @pytest.mark.asyncio
+    async def test_a_rejected_command_item_gets_a_hint_and_others_do_not(
+        self, mock_http_client, mock_token_manager
+    ):
+        rejected = {
+            'type': 'command',
+            'id': 'cmd-1',
+            'rejection_cause': 'work_session_terminated',
+            'rejection_gate': 'work_session',
+        }
+        ran = {'type': 'command', 'id': 'cmd-2', 'rejection_cause': None}
+        grant = {'type': 'sudo_grant', 'rejection_cause': 'approval_rejected'}
+        mock_http_client.get.side_effect = _timeline_server(
+            {'': ([rejected, ran, grant], None)}
+        )
+
+        result = await work_session_timeline(
+            session_id=SESSION_ID, workspace='testworkspace', region='ap1'
+        )
+
+        first, second, third = result['data']['results']
+        assert result['status'] == 'success'
+        assert first['rejection_gate'] == 'work_session'
+        assert (
+            'The Work Session ended while the command was held'
+            in (first['rejection_hint'])
+        )
+        assert 'rejection_hint' not in second
+        assert 'rejection_hint' not in third

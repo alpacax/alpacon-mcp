@@ -313,3 +313,61 @@ def test_a_404_from_attach_alert_rule_points_at_list_servers():
 
     assert 'list_servers' in hints['related_tools']
     assert any('attach_alert_rule' in h for h in hints['recovery_hints'])
+
+
+class TestEnrichSkipsWhenTheRefusalSaysMore:
+    """The status-and-text layer is a fallback (#242)."""
+
+    def test_a_server_hint_gets_no_status_hints(self):
+        resp = {
+            'status': 'error',
+            'message': 'HTTP 403 Ask an admin.',
+            'status_code': HTTPStatus.FORBIDDEN,
+            'hint': 'Ask an admin.',
+        }
+
+        enriched = enrich_error_response(resp, tool_name='execute_command')
+
+        assert 'recovery_hints' not in enriched
+        assert 'related_tools' not in enriched
+
+    def test_a_known_gate_gets_no_status_hints(self):
+        resp = {
+            'status': 'error',
+            'message': 'HTTP 403',
+            'status_code': HTTPStatus.FORBIDDEN,
+            'gate': 'command_acl',
+            'missing': 'command_preapproval',
+        }
+
+        enriched = enrich_error_response(resp, tool_name='execute_command')
+
+        assert 'recovery_hints' not in enriched
+        assert 'related_tools' not in enriched
+
+    def test_an_unknown_gate_keeps_the_status_hints(self):
+        resp = {
+            'status': 'error',
+            'message': 'HTTP 403',
+            'status_code': HTTPStatus.FORBIDDEN,
+            'gate': 'some_future_gate',
+        }
+
+        enriched = enrich_error_response(resp, tool_name='execute_command')
+
+        assert 'create_command_acl' in enriched['related_tools']
+
+    def test_a_plan_feature_lock_keeps_the_status_hints(self):
+        resp = {
+            'status': 'error',
+            'message': 'HTTP 402',
+            'status_code': HTTPStatus.PAYMENT_REQUIRED,
+            'gate': 'plan',
+        }
+
+        enriched = enrich_error_response(resp, tool_name='create_webhook')
+
+        assert (
+            'Creating and updating a webhook needs a paid plan.'
+            in enriched['recovery_hints']
+        )

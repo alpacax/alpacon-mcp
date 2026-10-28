@@ -5,6 +5,7 @@ from typing import Annotated
 from pydantic import Field
 
 from utils.api_call import http_call_response
+from utils.command_rejection import attach_rejection
 from utils.common import (
     build_list_params,
     error_response,
@@ -414,7 +415,8 @@ async def work_session_extend(
         'doing. The timeline carries no websh terminal recordings: it names the '
         'sessions that have one, as `websh_session` items whose `id` '
         'work_session_records then reads the recording of, and include_records '
-        'is refused rather than quietly ignored—do not pass it. '
+        'is refused rather than quietly ignored—do not pass it. A `command` item '
+        'with a rejection_cause also carries rejection_hint, saying whom to ask. '
         'Related: work_session_get (session detail), work_session_records (one '
         "websh session's recording), list_session_analyses / "
         'get_session_analysis_detail (AI security analysis results).'
@@ -452,7 +454,7 @@ async def work_session_timeline(
         page_size=page_size, cursor=cursor, include_records='false'
     )
 
-    return await cursor_list_response(
+    response = await cursor_list_response(
         http_client.get,
         region=region,
         workspace=workspace,
@@ -463,6 +465,12 @@ async def work_session_timeline(
         opt_in_pagination=True,
         session_id=session_id,
     )
+    data = response.get('data')
+    items = data.get('results') if isinstance(data, dict) else None
+    for item in items if isinstance(items, list) else ():
+        if isinstance(item, dict) and item.get('type') == 'command':
+            attach_rejection(item)
+    return response
 
 
 @mcp_tool_handler(
