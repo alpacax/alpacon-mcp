@@ -184,7 +184,7 @@ Get disk usage metrics for a server.
 
 **Parameters:**
 - `server_id` (string): Server UUID
-- `device` (string, optional): Device path (e.g., '/dev/sda1')
+- `device` (string, optional): Device path (e.g., '/dev/sda1'); with neither `device` nor `partition`, the tool reads the alphabetically first device with data in the last day
 - `partition` (string, optional): Partition ID (UUID) from `/api/proc/partitions/`
 - `start_date` (string, optional, default: 12 hours ago): Start date; the server returns at most the last 12 hours
 - `end_date` (string, optional): End date
@@ -207,13 +207,13 @@ Get disk I/O performance metrics for a server.
 
 **Parameters:**
 - `server_id` (string): Server UUID
-- `device` (string): Disk device name (e.g., 'sda', 'nvme0n1'); the schema marks it optional, but the endpoint returns HTTP 400 `api_insufficient_data` when it is missing (#413)
+- `device` (string, optional): Disk device name (e.g., 'sda', 'nvme0n1'); when omitted or blank, the tool reads `/api/metrics/realtime/disk-io/device/` and uses the alphabetically first device with data in the last day, and returns an error without querying metrics when there is none
 - `start_date` (string, optional, default: 12 hours ago): Start date in ISO format; the server returns at most the last 12 hours
 - `end_date` (string, optional): End date in ISO format
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 - `workspace` (string): Workspace name
 
-**Response:** `data` is the unpaginated list of rows the Alpacon API server returns, newest first, one per device and sample: `id`, `device`, `disk`, `timestamp`, and that sample's `peak_read_bps`, `peak_write_bps`, `avg_read_bps` and `avg_write_bps` in bytes per second.
+**Response:** `data` is the unpaginated list of rows the Alpacon API server returns, newest first, one per device and sample: `id`, `device`, `disk`, `timestamp`, and that sample's `peak_read_bps`, `peak_write_bps`, `avg_read_bps` and `avg_write_bps` in bytes per second. The top-level `device` is the device read, and `devices` is the sorted list of discovered devices when `device` was omitted or blank, null otherwise; call again with another entry to read that device. A device listed for the last day can have no rows in the 12-hour window, which returns an empty `data`.
 
 ### `get_top_servers`
 Rank the top five servers by resource usage over the last 24 hours.

@@ -701,6 +701,7 @@ class TestPathIdentifierValidation:
     # never grow this set just to turn the test green.
     ENDPOINT_CHOICES = frozenset(
         {
+            'metrics_tools.py: metric.device_endpoint',
             'metrics_tools.py: metric_endpoints[metric]',
             'security_tools.py: endpoint',
             'webftp_tools.py: endpoint_map[transfer_type]',

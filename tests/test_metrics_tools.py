@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta
 from functools import partial
 from http import HTTPStatus
 from typing import Protocol
-from unittest.mock import patch
+from unittest.mock import call, patch
 
 import pytest
 
@@ -258,23 +258,45 @@ class TestGetDiskUsage:
         )
 
     @pytest.mark.asyncio
-    async def test_disk_usage_auto_device_detection(
+    async def test_disk_usage_without_device_reads_the_first_discovered_device(
         self, mock_http_client, mock_token_manager
     ):
-        # First call: device discovery; Second call: actual disk metrics
         mock_http_client.get.side_effect = [
-            {'devices': ['/dev/sda1', '/dev/sdb1']},  # Device discovery
-            {
-                'results': [{'usage': 50.0, 'total': 100, 'used': 50, 'free': 50}]
-            },  # Disk metrics
+            {'devices': ['/dev/sdb1', '/dev/sda1']},
+            {'results': [{'usage': 50.0, 'total': 100, 'used': 50, 'free': 50}]},
         ]
 
-        result = await get_disk_usage(server_id=SERVER_ID, workspace='testworkspace')
+        result = await get_disk_usage(
+            server_id=SERVER_ID,
+            workspace='testworkspace',
+            start_date=START,
+            end_date=END,
+            region='ap1',
+        )
 
         assert result['status'] == 'success'
-
-        # Verify two calls: device discovery + actual metrics
-        assert mock_http_client.get.call_count == 2
+        assert result['data']['device'] == '/dev/sda1'
+        assert mock_http_client.get.call_args_list == [
+            call(
+                region='ap1',
+                workspace='testworkspace',
+                endpoint='/api/metrics/realtime/disk-usage/device/',
+                token='test-token',
+                params={'server': SERVER_ID},
+            ),
+            call(
+                region='ap1',
+                workspace='testworkspace',
+                endpoint='/api/metrics/realtime/disk-usage/',
+                token='test-token',
+                params={
+                    'server': SERVER_ID,
+                    'device': '/dev/sda1',
+                    'start': START,
+                    'end': END,
+                },
+            ),
+        ]
 
     @pytest.mark.asyncio
     async def test_disk_usage_device_discovery_http_error(
@@ -395,11 +417,109 @@ class TestGetDiskIo:
     ):
         mock_http_client.get.return_value = HTTP_ERROR_ENVELOPE
 
-        result = await get_disk_io(server_id=SERVER_ID, workspace='testworkspace')
+        result = await get_disk_io(
+            server_id=SERVER_ID, workspace='testworkspace', device='sda'
+        )
 
         assert result['status'] == 'error'
         assert result['status_code'] == HTTPStatus.NOT_FOUND
         assert result['message'] == 'Not found'
+
+    @pytest.mark.parametrize('device', [None, ''])
+    @pytest.mark.asyncio
+    async def test_disk_io_without_device_reads_the_first_discovered_device(
+        self, device, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.get.side_effect = [
+            {'devices': ['sdb', 'nvme0n1', 'sda']},
+            [{'device': 'nvme0n1', 'avg_read_bps': 1.0}],
+        ]
+
+        result = await get_disk_io(
+            server_id=SERVER_ID,
+            workspace='testworkspace',
+            device=device,
+            start_date=START,
+            end_date=END,
+            region='ap1',
+        )
+
+        assert result['status'] == 'success'
+        assert mock_http_client.get.call_args_list == [
+            call(
+                region='ap1',
+                workspace='testworkspace',
+                endpoint='/api/metrics/realtime/disk-io/device/',
+                token='test-token',
+                params={'server': SERVER_ID},
+            ),
+            call(
+                region='ap1',
+                workspace='testworkspace',
+                endpoint='/api/metrics/realtime/disk-io/',
+                token='test-token',
+                params={
+                    'server': SERVER_ID,
+                    'device': 'nvme0n1',
+                    'start': START,
+                    'end': END,
+                },
+            ),
+        ]
+        assert result['device'] == 'nvme0n1'
+        assert result['devices'] == ['nvme0n1', 'sda', 'sdb']
+        assert result['data'] == [{'device': 'nvme0n1', 'avg_read_bps': 1.0}]
+
+    @pytest.mark.parametrize('discovered', [{'devices': []}, {}])
+    @pytest.mark.parametrize(
+        ('tool', 'message'),
+        [
+            (get_disk_io, 'No disk I/O devices found for this server'),
+            (get_disk_usage, 'No disk devices found for this server'),
+        ],
+    )
+    @pytest.mark.asyncio
+    async def test_no_recorded_device_is_an_error_without_a_metrics_call(
+        self, tool, message, discovered, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.get.return_value = discovered
+
+        result = await tool(server_id=SERVER_ID, workspace='testworkspace')
+
+        assert result['status'] == 'error'
+        assert result['message'] == message
+        assert mock_http_client.get.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_disk_io_device_discovery_http_error_skips_the_metrics_call(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.get.return_value = HTTP_ERROR_ENVELOPE
+
+        result = await get_disk_io(server_id=SERVER_ID, workspace='testworkspace')
+
+        assert result['status'] == 'error'
+        assert result['status_code'] == HTTPStatus.NOT_FOUND
+        assert mock_http_client.get.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_disk_io_with_device_skips_discovery(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.get.return_value = []
+
+        result = await get_disk_io(
+            server_id=SERVER_ID, workspace='testworkspace', device='sda'
+        )
+
+        assert result['status'] == 'success'
+        assert result['device'] == 'sda'
+        assert result['devices'] is None
+        mock_http_client.get.assert_called_once()
+        assert (
+            mock_http_client.get.call_args.kwargs['endpoint']
+            == '/api/metrics/realtime/disk-io/'
+        )
 
 
 class TestGetTopServers:
@@ -1418,7 +1538,7 @@ class TestMetricsWindowParams:
             {},
             id='get_memory_usage',
         ),
-        # A blank device and partition would start auto-discovery instead.
+        # A blank device would start auto-discovery instead.
         pytest.param(
             get_disk_usage,
             '/api/metrics/realtime/disk-usage/',
@@ -1427,7 +1547,11 @@ class TestMetricsWindowParams:
             id='get_disk_usage',
         ),
         pytest.param(
-            get_disk_io, '/api/metrics/realtime/disk-io/', {}, {}, id='get_disk_io'
+            get_disk_io,
+            '/api/metrics/realtime/disk-io/',
+            {'device': 'sda'},
+            {'device': 'sda'},
+            id='get_disk_io',
         ),
         pytest.param(
             get_network_traffic,
@@ -1620,13 +1744,6 @@ class TestMetricsDeviceFilters:
             {'device': 'sda'},
             {'device': 'sda'},
             id='get_disk_io_device',
-        ),
-        pytest.param(
-            get_disk_io,
-            '/api/metrics/realtime/disk-io/',
-            {'device': ''},
-            {'device': ''},
-            id='get_disk_io_blank_device_forwarded',
         ),
         pytest.param(
             get_network_traffic,

@@ -3,6 +3,7 @@
 import asyncio
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime, timedelta
+from enum import Enum
 from typing import TypedDict
 
 from pydantic import TypeAdapter
@@ -21,10 +22,17 @@ from utils.common import (
     validate_response,
 )
 from utils.decorators import mcp_tool_handler
-from utils.error_handler import UpstreamAuthError, format_validation_error
+from utils.error_handler import format_validation_error
 from utils.http_client import http_client
 from utils.tool_annotations import READ_ONLY
-from utils.types import JsonValue, OptionalServerId, QueryParam, ServerId, ToolResponse
+from utils.types import (
+    JsonValue,
+    OptionalServerId,
+    QueryParam,
+    ServerId,
+    ToolResponse,
+    ToolResult,
+)
 
 #: `?state=` values `/api/metrics/latest/` accepts; mirrors alpacon-server's
 #: `metrics.latest.LATEST_STATES`. `stale` covers `no_data`: never-stored is overdue.
@@ -95,6 +103,23 @@ class _DiskDevices(TypedDict, total=False):
 
 class _NextPage(TypedDict, total=False):  # a page-number list envelope
     next: int | None
+
+
+class _DiskMetric(Enum):
+    """A realtime disk metric whose list endpoint needs a device."""
+
+    USAGE = (
+        '/api/metrics/realtime/disk-usage/device/',
+        'No disk devices found for this server',
+    )
+    IO = (
+        '/api/metrics/realtime/disk-io/device/',
+        'No disk I/O devices found for this server',
+    )
+
+    def __init__(self, device_endpoint: str, empty_message: str) -> None:
+        self.device_endpoint = device_endpoint
+        self.empty_message = empty_message
 
 
 _USAGE_ROWS = TypeAdapter(list[_UsageRow])
@@ -408,8 +433,45 @@ def parse_disk_metrics(results: list[_DiskUsageRow]) -> dict[str, object]:
     }
 
 
+async def _disk_devices(
+    metric: _DiskMetric,
+    *,
+    server_id: str,
+    workspace: str,
+    region: str,
+    token: str | None,
+) -> ToolResult[list[str]]:
+    """Sorted devices with `metric` data in the last day, or an error result when
+    the lookup fails or finds none."""
+    result = await http_client.get(
+        region=region,
+        workspace=workspace,
+        endpoint=metric.device_endpoint,
+        token=token,
+        params={'server': server_id},
+    )
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to fetch disk devices',
+        server_id=server_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
+    devices = sorted(validate_response(_DISK_DEVICES, result).get('devices', []))
+    if not devices:
+        return error_response(
+            message=metric.empty_message,
+            server_id=server_id,
+            region=region,
+            workspace=workspace,
+        )
+    return devices
+
+
 @mcp_tool_handler(
-    description='Get disk space usage metrics for a server by device or partition. Returns usage percentage and total/used/free space. When to use: checking available disk space or monitoring storage growth. Related: get_disk_io (I/O throughput, not space), get_disk_info (physical disk layout). Note: Auto-discovers first device if none specified. Defaults to the last 12 hours; the realtime endpoint returns at most the last 12 hours.',
+    description='Get disk space usage metrics for a server by device or partition. Returns usage percentage and total/used/free space. When to use: checking available disk space or monitoring storage growth. Related: get_disk_io (I/O throughput, not space), get_disk_info (physical disk layout). Note: Without device or partition, reads the alphabetically first device with data in the last day. Defaults to the last 12 hours; the realtime endpoint returns at most the last 12 hours.',
     annotations=READ_ONLY,
     meta={'anthropic/searchHint': 'disk space storage partition mount usage'},
 )
@@ -431,7 +493,7 @@ async def get_disk_usage(
     Args:
         server_id: Server ID to get metrics for
         workspace: Workspace name. Required parameter
-        device: Optional device path (e.g., '/dev/sda1'). If not provided, will fetch first available device
+        device: Optional device path (e.g., '/dev/sda1'). Without device or partition, reads the alphabetically first discovered device
         partition: Optional partition ID (UUID) from /api/proc/partitions/
         start_date: Start date in ISO format (e.g., '2024-01-01T00:00:00Z')
         end_date: End date in ISO format (e.g., '2024-01-02T00:00:00Z')
@@ -442,53 +504,17 @@ async def get_disk_usage(
     """
     token = kwargs.get('token')
 
-    # If no device or partition provided, fetch available devices first
     if not device and not partition:
-        try:
-            devices_result = await http_client.get(
-                region=region,
-                workspace=workspace,
-                endpoint='/api/metrics/realtime/disk-usage/device/',
-                token=token,
-                params={'server': server_id},
-            )
-
-            # A 4xx/5xx here must surface as the real error, not be masked as
-            # "no devices found" by the empty-list fallback below.
-            err = unwrap_http_result(
-                devices_result,
-                default_message='Failed to fetch disk devices',
-                server_id=server_id,
-                region=region,
-                workspace=workspace,
-            )
-            if err:
-                return err
-
-            # Extract device list from response
-            available_devices = validate_response(_DISK_DEVICES, devices_result).get(
-                'devices', []
-            )
-
-            if available_devices:
-                # Use the first available device
-                device = available_devices[0]
-            else:
-                return error_response(
-                    message='No disk devices found for this server',
-                    server_id=server_id,
-                    region=region,
-                    workspace=workspace,
-                )
-        except UpstreamAuthError:
-            raise
-        except Exception as e:
-            return error_response(
-                message=f'Failed to fetch disk devices: {str(e)}',
-                server_id=server_id,
-                region=region,
-                workspace=workspace,
-            )
+        devices = await _disk_devices(
+            _DiskMetric.USAGE,
+            server_id=server_id,
+            workspace=workspace,
+            region=region,
+            token=token,
+        )
+        if isinstance(devices, dict):
+            return devices
+        device = devices[0]
 
     start, end = resolve_time_window(start_date, end_date)
     params = build_list_params(
@@ -617,7 +643,7 @@ def parse_network_metrics(results: list[_TrafficRow]) -> dict[str, object]:
 
 
 @mcp_tool_handler(
-    description='Get disk I/O read/write throughput metrics for a server. Returns peak and average transfer rates per device. When to use: diagnosing storage performance bottlenecks or slow I/O. Related: get_disk_usage (space, not I/O), get_top_servers (compare I/O across servers). Note: Defaults to the last 12 hours; the realtime endpoint returns at most the last 12 hours.',
+    description='Get disk I/O read/write throughput metrics for a server. Returns peak and average transfer rates per device. When to use: diagnosing storage performance bottlenecks or slow I/O. Related: get_disk_usage (space, not I/O), get_top_servers (compare I/O across servers). Note: Without device (or with a blank one), reads the alphabetically first device with data in the last day and lists every such device in `devices`; pass one of them as device to read another. Defaults to the last 12 hours; the realtime endpoint returns at most the last 12 hours.',
     annotations=READ_ONLY,
     meta={
         'anthropic/searchHint': 'disk io read write throughput iops storage performance'
@@ -639,15 +665,30 @@ async def get_disk_io(
     Args:
         server_id: Server ID to get disk I/O metrics for
         workspace: Workspace name. Required parameter
-        device: Optional disk device name (e.g., 'sda', 'nvme0n1')
+        device: Optional disk device name (e.g., 'sda', 'nvme0n1'). Omitted or blank reads the alphabetically first discovered device
         start_date: Start date for metrics (ISO 8601 format). Defaults to the last 12 hours; older data is not returned
         end_date: End date for metrics (ISO 8601 format)
         region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
-        Disk I/O metrics response with device, read/write rates, and timestamps
+        Disk I/O metrics response with device, read/write rates, and timestamps;
+        `devices` lists the discovered devices when device was omitted or blank
     """
     token = kwargs.get('token')
+
+    devices: list[str] | None = None
+    if not device:
+        discovered = await _disk_devices(
+            _DiskMetric.IO,
+            server_id=server_id,
+            workspace=workspace,
+            region=region,
+            token=token,
+        )
+        if isinstance(discovered, dict):
+            return discovered
+        devices = discovered
+        device = devices[0]
 
     start, end = resolve_time_window(start_date, end_date)
     params = build_list_params(
@@ -680,6 +721,7 @@ async def get_disk_io(
         data=result,
         server_id=server_id,
         device=device,
+        devices=devices,
         start_date=start_date,
         end_date=end_date,
         region=region,
