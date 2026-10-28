@@ -8,7 +8,7 @@ from utils.decorators import mcp_tool_handler
 from utils.error_handler import format_validation_error
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ_ONLY
-from utils.types import ToolResponse
+from utils.types import OptionalServerId, ServerId, ToolResponse
 
 # Mirrors AlertAcknowledgement.ACTION_TYPE_CHOICES; the server takes nothing else.
 ALERT_ACTION_TYPES = frozenset({'checked', 'dismissed'})
@@ -51,7 +51,7 @@ _TARGETS_SENTENCE = (
 )
 async def list_alerts(
     workspace: str,
-    server_id: str | None = None,
+    server_id: OptionalServerId = None,
     alert_type: str | None = None,
     severity: str | None = None,
     server_name: str | None = None,
@@ -348,7 +348,7 @@ async def update_alert_rule(
     meta={'anthropic/searchHint': 'alert rule attach server association monitor'},
 )
 async def attach_alert_rule(
-    server_id: str,
+    server_id: ServerId,
     rule_id: str,
     workspace: str,
     region: str = '',
@@ -378,7 +378,7 @@ async def attach_alert_rule(
     meta={'anthropic/searchHint': 'alert rule detach server remove association'},
 )
 async def detach_alert_rule(
-    server_id: str,
+    server_id: ServerId,
     rule_id: str,
     workspace: str,
     region: str = '',
@@ -592,7 +592,7 @@ async def preview_alert_rule(
 )
 async def list_rule_overrides(
     workspace: str,
-    server_id: str | None = None,
+    server_id: OptionalServerId = None,
     rule_id: str | None = None,
     enabled: bool | None = None,
     region: str = '',
@@ -689,7 +689,7 @@ async def get_rule_override(
     },
 )
 async def create_rule_override(
-    server_id: str,
+    server_id: ServerId,
     rule_id: str,
     workspace: str,
     threshold: float | None = None,
@@ -742,7 +742,7 @@ async def create_rule_override(
 async def update_rule_override(
     override_id: str,
     workspace: str,
-    server_id: str | None = None,
+    server_id: OptionalServerId = None,
     rule_id: str | None = None,
     threshold: float | None = None,
     recovery_threshold: float | None = None,

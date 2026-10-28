@@ -22,6 +22,8 @@ from tools.approval_tools import request_sudo_policy
 from tools.command_tools import execute_command
 from tools.server_tools import get_server, list_servers
 from tools.webftp_tools import webftp_upload_content
+from utils.decorators import ALL_REGIONS_DESCRIPTION, REGION_DESCRIPTION
+from utils.types import SERVER_ID_DESCRIPTION, WORK_SESSION_ID_DESCRIPTION
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
@@ -472,26 +474,130 @@ class TestPublishedSchema:
         assert structured['status'] == 'success'
 
     async def test_every_tool_advertises_the_served_regions_as_optional(self):
+        # Given every registered tool's schema
         _tool_functions()
         schemas = {t.name: t.input_schema for t in await mcp.list_tools()}
-        expected = {
-            'anyOf': [{'enum': ['ap1', 'us1'], 'type': 'string'}, {'type': 'null'}],
-            'default': None,
-            'title': 'Region',
-        }
 
+        # When collecting each region property
         regions = {
             name: (s['properties']['region'], s.get('required', []))
             for name, s in schemas.items()
             if 'region' in s.get('properties', {})
         }
 
+        # Then each offers ap1/us1 as optional, described by what an omission means
+        def expected(name: str) -> dict[str, object]:
+            return {
+                'anyOf': [{'enum': ['ap1', 'us1'], 'type': 'string'}, {'type': 'null'}],
+                'default': None,
+                'description': ALL_REGIONS_DESCRIPTION
+                if name == 'list_workspaces'
+                else REGION_DESCRIPTION,
+                'title': 'Region',
+            }
+
         assert set(schemas) - set(regions) == {'health_check'}  # answers before any JWT
         assert not {
             name: schema
             for name, (schema, required) in regions.items()
-            if schema != expected or 'region' in required
+            if schema != expected(name) or 'region' in required
         }
+
+    async def test_region_description_says_what_an_omitted_region_means(self):
+        # Given every registered tool
+        _tool_functions()
+        tools = {t.name: t for t in await mcp.list_tools()}
+
+        # When reading list_servers' and list_workspaces' region properties
+        scoped = tools['list_servers'].input_schema['properties']['region']
+        unscoped = tools['list_workspaces'].input_schema['properties']['region']
+
+        # Then one names both sources and the failure, the other every region,
+        # and no tool description restates the rule
+        for phrase in ('JWT', 'token.json', 'cannot be determined'):
+            assert phrase in scoped['description']
+        assert 'every region' in unscoped['description']
+        assert not [
+            name
+            for name, t in tools.items()
+            for phrase in ("workspace's region", 'cannot be determined')
+            if phrase in (t.description or '')
+        ]
+
+    async def test_every_server_id_says_uuid_never_a_name(self):
+        # Given every registered tool
+        _tool_functions()
+        tools = await mcp.list_tools()
+
+        # When collecting each server_id property and whether it is required
+        server_ids = {
+            t.name: (
+                t.input_schema['properties']['server_id'],
+                'server_id' in t.input_schema.get('required', []),
+            )
+            for t in tools
+            if 'server_id' in t.input_schema.get('properties', {})
+        }
+
+        # Then every one carries the rule, an optional one stays nullable,
+        # and no tool description restates the rule
+        assert {'get_server', 'execute_command', 'list_alerts'} <= set(server_ids)
+        assert not {
+            name: prop
+            for name, (prop, _) in server_ids.items()
+            if prop.get('description') != SERVER_ID_DESCRIPTION
+        }
+        assert server_ids['list_alerts'][1] is False
+        assert not [
+            name
+            for name, (prop, required) in server_ids.items()
+            if not required and {'type': 'null'} not in prop.get('anyOf', [])
+        ]
+        published = server_ids['get_server'][0]['description']
+        assert 'never a server name' in published
+        assert 'list_servers' in published
+        assert not [
+            t.name for t in tools if 'never a server name' in (t.description or '')
+        ]
+
+    async def test_every_work_session_id_carries_audit_gate_and_fallback(self):
+        # Given every registered tool
+        _tool_functions()
+        tools = await mcp.list_tools()
+
+        # When collecting the tools that take work_session_id
+        carriers = {
+            t.name: (
+                t.input_schema['properties']['work_session_id'],
+                t.description or '',
+            )
+            for t in tools
+            if 'work_session_id' in t.input_schema.get('properties', {})
+        }
+
+        # Then the parameter carries the rule and the tool description drops it
+        assert {'execute_command', 'execute_file', 'webftp_session_create'} <= set(
+            carriers
+        )
+        assert not {
+            name: prop
+            for name, (prop, _) in carriers.items()
+            if prop.get('description') != WORK_SESSION_ID_DESCRIPTION
+        }
+        published = carriers['execute_command'][0]['description']
+        for phrase in ('audit', 'MCP OAuth', 'ALPACON_WORK_SESSION', 'explicit'):
+            assert phrase in published
+        assert not [
+            name
+            for name, (_, text) in carriers.items()
+            for phrase in (
+                'for audit',
+                'MCP OAuth',
+                'browser-based',
+                'ALPACON_WORK_SESSION',
+            )
+            if phrase in text
+        ]
 
     @pytest.mark.parametrize('region', ['dev', '', 'AP1'])
     async def test_call_tool_refuses_a_region_outside_the_served_set(

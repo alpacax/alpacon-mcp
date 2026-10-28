@@ -7,10 +7,11 @@ import logging
 import re
 from collections.abc import Awaitable, Callable, Mapping
 from functools import wraps
-from typing import Protocol
+from typing import Annotated, Protocol
 
 from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.types import ToolAnnotations
+from pydantic import Field
 
 from utils import request_signal, token_manager
 from utils.auth import (
@@ -369,9 +370,26 @@ def _validate_uuid_list(field: str, value: object) -> ToolErrorResponse | None:
     return None
 
 
-def _published_region(param: inspect.Parameter) -> inspect.Parameter:
-    """Advertise the served regions; an omitted one arrives as None to resolve."""
-    return param.replace(annotation=ServedRegion.__value__ | None, default=None)
+REGION_DESCRIPTION = (
+    "Region, ap1 or us1. Omit it to use the workspace's region: read from the JWT "
+    'in remote mode and from token.json in local mode. The call fails when that '
+    'region cannot be determined; pass region when several regions match.'
+)
+
+ALL_REGIONS_DESCRIPTION = 'Lists only the workspaces in this region, ap1 or us1. Omit it to list every region.'
+
+
+def _published_region(
+    param: inspect.Parameter, requires_workspace: bool
+) -> inspect.Parameter:
+    """Advertise the served regions and what an omitted one means; it arrives as None."""
+    description = REGION_DESCRIPTION if requires_workspace else ALL_REGIONS_DESCRIPTION
+    return param.replace(
+        annotation=Annotated[
+            ServedRegion.__value__ | None, Field(description=description)
+        ],
+        default=None,
+    )
 
 
 def with_token_validation[**P, R](
@@ -535,7 +553,7 @@ def with_token_validation[**P, R](
 
     # The SDK publishes a VAR_KEYWORD as a required field, not a catch-all.
     new_params = [
-        _published_region(p) if p.name == 'region' else p
+        _published_region(p, requires_workspace) if p.name == 'region' else p
         for p in original_sig.parameters.values()
         if p.name != catch_all
     ]

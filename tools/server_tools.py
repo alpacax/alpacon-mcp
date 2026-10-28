@@ -6,7 +6,7 @@ from utils.decorators import mcp_tool_handler
 from utils.error_handler import format_validation_error, uuid_field_error
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ_ONLY
-from utils.types import ToolErrorResponse, ToolResponse
+from utils.types import ServerId, ToolErrorResponse, ToolResponse
 
 VALID_PLATFORMS = frozenset({'debian', 'rhel', 'suse', 'darwin', 'windows'})
 _PLATFORM_LIST_STR = ', '.join(f'"{p}"' for p in sorted(VALID_PLATFORMS))
@@ -83,7 +83,7 @@ async def list_servers(
     },
 )
 async def get_server(
-    server_id: str, workspace: str, region: str = '', **kwargs: str
+    server_id: ServerId, workspace: str, region: str = '', **kwargs: str
 ) -> ToolResponse:
     """Get detailed information about a specific server.
 
@@ -131,7 +131,7 @@ async def get_server(
     },
 )
 async def get_collection_profile(
-    server_id: str, workspace: str, region: str = '', **kwargs: str
+    server_id: ServerId, workspace: str, region: str = '', **kwargs: str
 ) -> ToolResponse:
     """Get a server's collection profile.
 
@@ -172,7 +172,7 @@ async def get_collection_profile(
     meta={'anthropic/searchHint': 'server notes documentation'},
 )
 async def list_server_notes(
-    server_id: str, workspace: str, region: str = '', **kwargs: str
+    server_id: ServerId, workspace: str, region: str = '', **kwargs: str
 ) -> ToolResponse:
     """Get list of notes for a specific server.
 
@@ -209,7 +209,7 @@ async def list_server_notes(
     meta={'anthropic/searchHint': 'server note create documentation'},
 )
 async def create_server_note(
-    server_id: str,
+    server_id: ServerId,
     content: str,
     workspace: str,
     private: bool | None = None,
@@ -386,7 +386,11 @@ async def _server_action(
     meta={'anthropic/searchHint': 'agent restart alpacon process'},
 )
 async def restart_agent(
-    server_id: str, workspace: str, region: str = '', force: bool = False, **kwargs: str
+    server_id: ServerId,
+    workspace: str,
+    region: str = '',
+    force: bool = False,
+    **kwargs: str,
 ) -> ToolResponse:
     """Restart the agent; force=True runs it even while the host is busy,
     tearing down open Websh/WebFTP sessions and in-flight commands."""
@@ -414,7 +418,11 @@ async def restart_agent(
     meta={'anthropic/searchHint': 'agent upgrade update version'},
 )
 async def upgrade_agent(
-    server_id: str, workspace: str, region: str = '', force: bool = False, **kwargs: str
+    server_id: ServerId,
+    workspace: str,
+    region: str = '',
+    force: bool = False,
+    **kwargs: str,
 ) -> ToolResponse:
     """Upgrade the agent; force=True runs it even while the host is busy,
     tearing down open Websh/WebFTP sessions and in-flight commands."""
@@ -449,7 +457,7 @@ async def upgrade_agent(
     meta={'anthropic/searchHint': 'alpamon-pam install pam module sudo mfa'},
 )
 async def install_pam(
-    server_id: str, workspace: str, region: str = '', **kwargs: str
+    server_id: ServerId, workspace: str, region: str = '', **kwargs: str
 ) -> ToolResponse:
     """Install alpamon-pam on a server."""
     token = kwargs.get('token')
@@ -474,7 +482,7 @@ async def install_pam(
     meta={'anthropic/searchHint': 'refresh system info hardware OS rescan'},
 )
 async def update_information(
-    server_id: str, workspace: str, region: str = '', **kwargs: str
+    server_id: ServerId, workspace: str, region: str = '', **kwargs: str
 ) -> ToolResponse:
     """Trigger system information update on a server."""
     token = kwargs.get('token')
@@ -506,7 +514,7 @@ async def update_information(
     },
 )
 async def update_server(
-    server_id: str,
+    server_id: ServerId,
     workspace: str,
     name: str | None = None,
     description: str | None = None,
@@ -558,7 +566,7 @@ async def update_server(
     meta={'anthropic/searchHint': 'server unregister deregister delete remove'},
 )
 async def unregister_server(
-    server_id: str,
+    server_id: ServerId,
     workspace: str,
     region: str = '',
     auto: bool = False,
@@ -592,7 +600,7 @@ async def unregister_server(
     meta={'anthropic/searchHint': 'server star pin favorite bookmark personalization'},
 )
 async def star_server(
-    server_id: str, status: bool, workspace: str, region: str = '', **kwargs: str
+    server_id: ServerId, status: bool, workspace: str, region: str = '', **kwargs: str
 ) -> ToolResponse:
     """Set star status on a server."""
     token = kwargs.get('token')
