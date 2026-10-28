@@ -980,7 +980,7 @@ async def _list_all_interfaces(
 
 
 @mcp_tool_handler(
-    description="Get one server's detail: a comprehensive monitoring overview combining CPU, memory, disk, and network metrics for that single server. Returns a compact summary with data availability status, read over the last `hours` (default and max 12, all the realtime endpoints keep). When to use: quick health check of one server or starting point for investigation. Related: get_cpu_usage, get_memory_usage, get_disk_usage, get_network_traffic (full detailed data per metric), list_latest_metrics (latest reading for many servers at once). Note: Use individual metric tools for time-series data.",
+    description="Get one server's detail: a comprehensive monitoring overview combining CPU, memory, disk, and network metrics for that single server. Returns a compact summary with data availability status, read over the last `hours`, 12 by default and capped at 12, the window the realtime endpoints keep. When to use: quick health check of one server or starting point for investigation. Related: get_cpu_usage, get_memory_usage, get_disk_usage, get_network_traffic (full detailed data per metric), list_latest_metrics (latest reading for many servers at once). Note: Use individual metric tools for time-series data.",
     annotations=READ_ONLY,
     meta={
         'anthropic/searchHint': 'server metrics summary overview health monitoring dashboard single server detail',
@@ -1203,8 +1203,8 @@ async def get_server_metrics_summary(
         '("percent" or "bytes_per_sec"), `sampled_at`, `device`, `collected`, '
         '`reason`, and `interval_s`; `value`, `sampled_at`, and `device` are '
         'null when no sample is stored for that family. Results are paginated '
-        "like list_servers', so compare `count` with `results` and follow "
-        "`next`. state='stale' selects servers where some family is overdue, "
+        'the same way as list_servers: compare `count` with `results` and '
+        "follow `next`. state='stale' selects servers where some family is overdue, "
         "including one storing nothing at all, so it includes every 'no_data' "
         'server. Order by metric_severity or -metric_severity '
         '(critical first descending; ties keep the default order). Rows include '

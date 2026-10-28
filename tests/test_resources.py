@@ -136,6 +136,27 @@ class TestResourceRegistration:
         assert template.description == 'untracked_probe'
 
     @pytest.mark.asyncio
+    async def test_resource_over_a_namesake_of_a_tool_is_described_by_its_name(self):
+        """A callable that only shares a registered tool's name does not borrow
+        that tool's description."""
+
+        async def list_servers(region, workspace):
+            return {'ok': True}
+
+        res.register_resource(
+            'alpacon://test-namesake/{region}/{workspace}',
+            list_servers,
+            'namesake_probe',
+        )
+
+        template = next(
+            t
+            for t in await mcp.list_resource_templates()
+            if t.uri_template == 'alpacon://test-namesake/{region}/{workspace}'
+        )
+        assert template.description == 'namesake_probe'
+
+    @pytest.mark.asyncio
     async def test_filtered_resource_describes_its_pin(self):
         """A resource registered with extra kwargs must surface the pinned
         filter in its description, not just inherit the tool description."""

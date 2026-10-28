@@ -455,7 +455,7 @@ def register_resource(
     description, or `name` for a non-tool, plus a line naming any filter `extra` pins."""
     wrapper = build_resource_wrapper(uri, fn, name, extra)
     tool = mcp._tool_manager.get_tool(fn.__name__)  # SDK 2.x has no sync public lookup
-    doc = tool.description if tool and tool.description else name
+    doc = tool.description if tool and tool.fn is fn and tool.description else name
     if extra:
         # Surface the pinned filter so a filtered resource isn't mistaken for the bare one.
         pinned = ', '.join(f'{k}={v!r}' for k, v in extra.items())
