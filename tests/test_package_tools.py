@@ -21,13 +21,10 @@ SERVER_ID = '550e8400-e29b-41d4-a716-446655440123'
 
 
 class TestSystemPackages:
-    """Test system package tools."""
-
     @pytest.mark.asyncio
     async def test_list_system_package_entries_success(
         self, mock_http_client, mock_token_manager
     ):
-        """Test successful system package entries listing."""
         mock_http_client.get.return_value = {
             'count': 2,
             'results': [
@@ -54,7 +51,6 @@ class TestSystemPackages:
     async def test_list_system_package_entries_with_pagination(
         self, mock_http_client, mock_token_manager
     ):
-        """Test system package entries listing with pagination."""
         mock_http_client.get.return_value = {'count': 50, 'results': []}
 
         result = await list_system_package_entries(
@@ -78,7 +74,6 @@ class TestSystemPackages:
     async def test_install_system_package_success(
         self, mock_http_client, mock_token_manager
     ):
-        """Test successful system package installation."""
         mock_http_client.post.return_value = {
             'id': 'pkg-3',
             'name': 'htop',
@@ -106,7 +101,6 @@ class TestSystemPackages:
     async def test_install_system_package_with_version(
         self, mock_http_client, mock_token_manager
     ):
-        """Test system package installation with specific version."""
         mock_http_client.post.return_value = {'id': 'pkg-4', 'name': 'nginx'}
 
         result = await install_system_package(
@@ -130,7 +124,6 @@ class TestSystemPackages:
     async def test_remove_system_package_success(
         self, mock_http_client, mock_token_manager
     ):
-        """Test successful system package removal."""
         mock_http_client.delete.return_value = {}
 
         result = await remove_system_package(
@@ -150,7 +143,6 @@ class TestSystemPackages:
     async def test_list_system_package_entries_error(
         self, mock_http_client, mock_token_manager
     ):
-        """Test system package entries listing surfaces an HTTP error."""
         mock_http_client.get.return_value = HTTP_ERROR_ENVELOPE
 
         result = await list_system_package_entries(
@@ -164,7 +156,6 @@ class TestSystemPackages:
     async def test_install_system_package_error(
         self, mock_http_client, mock_token_manager
     ):
-        """Test system package installation surfaces an HTTP error."""
         mock_http_client.post.return_value = HTTP_ERROR_ENVELOPE
 
         result = await install_system_package(
@@ -179,13 +170,10 @@ class TestSystemPackages:
 
 
 class TestPythonPackages:
-    """Test Python package tools."""
-
     @pytest.mark.asyncio
     async def test_list_python_packages_success(
         self, mock_http_client, mock_token_manager
     ):
-        """Test successful Python packages listing."""
         mock_http_client.get.return_value = {
             'count': 2,
             'results': [
@@ -212,7 +200,6 @@ class TestPythonPackages:
     async def test_install_python_package_success(
         self, mock_http_client, mock_token_manager
     ):
-        """Test successful Python package installation."""
         mock_http_client.post.return_value = {
             'id': 'py-3',
             'name': 'django',
@@ -239,7 +226,6 @@ class TestPythonPackages:
     async def test_install_python_package_with_version(
         self, mock_http_client, mock_token_manager
     ):
-        """Test Python package installation with specific version."""
         mock_http_client.post.return_value = {'id': 'py-4', 'name': 'django'}
 
         result = await install_python_package(
@@ -263,7 +249,6 @@ class TestPythonPackages:
     async def test_remove_python_package_success(
         self, mock_http_client, mock_token_manager
     ):
-        """Test successful Python package removal."""
         mock_http_client.delete.return_value = {}
 
         result = await remove_python_package(
@@ -283,7 +268,6 @@ class TestPythonPackages:
     async def test_remove_python_package_error(
         self, mock_http_client, mock_token_manager
     ):
-        """Test Python package removal surfaces an HTTP error."""
         mock_http_client.delete.return_value = HTTP_ERROR_ENVELOPE
 
         result = await remove_python_package(

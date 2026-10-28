@@ -1,8 +1,4 @@
-"""
-Simple integration tests for Alpacon MCP Server.
-
-Tests basic integration and configuration loading without complex mocking.
-"""
+"""Basic integration and configuration-loading tests without complex mocking."""
 
 import json
 import os
@@ -43,10 +39,7 @@ def temp_config_file():
 
 
 class TestTokenManagement:
-    """Test token management functionality."""
-
     def test_token_configuration_loading(self, temp_config_file):
-        """Test token configuration file loading."""
         tm = TokenManager()
 
         # Test token retrieval
@@ -61,7 +54,6 @@ class TestTokenManagement:
         assert token_nonexistent is None
 
     def test_token_manager_singleton(self):
-        """Test that token manager works as expected."""
         tm1 = get_token_manager()
         tm2 = get_token_manager()
 
@@ -70,7 +62,6 @@ class TestTokenManagement:
 
     @pytest.mark.asyncio
     async def test_missing_token_error_flow(self, temp_config_file):
-        """Test error handling when token is missing."""
         # Try to use a workspace/region combination that doesn't exist
         result = await list_servers(workspace='nonexistent_workspace', region='ap1')
 
@@ -80,15 +71,11 @@ class TestTokenManagement:
 
 
 class TestModuleImports:
-    """Test that all modules can be imported successfully.
-
-    Each import stays local: the import succeeding is the assertion under
-    test, so hoisting it would turn an import failure into a
-    collection-time crash for the whole file instead of one failing test.
+    """Every module imports successfully.
+    Imports stay local: a failing import should fail one test, not collection.
     """
 
     def test_server_tools_import(self):
-        """Test server tools module import."""
         from tools import server_tools
 
         # Check required functions exist
@@ -98,7 +85,6 @@ class TestModuleImports:
         assert hasattr(server_tools, 'create_server_note')
 
     def test_iam_tools_import(self):
-        """Test IAM tools module import."""
         from tools import iam_tools
 
         # Check required functions exist
@@ -108,7 +94,6 @@ class TestModuleImports:
         assert hasattr(iam_tools, 'list_iam_groups')
 
     def test_http_client_import(self):
-        """Test HTTP client import."""
         from utils import http_client
 
         # Check client object exists
@@ -119,7 +104,6 @@ class TestModuleImports:
         assert hasattr(http_client.http_client, 'delete')
 
     def test_logger_import(self):
-        """Test logger utility import."""
         from utils import logger
 
         # Check logger function exists
@@ -131,22 +115,17 @@ class TestModuleImports:
 
 
 class TestMCPServerConfiguration:
-    """Test MCP server configuration and setup.
-
-    Each import stays local: the import succeeding is the assertion under
-    test, so hoisting it would turn an import failure into a
-    collection-time crash for the whole file instead of one failing test.
+    """MCP server configuration and setup.
+    Imports stay local: a failing import should fail one test, not collection.
     """
 
     def test_mcp_server_import(self):
-        """Test MCP server can be imported."""
         from server import mcp
 
         # MCP server should be initialized
         assert mcp is not None
 
     def test_main_entry_point(self):
-        """Test main entry point exists."""
         from main import main
 
         # Main function should exist
@@ -154,10 +133,7 @@ class TestMCPServerConfiguration:
 
 
 class TestUtilityFunctions:
-    """Test utility functions work correctly."""
-
     def test_logger_functionality(self):
-        """Test logger creates different loggers."""
         logger1 = get_logger('module1')
         logger2 = get_logger('module2')
         logger3 = get_logger('module1')  # Same name
@@ -169,7 +145,6 @@ class TestUtilityFunctions:
         assert logger1 is logger3
 
     def test_token_manager_methods(self):
-        """Test token manager has required methods."""
         tm = TokenManager()
 
         # Check required methods exist
@@ -182,10 +157,7 @@ class TestUtilityFunctions:
 
 
 class TestProjectStructure:
-    """Test project structure and files."""
-
     def test_required_files_exist(self):
-        """Test that required project files exist."""
         project_root = Path(__file__).parent.parent
 
         # Core files
@@ -207,7 +179,6 @@ class TestProjectStructure:
         assert (utils_dir / 'logger.py').exists()
 
     def test_documentation_files_exist(self):
-        """Test that documentation files exist."""
         project_root = Path(__file__).parent.parent
 
         # Documentation

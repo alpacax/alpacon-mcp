@@ -53,11 +53,8 @@ async def test_agent_action_http_error_envelope_returns_error(
 
 
 class TestRestartAgent:
-    """Test agent restart functionality."""
-
     @pytest.mark.asyncio
     async def test_restart_agent_success(self, mock_http_client, mock_token_manager):
-        """Test successful agent restart."""
         mock_http_client.post.return_value = {'status': 'restarting'}
 
         result = await restart_agent(
@@ -76,11 +73,8 @@ class TestRestartAgent:
 
 
 class TestUpgradeAgent:
-    """Test agent upgrade functionality."""
-
     @pytest.mark.asyncio
     async def test_upgrade_agent_success(self, mock_http_client, mock_token_manager):
-        """Test successful agent upgrade."""
         mock_http_client.post.return_value = {'status': 'upgrading'}
 
         result = await upgrade_agent(
@@ -99,7 +93,6 @@ class TestUpgradeAgent:
 
     @pytest.mark.asyncio
     async def test_upgrade_agent_no_token(self, mock_http_client, mock_token_manager):
-        """Test agent upgrade with no token."""
         mock_token_manager.get_token.return_value = None
 
         result = await upgrade_agent(
@@ -112,11 +105,8 @@ class TestUpgradeAgent:
 
 
 class TestInstallPam:
-    """Test alpamon-pam install functionality."""
-
     @pytest.mark.asyncio
     async def test_install_pam_success(self, mock_http_client, mock_token_manager):
-        """Test successful alpamon-pam install."""
         mock_http_client.post.return_value = {'id': 'cmd-1'}
 
         result = await install_pam(
@@ -176,13 +166,10 @@ class TestInstallPam:
 
 
 class TestUpdateInformation:
-    """Test system information update functionality."""
-
     @pytest.mark.asyncio
     async def test_update_information_success(
         self, mock_http_client, mock_token_manager
     ):
-        """Test successful system information update."""
         mock_http_client.post.return_value = {'status': 'updating'}
 
         result = await update_information(
@@ -201,8 +188,6 @@ class TestUpdateInformation:
 
 
 class TestDisruptiveActionForce:
-    """Tests for the force flag on disruptive server actions."""
-
     DISRUPTIVE = [
         (restart_agent, 'restart_agent'),
         (upgrade_agent, 'upgrade_agent'),

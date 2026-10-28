@@ -26,10 +26,11 @@ from utils.common import (
     validate_token,
 )
 from utils.error_handler import (
+    ServedRegion,
     UpstreamAuthError,
     format_validation_error,
     validate_region_format,
-    validate_server_id_format,
+    validate_uuid_format,
     validate_workspace_format,
 )
 from utils.http_client import AlpaconHTTPClient
@@ -207,11 +208,7 @@ _PAGINATION_FIELDS = ('limit', 'page_size')
 
 
 def _get_jwt_token() -> str | None:
-    """Get JWT token from the SDK auth context if available.
-
-    Returns the raw JWT string when running in HTTP transport mode
-    with JWT authentication. Returns None in stdio/SSE mode.
-    """
+    """The raw JWT from the SDK auth context; None in stdio/SSE mode."""
     access_token = get_access_token()
     return access_token.token if access_token is not None else None
 
@@ -219,17 +216,14 @@ def _get_jwt_token() -> str | None:
 def _validate_jwt_workspace(
     workspaces: list[WorkspaceClaim], region: str, workspace: str
 ) -> bool:
-    """Validate that the JWT's workspaces authorize the given workspace/region."""
     return match_workspace(workspaces, region, workspace)
 
 
 def _resolve_region_from_jwt(
     workspaces: list[WorkspaceClaim], workspace: str | None = None
 ) -> str | None:
-    """Resolve region from the JWT's workspaces.
-
-    If workspace is given, find its region. Otherwise, return region if only one exists.
-    """
+    """The workspace's region, or the only region when no workspace is given; None if
+    ambiguous."""
     if not workspaces:
         return None
 
@@ -250,11 +244,7 @@ def _resolve_region_from_jwt(
 def _resolve_region_jwt(
     workspaces: list[WorkspaceClaim], workspace: str | None
 ) -> tuple[str | None, str | None]:
-    """Resolve region from the JWT's workspaces.
-
-    Returns:
-        (resolved_region, error_message) - one of them will be None
-    """
+    """(region, error_message) from the JWT; exactly one is None."""
     region = _resolve_region_from_jwt(workspaces, workspace)
     if region:
         return region, None
@@ -269,11 +259,7 @@ def _resolve_region_jwt(
 
 
 def _resolve_region_local(workspace: str | None) -> tuple[str | None, str | None]:
-    """Resolve region from token.json configuration.
-
-    Returns:
-        (resolved_region, error_message) - one of them will be None
-    """
+    """(region, error_message) from token.json; exactly one is None."""
     tm = token_manager.get_token_manager()
 
     if workspace:
@@ -297,18 +283,8 @@ def _resolve_region_local(workspace: str | None) -> tuple[str | None, str | None
 async def _check_mfa_requirement(
     tool_name: str, jwt_token: str, workspace: str
 ) -> None:
-    """Check if MFA is required for this tool call and raise if needed.
-
-    Fetches workspace security settings, checks the JWT's MFA completion
-    claims, and raises UpstreamAuthError if MFA is required but
-    expired/missing. Before raising, it signals request_signal, which the
-    ASGI middleware reads to return HTTP 401 with MFA scope.
-
-    Fails open on errors — the upstream API will catch it as a fallback.
-
-    Raises:
-        UpstreamAuthError: If MFA is required but not completed.
-    """
+    """Signal and raise UpstreamAuthError when the tool's MFA action is required but not
+    completed; any other failure is ignored (fail-open)."""
     action = get_action_for_tool(tool_name)
     if not action:
         return
@@ -344,7 +320,6 @@ async def _check_mfa_requirement(
 
 
 def _validate_path_identifier(field: str, value: object) -> ToolErrorResponse | None:
-    """Returns an error response, or None if valid."""
     # A non-str never matches the pattern, but the f-string that builds the
     # endpoint stringifies it anyway, so its separators reach the path.
     # fullmatch, not match: '$' also matches before a trailing newline.
@@ -365,7 +340,6 @@ def _validate_path_identifier(field: str, value: object) -> ToolErrorResponse | 
 
 
 def _validate_page_size(field: str, value: object) -> ToolErrorResponse | None:
-    """Returns an error response, or None if valid."""
     # bool is an int subclass, so True would otherwise pass as a page size of 1.
     if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
         return format_validation_error(
@@ -377,7 +351,6 @@ def _validate_page_size(field: str, value: object) -> ToolErrorResponse | None:
 
 
 def _validate_uuid_list(field: str, value: object) -> ToolErrorResponse | None:
-    """Returns an error response, or None if valid."""
     if not isinstance(value, list):
         return format_validation_error(
             field,
@@ -385,7 +358,7 @@ def _validate_uuid_list(field: str, value: object) -> ToolErrorResponse | None:
             'Must be a list of server UUIDs.',
         )
 
-    invalid = [item for item in value if not validate_server_id_format(item)]
+    invalid = [item for item in value if not validate_uuid_format(item)]
     if invalid:
         return format_validation_error(
             field,
@@ -396,39 +369,26 @@ def _validate_uuid_list(field: str, value: object) -> ToolErrorResponse | None:
     return None
 
 
+def _published_region(param: inspect.Parameter) -> inspect.Parameter:
+    """Advertise the served regions; an omitted one arrives as None to resolve."""
+    return param.replace(annotation=ServedRegion.__value__ | None, default=None)
+
+
 def with_token_validation[**P, R](
     func: Callable[P, Awaitable[R]], requires_workspace: bool = True
 ) -> Callable[P, Awaitable[ToolResult[R]]]:
-    """Validate a tool's inputs, then resolve and inject its auth token.
-
-    Despite the name, this is the single validation gate for MCP tools:
-    workspace, region, every ``_id``-suffixed identifier, and the page-size
-    arguments are checked here, before the token lookup runs. For identifiers
-    the ``_id`` suffix is the only trigger, so a path parameter named otherwise
-    (``username``, say) and an ``_id`` nested inside ``**kwargs`` both reach the
-    URL unchecked. ``work_session_id`` is exempt: ``resolve_work_session_id``
-    strips padding this gate would reject.
-
-    ``requires_workspace=False`` is for a tool that answers before a workspace
-    is known—``list_workspaces`` is the one today. It skips the workspace
-    checks, the workspace-keyed region resolution, the JWT workspace
-    authorization, the MFA pre-check, and the stdio token injection, and reads
-    an empty ``region`` as "all regions" rather than one to resolve. A region
-    that is given is still validated. A tool that reaches any workspace-scoped
-    resource must not set it, read-only or not.
-
-    Transport mode comes from ALPACON_MCP_AUTH_ENABLED: 'true'
-    (streamable-http) takes the JWT from the auth context and never falls back
-    to token.json; anything else (stdio) reads token.json and never tries JWT.
-
-    Args:
-        func: The async function to decorate
-        requires_workspace: False for a tool that answers before a workspace is known
-
-    Returns:
-        Decorated async function whose published signature drops the **kwargs
-        catch-all, so it never reaches the schema the SDK publishes
-    """
+    """The single validation gate, run before the token lookup: workspace, region,
+    server and session UUIDs, every _id-suffixed argument (not work_session_id, whose
+    padding resolve_work_session_id strips) and limit/page_size. Only the _id suffix
+    triggers, so another path parameter name or an _id inside **kwargs reaches the
+    URL unchecked. func must declare **kwargs: the token is injected there, and the
+    catch-all is dropped from the published signature, which also offers region as
+    ap1, us1 or None. requires_workspace=False (list_workspaces only) is for a tool
+    that answers before a workspace is known; it skips workspace checks, region
+    resolution, JWT authorization, the MFA pre-check and stdio token injection, and
+    reads an omitted region as all regions (a given one is still validated), so a tool
+    reaching any workspace-scoped resource must not set it. ALPACON_MCP_AUTH_ENABLED=true
+    uses the JWT and never token.json; otherwise token.json and never JWT."""
     original_sig = inspect.signature(func)
     catch_all = next(
         (
@@ -443,8 +403,6 @@ def with_token_validation[**P, R](
             f'{func.__name__} declares no **kwargs, so there is nowhere to inject '
             'the token'
         )
-
-    unchecked_func: Callable[..., Awaitable[R]] = func  # bound_args no longer carries P
 
     @wraps(func)
     async def wrapper(*args: P.args, **kwargs: P.kwargs) -> ToolResult[R]:
@@ -485,7 +443,7 @@ def with_token_validation[**P, R](
                 workspace = resolved_workspace
                 bound_args.arguments['workspace'] = workspace
 
-        if not region and requires_workspace:  # workspace-less: empty means all
+        if not region and requires_workspace:  # workspace-less: omitted means all
             if auth_enabled:
                 resolved_region, err_msg = _resolve_region_jwt(
                     jwt_workspaces, workspace
@@ -504,7 +462,7 @@ def with_token_validation[**P, R](
 
         # Validate server_id format if present
         server_id = arguments.get('server_id')
-        if server_id is not None and not validate_server_id_format(server_id):
+        if server_id is not None and not validate_uuid_format(server_id):
             return format_validation_error('server_id', server_id)
 
         # 'servers' carries server UUIDs sent in request bodies.
@@ -518,7 +476,7 @@ def with_token_validation[**P, R](
 
         # session_id is interpolated into URL paths, so reject non-UUID values that could retarget the request.
         session_id = arguments.get('session_id')
-        if session_id is not None and not validate_server_id_format(session_id):
+        if session_id is not None and not validate_uuid_format(session_id):
             return format_validation_error('session_id', session_id)
 
         # Every other *_id may be interpolated into an endpoint path. Their
@@ -573,10 +531,14 @@ def with_token_validation[**P, R](
         bound_args.arguments[catch_all] = extra_kwargs
 
         # bound_args carries a positional or keyword region alike
-        return await unchecked_func(*bound_args.args, **bound_args.kwargs)
+        return await func(*bound_args.args, **bound_args.kwargs)
 
     # The SDK publishes a VAR_KEYWORD as a required field, not a catch-all.
-    new_params = [p for p in original_sig.parameters.values() if p.name != catch_all]
+    new_params = [
+        _published_region(p) if p.name == 'region' else p
+        for p in original_sig.parameters.values()
+        if p.name != catch_all
+    ]
     wrapper.__signature__ = original_sig.replace(parameters=new_params)  # type: ignore[attr-defined]
 
     return wrapper
@@ -585,14 +547,8 @@ def with_token_validation[**P, R](
 def with_error_handling[**P, R](
     func: Callable[P, Awaitable[R]],
 ) -> Callable[P, Awaitable[ToolResult[R]]]:
-    """Decorator to add consistent error handling to MCP tools.
-
-    This decorator:
-    1. Wraps the function in try-except
-    2. Logs errors with context
-    3. Returns standardized error responses
-    4. Enriches error responses with recovery hints for LLM self-recovery
-    """
+    """Turn an unhandled exception into an error response with recovery hints;
+    UpstreamAuthError propagates. Marks the wrapper with ERROR_HANDLING_MARKER."""
 
     @wraps(func)
     async def wrapper(*args: P.args, **kwargs: P.kwargs) -> ToolResult[R]:
@@ -635,13 +591,8 @@ def with_error_handling[**P, R](
 
 
 def _summarize_log_value(value: object, _nested: bool = False) -> object:
-    """Bound a verbatim argument, describing whatever is past the bound.
-
-    A string longer than the bound becomes ``<str len=N>``, a container
-    ``<list items=N>`` or ``<dict items=N>``. A short list, tuple, or dict is
-    summarized one level down: an entry that is itself a container becomes the
-    placeholder, so nothing arbitrarily deep reaches the log line.
-    """
+    """Bound a verbatim log value: an over-long string or container becomes a
+    placeholder like <str len=N>; short containers are summarized one level down."""
     if isinstance(value, str) and len(value) > _MAX_LOGGED_VALUE_LEN:
         return describe_for_log(value)
     if isinstance(value, (list, tuple, dict)):
@@ -659,7 +610,8 @@ def _summarize_log_value(value: object, _nested: bool = False) -> object:
 
 
 def _log_arguments(arguments: Mapping[str, object]) -> dict[str, object]:
-    """The entry log's view of a call: every key, and a value only if reviewed."""
+    """The entry log's view of a call: every key, a value only if in
+    _LOGGED_VERBATIM_KEYS."""
     return {
         key: (
             _summarize_log_value(value)
@@ -671,13 +623,8 @@ def _log_arguments(arguments: Mapping[str, object]) -> dict[str, object]:
 
 
 def with_logging[**P, R](func: Callable[P, Awaitable[R]]) -> Callable[P, Awaitable[R]]:
-    """Decorator to add automatic logging to MCP tools.
-
-    This decorator:
-    1. Logs function entry: `_LOGGED_VERBATIM_KEYS` are written bounded by
-       `_summarize_log_value`, every other argument by type and size alone
-    2. Logs completion when the result is a dict with status 'success'
-    """
+    """Log entry (arguments per _LOGGED_VERBATIM_KEYS, others by type and size) and
+    completion on a success status."""
     # with_token_validation has already published the catch-all-free signature
     # this binds against, and nothing assigns __signature__ afterwards, so the
     # object is fixed for the life of the process.
@@ -710,23 +657,8 @@ def with_logging[**P, R](func: Callable[P, Awaitable[R]]) -> Callable[P, Awaitab
 def require_jwt_auth[**P, R](
     func: Callable[P, Awaitable[R]],
 ) -> Callable[P, Awaitable[ToolResult[R]]]:
-    """Reject non-JWT (API) tokens before any upstream call.
-
-    Stack INSIDE ``@mcp_tool_handler`` so the resolved token is already
-    in the wrapped function's ``**kwargs`` when this guard runs. Used on
-    tools whose endpoint authentication accepts only JWT (OAuth/SSO)
-    sessions—e.g. ``APITokenObjectPermission`` 403s ``source='api'``
-    requests, and viewsets whose ``authentication_classes`` omit
-    ``APITokenAuthentication`` return 403 (AnonymousUser) for static API
-    tokens. Short-circuiting here skips the wasted round-trip and returns
-    a clearer error than the raw upstream 403.
-
-    Usage::
-
-        @mcp_tool_handler(description='...')
-        @require_jwt_auth
-        async def create_api_token(...): ...
-    """
+    """Reject a static API token before any upstream call; stack inside
+    @mcp_tool_handler so the token is in kwargs."""
 
     @wraps(func)
     async def wrapper(*args: P.args, **kwargs: P.kwargs) -> ToolResult[R]:
@@ -756,23 +688,8 @@ def mcp_tool_handler(
     meta: dict[str, object] | None = None,
     requires_workspace: bool = True,
 ) -> _ToolDecorator:
-    """Combined decorator for MCP tools that adds all common functionality.
-
-    This decorator combines:
-    1. MCP tool registration (with optional annotations and meta)
-    2. Input validation, then token injection (JWT for streamable-http, token.json for stdio)
-    3. Error handling
-    4. Logging
-
-    Args:
-        description: Tool description for MCP
-        annotations: MCP ToolAnnotations (read_only_hint, destructive_hint, etc.)
-        meta: MCP meta dict (anthropic/alwaysLoad, anthropic/searchHint, etc.)
-        requires_workspace: Whether the tool takes a workspace. Set False only
-            for a tool that answers before any workspace is known and reaches
-            no workspace-scoped resource; see ``with_token_validation`` for
-            what that turns off.
-    """
+    """Register a tool wrapped in error handling, validation and token injection, then
+    logging."""
 
     def decorator[**P, R](
         func: Callable[P, Awaitable[R]],

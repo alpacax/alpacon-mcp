@@ -270,7 +270,7 @@ export ALPACON_MCP_LOG_LEVEL=INFO    # For standard use (default)
 export ALPACON_MCP_LOG_LEVEL=ERROR   # For production
 
 # WebFTP configuration
-export ALPACON_MCP_WEBFTP_DOWNLOAD_TIMEOUT=60   # Seconds to poll for S3 staging in remote-mode downloads (default: 60). Raise for large folder ZIPs.
+export ALPACON_MCP_WEBFTP_DOWNLOAD_TIMEOUT=60   # Seconds webftp_download_file waits for the host to transfer the file, in both modes (default: 60); the transfer is checked once more at the deadline. Raise for large folder ZIPs.
 
 # OAuth callback allowlist (remote mode only)
 export ALLOWED_REDIRECT_URIS="https://app.example.com/oauth/callback"   # Comma-separated full URIs; replaces the built-in list

@@ -3,7 +3,7 @@
 from typing import TypedDict
 
 from utils.api_call import http_call_response
-from utils.common import build_list_params
+from utils.common import build_list_params, exclude_none
 from utils.decorators import mcp_tool_handler
 from utils.error_handler import format_validation_error
 from utils.http_client import http_client
@@ -160,17 +160,8 @@ async def acknowledge_alert(
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
-    """Acknowledge an alert.
-
-    Args:
-        alert_id: Alert ID to acknowledge
-        workspace: Workspace name. Required parameter
-        action_type: One of ALERT_ACTION_TYPES ('checked' or 'dismissed')
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        Acknowledge response
-    """
+    """Acknowledge an alert; action_type must be in ALERT_ACTION_TYPES, and the
+    server accepts one acknowledgement per user per alert."""
     if action_type not in ALERT_ACTION_TYPES:
         return format_validation_error(
             'action_type',
@@ -230,48 +221,8 @@ async def create_alert_rule(
     notify_slack_channel: bool | None = None,
     **kwargs: str,
 ) -> ToolResponse:
-    """Create an alert rule.
-
-    Args:
-        workspace: Workspace name. Required parameter
-        name: Rule name, unique within the workspace
-        target: Target metric, e.g. cpu-usage, memory-usage, disk-usage, or
-            one of the peak/avg bps or pps network and disk rates. The server
-            holds the authoritative list and rejects an unrecognized one.
-        threshold: Value the metric must cross to fire
-        is_default: Make this the default rule for the target
-        region: Region (ap1, us1). Auto-detected if not provided
-        operator: Which side of the threshold breaches: gte (default) fires
-            at or above it, lte fires at or below it (optional)
-        duration_s: How long the condition must hold before firing, in
-            seconds; 0 (the default) fires on a single breaching sample
-            (optional)
-        recovery_threshold: Value the metric must return to before the alert
-            resolves; omitted, the threshold itself resolves it (optional)
-        no_data_after_s: Raise an alert when no sample arrives for this many
-            seconds; the server floors it at the target's own collection
-            interval (optional)
-        device: Narrow the rule to one disk, partition, or network interface.
-            Only accepted for a device-scoped target (disk-usage, disk I/O,
-            network); cpu-usage and memory-usage are host-wide and reject it
-            (optional)
-        severity: Severity the raised alert carries: critical, warning
-            (default), or info (optional)
-        notify_email: Who the alert mail is addressed to, within the people
-            who already can see the server: all (server default), admins,
-            group_members (the same fan-out minus admins), or none. No
-            setting here sends mail for an info-severity rule. Omitted keeps
-            the server default of all. Refused with a 400 from a
-            service-token or agent caller (optional)
-        notify_slack_channel: Whether a raise and its resolution post to the
-            workspace alert channel. Independent of notify_email—either
-            can be turned off without touching the other. Omitted keeps the
-            server default of true. Refused with a 400 from a service-token
-            or agent caller (optional)
-
-    Returns:
-        Created alert rule
-    """
+    """Create an alert rule; notify_email must be in ALERT_EMAIL_DESTINATIONS,
+    and notify_* are refused with a 400 from service-token or agent callers."""
     if notify_email is not None and notify_email not in ALERT_EMAIL_DESTINATIONS:
         return format_validation_error(
             'notify_email',
@@ -286,23 +237,17 @@ async def create_alert_rule(
         'target': target,
         'threshold': threshold,
         'is_default': is_default,
+        **exclude_none(
+            operator=operator,
+            duration_s=duration_s,
+            recovery_threshold=recovery_threshold,
+            no_data_after_s=no_data_after_s,
+            device=device,
+            severity=severity,
+            notify_email=notify_email,
+            notify_slack_channel=notify_slack_channel,
+        ),
     }
-    if operator is not None:
-        rule_data['operator'] = operator
-    if duration_s is not None:
-        rule_data['duration_s'] = duration_s
-    if recovery_threshold is not None:
-        rule_data['recovery_threshold'] = recovery_threshold
-    if no_data_after_s is not None:
-        rule_data['no_data_after_s'] = no_data_after_s
-    if device is not None:
-        rule_data['device'] = device
-    if severity is not None:
-        rule_data['severity'] = severity
-    if notify_email is not None:
-        rule_data['notify_email'] = notify_email
-    if notify_slack_channel is not None:
-        rule_data['notify_slack_channel'] = notify_slack_channel
 
     return await http_call_response(
         http_client.post,
@@ -347,49 +292,8 @@ async def update_alert_rule(
     notify_slack_channel: bool | None = None,
     **kwargs: str,
 ) -> ToolResponse:
-    """Update an alert rule.
-
-    Args:
-        rule_id: Alert rule ID to update
-        workspace: Workspace name. Required parameter
-        name: New rule name (optional)
-        target: New target metric, e.g. cpu-usage, memory-usage, disk-usage,
-            or one of the peak/avg bps or pps network and disk rates. The
-            server holds the authoritative list and rejects an unrecognized
-            one. (optional)
-        threshold: New threshold (optional)
-        is_default: Make this the default rule for the target (optional)
-        region: Region (ap1, us1). Auto-detected if not provided
-        operator: Which side of the threshold breaches: gte fires at or
-            above it, lte fires at or below it (optional)
-        duration_s: How long the condition must hold before firing, in
-            seconds; 0 fires on a single breaching sample (optional)
-        recovery_threshold: Value the metric must return to before the alert
-            resolves; omitted, the threshold itself resolves it (optional)
-        no_data_after_s: Raise an alert when no sample arrives for this many
-            seconds; the server floors it at the target's own collection
-            interval (optional)
-        device: Narrow the rule to one disk, partition, or network interface.
-            Only accepted for a device-scoped target (disk-usage, disk I/O,
-            network); cpu-usage and memory-usage are host-wide and reject it
-            (optional)
-        severity: Severity the raised alert carries: critical, warning, or
-            info (optional)
-        notify_email: Who the alert mail is addressed to, within the people
-            who already can see the server: all, admins, group_members (the
-            same fan-out minus admins), or none. No setting here sends mail
-            for an info-severity rule. Omitted leaves the rule's current
-            value unchanged. Refused with a 400 from a service-token or
-            agent caller (optional)
-        notify_slack_channel: Whether a raise and its resolution post to the
-            workspace alert channel. Independent of notify_email—either
-            can be turned off without touching the other. Omitted leaves the
-            rule's current value unchanged. Refused with a 400 from a
-            service-token or agent caller (optional)
-
-    Returns:
-        Updated alert rule
-    """
+    """Partially update an alert rule; errors when no field is given. The
+    notify_email/notify_slack_channel rules match create_alert_rule."""
     if notify_email is not None and notify_email not in ALERT_EMAIL_DESTINATIONS:
         return format_validation_error(
             'notify_email',
@@ -399,31 +303,20 @@ async def update_alert_rule(
 
     token = kwargs.get('token')
 
-    update_data: dict[str, object] = {}
-    if name is not None:
-        update_data['name'] = name
-    if target is not None:
-        update_data['target'] = target
-    if threshold is not None:
-        update_data['threshold'] = threshold
-    if is_default is not None:
-        update_data['is_default'] = is_default
-    if operator is not None:
-        update_data['operator'] = operator
-    if duration_s is not None:
-        update_data['duration_s'] = duration_s
-    if recovery_threshold is not None:
-        update_data['recovery_threshold'] = recovery_threshold
-    if no_data_after_s is not None:
-        update_data['no_data_after_s'] = no_data_after_s
-    if device is not None:
-        update_data['device'] = device
-    if severity is not None:
-        update_data['severity'] = severity
-    if notify_email is not None:
-        update_data['notify_email'] = notify_email
-    if notify_slack_channel is not None:
-        update_data['notify_slack_channel'] = notify_slack_channel
+    update_data: dict[str, object] = exclude_none(
+        name=name,
+        target=target,
+        threshold=threshold,
+        is_default=is_default,
+        operator=operator,
+        duration_s=duration_s,
+        recovery_threshold=recovery_threshold,
+        no_data_after_s=no_data_after_s,
+        device=device,
+        severity=severity,
+        notify_email=notify_email,
+        notify_slack_channel=notify_slack_channel,
+    )
 
     if not update_data:
         return format_validation_error(
@@ -461,17 +354,7 @@ async def attach_alert_rule(
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
-    """Attach an alert rule to a server.
-
-    Args:
-        server_id: Server UUID the rule should watch
-        rule_id: Alert rule UUID to attach
-        workspace: Workspace name. Required parameter
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        Attach response
-    """
+    """Attach an alert rule to a server."""
     token = kwargs.get('token')
 
     return await http_call_response(
@@ -501,17 +384,7 @@ async def detach_alert_rule(
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
-    """Detach an alert rule from a server.
-
-    Args:
-        server_id: Server UUID the rule should stop watching
-        rule_id: Alert rule UUID to detach
-        workspace: Workspace name. Required parameter
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        Detach response
-    """
+    """Detach an alert rule from a server."""
     token = kwargs.get('token')
 
     return await http_call_response(
@@ -535,16 +408,7 @@ async def detach_alert_rule(
 async def delete_alert_rule(
     rule_id: str, workspace: str, region: str = '', **kwargs: str
 ) -> ToolResponse:
-    """Delete an alert rule.
-
-    Args:
-        rule_id: Alert rule ID to delete
-        workspace: Workspace name. Required parameter
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        Alert rule deletion response
-    """
+    """Delete an alert rule."""
     token = kwargs.get('token')
 
     return await http_call_response(
@@ -665,63 +529,8 @@ async def preview_alert_rule(
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
-    """Preview what an alert rule would have raised over a past window.
-
-    The rule is judged by the same evaluator that runs saved rules, one tick
-    every 60 seconds over the realtime samples of the window. Nothing is
-    stored and no activity is recorded.
-
-    Without rule_id, the rule fields describe a new rule (target and
-    threshold at least) and servers is required. With rule_id, the rule
-    fields given override that rule's values, every omitted field keeps the
-    rule's own, and the rule's server overrides apply.
-
-    Args:
-        workspace: Workspace name. Required parameter
-        rule_id: An existing alert rule to preview against; its attached
-            servers become the default for servers (optional)
-        servers: Server UUIDs to replay over, up to 20. Required when
-            rule_id is omitted (optional)
-        window_s: How far back to replay, in seconds: 60 to 604800 (seven
-            days), default 86400 (optional)
-        target: Target metric, as on create_alert_rule (optional)
-        threshold: Value the metric must cross to fire (optional)
-        operator: gte or lte, as on create_alert_rule (optional)
-        duration_s: How long the condition must hold before firing, in
-            seconds (optional)
-        recovery_threshold: Value the metric must return to before the alert
-            resolves (optional)
-        no_data_after_s: Raise when no sample arrives for this many seconds
-            (optional)
-        device: Narrow the rule to one disk, partition, or network interface;
-            device-scoped targets only (optional)
-        severity: critical, warning, or info; decides with the destinations
-            whether an episode would interrupt anyone (optional)
-        notify_email: all, admins, group_members, or none. Refused with a
-            400 from a service-token or agent caller (optional)
-        notify_slack_channel: Whether a raise posts to the workspace alert
-            channel. Refused with a 400 from a service-token or agent caller
-            (optional)
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        window (start, end), sample_interval_s, summary (episodes,
-        would_interrupt, open_at_end, longest_s), servers (one row per
-        server and device: server, device, samples, and episodes with
-        condition, raised_at, resolved_at, peak, outlived_hold,
-        would_interrupt), recipients (the get_alert_rule_recipients shape,
-        over the replayed servers), and not_reproduced (what the replay
-        cannot know, e.g. tick_jitter, state_before_window).
-
-        Refusals carry the server's error_code:
-        metrics_alert_rule_preview_window_too_long,
-        metrics_alert_rule_preview_too_many_servers,
-        metrics_alert_rule_preview_too_many_samples,
-        metrics_alert_rule_preview_servers_required, and server_not_found (a
-        server in servers is unknown or out of reach), each a 400. A 404
-        means no rule with rule_id, or every server it is attached to is
-        outside what you can see.
-    """
+    """Replay a rule over past samples, storing nothing; without rule_id the
+    rule fields define a new rule and servers is required."""
     if notify_email is not None and notify_email not in ALERT_EMAIL_DESTINATIONS:
         return format_validation_error(
             'notify_email',
@@ -731,31 +540,23 @@ async def preview_alert_rule(
 
     token = kwargs.get('token')
 
-    rule_fields = {
-        'target': target,
-        'threshold': threshold,
-        'operator': operator,
-        'duration_s': duration_s,
-        'recovery_threshold': recovery_threshold,
-        'no_data_after_s': no_data_after_s,
-        'device': device,
-        'severity': severity,
-        'notify_email': notify_email,
-        'notify_slack_channel': notify_slack_channel,
-    }
     # The server always requires the rule object; an empty one previews the
     # rule_id rule unchanged.
     body: dict[str, object] = {
-        'rule': {
-            field: value for field, value in rule_fields.items() if value is not None
-        }
+        'rule': exclude_none(
+            target=target,
+            threshold=threshold,
+            operator=operator,
+            duration_s=duration_s,
+            recovery_threshold=recovery_threshold,
+            no_data_after_s=no_data_after_s,
+            device=device,
+            severity=severity,
+            notify_email=notify_email,
+            notify_slack_channel=notify_slack_channel,
+        ),
+        **exclude_none(rule_id=rule_id, servers=servers, window_s=window_s),
     }
-    if rule_id is not None:
-        body['rule_id'] = rule_id
-    if servers is not None:
-        body['servers'] = servers
-    if window_s is not None:
-        body['window_s'] = window_s
     id_context: _RuleContext = {} if rule_id is None else {'rule_id': rule_id}
 
     return await http_call_response(
@@ -898,37 +699,20 @@ async def create_rule_override(
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
-    """Create a rule override.
-
-    Args:
-        server_id: Server UUID the override applies to
-        rule_id: Alert rule UUID being overridden
-        workspace: Workspace name. Required parameter
-        threshold: Replace the rule's threshold for this server; unset keeps
-            the rule's value (optional)
-        recovery_threshold: Replace the rule's recovery threshold for this
-            server; unset keeps the rule's value (optional)
-        duration_s: Replace the rule's duration for this server, in seconds;
-            unset keeps the rule's value, 0 fires on a single breaching
-            sample (optional)
-        enabled: False exempts this server from the rule entirely, whatever
-            the other fields hold (default: true, matching the server)
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        Created rule override
-    """
+    """Create a per-server override of a rule; a second one for the same
+    (server, rule) pair is refused, and enabled=False exempts the server."""
     token = kwargs.get('token')
 
-    override_data: dict[str, object] = {'server': server_id, 'rule': rule_id}
-    if threshold is not None:
-        override_data['threshold'] = threshold
-    if recovery_threshold is not None:
-        override_data['recovery_threshold'] = recovery_threshold
-    if duration_s is not None:
-        override_data['duration_s'] = duration_s
-    if enabled is not None:
-        override_data['enabled'] = enabled
+    override_data: dict[str, object] = {
+        'server': server_id,
+        'rule': rule_id,
+        **exclude_none(
+            threshold=threshold,
+            recovery_threshold=recovery_threshold,
+            duration_s=duration_s,
+            enabled=enabled,
+        ),
+    }
 
     return await http_call_response(
         http_client.post,
@@ -967,37 +751,18 @@ async def update_rule_override(
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
-    """Update a rule override.
-
-    Args:
-        override_id: Rule override ID to update
-        workspace: Workspace name. Required parameter
-        server_id: Move the override to a different server (optional)
-        rule_id: Move the override to a different alert rule (optional)
-        threshold: New threshold override (optional)
-        recovery_threshold: New recovery threshold override (optional)
-        duration_s: New duration override, in seconds (optional)
-        enabled: False exempts this server from the rule entirely (optional)
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        Updated rule override
-    """
+    """Partially update an override; errors when no field is given, and an
+    omitted field keeps its current value."""
     token = kwargs.get('token')
 
-    update_data: dict[str, object] = {}
-    if server_id is not None:
-        update_data['server'] = server_id
-    if rule_id is not None:
-        update_data['rule'] = rule_id
-    if threshold is not None:
-        update_data['threshold'] = threshold
-    if recovery_threshold is not None:
-        update_data['recovery_threshold'] = recovery_threshold
-    if duration_s is not None:
-        update_data['duration_s'] = duration_s
-    if enabled is not None:
-        update_data['enabled'] = enabled
+    update_data: dict[str, object] = exclude_none(
+        server=server_id,
+        rule=rule_id,
+        threshold=threshold,
+        recovery_threshold=recovery_threshold,
+        duration_s=duration_s,
+        enabled=enabled,
+    )
 
     if not update_data:
         return format_validation_error(
@@ -1033,16 +798,7 @@ async def update_rule_override(
 async def delete_rule_override(
     override_id: str, workspace: str, region: str = '', **kwargs: str
 ) -> ToolResponse:
-    """Delete a rule override.
-
-    Args:
-        override_id: Rule override ID to delete
-        workspace: Workspace name. Required parameter
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        Rule override deletion response
-    """
+    """Delete a rule override."""
     token = kwargs.get('token')
 
     return await http_call_response(

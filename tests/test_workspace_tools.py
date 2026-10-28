@@ -1,9 +1,4 @@
-"""
-Unit tests for workspace_tools module.
-
-Tests workspace management functionality including workspace listing.
-Note: User settings and profile endpoints have been removed from the server.
-"""
+"""Unit tests for workspace_tools: listing, current user, and security settings."""
 
 import json
 from http import HTTPStatus
@@ -30,10 +25,8 @@ mock_http_client = http_client_fixture('tools.workspace_tools')
 
 @pytest.fixture
 def mock_token_manager():
-    """Mock token manager for testing.
-
-    tools.workspace_tools imports get_token_manager at module top level, so
-    the mock must be patched there rather than at utils.token_manager.
+    """Mock token manager for testing. workspace_tools imports get_token_manager at
+    module top, so the mock is patched there.
     """
     mock_manager = MagicMock()
     mock_manager.get_all_tokens.return_value = {
@@ -56,11 +49,8 @@ def mock_token_manager():
 
 
 class TestListWorkspaces:
-    """Test list_workspaces function."""
-
     @pytest.mark.asyncio
     async def test_list_workspaces_success(self, mock_token_manager):
-        """Test successful workspace listing."""
         result = await list_workspaces(region='ap1')
 
         # Verify response structure
@@ -92,7 +82,6 @@ class TestListWorkspaces:
 
     @pytest.mark.asyncio
     async def test_list_workspaces_different_region(self, mock_token_manager):
-        """Test workspace listing for different region."""
         result = await list_workspaces(region='us1')
 
         assert result['status'] == 'success'
@@ -125,12 +114,9 @@ class TestListWorkspaces:
     @pytest.mark.asyncio
     async def test_list_workspaces_unknown_region_is_rejected(self, mock_token_manager):
         """An unserved region is a validation error, not an empty list.
-
-        Routing through @mcp_tool_handler puts this tool behind the same
-        region gate as every other one, so a typo reads as a typo instead of
-        as "that region has no workspaces".
+        @mcp_tool_handler puts this tool behind the region gate, so a typo reads as one.
         """
-        result = await list_workspaces(region='nonexistent')
+        result = await list_workspaces(region='nonexistent')  # type: ignore[arg-type]
 
         assert result['status'] == 'error'
         assert result['error_code'] == 'validation'
@@ -138,7 +124,6 @@ class TestListWorkspaces:
 
     @pytest.mark.asyncio
     async def test_list_workspaces_workspace_without_token(self, mock_token_manager):
-        """Test workspace listing with workspace that has no token."""
         # Mock tokens with empty token value
         mock_token_manager.get_all_tokens.return_value = {
             'ap1': {
@@ -168,11 +153,8 @@ class TestListWorkspaces:
     async def test_list_workspaces_reports_pinned_url_domain(
         self, tmp_path, monkeypatch
     ):
-        """The reported domain resolves through get_base_url_override.
-
-        Uses a real TokenManager so the displayed host gets the same
-        precedence (env var over config) and normalization (scheme added,
-        trailing slash dropped) as actual request routing.
+        """The reported domain resolves through get_base_url_override. A real
+        TokenManager gives the host the same precedence and normalization as routing.
         """
         config_path = tmp_path / 'token.json'
         config_path.write_text(
@@ -241,7 +223,6 @@ class TestListWorkspaces:
 
     @pytest.mark.asyncio
     async def test_list_workspaces_default_region(self, mock_token_manager):
-        """Test workspace listing without region returns all regions."""
         result = await list_workspaces()
 
         assert result['status'] == 'success'
@@ -256,9 +237,7 @@ class TestListWorkspaces:
 @pytest.fixture
 def jwt_mode():
     """Drive the tool through the decorator's remote/JWT branch.
-
-    Both modules read is_auth_enabled, so patching one leaves the other in
-    stdio mode.
+    Both modules read is_auth_enabled, so patching one leaves the other in stdio mode.
     """
     with (
         patch('utils.decorators.is_auth_enabled', return_value=True),
@@ -371,10 +350,8 @@ def mock_token():
 
 @pytest.fixture
 def mock_jwt_token():
-    """Mock token manager returning a JWT-shaped token.
-
-    The security-settings tools stack @require_jwt_auth, which rejects any
-    token that is not JWT-shaped (3 dotted non-empty parts).
+    """Mock token manager returning a JWT-shaped token. The security-settings tools
+    stack @require_jwt_auth, which needs 3 dotted non-empty parts.
     """
     with patch('utils.common.token_manager') as mock_manager:
         mock_manager.get_token.return_value = 'header.payload.signature'
@@ -382,8 +359,6 @@ def mock_jwt_token():
 
 
 class TestGetCurrentUser:
-    """Test get_current_user function."""
-
     @pytest.mark.asyncio
     async def test_get_current_user_success(self, mock_http_client, mock_token):
         """Returns current user info from /api/iam/users/-/."""
@@ -415,8 +390,6 @@ class TestGetCurrentUser:
 
 
 class TestGetWorkspaceAccessControl:
-    """Test get_workspace_access_control function."""
-
     @pytest.mark.asyncio
     async def test_success(self, mock_http_client, mock_token):
         mock_http_client.get.return_value = {
@@ -450,8 +423,6 @@ class TestGetWorkspaceAccessControl:
 
 
 class TestGetWorkspaceSecurity:
-    """Test get_workspace_security function, including the SaaS-only 404 case."""
-
     @pytest.mark.asyncio
     async def test_success(self, mock_http_client, mock_jwt_token):
         mock_http_client.get.return_value = {
@@ -526,8 +497,6 @@ class TestGetWorkspaceSecurity:
 
 
 class TestListWorkspaceMfaMethods:
-    """Test list_workspace_mfa_methods function."""
-
     @pytest.mark.asyncio
     async def test_success(self, mock_http_client, mock_jwt_token):
         mock_http_client.get.return_value = {
@@ -612,8 +581,6 @@ class TestListWorkspaceMfaMethods:
 
 
 class TestGetWorkspacePreferences:
-    """Test get_workspace_preferences function."""
-
     @pytest.mark.asyncio
     async def test_success(self, mock_http_client, mock_token):
         mock_http_client.get.return_value = {
@@ -677,8 +644,6 @@ class TestGetWorkspacePreferences:
 
 
 class TestUpdateWorkspacePreferences:
-    """Test update_workspace_preferences function."""
-
     def test_allowed_domains_is_not_in_tool_schema(self):
         tool = mcp._tool_manager.get_tool('update_workspace_preferences')
         assert tool is not None

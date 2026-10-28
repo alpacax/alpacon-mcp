@@ -1,8 +1,5 @@
-"""End-to-end integration tests for MCP tool functions.
-
-Tests tool functions from call through the full decorator chain, HTTP client,
-MockTransport, and back to response parsing. Verifies that realistic API
-payloads produce correct success/error responses.
+"""Tool end-to-end tests: decorator chain, HTTP client and MockTransport, then parsing.
+Realistic API payloads must produce correct success and error responses.
 """
 
 import json
@@ -12,6 +9,7 @@ from unittest.mock import patch
 import httpx
 import pytest
 
+from tools.command_tools import DO_NOT_RESUBMIT, execute_command
 from tools.events_tools import list_events
 from tools.iam_tools import (
     create_iam_user,
@@ -296,12 +294,8 @@ class TestSystemInfoEndToEnd:
     async def test_get_server_overview_fans_out_to_every_section(
         self, patched_http_client, mock_token_for_integration
     ):
-        """Every section is filled over HTTP, not from a swallowed exception.
-
-        The five calls this tool fans out to are decorated tools themselves, so
-        an argument their published signature rejects arrives here as a
-        per-section error string under an overall status of success. Mocking the
-        five out, as the unit tests do, hides exactly that.
+        """Every section is filled over HTTP, not from a swallowed exception. A rejected
+        argument becomes a per-section error under status success; mocks hide it.
         """
         requested = []
 
@@ -509,3 +503,76 @@ class TestAuthVerificationUnavailable:
         assert 'error_code' not in section
         assert 'secret-internal-detail' not in section['error']
         assert section['error'] == 'Server error after 3 attempts'
+
+
+class TestWriteThatMayHaveActed:
+    """A POST that may have reached the server is reported once, never as worth retrying."""
+
+    @pytest.mark.parametrize(
+        'status', [HTTPStatus.INTERNAL_SERVER_ERROR, HTTPStatus.SERVICE_UNAVAILABLE]
+    )
+    async def test_command_server_error_carries_no_try_again_hint(
+        self, patched_http_client, mock_token_for_integration, status
+    ):
+        posts: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            posts.append(request)
+            return httpx.Response(status, json={})
+
+        patched_http_client.set_handler(handler)
+
+        result = await execute_command(
+            server_id=SERVER_ID, command='ls', workspace='production', region='ap1'
+        )
+
+        assert len(posts) == 1
+        assert result['status'] == 'error'
+        assert result['status_code'] == status
+        assert result['outcome_unknown'] is True
+        assert DO_NOT_RESUBMIT in result['message']
+        hints = ' '.join(result.get('recovery_hints', []))
+        assert 'Try again' not in hints
+
+    async def test_any_post_tool_exposes_outcome_unknown(
+        self, patched_http_client, mock_token_for_integration
+    ):
+        posts: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            posts.append(request)
+            raise httpx.ReadTimeout('read timed out', request=request)
+
+        patched_http_client.set_handler(handler)
+
+        result = await create_server_note(
+            server_id=SERVER_ID, content='note', workspace='production', region='ap1'
+        )
+
+        assert len(posts) == 1
+        assert result['status'] == 'error'
+        assert result['outcome_unknown'] is True
+        assert 'recovery_hints' not in result
+
+    async def test_post_rejected_at_the_credential_check_is_retried(
+        self, patched_http_client, mock_token_for_integration
+    ):
+        posts: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            posts.append(request)
+            return httpx.Response(
+                HTTPStatus.SERVICE_UNAVAILABLE,
+                json={'code': 'auth_verification_unavailable'},
+            )
+
+        patched_http_client.set_handler(handler)
+
+        result = await create_server_note(
+            server_id=SERVER_ID, content='note', workspace='production', region='ap1'
+        )
+
+        assert len(posts) == 3
+        assert result['status'] == 'error'
+        assert result['error_code'] == 'auth_verification_unavailable'
+        assert 'outcome_unknown' not in result

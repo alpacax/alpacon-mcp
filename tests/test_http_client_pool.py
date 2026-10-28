@@ -4,9 +4,6 @@ import asyncio
 from http import HTTPStatus
 
 import httpx
-import pytest
-
-from utils.http_client import AlpaconHTTPClient
 
 URL = 'https://ws.ap1.alpacon.io/api/servers/servers/'
 
@@ -23,21 +20,6 @@ class RecordingTransport(httpx.MockTransport):
         self.requests.append(request)
         status = self._statuses.pop(0) if len(self._statuses) > 1 else self._statuses[0]
         return httpx.Response(status, json={'results': []})
-
-
-@pytest.fixture
-async def make_client():
-    clients: list[AlpaconHTTPClient] = []
-
-    def build(transport: httpx.AsyncBaseTransport) -> AlpaconHTTPClient:
-        client = AlpaconHTTPClient(transport=transport)
-        client.retry_delay = 0
-        clients.append(client)
-        return client
-
-    yield build
-    for client in clients:
-        await client.close()
 
 
 class TestPooledClient:

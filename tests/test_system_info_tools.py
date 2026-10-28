@@ -1,9 +1,4 @@
-"""
-Unit tests for system_info_tools module.
-
-Tests system information functionality including system details,
-OS version, users, groups, packages, network interfaces, and disk information.
-"""
+"""Unit tests for system_info_tools: system, OS, users, groups, packages, network, disk."""
 
 import asyncio
 from http import HTTPStatus
@@ -30,12 +25,8 @@ SERVER_ID = '550e8400-e29b-41d4-a716-446655440001'
 
 
 class TestGetSystemInfo:
-    """Test get_system_info function."""
-
     @pytest.mark.asyncio
     async def test_system_info_success(self, mock_http_client, mock_token_manager):
-        """Test successful system information retrieval."""
-
         # Mock successful response
         mock_http_client.get.return_value = {
             'hostname': 'web-server-1',
@@ -73,8 +64,6 @@ class TestGetSystemInfo:
 
     @pytest.mark.asyncio
     async def test_system_info_no_token(self, mock_http_client, mock_token_manager):
-        """Test system info when no token is available."""
-
         mock_token_manager.get_token.return_value = None
 
         result = await get_system_info(server_id=SERVER_ID, workspace='testworkspace')
@@ -87,8 +76,6 @@ class TestGetSystemInfo:
     async def test_system_info_error_envelope(
         self, mock_http_client, mock_token_manager
     ):
-        """Test that an http_client error envelope returns an error response."""
-
         mock_http_client.get.return_value = HTTP_ERROR_ENVELOPE
 
         result = await get_system_info(
@@ -107,12 +94,8 @@ class TestGetSystemInfo:
 
 
 class TestGetOsVersion:
-    """Test get_os_version function."""
-
     @pytest.mark.asyncio
     async def test_os_version_success(self, mock_http_client, mock_token_manager):
-        """Test successful OS version retrieval."""
-
         # Mock successful response
         mock_http_client.get.return_value = {
             'name': 'Ubuntu',
@@ -149,8 +132,6 @@ class TestGetOsVersion:
 
     @pytest.mark.asyncio
     async def test_os_version_no_token(self, mock_http_client, mock_token_manager):
-        """Test OS version when no token is available."""
-
         mock_token_manager.get_token.return_value = None
 
         result = await get_os_version(server_id=SERVER_ID, workspace='testworkspace')
@@ -160,12 +141,8 @@ class TestGetOsVersion:
 
 
 class TestListSystemUsers:
-    """Test list_system_users function."""
-
     @pytest.mark.asyncio
     async def test_list_users_success(self, mock_http_client, mock_token_manager):
-        """Test successful system users listing."""
-
         # Mock successful response
         mock_http_client.get.return_value = {
             'count': 3,
@@ -230,8 +207,6 @@ class TestListSystemUsers:
     async def test_list_users_minimal_params(
         self, mock_http_client, mock_token_manager
     ):
-        """Test users listing with minimal parameters."""
-
         mock_http_client.get.return_value = {'count': 10, 'results': []}
 
         result = await list_system_users(server_id=SERVER_ID, workspace='testworkspace')
@@ -249,8 +224,6 @@ class TestListSystemUsers:
 
     @pytest.mark.asyncio
     async def test_list_users_no_token(self, mock_http_client, mock_token_manager):
-        """Test users listing when no token is available."""
-
         mock_token_manager.get_token.return_value = None
 
         result = await list_system_users(server_id=SERVER_ID, workspace='testworkspace')
@@ -262,8 +235,6 @@ class TestListSystemUsers:
     async def test_list_users_error_envelope(
         self, mock_http_client, mock_token_manager
     ):
-        """Test that an http_client error envelope returns an error response."""
-
         mock_http_client.get.return_value = HTTP_ERROR_ENVELOPE
 
         result = await list_system_users(
@@ -280,12 +251,8 @@ class TestListSystemUsers:
 
 
 class TestListSystemGroups:
-    """Test list_system_groups function."""
-
     @pytest.mark.asyncio
     async def test_list_groups_success(self, mock_http_client, mock_token_manager):
-        """Test successful system groups listing."""
-
         # Mock successful response
         mock_http_client.get.return_value = {
             'count': 4,
@@ -325,8 +292,6 @@ class TestListSystemGroups:
 
     @pytest.mark.asyncio
     async def test_list_groups_no_filter(self, mock_http_client, mock_token_manager):
-        """Test groups listing without filter."""
-
         mock_http_client.get.return_value = {'count': 0, 'results': []}
 
         result = await list_system_groups(
@@ -345,8 +310,6 @@ class TestListSystemGroups:
 
     @pytest.mark.asyncio
     async def test_list_groups_no_token(self, mock_http_client, mock_token_manager):
-        """Test groups listing when no token is available."""
-
         mock_token_manager.get_token.return_value = None
 
         result = await list_system_groups(
@@ -358,12 +321,8 @@ class TestListSystemGroups:
 
 
 class TestListSystemPackages:
-    """Test list_system_packages function."""
-
     @pytest.mark.asyncio
     async def test_list_packages_success(self, mock_http_client, mock_token_manager):
-        """Test successful system packages listing."""
-
         # Mock successful response
         mock_http_client.get.return_value = {
             'count': 2,
@@ -421,8 +380,6 @@ class TestListSystemPackages:
     async def test_list_packages_minimal_params(
         self, mock_http_client, mock_token_manager
     ):
-        """Test packages listing with minimal parameters."""
-
         mock_http_client.get.return_value = {'count': 500, 'results': []}
 
         result = await list_system_packages(
@@ -444,8 +401,6 @@ class TestListSystemPackages:
 
     @pytest.mark.asyncio
     async def test_list_packages_no_token(self, mock_http_client, mock_token_manager):
-        """Test packages listing when no token is available."""
-
         mock_token_manager.get_token.return_value = None
 
         result = await list_system_packages(
@@ -457,14 +412,10 @@ class TestListSystemPackages:
 
 
 class TestGetNetworkInterfaces:
-    """Test get_network_interfaces function."""
-
     @pytest.mark.asyncio
     async def test_network_interfaces_success(
         self, mock_http_client, mock_token_manager
     ):
-        """Test successful network interfaces retrieval."""
-
         # Mock successful response
         mock_http_client.get.return_value = {
             'interfaces': [
@@ -512,8 +463,6 @@ class TestGetNetworkInterfaces:
     async def test_network_interfaces_no_token(
         self, mock_http_client, mock_token_manager
     ):
-        """Test network interfaces when no token is available."""
-
         mock_token_manager.get_token.return_value = None
 
         result = await get_network_interfaces(
@@ -527,8 +476,6 @@ class TestGetNetworkInterfaces:
     async def test_network_interfaces_error_envelope(
         self, mock_http_client, mock_token_manager
     ):
-        """Test that an http_client error envelope returns an error response."""
-
         mock_http_client.get.return_value = HTTP_ERROR_ENVELOPE
 
         result = await get_network_interfaces(
@@ -545,12 +492,8 @@ class TestGetNetworkInterfaces:
 
 
 class TestGetDiskInfo:
-    """Test get_disk_info function."""
-
     @pytest.mark.asyncio
     async def test_disk_info_success(self, mock_http_client, mock_token_manager):
-        """Test successful disk info retrieval."""
-
         # Mock successful responses for both disks and partitions
         disks_data = {
             'disks': [
@@ -649,8 +592,6 @@ class TestGetDiskInfo:
 
     @pytest.mark.asyncio
     async def test_disk_info_no_token(self, mock_http_client, mock_token_manager):
-        """Test disk info when no token is available."""
-
         mock_token_manager.get_token.return_value = None
 
         result = await get_disk_info(server_id=SERVER_ID, workspace='testworkspace')
@@ -660,12 +601,8 @@ class TestGetDiskInfo:
 
 
 class TestGetSystemTime:
-    """Test get_system_time function."""
-
     @pytest.mark.asyncio
     async def test_system_time_success(self, mock_http_client, mock_token_manager):
-        """Test successful system time retrieval."""
-
         # Mock successful response
         mock_http_client.get.return_value = {
             'current_time': '2024-01-01T12:00:00Z',
@@ -699,8 +636,6 @@ class TestGetSystemTime:
 
     @pytest.mark.asyncio
     async def test_system_time_no_token(self, mock_http_client, mock_token_manager):
-        """Test system time when no token is available."""
-
         mock_token_manager.get_token.return_value = None
 
         result = await get_system_time(server_id=SERVER_ID, workspace='testworkspace')
@@ -710,12 +645,8 @@ class TestGetSystemTime:
 
 
 class TestGetServerOverview:
-    """Test get_server_overview function."""
-
     @pytest.mark.asyncio
     async def test_server_overview_success(self, mock_http_client, mock_token_manager):
-        """Test successful server overview retrieval."""
-
         # Mock successful responses for all individual functions
         with (
             patch('tools.system_info_tools.get_system_info') as mock_sys_info,
@@ -773,8 +704,6 @@ class TestGetServerOverview:
     async def test_server_overview_partial_failure(
         self, mock_http_client, mock_token_manager
     ):
-        """Test server overview with some functions failing."""
-
         with (
             patch('tools.system_info_tools.get_system_info') as mock_sys_info,
             patch('tools.system_info_tools.get_os_version') as mock_os_version,
@@ -819,8 +748,6 @@ class TestGetServerOverview:
     async def test_server_overview_exception(
         self, mock_http_client, mock_token_manager
     ):
-        """Test server overview with general exception."""
-
         def _raise_and_close_coros(*coros, **kwargs):
             # Close the coros gather() never ran, or they leak as unawaited.
             for coro in coros:

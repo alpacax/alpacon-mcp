@@ -1,8 +1,5 @@
-"""Integration tests for HTTP client retry, caching, and request construction.
-
-Uses MockTransport at the httpx transport layer to verify the full HTTP client
-behavior including retry logic, exponential backoff, caching, URL construction,
-and authorization headers.
+"""HTTP client retry, backoff, uncached reads, and request construction over
+MockTransport.
 """
 
 from http import HTTPStatus
@@ -17,8 +14,6 @@ pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
 
 class TestRetryBehavior:
-    """Test HTTP client retry logic with MockTransport."""
-
     async def test_5xx_retries_3_times_then_fails(self, patched_http_client, no_sleep):
         """5xx errors trigger max_retries attempts then return error."""
         call_count = 0
@@ -269,8 +264,6 @@ class TestNoResponseCache:
 
 
 class TestURLConstruction:
-    """Test URL construction and header formatting."""
-
     async def test_url_construction_for_regions(self, patched_http_client):
         """URL is constructed correctly for different regions."""
         captured_urls = []

@@ -131,13 +131,10 @@ async def test_webhook_http_error_envelope_returns_error(
 
 
 class TestEventSubscriptions:
-    """Test event subscription tools."""
-
     @pytest.mark.asyncio
     async def test_list_event_subscriptions_success(
         self, mock_http_client, mock_token_manager
     ):
-        """Test successful event subscriptions list."""
         mock_http_client.get.return_value = {'count': 1, 'results': [{'id': 'sub-1'}]}
 
         result = await list_event_subscriptions(workspace='testworkspace', region='ap1')
@@ -155,7 +152,6 @@ class TestEventSubscriptions:
     async def test_create_event_subscription_success(
         self, mock_http_client, mock_token_manager
     ):
-        """Test successful event subscription creation."""
         mock_http_client.post.return_value = {
             'id': 'sub-1',
             'event_type': 'command_fin',
@@ -186,7 +182,6 @@ class TestEventSubscriptions:
     async def test_create_event_subscription_minimal(
         self, mock_http_client, mock_token_manager
     ):
-        """Test event subscription creation with minimal params."""
         mock_http_client.post.return_value = {'id': 'sub-2'}
 
         result = await create_event_subscription(
@@ -212,9 +207,8 @@ class TestEventSubscriptions:
     async def test_create_event_subscription_forwards_metric_threshold_types(
         self, event_type, mock_http_client, mock_token_manager
     ):
-        """#243: the two metrics-extension event types are not pre-validated
-        here — the server gates them on the workspace's plan and, for a
-        wildcard subscription, on the caller being an admin.
+        """#243: the two metrics-extension event types are not pre-validated; the server
+        gates them on the workspace plan and, for a wildcard, on an admin caller.
         """
         mock_http_client.post.return_value = {'id': 'sub-3', 'event_type': event_type}
 
@@ -250,7 +244,6 @@ class TestEventSubscriptions:
     async def test_delete_event_subscription_success(
         self, mock_http_client, mock_token_manager
     ):
-        """Test successful event subscription deletion."""
         mock_http_client.delete.return_value = {}
 
         result = await delete_event_subscription(
@@ -268,11 +261,8 @@ class TestEventSubscriptions:
 
 
 class TestWebhooks:
-    """Test webhook tools."""
-
     @pytest.mark.asyncio
     async def test_list_webhooks_success(self, mock_http_client, mock_token_manager):
-        """Test successful webhooks list."""
         mock_http_client.get.return_value = {
             'count': 1,
             'results': [{'id': 'wh-1', 'name': 'alerts'}],
@@ -443,7 +433,6 @@ class TestWebhooks:
 
     @pytest.mark.asyncio
     async def test_update_webhook_success(self, mock_http_client, mock_token_manager):
-        """Test successful webhook update."""
         mock_http_client.patch.return_value = {
             'id': 'wh-1',
             'name': 'updated-alerts',
@@ -469,7 +458,6 @@ class TestWebhooks:
 
     @pytest.mark.asyncio
     async def test_delete_webhook_success(self, mock_http_client, mock_token_manager):
-        """Test successful webhook deletion."""
         mock_http_client.delete.return_value = {}
 
         result = await delete_webhook(
@@ -487,8 +475,6 @@ class TestWebhooks:
 
 
 class TestGetWebhook:
-    """Test get_webhook function."""
-
     @pytest.mark.asyncio
     async def test_get_webhook_success(self, mock_http_client, mock_token_manager):
         """Returns single webhook detail by ID."""

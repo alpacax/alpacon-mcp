@@ -13,6 +13,7 @@ from utils.common import (
     build_list_params,
     error_response,
     expect_json_object,
+    is_http_error,
     json_records,
     resolve_time_window,
     success_response,
@@ -46,6 +47,7 @@ VALID_LATEST_METRIC_ORDERING_FIELDS = frozenset(
         'disk_io',
         'disk-io',
         'net',
+        'metric_severity',
     }
 )
 _LATEST_ORDERING_SENTENCE = (
@@ -103,7 +105,8 @@ _NEXT_PAGE = TypeAdapter(_NextPage)
 
 
 def _metric_rows[R](adapter: TypeAdapter[list[R]], result: JsonValue) -> list[R]:
-    """The time-series rows of a /api/metrics/ answer; raises on a row the adapter rejects."""
+    """Time-series rows of a /api/metrics/ answer; raises on a row the adapter
+    rejects."""
     return validate_response(adapter, json_records(result))
 
 
@@ -119,19 +122,13 @@ def _timestamp_key(entry: _TimedRow) -> datetime:
 
 
 def _oldest_first[R: _TimedRow](results: list[R]) -> list[R]:
-    """Order metric rows by the instant of their timestamp; the API returns newest first."""
+    """Order metric rows by timestamp instant; the API returns newest first."""
     return sorted(results, key=_timestamp_key)
 
 
 def parse_cpu_metrics(results: list[_UsageRow]) -> dict[str, object]:
-    """Parse CPU usage metrics to extract meaningful statistics.
-
-    Args:
-        results: List of CPU usage data points
-
-    Returns:
-        Parsed statistics including average, min, max, current usage with user-friendly format
-    """
+    """Summarize CPU rows (current, average, min, max, status, health);
+    `available` is False when there are no rows or no `usage` values."""
     if not results:
         return {'available': False, 'message': 'No CPU data available'}
 
@@ -247,14 +244,8 @@ async def get_cpu_usage(
 
 
 def parse_memory_metrics(results: list[_UsageRow]) -> dict[str, object]:
-    """Parse memory usage metrics to extract meaningful statistics.
-
-    Args:
-        results: List of memory usage data points
-
-    Returns:
-        Parsed statistics including average, min, max, current usage with user-friendly format
-    """
+    """Summarize memory rows (current, average, min, max, status, health);
+    `available` is False when there are no rows or no `usage` values."""
     if not results:
         return {'available': False, 'message': 'No memory data available'}
 
@@ -370,14 +361,8 @@ async def get_memory_usage(
 
 
 def parse_disk_metrics(results: list[_DiskUsageRow]) -> dict[str, object]:
-    """Parse disk usage metrics to extract meaningful statistics.
-
-    Args:
-        results: List of disk usage data points
-
-    Returns:
-        Parsed statistics including average, min, max, current usage and space info
-    """
+    """Summarize disk rows (current, average, min, max, space_info);
+    `available` is False when there are no rows or no `usage` values."""
     if not results:
         return {'available': False, 'message': 'No disk data available'}
 
@@ -547,14 +532,8 @@ async def get_disk_usage(
 
 
 def parse_network_metrics(results: list[_TrafficRow]) -> dict[str, object]:
-    """Parse network traffic metrics to extract meaningful statistics.
-
-    Args:
-        results: List of network traffic data points
-
-    Returns:
-        Parsed statistics including average, peak input/output in bps and pps
-    """
+    """Summarize traffic rows (average and peak input/output in bps and pps);
+    `available` is False when there are no rows."""
     if not results:
         return {'available': False, 'message': 'No network data available'}
 
@@ -930,18 +909,12 @@ async def get_alert_rules(
     )
 
 
-def _is_http_error(result: object) -> bool:
-    return isinstance(result, dict) and 'error' in result
-
-
 def _find_record_id(
     result: object, predicate: Callable[[_ProcRecord], bool]
 ) -> str | None:
-    """Return the id of the first /api/proc/ record matching predicate.
-
-    Those endpoints answer with a plain list or a paginated `results` dict.
-    """
-    if isinstance(result, dict) and not _is_http_error(result):
+    """Return the id of the first /api/proc/ record matching predicate; the
+    answer is a plain list or a paginated `results` dict."""
+    if isinstance(result, dict) and not is_http_error(result):
         result = result.get('results')
     if not isinstance(result, list):
         return None
@@ -977,10 +950,8 @@ _MAX_INTERFACE_PAGES = 20  # with page_size=100, at most 2000 interfaces
 async def _list_all_interfaces(
     *, region: str, workspace: str, token: str | None, server_id: str
 ) -> list[JsonValue] | dict[str, JsonValue]:
-    """Collect a server's /api/proc/interfaces/ records, or return the error dict.
-
-    `next` is a page number; paging stops after `_MAX_INTERFACE_PAGES` pages.
-    """
+    """Collect a server's /api/proc/interfaces/ records, or return the error
+    dict; paging stops after `_MAX_INTERFACE_PAGES` pages."""
     base_params: dict[str, QueryParam] = {'server': server_id, 'page_size': 100}
     params = base_params
     records: list[JsonValue] = []
@@ -1180,7 +1151,7 @@ async def get_server_metrics_summary(
 
     if root_partition_id:
         disk_summary = extract_summary(metric_results['disk'], 'disk')
-    elif _is_http_error(partitions_result):
+    elif is_http_error(partitions_result):
         disk_summary = extract_summary(partitions_result, 'partition lookup')
         disk_summary['error'] = f'Partition lookup failed: {disk_summary["error"]}'
     else:
@@ -1191,7 +1162,7 @@ async def get_server_metrics_summary(
 
     if interface_id:
         network_summary = extract_summary(metric_results['network'], 'network')
-    elif _is_http_error(interfaces_result):
+    elif is_http_error(interfaces_result):
         network_summary = extract_summary(interfaces_result, 'interface lookup')
         network_summary['error'] = (
             f'Interface lookup failed: {network_summary["error"]}'
@@ -1223,9 +1194,20 @@ async def get_server_metrics_summary(
     description=(
         'Latest CPU, memory, disk usage, disk I/O and network reading for many '
         'servers in one request; each cell says whether the value is missing, '
-        "stale or not collected. For one server's time series use get_cpu_usage "
+        'stale or not collected. Order by metric_severity or -metric_severity '
+        '(critical first descending; ties keep the default order). Rows include '
+        'metric_severity (critical, warning, info or null without alert:read). '
+        'Cells include threshold (number or null) and operator (gte, lte or null); '
+        'both are null for disk-io and net, or without rule override read access. '
+        'summary counts critical, warning, stale and no_data over the filtered '
+        'set before pagination; critical and warning are null without alert:read, '
+        'and warning excludes critical servers. '
+        "For one server's time series use get_cpu_usage "
         "etc.; for one server's detail use get_server_metrics_summary. Requires "
-        'alpacon-server 2.37.0 or later.'
+        'alpacon-server 2.37.0 or later. Severity ordering, metric_severity, '
+        'threshold, operator and summary require server support; earlier '
+        'deployments ignore that ordering (default order) and omit those fields; '
+        'without alert:read the ordering is ignored too.'
     ),
     annotations=READ_ONLY,
     meta={
@@ -1251,6 +1233,10 @@ async def list_latest_metrics(
     metric cells added: the filters, search, and pagination are `list_servers`'
     own, plus `state` and `ordering`.
 
+    Severity ordering, metric_severity, threshold, operator, and summary require
+    server support; earlier deployments ignore that ordering (default order) and
+    omit those fields, and without alert:read the ordering is ignored too.
+
     Args:
         workspace: Workspace name. Required parameter
         region: Region (ap1, us1). Auto-detected if not provided
@@ -1264,18 +1250,28 @@ async def list_latest_metrics(
             server. (optional)
         ordering: Sort field, one of VALID_LATEST_METRIC_ORDERING_FIELDS
             (name, starred, sampled_at, cpu, memory, disk_usage/disk-usage,
-            disk_io/disk-io, net), optionally prefixed with "-" for descending.
-            A server with no value for the field sorts last. (optional)
+            disk_io/disk-io, net, metric_severity), optionally prefixed with "-"
+            for descending. A server with no value for the field sorts last.
+            -metric_severity puts critical first; ties keep the default order.
+            (optional)
         page: Page number for pagination (optional)
         page_size: Number of results per page, up to 100 (optional)
 
     Returns:
-        Paginated response: `count`, `current`, `next`, `previous`, `last`, and
-        `results` — each result an `{id, name, is_connected, cpu, memory,
-        "disk-usage", "disk-io", net}` row, every metric cell an object with
+        Paginated response: `count`, `current`, `next`, `previous`, `last`,
+        `summary`, and `results`—each result an `{id, name, is_connected,
+        metric_severity, cpu, memory, "disk-usage", "disk-io", net}` row,
+        every metric cell an object with
         `value`, `unit` ("percent" or "bytes_per_sec"), `sampled_at`, `device`,
-        `collected`, `reason`, and `interval_s` (`value`, `sampled_at`, and
-        `device` are null when no sample is stored for that family).
+        `collected`, `reason`, `interval_s`, `threshold`, and `operator`
+        (`value`, `sampled_at`, and `device` are null when no sample is stored
+        for that family).
+        `metric_severity` is critical, warning, info, or null without alert:read.
+        `threshold` is a number or null; `operator` is gte, lte, or null. Both
+        are null for disk-io and net, or without rule override read access.
+        `summary` counts critical, warning, stale, and no_data over the filtered
+        set before pagination. `critical` and `warning` are null without
+        alert:read; `warning` excludes servers counted as critical.
     """
     if state is not None and state not in VALID_LATEST_METRIC_STATES:
         return format_validation_error('state', state, _LATEST_STATE_SENTENCE)

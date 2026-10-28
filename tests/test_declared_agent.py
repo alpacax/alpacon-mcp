@@ -3,12 +3,13 @@
 import importlib
 from http import HTTPStatus
 from types import SimpleNamespace
-from typing import Any
+from typing import cast
 
 import h11
 import pytest
 from mcp.client.client import Client
 from mcp.server import MCPServer
+from mcp.server.context import ServerRequestContext
 from mcp.types import Implementation
 
 import server as server_module
@@ -49,20 +50,26 @@ def stdio(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(declared_agent_module, '_environment_fallback', True)
 
 
-def _no_client_info() -> Any:
-    return SimpleNamespace(session=SimpleNamespace(client_params=None))
+type _Context = ServerRequestContext[object, object]
 
 
-def _ctx(name: str, version: str) -> Any:
+def _no_client_info() -> _Context:
+    return cast(_Context, SimpleNamespace(session=SimpleNamespace(client_params=None)))
+
+
+def _ctx(name: str, version: str) -> _Context:
     """A request context whose session carries this clientInfo."""
     info = Implementation(name=name, version=version)
-    return SimpleNamespace(
-        session=SimpleNamespace(client_params=SimpleNamespace(client_info=info))
+    return cast(
+        _Context,
+        SimpleNamespace(
+            session=SimpleNamespace(client_params=SimpleNamespace(client_info=info))
+        ),
     )
 
 
-async def _headers_inside(ctx: Any) -> dict[str, str]:
-    async def call_next(_: Any) -> dict[str, str]:
+async def _headers_inside(ctx: _Context) -> dict[str, str]:
+    async def call_next(_: object) -> dict[str, str]:
         return declared_agent_headers()
 
     result = await capture_declared_agent(ctx, call_next)
@@ -138,8 +145,7 @@ class TestHeaderSafety:
     @pytest.mark.asyncio
     async def test_oversized_values_are_cut_to_the_server_limits(self) -> None:
         """The server would truncate them too, but only if the request reaches it.
-
-        The limits are written out because they are alpacon-server's, not ours.
+        The limits are alpacon-server's, so they are written out, not imported.
         """
         headers = await _headers_inside(_ctx('a' * 100_000, '1' * 100_000))
         assert headers == {
@@ -198,7 +204,7 @@ class TestHTTPClientForwards:
             status_code=HTTPStatus.OK, json_data={'result': 'ok'}
         )
 
-        async def call_next(_: Any) -> None:
+        async def call_next(_: object) -> None:
             await http_client.get(
                 region='ap1', workspace='ws', endpoint='/api/test/', token='t'
             )
@@ -337,7 +343,10 @@ class TestEnvironmentFallback:
         ],
     )
     def test_only_stdio_turns_the_fallback_on(
-        self, monkeypatch: pytest.MonkeyPatch, transport: Any, enabled: bool
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        transport: server_module.Transport,
+        enabled: bool,
     ) -> None:
         monkeypatch.setattr(importlib, 'import_module', lambda _: None)
         monkeypatch.setattr(resources_module, 'register_resources', lambda _: None)

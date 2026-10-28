@@ -1,20 +1,5 @@
-"""ASGI middleware to turn an upstream API 401 into an MCP transport challenge.
-
-When the Alpacon API returns 401, this middleware intercepts the error and
-answers with a WWW-Authenticate challenge that starts the MCP client's OAuth
-re-authentication: 401 for an expired credential, 403 insufficient_scope when
-the API wants MFA (see ``_send_challenge``).
-
-The middleware plants an empty signal dict in a ContextVar at the start of
-each request; ``http_client`` and the MFA pre-check mutate that same object
-from the tool handler's task. The signal is read when the first body chunk
-arrives, while the start message is still held; a response with no body
-falls back to a check after ``self.app()`` returns. SDK 2.x turns a handler
-exception into a wire response, so ``UpstreamAuthError`` only reaches the
-``except`` branch from a caller that invokes this app directly.
-
-Only active in remote (streamable-http) mode where OAuth is enabled.
-"""
+"""ASGI middleware that turns an upstream API 401 into an MCP re-auth challenge.
+Active only in remote mode with OAuth enabled; ``_send_challenge`` has the MFA 403."""
 
 import hashlib
 import json
@@ -35,8 +20,8 @@ logger = get_logger('auth_error_middleware')
 
 
 class _Decision(Enum):
-    """Whether the response was replaced with a 401, forwarded as-is, or
-    forwarded because the cooldown suppressed the 401."""
+    """Outcome for one response: replaced with a challenge, forwarded, or forwarded
+    because the cooldown suppressed the challenge."""
 
     PENDING = auto()
     REPLACED = auto()
@@ -45,14 +30,8 @@ class _Decision(Enum):
 
 
 class UpstreamAuthErrorMiddleware:
-    """Replace HTTP 200 with a challenge when upstream API requires re-authentication.
-
-    Uses a per-client cooldown timer to prevent infinite re-auth loops:
-    after emitting a challenge for a given client, subsequent upstream auth errors
-    from that client within the cooldown period leave the app's own response
-    alone instead of raising a second one. Cooldown is tracked per client (by
-    JWT token hash) so one client's re-auth does not suppress another's.
-    """
+    """Replace the app's response with a re-auth challenge when upstream signals a 401.
+    A per-client cooldown (by JWT hash) lets the app's response pass, stopping loops."""
 
     def __init__(
         self,
@@ -79,12 +58,7 @@ class UpstreamAuthErrorMiddleware:
 
     @staticmethod
     def _extract_token_key(scope: Scope) -> str | None:
-        """Extract JWT token from Authorization header and derive a cooldown key.
-
-        Returns None if no Bearer token is present. Handles the Bearer scheme
-        case-insensitively per RFC 6750 and decodes defensively to avoid
-        UnicodeDecodeError on malformed headers.
-        """
+        """Return a cooldown key (hash of the Bearer token), or None without one."""
         headers = dict(scope.get('headers', []))
         auth_raw = headers.get(b'authorization', b'')
         if not auth_raw:
@@ -120,11 +94,8 @@ class UpstreamAuthErrorMiddleware:
         cooldown_key: str | None,
         signal: request_signal.AuthSignal,
     ) -> None:
-        """Stream the app's response, replacing it with a 401 if the signal fires.
-
-        The start message is held until the signal is known: once it goes out,
-        neither the status nor WWW-Authenticate can be changed.
-        """
+        """Stream the app's response, replacing it with a challenge if the signal fires.
+        The start message is held until then, since it cannot be changed once sent."""
         logger.debug(
             '[DEBUG-MW] Request %s—cooldown_key=%s (None means no Bearer header)',
             scope.get('path', '?'),
@@ -211,12 +182,8 @@ class UpstreamAuthErrorMiddleware:
         signal: request_signal.AuthSignal,
         cooldown_key: str | None,
     ) -> bool:
-        """Answer with the challenge, unless this client was told to re-authenticate already.
-
-        The cooldown stops a client from looping on a challenge it cannot satisfy.
-        Returns False without sending anything when the cooldown is active, leaving
-        the caller to pass the app's own response through.
-        """
+        """Send the challenge unless this client's cooldown is active; then send nothing
+        and return False so the caller passes the app's own response through."""
         now = time.monotonic()
         self._prune_expired_cooldowns(now)
         client_key = cooldown_key or '_anonymous'
@@ -270,14 +237,8 @@ class UpstreamAuthErrorMiddleware:
         )
 
     async def _send_challenge(self, send: Send, *, mfa_required: bool = False) -> None:
-        """Send the re-authentication challenge.
-
-        An MFA signal answers 403 insufficient_scope with 'mfa' in the scope: MCP
-        clients refresh on a 401 and drop its scope while the refresh succeeds,
-        and a refreshed token still lacks MFA. On insufficient_scope they skip
-        the refresh and run /oauth/authorize with the union of scopes, where the
-        proxy turns 'mfa' into the two-stage MFA flow. Anything else is a 401.
-        """
+        """Send a 401 invalid_token, or 403 insufficient_scope with an 'mfa' scope when
+        MFA is needed, so clients re-run /oauth/authorize instead of refreshing."""
         scopes = 'openid profile email offline_access'
         error = 'invalid_token'
         status = HTTPStatus.UNAUTHORIZED

@@ -1,9 +1,9 @@
-"""Server management tools for Alpacon MCP server - Refactored version."""
+"""Server management tools for Alpacon MCP server."""
 
 from utils.api_call import http_call_response
-from utils.common import build_list_params
+from utils.common import build_list_params, exclude_none
 from utils.decorators import mcp_tool_handler
-from utils.error_handler import format_validation_error, validate_server_id_format
+from utils.error_handler import format_validation_error, uuid_field_error
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ_ONLY
 from utils.types import ToolErrorResponse, ToolResponse
@@ -218,32 +218,18 @@ async def create_server_note(
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
-    """Create a new note for a specific server.
-
-    Args:
-        server_id: Server ID
-        content: Note content; capped at NOTE_CONTENT_MAX_LENGTH characters
-        workspace: Workspace name. Required parameter
-        private: Hide the note from other workspace members (optional)
-        pinned: Pin the note; a server holds at most three pinned notes (optional)
-        mentioned_users: User UUIDs to notify; accepted on create only (optional)
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        Note creation response
-    """
+    """Create a server note; content is capped at NOTE_CONTENT_MAX_LENGTH and
+    mentioned_users is accepted on create only."""
     if len(content) > NOTE_CONTENT_MAX_LENGTH:
         return format_validation_error('content', content, _CONTENT_SENTENCE)
 
     token = kwargs.get('token')
 
-    note_data: dict[str, object] = {'server': server_id, 'content': content}
-    if private is not None:
-        note_data['private'] = private
-    if pinned is not None:
-        note_data['pinned'] = pinned
-    if mentioned_users is not None:
-        note_data['mentioned_users'] = mentioned_users
+    note_data: dict[str, object] = {
+        'server': server_id,
+        'content': content,
+        **exclude_none(private=private, pinned=pinned, mentioned_users=mentioned_users),
+    }
 
     # Make async call to create note
     return await http_call_response(
@@ -312,35 +298,16 @@ async def update_server_note(
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
-    """Update an existing server note.
-
-    Args:
-        note_id: Note ID
-        workspace: Workspace name. Required parameter
-        content: New content; capped at NOTE_CONTENT_MAX_LENGTH characters (optional)
-        private: Hide the note from other workspace members (optional)
-        pinned: Pin the note; a server holds at most three pinned notes (optional)
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        Server note update response
-
-    Note:
-        No mentioned_users here: the server routes only `create` to
-        NoteCreateSerializer, and the update path never sees that field.
-    """
+    """Partially update a note; errors when no field is given. Takes no
+    mentioned_users (create only)."""
     if content is not None and len(content) > NOTE_CONTENT_MAX_LENGTH:
         return format_validation_error('content', content, _CONTENT_SENTENCE)
 
     token = kwargs.get('token')
 
-    update_data: dict[str, object] = {}
-    if content is not None:
-        update_data['content'] = content
-    if private is not None:
-        update_data['private'] = private
-    if pinned is not None:
-        update_data['pinned'] = pinned
+    update_data: dict[str, object] = exclude_none(
+        content=content, private=private, pinned=pinned
+    )
 
     if not update_data:
         return format_validation_error(
@@ -372,16 +339,7 @@ async def update_server_note(
 async def delete_server_note(
     note_id: str, workspace: str, region: str = '', **kwargs: str
 ) -> ToolResponse:
-    """Delete a server note.
-
-    Args:
-        note_id: Note ID
-        workspace: Workspace name. Required parameter
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        Server note delete response
-    """
+    """Delete a server note."""
     token = kwargs.get('token')
 
     return await http_call_response(
@@ -430,19 +388,8 @@ async def _server_action(
 async def restart_agent(
     server_id: str, workspace: str, region: str = '', force: bool = False, **kwargs: str
 ) -> ToolResponse:
-    """Restart the Alpacon agent on a server.
-
-    Args:
-        server_id: Server ID
-        workspace: Workspace name. Required parameter
-        region: Region (ap1, us1). Auto-detected if not provided
-        force: Run even when the server is busy with an open Websh/WebFTP
-            session or an in-flight command, tearing that work down
-            (default: False)
-
-    Returns:
-        Agent restart response
-    """
+    """Restart the agent; force=True runs it even while the host is busy,
+    tearing down open Websh/WebFTP sessions and in-flight commands."""
     token = kwargs.get('token')
 
     return await _server_action(
@@ -469,19 +416,8 @@ async def restart_agent(
 async def upgrade_agent(
     server_id: str, workspace: str, region: str = '', force: bool = False, **kwargs: str
 ) -> ToolResponse:
-    """Upgrade the Alpacon agent on a server to the latest version.
-
-    Args:
-        server_id: Server ID
-        workspace: Workspace name. Required parameter
-        region: Region (ap1, us1). Auto-detected if not provided
-        force: Run even when the server is busy with an open Websh/WebFTP
-            session or an in-flight command, tearing that work down
-            (default: False)
-
-    Returns:
-        Agent upgrade response
-    """
+    """Upgrade the agent; force=True runs it even while the host is busy,
+    tearing down open Websh/WebFTP sessions and in-flight commands."""
     token = kwargs.get('token')
 
     return await _server_action(
@@ -515,16 +451,7 @@ async def upgrade_agent(
 async def install_pam(
     server_id: str, workspace: str, region: str = '', **kwargs: str
 ) -> ToolResponse:
-    """Install alpamon-pam on a server.
-
-    Args:
-        server_id: Server ID
-        workspace: Workspace name. Required parameter
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        PAM install response
-    """
+    """Install alpamon-pam on a server."""
     token = kwargs.get('token')
 
     return await _server_action(
@@ -549,16 +476,7 @@ async def install_pam(
 async def update_information(
     server_id: str, workspace: str, region: str = '', **kwargs: str
 ) -> ToolResponse:
-    """Trigger system information update on a server.
-
-    Args:
-        server_id: Server ID
-        workspace: Workspace name. Required parameter
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        Update information response
-    """
+    """Trigger system information update on a server."""
     token = kwargs.get('token')
 
     return await _server_action(
@@ -596,31 +514,13 @@ async def update_server(
     offline_alert_enabled: bool | None = None,
     **kwargs: str,
 ) -> ToolResponse:
-    """Update an existing server record.
-
-    Args:
-        server_id: Server UUID
-        workspace: Workspace name. Required parameter
-        name: New server name (optional)
-        description: New server description (optional)
-        region: Region (ap1, us1). Auto-detected if not provided
-        offline_alert_enabled: Toggle this server's own offline-alert
-            delivery, independent of any workspace rule; defaults to true on
-            the server. Refused when the caller is the server's own agent
-            credential (optional)
-
-    Returns:
-        Updated server data
-    """
+    """Partially update a server (name, description, offline_alert_enabled);
+    errors when none is given. The agent's own credential cannot set the toggle."""
     token = kwargs.get('token')
 
-    update_data: dict[str, object] = {}
-    if name is not None:
-        update_data['name'] = name
-    if description is not None:
-        update_data['description'] = description
-    if offline_alert_enabled is not None:
-        update_data['offline_alert_enabled'] = offline_alert_enabled
+    update_data: dict[str, object] = exclude_none(
+        name=name, description=description, offline_alert_enabled=offline_alert_enabled
+    )
 
     if not update_data:
         return format_validation_error(
@@ -665,22 +565,8 @@ async def unregister_server(
     purge_provisioned_accounts: bool = False,
     **kwargs: str,
 ) -> ToolResponse:
-    """Unregister a server from the workspace.
-
-    Args:
-        server_id: Server UUID
-        workspace: Workspace name. Required parameter
-        region: Region (ap1, us1). Auto-detected if not provided
-        auto: Remove the agent from a still-connected host. False refuses the
-            removal unless the host is already disconnected (default: False,
-            matching the server)
-        purge_provisioned_accounts: Also delete the OS accounts Alpacon
-            provisioned on the host. Skipped when the host is already
-            disconnected (default: False)
-
-    Returns:
-        Unregister confirmation
-    """
+    """Unregister a server; auto=True removes the agent from a connected host,
+    purge_provisioned_accounts deletes its OS accounts (skipped if disconnected)."""
     token = kwargs.get('token')
 
     return await http_call_response(
@@ -708,17 +594,7 @@ async def unregister_server(
 async def star_server(
     server_id: str, status: bool, workspace: str, region: str = '', **kwargs: str
 ) -> ToolResponse:
-    """Set star status on a server.
-
-    Args:
-        server_id: Server UUID
-        status: True to star, False to unstar
-        workspace: Workspace name. Required parameter
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        Star update response
-    """
+    """Set star status on a server."""
     token = kwargs.get('token')
 
     return await http_call_response(
@@ -797,22 +673,10 @@ async def create_registration_token(
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
-    """Create a server registration token.
-
-    Args:
-        workspace: Workspace name. Required parameter
-        name: Token name
-        description: Optional token description
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        Created registration token data
-    """
+    """Create a server registration token."""
     token = kwargs.get('token')
 
-    data: dict[str, object] = {'name': name}
-    if description is not None:
-        data['description'] = description
+    data: dict[str, object] = {'name': name, **exclude_none(description=description)}
 
     return await http_call_response(
         http_client.post,
@@ -838,19 +702,10 @@ async def create_registration_token(
 async def delete_registration_token(
     token_id: str, workspace: str, region: str = '', **kwargs: str
 ) -> ToolResponse:
-    """Delete a server registration token.
-
-    Args:
-        token_id: Registration token UUID
-        workspace: Workspace name. Required parameter
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        Deletion confirmation
-    """
+    """Delete a server registration token."""
     token = kwargs.get('token')
 
-    err = _validate_token_id(token_id)
+    err = uuid_field_error('token_id', token_id)
     if err:
         return err
 
@@ -887,30 +742,22 @@ async def get_registration_guide(
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
-    """Get agent installation guide for a platform and registration token.
-
-    Args:
-        token_id: Registration token UUID to embed in the install script
-        workspace: Workspace name. Required parameter
-        platform: Target platform ("debian" | "rhel" | "suse" | "darwin" | "windows")
-        server_name: Optional server name to pre-configure during installation
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        Installation guide with commands/instructions
-    """
+    """Get the install script for a registration token; platform must be one of
+    VALID_PLATFORMS."""
     token = kwargs.get('token')
 
-    err = _validate_token_id(token_id)
+    err = uuid_field_error('token_id', token_id)
     if err:
         return err
     err = _validate_platform(platform)
     if err:
         return err
 
-    data: dict[str, object] = {'platform': platform, 'token': token_id}
-    if server_name is not None:
-        data['server_name'] = server_name
+    data: dict[str, object] = {
+        'platform': platform,
+        'token': token_id,
+        **exclude_none(server_name=server_name),
+    }
 
     return await http_call_response(
         http_client.post,
@@ -930,15 +777,5 @@ def _validate_platform(platform: str) -> ToolErrorResponse | None:
             'platform',
             platform,
             f'Must be one of: {", ".join(sorted(VALID_PLATFORMS))}',
-        )
-    return None
-
-
-def _validate_token_id(token_id: str) -> ToolErrorResponse | None:
-    if not validate_server_id_format(token_id):
-        return format_validation_error(
-            'token_id',
-            token_id,
-            'Must be a valid UUID. Example: 550e8400-e29b-41d4-a716-446655440000',
         )
     return None

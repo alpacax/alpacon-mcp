@@ -346,7 +346,7 @@ The upload fails if the directory does not exist or the transfer user cannot wri
 
 **Hosted mode has no access to your disk.** `webftp_upload_file` reads a local file, which only works when the server runs on your machine. From the hosted server, use `webftp_upload_content` with base64-encoded bytes instead.
 
-**Large folder downloads time out.** A folder downloads as a ZIP staged through S3; raise `ALPACON_MCP_WEBFTP_DOWNLOAD_TIMEOUT` (default 60 seconds) when staging takes longer, and use `webftp_check_status` to follow an in-flight transfer.
+**Large folder downloads time out.** A folder downloads as a ZIP the host uploads to S3, and `webftp_download_file` waits for that upload before it answers. When it takes longer than `ALPACON_MCP_WEBFTP_DOWNLOAD_TIMEOUT` (default 60 seconds), the call returns `download_timeout`; raise the setting, or follow the in-flight transfer with `webftp_check_status`.
 
 ---
 

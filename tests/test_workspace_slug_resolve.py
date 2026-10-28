@@ -1,8 +1,5 @@
-"""A workspace URL slug may be renamed while its schema_name stays fixed.
-
-In JWT mode the `workspace` argument is matched against the token claim's
-`schema_name`. These tests pin that a renamed slug is resolved through the
-account service lookup first, and that every failure keeps the rejection.
+"""A workspace URL slug may be renamed while its schema_name stays fixed. In JWT mode a
+renamed slug resolves via the account service first; every failure keeps the rejection.
 """
 
 from unittest.mock import AsyncMock, MagicMock, patch

@@ -1,7 +1,5 @@
-"""Integration tests for error scenarios.
-
-Tests error handling through the full request path: timeout after retries,
-malformed JSON, empty body, connection errors, and various HTTP status codes.
+"""Error handling through the full request path. Covers timeouts after retries,
+malformed JSON, empty bodies, connection errors, status codes.
 """
 
 from http import HTTPStatus
@@ -17,8 +15,6 @@ pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
 
 class TestTimeoutScenarios:
-    """Test timeout handling through the full path."""
-
     async def test_timeout_after_retries(self, patched_http_client, no_sleep):
         """Timeout on every attempt exhausts retries and returns timeout error."""
         call_count = 0
@@ -45,8 +41,6 @@ class TestTimeoutScenarios:
 
 
 class TestMalformedResponses:
-    """Test handling of malformed or unexpected responses."""
-
     async def test_malformed_json_response(self, patched_http_client):
         """Response with invalid JSON body returns unexpected error."""
 
@@ -93,8 +87,6 @@ class TestMalformedResponses:
 
 
 class TestConnectionErrors:
-    """Test connection error handling."""
-
     async def test_connect_error_retried_then_fails(
         self, patched_http_client, no_sleep
     ):
@@ -123,8 +115,6 @@ class TestConnectionErrors:
 
 
 class TestHTTPStatusErrorHandling:
-    """Test specific HTTP status code handling."""
-
     async def test_400_returns_error_not_retried(self, patched_http_client, no_sleep):
         """400 Bad Request returns error without retry."""
         call_count = 0

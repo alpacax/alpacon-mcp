@@ -1,9 +1,14 @@
 """Work Session management tools for Alpacon MCP server."""
 
+from typing import Annotated
+
+from pydantic import Field
+
 from utils.api_call import http_call_response
 from utils.common import (
     build_list_params,
     error_response,
+    exclude_none,
     pending_approval_response,
     success_response,
     unwrap_http_result,
@@ -34,6 +39,20 @@ _INCLUDE_RECORDS_REFUSED = (
 _RECORD_MAX_PAGE_SIZE = 16
 _RECORD_DEFAULT_PAGE_SIZE = 8
 
+_SCOPES_DESCRIPTION = (
+    'Operations the session allows: "command" (execute_command, execute_file), '
+    '"webftp" (file transfers), "tunnel" (port forwarding), "sudo" (privilege elevation). '
+    'Request "sudo" only when the work genuinely requires root.'
+)
+
+_SESSION_DESCRIPTION = (
+    'What you are doing and why, written as prose for the human who approves the '
+    'session. It is NOT a command list and nothing in it is executed—commands run '
+    'via execute_command once the session is active. Be specific: name the targets, '
+    'the action, and what will not be touched; a bare word like "maintenance" gives '
+    'the approver nothing to decide on. Markdown supported.'
+)
+
 
 @mcp_tool_handler(
     description=(
@@ -46,14 +65,6 @@ _RECORD_DEFAULT_PAGE_SIZE = 8
         'human approves out-of-band (Alpacon web console or Slack). Do not open another '
         'session; call work_session_get and proceed once data.status is active, or stop '
         'if it is rejected, cancelled, expired, revoked, or completed, since those never become active. '
-        'description: what you are doing and why, written as prose for the human who '
-        'approves the session. It is NOT a command list and nothing in it is executed—'
-        'commands run via execute_command once the session is active. Be specific: '
-        'name the targets, the action, and what will not be touched; a bare word like '
-        '"maintenance" gives the approver nothing to decide on. Markdown supported. '
-        'scopes declares which operations are allowed: '
-        '"command" (execute_command, execute_file), "webftp" (file transfers), '
-        '"tunnel" (port forwarding), "sudo" (privilege elevation). '
         'servers is the list of target server UUIDs. '
         'expires_at is an ISO 8601 datetime string. '
         'target_account_username (optional) is the single OS account the commands will run '
@@ -69,10 +80,10 @@ _RECORD_DEFAULT_PAGE_SIZE = 8
 )
 async def work_session_create(
     workspace: str,
-    scopes: list[str],
+    scopes: Annotated[list[str], Field(description=_SCOPES_DESCRIPTION)],
     servers: list[str],
     expires_at: str,
-    description: str,
+    description: Annotated[str, Field(description=_SESSION_DESCRIPTION)],
     title: str | None = None,
     region: str = '',
     target_account_username: str | None = None,
@@ -240,8 +251,6 @@ async def work_session_list(
         'expires_at is only honored for pending sessions—for approved/active sessions '
         'it is ignored, so use work_session_extend instead. '
         'Terminal sessions (completed/rejected/cancelled/expired/revoked) cannot be updated. '
-        'description stays prose for the human approver—it is NOT a command list and '
-        'nothing in it is executed; commands run via execute_command. '
         'Related: work_session_get (check status), work_session_extend (extend expiry only).'
     ),
     annotations=IDEMPOTENT_WRITE,
@@ -253,8 +262,14 @@ async def work_session_update(
     session_id: str,
     workspace: str,
     title: str | None = None,
-    description: str | None = None,
-    scopes: list[str] | None = None,
+    description: Annotated[str | None, Field(description=_SESSION_DESCRIPTION)] = None,
+    scopes: Annotated[
+        list[str] | None,
+        Field(
+            description='Replaces the whole scope list, so list every scope the '
+            'session keeps. ' + _SCOPES_DESCRIPTION
+        ),
+    ] = None,
     servers: list[str] | None = None,
     expires_at: str | None = None,
     region: str = '',
@@ -263,17 +278,13 @@ async def work_session_update(
     """Partially update a Work Session."""
     token = kwargs.get('token')
 
-    data: dict[str, str | list[str]] = {}
-    if title is not None:
-        data['title'] = title
-    if description is not None:
-        data['description'] = description
-    if scopes is not None:
-        data['scopes'] = scopes
-    if servers is not None:
-        data['servers'] = servers
-    if expires_at is not None:
-        data['expires_at'] = expires_at
+    data: dict[str, str | list[str]] = exclude_none(
+        title=title,
+        description=description,
+        scopes=scopes,
+        servers=servers,
+        expires_at=expires_at,
+    )
 
     if not data:
         return error_response(
@@ -422,23 +433,8 @@ async def work_session_timeline(
     include_records: bool | None = None,
     **kwargs: str,
 ) -> ToolResponse:
-    """Get the timeline of a Work Session, following the server's cursor.
-
-    Args:
-        session_id: Work Session ID
-        workspace: Workspace name. Required parameter
-        region: Region (ap1, us1). Auto-detected if not provided
-        cursor: Opaque cursor from a previous call's `pagination.next_cursor`,
-            which resumes the walk where the bound stopped it (optional)
-        page_size: Items per request, 1 to 500 (optional); the server's
-            default is 100
-        include_records: Retired, and declared only to be refused. Any value,
-            true or false, is answered with a validation error
-
-    Returns:
-        The merged timeline, plus a `pagination` report saying whether the walk
-        read the session to its end
-    """
+    """Read the timeline, following the cursor up to the request bound; `page_size`
+    is 1 to 500. `include_records` is refused: use work_session_records."""
     if include_records is not None:
         return format_validation_error(
             'include_records', include_records, _INCLUDE_RECORDS_REFUSED
@@ -506,24 +502,8 @@ async def work_session_records(
     page_size: int = _RECORD_DEFAULT_PAGE_SIZE,
     **kwargs: str,
 ) -> ToolResponse:
-    """Read one page of one websh session's recording in a Work Session.
-
-    Args:
-        session_id: Work Session ID
-        websh_session_id: The websh session whose recording to read, as the
-            `id` of a `websh_session` item on work_session_timeline
-        workspace: Workspace name. Required parameter
-        region: Region (ap1, us1). Auto-detected if not provided
-        cursor: Opaque cursor from the previous page's `next` (optional);
-            omitted, the page starts at the beginning of the recording
-        page_size: Chunks asked for, 1 to 16 (optional, default 8); a byte
-            budget can still cut the page shorter
-
-    Returns:
-        The server's page as it answered it—`count`, `next`, `previous` and
-        the `results` chunks—where `next` is the cursor of the page after
-        this one and null only at the end of the recording
-    """
+    """Read one page of a Websh recording; pass `next` back as `cursor`, and only
+    `next: null` ends it. `page_size` is 1 to 16 (default 8); a byte cap can cut it."""
     if not 1 <= page_size <= _RECORD_MAX_PAGE_SIZE:
         return format_validation_error(
             'page_size', page_size, f'An integer from 1 to {_RECORD_MAX_PAGE_SIZE}.'

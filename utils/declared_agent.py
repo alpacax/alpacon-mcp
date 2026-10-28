@@ -1,34 +1,5 @@
-"""Carry the agent's self-reported clientInfo to alpacon-server.
-
-The agent names itself in MCP ``clientInfo`` (``name`` and ``version``), either
-once in the ``initialize`` handshake or, from protocol 2026-07-28, in every
-request's ``_meta``. The SDK exposes both the same way, on
-``session.client_params``. A server middleware binds it here for the request in
-flight, and the HTTP client forwards it in two headers.
-
-The value is self-reported and nobody checks it. alpacon-server records it as
-``declared_agent``, beside the channel it derived from the credential, and no
-gate reads it. Composition into ``name/version`` and sanitization happen on the
-server, so this module passes the values through, with three exceptions that
-keep a header sendable. Boundary whitespace is trimmed, since h11 refuses a
-value that starts or ends with it. Each value is cut to the server's own limit
-(64 for the name, 32 for the version), since an oversized header is refused
-before the server can truncate it. A value that still cannot travel as a header
-is left out: httpx refuses a non-ASCII value and h11 a newline, and either
-would fail the tool call.
-
-A stateless streamable-http server builds a fresh connection for each request,
-so a pre-2026 client's handshake does not reach the tool call there, and
-nothing is sent. Once that client speaks 2026-07-28, the value arrives on every
-request.
-
-Over stdio the server is a child of the agent and inherits its environment, so
-when a client sends no ``clientInfo`` name, the agent is declared from the same
-environment markers the Alpacon CLI reads (``utils.agent_environment``). Only
-the stdio transport turns this on: an HTTP server is not the agent's child, and
-its environment says nothing about who is calling. ``clientInfo`` always wins
-when it names the agent.
-"""
+"""Carry the agent's self-reported clientInfo to alpacon-server in two headers.
+Unverified; dropped if not header-safe, and stdio falls back to environment markers."""
 
 import os
 from contextvars import ContextVar
