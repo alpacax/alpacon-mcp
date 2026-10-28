@@ -39,6 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - The rules that bind one argument now sit on that argument's schema description instead of the tool description (#175): `description` and `scopes` on `work_session_create` and `work_session_update`, and `command` on `execute_command` and `execute_command_multi_server`. The four tool descriptions drop those sentences and keep the cost and routing guidance; the parameter descriptions also add rules the tool descriptions never stated: `command` must not be empty or whitespace-only, `sudo` scope is requested only when the work requires root, `work_session_update`'s `description` asks for the same specific statement as create's, and its `scopes` replaces the whole scope list. Arguments and responses are unchanged, so a client has nothing new to handle.
+- Sudo tool descriptions, denial hints, and next actions now describe the policy as session-authorized sudo and name the `session_authorized` field a human sets on the Work Session's sudo policy in the Alpacon web console. `request_sudo_policy` still cannot carry that field; tool names, parameters, error codes, and response shapes are unchanged, so clients parsing responses have nothing new to handle.
 - The `command_acl_moved` hint, the command ACL tool descriptions and the 403 command recovery hint
   keep pointing to the web console and, on a stdio server only, also name the ledger tools.
 - Remote mode reads the JWT and the workspace security settings more strictly, only for values the Alpacon API server and Auth0 do not send. A token whose `sub` or `scope` is not a string, or whose `exp` is not an integer, is refused, where a string `exp` used to be accepted. A malformed security setting takes its strictest reading: an `mfa_required_actions` that is not a list of strings requires MFA for every action, an `allowed_mfa_methods` that is not a list of strings lets no method satisfy MFA, and a non-numeric or boolean `mfa_timeout` counts no MFA as fresh. `list_workspaces` reports a non-string `auth0_id` from the workspaces claim as an empty string. In local mode, a top-level `token.json` value that is not an object, such as a `_comment` key, is no longer counted as a region or reported by `list_workspaces`, where it used to appear as a workspace named after its key, and saving a token keeps it in the file.
@@ -250,8 +251,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `status="pending_approval"` with category `SUDO_POLICY_REQUEST_PENDING`, so a client that already
   branches on the pending-approval shape needs no new handling. Omitting `users` scopes the
   approved policy to the requester alone rather than to the whole workspace, which is how the
-  server narrows an approved request. `allow_bypass_mfa` is deliberately not a parameter: the
-  server refuses it on this endpoint.
+  server narrows an approved request. `session_authorized` (formerly `allow_bypass_mfa`) is
+  deliberately not a parameter: the server refuses it on this endpoint.
 - `--toolsets` CLI argument (and `ALPACON_MCP_TOOLSETS` env var) for local
   stdio/SSE mode: selectively register toolsets; default remains `all`
   (#34). Remote mode is unaffected and always registers every tool.

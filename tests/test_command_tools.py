@@ -110,8 +110,10 @@ class TestSudoDenialHint:
         }
         hint = self._hint(out)
         assert hint is not None
-        # vs SUDO_NO_WORKSESSION_POLICY: a policy matched, just not a bypass one.
-        assert 'allow_bypass_mfa' in hint
+        # A policy matched, but it does not authorize sudo for the session.
+        assert 'session-authorized sudo policy' in hint
+        assert 'session_authorized' in hint
+        assert 'Alpacon web console' in hint
 
     def test_intent_deviation(self):
         out = {'result': 'Alpacon denied this sudo command (SUDO_INTENT_DEVIATION).\n'}

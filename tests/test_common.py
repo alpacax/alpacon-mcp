@@ -63,9 +63,10 @@ class TestSudoDenialNextActions:
     def test_policy_mfa_required_names_the_policy_edit(self):
         # _DEFAULT_NEXT_ACTION is SUDO_APPROVAL_REQUIRED's own text, so a key
         # silently pointing at it still passes a non-emptiness check.
-        assert (
-            'allow_bypass_mfa' in _NEXT_ACTION_BY_CATEGORY['SUDO_POLICY_MFA_REQUIRED']
-        )
+        text = _NEXT_ACTION_BY_CATEGORY['SUDO_POLICY_MFA_REQUIRED']
+        assert 'session-authorized sudo policy' in text
+        assert 'session_authorized' in text
+        assert 'Alpacon web console' in text
 
     def test_intent_deviation_states_both_paths(self):
         text = _NEXT_ACTION_BY_CATEGORY['SUDO_INTENT_DEVIATION']

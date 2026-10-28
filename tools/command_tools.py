@@ -98,14 +98,14 @@ _COMMAND_DESCRIPTION = (
 # guidance only—the server never sends the risk score or reasoning to a client.
 _SUDO_DENIAL_HINTS: dict[str, str] = {
     'SUDO_NO_WORKSESSION_POLICY': (
-        'sudo was denied: this command is not covered by an MFA-bypass policy '
-        'in the Work Session. You can ask for a policy with '
+        'sudo was denied: this command is not covered by a session-authorized sudo '
+        'policy in the Work Session. You can ask for a policy with '
         'request_sudo_policy, but an admin has to approve that request before '
-        'it takes effect, and the request cannot carry MFA bypass—the server '
-        'refuses it on that endpoint. A bypass policy still needs a human, who '
-        'sets allow_bypass_mfa on a Work Session policy in the Alpacon web '
-        "console or with the CLI's 'work-session update --sudo'. Re-run once "
-        'the policy is live.'
+        'it takes effect, and the request cannot carry session-authorized sudo—the '
+        'server refuses it on that endpoint. A session-authorized sudo policy still '
+        'needs a human, who sets session_authorized on a Work Session sudo policy '
+        "in the Alpacon web console or with the CLI's 'work-session update "
+        "--sudo'. Re-run once the policy is live."
     ),
     'SUDO_PRESENCE_REQUIRED': (
         'sudo needs a recent human MFA: a human must complete a step-up, then '
@@ -121,10 +121,11 @@ _SUDO_DENIAL_HINTS: dict[str, str] = {
     ),
     'SUDO_POLICY_MFA_REQUIRED': (
         'sudo was denied: a Work Session sudo policy covers this command, but '
-        'it is not an MFA-bypass policy and a command runs non-interactively, '
-        'so it can never supply MFA. A human must set allow_bypass_mfa on that '
-        'policy (enterprise plan; the policy must be tied to a usable Work '
-        'Session). Re-run once it is set.'
+        'it is not a session-authorized sudo policy and a command runs '
+        'non-interactively, so it can never supply MFA. A human must set '
+        'session_authorized on that policy in the Alpacon web console '
+        '(enterprise plan; the policy must be tied to a usable Work Session). '
+        'Re-run once it is set.'
     ),
     'SUDO_INTENT_DEVIATION': (
         'sudo was denied: this command was judged off-purpose for the Work '

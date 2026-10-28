@@ -85,9 +85,10 @@ _NEXT_ACTION_BY_CATEGORY: dict[str, str] = {
     'SUDO_NO_WORKSESSION_POLICY': (
         'This command is not covered by the Work Session sudo policy. You can '
         'submit a request with request_sudo_policy, but a human must approve it '
-        'before it takes effect, and an MFA-bypass policy cannot be requested '
-        'that way at all. Retry once the policy is live; you cannot grant it '
-        'yourself.'
+        'before it takes effect, and a session-authorized sudo policy cannot be '
+        'requested that way at all. A human must set session_authorized on the '
+        'Work Session sudo policy in the Alpacon web console. Retry once the '
+        'policy is live; you cannot grant it yourself.'
     ),
     'SUDO_POLICY_REQUEST_PENDING': (
         'The policy does not exist yet: an admin must approve this request '
@@ -96,9 +97,10 @@ _NEXT_ACTION_BY_CATEGORY: dict[str, str] = {
         'resubmit, which only creates a duplicate request.'
     ),
     'SUDO_POLICY_MFA_REQUIRED': (
-        'A sudo policy covers this command but is not an MFA-bypass policy, and '
-        'a command runs non-interactively so it can never supply MFA. A human '
-        'must set allow_bypass_mfa on the covering Work Session sudo policy '
+        'A sudo policy covers this command but is not a session-authorized sudo '
+        'policy, and a command runs non-interactively so it can never supply MFA. '
+        'A human must set session_authorized on the covering Work Session sudo '
+        'policy in the Alpacon web console '
         '(enterprise plan, and the policy must be tied to a usable Work '
         'Session), then retry. You cannot grant it yourself.'
     ),
