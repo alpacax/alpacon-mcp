@@ -13,6 +13,7 @@ from utils.common import (
     build_list_params,
     error_response,
     expect_json_object,
+    is_http_error,
     json_records,
     resolve_time_window,
     success_response,
@@ -103,7 +104,8 @@ _NEXT_PAGE = TypeAdapter(_NextPage)
 
 
 def _metric_rows[R](adapter: TypeAdapter[list[R]], result: JsonValue) -> list[R]:
-    """The time-series rows of a /api/metrics/ answer; raises on a row the adapter rejects."""
+    """Time-series rows of a /api/metrics/ answer; raises on a row the adapter
+    rejects."""
     return validate_response(adapter, json_records(result))
 
 
@@ -119,19 +121,13 @@ def _timestamp_key(entry: _TimedRow) -> datetime:
 
 
 def _oldest_first[R: _TimedRow](results: list[R]) -> list[R]:
-    """Order metric rows by the instant of their timestamp; the API returns newest first."""
+    """Order metric rows by timestamp instant; the API returns newest first."""
     return sorted(results, key=_timestamp_key)
 
 
 def parse_cpu_metrics(results: list[_UsageRow]) -> dict[str, object]:
-    """Parse CPU usage metrics to extract meaningful statistics.
-
-    Args:
-        results: List of CPU usage data points
-
-    Returns:
-        Parsed statistics including average, min, max, current usage with user-friendly format
-    """
+    """Summarize CPU rows (current, average, min, max, status, health);
+    `available` is False when there are no rows or no `usage` values."""
     if not results:
         return {'available': False, 'message': 'No CPU data available'}
 
@@ -247,14 +243,8 @@ async def get_cpu_usage(
 
 
 def parse_memory_metrics(results: list[_UsageRow]) -> dict[str, object]:
-    """Parse memory usage metrics to extract meaningful statistics.
-
-    Args:
-        results: List of memory usage data points
-
-    Returns:
-        Parsed statistics including average, min, max, current usage with user-friendly format
-    """
+    """Summarize memory rows (current, average, min, max, status, health);
+    `available` is False when there are no rows or no `usage` values."""
     if not results:
         return {'available': False, 'message': 'No memory data available'}
 
@@ -370,14 +360,8 @@ async def get_memory_usage(
 
 
 def parse_disk_metrics(results: list[_DiskUsageRow]) -> dict[str, object]:
-    """Parse disk usage metrics to extract meaningful statistics.
-
-    Args:
-        results: List of disk usage data points
-
-    Returns:
-        Parsed statistics including average, min, max, current usage and space info
-    """
+    """Summarize disk rows (current, average, min, max, space_info);
+    `available` is False when there are no rows or no `usage` values."""
     if not results:
         return {'available': False, 'message': 'No disk data available'}
 
@@ -547,14 +531,8 @@ async def get_disk_usage(
 
 
 def parse_network_metrics(results: list[_TrafficRow]) -> dict[str, object]:
-    """Parse network traffic metrics to extract meaningful statistics.
-
-    Args:
-        results: List of network traffic data points
-
-    Returns:
-        Parsed statistics including average, peak input/output in bps and pps
-    """
+    """Summarize traffic rows (average and peak input/output in bps and pps);
+    `available` is False when there are no rows."""
     if not results:
         return {'available': False, 'message': 'No network data available'}
 
@@ -930,18 +908,12 @@ async def get_alert_rules(
     )
 
 
-def _is_http_error(result: object) -> bool:
-    return isinstance(result, dict) and 'error' in result
-
-
 def _find_record_id(
     result: object, predicate: Callable[[_ProcRecord], bool]
 ) -> str | None:
-    """Return the id of the first /api/proc/ record matching predicate.
-
-    Those endpoints answer with a plain list or a paginated `results` dict.
-    """
-    if isinstance(result, dict) and not _is_http_error(result):
+    """Return the id of the first /api/proc/ record matching predicate; the
+    answer is a plain list or a paginated `results` dict."""
+    if isinstance(result, dict) and not is_http_error(result):
         result = result.get('results')
     if not isinstance(result, list):
         return None
@@ -977,10 +949,8 @@ _MAX_INTERFACE_PAGES = 20  # with page_size=100, at most 2000 interfaces
 async def _list_all_interfaces(
     *, region: str, workspace: str, token: str | None, server_id: str
 ) -> list[JsonValue] | dict[str, JsonValue]:
-    """Collect a server's /api/proc/interfaces/ records, or return the error dict.
-
-    `next` is a page number; paging stops after `_MAX_INTERFACE_PAGES` pages.
-    """
+    """Collect a server's /api/proc/interfaces/ records, or return the error
+    dict; paging stops after `_MAX_INTERFACE_PAGES` pages."""
     base_params: dict[str, QueryParam] = {'server': server_id, 'page_size': 100}
     params = base_params
     records: list[JsonValue] = []
@@ -1180,7 +1150,7 @@ async def get_server_metrics_summary(
 
     if root_partition_id:
         disk_summary = extract_summary(metric_results['disk'], 'disk')
-    elif _is_http_error(partitions_result):
+    elif is_http_error(partitions_result):
         disk_summary = extract_summary(partitions_result, 'partition lookup')
         disk_summary['error'] = f'Partition lookup failed: {disk_summary["error"]}'
     else:
@@ -1191,7 +1161,7 @@ async def get_server_metrics_summary(
 
     if interface_id:
         network_summary = extract_summary(metric_results['network'], 'network')
-    elif _is_http_error(interfaces_result):
+    elif is_http_error(interfaces_result):
         network_summary = extract_summary(interfaces_result, 'interface lookup')
         network_summary['error'] = (
             f'Interface lookup failed: {network_summary["error"]}'

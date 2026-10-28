@@ -24,10 +24,8 @@ _DEFAULT_401_BODY = {
 
 
 class _MockApp:
-    """Minimal ASGI app that returns a 200 JSON response.
-
-    Optionally signals an upstream auth error via the request signal,
-    simulating what http_client does when it receives a 401.
+    """ASGI app that returns a 200 JSON response, optionally signalling an upstream 401
+    the way http_client does.
     """
 
     def __init__(
@@ -66,9 +64,9 @@ class _MockApp:
 
 
 class _DispatchingApp:
-    """ASGI app whose behavior depends on request path, not on which instance
-    called it—so one middleware instance can serve two concurrent requests
-    that behave differently, with its cooldown dict shared between them."""
+    """ASGI app whose behavior depends on the request path, so one middleware instance
+    can serve two concurrent requests that differ, sharing its cooldown dict.
+    """
 
     def __init__(self, fail_path: str, signal_error: AuthSignal):
         self._fail_path = fail_path
@@ -180,10 +178,8 @@ async def test_flag_triggers_401():
 
 @pytest.mark.asyncio
 async def test_mfa_flag_answers_insufficient_scope_with_mfa_scope():
-    """An MFA signal is a 403 step-up challenge, not a 401.
-
-    Clients refresh on a 401 and drop its scope while the refresh succeeds, so
-    only insufficient_scope sends them back through /authorize with 'mfa'.
+    """An MFA signal is a 403 step-up challenge, not a 401. Clients refresh on a 401 and
+    drop its scope; only insufficient_scope sends them to /authorize with 'mfa'.
     """
     mw = _make(error_value={'mfa_required': True, 'source': 'websh'})
     sent = await _run(mw)
@@ -209,11 +205,8 @@ async def test_non_mfa_flag_excludes_mfa_scope():
 
 @pytest.mark.asyncio
 async def test_cooldown_passes_the_apps_own_response_through_on_a_second_401():
-    """Given a client within cooldown, When a second signal fires, Then the app's
-    own response reaches the client untouched, with no second challenge.
-
-    Nothing has gone out yet when the check runs—the start message is still held
-    and the first body chunk is in hand—so the original is still forwardable.
+    """Within cooldown the app's own response reaches the client, with no new challenge.
+    Nothing has gone out yet (the start is held), so it is still forwardable.
     """
     token = 'cooldown-test-token'
     original = {'jsonrpc': '2.0', 'result': {'isError': True, 'reason': 'upstream'}}
@@ -241,9 +234,9 @@ async def test_cooldown_passes_the_apps_own_response_through_on_a_second_401():
 
 @pytest.mark.asyncio
 async def test_cooldown_pass_through_does_not_log_a_late_signal_warning(caplog):
-    """Given a client within cooldown, When the app's own response is passed
-    through, Then no 'cannot replace it' warning fires—the cooldown, not a
-    late signal, is why nothing was replaced, and it already logs at INFO."""
+    """Within cooldown, passing the app's response through logs no 'cannot replace it'
+    warning. The cooldown, not a late signal, is why nothing was replaced.
+    """
     token = 'cooldown-warning-token'
     original = {'jsonrpc': '2.0', 'result': {'isError': True, 'reason': 'upstream'}}
 
@@ -344,11 +337,8 @@ async def test_non_http_scope_passes_through():
 
 @pytest.mark.asyncio
 async def test_a_signal_left_before_the_request_does_not_leak_in():
-    """Given a signal written before the middleware begins a request, When that
-    request runs with a clean app, Then nothing was stored to leak into it.
-
-    A per-request ContextVar object replaces the old module-level dict, so a
-    signal recorded outside begin_request() is dropped rather than parked.
+    """A signal recorded outside begin_request() is dropped, not parked for the next
+    request. It lives in a per-request ContextVar object, not a module-level dict.
     """
     token = 'shared-token'
 
@@ -369,10 +359,8 @@ async def test_a_signal_left_before_the_request_does_not_leak_in():
 
 @pytest.mark.asyncio
 async def test_flag_triggers_401_with_any_body():
-    """Middleware triggers 401 based on signal, regardless of body content.
-
-    The middleware no longer inspects response body. The signal from
-    http_client is the sole source of truth for upstream 401 detection.
+    """The middleware answers 401 on the signal alone, whatever the response body holds.
+    The http_client signal is the only source of truth for upstream 401 detection.
     """
     token = 'any-body-test-jwt'
     mw = _make(
@@ -415,7 +403,7 @@ async def test_no_signal_passes_through_regardless_of_body():
 
 
 class _RaisingApp:
-    """Mock ASGI app that raises UpstreamAuthError, simulating the new exception path."""
+    """ASGI app that raises UpstreamAuthError instead of signalling."""
 
     def __init__(
         self,
@@ -465,11 +453,8 @@ async def test_exception_non_mfa_triggers_401_without_mfa_scope():
 
 @pytest.mark.asyncio
 async def test_exception_path_signal_does_not_leak_into_the_next_request():
-    """Given a request whose app raises UpstreamAuthError, When a later request with
-    the same token runs against a clean app, Then it sees no leftover signal.
-
-    cooldown_seconds=0 so a cooldown, not signal leakage, cannot be the reason
-    the second request comes back 200.
+    """A request whose app raises UpstreamAuthError leaves no signal for the next one.
+    cooldown_seconds=0, so a cooldown cannot explain the second 200.
     """
     token = 'test-jwt'
     raising_app = _RaisingApp(auth_value=token)
@@ -488,11 +473,8 @@ async def test_exception_path_signal_does_not_leak_into_the_next_request():
 
 @pytest.mark.asyncio
 async def test_normal_return_signal_does_not_leak_into_the_next_request():
-    """Given a request whose app signals a 401 and returns normally, When a later
-    request with the same token runs against a clean app, Then it sees no
-    leftover signal.
-
-    cooldown_seconds=0 so a cooldown cannot be mistaken for signal isolation.
+    """A signal from an app that returns normally leaves nothing for the next request.
+    cooldown_seconds=0, so a cooldown cannot be mistaken for signal isolation.
     """
     token = 'test-jwt'
     signaling_app = _MockApp(
@@ -532,13 +514,8 @@ async def test_exception_respects_cooldown():
 
 @pytest.mark.asyncio
 async def test_same_token_concurrent_requests_do_not_steal_each_others_signal():
-    """Given two requests with the same token on one middleware instance, one
-    failing and one fine, When they run together, Then only the failing one
-    is answered with 401.
-
-    Both requests go through the same UpstreamAuthErrorMiddleware instance
-    (shared _client_cooldowns), so cooldown_seconds=0 keeps the first 401
-    from suppressing the second request's check.
+    """Two same-token requests on one middleware: only the failing one gets a 401.
+    cooldown_seconds=0 keeps the first 401's cooldown from suppressing the second check.
     """
     app = _DispatchingApp(
         fail_path='/fail', signal_error={'mfa_required': True, 'source': 'exec'}
@@ -560,9 +537,7 @@ async def test_same_token_concurrent_requests_do_not_steal_each_others_signal():
 
 class _HandshakeApp:
     """Sends one chunk, then waits for the receiver to acknowledge it.
-
-    A middleware that buffers never lets that acknowledgement happen, so the wait
-    times out. That is what makes this app able to tell the two apart.
+    A buffering middleware never lets that happen, so the wait times out.
     """
 
     def __init__(self, delivered: asyncio.Event):
@@ -589,9 +564,9 @@ class _HandshakeApp:
 
 @pytest.mark.asyncio
 async def test_a_chunk_reaches_the_client_while_the_app_is_still_running():
-    """Given a long-lived response, When the app emits its first chunk, Then the
-    client has it before the app produces the next one, and the wire sees exactly
-    one `http.response.start`."""
+    """A long-lived response's first chunk reaches the client before the app emits the
+    next, and the wire sees exactly one `http.response.start`.
+    """
     delivered = asyncio.Event()
     app = _HandshakeApp(delivered)
     mw = UpstreamAuthErrorMiddleware(app)
@@ -620,9 +595,9 @@ async def test_a_chunk_reaches_the_client_while_the_app_is_still_running():
 
 
 class _LateSignalApp:
-    """Sends a start and one chunk, then signals an upstream 401 mid-stream, then
-    sends a final chunk. Mirrors an SSE tool call whose upstream token expires
-    after the response has already begun."""
+    """Sends a start and a chunk, signals an upstream 401 mid-stream, then a final
+    chunk. Mirrors an SSE call whose upstream token expires mid-response.
+    """
 
     async def __call__(self, scope, receive, send):
         await send(
@@ -643,9 +618,9 @@ class _LateSignalApp:
 
 @pytest.mark.asyncio
 async def test_a_late_signal_does_not_send_a_second_response_start(caplog):
-    """Given a response that already started, When the signal fires mid-stream,
-    Then the wire still sees exactly one `http.response.start` and the original
-    chunks, not a 401—the client already got a 200 it cannot take back."""
+    """A signal after the response started leaves one `http.response.start` and the
+    original chunks. The client already got a 200 it cannot take back, so no 401.
+    """
     app = _LateSignalApp()
     mw = UpstreamAuthErrorMiddleware(app)
 

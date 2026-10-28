@@ -1,8 +1,5 @@
 """What each protocol revision negotiates, and how many times lifespan runs.
-
-2026-07-28 is not reachable through initialize: the SDK answers that handshake
-with the newest handshake revision instead. It is reached through server/discover
-carrying a per-request _meta envelope.
+2026-07-28 comes only via server/discover with a per-request _meta, not via initialize.
 """
 
 import contextlib

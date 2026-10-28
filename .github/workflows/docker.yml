@@ -87,6 +87,10 @@ jobs:
       # alpacon-mcp is public; shared-ci is Internal so public callers
       # cannot resolve `uses: alpacax/shared-ci/...`. Mirror the wrapper
       # logic here (App token + workflow-dispatch).
+      #
+      # The dev deployment (mcp.dev.alpacon.io) runs on the staging cluster,
+      # so the dev build bumps that cluster's staging values. The target
+      # workflow takes service, tag and env only.
       - name: Generate App token
         id: app-token
         uses: actions/create-github-app-token@v3
@@ -94,17 +98,17 @@ jobs:
           client-id: ${{ secrets.DEPLOY_DISPATCHER_APP_CLIENT_ID }}
           private-key: ${{ secrets.DEPLOY_DISPATCHER_PRIVATE_KEY }}
           owner: alpacax
-          repositories: alpacon-gitops
+          repositories: iac-dc-kr
           permission-actions: write
 
       - name: Trigger dev deployment
         uses: benc-uk/workflow-dispatch@v1.3.1
         with:
           workflow: image-tag-update-pr.yaml
-          repo: alpacax/alpacon-gitops
+          repo: alpacax/iac-dc-kr
           ref: main
           token: ${{ steps.app-token.outputs.token }}
-          inputs: '{"tag": "${{ github.event.workflow_run.head_sha }}", "service": "alpacon-mcp", "env": "dev", "job": "update_image_tag"}'
+          inputs: '{"tag": "${{ github.event.workflow_run.head_sha }}", "service": "alpacon-mcp", "env": "staging"}'
 
   deploy-prod:
     needs: build-and-push

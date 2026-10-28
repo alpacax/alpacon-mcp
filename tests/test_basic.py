@@ -1,15 +1,11 @@
 """Basic tests for alpacon-mcp package.
-
-The imports below stay local to each test: the import succeeding is the
-assertion under test, so hoisting them would turn an import failure into a
-collection-time crash for the whole file instead of one failing test.
+Imports stay local to each test: a failing import should fail one test, not collection.
 """
 
 import pytest
 
 
 def test_import_server():
-    """Test that main modules can be imported."""
     try:
         import server
 
@@ -19,7 +15,6 @@ def test_import_server():
 
 
 def test_import_main():
-    """Test that main module can be imported."""
     try:
         import main
 
@@ -29,7 +24,6 @@ def test_import_main():
 
 
 def test_import_utils():
-    """Test that utils modules can be imported."""
     try:
         from utils import http_client, token_manager
 
@@ -40,7 +34,6 @@ def test_import_utils():
 
 
 def test_basic_functionality():
-    """Test basic package functionality."""
     # This is a placeholder test - replace with actual functionality tests
     assert 1 + 1 == 2
 

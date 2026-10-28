@@ -3,7 +3,6 @@
 import importlib
 import json
 from http import HTTPStatus
-from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -260,7 +259,7 @@ class TestStdioOnly:
     ):
         imported: list[str] = []
         real_import = importlib.import_module
-        handed: dict[str, Any] = {}
+        handed: dict[str, set[str]] = {}
 
         def spy(name, *args, **kwargs):
             imported.append(name)

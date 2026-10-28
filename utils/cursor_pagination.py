@@ -1,15 +1,5 @@
-"""Bounded cursor-page traversal for alpacon-server's cursor-paginated lists.
-
-alpacon-server's Elasticsearch-backed lists use ``ESCursorPagination``, which
-ignores ``page``: a caller stepping ``page=1,2,3`` gets the first page three
-times. Those endpoints are walked by cursor here instead (#325), with the walk
-bounded and its outcome reported under ``pagination``.
-
-The work-session timeline pages only when a request names ``cursor``; unasked,
-alpacon-server serves the whole session in one body, and a release that predates
-the paginator does so whatever the request names. ``opt_in_pagination`` is how a
-walk asks, and how it reads the answer of a server that cannot.
-"""
+"""Bounded cursor-page walk for alpacon-server's cursor-paginated lists, whose ES-backed
+endpoints ignore page; the outcome is reported under pagination."""
 
 from typing import NamedTuple
 
@@ -92,10 +82,8 @@ _RETRY_FROM_THE_START = (
 
 
 class _Page(NamedTuple):
-    """One upstream page: its records, the server's total, and where to resume.
-
-    ``unpaginated`` marks a body with no ``next`` at all, read as the whole list.
-    """
+    """One upstream page; unpaginated marks a body with no next, read as the whole
+    list."""
 
     records: list[JsonValue]
     total: JsonValue  # the server's `count` (tuple.count owns that name)
@@ -106,11 +94,8 @@ class _Page(NamedTuple):
 def _read_page(
     result: JsonValue, sent_cursor: str | None, *, opt_in: bool, first: bool
 ) -> _Page:
-    """Return a page's records, its ``count``, and its ``next`` cursor.
-
-    Raises UnexpectedResponseShapeError for a body alpacon-server's schema does
-    not allow, rather than reading it as an empty page or the end of the list.
-    """
+    """A page's records, count and next cursor; raises UnexpectedResponseShapeError for
+    a body the schema disallows."""
     whole_list_ok = opt_in and first
     if isinstance(result, list):
         if opt_in and not first:
@@ -150,13 +135,8 @@ def _report(
     started_from_cursor: bool,
     next_cursor: str | None,
 ) -> dict[str, object]:
-    """Build the walk's own account of itself, minus the per-outcome fields.
-
-    ``complete`` means this response holds the whole list, so a walk resumed
-    from a cursor is never complete, even when it reaches the end. An
-    unpaginated answer is the exception: it carries the list entire whatever
-    cursor the request named, because the server ignored that too.
-    """
+    """The walk's report minus per-outcome fields; complete means the response holds the
+    whole list, so a resumed walk never is unless the server ignored pagination."""
     return {
         'pages_read': pages,
         'max_pages': MAX_CURSOR_PAGES,
@@ -180,43 +160,8 @@ async def cursor_list_response(
     opt_in_pagination: bool = False,
     **id_context: object,
 ) -> ToolResponse:
-    """Walk a cursor-paginated list, bounded by ``MAX_CURSOR_PAGES``, as one response.
-
-    ``params`` is re-sent on every request with only ``cursor`` rewritten,
-    since the server re-reads the filters and ``page_size`` each time. A
-    ``cursor`` in ``params`` is where the walk starts.
-
-    Under ``opt_in_pagination`` the first request names ``cursor``, empty when
-    there is nothing to resume from, which is what makes an opt-in endpoint
-    page. A first answer that still carries no ``next`` came from a server
-    that does not page and is the whole list, reported ``stopped_because:
-    unpaginated_server`` and ``complete: true``; a later answer without
-    ``next`` is a shape error, since by then the server was paging.
-
-    On success ``data`` carries the server's ``count`` and the merged
-    ``results``; the envelope's ``next`` and ``previous`` are dropped, leaving
-    ``pagination.next_cursor`` as the one resume point. On any failure, the
-    records read so far are discarded and the error response carries the
-    ``pagination`` report, whose ``next_cursor`` is the walk's own start.
-
-    Args:
-        method: Bound http_client method, passed from the tool module so tests
-            patching that module's ``http_client`` keep intercepting the call.
-        region: Region (ap1, us1)
-        workspace: Workspace name
-        endpoint: API endpoint path
-        token: API token (injected by @mcp_tool_handler)
-        default_message: Fallback message when the upstream response has none.
-        params: Query parameters, including an optional starting ``cursor``.
-        opt_in_pagination: The endpoint pages only when a request names
-            ``cursor`` and serves the whole list otherwise. Off by default: for
-            a list that always pages, a body with no ``next`` is a page of
-            unknown extent and stays a shape error.
-        **id_context: Extra identifiers merged into the response.
-
-    Returns:
-        Standardized success or error response, with a ``pagination`` report.
-    """
+    """Walk a cursor list in up to MAX_CURSOR_PAGES requests; a failure discards the
+    records read. opt_in_pagination: the endpoint pages only if cursor is named."""
     base_params = {
         name: value for name, value in params.items() if name != _CURSOR_PARAM
     }

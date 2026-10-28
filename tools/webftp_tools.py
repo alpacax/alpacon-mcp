@@ -2,12 +2,15 @@
 
 import asyncio
 import binascii
+import contextlib
 import os
+import secrets
 import shlex
+import shutil
 from collections.abc import AsyncIterator
 from http import HTTPStatus
 from pathlib import Path
-from typing import cast
+from typing import NamedTuple
 
 import httpx
 import pybase64
@@ -28,10 +31,24 @@ from utils.common import (
 )
 from utils.decorators import mcp_tool_handler
 from utils.error_handler import format_validation_error, validate_file_path
+from utils.host_transfer import (
+    CommandHidden,
+    Failed,
+    Refused,
+    Stalled,
+    TimedOut,
+    await_command_handled,
+    await_transfer_success,
+    deadline_after,
+)
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, READ_ONLY
-from utils.types import ToolResponse
-from utils.webftp_shapes import TRANSFER_REQUEST, TRANSFER_STATE, TransferRequest
+from utils.types import ToolErrorResponse, ToolResponse
+from utils.webftp_shapes import (
+    TRANSFER_REQUEST,
+    TRANSFER_STATE,
+    TransferRequest,
+)
 
 # base64 inflates bytes 4/3x; this keeps the decoded upload at 3 MiB even
 # though the ASGI layer allows a larger envelope (see #144, design in #275).
@@ -57,7 +74,8 @@ _API_DOWNLOAD_STATUS = _API_DOWNLOADS + '{}/status/'
 _CHUNK_SIZE = 65536
 _UPLOAD_CONCURRENCY = 10
 _BULK_DOWNLOAD_TIMEOUT = 60.0
-_REMOTE_DOWNLOAD_TIMEOUT = int(os.getenv('ALPACON_MCP_WEBFTP_DOWNLOAD_TIMEOUT', '60'))
+_DOWNLOAD_TIMEOUT = int(os.getenv('ALPACON_MCP_WEBFTP_DOWNLOAD_TIMEOUT', '60'))  # s
+_DOWNLOAD_POLL_INTERVAL = 1.0
 _S3_SUCCESS_CODES = (HTTPStatus.OK, HTTPStatus.CREATED)
 
 # Result statuses
@@ -111,11 +129,7 @@ async def _ensure_parent_dir(local_path: str) -> None:
 
 
 async def _save_stream(response: httpx.Response, local_path: str) -> int:
-    """Save streaming response body to a local file. Returns bytes written.
-
-    On any failure during the write loop (network error, OSError), the
-    partially-written file is removed so retries do not see stale data.
-    """
+    """Write the body to `local_path`, return bytes written; failure deletes it."""
     try:
         dest_file = await asyncio.to_thread(open, local_path, 'wb')
     except OSError as e:
@@ -161,6 +175,138 @@ async def _upload_bytes_to_s3(upload_url: str, data: bytes) -> str | None:
     return None
 
 
+class _HostDownload(NamedTuple):  # a download the server handed to the host
+    file_id: str
+    url: str
+    command_id: str
+
+
+def _download_failed(reason: str, *, file_id: str) -> ToolErrorResponse:
+    return error_response(
+        f'Server failed to process download: {reason}',
+        file_id=file_id,
+        code='download_failed',
+    )
+
+
+def _host_download(request: TransferRequest) -> _HostDownload | ToolErrorResponse:
+    file_id = request['id']
+    if not (url := request.get('download_url')):
+        return _download_failed(
+            'the download request returned no URL; the token most likely lacks '
+            'the WebFTP download scope',
+            file_id=file_id,
+        )
+    if not (command_id := request.get('command')):
+        return _download_failed(
+            'the download request returned no command', file_id=file_id
+        )
+    return _HostDownload(file_id, url, command_id)
+
+
+def _download_stalled(
+    outcome: Stalled,
+    poll_message: str,
+    download: _HostDownload,
+    *,
+    workspace: str,
+    region: str,
+    remote: bool,
+) -> ToolErrorResponse:
+    file_id = download.file_id
+    match outcome:
+        case Refused(response):
+            refused = unwrap_http_result(
+                response,
+                default_message=poll_message,
+                file_id=file_id,
+                region=region,
+                workspace=workspace,
+            )
+            return refused or _download_failed(poll_message, file_id=file_id)
+        case Failed(reason):
+            return _download_failed(
+                reason or 'the host refused the download', file_id=file_id
+            )
+        case TimedOut():
+            message = (
+                'Download timed out waiting for server. '
+                f'Use webftp_check_status("{file_id}", "download", workspace="{workspace}", region="{region}") to poll manually.'
+            )
+            if not remote:
+                return error_response(message, file_id=file_id, code='download_timeout')
+            return error_response(  # the transfer may still land
+                message
+                + ' Once it reports the download completed, fetch download_url.',
+                file_id=file_id,
+                code='download_timeout',
+                download_url=download.url,
+            )
+
+
+async def _download_ready(
+    download: _HostDownload, *, region: str, workspace: str, token: str, remote: bool
+) -> ToolErrorResponse | None:
+    """None once the server reports the file is behind the presigned URL."""
+    deadline = deadline_after(_DOWNLOAD_TIMEOUT)
+    command = await await_command_handled(
+        download.command_id,
+        region=region,
+        workspace=workspace,
+        token=token,
+        deadline=deadline,
+        interval=_DOWNLOAD_POLL_INTERVAL,
+    )
+    if command is not None and not isinstance(command, CommandHidden):
+        return _download_stalled(
+            command,
+            'Failed to poll the download command',
+            download,
+            workspace=workspace,
+            region=region,
+            remote=remote,
+        )
+    if transfer := await await_transfer_success(
+        _API_DOWNLOAD_STATUS.format(download.file_id),
+        region=region,
+        workspace=workspace,
+        token=token,
+        deadline=deadline,
+        interval=_DOWNLOAD_POLL_INTERVAL,
+    ):
+        return _download_stalled(
+            transfer,
+            'Failed to poll download status',
+            download,
+            workspace=workspace,
+            region=region,
+            remote=remote,
+        )
+    return None
+
+
+def _create_part(part_path: str, local_file_path: str) -> None:
+    # Owner-only beside an existing file, whose mode it takes on at the move.
+    mode = 0o600 if os.path.lexists(local_file_path) else 0o666
+    try:
+        os.close(os.open(part_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, mode))
+    except OSError as e:
+        raise _LocalSaveError(str(e)) from e
+
+
+def _move_into_place(part_path: str, local_file_path: str) -> None:
+    with contextlib.suppress(FileNotFoundError):  # an existing file keeps its mode
+        shutil.copymode(local_file_path, part_path)
+    os.replace(part_path, local_file_path)
+
+
+async def _discard(path: str) -> None:
+    try:
+        await asyncio.to_thread(os.unlink, path)
+    except OSError:
+        pass  # already gone, or best-effort cleanup
+
+
 async def _download_remote_mode(
     *,
     server_id: str,
@@ -172,7 +318,7 @@ async def _download_remote_mode(
     work_session_id: str | None,
     token: str,
 ) -> ToolResponse:
-    """Handle webftp_download_file in remote mode: poll until ready, return presigned URL."""
+    """Handle webftp_download_file in remote mode: wait for the host, return presigned URL."""
     file_name = os.path.basename(remote_file_path)
     if resource_type == 'folder':
         file_name += '.zip'
@@ -205,42 +351,13 @@ async def _download_remote_mode(
     ):
         return err
 
-    request = validate_response(TRANSFER_REQUEST, result)
-    download_url = request.get('download_url')
-
-    if not download_url:
-        file_id = request['id']
-        for _ in range(_REMOTE_DOWNLOAD_TIMEOUT):
-            await asyncio.sleep(1)
-            status = await http_client.get(
-                region=region,
-                workspace=workspace,
-                endpoint=_API_DOWNLOAD_STATUS.format(file_id),
-                token=token,
-            )
-            if err := unwrap_http_result(
-                status,
-                default_message='Failed to poll download status',
-                file_id=file_id,
-            ):
-                return err
-            state = validate_response(TRANSFER_STATE, status)
-            if state.get('success') is True:
-                download_url = state.get('download_url')
-                break
-            elif state.get('success') is False:
-                return error_response(
-                    f'Server failed to process download: {state.get("message") or "unknown error"}',
-                    file_id=file_id,
-                    code='download_failed',
-                )
-        else:
-            return error_response(
-                f'Download timed out waiting for server. '
-                f'Use webftp_check_status("{file_id}", "download", workspace="{workspace}", region="{region}") to poll manually.',
-                file_id=file_id,
-                code='download_timeout',
-            )
+    download = _host_download(validate_response(TRANSFER_REQUEST, result))
+    if not isinstance(download, _HostDownload):
+        return download
+    if failed := await _download_ready(
+        download, region=region, workspace=workspace, token=token, remote=True
+    ):
+        return failed
 
     return success_response(
         message=f'File ready for download: {file_name}',
@@ -248,9 +365,9 @@ async def _download_remote_mode(
         server_id=server_id,
         remote_file_path=remote_file_path,
         resource_type=resource_type,
-        download_url=download_url,
+        download_url=download.url,
         expires_in='24 hours',
-        tip=f'curl -o {shlex.quote(file_name)} {shlex.quote(cast(str, download_url))}',
+        tip=f'curl -o {shlex.quote(file_name)} {shlex.quote(download.url)}',
         region=region,
         workspace=workspace,
     )
@@ -464,12 +581,8 @@ async def webftp_upload_content(
     allow_overwrite: bool = True,
     **kwargs: str,
 ) -> ToolResponse:
-    """Upload base64-encoded file content to a server via WebFTP.
-
-    On streamable-http/SSE, file_content is limited to 3 MiB decoded (base64
-    inflates bytes 4/3x). stdio has no such cap. Larger files must use
-    webftp_upload_file in local mode.
-    """
+    """Non-stdio transports cap decoded `file_content` at 3 MiB (content_too_large);
+    use webftp_upload_file in local mode for larger files."""
     token = kwargs.get('token')
 
     try:
@@ -573,9 +686,15 @@ async def webftp_upload_content(
 @mcp_tool_handler(
     description=(
         'Download a file or folder from a remote server. '
-        'In local mode: saves to local_file_path. '
-        'In remote mode (streamable-http): polls until the file is ready on S3, '
-        'then returns a presigned download URL valid for 24 hours — '
+        'Waits until the host reports the file transferred, up to '
+        'ALPACON_MCP_WEBFTP_DOWNLOAD_TIMEOUT seconds (default 60); a failed '
+        'transfer returns error code download_failed, and one still running '
+        'when the wait ends returns download_timeout; in remote mode that error '
+        'carries download_url, to fetch once webftp_check_status reports the '
+        'download completed. '
+        'In local mode: saves to local_file_path, leaving an existing file '
+        'there untouched when the download fails. '
+        'In remote mode (streamable-http): returns a presigned download URL valid for 24 hours—'
         'open it in a browser or run the curl command in the response. '
         'For folders, content is packaged as a ZIP archive. '
         'Pass work_session_id to link this download to a Work Session for audit; '
@@ -658,40 +777,49 @@ async def webftp_download_file(
     ):
         return err
 
-    request = validate_response(TRANSFER_REQUEST, result)
-    if download_url := request.get('download_url'):
+    download = _host_download(validate_response(TRANSFER_REQUEST, result))
+    if not isinstance(download, _HostDownload):
+        return download
+    if failed := await _download_ready(
+        download, region=region, workspace=workspace, token=token, remote=False
+    ):
+        return failed
+
+    # The file lands under a temporary name, so a failed fetch never
+    # replaces what is already at local_file_path.
+    part_path = f'{local_file_path}.{secrets.token_hex(4)}.part'
+    try:
         try:
-            file_size = await _stream_s3_to_file(download_url, local_file_path)
+            await _ensure_parent_dir(local_file_path)
+            await asyncio.to_thread(_create_part, part_path, local_file_path)
+            file_size = await _stream_s3_to_file(
+                download.url, part_path, timeout=_DOWNLOAD_TIMEOUT
+            )
         except _S3DownloadError as e:
             return error_response(
-                f'Failed to download from S3: {e}',
-                download_url=download_url,
+                f'Failed to download from S3: {e}', download_url=download.url
             )
         except _LocalSaveError as e:
             return error_response(f'Failed to save file locally: {e}')
+        try:
+            await asyncio.to_thread(_move_into_place, part_path, local_file_path)
+        except OSError as e:
+            return error_response(f'Failed to save file locally: {e}')
+    finally:
+        await _discard(part_path)
 
-        return success_response(
-            message=f'File downloaded successfully from {resource_type}: {remote_file_path}',
-            data=result,
-            server_id=server_id,
-            remote_file_path=remote_file_path,
-            local_file_path=local_file_path,
-            resource_type=resource_type,
-            file_size=file_size,
-            download_url=download_url,
-            region=region,
-            workspace=workspace,
-        )
-    else:
-        return success_response(
-            message=f'Download request created for {resource_type}: {remote_file_path}',
-            data=result,
-            server_id=server_id,
-            remote_file_path=remote_file_path,
-            resource_type=resource_type,
-            region=region,
-            workspace=workspace,
-        )
+    return success_response(
+        message=f'File downloaded successfully from {resource_type}: {remote_file_path}',
+        data=result,
+        server_id=server_id,
+        remote_file_path=remote_file_path,
+        local_file_path=local_file_path,
+        resource_type=resource_type,
+        file_size=file_size,
+        download_url=download.url,
+        region=region,
+        workspace=workspace,
+    )
 
 
 @mcp_tool_handler(

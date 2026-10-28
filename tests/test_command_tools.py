@@ -1,8 +1,9 @@
 """Unit tests for command tools module."""
 
+from collections.abc import Awaitable, Iterator
 from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
-from typing import Any
+from typing import Protocol
 from unittest.mock import patch
 
 import httpx
@@ -12,6 +13,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 from server import mcp
 from tests.conftest import VALID_SERVER_ID, http_client_fixture, tool_descriptions
 from tools.command_tools import (
+    _COMMAND_DESCRIPTION,
     _FILE_PHASE_GENERIC_HINT,
     _FILE_PHASE_HINTS,
     _SUDO_DENIAL_HINTS,
@@ -38,6 +40,7 @@ from utils.common import (
     FILE_EXEC_REFUSAL_HINTS,
     INLINE_CREDENTIAL_HINT,
 )
+from utils.types import JsonValue, ToolResponse
 
 _GATE_ENVELOPE_REQUIRED = {
     'error': 'HTTP Error',
@@ -212,8 +215,6 @@ class TestSudoDenialHint:
 
 
 class TestSubmitCommand:
-    """Test _submit_command internal helper."""
-
     @pytest.mark.asyncio
     async def test_submit_basic(self, mock_http_client):
         mock_http_client.post.return_value = {'id': 'cmd-123', 'status': 'running'}
@@ -361,8 +362,6 @@ class TestSubmitCommand:
 
 
 class TestListCommands:
-    """Test list_commands function."""
-
     @pytest.mark.asyncio
     async def test_list_commands_success(self, mock_http_client, mock_token_manager):
         mock_http_client.get.return_value = {
@@ -605,8 +604,6 @@ class TestListCommandsSudoDenialAnnotation:
 
 
 class TestExecuteCommand:
-    """Test execute_command function (renamed from execute_command_sync)."""
-
     @pytest.mark.asyncio
     async def test_success(self, mock_http_client, mock_token_manager):
         with (
@@ -1086,8 +1083,6 @@ class TestExecuteCommand:
 
 
 class TestSubmitCommandWithSession:
-    """Test _submit_command forwards work_session to API payload."""
-
     @pytest.mark.asyncio
     async def test_submit_includes_work_session_when_provided(self, mock_http_client):
         mock_http_client.post.return_value = {'id': 'cmd-ws-001'}
@@ -1294,13 +1289,32 @@ class TestSudoGuidanceInToolDescriptions:
     async def test_description_states_the_sudo_cost(self, tool_name):
         descriptions = await tool_descriptions()
         text = descriptions[tool_name]
-        assert 'Do not prefix the command with sudo by default' in text
         assert 'human-in-the-loop' in text
-        # The carve-out and the hard-denial path are the reason the rule is
-        # qualified rather than absolute; pin both so neither regresses.
+        # The carve-out and the hard-denial path qualify the parameter's sudo rule;
+        # pin both on the tool so neither regresses.
         assert 'sudo policy already covers' in text
         assert 'denied outright' in text
         assert 'sudo_denial.category' in text
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        'tool_name', ['execute_command', 'execute_command_multi_server']
+    )
+    async def test_command_parameter_carries_the_sudo_rule(self, tool_name):
+        # Given the published tool list
+        tools = {t.name: t for t in await mcp.list_tools()}
+        descriptions = await tool_descriptions()
+
+        # When reading the command property
+        command = tools[tool_name].input_schema['properties']['command']
+
+        # Then the parameter carries the rule and the tool description does not
+        assert command['description'] == _COMMAND_DESCRIPTION
+        assert 'whitespace-only' in command['description']
+        assert 'with sudo by default' in command['description']
+        assert _COMMAND_DESCRIPTION not in descriptions[tool_name]
+        assert 'with sudo by default' not in descriptions[tool_name]
+        assert 'use sudo only when' not in descriptions[tool_name].lower()
 
 
 def test_no_worksession_policy_hint_names_the_request_tool():
@@ -1666,8 +1680,8 @@ class TestPurposeDemandWindow:
     """What the response says about how long is left."""
 
     @staticmethod
-    def _parked(expires_at: str | None) -> dict[str, Any]:
-        row: dict[str, Any] = {
+    def _parked(expires_at: str | None) -> dict[str, JsonValue]:
+        row: dict[str, JsonValue] = {
             'id': 'cmd-600',
             'status': 'awaiting_purpose',
             'handled_at': None,
@@ -1676,7 +1690,7 @@ class TestPurposeDemandWindow:
             row['purpose_expires_at'] = expires_at
         return row
 
-    async def _demand(self, row: dict[str, Any]) -> dict[str, Any]:
+    async def _demand(self, row: dict[str, JsonValue]) -> ToolResponse:
         with (
             patch('tools.command_tools._submit_command') as mock_submit,
             patch('tools.command_tools._get_command_result') as mock_poll,
@@ -2045,7 +2059,7 @@ class TestEmptyCommandRejected:
         mock_http_client.post.assert_not_called()
 
 
-def _file_exec_envelope(code: str) -> dict[str, Any]:
+def _file_exec_envelope(code: str) -> dict[str, JsonValue]:
     return {
         'error': 'HTTP Error',
         'status_code': HTTPStatus.BAD_REQUEST,
@@ -2311,7 +2325,7 @@ class TestExecuteFileLocalValidation:
     async def test_relative_path_or_interpreter_is_refused_locally(
         self, mock_http_client, mock_token_manager, field, override
     ):
-        kwargs: dict[str, Any] = {
+        kwargs: dict[str, str] = {
             'path': '/opt/deploy.sh',
             'interpreter': '/bin/bash',
             **override,
@@ -2322,7 +2336,8 @@ class TestExecuteFileLocalValidation:
             content=_FILE_SCRIPT,
             workspace='testworkspace',
             region='ap1',
-            **kwargs,
+            path=kwargs['path'],
+            interpreter=kwargs['interpreter'],
         )
 
         assert result['status'] == 'error'
@@ -2734,13 +2749,17 @@ class TestExecuteFileRun:
         assert result['purpose_truncated'] is True
 
 
+class _Route(Protocol):  # an http_client.get side effect
+    def __call__(self, *, endpoint: str, **kw: object) -> Awaitable[JsonValue]: ...
+
+
 _UPLOAD_ROW = {'id': 'up-1', 'upload_url': 'https://s3.example/put'}
 
 
-def _route_get(status: Any = None):
+def _route_get(status: JsonValue = None) -> _Route:
     """Answer the WebFTP trigger and status GETs the write path makes."""
 
-    async def _get(*, endpoint: str, **_: Any) -> Any:
+    async def _get(*, endpoint: str, **_: object) -> JsonValue:
         if endpoint.endswith('/status/'):
             return {'success': True} if status is None else status
         return {}
@@ -2752,9 +2771,8 @@ class TestExecuteFileWriteFile:
     """write_file puts the submitted bytes on the host before the run is submitted."""
 
     @pytest.fixture(autouse=True)
-    def _no_poll_wait(self):
-        with patch('tools.command_tools._FILE_WRITE_POLL_INTERVAL', 0):
-            yield
+    def _clock(self, fake_clock):
+        return fake_clock
 
     @pytest.mark.asyncio
     async def test_off_by_default_writes_nothing(
@@ -2790,17 +2808,17 @@ class TestExecuteFileWriteFile:
         mock_http_client.post.side_effect = _post
         route = _route_get()
 
-        async def _get(*, endpoint: str, **kw: Any) -> Any:
+        async def _get(*, endpoint: str, **kw: object) -> JsonValue:
             calls.append('status' if endpoint.endswith('/status/') else 'trigger')
             return await route(endpoint=endpoint, **kw)
 
-        async def _put(*_: Any) -> None:
+        async def _put(*_: object) -> None:
             calls.append('put')
 
         mock_http_client.get.side_effect = _get
         script = '#!/bin/bash\r\necho é\n'
 
-        async def _submit(**kw: Any) -> Any:
+        async def _submit(**kw: object) -> dict[str, JsonValue]:
             calls.append('submit')
             return _file_exec_envelope('file_exec_empty_content')
 
@@ -2945,7 +2963,7 @@ class TestExecuteFileWriteFile:
         with (
             patch('tools.command_tools._submit_file_execution') as mock_submit,
             patch('tools.command_tools._put_to_s3', return_value=None),
-            patch('tools.command_tools._FILE_WRITE_POLL_ATTEMPTS', 3),
+            patch('tools.command_tools._FILE_WRITE_TIMEOUT', 2),
         ):
             result = await execute_file(
                 server_id=VALID_SERVER_ID,
@@ -3186,7 +3204,7 @@ _DOWNLOAD_ROW = {
     'download_url': 'https://s3.example/get',
     'command': 'cmd-d1',
 }
-_DOWNLOAD_COMMAND_DONE = {
+_DOWNLOAD_COMMAND_DONE: dict[str, JsonValue] = {
     'id': 'cmd-d1',
     'status': 'success',
     'success': True,
@@ -3194,11 +3212,23 @@ _DOWNLOAD_COMMAND_DONE = {
 }
 
 
-def _route_download_status(status: Any = None, command: Any = None):
-    """Answer the transfer command and download status GETs the read path makes."""
+def _route_download_status(
+    status: JsonValue = None,
+    command: JsonValue = None,
+    *,
+    commands: list[JsonValue] | None = None,
+    log: list[str] | None = None,
+) -> _Route:
+    """Answer the transfer command and download status GETs the read path makes.
+    `commands` answers the command polls in order, its last entry repeating.
+    """
 
-    async def _get(*, endpoint: str, **_: Any) -> Any:
+    async def _get(*, endpoint: str, **_: object) -> JsonValue:
+        if log is not None:
+            log.append(endpoint)
         if endpoint == '/api/events/commands/cmd-d1/':
+            if commands:
+                return commands.pop(0) if len(commands) > 1 else commands[0]
             return _DOWNLOAD_COMMAND_DONE if command is None else command
         assert endpoint == '/api/webftp/downloads/down-1/status/'
         return {'success': True, 'message': None} if status is None else status
@@ -3210,9 +3240,8 @@ class TestExecuteFileReadFromServer:
     """read_from_server submits the bytes already on the host as content."""
 
     @pytest.fixture(autouse=True)
-    def _no_poll_wait(self):
-        with patch('tools.command_tools._FILE_READ_POLL_INTERVAL', 0):
-            yield
+    def _clock(self, fake_clock):
+        return fake_clock
 
     @pytest.mark.asyncio
     async def test_reads_the_file_then_submits_its_exact_bytes(
@@ -3269,10 +3298,10 @@ class TestExecuteFileReadFromServer:
     ):
         calls: list[str] = []
         mock_http_client.post.return_value = _DOWNLOAD_ROW
-        answers = iter([{'status': 'running', 'handled_at': None}])
+        answers: Iterator[JsonValue] = iter([{'status': 'running', 'handled_at': None}])
         route = _route_download_status()
 
-        async def _get(*, endpoint: str, **kw: Any) -> Any:
+        async def _get(*, endpoint: str, **kw: object) -> JsonValue:
             if endpoint.startswith('/api/events/commands/'):
                 calls.append('command')
                 if (answer := next(answers, None)) is not None:
@@ -3281,11 +3310,11 @@ class TestExecuteFileReadFromServer:
                 calls.append('status')
             return await route(endpoint=endpoint, **kw)
 
-        async def _fetch(*_: Any) -> bytes:
+        async def _fetch(*_: object) -> bytes:
             calls.append('fetch')
             return b'echo hi\n'
 
-        async def _submit(**kw: Any) -> Any:
+        async def _submit(**kw: object) -> dict[str, JsonValue]:
             calls.append('submit')
             return _file_exec_envelope('file_exec_empty_content')
 
@@ -3304,7 +3333,7 @@ class TestExecuteFileReadFromServer:
                 region='ap1',
             )
 
-        assert calls == ['command', 'command', 'fetch', 'status', 'submit']
+        assert calls == ['command', 'command', 'status', 'fetch', 'submit']
         assert mock_submit.call_args.kwargs['content'] == 'echo hi\n'
 
     @pytest.mark.asyncio
@@ -3551,7 +3580,7 @@ class TestExecuteFileReadFromServer:
             # The host never finishes sending the file.
             ({'status': 'running', 'handled_at': None}, None, 3),
             # The host sent it but never reports the transfer.
-            (None, {'success': None}, 3),
+            (None, {'success': None}, 4),
         ],
     )
     async def test_a_read_that_never_lands_times_out(
@@ -3565,7 +3594,7 @@ class TestExecuteFileReadFromServer:
         with (
             patch('tools.command_tools._submit_file_execution') as mock_submit,
             patch('tools.command_tools._get_capped', return_value=b'echo hi\n'),
-            patch('tools.command_tools._FILE_READ_POLL_ATTEMPTS', 3),
+            patch('tools.command_tools._FILE_READ_TIMEOUT', 2),
         ):
             result = await execute_file(
                 server_id=VALID_SERVER_ID,
@@ -3578,6 +3607,117 @@ class TestExecuteFileReadFromServer:
         assert result['error_code'] == 'file_read_timeout'
         assert result['download_id'] == 'down-1'
         assert mock_http_client.get.call_count == gets
+        mock_submit.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_command_handled_at_the_deadline_still_checks_transfer_status(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = _DOWNLOAD_ROW
+        calls: list[str] = []
+        mock_http_client.get.side_effect = _route_download_status(
+            commands=[
+                {'status': 'running', 'handled_at': None},
+                _DOWNLOAD_COMMAND_DONE,
+            ],
+            log=calls,
+        )
+
+        with (
+            patch(
+                'tools.command_tools._submit_file_execution',
+                return_value=_file_exec_envelope('file_exec_empty_content'),
+            ) as mock_submit,
+            patch('tools.command_tools._get_capped', return_value=b'echo hi\n'),
+            patch('tools.command_tools._FILE_READ_TIMEOUT', 1),
+        ):
+            result = await execute_file(
+                server_id=VALID_SERVER_ID,
+                path='/opt/deploy.sh',
+                read_from_server=True,
+                workspace='testworkspace',
+                region='ap1',
+            )
+
+        assert result['error_code'] == 'file_exec_empty_content'  # the submit's answer
+        assert mock_submit.call_args.kwargs['content'] == 'echo hi\n'
+        assert calls == [
+            '/api/events/commands/cmd-d1/',
+            '/api/events/commands/cmd-d1/',
+            '/api/webftp/downloads/down-1/status/',
+        ]
+
+    @pytest.mark.asyncio
+    async def test_a_token_that_cannot_read_the_command_reads_after_the_transfer(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = _DOWNLOAD_ROW
+        calls: list[str] = []
+        mock_http_client.get.side_effect = _route_download_status(
+            command={
+                'error': 'HTTP Error',
+                'status_code': HTTPStatus.FORBIDDEN,
+                'response': '{"code":"api_token_scope_missing"}',
+            },
+            log=calls,
+        )
+
+        async def _fetch(url: str, limit: int) -> bytes:
+            calls.append('GET')
+            return b'echo hi\n'
+
+        with (
+            patch(
+                'tools.command_tools._submit_file_execution',
+                return_value=_file_exec_envelope('file_exec_empty_content'),
+            ) as mock_submit,
+            patch('tools.command_tools._get_capped', new=_fetch),
+        ):
+            result = await execute_file(
+                server_id=VALID_SERVER_ID,
+                path='/opt/deploy.sh',
+                read_from_server=True,
+                workspace='testworkspace',
+                region='ap1',
+            )
+
+        assert result['error_code'] == 'file_exec_empty_content'  # the submit's answer
+        assert mock_submit.call_args.kwargs['content'] == 'echo hi\n'
+        assert calls == [
+            '/api/events/commands/cmd-d1/',
+            '/api/webftp/downloads/down-1/status/',
+            'GET',
+        ]
+
+    @pytest.mark.asyncio
+    async def test_a_failed_fetch_after_a_confirmed_transfer_is_reported(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = _DOWNLOAD_ROW
+        calls: list[str] = []
+        mock_http_client.get.side_effect = _route_download_status(log=calls)
+
+        with (
+            patch('tools.command_tools._submit_file_execution') as mock_submit,
+            patch(
+                'tools.command_tools._get_capped',
+                return_value='Failed to download from S3: 404 - Not Found',
+            ),
+        ):
+            result = await execute_file(
+                server_id=VALID_SERVER_ID,
+                path='/opt/deploy.sh',
+                read_from_server=True,
+                workspace='testworkspace',
+                region='ap1',
+            )
+
+        assert result['error_code'] == 'file_read_failed'
+        assert '404 - Not Found' in result['message']
+        assert calls == [
+            '/api/events/commands/cmd-d1/',
+            '/api/webftp/downloads/down-1/status/',
+        ]
         mock_submit.assert_not_called()
 
     @pytest.mark.asyncio
@@ -3663,8 +3803,14 @@ class TestHeldCommandSuggestsTheFileLane:
     """A held shell line is pointed at execute_file with read_from_server."""
 
     async def _held(
-        self, row_extra: dict[str, Any], **call_extra: Any
-    ) -> dict[str, Any]:
+        self,
+        row_extra: dict[str, JsonValue],
+        *,
+        username: str | None = None,
+        groupname: str = 'alpacon',
+        work_session_id: str | None = None,
+        data: str | None = None,
+    ) -> ToolResponse:
         with (
             patch(
                 'tools.command_tools._submit_command',
@@ -3686,7 +3832,10 @@ class TestHeldCommandSuggestsTheFileLane:
                 workspace='testworkspace',
                 region='ap1',
                 timeout=10,
-                **call_extra,
+                username=username,
+                groupname=groupname,
+                work_session_id=work_session_id,
+                data=data,
             )
 
     @pytest.mark.asyncio

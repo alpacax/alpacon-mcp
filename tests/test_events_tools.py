@@ -1,9 +1,4 @@
-"""
-Unit tests for events_tools module.
-
-Tests event management functionality including event listing,
-event retrieval, and event search.
-"""
+"""Unit tests for events_tools: listing, retrieval, and search."""
 
 import pytest
 
@@ -17,12 +12,8 @@ SECOND_SERVER_ID = '550e8400-e29b-41d4-a716-446655440002'
 
 
 class TestListEvents:
-    """Test list_events function."""
-
     @pytest.mark.asyncio
     async def test_list_events_success(self, mock_http_client, mock_token_manager):
-        """Test successful events listing."""
-
         # Mock successful response
         mock_http_client.get.return_value = {
             'count': 3,
@@ -90,8 +81,6 @@ class TestListEvents:
     async def test_list_events_minimal_params(
         self, mock_http_client, mock_token_manager
     ):
-        """Test events listing with minimal parameters."""
-
         mock_http_client.get.return_value = {'count': 0, 'results': []}
 
         result = await list_events(workspace='testworkspace')
@@ -111,8 +100,6 @@ class TestListEvents:
 
     @pytest.mark.asyncio
     async def test_list_events_no_token(self, mock_http_client, mock_token_manager):
-        """Test events listing when no token is available."""
-
         mock_token_manager.get_token.return_value = None
 
         result = await list_events(workspace='testworkspace')
@@ -125,8 +112,6 @@ class TestListEvents:
     async def test_list_events_error_envelope(
         self, mock_http_client, mock_token_manager
     ):
-        """Test events listing surfaces http_client error envelope as error."""
-
         mock_http_client.get.return_value = HTTP_ERROR_ENVELOPE
 
         result = await list_events(workspace='testworkspace')
@@ -135,12 +120,8 @@ class TestListEvents:
 
 
 class TestGetEvent:
-    """Test get_event function."""
-
     @pytest.mark.asyncio
     async def test_get_event_success(self, mock_http_client, mock_token_manager):
-        """Test successful event details retrieval."""
-
         # Mock successful response
         mock_http_client.get.return_value = {
             'id': 'event-123',
@@ -175,8 +156,6 @@ class TestGetEvent:
 
     @pytest.mark.asyncio
     async def test_get_event_no_token(self, mock_http_client, mock_token_manager):
-        """Test event retrieval when no token is available."""
-
         mock_token_manager.get_token.return_value = None
 
         result = await get_event(event_id='event-123', workspace='testworkspace')
@@ -187,8 +166,6 @@ class TestGetEvent:
 
     @pytest.mark.asyncio
     async def test_get_event_error_envelope(self, mock_http_client, mock_token_manager):
-        """Test event retrieval surfaces http_client error envelope as error."""
-
         mock_http_client.get.return_value = HTTP_ERROR_ENVELOPE
 
         result = await get_event(event_id='event-123', workspace='testworkspace')
@@ -197,12 +174,8 @@ class TestGetEvent:
 
 
 class TestSearchEvents:
-    """Test search_events function."""
-
     @pytest.mark.asyncio
     async def test_search_events_success(self, mock_http_client, mock_token_manager):
-        """Test successful event search."""
-
         # Mock successful response
         mock_http_client.get.return_value = {
             'count': 2,
@@ -262,8 +235,6 @@ class TestSearchEvents:
     async def test_search_events_minimal_params(
         self, mock_http_client, mock_token_manager
     ):
-        """Test event search with minimal parameters."""
-
         mock_http_client.get.return_value = {'count': 0, 'results': []}
 
         result = await search_events(search_query='error', workspace='testworkspace')
@@ -283,8 +254,6 @@ class TestSearchEvents:
 
     @pytest.mark.asyncio
     async def test_search_events_no_results(self, mock_http_client, mock_token_manager):
-        """Test event search with no results."""
-
         mock_http_client.get.return_value = {'count': 0, 'results': []}
 
         result = await search_events(
@@ -297,8 +266,6 @@ class TestSearchEvents:
 
     @pytest.mark.asyncio
     async def test_search_events_no_token(self, mock_http_client, mock_token_manager):
-        """Test event search when no token is available."""
-
         mock_token_manager.get_token.return_value = None
 
         result = await search_events(search_query='test', workspace='testworkspace')
@@ -310,8 +277,6 @@ class TestSearchEvents:
     async def test_search_events_error_envelope(
         self, mock_http_client, mock_token_manager
     ):
-        """Test event search surfaces http_client error envelope as error."""
-
         mock_http_client.get.return_value = HTTP_ERROR_ENVELOPE
 
         result = await search_events(search_query='test', workspace='testworkspace')

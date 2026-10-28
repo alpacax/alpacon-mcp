@@ -1,9 +1,4 @@
-"""
-Unit tests for webftp_tools module.
-
-Tests WebFTP functionality including session management, file uploads,
-file downloads, and file transfer history.
-"""
+"""Unit tests for webftp_tools: sessions, uploads, downloads, and transfer history."""
 
 import asyncio
 import base64
@@ -44,6 +39,43 @@ mock_http_client = http_client_fixture('tools.webftp_tools')
 
 SECOND_SERVER_ID = '550e8400-e29b-41d4-a716-446655440002'  # listings span two servers
 
+_DOWNLOAD_URL = 'https://s3.example.com/file?sig=abc'
+_DOWNLOAD_ROW = {'id': 'dl-abc', 'download_url': _DOWNLOAD_URL, 'command': 'cmd-dl'}
+_COMMAND_RUNNING = {'status': 'running', 'handled_at': None}
+_COMMAND_DONE = {
+    'status': 'success',
+    'success': True,
+    'handled_at': '2026-10-26T00:00:01Z',
+}
+_TRANSFER_DONE = {'success': True, 'message': None}
+_SCOPE_REFUSAL = {
+    'error': 'HTTP Error',
+    'status_code': HTTPStatus.FORBIDDEN,
+    'response': '{"code":"api_token_scope_missing"}',
+}
+
+
+def _default_file_mode():
+    umask = os.umask(0)
+    os.umask(umask)
+    return 0o666 & ~umask
+
+
+def _route_download(commands=(_COMMAND_DONE,), statuses=(_TRANSFER_DONE,), log=None):
+    """Answer the download command and status GETs in order, the last answer repeating."""
+    answers = {
+        '/api/events/commands/cmd-dl/': list(commands),
+        '/api/webftp/downloads/dl-abc/status/': list(statuses),
+    }
+
+    async def _get(*, endpoint, **_):
+        if log is not None:
+            log.append(endpoint)
+        queue = answers[endpoint]
+        return queue.pop(0) if len(queue) > 1 else queue[0]
+
+    return _get
+
 
 @pytest.fixture
 def mock_httpx():
@@ -82,12 +114,8 @@ async def _max_loop_gap_during[T](coro: Awaitable[T]) -> tuple[float, T]:
 
 
 class TestWebFtpSessionCreate:
-    """Test webftp_session_create function."""
-
     @pytest.mark.asyncio
     async def test_session_create_success(self, mock_http_client, mock_token_manager):
-        """Test successful WebFTP session creation."""
-
         # Mock successful response
         mock_http_client.post.return_value = {
             'id': 'session-123',
@@ -127,8 +155,6 @@ class TestWebFtpSessionCreate:
     async def test_session_create_without_username(
         self, mock_http_client, mock_token_manager
     ):
-        """Test WebFTP session creation without username."""
-
         mock_http_client.post.return_value = {'id': 'session-123'}
 
         result = await webftp_session_create(
@@ -150,8 +176,6 @@ class TestWebFtpSessionCreate:
 
     @pytest.mark.asyncio
     async def test_session_create_no_token(self, mock_http_client, mock_token_manager):
-        """Test session creation when no token is available."""
-
         mock_token_manager.get_token.return_value = None
 
         result = await webftp_session_create(
@@ -166,8 +190,6 @@ class TestWebFtpSessionCreate:
 class TestWebFtpSessionsList:
     @pytest.mark.asyncio
     async def test_sessions_list_success(self, mock_http_client, mock_token_manager):
-        """Test successful WebFTP sessions listing."""
-
         # Mock successful response
         mock_http_client.get.return_value = {
             'count': 2,
@@ -208,8 +230,6 @@ class TestWebFtpSessionsList:
     async def test_sessions_list_with_server_filter(
         self, mock_http_client, mock_token_manager
     ):
-        """Test sessions listing with server filter."""
-
         mock_http_client.get.return_value = {'count': 1, 'results': []}
 
         result = await webftp_sessions_list(
@@ -230,8 +250,6 @@ class TestWebFtpSessionsList:
 
     @pytest.mark.asyncio
     async def test_sessions_list_no_token(self, mock_http_client, mock_token_manager):
-        """Test sessions listing when no token is available."""
-
         mock_token_manager.get_token.return_value = None
 
         result = await webftp_sessions_list(workspace='testworkspace')
@@ -255,14 +273,10 @@ class TestWebFtpSessionsList:
 
 
 class TestWebFtpUploadFile:
-    """Test webftp_upload_file function."""
-
     @pytest.mark.asyncio
     async def test_upload_file_success_with_s3(
         self, mock_http_client, mock_token_manager
     ):
-        """Test successful file upload with S3."""
-
         # Mock file content
         file_content = b'test file content'
 
@@ -324,8 +338,6 @@ class TestWebFtpUploadFile:
     async def test_upload_file_success_direct(
         self, mock_http_client, mock_token_manager
     ):
-        """Test successful file upload without S3."""
-
         file_content = b'test file content'
 
         with patch.object(Path, 'read_bytes', return_value=file_content):
@@ -348,8 +360,6 @@ class TestWebFtpUploadFile:
 
     @pytest.mark.asyncio
     async def test_upload_file_not_found(self, mock_http_client, mock_token_manager):
-        """Test file upload when local file doesn't exist."""
-
         with patch.object(
             Path,
             'read_bytes',
@@ -370,8 +380,6 @@ class TestWebFtpUploadFile:
     async def test_upload_file_s3_error(
         self, mock_http_client, mock_token_manager, mock_httpx
     ):
-        """Test file upload with S3 error."""
-
         file_content = b'test file content'
 
         with patch.object(Path, 'read_bytes', return_value=file_content):
@@ -398,8 +406,6 @@ class TestWebFtpUploadFile:
 
     @pytest.mark.asyncio
     async def test_upload_file_no_token(self, mock_http_client, mock_token_manager):
-        """Test file upload when no token is available."""
-
         mock_token_manager.get_token.return_value = None
 
         result = await webftp_upload_file(
@@ -414,154 +420,348 @@ class TestWebFtpUploadFile:
 
 
 class TestWebFtpDownloadFile:
-    """Test webftp_download_file function."""
+    @pytest.fixture(autouse=True)
+    def _clock(self, fake_clock):
+        return fake_clock
+
+    @staticmethod
+    def _stream_writing(body=b'new bytes', log=None, seen=None):
+        """Stand in for the S3 GET, writing ``body`` where the tool asks."""
+
+        async def _stream(url, path, *, timeout):
+            if log is not None:
+                log.append('GET ' + url)
+            if seen is not None:
+                seen.update(timeout=timeout, mode=Path(path).stat().st_mode & 0o777)
+            Path(path).write_bytes(body)
+            return len(body)
+
+        return _stream
+
+    @staticmethod
+    async def _download(local_file_path, **kwargs):
+        return await webftp_download_file(
+            server_id=VALID_SERVER_ID,
+            remote_file_path='/remote/test.txt',
+            local_file_path=str(local_file_path),
+            workspace='testworkspace',
+            **kwargs,
+        )
 
     @pytest.mark.asyncio
-    async def test_download_file_success(self, mock_http_client, mock_token_manager):
-        """Test successful file download."""
+    async def test_download_file_success(
+        self, mock_http_client, mock_token_manager, tmp_path
+    ):
+        mock_http_client.post.return_value = _DOWNLOAD_ROW
+        mock_http_client.get.side_effect = _route_download()
+        dest = tmp_path / 'test.txt'
+        seen: dict[str, int] = {}
 
-        # Mock API response with S3 URL
-        mock_http_client.post.return_value = {
-            'id': 'download-123',
-            'name': 'test.txt',
-            'download_url': 'https://s3.amazonaws.com/bucket/download-url',
-        }
-
-        file_content = b'downloaded file content'
-        with patch(
-            'tools.webftp_tools._stream_s3_to_file',
-            new=AsyncMock(return_value=len(file_content)),
-        ) as mock_stream:
-            result = await webftp_download_file(
-                server_id=VALID_SERVER_ID,
-                remote_file_path='/remote/test.txt',
-                local_file_path='/local/test.txt',
-                workspace='testworkspace',
-                username='testuser',
-                region='ap1',
-            )
-
-            assert result['status'] == 'success'
-            assert 'downloaded successfully' in result['message']
-            assert result['server_id'] == VALID_SERVER_ID
-            assert result['remote_file_path'] == '/remote/test.txt'
-            assert result['local_file_path'] == '/local/test.txt'
-            assert result['file_size'] == len(file_content)
-            assert result['resource_type'] == 'file'
-
-            mock_stream.assert_called_once_with(
-                'https://s3.amazonaws.com/bucket/download-url',
-                '/local/test.txt',
-            )
-
-    @pytest.mark.asyncio
-    async def test_download_folder_success(self, mock_http_client, mock_token_manager):
-        """Test successful folder download as zip."""
-
-        mock_http_client.post.return_value = {
-            'id': 'download-123',
-            'name': 'folder.zip',
-            'download_url': 'https://s3.amazonaws.com/bucket/download-url',
-        }
-
-        with patch(
-            'tools.webftp_tools._stream_s3_to_file',
-            new=AsyncMock(return_value=16),
+        with (
+            patch('tools.webftp_tools._DOWNLOAD_TIMEOUT', 5),
+            patch(
+                'tools.webftp_tools._stream_s3_to_file',
+                new=self._stream_writing(seen=seen),
+            ),
         ):
+            result = await self._download(dest, username='testuser', region='ap1')
+
+        assert result['status'] == 'success'
+        assert 'downloaded successfully' in result['message']
+        assert result['server_id'] == VALID_SERVER_ID
+        assert result['remote_file_path'] == '/remote/test.txt'
+        assert result['local_file_path'] == str(dest)
+        assert result['file_size'] == len(b'new bytes')
+        assert result['resource_type'] == 'file'
+        assert dest.read_bytes() == b'new bytes'
+        assert list(tmp_path.iterdir()) == [dest]
+        assert seen == {'timeout': 5, 'mode': _default_file_mode()}
+
+    @pytest.mark.asyncio
+    async def test_download_folder_success(
+        self, mock_http_client, mock_token_manager, tmp_path
+    ):
+        mock_http_client.post.return_value = _DOWNLOAD_ROW
+        mock_http_client.get.side_effect = _route_download()
+
+        with patch('tools.webftp_tools._stream_s3_to_file', new=self._stream_writing()):
             result = await webftp_download_file(
                 server_id=VALID_SERVER_ID,
                 remote_file_path='/remote/folder',
-                local_file_path='/local/folder.zip',
+                local_file_path=str(tmp_path / 'folder.zip'),
                 workspace='testworkspace',
                 resource_type='folder',
             )
 
-            assert result['status'] == 'success'
-            assert result['resource_type'] == 'folder'
-
-            mock_http_client.post.assert_called_once_with(
-                region='ap1',
-                workspace='testworkspace',
-                endpoint='/api/webftp/downloads/',
-                token='test-token',
-                data={
-                    'server': VALID_SERVER_ID,
-                    'path': '/remote/folder',
-                    'name': 'folder.zip',
-                    'resource_type': 'folder',
-                },
-            )
-
-    @pytest.mark.asyncio
-    async def test_download_file_direct_mode(
-        self, mock_http_client, mock_token_manager
-    ):
-        """Test file download without S3 (direct mode)."""
-
-        # Mock API response without S3 URL
-        mock_http_client.post.return_value = {'id': 'download-123', 'name': 'test.txt'}
-
-        result = await webftp_download_file(
-            server_id=VALID_SERVER_ID,
-            remote_file_path='/remote/test.txt',
-            local_file_path='/local/test.txt',
+        assert result['status'] == 'success'
+        assert result['resource_type'] == 'folder'
+        mock_http_client.post.assert_called_once_with(
+            region='ap1',
             workspace='testworkspace',
+            endpoint='/api/webftp/downloads/',
+            token='test-token',
+            data={
+                'server': VALID_SERVER_ID,
+                'path': '/remote/folder',
+                'name': 'folder.zip',
+                'resource_type': 'folder',
+            },
         )
 
-        assert result['status'] == 'success'
-        assert 'Download request created' in result['message']
-        assert result['server_id'] == VALID_SERVER_ID
+    @pytest.mark.asyncio
+    async def test_local_download_without_a_url_fails_naming_the_scope(
+        self, mock_http_client, mock_token_manager, tmp_path
+    ):
+        mock_http_client.post.return_value = {**_DOWNLOAD_ROW, 'download_url': None}
+
+        with patch('tools.webftp_tools._stream_s3_to_file') as mock_stream:
+            result = await self._download(tmp_path / 'test.txt')
+
+        assert result['status'] == _STATUS_ERROR
+        assert result['code'] == 'download_failed'
+        assert result['file_id'] == 'dl-abc'
+        assert 'download scope' in result['message']
+        mock_http_client.get.assert_not_called()
+        mock_stream.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_download_file_s3_error(self, mock_http_client, mock_token_manager):
-        """Test file download with S3 error."""
+    async def test_local_download_without_a_command_never_fetches(
+        self, mock_http_client, mock_token_manager, tmp_path
+    ):
+        mock_http_client.post.return_value = {**_DOWNLOAD_ROW, 'command': None}
 
-        mock_http_client.post.return_value = {
-            'id': 'download-123',
-            'download_url': 'https://s3.amazonaws.com/bucket/download-url',
-        }
+        with patch('tools.webftp_tools._stream_s3_to_file') as mock_stream:
+            result = await self._download(tmp_path / 'test.txt')
+
+        assert result['status'] == _STATUS_ERROR
+        assert result['code'] == 'download_failed'
+        assert result['file_id'] == 'dl-abc'
+        mock_http_client.get.assert_not_called()
+        mock_stream.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_download_file_s3_error(
+        self, mock_http_client, mock_token_manager, tmp_path
+    ):
+        mock_http_client.post.return_value = _DOWNLOAD_ROW
+        calls: list[str] = []
+        mock_http_client.get.side_effect = _route_download(log=calls)
 
         with patch(
             'tools.webftp_tools._stream_s3_to_file',
             new=AsyncMock(side_effect=_S3DownloadError('404 - Not Found')),
         ):
-            result = await webftp_download_file(
-                server_id=VALID_SERVER_ID,
-                remote_file_path='/remote/test.txt',
-                local_file_path='/local/test.txt',
-                workspace='testworkspace',
-            )
+            result = await self._download(tmp_path / 'test.txt')
 
         assert result['status'] == _STATUS_ERROR
-        assert 'Failed to download from S3' in result['message']
+        assert 'Failed to download from S3: 404 - Not Found' in result['message']
+        assert calls == [
+            '/api/events/commands/cmd-dl/',
+            '/api/webftp/downloads/dl-abc/status/',
+        ]
+        assert list(tmp_path.iterdir()) == []
 
     @pytest.mark.asyncio
-    async def test_download_file_save_error(self, mock_http_client, mock_token_manager):
-        """Test file download with local save error."""
-
-        mock_http_client.post.return_value = {
-            'id': 'download-123',
-            'download_url': 'https://s3.amazonaws.com/bucket/download-url',
-        }
+    async def test_download_file_save_error(
+        self, mock_http_client, mock_token_manager, tmp_path
+    ):
+        mock_http_client.post.return_value = _DOWNLOAD_ROW
+        mock_http_client.get.side_effect = _route_download()
 
         with patch(
             'tools.webftp_tools._stream_s3_to_file',
             new=AsyncMock(side_effect=_LocalSaveError('Permission denied')),
         ):
-            result = await webftp_download_file(
-                server_id=VALID_SERVER_ID,
-                remote_file_path='/remote/test.txt',
-                local_file_path='/local/test.txt',
-                workspace='testworkspace',
-            )
+            result = await self._download(tmp_path / 'test.txt')
 
         assert result['status'] == _STATUS_ERROR
-        assert 'Failed to save file locally' in result['message']
+        assert 'Failed to save file locally: Permission denied' in result['message']
+
+    @pytest.mark.asyncio
+    async def test_local_download_fetches_only_after_the_transfer_is_confirmed(
+        self, mock_http_client, mock_token_manager, tmp_path
+    ):
+        mock_http_client.post.return_value = _DOWNLOAD_ROW
+        calls: list[str] = []
+        mock_http_client.get.side_effect = _route_download(
+            commands=(_COMMAND_RUNNING, _COMMAND_RUNNING, _COMMAND_DONE), log=calls
+        )
+
+        with patch(
+            'tools.webftp_tools._stream_s3_to_file',
+            new=self._stream_writing(log=calls),
+        ):
+            result = await self._download(tmp_path / 'test.txt')
+
+        assert result['status'] == 'success'
+        assert calls == [
+            '/api/events/commands/cmd-dl/',
+            '/api/events/commands/cmd-dl/',
+            '/api/events/commands/cmd-dl/',
+            '/api/webftp/downloads/dl-abc/status/',
+            'GET ' + _DOWNLOAD_URL,
+        ]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ('command', 'reason'),
+        [
+            pytest.param(
+                {**_COMMAND_DONE, 'success': False, 'result': 'Permission denied'},
+                'Permission denied',
+                id='handled-and-failed',
+            ),
+            pytest.param(
+                {**_COMMAND_DONE, 'success': False, 'result': None},
+                'the host refused the download',
+                id='handled-and-failed-silently',
+            ),
+            *(
+                pytest.param(
+                    {'status': status, 'handled_at': None},
+                    f'the transfer command ended as {status}',
+                    id=status,
+                )
+                for status in ('denied', 'rejected', 'stuck')
+            ),
+        ],
+    )
+    async def test_local_download_is_not_fetched_when_the_host_command_fails(
+        self, mock_http_client, mock_token_manager, tmp_path, command, reason
+    ):
+        mock_http_client.post.return_value = _DOWNLOAD_ROW
+        mock_http_client.get.side_effect = _route_download(commands=(command,))
+
+        with patch('tools.webftp_tools._stream_s3_to_file') as mock_stream:
+            result = await self._download(tmp_path / 'test.txt')
+
+        assert result['status'] == _STATUS_ERROR
+        assert result['code'] == 'download_failed'
+        assert result['message'] == f'Server failed to process download: {reason}'
+        mock_stream.assert_not_called()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ('status', 'code'),
+        [
+            pytest.param(
+                {'success': False, 'message': 'upload to S3 failed'},
+                'download_failed',
+                id='failed',
+            ),
+            pytest.param({'success': None}, 'download_timeout', id='in-progress'),
+        ],
+    )
+    async def test_an_unconfirmed_transfer_leaves_the_existing_file_untouched(
+        self, mock_http_client, mock_token_manager, tmp_path, status, code
+    ):
+        mock_http_client.post.return_value = _DOWNLOAD_ROW
+        mock_http_client.get.side_effect = _route_download(statuses=(status,))
+        dest = tmp_path / 'test.txt'
+        dest.write_bytes(b'old bytes')
+
+        with (
+            patch('tools.webftp_tools._DOWNLOAD_TIMEOUT', 2),
+            patch('tools.webftp_tools._stream_s3_to_file', new=self._stream_writing()),
+        ):
+            result = await self._download(dest)
+
+        assert result['status'] == _STATUS_ERROR
+        assert result['code'] == code
+        assert dest.read_bytes() == b'old bytes'
+        assert list(tmp_path.iterdir()) == [dest]
+
+    @pytest.mark.asyncio
+    async def test_a_confirmed_transfer_replaces_the_existing_file(
+        self, mock_http_client, mock_token_manager, tmp_path
+    ):
+        mock_http_client.post.return_value = _DOWNLOAD_ROW
+        mock_http_client.get.side_effect = _route_download()
+        dest = tmp_path / 'test.txt'
+        dest.write_bytes(b'old bytes')
+        dest.chmod(0o640)
+        seen: dict[str, int] = {}
+
+        with patch(
+            'tools.webftp_tools._stream_s3_to_file',
+            new=self._stream_writing(seen=seen),
+        ):
+            result = await self._download(dest)
+
+        assert result['status'] == 'success'
+        assert dest.read_bytes() == b'new bytes'
+        assert seen['mode'] == 0o600
+        assert dest.stat().st_mode & 0o777 == 0o640
+        assert list(tmp_path.iterdir()) == [dest]
+
+    @pytest.mark.asyncio
+    async def test_a_token_that_cannot_read_the_command_fetches_after_the_transfer(
+        self, mock_http_client, mock_token_manager, tmp_path
+    ):
+        mock_http_client.post.return_value = _DOWNLOAD_ROW
+        calls: list[str] = []
+        mock_http_client.get.side_effect = _route_download(
+            commands=(_SCOPE_REFUSAL,),
+            statuses=({'success': None}, _TRANSFER_DONE),
+            log=calls,
+        )
+        dest = tmp_path / 'test.txt'
+
+        with patch(
+            'tools.webftp_tools._stream_s3_to_file',
+            new=self._stream_writing(log=calls),
+        ):
+            result = await self._download(dest)
+
+        assert result['status'] == 'success'
+        assert dest.read_bytes() == b'new bytes'
+        assert calls == [
+            '/api/events/commands/cmd-dl/',
+            '/api/webftp/downloads/dl-abc/status/',
+            '/api/webftp/downloads/dl-abc/status/',
+            'GET ' + _DOWNLOAD_URL,
+        ]
+
+    @pytest.mark.asyncio
+    async def test_a_token_that_cannot_read_the_command_never_fetches_a_failed_transfer(
+        self, mock_http_client, mock_token_manager, tmp_path
+    ):
+        mock_http_client.post.return_value = _DOWNLOAD_ROW
+        mock_http_client.get.side_effect = _route_download(
+            commands=(_SCOPE_REFUSAL,),
+            statuses=({'success': False, 'message': 'upload to S3 failed'},),
+        )
+
+        with patch('tools.webftp_tools._stream_s3_to_file') as mock_stream:
+            result = await self._download(tmp_path / 'test.txt')
+
+        assert result['status'] == _STATUS_ERROR
+        assert result['code'] == 'download_failed'
+        assert 'upload to S3 failed' in result['message']
+        mock_stream.assert_not_called()
+        assert list(tmp_path.iterdir()) == []
+
+    @pytest.mark.asyncio
+    async def test_local_download_times_out_when_the_host_never_handles_the_command(
+        self, mock_http_client, mock_token_manager, tmp_path
+    ):
+        mock_http_client.post.return_value = _DOWNLOAD_ROW
+        mock_http_client.get.side_effect = _route_download(commands=(_COMMAND_RUNNING,))
+
+        with (
+            patch('tools.webftp_tools._DOWNLOAD_TIMEOUT', 2),
+            patch('tools.webftp_tools._stream_s3_to_file') as mock_stream,
+        ):
+            result = await self._download(tmp_path / 'test.txt')
+
+        assert result['status'] == _STATUS_ERROR
+        assert result['code'] == 'download_timeout'
+        assert result['file_id'] == 'dl-abc'
+        assert mock_http_client.get.call_count == 3  # at 0s, 1s and the 2s deadline
+        mock_stream.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_download_file_no_token(self, mock_http_client, mock_token_manager):
-        """Test file download when no token is available."""
-
         mock_token_manager.get_token.return_value = None
 
         result = await webftp_download_file(
@@ -576,12 +776,8 @@ class TestWebFtpDownloadFile:
 
 
 class TestWebFtpUploadsList:
-    """Test webftp_uploads_list function."""
-
     @pytest.mark.asyncio
     async def test_uploads_list_success(self, mock_http_client, mock_token_manager):
-        """Test successful uploads list retrieval."""
-
         # Mock successful response
         mock_http_client.get.return_value = {
             'count': 2,
@@ -621,8 +817,6 @@ class TestWebFtpUploadsList:
     async def test_uploads_list_with_server_filter(
         self, mock_http_client, mock_token_manager
     ):
-        """Test uploads list with server filter."""
-
         mock_http_client.get.return_value = {'count': 1, 'results': []}
 
         result = await webftp_uploads_list(
@@ -641,8 +835,6 @@ class TestWebFtpUploadsList:
 
     @pytest.mark.asyncio
     async def test_uploads_list_no_token(self, mock_http_client, mock_token_manager):
-        """Test uploads list when no token is available."""
-
         mock_token_manager.get_token.return_value = None
 
         result = await webftp_uploads_list(workspace='testworkspace')
@@ -655,8 +847,6 @@ class TestWebFtpUploadsList:
 class TestWebFtpDownloadsList:
     @pytest.mark.asyncio
     async def test_downloads_list_success(self, mock_http_client, mock_token_manager):
-        """Test successful downloads list retrieval."""
-
         # Mock successful response
         mock_http_client.get.return_value = {
             'count': 2,
@@ -696,8 +886,6 @@ class TestWebFtpDownloadsList:
     async def test_downloads_list_with_server_filter(
         self, mock_http_client, mock_token_manager
     ):
-        """Test downloads list with server filter."""
-
         mock_http_client.get.return_value = {'count': 1, 'results': []}
 
         result = await webftp_downloads_list(
@@ -716,8 +904,6 @@ class TestWebFtpDownloadsList:
 
     @pytest.mark.asyncio
     async def test_downloads_list_no_token(self, mock_http_client, mock_token_manager):
-        """Test downloads list when no token is available."""
-
         mock_token_manager.get_token.return_value = None
 
         result = await webftp_downloads_list(workspace='testworkspace')
@@ -851,8 +1037,6 @@ class TestWebFtpCheckStatus:
 
 
 class TestWebFtpBulkUpload:
-    """Test webftp_bulk_upload function."""
-
     @staticmethod
     def _patch_local_file_checks():
         """Patch path/access/stat checks so validation passes."""
@@ -1155,8 +1339,6 @@ class TestWebFtpBulkUpload:
 
 
 class TestWebFtpBulkDownload:
-    """Test webftp_bulk_download function."""
-
     @pytest.mark.asyncio
     async def test_bulk_download_success(self, mock_http_client, mock_token_manager):
         """Successful streaming download returns size and metadata."""
@@ -1301,7 +1483,7 @@ class TestWebFtpBulkDownload:
 
 
 class TestUploadContent:
-    """Test webftp_upload_content — content-based upload for remote and local modes."""
+    """Test webftp_upload_content: content-based upload for remote and local modes."""
 
     @pytest.mark.asyncio
     async def test_upload_content_success(
@@ -1516,14 +1698,10 @@ class TestUploadContent:
 
 
 class TestRemoteModeUnsupported:
-    """Test that file-transfer tools return a clear error in remote mode."""
-
     @pytest.mark.asyncio
     async def test_upload_file_remote_mode(self, mock_http_client, mock_token_manager):
-        """webftp_upload_file returns remote_mode_unsupported error in remote mode.
-
-        The decorator's auth check is bypassed (auth disabled) so the function
-        body's is_auth_enabled check is what we're exercising here.
+        """webftp_upload_file returns remote_mode_unsupported in remote mode. The
+        decorator's auth check is bypassed, so the body's is_auth_enabled check runs.
         """
         with patch('tools.webftp_tools.is_auth_enabled', return_value=True):
             result = await webftp_upload_file(
@@ -1589,110 +1767,242 @@ class TestRemoteModeUnsupported:
 
 
 class TestRemoteModeDownload:
-    """Test webftp_download_file remote mode — returns presigned URL instead of saving locally."""
+    """Remote mode answers with the presigned URL only once the host has put the file."""
+
+    @pytest.fixture(autouse=True)
+    def _remote_mode(self, fake_clock):
+        with patch('tools.webftp_tools.is_auth_enabled', return_value=True):
+            yield fake_clock
+
+    @staticmethod
+    async def _download():
+        return await webftp_download_file(
+            server_id=VALID_SERVER_ID,
+            remote_file_path='/remote/file.txt',
+            workspace='ws',
+            region='ap1',
+        )
 
     @pytest.mark.asyncio
-    async def test_download_remote_mode_immediate_url(
+    async def test_remote_download_returns_the_url_once_the_transfer_succeeds(
         self, mock_http_client, mock_token_manager
     ):
-        """When POST response already contains download_url, return it immediately."""
-        mock_http_client.post.return_value = {
-            'id': 'dl-abc',
-            'download_url': 'https://s3.example.com/file?sig=abc',
-        }
+        mock_http_client.post.return_value = _DOWNLOAD_ROW
+        calls: list[str] = []
+        mock_http_client.get.side_effect = _route_download(
+            commands=(_COMMAND_RUNNING, _COMMAND_DONE),
+            statuses=({'success': None, 'message': None}, _TRANSFER_DONE),
+            log=calls,
+        )
 
-        with patch('tools.webftp_tools.is_auth_enabled', return_value=True):
-            result = await webftp_download_file(
-                server_id=VALID_SERVER_ID,
-                remote_file_path='/remote/file.txt',
-                workspace='ws',
-                region='ap1',
-            )
+        result = await self._download()
 
         assert result['status'] == 'success'
-        assert result['download_url'] == 'https://s3.example.com/file?sig=abc'
-        mock_http_client.post.assert_called_once()
+        assert result['download_url'] == _DOWNLOAD_URL
+        assert calls == [
+            '/api/events/commands/cmd-dl/',
+            '/api/events/commands/cmd-dl/',
+            '/api/webftp/downloads/dl-abc/status/',
+            '/api/webftp/downloads/dl-abc/status/',
+        ]
+
+    @pytest.mark.asyncio
+    async def test_remote_download_times_out_while_the_transfer_is_in_progress(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = _DOWNLOAD_ROW
+        calls: list[str] = []
+        mock_http_client.get.side_effect = _route_download(
+            statuses=({'success': None},), log=calls
+        )
+
+        with patch('tools.webftp_tools._DOWNLOAD_TIMEOUT', 2):
+            result = await self._download()
+
+        assert result['status'] == 'error'
+        assert result['code'] == 'download_timeout'
+        assert result['file_id'] == 'dl-abc'
+        assert result['download_url'] == _DOWNLOAD_URL
+        assert result['message'].endswith(
+            'Once it reports the download completed, fetch download_url.'
+        )
+        assert calls == [
+            '/api/events/commands/cmd-dl/',
+            '/api/webftp/downloads/dl-abc/status/',
+            '/api/webftp/downloads/dl-abc/status/',
+            '/api/webftp/downloads/dl-abc/status/',
+        ]
+
+    @pytest.mark.asyncio
+    async def test_remote_download_timing_out_on_the_command_still_hands_back_the_url(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = _DOWNLOAD_ROW
+        mock_http_client.get.side_effect = _route_download(commands=(_COMMAND_RUNNING,))
+
+        with patch('tools.webftp_tools._DOWNLOAD_TIMEOUT', 2):
+            result = await self._download()
+
+        assert result['status'] == 'error'
+        assert result['code'] == 'download_timeout'
+        assert result['download_url'] == _DOWNLOAD_URL
+        assert mock_http_client.get.call_count == 3
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ('timeout', 'settles_at'),
+        [
+            pytest.param(3, 1.5, id='between-polls'),
+            pytest.param(2.5, 2.4, id='after-the-last-whole-interval'),
+            pytest.param(2.5, 2.5, id='at-the-deadline'),
+        ],
+    )
+    async def test_a_transfer_settling_inside_the_window_is_not_a_timeout(
+        self, mock_http_client, mock_token_manager, _remote_mode, timeout, settles_at
+    ):
+        clock = _remote_mode
+        mock_http_client.post.return_value = _DOWNLOAD_ROW
+
+        async def _get(*, endpoint, **_):
+            if endpoint == '/api/events/commands/cmd-dl/':
+                return _COMMAND_DONE
+            return {'success': True if clock.now >= settles_at else None}
+
+        mock_http_client.get.side_effect = _get
+
+        with patch('tools.webftp_tools._DOWNLOAD_TIMEOUT', timeout):
+            result = await self._download()
+
+        assert result['status'] == 'success'
+        assert result['download_url'] == _DOWNLOAD_URL
+        assert clock.now <= timeout
+
+    @pytest.mark.asyncio
+    async def test_remote_download_checks_the_transfer_when_handled_at_the_deadline(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = _DOWNLOAD_ROW
+        calls: list[str] = []
+        mock_http_client.get.side_effect = _route_download(
+            commands=(_COMMAND_RUNNING, _COMMAND_DONE), log=calls
+        )
+
+        with patch('tools.webftp_tools._DOWNLOAD_TIMEOUT', 1):
+            result = await self._download()
+
+        assert result['status'] == 'success'
+        assert result['download_url'] == _DOWNLOAD_URL
+        assert calls == [
+            '/api/events/commands/cmd-dl/',
+            '/api/events/commands/cmd-dl/',
+            '/api/webftp/downloads/dl-abc/status/',
+        ]
+
+    @pytest.mark.asyncio
+    async def test_remote_download_reports_a_failed_transfer(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = _DOWNLOAD_ROW
+        mock_http_client.get.side_effect = _route_download(
+            statuses=({'success': False, 'message': 'file not found on server'},)
+        )
+
+        result = await self._download()
+
+        assert result['status'] == 'error'
+        assert result['code'] == 'download_failed'
+        assert result['message'] == (
+            'Server failed to process download: file not found on server'
+        )
+        assert 'download_url' not in result
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('outcome', ['denied', 'rejected', 'stuck'])
+    async def test_remote_download_reports_a_host_command_that_never_ran(
+        self, mock_http_client, mock_token_manager, outcome
+    ):
+        mock_http_client.post.return_value = _DOWNLOAD_ROW
+        calls: list[str] = []
+        mock_http_client.get.side_effect = _route_download(
+            commands=({'status': outcome, 'handled_at': None},), log=calls
+        )
+
+        result = await self._download()
+
+        assert result['status'] == 'error'
+        assert result['code'] == 'download_failed'
+        assert result['message'] == (
+            f'Server failed to process download: the transfer command ended as {outcome}'
+        )
+        assert calls == ['/api/events/commands/cmd-dl/']
+
+    @pytest.mark.asyncio
+    async def test_remote_download_waits_on_the_transfer_when_the_command_is_hidden(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = _DOWNLOAD_ROW
+        calls: list[str] = []
+        mock_http_client.get.side_effect = _route_download(
+            commands=(_SCOPE_REFUSAL,), log=calls
+        )
+
+        result = await self._download()
+
+        assert result['status'] == 'success'
+        assert result['download_url'] == _DOWNLOAD_URL
+        assert calls == [
+            '/api/events/commands/cmd-dl/',
+            '/api/webftp/downloads/dl-abc/status/',
+        ]
+
+    @pytest.mark.asyncio
+    async def test_remote_download_reports_a_refused_command_poll(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = _DOWNLOAD_ROW
+        mock_http_client.get.return_value = {
+            'error': 'HTTP Error',
+            'status_code': HTTPStatus.INTERNAL_SERVER_ERROR,
+        }
+
+        result = await self._download()
+
+        assert result['status'] == 'error'
+        assert result['message'] == 'Failed to poll the download command'
+        assert result['file_id'] == 'dl-abc'
+        assert (result['region'], result['workspace']) == ('ap1', 'ws')
+        assert result['status_code'] == HTTPStatus.INTERNAL_SERVER_ERROR
+        assert mock_http_client.get.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_remote_download_without_a_url_fails_naming_the_scope(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = {**_DOWNLOAD_ROW, 'download_url': None}
+
+        result = await self._download()
+
+        assert result['status'] == 'error'
+        assert result['code'] == 'download_failed'
+        assert result['file_id'] == 'dl-abc'
+        assert 'download scope' in result['message']
         mock_http_client.get.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_download_remote_mode_polling(
+    async def test_remote_download_refuses_a_request_without_a_command(
         self, mock_http_client, mock_token_manager
     ):
-        """When download_url is absent, poll status until success=True then return URL."""
-        mock_http_client.post.return_value = {'id': 'dl-abc', 'download_url': None}
-        mock_http_client.get.side_effect = [
-            {'success': None},
-            {'success': True, 'download_url': 'https://s3.example.com/file?sig=abc'},
-        ]
+        mock_http_client.post.return_value = {**_DOWNLOAD_ROW, 'command': None}
 
-        with (
-            patch('tools.webftp_tools.is_auth_enabled', return_value=True),
-            patch('asyncio.sleep', new_callable=AsyncMock),
-        ):
-            result = await webftp_download_file(
-                server_id=VALID_SERVER_ID,
-                remote_file_path='/remote/file.txt',
-                workspace='ws',
-                region='ap1',
-            )
-
-        assert result['status'] == 'success'
-        assert result['download_url'] == 'https://s3.example.com/file?sig=abc'
-        assert mock_http_client.get.call_count == 2
-
-    @pytest.mark.asyncio
-    async def test_download_remote_mode_timeout(
-        self, mock_http_client, mock_token_manager
-    ):
-        """Polling that exceeds _REMOTE_DOWNLOAD_TIMEOUT returns download_timeout error."""
-        mock_http_client.post.return_value = {'id': 'dl-abc', 'download_url': None}
-        mock_http_client.get.return_value = {'success': None}
-
-        with (
-            patch('tools.webftp_tools.is_auth_enabled', return_value=True),
-            patch('asyncio.sleep', new_callable=AsyncMock),
-            patch('tools.webftp_tools._REMOTE_DOWNLOAD_TIMEOUT', 2),
-        ):
-            result = await webftp_download_file(
-                server_id=VALID_SERVER_ID,
-                remote_file_path='/remote/file.txt',
-                workspace='ws',
-                region='ap1',
-            )
+        result = await self._download()
 
         assert result['status'] == 'error'
-        assert result.get('code') == 'download_timeout'
-        assert result.get('file_id') == 'dl-abc'
-
-    @pytest.mark.asyncio
-    async def test_download_remote_mode_server_failure(
-        self, mock_http_client, mock_token_manager
-    ):
-        """When server reports success=False, return error with the server message."""
-        mock_http_client.post.return_value = {'id': 'dl-abc', 'download_url': None}
-        mock_http_client.get.return_value = {
-            'success': False,
-            'message': 'file not found on server',
-        }
-
-        with (
-            patch('tools.webftp_tools.is_auth_enabled', return_value=True),
-            patch('asyncio.sleep', new_callable=AsyncMock),
-        ):
-            result = await webftp_download_file(
-                server_id=VALID_SERVER_ID,
-                remote_file_path='/remote/file.txt',
-                workspace='ws',
-                region='ap1',
-            )
-
-        assert result['status'] == 'error'
-        assert 'file not found' in result['message']
+        assert result['code'] == 'download_failed'
+        assert result['file_id'] == 'dl-abc'
+        mock_http_client.get.assert_not_called()
 
 
 class TestAiterFile:
-    """Test the _aiter_file streaming-upload helper."""
-
     @pytest.mark.asyncio
     async def test_aiter_file_yields_chunks(self, tmp_path):
         """Yields exact file contents in chunks bounded by chunk_size."""
@@ -1721,8 +2031,6 @@ class TestAiterFile:
 
 
 class TestEnsureParentDir:
-    """Test the _ensure_parent_dir helper."""
-
     @pytest.mark.asyncio
     async def test_ensure_parent_dir_wraps_oserror_as_local_save_error(self):
         """OSError from mkdir surfaces as _LocalSaveError with the OS message."""
@@ -1996,16 +2304,14 @@ class TestNonObjectResponseBodies:
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize('body', BODIES, ids=BODY_IDS)
-    async def test_remote_download_rejects_non_object_status_poll(
-        self, body, mock_http_client, mock_token_manager
+    @pytest.mark.parametrize('poll', ['commands', 'statuses'])
+    async def test_remote_download_rejects_non_object_poll(
+        self, body, poll, mock_http_client, mock_token_manager, fake_clock
     ):
-        mock_http_client.post.return_value = {'id': 'dl-abc', 'download_url': None}
-        mock_http_client.get.return_value = body
+        mock_http_client.post.return_value = _DOWNLOAD_ROW
+        mock_http_client.get.side_effect = _route_download(**{poll: (body,)})
 
-        with (
-            patch('tools.webftp_tools.is_auth_enabled', return_value=True),
-            patch('asyncio.sleep', new_callable=AsyncMock),
-        ):
+        with patch('tools.webftp_tools.is_auth_enabled', return_value=True):
             result = await webftp_download_file(
                 server_id=VALID_SERVER_ID,
                 remote_file_path='/remote/file.txt',

@@ -5,6 +5,7 @@ from utils.common import (
     build_list_params,
     empty_value_error,
     error_response,
+    exclude_none,
     is_stdio_transport,
 )
 from utils.decorators import mcp_tool_handler
@@ -31,12 +32,8 @@ _TOKEN_REQUIRED_ERROR = 'Either api_token_id or service_token_id must be provide
 
 
 def _command_acl_moved_note(stdio: bool) -> str:
-    """The note the command-ACL write tools carry about the ledger.
-
-    A deployment that moved command ACLs to the pre-approval ledger refuses
-    every write; one without it does not. Only a stdio server registers the
-    ledger tools, so only there does the note name them.
-    """
+    """Note for the command-ACL write tools; only stdio registers the ledger tools,
+    so only there does it name them."""
     ledger_tools = (
         ', or with issue_ledger_entries and revoke_ledger_entry on this server '
         '(get_ledger_capability reports command_acl_surface "ai")'
@@ -138,22 +135,8 @@ async def create_command_acl(
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
-    """Create a command ACL rule.
-
-    Exactly one of api_token_id or service_token_id must be provided.
-
-    Args:
-        workspace: Workspace name. Required parameter
-        command: Command pattern to allow (e.g., 'docker *', 'ls -la'). Wildcards (*) supported. Must not be empty
-        api_token_id: API token ID this rule applies to (mutually exclusive with service_token_id)
-        service_token_id: Service token ID this rule applies to (mutually exclusive with api_token_id)
-        username: System username restriction. Empty = token owner only, '*' = any user (optional)
-        groupname: System groupname restriction. Empty = no restriction (any group), exact name to restrict (optional)
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        Command ACL creation response
-    """
+    """Create a rule bound to exactly one of `api_token_id`, `service_token_id`.
+    Empty `username` means token owner only, '*' any user; empty `groupname`, any."""
     if not command.strip():
         return empty_value_error('command')
     if api_token_id is None and service_token_id is None:
@@ -199,33 +182,16 @@ async def update_command_acl(
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
-    """Update an existing command ACL rule.
-
-    Note: This tool does not support changing the token binding. Delete and recreate to rebind to a different token.
-
-    Args:
-        acl_id: Command ACL rule ID to update
-        workspace: Workspace name. Required parameter
-        command: Command pattern to allow. Must not be empty when given (optional)
-        username: System username restriction. Pass '' explicitly to clear an existing restriction; omit to leave unchanged (optional)
-        groupname: System groupname restriction. Pass '' explicitly to clear an existing restriction; omit to leave unchanged (optional)
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        Command ACL update response
-    """
+    """Update a rule; the token binding is fixed, so delete and recreate to rebind.
+    Pass '' to clear `username` or `groupname`; omit to leave it unchanged."""
     if command is not None and not command.strip():
         return empty_value_error('command')
 
     token = kwargs.get('token')
 
-    update_data: dict[str, object] = {}
-    if command is not None:
-        update_data['command'] = command
-    if username is not None:
-        update_data['username'] = username
-    if groupname is not None:
-        update_data['groupname'] = groupname
+    update_data: dict[str, object] = exclude_none(
+        command=command, username=username, groupname=groupname
+    )
 
     if not update_data:
         return error_response('No update data provided')
@@ -251,16 +217,6 @@ async def update_command_acl(
 async def delete_command_acl(
     acl_id: str, workspace: str, region: str = '', **kwargs: str
 ) -> ToolResponse:
-    """Delete a command ACL rule.
-
-    Args:
-        acl_id: Command ACL rule ID to delete
-        workspace: Workspace name. Required parameter
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        Command ACL deletion response
-    """
     token = kwargs.get('token')
 
     return await http_call_response(
@@ -337,21 +293,7 @@ async def create_server_acl(
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
-    """Create a server ACL rule.
-
-    Exactly one of api_token_id or service_token_id must be provided.
-    Each rule grants the token access to exactly one server.
-
-    Args:
-        workspace: Workspace name. Required parameter
-        server_id: Server UUID to grant access to
-        api_token_id: API token ID to grant access (mutually exclusive with service_token_id)
-        service_token_id: Service token ID to grant access (mutually exclusive with api_token_id)
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        Server ACL creation response
-    """
+    """Grant exactly one of `api_token_id`, `service_token_id` access to one server."""
     if api_token_id is None and service_token_id is None:
         return error_response(_TOKEN_REQUIRED_ERROR)
     if api_token_id is not None and service_token_id is not None:
@@ -390,29 +332,13 @@ async def update_server_acl(
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
-    """Update an existing server ACL rule.
-
-    Note: Token binding can be updated by providing api_token_id or service_token_id.
-
-    Args:
-        acl_id: Server ACL rule ID to update
-        workspace: Workspace name. Required parameter
-        server_id: New server UUID (optional)
-        api_token_id: New API token ID to rebind this rule to (optional)
-        service_token_id: New service token ID to rebind this rule to (optional)
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        Server ACL update response
-    """
+    """Update a rule; a token id rebinds it, and the other token type is nulled."""
     if api_token_id is not None and service_token_id is not None:
         return error_response(_BOTH_TOKENS_ERROR)
 
     token = kwargs.get('token')
 
-    update_data: dict[str, object] = {}
-    if server_id is not None:
-        update_data['server'] = server_id
+    update_data: dict[str, object] = exclude_none(server=server_id)
     # When rebinding, null the opposing field explicitly: the server enforces
     # exactly-one-token-type, and PATCH keeps the old binding otherwise.
     if api_token_id is not None:
@@ -445,16 +371,6 @@ async def update_server_acl(
 async def delete_server_acl(
     acl_id: str, workspace: str, region: str = '', **kwargs: str
 ) -> ToolResponse:
-    """Delete a server ACL rule.
-
-    Args:
-        acl_id: Server ACL rule ID to delete
-        workspace: Workspace name. Required parameter
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        Server ACL deletion response
-    """
     token = kwargs.get('token')
 
     return await http_call_response(
@@ -483,21 +399,7 @@ async def bulk_server_acl(
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
-    """Bulk add or remove server ACL entries.
-
-    Exactly one of api_token_id or service_token_id must be provided.
-
-    Args:
-        workspace: Workspace name. Required parameter
-        action: Bulk action - 'add' (grant access) or 'remove' (revoke access)
-        server_ids: List of server UUIDs to add or remove access for (1-100 items)
-        api_token_id: API token ID to operate on (mutually exclusive with service_token_id)
-        service_token_id: Service token ID to operate on (mutually exclusive with api_token_id)
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        Bulk server ACL operation response
-    """
+    """Add or remove 1 to 100 servers for exactly one of the two token ids."""
     if action not in VALID_BULK_ACTIONS:
         return error_response(
             f"Invalid action '{action}'. Must be one of: {_BULK_ACTIONS_STR}."
@@ -603,23 +505,8 @@ async def create_file_acl(
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
-    """Create a file ACL rule.
-
-    Exactly one of api_token_id or service_token_id must be provided.
-
-    Args:
-        workspace: Workspace name. Required parameter
-        path: File path pattern to match (e.g., '/etc/nginx/*', '/var/log/*.log'). Wildcards (*) supported. Must not be empty
-        action: Allowed action - 'upload', 'download', or '*' (both)
-        api_token_id: API token ID this rule applies to (mutually exclusive with service_token_id)
-        service_token_id: Service token ID this rule applies to (mutually exclusive with api_token_id)
-        username: System username restriction. Empty = token owner only, '*' = any user (optional)
-        groupname: System groupname restriction. Empty = no restriction (any group), exact name to restrict (optional)
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        File ACL creation response
-    """
+    """Create a rule for a `path` pattern bound to exactly one of the two token ids.
+    `action` is upload, download or *; empty `username` means token owner, '*' any."""
     if not path.strip():
         return empty_value_error('path')
     if action not in VALID_FILE_ACL_ACTIONS:
@@ -670,22 +557,8 @@ async def update_file_acl(
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
-    """Update an existing file ACL rule.
-
-    Note: This tool does not support changing the token binding. Delete and recreate to rebind to a different token.
-
-    Args:
-        acl_id: File ACL rule ID to update
-        workspace: Workspace name. Required parameter
-        path: New file path pattern. Must not be empty when given (optional)
-        action: New allowed action - 'upload', 'download', or '*' (optional)
-        username: System username restriction. Pass '' explicitly to clear an existing restriction; omit to leave unchanged (optional)
-        groupname: System groupname restriction. Pass '' explicitly to clear an existing restriction; omit to leave unchanged (optional)
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        File ACL update response
-    """
+    """Update a rule; the token binding is fixed, so delete and recreate to rebind.
+    Pass '' to clear `username` or `groupname`; omit to leave it unchanged."""
     if path is not None and not path.strip():
         return empty_value_error('path')
     if action is not None and action not in VALID_FILE_ACL_ACTIONS:
@@ -695,15 +568,9 @@ async def update_file_acl(
 
     token = kwargs.get('token')
 
-    update_data: dict[str, object] = {}
-    if path is not None:
-        update_data['path'] = path
-    if action is not None:
-        update_data['action'] = action
-    if username is not None:
-        update_data['username'] = username
-    if groupname is not None:
-        update_data['groupname'] = groupname
+    update_data: dict[str, object] = exclude_none(
+        path=path, action=action, username=username, groupname=groupname
+    )
 
     if not update_data:
         return error_response('No update data provided')
@@ -728,16 +595,6 @@ async def update_file_acl(
 async def delete_file_acl(
     acl_id: str, workspace: str, region: str = '', **kwargs: str
 ) -> ToolResponse:
-    """Delete a file ACL rule.
-
-    Args:
-        acl_id: File ACL rule ID to delete
-        workspace: Workspace name. Required parameter
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        File ACL deletion response
-    """
     token = kwargs.get('token')
 
     return await http_call_response(

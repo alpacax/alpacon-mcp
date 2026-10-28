@@ -20,13 +20,6 @@ from utils.types import ToolResponse
 )
 @with_error_handling
 async def health_check() -> ToolResponse:
-    """Check MCP server health and return status information.
-
-    No parameters required - returns server health metrics including
-    version, uptime, authentication status, and connection pool info.
-
-    Returns:
-        Health status dictionary with server metrics
-    """
+    """Report version, uptime, auth mode and pool info; needs no token or workspace."""
     health = await get_health_info()
     return success_response(data=health)

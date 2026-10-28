@@ -65,10 +65,8 @@ class TestCursorFollowing:
 
     @pytest.mark.asyncio
     async def test_page_is_never_sent(self):
-        """`page` is the parameter ESCursorPagination does not have (#325).
-
-        Sending it is answered with the first page again, so a walk that used it
-        would repeat page one and report the repetition as a complete list.
+        """`page` is the parameter ESCursorPagination does not have (#325). The server
+        answers it with page one again, so a walk using it would repeat page one.
         """
         _, method = await _walk(
             [_page([{'id': 'a'}], next_cursor='c1'), _page([{'id': 'b'}])]
@@ -79,10 +77,7 @@ class TestCursorFollowing:
     @pytest.mark.asyncio
     async def test_page_size_and_filters_are_resent_on_every_request(self):
         """The paginator rebuilds its query per request, so every param repeats.
-
-        `page_size` is re-read from the query string each time, and a cursor is
-        refused when the filters no longer select the index set it was minted
-        against.
+        page_size is re-read each time, and a cursor is refused once the filters change.
         """
         _, method = await _walk(
             [_page([{'id': 'a'}], next_cursor='c1'), _page([{'id': 'b'}])],
@@ -124,11 +119,8 @@ class TestCursorFollowing:
 
     @pytest.mark.asyncio
     async def test_an_integer_next_is_an_error_not_the_end_of_the_list(self):
-        """A page-number body also carries `next`, as an int, which is not a cursor.
-
-        Feeding one back would fail the cursor paginator's signature check, and
-        stopping there would report `complete` while upstream says another page
-        exists, so a walk mis-wired to a page-number endpoint fails instead.
+        """A page-number body carries `next` as an int, which is not a cursor. Feeding
+        it back fails the signature check; stopping would falsely report `complete`.
         """
         result, method = await _walk(
             [{'count': 30, 'next': 2, 'results': [{'id': 'a'}]}]

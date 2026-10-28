@@ -1,8 +1,4 @@
-"""
-Unit tests for server tools module.
-
-Tests all server management functions including server listing, details, and notes management.
-"""
+"""Unit tests for server tools: listing, details, and notes."""
 
 import inspect
 from http import HTTPStatus
@@ -108,13 +104,10 @@ def sample_server_notes():
 
 
 class TestListServers:
-    """Test servers list functionality."""
-
     @pytest.mark.asyncio
     async def test_list_servers_success(
         self, mock_http_client, mock_token_manager, sample_servers_list
     ):
-        """Test successful servers list retrieval."""
         mock_http_client.get.return_value = sample_servers_list
 
         result = await list_servers(workspace='testworkspace', region='ap1')
@@ -135,7 +128,6 @@ class TestListServers:
     async def test_list_servers_pagination(
         self, mock_http_client, mock_token_manager, sample_servers_list
     ):
-        """Test servers list forwards pagination params to the API."""
         mock_http_client.get.return_value = sample_servers_list
 
         result = await list_servers(
@@ -153,7 +145,6 @@ class TestListServers:
 
     @pytest.mark.asyncio
     async def test_list_servers_no_token(self, mock_http_client, mock_token_manager):
-        """Test servers list with no token."""
         mock_token_manager.get_token.return_value = None
 
         result = await list_servers(workspace='testworkspace')
@@ -166,7 +157,6 @@ class TestListServers:
     async def test_list_servers_different_region(
         self, mock_http_client, mock_token_manager, sample_servers_list
     ):
-        """Test servers list with different region."""
         mock_http_client.get.return_value = sample_servers_list
 
         result = await list_servers(workspace='testworkspace', region='us1')
@@ -305,7 +295,6 @@ class TestGetServer:
     async def test_get_server_success(
         self, mock_http_client, mock_token_manager, sample_server
     ):
-        """Test successful server details retrieval."""
         mock_http_client.get.return_value = sample_server
 
         result = await get_server(server_id=SERVER_ID, workspace='testworkspace')
@@ -325,7 +314,6 @@ class TestGetServer:
 
     @pytest.mark.asyncio
     async def test_get_server_no_token(self, mock_http_client, mock_token_manager):
-        """Test server details with no token."""
         mock_token_manager.get_token.return_value = None
 
         result = await get_server(server_id=SERVER_ID, workspace='testworkspace')
@@ -336,7 +324,6 @@ class TestGetServer:
 
     @pytest.mark.asyncio
     async def test_get_server_not_found(self, mock_http_client, mock_token_manager):
-        """Test server details with non-existent server."""
         mock_http_client.get.return_value = {
             'error': 'HTTP Error',
             'status_code': HTTPStatus.NOT_FOUND,
@@ -356,7 +343,6 @@ class TestGetServer:
     async def test_get_server_different_region(
         self, mock_http_client, mock_token_manager, sample_server
     ):
-        """Test server details with different region."""
         mock_http_client.get.return_value = sample_server
 
         result = await get_server(
@@ -379,7 +365,6 @@ class TestGetCollectionProfile:
     async def test_get_collection_profile_success(
         self, mock_http_client, mock_token_manager
     ):
-        """Test successful collection profile retrieval."""
         profile = {
             'enabled': True,
             'core': [
@@ -475,7 +460,6 @@ class TestServerNotes:
     async def test_list_server_notes_success(
         self, mock_http_client, mock_token_manager, sample_server_notes
     ):
-        """Test successful server notes list retrieval."""
         mock_http_client.get.return_value = sample_server_notes
 
         result = await list_server_notes(server_id=SERVER_ID, workspace='testworkspace')
@@ -514,7 +498,6 @@ class TestServerNotes:
     async def test_list_server_notes_no_token(
         self, mock_http_client, mock_token_manager
     ):
-        """Test server notes list with no token."""
         mock_token_manager.get_token.return_value = None
 
         result = await list_server_notes(server_id=SERVER_ID, workspace='testworkspace')
@@ -599,7 +582,6 @@ class TestServerNotes:
     async def test_create_server_note_no_token(
         self, mock_http_client, mock_token_manager
     ):
-        """Test server note creation with no token."""
         mock_token_manager.get_token.return_value = None
 
         result = await create_server_note(
@@ -618,7 +600,6 @@ class TestParameterValidation:
     async def test_special_characters_in_workspace(
         self, mock_http_client, mock_token_manager, sample_servers_list
     ):
-        """Test with special characters in workspace name."""
         mock_http_client.get.return_value = sample_servers_list
 
         result = await list_servers(workspace='test-workspace_123', region='ap1')
@@ -695,13 +676,10 @@ class TestParameterValidation:
 
 
 class TestRegionHandling:
-    """Test region parameter handling."""
-
     @pytest.mark.asyncio
     async def test_all_supported_regions(
         self, mock_http_client, mock_token_manager, sample_servers_list
     ):
-        """Test with all supported regions."""
         mock_http_client.get.return_value = sample_servers_list
         regions = ['ap1', 'us1', 'dev']
 
@@ -722,8 +700,6 @@ class TestRegionHandling:
 
 
 class TestServerNoteCRUD:
-    """Tests for get_server_note, update_server_note, delete_server_note."""
-
     @pytest.mark.asyncio
     async def test_get_server_note_success(self, mock_http_client, mock_token_manager):
         """Returns single note detail by ID."""
@@ -809,8 +785,6 @@ class TestServerNoteCRUD:
 
 
 class TestUpdateServer:
-    """Tests for update_server tool."""
-
     @pytest.mark.asyncio
     async def test_update_server_success(self, mock_http_client, mock_token_manager):
         """Updates server fields via PATCH and returns updated data."""
@@ -978,8 +952,6 @@ class TestUpdateServer:
 
 
 class TestUnregisterServer:
-    """Tests for unregister_server tool."""
-
     @pytest.mark.asyncio
     async def test_unregister_server_success(
         self, mock_http_client, mock_token_manager
@@ -1043,8 +1015,6 @@ class TestUnregisterServer:
 
 
 class TestStarServer:
-    """Tests for star_server tool."""
-
     @pytest.mark.asyncio
     async def test_star_server_success(self, mock_http_client, mock_token_manager):
         """Posts to star endpoint with status flag and returns success."""
@@ -1083,8 +1053,6 @@ class TestStarServer:
 
 
 class TestListRegistrationTokens:
-    """Tests for list_registration_tokens tool."""
-
     @pytest.mark.asyncio
     async def test_list_registration_tokens_success(
         self, mock_http_client, mock_token_manager
@@ -1145,8 +1113,6 @@ class TestListRegistrationTokens:
 
 
 class TestCreateRegistrationToken:
-    """Tests for create_registration_token tool."""
-
     @pytest.mark.asyncio
     async def test_create_registration_token_success(
         self, mock_http_client, mock_token_manager
@@ -1216,8 +1182,6 @@ class TestCreateRegistrationToken:
 
 
 class TestDeleteRegistrationToken:
-    """Tests for delete_registration_token tool."""
-
     @pytest.mark.asyncio
     async def test_delete_registration_token_success(
         self, mock_http_client, mock_token_manager
@@ -1272,8 +1236,6 @@ class TestDeleteRegistrationToken:
 
 
 class TestGetRegistrationGuide:
-    """Tests for get_registration_guide tool."""
-
     @pytest.mark.asyncio
     async def test_get_registration_guide_success(
         self, mock_http_client, mock_token_manager

@@ -1,17 +1,5 @@
-"""Command pre-approval ledger tools for Alpacon MCP server.
-
-On a workspace whose command ACL surface is `ai`, the pre-approvals that let a
-token run a command without a human approval live on the command pre-approval
-ledger rather than on the workspace server (the "Pre-approved commands" card in
-the web console). The ledger is its own service: it takes a person's token for
-its own audience, never an API or service token, and only a Command ACL admin
-of the workspace may change it. `utils.ledger_auth` obtains that token.
-
-A workspace whose surface is `upstream` keeps using the command ACL tools in
-`security_tools`; every tool here refuses it and says so. Any transport other
-than stdio is refused too, before the sign-in cache is touched: that cache is
-per process, and a network transport may share a process between callers.
-"""
+"""Command pre-approval ledger tools, for workspaces whose command ACL surface is `ai`.
+Stdio only, via `utils.ledger_auth`; only get_ledger_capability answers `upstream`."""
 
 import json
 from http import HTTPStatus
@@ -20,6 +8,7 @@ from typing import Annotated, Literal, NotRequired, TypedDict
 from pydantic import Field
 
 from utils.common import (
+    build_list_params,
     error_response,
     is_auth_enabled,
     is_stdio_transport,
@@ -36,7 +25,6 @@ from utils.ledger_auth import (
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ_ONLY
 from utils.types import (
     JsonValue,
-    QueryParam,
     QueryParams,
     RequestBody,
     ToolErrorResponse,
@@ -100,7 +88,7 @@ class LedgerEntryInput(TypedDict):
 async def _ledger_target(
     region: str, workspace: str, token: str | None
 ) -> LedgerTarget | ToolErrorResponse:
-    """Read the workspace's ACL surface and Auth0 settings; refuse what cannot reach the ledger."""
+    """Read the ACL surface and Auth0 settings; refuse what cannot reach the ledger."""
     result = await http_client.get(
         region=region,
         workspace=workspace,
@@ -233,12 +221,8 @@ async def _ledger_call(
     params: QueryParams | None = None,
     **id_context: object,
 ) -> ToolResponse:
-    """Resolve the ledger target, then call it.
-
-    `scope_to_workspace` names where the workspace's id goes: a list names it
-    in the query and a write in the body, and the ledger refuses either
-    without it.
-    """
+    """Resolve the ledger target, then call it; `scope_to_workspace` puts the workspace
+    id in the query (lists) or body (writes), which the ledger demands."""
     target = await _ledger_target(region, workspace, token)
     if isinstance(target, dict):
         return target
@@ -288,16 +272,7 @@ def _error_detail(result: object) -> JsonValue:
 async def get_ledger_capability(
     workspace: str, region: str = '', **kwargs: str
 ) -> ToolResponse:
-    """Report the command ACL surface and the caller's ledger authority.
-
-    Args:
-        workspace: Workspace name. Required parameter
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        `command_acl_surface`, and on the ledger `is_ledger_admin`,
-        `administers_workspace` and `workspace_ids`
-    """
+    """Report `command_acl_surface` and, on the ledger, the caller's admin authority."""
     token = kwargs.get('token')
     target = await _ledger_target(region, workspace, token)
     if isinstance(target, dict):
@@ -353,30 +328,14 @@ async def list_ledger_entries(
     page_size: int | None = None,
     **kwargs: str,
 ) -> ToolResponse:
-    """List active ledger entries.
-
-    Args:
-        workspace: Workspace name. Required parameter
-        region: Region (ap1, us1). Auto-detected if not provided
-        principal_type: Only entries for this kind of token (optional).
-            'api_token' lists entries a personal API token kept from before;
-            none can be issued
-        principal_id: Only entries for this token's UUID (optional)
-        page: Page number (optional)
-        page_size: Entries per page, at most 200 (optional)
-
-    Returns:
-        A page with `count`, `current`, `next`, `previous`, `last`, `results`
-    """
-    params: dict[str, QueryParam] = {}
-    for name, value in (
-        ('principal_type', principal_type),
-        ('principal_id', principal_id),
-        ('page', page),
-        ('page_size', page_size),
-    ):
-        if value is not None:
-            params[name] = value
+    """List active entries; `principal_type='api_token'` lists legacy ones, none can be
+    issued. `page_size` is at most 200."""
+    params = build_list_params(
+        page=page,
+        page_size=page_size,
+        principal_type=principal_type,
+        principal_id=principal_id,
+    )
 
     return await _ledger_call(
         'GET',
@@ -410,20 +369,7 @@ async def issue_ledger_entries(
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
-    """Issue ledger entries in one request.
-
-    Args:
-        workspace: Workspace name. Required parameter
-        entries: 1 to 200 entries. Each takes `principal_type`
-            ('service_token' only), `principal_id` (the service token's UUID),
-            `command_pattern`, and `username` ('*' for any user). Optional:
-            `groupname`, `server_ids` (UUIDs; omit to apply on every server),
-            `expires_at` (ISO 8601) and `enabled`
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        The issued entries, each with its `id` and any `warnings`
-    """
+    """Issue 1 to 200 entries at once; omitted `server_ids` applies on every server."""
     if not entries:
         return error_response('entries must not be empty')
     if len(entries) > _BULK_MAX_ENTRIES:
@@ -470,16 +416,6 @@ async def issue_ledger_entries(
 async def revoke_ledger_entry(
     workspace: str, entry_id: str, region: str = '', **kwargs: str
 ) -> ToolResponse:
-    """Revoke one ledger entry.
-
-    Args:
-        workspace: Workspace name. Required parameter
-        entry_id: Ledger entry UUID
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        Revocation response
-    """
     return await _ledger_call(
         'DELETE',
         f'entries/{entry_id}/',
@@ -504,16 +440,7 @@ async def revoke_ledger_entry(
 async def revoke_ledger_entries(
     workspace: str, entry_ids: list[str], region: str = '', **kwargs: str
 ) -> ToolResponse:
-    """Revoke several ledger entries.
-
-    Args:
-        workspace: Workspace name. Required parameter
-        entry_ids: 1 to 200 ledger entry UUIDs
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        `revoked`: how many entries were revoked
-    """
+    """Revoke 1 to 200 entries; returns `revoked`, the count."""
     if not entry_ids:
         return error_response('entry_ids must not be empty')
     if len(entry_ids) > _BULK_MAX_ENTRIES:
@@ -562,16 +489,7 @@ async def _set_entry_enabled(
 async def disable_ledger_entry(
     workspace: str, entry_id: str, region: str = '', **kwargs: str
 ) -> ToolResponse:
-    """Disable one ledger entry.
-
-    Args:
-        workspace: Workspace name. Required parameter
-        entry_id: Ledger entry UUID
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        The entry with `enabled: false`
-    """
+    """Disable one ledger entry; enable_ledger_entry undoes it."""
     return await _set_entry_enabled(
         'disable', workspace, entry_id, region, kwargs.get('token')
     )
@@ -588,16 +506,6 @@ async def disable_ledger_entry(
 async def enable_ledger_entry(
     workspace: str, entry_id: str, region: str = '', **kwargs: str
 ) -> ToolResponse:
-    """Enable one ledger entry.
-
-    Args:
-        workspace: Workspace name. Required parameter
-        entry_id: Ledger entry UUID
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        The entry with `enabled: true`
-    """
     return await _set_entry_enabled(
         'enable', workspace, entry_id, region, kwargs.get('token')
     )
@@ -619,22 +527,8 @@ async def list_ledger_admins(
     page_size: int | None = None,
     **kwargs: str,
 ) -> ToolResponse:
-    """List the workspace's Command ACL admins.
-
-    Args:
-        workspace: Workspace name. Required parameter
-        region: Region (ap1, us1). Auto-detected if not provided
-        page: Page number (optional)
-        page_size: Admins per page, at most 200 (optional)
-
-    Returns:
-        A page of admins, each with `id`, `subject` and `email`
-    """
-    params: dict[str, QueryParam] = {}
-    if page is not None:
-        params['page'] = page
-    if page_size is not None:
-        params['page_size'] = page_size
+    """List the workspace's Command ACL admins; `page_size` is at most 200."""
+    params = build_list_params(page=page, page_size=page_size)
 
     return await _ledger_call(
         'GET',
@@ -665,17 +559,7 @@ async def grant_ledger_admin(
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
-    """Grant Command ACL admin.
-
-    Args:
-        workspace: Workspace name. Required parameter
-        subject: The person's Auth0 user id, e.g. 'auth0|abc123'
-        email: The person's email, recorded for display (optional)
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        The new admin record
-    """
+    """`subject` is the person's Auth0 user id, e.g. 'auth0|abc123'."""
     if not subject.strip():
         return error_response('subject must not be empty')
 
@@ -703,16 +587,7 @@ async def grant_ledger_admin(
 async def revoke_ledger_admin(
     workspace: str, admin_id: str, region: str = '', **kwargs: str
 ) -> ToolResponse:
-    """Revoke Command ACL admin.
-
-    Args:
-        workspace: Workspace name. Required parameter
-        admin_id: Admin record UUID from list_ledger_admins
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        Revocation response
-    """
+    """`admin_id` comes from list_ledger_admins."""
     return await _ledger_call(
         'DELETE',
         f'admins/{admin_id}/',

@@ -1,20 +1,10 @@
-"""API token management tools for Alpacon MCP server.
-
-Authentication note: ``api/apitoken/permissions.py:APITokenObjectPermission``
-rejects any request whose ``request.auth`` is an ``APIToken`` with
-``source='api'``. The list/retrieve/create/update/delete/duplicate
-tools below therefore return ``403 Forbidden`` when called from stdio
-mode using a token from ``token.json`` (which is a ``source='api'``
-token). Other authentication paths (JWT/OAuth in streamable-http
-remote mode, browser session, ``source='login'`` token) pass the
-check. The scopes and presets catalog endpoints are not subject to
-this restriction.
-"""
+"""API token tools; a `source='api'` token (stdio token.json) is refused by the API.
+The write tools refuse it up front, list/get 403 upstream; the catalogs are exempt."""
 
 from utils.api_call import http_call_response
-from utils.common import build_list_params, error_response
+from utils.common import build_list_params, error_response, exclude_none
 from utils.decorators import mcp_tool_handler, require_jwt_auth
-from utils.error_handler import format_validation_error, validate_server_id_format
+from utils.error_handler import uuid_field_error
 from utils.http_client import http_client
 from utils.tool_annotations import (
     ADDITIVE,
@@ -22,7 +12,7 @@ from utils.tool_annotations import (
     IDEMPOTENT_WRITE,
     READ_ONLY,
 )
-from utils.types import ToolErrorResponse, ToolResponse
+from utils.types import ToolResponse
 
 _API_TOKENS = '/api/auth/tokens/'
 _API_TOKEN_SCOPES = f'{_API_TOKENS}scopes/'
@@ -32,16 +22,6 @@ _JWT_REQUIRED_NOTE = (
     "Returns 403 Forbidden when called with a source='api' API token; "
     'use JWT/OAuth, a browser session, or a login-source token instead.'
 )
-
-
-def _validate_token_id(token_id: str) -> ToolErrorResponse | None:
-    if not validate_server_id_format(token_id):
-        return format_validation_error(
-            'token_id',
-            token_id,
-            'Must be a valid UUID. Example: 550e8400-e29b-41d4-a716-446655440000',
-        )
-    return None
 
 
 @mcp_tool_handler(
@@ -132,7 +112,7 @@ async def get_api_token(
     """
     token = kwargs.get('token')
 
-    err = _validate_token_id(token_id)
+    err = uuid_field_error('token_id', token_id)
     if err:
         return err
 
@@ -168,33 +148,16 @@ async def create_api_token(
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
-    """Create a new API token.
-
-    Args:
-        workspace: Workspace name. Required parameter
-        name: Name of the API token
-        scopes: List of permission scopes for the token (optional)
-        expires_at: ISO 8601 expiry; the workspace maximum when omitted (optional)
-        enabled: Whether the token is active. Defaults to True on the server (optional)
-        presets: Preset scope keys resolved server-side. Merged with explicit
-            scopes; stored as granular scope strings. Call
-            list_api_token_presets to discover available keys (optional)
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        API token creation response
-    """
+    """Create a token; `presets` merge with `scopes` server-side, expiry defaults to the
+    workspace maximum."""
     token = kwargs.get('token')
 
-    token_data: dict[str, object] = {'name': name}
-    if scopes is not None:
-        token_data['scopes'] = scopes
-    if expires_at is not None:
-        token_data['expires_at'] = expires_at
-    if enabled is not None:
-        token_data['enabled'] = enabled
-    if presets is not None:
-        token_data['presets'] = presets
+    token_data: dict[str, object] = {
+        'name': name,
+        **exclude_none(
+            scopes=scopes, expires_at=expires_at, enabled=enabled, presets=presets
+        ),
+    }
 
     return await http_call_response(
         http_client.post,
@@ -231,48 +194,24 @@ async def update_api_token(
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
-    """Update an API token via PATCH.
-
-    Only the fields you pass are sent; everything else is left untouched
-    on the server. The server enforces the caller's RBAC scope ceiling
-    when ``scopes`` is included.
-
-    Args:
-        token_id: ID of the API token to update
-        workspace: Workspace name. Required parameter
-        name: New token name (optional)
-        enabled: Toggle the token's enabled state (optional)
-        expires_at: New expiration datetime in ISO 8601 format. Mutually
-            exclusive with clear_expires_at (optional)
-        clear_expires_at: When True, send a null expiry; the server resets it to
-            the workspace maximum lifetime. Mutually exclusive with expires_at (optional)
-        scopes: Replacement scope list. Re-validated against the caller's
-            RBAC ceiling (optional)
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        API token update response
-    """
+    """PATCH only the fields passed; `expires_at` and `clear_expires_at` are exclusive.
+    `clear_expires_at` resets expiry to the maximum; `scopes` face the RBAC cap."""
     token = kwargs.get('token')
 
-    err = _validate_token_id(token_id)
+    err = uuid_field_error('token_id', token_id)
     if err:
         return err
 
     if expires_at is not None and clear_expires_at:
         return error_response('expires_at and clear_expires_at are mutually exclusive')
 
-    update_data: dict[str, object] = {}
-    if name is not None:
-        update_data['name'] = name
-    if enabled is not None:
-        update_data['enabled'] = enabled
+    update_data: dict[str, object] = exclude_none(
+        name=name, enabled=enabled, scopes=scopes
+    )
     if expires_at is not None:
         update_data['expires_at'] = expires_at
     elif clear_expires_at:
         update_data['expires_at'] = None
-    if scopes is not None:
-        update_data['scopes'] = scopes
 
     if not update_data:
         return error_response('No update data provided')
@@ -305,19 +244,10 @@ async def delete_api_token(
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
-    """Delete an API token.
-
-    Args:
-        token_id: ID of the API token to delete
-        workspace: Workspace name. Required parameter
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        API token deletion response
-    """
+    """Delete an API token; this cannot be undone."""
     token = kwargs.get('token')
 
-    err = _validate_token_id(token_id)
+    err = uuid_field_error('token_id', token_id)
     if err:
         return err
 
@@ -354,29 +284,15 @@ async def duplicate_api_token(
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
-    """Duplicate an API token.
-
-    Copies the source's configuration subject to current policy: scopes that can no
-    longer be granted are dropped and expiry is capped at the workspace maximum.
-
-    Args:
-        token_id: ID of the API token to duplicate
-        workspace: Workspace name. Required parameter
-        name: Name for the duplicated token (optional; server auto-generates if omitted)
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        Duplicated API token response
-    """
+    """Copy a token under current policy: ungrantable scopes are dropped and expiry is
+    capped at the workspace maximum."""
     token = kwargs.get('token')
 
-    err = _validate_token_id(token_id)
+    err = uuid_field_error('token_id', token_id)
     if err:
         return err
 
-    data: dict[str, object] = {}
-    if name is not None:
-        data['name'] = name
+    data: dict[str, object] = exclude_none(name=name)
 
     return await http_call_response(
         http_client.post,
@@ -413,22 +329,11 @@ async def duplicate_api_token(
 async def rotate_api_token(
     token_id: str, workspace: str, region: str = '', **kwargs: str
 ) -> ToolResponse:
-    """Rotate an API token's secret in place.
-
-    A token that had no expiry comes back with the workspace maximum expiry, and
-    a token already past its expiry is refused with 400 API_TOKEN_ALREADY_EXPIRED.
-
-    Args:
-        token_id: ID of the API token to rotate
-        workspace: Workspace name. Required parameter
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        Rotated API token response carrying the new secret
-    """
+    """Replace the secret in place; no expiry becomes the workspace maximum, and
+    an expired token is refused with 400 API_TOKEN_ALREADY_EXPIRED."""
     token = kwargs.get('token')
 
-    err = _validate_token_id(token_id)
+    err = uuid_field_error('token_id', token_id)
     if err:
         return err
 

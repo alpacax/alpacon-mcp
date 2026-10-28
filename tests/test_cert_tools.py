@@ -33,13 +33,10 @@ OWNER_ID = '11111111-1111-1111-1111-111111111111'
 
 
 class TestCertificateAuthorities:
-    """Test certificate authority tools."""
-
     @pytest.mark.asyncio
     async def test_list_certificate_authorities_success(
         self, mock_http_client, mock_token_manager
     ):
-        """Test successful CA listing."""
         mock_http_client.get.return_value = {
             'count': 1,
             'results': [{'id': 'ca-1', 'name': 'Internal CA'}],
@@ -62,7 +59,6 @@ class TestCertificateAuthorities:
     async def test_create_certificate_authority_success(
         self, mock_http_client, mock_token_manager
     ):
-        """Test successful CA creation."""
         mock_http_client.post.return_value = {
             'id': 'ca-1',
             'name': 'Internal CA',
@@ -110,7 +106,6 @@ class TestCertificateAuthorities:
     async def test_list_certificate_authorities_with_pagination(
         self, mock_http_client, mock_token_manager
     ):
-        """Test CA listing with pagination."""
         mock_http_client.get.return_value = {'count': 0, 'results': []}
 
         result = await list_certificate_authorities(
@@ -130,7 +125,6 @@ class TestCertificateAuthorities:
     async def test_create_certificate_authority_minimal(
         self, mock_http_client, mock_token_manager
     ):
-        """Test CA creation with minimal params."""
         mock_http_client.post.return_value = {'id': 'ca-2'}
 
         result = await create_certificate_authority(
@@ -160,13 +154,10 @@ class TestCertificateAuthorities:
 
 
 class TestSignRequests:
-    """Test certificate signing request tools."""
-
     @pytest.mark.asyncio
     async def test_list_sign_requests_success(
         self, mock_http_client, mock_token_manager
     ):
-        """Test successful CSR listing."""
         mock_http_client.get.return_value = {
             'count': 1,
             'results': [{'id': 'csr-1'}],
@@ -187,7 +178,6 @@ class TestSignRequests:
     async def test_list_sign_requests_with_pagination(
         self, mock_http_client, mock_token_manager
     ):
-        """Test CSR listing with pagination."""
         mock_http_client.get.return_value = {'count': 0, 'results': []}
 
         result = await list_sign_requests(
@@ -207,7 +197,6 @@ class TestSignRequests:
     async def test_create_sign_request_success(
         self, mock_http_client, mock_token_manager
     ):
-        """Test successful CSR creation."""
         mock_http_client.post.return_value = {
             'id': 'csr-1',
             'common_name': 'api.example.com',
@@ -260,7 +249,6 @@ class TestSignRequests:
     async def test_create_sign_request_requires_san(
         self, mock_http_client, mock_token_manager
     ):
-        """Test CSR creation without any SAN returns an error."""
         result = await create_sign_request(
             workspace='testworkspace',
             region='ap1',
@@ -271,13 +259,10 @@ class TestSignRequests:
 
 
 class TestCertificates:
-    """Test certificate tools."""
-
     @pytest.mark.asyncio
     async def test_list_certificates_success(
         self, mock_http_client, mock_token_manager
     ):
-        """Test successful certificates listing."""
         mock_http_client.get.return_value = {
             'count': 1,
             'results': [{'id': 'cert-1', 'common_name': 'api.example.com'}],
@@ -298,7 +283,6 @@ class TestCertificates:
     async def test_list_certificates_with_authority_filter(
         self, mock_http_client, mock_token_manager
     ):
-        """Test certificates listing filtered by authority."""
         mock_http_client.get.return_value = {'count': 0, 'results': []}
 
         result = await list_certificates(
@@ -318,7 +302,6 @@ class TestCertificates:
     async def test_list_certificates_with_pagination(
         self, mock_http_client, mock_token_manager
     ):
-        """Test certificates listing with pagination."""
         mock_http_client.get.return_value = {'count': 0, 'results': []}
 
         result = await list_certificates(
@@ -338,7 +321,6 @@ class TestCertificates:
     async def test_revoke_certificate_success(
         self, mock_http_client, mock_token_manager
     ):
-        """Test successful certificate revocation."""
         mock_http_client.post.return_value = {
             'id': 'cert-1',
             'status': 'revoked',
@@ -362,7 +344,6 @@ class TestCertificates:
     async def test_revoke_certificate_with_reason(
         self, mock_http_client, mock_token_manager
     ):
-        """Test certificate revocation with reason code and free-text reason."""
         mock_http_client.post.return_value = {'id': 'cert-1', 'status': 'revoked'}
 
         result = await revoke_certificate(
@@ -388,13 +369,10 @@ class TestCertificates:
 
 
 class TestGetCertificateAuthority:
-    """Test get/update/delete certificate authority tools."""
-
     @pytest.mark.asyncio
     async def test_get_certificate_authority_success(
         self, mock_http_client, mock_token_manager
     ):
-        """Test successful CA retrieval."""
         mock_http_client.get.return_value = {
             'id': 'ca-1',
             'name': 'Internal CA',
@@ -418,7 +396,6 @@ class TestGetCertificateAuthority:
     async def test_update_certificate_authority_success(
         self, mock_http_client, mock_token_manager
     ):
-        """Test successful CA update."""
         mock_http_client.patch.return_value = {
             'id': 'ca-1',
             'default_valid_days': 180,
@@ -452,7 +429,6 @@ class TestGetCertificateAuthority:
     async def test_update_certificate_authority_partial(
         self, mock_http_client, mock_token_manager
     ):
-        """Test partial CA update sends only provided fields."""
         mock_http_client.patch.return_value = {
             'id': 'ca-1',
             'default_valid_days': 90,
@@ -478,7 +454,6 @@ class TestGetCertificateAuthority:
     async def test_update_certificate_authority_no_fields_returns_error(
         self, mock_http_client, mock_token_manager
     ):
-        """Test that update with no optional fields returns an error."""
         result = await update_certificate_authority(
             ca_id='ca-1', workspace='testworkspace', region='ap1'
         )
@@ -490,7 +465,6 @@ class TestGetCertificateAuthority:
     async def test_delete_certificate_authority_success(
         self, mock_http_client, mock_token_manager
     ):
-        """Test successful CA deletion."""
         mock_http_client.delete.return_value = {}
 
         result = await delete_certificate_authority(
@@ -508,11 +482,8 @@ class TestGetCertificateAuthority:
 
 
 class TestSignRequestDetails:
-    """Test get/approve/deny/delete/retry sign request tools."""
-
     @pytest.mark.asyncio
     async def test_get_sign_request_success(self, mock_http_client, mock_token_manager):
-        """Test successful CSR retrieval."""
         mock_http_client.get.return_value = {
             'id': 'csr-1',
             'common_name': 'api.example.com',
@@ -536,7 +507,6 @@ class TestSignRequestDetails:
     async def test_approve_sign_request_success(
         self, mock_http_client, mock_token_manager
     ):
-        """Test successful CSR approval."""
         mock_http_client.post.return_value = {'id': 'csr-1', 'status': 'approved'}
 
         result = await approve_sign_request(
@@ -557,7 +527,6 @@ class TestSignRequestDetails:
     async def test_deny_sign_request_success(
         self, mock_http_client, mock_token_manager
     ):
-        """Test successful CSR denial without reason."""
         mock_http_client.post.return_value = {'id': 'csr-1', 'status': 'denied'}
 
         result = await deny_sign_request(
@@ -577,7 +546,6 @@ class TestSignRequestDetails:
     async def test_delete_sign_request_success(
         self, mock_http_client, mock_token_manager
     ):
-        """Test successful CSR deletion."""
         mock_http_client.delete.return_value = {}
 
         result = await delete_sign_request(
@@ -597,7 +565,6 @@ class TestSignRequestDetails:
     async def test_retry_sign_request_success(
         self, mock_http_client, mock_token_manager
     ):
-        """Test successful CSR retry."""
         mock_http_client.post.return_value = {'id': 'csr-1', 'status': 'pending'}
 
         result = await retry_sign_request(
@@ -616,13 +583,10 @@ class TestSignRequestDetails:
 
 
 class TestErrorPropagation:
-    """Test that http_client error envelopes are reported as status='error'."""
-
     @pytest.mark.asyncio
     async def test_approve_sign_request_error(
         self, mock_http_client, mock_token_manager
     ):
-        """Test approve sign request reports upstream 404 as an error."""
         mock_http_client.post.return_value = HTTP_ERROR_ENVELOPE
 
         result = await approve_sign_request(
@@ -633,7 +597,6 @@ class TestErrorPropagation:
 
     @pytest.mark.asyncio
     async def test_revoke_certificate_error(self, mock_http_client, mock_token_manager):
-        """Test revoke certificate reports upstream 404 as an error."""
         mock_http_client.post.return_value = HTTP_ERROR_ENVELOPE
 
         result = await revoke_certificate(
@@ -644,7 +607,6 @@ class TestErrorPropagation:
 
     @pytest.mark.asyncio
     async def test_get_certificate_error(self, mock_http_client, mock_token_manager):
-        """Test get certificate reports upstream 404 as an error."""
         mock_http_client.get.return_value = HTTP_ERROR_ENVELOPE
 
         result = await get_certificate(
@@ -655,11 +617,8 @@ class TestErrorPropagation:
 
 
 class TestGetCertificate:
-    """Test get certificate tool."""
-
     @pytest.mark.asyncio
     async def test_get_certificate_success(self, mock_http_client, mock_token_manager):
-        """Test successful certificate retrieval."""
         mock_http_client.get.return_value = {
             'id': 'cert-1',
             'common_name': 'api.example.com',
@@ -681,13 +640,10 @@ class TestGetCertificate:
 
 
 class TestRevokeRequests:
-    """Test revoke request tools."""
-
     @pytest.mark.asyncio
     async def test_list_revoke_requests_success(
         self, mock_http_client, mock_token_manager
     ):
-        """Test successful revoke requests listing."""
         mock_http_client.get.return_value = {
             'count': 1,
             'results': [{'id': 'rev-1', 'status': 'pending'}],
@@ -708,7 +664,6 @@ class TestRevokeRequests:
     async def test_list_revoke_requests_with_pagination(
         self, mock_http_client, mock_token_manager
     ):
-        """Test revoke requests listing with pagination."""
         mock_http_client.get.return_value = {'count': 0, 'results': []}
 
         result = await list_revoke_requests(
@@ -728,7 +683,6 @@ class TestRevokeRequests:
     async def test_get_revoke_request_success(
         self, mock_http_client, mock_token_manager
     ):
-        """Test successful revoke request retrieval."""
         mock_http_client.get.return_value = {
             'id': 'rev-1',
             'certificate': 'cert-1',
@@ -752,7 +706,6 @@ class TestRevokeRequests:
     async def test_approve_revoke_request_success(
         self, mock_http_client, mock_token_manager
     ):
-        """Test successful revoke request approval."""
         mock_http_client.post.return_value = {'id': 'rev-1', 'status': 'approved'}
 
         result = await approve_revoke_request(
@@ -773,7 +726,6 @@ class TestRevokeRequests:
     async def test_deny_revoke_request_success(
         self, mock_http_client, mock_token_manager
     ):
-        """Test successful revoke request denial without reason."""
         mock_http_client.post.return_value = {'id': 'rev-1', 'status': 'denied'}
 
         result = await deny_revoke_request(
@@ -793,7 +745,6 @@ class TestRevokeRequests:
     async def test_retry_revoke_request_success(
         self, mock_http_client, mock_token_manager
     ):
-        """Test successful revoke request retry."""
         mock_http_client.post.return_value = {'id': 'rev-1', 'status': 'pending'}
 
         result = await retry_revoke_request(
@@ -814,7 +765,6 @@ class TestRevokeRequests:
     async def test_cancel_revoke_request_success(
         self, mock_http_client, mock_token_manager
     ):
-        """Test successful revoke request cancellation via DELETE."""
         mock_http_client.delete.return_value = {'id': 'rev-1', 'status': 'canceled'}
 
         result = await cancel_revoke_request(

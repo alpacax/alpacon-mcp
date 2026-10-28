@@ -1,8 +1,5 @@
 """Contracts shared by every tool using the error-handling decorator.
-
-These are unit tests over the decorators themselves. The same chain is
-exercised end to end against a real tool in
-``tests/integration/test_decorator_chain.py``.
+The end-to-end chain is in tests/integration/test_decorator_chain.py.
 """
 
 import importlib

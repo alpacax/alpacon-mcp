@@ -4,9 +4,9 @@ import server
 
 
 def test_token_resource_validation_is_explicitly_disabled(monkeypatch):
-    """Given remote mode, When the server is built, Then validate_token_resource
-    is False rather than unset, because Auth0TokenVerifier checks the audience
-    itself and SDK 3.0 will default this to True."""
+    """Given remote mode, When the server is built, Then validate_token_resource is
+    False: Auth0TokenVerifier checks the audience, and SDK 3.0 will default it to True.
+    """
     monkeypatch.setenv('ALPACON_MCP_AUTH_ENABLED', 'true')
     monkeypatch.setenv('AUTH0_DOMAIN', 'example.us.auth0.com')
     monkeypatch.setenv('ALPACON_MCP_RESOURCE_URL', 'https://mcp.example.com')

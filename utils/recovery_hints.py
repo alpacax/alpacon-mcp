@@ -142,7 +142,6 @@ def _detect_error_domain(
     tool_name: str | None = None,
     endpoint: str | None = None,
 ) -> str:
-    """Detect the error domain from context clues."""
     msg_lower = message.lower()
     tool_lower = (tool_name or '').lower()
     ep_lower = (endpoint or '').lower()
@@ -184,7 +183,6 @@ def _detect_error_domain(
 
 
 def _parse_status_code(raw: int | str | None) -> int | None:
-    """Normalize status_code to int, or None if missing/invalid."""
     if raw is None:
         return None
     try:
@@ -209,7 +207,6 @@ _STDIO_HINT_ADDITIONS: dict[tuple[int, str], dict[str, list[str]]] = {
 
 
 def _copy_hints(hints: dict[str, list[str]]) -> dict[str, list[str]]:
-    """Return a shallow copy of a hints entry to protect the registry."""
     return {
         'recovery_hints': list(hints['recovery_hints']),
         'related_tools': list(hints['related_tools']),
@@ -222,18 +219,8 @@ def get_recovery_hints(
     tool_name: str | None = None,
     endpoint: str | None = None,
 ) -> dict[str, list[str]]:
-    """Look up recovery hints for an error.
-
-    Args:
-        status_code: HTTP status code (int or string) or None
-        message: Error message text
-        tool_name: Name of the tool that failed
-        endpoint: API endpoint that was called
-
-    Returns:
-        Dict with 'recovery_hints' and 'related_tools' lists.
-        Returns empty lists if no hints match.
-    """
+    """Hints and related tools for an error, picked by status code and domain; both
+    lists are empty when none match."""
     code = _parse_status_code(status_code)
 
     # No hints when status code is missing or unrecognized
@@ -264,20 +251,8 @@ def enrich_error_response(
     tool_name: str | None = None,
     endpoint: str | None = None,
 ) -> ToolResponse:
-    """Add recovery hints to an error response dict.
-
-    Only modifies dicts that look like error responses (have status='error'
-    or 'error' key). Returns the original dict unmodified for success
-    responses.
-
-    Args:
-        response: The response dict to enrich
-        tool_name: Name of the tool that produced the error
-        endpoint: API endpoint that was called
-
-    Returns:
-        The response dict, potentially with recovery_hints and related_tools added
-    """
+    """Add recovery_hints and related_tools to an error response in place; success
+    responses and already-enriched ones pass through."""
     is_error = response.get('status') == 'error' or 'error' in response
     if not is_error:
         return response

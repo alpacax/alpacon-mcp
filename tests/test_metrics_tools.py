@@ -1,14 +1,10 @@
-"""
-Unit tests for metrics_tools module.
+"""Unit tests for metrics_tools: CPU, memory, disk, network, and server analytics."""
 
-Tests metrics and monitoring functionality including CPU, memory, disk,
-network traffic monitoring and server performance analytics.
-"""
-
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable
 from datetime import UTC, datetime, timedelta
+from functools import partial
 from http import HTTPStatus
-from typing import Any
+from typing import Protocol
 from unittest.mock import patch
 
 import pytest
@@ -36,6 +32,20 @@ from tools.metrics_tools import (
     parse_memory_metrics,
     parse_network_metrics,
 )
+from utils.types import ToolResponse
+
+
+class _UsageTool(Protocol):
+    def __call__(
+        self,
+        *,
+        server_id: str,
+        workspace: str,
+        start_date: str,
+        end_date: str,
+        region: str,
+    ) -> Awaitable[ToolResponse]: ...
+
 
 mock_http_client = http_client_fixture('tools.metrics_tools')
 
@@ -52,11 +62,8 @@ END = '2024-01-01T01:00:00Z'
 
 
 class TestGetCpuUsage:
-    """Test get_cpu_usage function."""
-
     @pytest.mark.asyncio
     async def test_cpu_usage_success(self, mock_http_client, mock_token_manager):
-        """Test successful CPU usage retrieval."""
         # Mock successful response with results format
         mock_http_client.get.return_value = {
             'results': [{'timestamp': '2024-01-01T00:00:00Z', 'usage': 25.5}]
@@ -128,7 +135,6 @@ class TestGetCpuUsage:
     async def test_cpu_usage_http_error_envelope(
         self, mock_http_client, mock_token_manager
     ):
-        """Test CPU usage returns error when http_client returns an error envelope."""
         mock_http_client.get.return_value = HTTP_ERROR_ENVELOPE
 
         result = await get_cpu_usage(server_id=SERVER_ID, workspace='testworkspace')
@@ -139,7 +145,6 @@ class TestGetCpuUsage:
 
     @pytest.mark.asyncio
     async def test_cpu_usage_no_token(self, mock_http_client, mock_token_manager):
-        """Test CPU usage when no token is available."""
         mock_token_manager.get_token.return_value = None
 
         result = await get_cpu_usage(server_id=SERVER_ID, workspace='testworkspace')
@@ -152,7 +157,6 @@ class TestGetCpuUsage:
 class TestGetMemoryUsage:
     @pytest.mark.asyncio
     async def test_memory_usage_success(self, mock_http_client, mock_token_manager):
-        """Test successful memory usage retrieval."""
         # Mock successful response with results format
         mock_http_client.get.return_value = {
             'results': [{'timestamp': '2024-01-01T00:00:00Z', 'usage': 65.2}]
@@ -191,7 +195,6 @@ class TestGetMemoryUsage:
 
     @pytest.mark.asyncio
     async def test_memory_usage_no_token(self, mock_http_client, mock_token_manager):
-        """Test memory usage when no token is available."""
         mock_token_manager.get_token.return_value = None
 
         result = await get_memory_usage(server_id=SERVER_ID, workspace='testworkspace')
@@ -203,7 +206,6 @@ class TestGetMemoryUsage:
 class TestGetDiskUsage:
     @pytest.mark.asyncio
     async def test_disk_usage_success(self, mock_http_client, mock_token_manager):
-        """Test successful disk usage retrieval with device and partition."""
         # Mock successful response with results format
         mock_http_client.get.return_value = {
             'results': [
@@ -259,7 +261,6 @@ class TestGetDiskUsage:
     async def test_disk_usage_auto_device_detection(
         self, mock_http_client, mock_token_manager
     ):
-        """Test disk usage auto-detects device when not provided."""
         # First call: device discovery; Second call: actual disk metrics
         mock_http_client.get.side_effect = [
             {'devices': ['/dev/sda1', '/dev/sdb1']},  # Device discovery
@@ -304,7 +305,6 @@ class TestGetDiskUsage:
 
     @pytest.mark.asyncio
     async def test_disk_usage_no_token(self, mock_http_client, mock_token_manager):
-        """Test disk usage when no token is available."""
         mock_token_manager.get_token.return_value = None
 
         result = await get_disk_usage(server_id=SERVER_ID, workspace='testworkspace')
@@ -314,11 +314,8 @@ class TestGetDiskUsage:
 
 
 class TestGetNetworkTraffic:
-    """Test get_network_traffic function."""
-
     @pytest.mark.asyncio
     async def test_network_traffic_success(self, mock_http_client, mock_token_manager):
-        """Test successful network traffic retrieval."""
         # Mock successful response with results format
         mock_http_client.get.return_value = {
             'results': [
@@ -379,7 +376,6 @@ class TestGetNetworkTraffic:
 
     @pytest.mark.asyncio
     async def test_network_traffic_no_token(self, mock_http_client, mock_token_manager):
-        """Test network traffic when no token is available."""
         mock_token_manager.get_token.return_value = None
 
         result = await get_network_traffic(
@@ -393,13 +389,10 @@ class TestGetNetworkTraffic:
 
 
 class TestGetDiskIo:
-    """Test get_disk_io function."""
-
     @pytest.mark.asyncio
     async def test_disk_io_http_error_envelope(
         self, mock_http_client, mock_token_manager
     ):
-        """Test disk I/O returns error when http_client returns an error envelope."""
         mock_http_client.get.return_value = HTTP_ERROR_ENVELOPE
 
         result = await get_disk_io(server_id=SERVER_ID, workspace='testworkspace')
@@ -410,8 +403,6 @@ class TestGetDiskIo:
 
 
 class TestGetTopServers:
-    """Test get_top_servers function."""
-
     @pytest.mark.asyncio
     async def test_top_servers_single_metric(
         self, mock_http_client, mock_token_manager
@@ -459,7 +450,6 @@ class TestGetTopServers:
     async def test_top_servers_multiple_metrics(
         self, mock_http_client, mock_token_manager
     ):
-        """Test top servers with multiple metric types."""
         # Mock responses for multiple metrics (asyncio.gather returns in order)
         mock_http_client.get.return_value = {'data': [{'server_id': 's1'}]}
 
@@ -492,7 +482,6 @@ class TestGetTopServers:
     async def test_top_servers_invalid_metric(
         self, mock_http_client, mock_token_manager
     ):
-        """Test top servers with invalid metric type."""
         result = await get_top_servers(
             workspace='testworkspace', metric_types='invalid_metric', region='ap1'
         )
@@ -503,7 +492,6 @@ class TestGetTopServers:
 
     @pytest.mark.asyncio
     async def test_top_servers_no_token(self, mock_http_client, mock_token_manager):
-        """Test top servers when no token is available."""
         mock_token_manager.get_token.return_value = None
 
         result = await get_top_servers(workspace='testworkspace', metric_types='cpu')
@@ -528,11 +516,8 @@ class TestGetTopServers:
 
 
 class TestGetAlertRules:
-    """Test get_alert_rules function."""
-
     @pytest.mark.asyncio
     async def test_alert_rules_success(self, mock_http_client, mock_token_manager):
-        """Test successful alert rules retrieval."""
         # Mock successful response
         mock_http_client.get.return_value = {
             'count': 3,
@@ -581,7 +566,6 @@ class TestGetAlertRules:
 
     @pytest.mark.asyncio
     async def test_alert_rules_all_servers(self, mock_http_client, mock_token_manager):
-        """Test alert rules for all servers."""
         mock_http_client.get.return_value = {'count': 10, 'results': []}
 
         result = await get_alert_rules(workspace='testworkspace')
@@ -601,7 +585,6 @@ class TestGetAlertRules:
     async def test_alert_rules_http_error_envelope(
         self, mock_http_client, mock_token_manager
     ):
-        """Test alert rules returns error when http_client returns an error envelope."""
         mock_http_client.get.return_value = HTTP_ERROR_ENVELOPE
 
         result = await get_alert_rules(workspace='testworkspace')
@@ -612,7 +595,6 @@ class TestGetAlertRules:
 
     @pytest.mark.asyncio
     async def test_alert_rules_no_token(self, mock_http_client, mock_token_manager):
-        """Test alert rules when no token is available."""
         mock_token_manager.get_token.return_value = None
 
         result = await get_alert_rules(workspace='testworkspace')
@@ -622,11 +604,8 @@ class TestGetAlertRules:
 
 
 class TestGetServerMetricsSummary:
-    """Test get_server_metrics_summary function."""
-
     @pytest.mark.asyncio
     async def test_metrics_summary_success(self, mock_http_client, mock_token_manager):
-        """Test successful metrics summary retrieval."""
         # The function calls http_client.get directly for partitions, interfaces,
         # and then for cpu, memory, disk, traffic metrics
         # Calls: partitions, interfaces, cpu, memory, disk, traffic
@@ -656,7 +635,6 @@ class TestGetServerMetricsSummary:
     async def test_metrics_summary_custom_hours(
         self, mock_http_client, mock_token_manager
     ):
-        """Test metrics summary with custom hours parameter."""
         mock_http_client.get.return_value = {'results': [{'usage': 30.0}]}
 
         result = await get_server_metrics_summary(
@@ -701,7 +679,6 @@ class TestGetServerMetricsSummary:
 
     @pytest.mark.asyncio
     async def test_metrics_summary_no_token(self, mock_http_client, mock_token_manager):
-        """Test metrics summary when no token is available."""
         mock_token_manager.get_token.return_value = None
 
         result = await get_server_metrics_summary(
@@ -1246,10 +1223,7 @@ class TestServerMetricsSummaryLookups:
 
 
 class TestParseCpuMetrics:
-    """Test parse_cpu_metrics helper function."""
-
     def test_parse_cpu_metrics_with_data(self):
-        """Test CPU metrics parsing with valid data."""
         results: list[_UsageRow] = [
             {'timestamp': '2024-01-01T00:00:00Z', 'usage': 25.0},
             {'timestamp': '2024-01-01T01:00:00Z', 'usage': 50.0},
@@ -1268,17 +1242,13 @@ class TestParseCpuMetrics:
         assert parsed['data_points'] == 3
 
     def test_parse_cpu_metrics_empty(self):
-        """Test CPU metrics parsing with empty data."""
         parsed = parse_cpu_metrics([])
 
         assert parsed['available'] is False
 
 
 class TestParseMemoryMetrics:
-    """Test parse_memory_metrics helper function."""
-
     def test_parse_memory_metrics_with_data(self):
-        """Test memory metrics parsing with valid data."""
         results: list[_UsageRow] = [
             {'timestamp': '2024-01-01T00:00:00Z', 'usage': 40.0},
             {'timestamp': '2024-01-01T01:00:00Z', 'usage': 60.0},
@@ -1296,7 +1266,6 @@ class TestParseMemoryMetrics:
         assert parsed['data_points'] == 2
 
     def test_parse_memory_metrics_empty(self):
-        """Test memory metrics parsing with empty data."""
         parsed = parse_memory_metrics([])
 
         assert parsed['available'] is False
@@ -1751,8 +1720,6 @@ class TestMetricsDeviceFilters:
 
 
 class TestListLatestMetrics:
-    """Test list_latest_metrics function."""
-
     @pytest.mark.asyncio
     async def test_list_latest_metrics_no_filters(
         self, mock_http_client, mock_token_manager
@@ -1861,8 +1828,8 @@ class TestListLatestMetrics:
         self, mock_http_client, mock_token_manager
     ):
         """The server aliases a family's hyphenated wire name (disk-usage) to
-        its underscore ordering_fields spelling (disk_usage); both must pass
-        client-side validation and reach the request unchanged."""
+        disk_usage; both pass client-side validation and reach the request unchanged.
+        """
         mock_http_client.get.return_value = {'count': 0, 'results': []}
 
         result = await list_latest_metrics(
@@ -1931,10 +1898,9 @@ class TestListLatestMetrics:
     async def test_list_latest_metrics_page_size_over_100_is_forwarded(
         self, mock_http_client, mock_token_manager
     ):
-        """No client-side ceiling: page_size is forwarded as-is and the server
-        enforces its own cap, matching list_servers (tools/server_tools.py),
-        which also documents a max of 100 without rejecting a larger value
-        locally."""
+        """No client-side ceiling: page_size is forwarded as-is and the server enforces
+        its cap, as list_servers does (tools/server_tools.py).
+        """
         mock_http_client.get.return_value = {'count': 0, 'results': []}
 
         result = await list_latest_metrics(
@@ -2004,25 +1970,21 @@ if __name__ == '__main__':
 class TestMetricsToolsBodyShapes:
     """The four usage tools read a list or a paginated object alike, and refuse a scalar."""
 
-    CALLS: dict[
-        str, tuple[Callable[..., Awaitable[dict[str, Any]]], dict[str, str]]
-    ] = {
-        'cpu': (get_cpu_usage, {}),
-        'memory': (get_memory_usage, {}),
-        'disk': (get_disk_usage, {'device': '/dev/sda1', 'partition': '/'}),
-        'network': (get_network_traffic, {'interface': INTERFACE_ID}),
+    CALLS: dict[str, _UsageTool] = {
+        'cpu': get_cpu_usage,
+        'memory': get_memory_usage,
+        'disk': partial(get_disk_usage, device='/dev/sda1', partition='/'),
+        'network': partial(get_network_traffic, interface=INTERFACE_ID),
     }
 
     @staticmethod
     def _call(name):
-        tool, extra = TestMetricsToolsBodyShapes.CALLS[name]
-        return tool(
+        return TestMetricsToolsBodyShapes.CALLS[name](
             server_id=SERVER_ID,
             workspace='testworkspace',
             start_date=START,
             end_date=END,
             region='ap1',
-            **extra,
         )
 
     @pytest.mark.asyncio
