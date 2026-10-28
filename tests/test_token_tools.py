@@ -934,7 +934,7 @@ class TestApiTokenMutationAuthGuard:
 
         assert result['status'] == 'error'
         assert 'JWT' in result['message']
-        mock_http_client.post.assert_not_called()
+        assert mock_http_client.method_calls == []
 
     @pytest.mark.asyncio
     async def test_update_rejected_for_non_jwt_token(
@@ -951,7 +951,7 @@ class TestApiTokenMutationAuthGuard:
 
         assert result['status'] == 'error'
         assert 'JWT' in result['message']
-        mock_http_client.patch.assert_not_called()
+        assert mock_http_client.method_calls == []
 
     @pytest.mark.asyncio
     async def test_duplicate_rejected_for_non_jwt_token(
@@ -967,7 +967,7 @@ class TestApiTokenMutationAuthGuard:
 
         assert result['status'] == 'error'
         assert 'JWT' in result['message']
-        mock_http_client.post.assert_not_called()
+        assert mock_http_client.method_calls == []
 
     @pytest.mark.asyncio
     async def test_delete_rejected_for_non_jwt_token(
@@ -983,7 +983,23 @@ class TestApiTokenMutationAuthGuard:
 
         assert result['status'] == 'error'
         assert 'JWT' in result['message']
-        mock_http_client.delete.assert_not_called()
+        assert mock_http_client.method_calls == []
+
+    @pytest.mark.asyncio
+    async def test_rotate_rejected_for_non_jwt_token(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_token_manager.get_token.return_value = 'opaque-api-token'
+
+        result = await rotate_api_token(
+            workspace='testworkspace',
+            region='ap1',
+            token_id=NON_JWT_TOKEN_ID,
+        )
+
+        assert result['status'] == 'error'
+        assert 'JWT' in result['message']
+        assert mock_http_client.method_calls == []
 
     @pytest.mark.asyncio
     async def test_jwt_token_passes_guard(self, mock_http_client, mock_token_manager):

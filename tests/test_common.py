@@ -17,7 +17,6 @@ from utils.common import (
     _NEXT_ACTION_BY_CATEGORY,
     _PLAN_LIMIT_AXIS_NAME,
     _WORK_SESSION_GATE_CODES,
-    _WORK_SESSION_GATE_NEXT_ACTION,
     UnexpectedResponseShapeError,
     _plan_limit_axis,
     _plan_limit_billing_link,
@@ -78,7 +77,9 @@ class TestSudoDenialNextActions:
         # One denial, two transports; one string so the wording cannot drift.
         assert (
             _NEXT_ACTION_BY_CATEGORY['WORK_SESSION_SCOPE_NOT_ALLOWED']
-            == _WORK_SESSION_GATE_NEXT_ACTION['work_session_scope_not_allowed']
+            == work_session_gate_response('work_session_scope_not_allowed')[
+                'next_action'
+            ]
         )
 
 
@@ -122,6 +123,11 @@ class TestWorkSessionGateResponse:
 
     def test_all_seven_codes_recognized(self):
         assert len(_WORK_SESSION_GATE_CODES) == 7
+
+    def test_unknown_code_fails_loudly_instead_of_raising_key_error(self):
+        # Mypy rejects this call; the ignore turns into [unused-ignore] if it ever stops.
+        with pytest.raises(AssertionError):
+            work_session_gate_response('work_session_unknown')  # type: ignore[arg-type]
 
 
 class TestUnwrapHttpResultGate:
@@ -641,7 +647,7 @@ class TestUnwrapHttpResultPlanLimit:
 
 
 class TestPlanLimitDoesNotTouchOtherPaths:
-    """Must NOT change: the work-session gate table, _ERROR_CODE_HINT, 401/403 hints."""
+    """Must NOT change: the work-session gate codes, _ERROR_CODE_HINT, 401/403 hints."""
 
     def test_legacy_limit_codes_are_not_work_session_gate_codes(self):
         assert not (set(_LIMIT_EXCEEDED_CODE_TO_AXIS) & _WORK_SESSION_GATE_CODES)

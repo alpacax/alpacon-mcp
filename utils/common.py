@@ -8,6 +8,7 @@ import re
 from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
+from typing import Literal, TypeGuard, assert_never, get_args
 from urllib.parse import urlparse
 
 from pydantic import TypeAdapter, ValidationError
@@ -133,40 +134,25 @@ _NEXT_ACTION_BY_CATEGORY: dict[str, str] = {
 }
 _DEFAULT_NEXT_ACTION = _NEXT_ACTION_BY_CATEGORY['SUDO_APPROVAL_REQUIRED']
 
-# Server WorkSession gate codes → next-action telling the agent how to get inside a valid session (mirrors alpacon-cli worksession_error.go).
-_WORK_SESSION_GATE_NEXT_ACTION: dict[str, str] = {
-    'work_session_required': (
-        'No Work Session is attached. Create one with work_session_create '
-        '(scope covering this operation—"command" for command execution, '
-        '"webftp" for file transfers—plus the target server), have a human '
-        'approve it out-of-band, then retry passing its id as work_session_id.'
-    ),
-    'work_session_not_usable': (
-        'The attached Work Session is in a terminal state and cannot be used. '
-        'Create a new Work Session, get it approved, then retry.'
-    ),
-    'work_session_expired': (
-        'The attached Work Session has expired. Extend it with '
-        'work_session_extend, or create a new one, then retry.'
-    ),
-    'work_session_scope_not_allowed': _SCOPE_NOT_ALLOWED_NEXT_ACTION,
-    'work_session_server_not_allowed': (
-        'The target server is not in the attached Work Session. Add it with '
-        'work_session_update, or create a new session including the server, '
-        'then retry.'
-    ),
-    'work_session_assignee_mismatch': (
-        'The attached Work Session is assigned to a different principal. Use a '
-        'session assigned to you, or create your own, then retry.'
-    ),
-}
+# Mirrors alpacon-cli worksession_error.go.
+type WorkSessionGateCode = Literal[
+    'work_session_not_active',
+    'work_session_required',
+    'work_session_not_usable',
+    'work_session_expired',
+    'work_session_scope_not_allowed',
+    'work_session_server_not_allowed',
+    'work_session_assignee_mismatch',
+]
 
-# Session exists but is unapproved; routes to pending-approval, not error.
-_WORK_SESSION_PENDING_CODE = 'work_session_not_active'
+_WORK_SESSION_GATE_CODES: frozenset[str] = frozenset(
+    get_args(WorkSessionGateCode.__value__)
+)
 
-_WORK_SESSION_GATE_CODES: frozenset[str] = frozenset(_WORK_SESSION_GATE_NEXT_ACTION) | {
-    _WORK_SESSION_PENDING_CODE
-}
+
+def _is_work_session_gate_code(code: str) -> TypeGuard[WorkSessionGateCode]:
+    return code in _WORK_SESSION_GATE_CODES
+
 
 #: Refusals the file lane (ADR 0053) answers with on submit, each a 400 carrying
 #: the code. None of them has a human behind it—every one is something the
@@ -522,22 +508,57 @@ def token_error_response(region: str, workspace: str) -> ToolErrorResponse:
     )
 
 
-def work_session_gate_response(code: str, **kwargs: object) -> ToolResponse:
+def work_session_gate_response(
+    code: WorkSessionGateCode, **kwargs: object
+) -> ToolResponse:
     """Turn a WorkSession gate code (ADR 0014) into an agent-actionable result:
-    ``work_session_not_active`` is pending approval; any other known code errors."""
-    if code == _WORK_SESSION_PENDING_CODE:
-        return pending_approval_response(
-            'The attached Work Session is not active yet. A human must approve '
-            'it out-of-band (Alpacon web console or Slack) before this operation '
-            'will run. Call work_session_get and retry once data.status is active; '
-            'stop if it is rejected, cancelled, expired, revoked, or completed.',
-            category='WORK_SESSION_PENDING',
-            **kwargs,
-        )
+    ``work_session_not_active`` is pending approval; any other code errors."""
+    match code:
+        case 'work_session_not_active':
+            return pending_approval_response(
+                'The attached Work Session is not active yet. A human must approve '
+                'it out-of-band (Alpacon web console or Slack) before this operation '
+                'will run. Call work_session_get and retry once data.status is active; '
+                'stop if it is rejected, cancelled, expired, revoked, or completed.',
+                category='WORK_SESSION_PENDING',
+                **kwargs,
+            )
+        case 'work_session_required':
+            next_action = (
+                'No Work Session is attached. Create one with work_session_create '
+                '(scope covering this operation—"command" for command execution, '
+                '"webftp" for file transfers—plus the target server), have a human '
+                'approve it out-of-band, then retry passing its id as work_session_id.'
+            )
+        case 'work_session_not_usable':
+            next_action = (
+                'The attached Work Session is in a terminal state and cannot be used. '
+                'Create a new Work Session, get it approved, then retry.'
+            )
+        case 'work_session_expired':
+            next_action = (
+                'The attached Work Session has expired. Extend it with '
+                'work_session_extend, or create a new one, then retry.'
+            )
+        case 'work_session_scope_not_allowed':
+            next_action = _SCOPE_NOT_ALLOWED_NEXT_ACTION
+        case 'work_session_server_not_allowed':
+            next_action = (
+                'The target server is not in the attached Work Session. Add it with '
+                'work_session_update, or create a new session including the server, '
+                'then retry.'
+            )
+        case 'work_session_assignee_mismatch':
+            next_action = (
+                'The attached Work Session is assigned to a different principal. Use a '
+                'session assigned to you, or create your own, then retry.'
+            )
+        case _:
+            assert_never(code)
     return error_response(
         f'Operation blocked by the Work Session gate: {code}.',
         code=code,
-        next_action=_WORK_SESSION_GATE_NEXT_ACTION[code],
+        next_action=next_action,
         requires_human_approval=False,
         **kwargs,
     )
@@ -658,11 +679,8 @@ def unwrap_http_result(
     if result.get('outcome_unknown') is True:  # a POST or PATCH that may have acted
         error_kwargs['outcome_unknown'] = True
 
-    # Parse the body's `code` once; it decides whether this is a WorkSession
-    # gate (membership in _WORK_SESSION_GATE_CODES) and, on the generic path
-    # below, what gets surfaced as `error_code`.
     code = http_error_code(result)
-    if code is not None and code in _WORK_SESSION_GATE_CODES:
+    if code is not None and _is_work_session_gate_code(code):
         return work_session_gate_response(code, **error_kwargs)
 
     # A plan-limit refusal gets its own actionable result, ahead of the
