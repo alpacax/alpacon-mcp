@@ -296,6 +296,25 @@ class TestAcknowledgeAlert:
         assert result['error_code'] == code
         assert 'already_acknowledged' not in result
 
+    @pytest.mark.asyncio
+    async def test_the_already_acknowledged_code_on_a_5xx_stays_an_error(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = _coded_envelope(
+            HTTPStatus.INTERNAL_SERVER_ERROR, 'alert_already_acknowledged'
+        )
+
+        result = await acknowledge_alert(
+            alert_id=ALERT_ID,
+            workspace='testworkspace',
+            action_type='checked',
+            region='ap1',
+        )
+
+        assert result['status'] == 'error'
+        assert result['status_code'] == HTTPStatus.INTERNAL_SERVER_ERROR
+        assert 'already_acknowledged' not in result
+
     def test_mute_alert_is_gone(self):
         module = sys.modules[acknowledge_alert.__module__]
         assert not hasattr(module, 'mute_alert')

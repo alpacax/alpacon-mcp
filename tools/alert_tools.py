@@ -1,5 +1,6 @@
 """Alert management tools for Alpacon MCP server."""
 
+from http import HTTPStatus
 from typing import TypedDict
 
 from utils.api_call import http_call_response
@@ -190,7 +191,10 @@ async def acknowledge_alert(
     )
     # The caller's alert is acknowledged either way, so this is not a failure;
     # a separate status would make every client learn a value that needs no action.
-    if response.get('error_code') == ALERT_ALREADY_ACKNOWLEDGED:
+    if (
+        response.get('status_code') == HTTPStatus.BAD_REQUEST
+        and response.get('error_code') == ALERT_ALREADY_ACKNOWLEDGED
+    ):
         return success_response(
             message=(
                 'This alert was already acknowledged by you, so this call '
