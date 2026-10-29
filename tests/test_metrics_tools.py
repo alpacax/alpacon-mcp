@@ -2279,6 +2279,12 @@ class TestMetricsToolsBodyShapes:
             '-metric_severity puts critical first',
             'critical first descending',
         ),
+        (
+            'list_latest_metrics',
+            'ordering',
+            'it is ignored and the default order applies',
+            'the ordering is ignored too',
+        ),
     ],
 )
 async def test_metrics_argument_rule_lives_on_the_parameter(

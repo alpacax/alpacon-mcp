@@ -233,9 +233,8 @@ value is missing, stale, or not collected — use `get_cpu_usage` etc. for one s
 or `get_server_metrics_summary` for one server's detail. **Requires alpacon-server 2.37.0 or
 later.**
 
-Severity ordering and the `metric_severity`, `threshold`, `operator`, and `summary` fields
-require a server deployment that supports them. Earlier deployments ignore severity ordering
-(the default order applies) and omit those fields; without `alert:read` the ordering is ignored too.
+The `metric_severity`, `threshold`, `operator`, and `summary` fields require a server
+deployment that supports them; earlier deployments omit them.
 
 **Parameters:**
 - `workspace` (string): Workspace name
@@ -249,7 +248,8 @@ require a server deployment that supports them. Earlier deployments ignore sever
 - `ordering` (string, optional): `name`, `starred`, `sampled_at`, `cpu`, `memory`, `disk_usage` (or
   `disk-usage`), `disk_io` (or `disk-io`), `net`, `metric_severity`, optionally prefixed with `-`
   for descending; a server with no value for the field sorts last. `-metric_severity` puts
-  critical first; ties keep the default order
+  critical first; ties keep the default order. Severity ordering needs a server that supports it
+  and `alert:read`; otherwise it is ignored and the default order applies
 - `page` (integer, optional): Page number for pagination
 - `page_size` (integer, optional): Number of results per page, up to 100
 

@@ -72,7 +72,8 @@ _LATEST_STATE_DESCRIPTION = (
 _LATEST_ORDERING_DESCRIPTION = (
     f'One of {", ".join(sorted(VALID_LATEST_METRIC_ORDERING_FIELDS))}, optionally '
     'prefixed with "-" for descending. -metric_severity puts critical first; ties '
-    'keep the default order.'
+    'keep the default order. Severity ordering needs a server that supports it and '
+    'alert:read; otherwise it is ignored and the default order applies.'
 )
 _METRIC_TYPES_DESCRIPTION = (
     'Comma-separated list of cpu, memory, disk_io and traffic; empty means all.'
@@ -81,9 +82,10 @@ _DISK_IO_DEVICE_DESCRIPTION = (
     'Omitted or blank, it reads the alphabetically first device with data in the '
     'last day; pass one of the devices listed in `devices` to read another.'
 )
+_MAX_SUMMARY_HOURS = 12  # the server clamps a realtime `start` older than this
 _SUMMARY_HOURS_DESCRIPTION = (
-    'Hours back to read, 12 by default and capped at 12, the window the realtime '
-    'endpoints keep.'
+    f'Hours back to read, {_MAX_SUMMARY_HOURS} by default and capped at '
+    f'{_MAX_SUMMARY_HOURS}, the window the realtime endpoints keep.'
 )
 
 _EPOCH = datetime.min.replace(tzinfo=UTC)
@@ -994,8 +996,6 @@ def _find_record_id(
     return None
 
 
-_MAX_SUMMARY_HOURS = 12  # the server clamps a realtime `start` older than this
-
 # Interfaces the server has no virtual flag for; the summary avoids them by name.
 _VIRTUAL_INTERFACE_PREFIXES = (
     'docker',
@@ -1281,10 +1281,9 @@ async def get_server_metrics_summary(
         'and warning excludes critical servers. '
         "For one server's time series use get_cpu_usage "
         "etc.; for one server's detail use get_server_metrics_summary. Requires "
-        'alpacon-server 2.37.0 or later. Severity ordering, metric_severity, '
+        'alpacon-server 2.37.0 or later. metric_severity, '
         'threshold, operator and summary require server support; earlier '
-        'deployments ignore that ordering (default order) and omit those fields; '
-        'without alert:read the ordering is ignored too.'
+        'deployments omit those fields.'
     ),
     annotations=READ_ONLY,
     meta={
@@ -1312,9 +1311,8 @@ async def list_latest_metrics(
     metric cells added: the filters, search, and pagination are `list_servers`'
     own, plus `state` and `ordering`.
 
-    Severity ordering, metric_severity, threshold, operator, and summary require
-    server support; earlier deployments ignore that ordering (default order) and
-    omit those fields, and without alert:read the ordering is ignored too.
+    metric_severity, threshold, operator, and summary require server support;
+    earlier deployments omit those fields.
 
     Args:
         workspace: Workspace name. Required parameter
@@ -1332,7 +1330,8 @@ async def list_latest_metrics(
             disk_io/disk-io, net, metric_severity), optionally prefixed with "-"
             for descending. A server with no value for the field sorts last.
             -metric_severity puts critical first; ties keep the default order.
-            (optional)
+            Severity ordering needs a server that supports it and alert:read;
+            otherwise it is ignored and the default order applies. (optional)
         page: Page number for pagination (optional)
         page_size: Number of results per page, up to 100 (optional)
 
