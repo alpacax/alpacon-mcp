@@ -502,13 +502,24 @@ def _strip_device_scopes(scope: str) -> str:
 
 
 def _ledger_org(scope: str) -> str:
-    """The workspace the last `ledger:` pseudo-scope names, or ''; clients append the
-    newest challenge to their scope union. Must be a valid workspace name."""
+    """The workspace of the newest `ledger:<ws>:<ms>` challenge, or ''. The tag, not
+    the position, decides: a client's scope union keeps only the first copy of a scope."""
     if not is_remote_ledger_enabled():
         return ''
-    asked = [p for p in scope.split() if p.startswith(_LEDGER_SCOPE_PREFIX)]
-    org = asked[-1].removeprefix(_LEDGER_SCOPE_PREFIX) if asked else ''
-    return org if validate_workspace_format(org) else ''
+    newest: tuple[int, int] = (-1, -1)
+    org = ''
+    for position, part in enumerate(scope.split()):
+        if not part.startswith(_LEDGER_SCOPE_PREFIX):
+            continue
+        name, _, tag = part.removeprefix(_LEDGER_SCOPE_PREFIX).partition(':')
+        if not validate_workspace_format(name) or (
+            tag and not (len(tag) <= 20 and tag.isascii() and tag.isdigit())
+        ):
+            continue
+        rank = (int(tag) if tag else 0, position)
+        if rank > newest:
+            newest, org = rank, name
+    return org
 
 
 def _strip_ledger_scopes(scope: str) -> str:

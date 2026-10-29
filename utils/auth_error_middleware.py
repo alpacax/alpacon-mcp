@@ -248,14 +248,17 @@ class UpstreamAuthErrorMiddleware:
         self, send: Send, *, mfa_required: bool = False, ledger_org: str = ''
     ) -> None:
         """Send a 401 invalid_token, or 403 insufficient_scope with an 'mfa' or
-        'ledger:<workspace>' scope, so clients re-run /oauth/authorize instead of refreshing."""
+        'ledger:<workspace>:<ms>' scope, so clients re-run /oauth/authorize instead of refreshing."""
         scopes = 'openid profile email offline_access'
         error = 'invalid_token'
         status = HTTPStatus.UNAUTHORIZED
         if mfa_required:
             scopes += ' mfa'
         if ledger_org:
-            scopes += f' ledger:{ledger_org}'
+            # A fresh tag per challenge: a client's scope union skips a scope it
+            # already holds, so a bare ledger:<ws> asked a second time would be
+            # lost behind a later workspace's.
+            scopes += f' ledger:{ledger_org}:{time.time_ns() // 1_000_000}'
         if mfa_required or ledger_org:
             error = 'insufficient_scope'
             status = HTTPStatus.FORBIDDEN

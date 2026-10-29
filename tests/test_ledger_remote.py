@@ -14,6 +14,7 @@ from urllib.parse import parse_qs, urlparse
 import httpx
 import jwt
 import pytest
+from mcp.client.auth.utils import union_scopes
 from mcp.server.auth.provider import AccessToken
 from starlette.applications import Starlette
 from starlette.testclient import TestClient
@@ -57,6 +58,7 @@ from utils.oauth import (
     _NONCE_COOKIE_NAME,
     _build_state,
     _hash_nonce,
+    _ledger_org,
     _open_seal,
     _seal_code,
     _seal_refresh_token,
@@ -371,6 +373,20 @@ class TestAuthorize:
         assert state is not None
         assert state['ledger_org'] == 'workspace-b'
         assert 'ledger:' not in str(state['original_scope'])
+
+    def test_a_tagged_challenge_wins_by_its_tag_not_its_position(self, oauth):
+        # A union keeps the first copy of a scope, so position alone can lie.
+        query = _query(
+            _authorize(oauth, 'openid ledger:workspace-a:300 ledger:workspace-b:200')
+        )
+        assert query['scope'].startswith('openid profile email org:workspace-a ')
+
+    @pytest.mark.parametrize(
+        'tag', ['x1', '1.5', '\u00b2', '1' * 21, '-1'], ids=lambda t: repr(t)
+    )
+    def test_a_malformed_tag_is_ignored(self, oauth, tag):
+        query = _query(_authorize(oauth, f'openid ledger:workspace-a:{tag}'))
+        assert query['audience'] == OAUTH_ENV['AUTH0_ALPACON_USER_AUDIENCE']
 
     def test_mfa_runs_first_and_keeps_the_ledger_for_later(self, oauth):
         query = _query(_authorize(oauth, f'openid mfa ledger:{WORKSPACE}'))
@@ -697,6 +713,42 @@ class TestVerifier:
             access = await verifier.verify_token('plain-jwt')
         assert access is not None
         assert access.claims is None
+
+
+class TestWorkspaceSwitching:
+    """A, B, then A again: the SDK's own scope union must not pin the ledger to B."""
+
+    async def _challenge_scope(self, org: str):
+        sent: list[dict[str, object]] = []
+
+        async def app(scope, receive, send):
+            request_signal.signal_upstream_auth_error({'ledger_org': org})
+            await send({'type': 'http.response.start', 'status': 200, 'headers': []})
+            await send({'type': 'http.response.body', 'body': b'{}'})
+
+        async def send(message):
+            sent.append(message)
+
+        async def receive():
+            return {'type': 'http.request', 'body': b''}
+
+        await UpstreamAuthErrorMiddleware(app)(
+            {'type': 'http', 'path': '/mcp', 'headers': []}, receive, send
+        )
+        raw_headers = sent[0]['headers']
+        assert isinstance(raw_headers, list)
+        header = dict(raw_headers)[b'www-authenticate'].decode()
+        return header.split('scope="', 1)[1].split('"', 1)[0]
+
+    @pytest.mark.asyncio
+    async def test_switching_back_signs_in_for_the_workspace_asked(self, remote_env):
+        scope = 'openid profile email offline_access'
+        signed_in_for = []
+        for org in ['ws-a', 'ws-b', 'ws-a', 'ws-b', 'ws-a']:
+            time.sleep(0.002)  # distinct millisecond tags
+            scope = union_scopes(scope, await self._challenge_scope(org)) or ''
+            signed_in_for.append(_ledger_org(scope))
+        assert signed_in_for == ['ws-a', 'ws-b', 'ws-a', 'ws-b', 'ws-a']
 
 
 class TestChallenge:
