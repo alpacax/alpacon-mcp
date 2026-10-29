@@ -9,6 +9,7 @@ from typing import TypedDict, cast
 
 import pytest
 
+from server import mcp
 from tests.conftest import HTTP_ERROR_ENVELOPE, http_client_fixture
 from tools.alert_tools import (
     _TARGETS_SENTENCE,
@@ -214,6 +215,8 @@ class TestAcknowledgeAlert:
         )
 
         assert result['status'] == 'success'
+        assert result['data'] == {'message': 'Alert checked successfully'}
+        assert 'already_acknowledged' not in result
         mock_http_client.post.assert_called_once_with(
             region='ap1',
             workspace='testworkspace',
@@ -237,6 +240,61 @@ class TestAcknowledgeAlert:
         assert result['error_code'] == 'validation'
         assert result['field'] == 'action_type'
         mock_http_client.post.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_a_repeat_acknowledgement_succeeds_without_recording_anything(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = _coded_envelope(
+            HTTPStatus.BAD_REQUEST, 'alert_already_acknowledged'
+        )
+
+        result = await acknowledge_alert(
+            alert_id=ALERT_ID,
+            workspace='testworkspace',
+            action_type='dismissed',
+            region='ap1',
+        )
+
+        assert result['status'] == 'success'
+        assert result['already_acknowledged'] is True
+        assert result['alert_id'] == ALERT_ID
+        assert result['region'] == 'ap1'
+        assert result['workspace'] == 'testworkspace'
+        assert 'get_alert' in result['message']
+        assert 'error_code' not in result
+        assert 'data' not in result
+
+    @pytest.mark.asyncio
+    async def test_acknowledge_alert_is_annotated_idempotent(self):
+        tools = {t.name: t for t in await mcp.list_tools()}
+
+        annotations = tools['acknowledge_alert'].annotations
+        assert annotations is not None
+        assert annotations.idempotent_hint is True
+        assert annotations.destructive_hint is False
+        assert annotations.read_only_hint is False
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('code', ['invalid', 'invalid_choice'])
+    async def test_any_other_coded_400_stays_an_error(
+        self, mock_http_client, mock_token_manager, code
+    ):
+        mock_http_client.post.return_value = _coded_envelope(
+            HTTPStatus.BAD_REQUEST, code
+        )
+
+        result = await acknowledge_alert(
+            alert_id=ALERT_ID,
+            workspace='testworkspace',
+            action_type='checked',
+            region='ap1',
+        )
+
+        assert result['status'] == 'error'
+        assert result['status_code'] == HTTPStatus.BAD_REQUEST
+        assert result['error_code'] == code
+        assert 'already_acknowledged' not in result
 
     def test_mute_alert_is_gone(self):
         module = sys.modules[acknowledge_alert.__module__]

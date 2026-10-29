@@ -3,7 +3,7 @@
 from typing import TypedDict
 
 from utils.api_call import http_call_response
-from utils.common import build_list_params, exclude_none
+from utils.common import build_list_params, exclude_none, success_response
 from utils.decorators import mcp_tool_handler
 from utils.error_handler import format_validation_error
 from utils.http_client import http_client
@@ -13,6 +13,9 @@ from utils.types import OptionalServerId, ServerId, ToolResponse
 # Mirrors AlertAcknowledgement.ACTION_TYPE_CHOICES; the server takes nothing else.
 ALERT_ACTION_TYPES = frozenset({'checked', 'dismissed'})
 _ACTION_TYPES_SENTENCE = f'One of {", ".join(sorted(ALERT_ACTION_TYPES))}.'
+# ErrorCode.ALERT_ALREADY_ACKNOWLEDGED: the server refuses a second acknowledgement
+# per (alert, user), whatever action_type it carries (alpacon-server 2.35.0+).
+ALERT_ALREADY_ACKNOWLEDGED = 'alert_already_acknowledged'
 
 
 class _RuleContext(TypedDict, total=False):  # extra ids echoed in a preview response
@@ -147,10 +150,14 @@ async def get_alert(
         'Record an acknowledgement against an alert. When to use: marking an '
         'alert as seen (action_type="checked") or as not worth acting on '
         '(action_type="dismissed"). The server allows one acknowledgement per '
-        'user per alert and it cannot be changed afterwards, so a second call '
-        'is refused. Related: list_alerts, get_alert.'
+        'user per alert and it cannot be changed afterwards. On alpacon-server '
+        '2.35.0+, a repeat call succeeds with already_acknowledged=true and '
+        'records nothing: the existing acknowledgement stands whatever '
+        'action_type you send, and its action_type is not in this response—'
+        'get_alert returns it as action_type. An older server refuses the '
+        'repeat with error_code invalid. Related: list_alerts, get_alert.'
     ),
-    annotations=ADDITIVE,
+    annotations=IDEMPOTENT_WRITE,  # a repeat call records nothing
     meta={'anthropic/searchHint': 'alert acknowledge checked dismissed confirm'},
 )
 async def acknowledge_alert(
@@ -160,8 +167,8 @@ async def acknowledge_alert(
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
-    """Acknowledge an alert; action_type must be in ALERT_ACTION_TYPES, and the
-    server accepts one acknowledgement per user per alert."""
+    """Acknowledge an alert; action_type must be in ALERT_ACTION_TYPES. A repeat by
+    the same user succeeds with already_acknowledged=True when the server codes it."""
     if action_type not in ALERT_ACTION_TYPES:
         return format_validation_error(
             'action_type',
@@ -171,7 +178,7 @@ async def acknowledge_alert(
 
     token = kwargs.get('token')
 
-    return await http_call_response(
+    response = await http_call_response(
         http_client.post,
         region=region,
         workspace=workspace,
@@ -181,6 +188,22 @@ async def acknowledge_alert(
         data={'action_type': action_type},
         alert_id=alert_id,
     )
+    # The caller's alert is acknowledged either way, so this is not a failure;
+    # a separate status would make every client learn a value that needs no action.
+    if response.get('error_code') == ALERT_ALREADY_ACKNOWLEDGED:
+        return success_response(
+            message=(
+                'This alert was already acknowledged by you, so this call '
+                f'(action_type={action_type!r}) recorded nothing. The existing '
+                'acknowledgement stands and cannot be changed; its action_type '
+                'is not returned here, and get_alert returns it as action_type.'
+            ),
+            already_acknowledged=True,
+            region=region,
+            workspace=workspace,
+            alert_id=alert_id,
+        )
+    return response
 
 
 # ===============================
