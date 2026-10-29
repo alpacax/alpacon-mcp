@@ -50,15 +50,12 @@ def mock_token_manager():
 
 
 class TestListApiTokens:
-    """Tests for list_api_tokens tool."""
-
     def test_list_api_tokens_has_no_remote_ip_filter(self):
         """The server dropped remote_ip, and django-filter discards it silently."""
         assert 'remote_ip' not in inspect.signature(list_api_tokens).parameters
 
     @pytest.mark.asyncio
     async def test_list_api_tokens_success(self, mock_http_client, mock_token_manager):
-        """Test successful API tokens list retrieval."""
         mock_http_client.get.return_value = {
             'count': 2,
             'results': [
@@ -85,7 +82,6 @@ class TestListApiTokens:
     async def test_list_api_tokens_with_pagination(
         self, mock_http_client, mock_token_manager
     ):
-        """Test list_api_tokens with pagination parameters."""
         mock_http_client.get.return_value = {'count': 10, 'results': []}
 
         result = await list_api_tokens(
@@ -105,7 +101,6 @@ class TestListApiTokens:
     async def test_list_api_tokens_with_filters(
         self, mock_http_client, mock_token_manager
     ):
-        """Test that filter/search/ordering params are forwarded to the API."""
         mock_http_client.get.return_value = {'count': 0, 'results': []}
 
         result = await list_api_tokens(
@@ -152,7 +147,6 @@ class TestListApiTokens:
     async def test_list_api_tokens_http_error(
         self, mock_http_client, mock_token_manager
     ):
-        """Test that list_api_tokens surfaces API error responses as errors."""
         mock_http_client.get.return_value = {
             'error': 'HTTP Error',
             'status_code': HTTPStatus.FORBIDDEN,
@@ -165,11 +159,8 @@ class TestListApiTokens:
 
 
 class TestCreateApiToken:
-    """Tests for create_api_token tool."""
-
     @pytest.mark.asyncio
     async def test_create_api_token_success(self, mock_http_client, mock_token_manager):
-        """Test successful API token creation."""
         mock_http_client.post.return_value = {
             'id': 'tok-new',
             'name': 'My Token',
@@ -194,7 +185,6 @@ class TestCreateApiToken:
     async def test_create_api_token_with_all_params(
         self, mock_http_client, mock_token_manager
     ):
-        """Test create_api_token with all optional parameters."""
         mock_http_client.post.return_value = {'id': 'tok-full', 'name': 'Full Token'}
 
         result = await create_api_token(
@@ -224,7 +214,6 @@ class TestCreateApiToken:
     async def test_create_api_token_with_scopes_only(
         self, mock_http_client, mock_token_manager
     ):
-        """Test create_api_token with scopes but no other optional params."""
         mock_http_client.post.return_value = {
             'id': 'tok-scoped',
             'name': 'Scoped Token',
@@ -250,7 +239,6 @@ class TestCreateApiToken:
     async def test_create_api_token_with_enabled_false(
         self, mock_http_client, mock_token_manager
     ):
-        """Test create_api_token with enabled=False creates a disabled token."""
         mock_http_client.post.return_value = {
             'id': 'tok-disabled',
             'name': 'Disabled Token',
@@ -303,7 +291,6 @@ class TestCreateApiToken:
     async def test_create_api_token_with_presets_only(
         self, mock_http_client, mock_token_manager
     ):
-        """Test create_api_token with presets but no explicit scopes."""
         mock_http_client.post.return_value = {
             'id': 'tok-preset',
             'name': 'Preset Token',
@@ -329,7 +316,6 @@ class TestCreateApiToken:
     async def test_create_api_token_empty_name_returns_server_error(
         self, mock_http_client, mock_token_manager
     ):
-        """Test that create_api_token with empty name surfaces the server 400 as error."""
         mock_http_client.post.return_value = {
             'error': 'HTTP Error',
             'status_code': HTTPStatus.BAD_REQUEST,
@@ -346,7 +332,6 @@ class TestCreateApiToken:
     async def test_create_api_token_http_error(
         self, mock_http_client, mock_token_manager
     ):
-        """Test that create_api_token surfaces API error responses as errors."""
         mock_http_client.post.return_value = {
             'error': 'HTTP Error',
             'status_code': HTTPStatus.BAD_REQUEST,
@@ -361,11 +346,8 @@ class TestCreateApiToken:
 
 
 class TestDeleteApiToken:
-    """Tests for delete_api_token tool."""
-
     @pytest.mark.asyncio
     async def test_delete_api_token_success(self, mock_http_client, mock_token_manager):
-        """Test successful API token deletion."""
         mock_http_client.delete.return_value = {}
 
         result = await delete_api_token(
@@ -386,7 +368,6 @@ class TestDeleteApiToken:
     async def test_delete_api_token_includes_token_id_in_response(
         self, mock_http_client, mock_token_manager
     ):
-        """Test that delete_api_token includes token_id in response metadata."""
         mock_http_client.delete.return_value = {}
 
         result = await delete_api_token(
@@ -402,7 +383,6 @@ class TestDeleteApiToken:
     async def test_delete_api_token_invalid_token_id(
         self, mock_http_client, mock_token_manager
     ):
-        """Test that delete_api_token returns error for non-UUID token_id."""
         result = await delete_api_token(
             token_id='not-a-uuid', workspace='testworkspace', region='ap1'
         )
@@ -431,13 +411,10 @@ class TestDeleteApiToken:
 
 
 class TestDuplicateApiToken:
-    """Tests for duplicate_api_token tool."""
-
     @pytest.mark.asyncio
     async def test_duplicate_api_token_success(
         self, mock_http_client, mock_token_manager
     ):
-        """Test successful API token duplication."""
         mock_http_client.post.return_value = {
             'id': 'tok-copy',
             'name': 'My Token (copy)',
@@ -464,7 +441,6 @@ class TestDuplicateApiToken:
     async def test_duplicate_api_token_with_custom_name(
         self, mock_http_client, mock_token_manager
     ):
-        """Test duplicate_api_token forwards optional name to the API."""
         mock_http_client.post.return_value = {
             'id': 'tok-named',
             'name': 'My Backup Token',
@@ -516,7 +492,6 @@ class TestDuplicateApiToken:
     async def test_duplicate_api_token_includes_token_id_in_response(
         self, mock_http_client, mock_token_manager
     ):
-        """Test that duplicate_api_token includes token_id in response metadata."""
         mock_http_client.post.return_value = {'id': 'tok-dup', 'name': 'Token (copy)'}
 
         result = await duplicate_api_token(
@@ -532,7 +507,6 @@ class TestDuplicateApiToken:
     async def test_duplicate_api_token_invalid_token_id(
         self, mock_http_client, mock_token_manager
     ):
-        """Test that duplicate_api_token returns error for non-UUID token_id."""
         result = await duplicate_api_token(
             token_id='not-a-uuid', workspace='testworkspace', region='ap1'
         )
@@ -561,13 +535,10 @@ class TestDuplicateApiToken:
 
 
 class TestListApiTokenScopes:
-    """Tests for list_api_token_scopes tool."""
-
     @pytest.mark.asyncio
     async def test_list_api_token_scopes_success(
         self, mock_http_client, mock_token_manager
     ):
-        """Test successful API token scopes retrieval."""
         mock_http_client.get.return_value = {
             'resources': [
                 {'name': 'servers:read', 'description': 'Read server information'},
@@ -597,7 +568,6 @@ class TestListApiTokenScopes:
     async def test_list_api_token_scopes_empty(
         self, mock_http_client, mock_token_manager
     ):
-        """Test list_api_token_scopes when no scopes are available."""
         mock_http_client.get.return_value = {'resources': [], 'wildcards': []}
 
         result = await list_api_token_scopes(workspace='testworkspace', region='ap1')
@@ -609,7 +579,6 @@ class TestListApiTokenScopes:
     async def test_list_api_token_scopes_http_error(
         self, mock_http_client, mock_token_manager
     ):
-        """Test that list_api_token_scopes surfaces API error responses as errors."""
         mock_http_client.get.return_value = {
             'error': 'HTTP Error',
             'status_code': HTTPStatus.FORBIDDEN,
@@ -622,11 +591,8 @@ class TestListApiTokenScopes:
 
 
 class TestGetApiToken:
-    """Tests for get_api_token tool."""
-
     @pytest.mark.asyncio
     async def test_get_api_token_success(self, mock_http_client, mock_token_manager):
-        """Test successful single API token retrieval."""
         mock_http_client.get.return_value = {
             'id': GET_TOKEN_ID,
             'name': 'Detail Token',
@@ -654,7 +620,6 @@ class TestGetApiToken:
     async def test_get_api_token_invalid_token_id(
         self, mock_http_client, mock_token_manager
     ):
-        """Test that get_api_token returns error for non-UUID token_id."""
         result = await get_api_token(
             token_id='not-a-uuid', workspace='testworkspace', region='ap1'
         )
@@ -664,7 +629,6 @@ class TestGetApiToken:
 
     @pytest.mark.asyncio
     async def test_get_api_token_not_found(self, mock_http_client, mock_token_manager):
-        """Test that get_api_token returns error when token does not exist."""
         mock_http_client.get.return_value = {
             'error': 'HTTP Error',
             'status_code': HTTPStatus.NOT_FOUND,
@@ -681,8 +645,6 @@ class TestGetApiToken:
 
 
 class TestUpdateApiToken:
-    """Tests for update_api_token tool."""
-
     @pytest.mark.asyncio
     async def test_update_api_token_toggle_enabled(
         self, mock_http_client, mock_token_manager
@@ -714,7 +676,6 @@ class TestUpdateApiToken:
     async def test_update_api_token_with_all_fields(
         self, mock_http_client, mock_token_manager
     ):
-        """Test update_api_token forwards every supplied field."""
         mock_http_client.patch.return_value = {
             'id': UPDATE_ALL_FIELDS_TOKEN_ID,
             'name': 'Renamed',
@@ -751,7 +712,6 @@ class TestUpdateApiToken:
     async def test_update_api_token_clear_expires_at(
         self, mock_http_client, mock_token_manager
     ):
-        """Test clear_expires_at=True sends expires_at=null."""
         mock_http_client.patch.return_value = {
             'id': CLEAR_EXPIRES_TOKEN_ID,
             'expires_at': None,
@@ -777,7 +737,6 @@ class TestUpdateApiToken:
     async def test_update_api_token_clear_expires_at_with_other_fields(
         self, mock_http_client, mock_token_manager
     ):
-        """Test clear_expires_at combines with other fields in a single PATCH."""
         mock_http_client.patch.return_value = {
             'id': CLEAR_EXPIRES_WITH_FIELDS_TOKEN_ID,
             'name': 'Renamed',
@@ -804,7 +763,6 @@ class TestUpdateApiToken:
     async def test_update_api_token_clear_and_set_expires_at_conflicts(
         self, mock_http_client, mock_token_manager
     ):
-        """Test mutual exclusion of expires_at and clear_expires_at."""
         result = await update_api_token(
             token_id=CLEAR_AND_SET_TOKEN_ID,
             workspace='testworkspace',
@@ -845,7 +803,6 @@ class TestUpdateApiToken:
     async def test_update_api_token_no_fields_returns_error(
         self, mock_http_client, mock_token_manager
     ):
-        """Test update_api_token returns error when no field is provided."""
         result = await update_api_token(
             token_id=NO_FIELDS_TOKEN_ID,
             workspace='testworkspace',
@@ -859,7 +816,6 @@ class TestUpdateApiToken:
     async def test_update_api_token_invalid_token_id(
         self, mock_http_client, mock_token_manager
     ):
-        """Test update_api_token returns error for non-UUID token_id."""
         result = await update_api_token(
             token_id='not-a-uuid',
             workspace='testworkspace',
@@ -874,10 +830,8 @@ class TestUpdateApiToken:
     async def test_update_api_token_http_error(
         self, mock_http_client, mock_token_manager
     ):
-        """Test update_api_token surfaces server error responses as errors.
-
-        Covers e.g. API_TOKEN_PRESETS_NOT_ALLOWED_ON_UPDATE / scope
-        ceiling rejection returned by the server.
+        """update_api_token surfaces server error responses as errors,
+        e.g. API_TOKEN_PRESETS_NOT_ALLOWED_ON_UPDATE and the scope-ceiling rejection.
         """
         mock_http_client.patch.return_value = {
             'error': 'HTTP Error',
@@ -898,7 +852,6 @@ class TestUpdateApiToken:
     async def test_update_api_token_not_found(
         self, mock_http_client, mock_token_manager
     ):
-        """Test update_api_token returns error when token does not exist."""
         mock_http_client.patch.return_value = {
             'error': 'HTTP Error',
             'status_code': HTTPStatus.NOT_FOUND,
@@ -916,13 +869,10 @@ class TestUpdateApiToken:
 
 
 class TestListApiTokenPresets:
-    """Tests for list_api_token_presets tool."""
-
     @pytest.mark.asyncio
     async def test_list_api_token_presets_success(
         self, mock_http_client, mock_token_manager
     ):
-        """Test successful preset catalog retrieval."""
         mock_http_client.get.return_value = {
             'file_upload': {
                 'name': 'File upload',
@@ -945,7 +895,6 @@ class TestListApiTokenPresets:
     async def test_list_api_token_presets_empty(
         self, mock_http_client, mock_token_manager
     ):
-        """Test preset catalog when workspace has no enabled presets."""
         mock_http_client.get.return_value = {}
 
         result = await list_api_token_presets(workspace='testworkspace', region='ap1')
@@ -957,7 +906,6 @@ class TestListApiTokenPresets:
     async def test_list_api_token_presets_http_error(
         self, mock_http_client, mock_token_manager
     ):
-        """Test list_api_token_presets surfaces API error responses as errors."""
         mock_http_client.get.return_value = {
             'error': 'HTTP Error',
             'status_code': HTTPStatus.FORBIDDEN,
@@ -970,17 +918,8 @@ class TestListApiTokenPresets:
 
 
 class TestApiTokenMutationAuthGuard:
-    """Preflight guard: the 4 mutation tools (create/update/duplicate/delete)
-    must short-circuit on the MCP side when the caller's resolved token is
-    not a JWT — because the server's APITokenObjectPermission would 403
-    every such request. The guard saves the round-trip and surfaces a
-    clearer error to the client.
-
-    Read-only tools (list/get/list_scopes/list_presets) are intentionally
-    NOT guarded — list/get because callers may legitimately enumerate
-    their own tokens with whichever auth they hold, and the catalog
-    endpoints because the server itself does not gate them with
-    APITokenObjectPermission.
+    """Preflight guard: create, update, delete, duplicate and rotate refuse a non-JWT
+    token. APITokenObjectPermission 403s it; read and catalog tools stay unguarded.
     """
 
     @pytest.mark.asyncio
@@ -995,7 +934,7 @@ class TestApiTokenMutationAuthGuard:
 
         assert result['status'] == 'error'
         assert 'JWT' in result['message']
-        mock_http_client.post.assert_not_called()
+        assert mock_http_client.method_calls == []
 
     @pytest.mark.asyncio
     async def test_update_rejected_for_non_jwt_token(
@@ -1012,7 +951,7 @@ class TestApiTokenMutationAuthGuard:
 
         assert result['status'] == 'error'
         assert 'JWT' in result['message']
-        mock_http_client.patch.assert_not_called()
+        assert mock_http_client.method_calls == []
 
     @pytest.mark.asyncio
     async def test_duplicate_rejected_for_non_jwt_token(
@@ -1028,7 +967,7 @@ class TestApiTokenMutationAuthGuard:
 
         assert result['status'] == 'error'
         assert 'JWT' in result['message']
-        mock_http_client.post.assert_not_called()
+        assert mock_http_client.method_calls == []
 
     @pytest.mark.asyncio
     async def test_delete_rejected_for_non_jwt_token(
@@ -1044,7 +983,23 @@ class TestApiTokenMutationAuthGuard:
 
         assert result['status'] == 'error'
         assert 'JWT' in result['message']
-        mock_http_client.delete.assert_not_called()
+        assert mock_http_client.method_calls == []
+
+    @pytest.mark.asyncio
+    async def test_rotate_rejected_for_non_jwt_token(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_token_manager.get_token.return_value = 'opaque-api-token'
+
+        result = await rotate_api_token(
+            workspace='testworkspace',
+            region='ap1',
+            token_id=NON_JWT_TOKEN_ID,
+        )
+
+        assert result['status'] == 'error'
+        assert 'JWT' in result['message']
+        assert mock_http_client.method_calls == []
 
     @pytest.mark.asyncio
     async def test_jwt_token_passes_guard(self, mock_http_client, mock_token_manager):
@@ -1066,8 +1021,6 @@ class TestApiTokenMutationAuthGuard:
 
 
 class TestRotateApiToken:
-    """Tests for rotate_api_token tool."""
-
     @pytest.mark.asyncio
     async def test_rotate_api_token_success(self, mock_http_client, mock_token_manager):
         """Rotation posts to the rotate action on the same token id."""

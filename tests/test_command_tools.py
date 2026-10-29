@@ -1,5 +1,6 @@
 """Unit tests for command tools module."""
 
+import json
 from collections.abc import Awaitable, Iterator
 from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
@@ -13,9 +14,11 @@ from mcp.server.mcpserver.exceptions import ToolError
 from server import mcp
 from tests.conftest import VALID_SERVER_ID, http_client_fixture, tool_descriptions
 from tools.command_tools import (
+    _COMMAND_DESCRIPTION,
     _FILE_PHASE_GENERIC_HINT,
     _FILE_PHASE_HINTS,
     _SUDO_DENIAL_HINTS,
+    DO_NOT_RESUBMIT,
     FILE_CONTENT_MAX_BYTES,
     FILE_REUSE_DAYS_MAX,
     FILE_REUSE_DAYS_MIN,
@@ -38,7 +41,9 @@ from utils.common import (
     FILE_EXEC_INLINE_CREDENTIAL_HINT,
     FILE_EXEC_REFUSAL_HINTS,
     INLINE_CREDENTIAL_HINT,
+    REFUSAL_GATE_HINT,
 )
+from utils.http_client import AlpaconHTTPClient
 from utils.types import JsonValue, ToolResponse
 
 _GATE_ENVELOPE_REQUIRED = {
@@ -106,8 +111,10 @@ class TestSudoDenialHint:
         }
         hint = self._hint(out)
         assert hint is not None
-        # vs SUDO_NO_WORKSESSION_POLICY: a policy matched, just not a bypass one.
-        assert 'allow_bypass_mfa' in hint
+        # A policy matched, but it does not authorize sudo for the session.
+        assert 'session-authorized sudo policy' in hint
+        assert 'session_authorized' in hint
+        assert 'Alpacon web console' in hint
 
     def test_intent_deviation(self):
         out = {'result': 'Alpacon denied this sudo command (SUDO_INTENT_DEVIATION).\n'}
@@ -212,8 +219,6 @@ class TestSudoDenialHint:
 
 
 class TestSubmitCommand:
-    """Test _submit_command internal helper."""
-
     @pytest.mark.asyncio
     async def test_submit_basic(self, mock_http_client):
         mock_http_client.post.return_value = {'id': 'cmd-123', 'status': 'running'}
@@ -361,8 +366,6 @@ class TestSubmitCommand:
 
 
 class TestListCommands:
-    """Test list_commands function."""
-
     @pytest.mark.asyncio
     async def test_list_commands_success(self, mock_http_client, mock_token_manager):
         mock_http_client.get.return_value = {
@@ -605,8 +608,6 @@ class TestListCommandsSudoDenialAnnotation:
 
 
 class TestExecuteCommand:
-    """Test execute_command function (renamed from execute_command_sync)."""
-
     @pytest.mark.asyncio
     async def test_success(self, mock_http_client, mock_token_manager):
         with (
@@ -1086,8 +1087,6 @@ class TestExecuteCommand:
 
 
 class TestSubmitCommandWithSession:
-    """Test _submit_command forwards work_session to API payload."""
-
     @pytest.mark.asyncio
     async def test_submit_includes_work_session_when_provided(self, mock_http_client):
         mock_http_client.post.return_value = {'id': 'cmd-ws-001'}
@@ -1282,6 +1281,123 @@ class TestExecuteCommandMultiServerGateTranslation:
         assert 'next_action' in server_entry
 
 
+@pytest.fixture
+async def lost_command_posts():
+    """A real client whose every command POST loses its response; yields what was sent."""
+    posts: list[httpx.Request] = []
+
+    def answer(request: httpx.Request) -> httpx.Response:
+        posts.append(request)
+        raise httpx.ReadTimeout('read timed out', request=request)
+
+    client = AlpaconHTTPClient(transport=httpx.MockTransport(answer))
+    client.retry_delay = 0
+    with patch('tools.command_tools.http_client', client):
+        yield posts
+    await client.close()
+
+
+class TestLostSubmissionIsNotResubmitted:
+    """A command POST whose response was lost may have run; it is sent once."""
+
+    @pytest.mark.asyncio
+    async def test_execute_command_sends_once_and_points_at_list_commands(
+        self, lost_command_posts, mock_token_manager
+    ):
+        result = await execute_command(
+            server_id=VALID_SERVER_ID,
+            command='rm -rf /tmp/x',
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert [r.method for r in lost_command_posts] == ['POST']
+        assert result['status'] == 'error'
+        assert result['outcome_unknown'] is True
+        assert DO_NOT_RESUBMIT in result['message']
+        assert 'list_commands' in result['message']
+        assert 'raise limit until the oldest entry predates it' in result['message']
+        assert 'if 100 newer ones fill the page, ask a human' in result['message']
+
+    @pytest.mark.asyncio
+    async def test_execute_file_sends_once_and_points_at_list_commands(
+        self, lost_command_posts, mock_token_manager
+    ):
+        result = await execute_file(
+            server_id=VALID_SERVER_ID,
+            path='/opt/deploy.sh',
+            content='echo deploy\n',
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert [r.method for r in lost_command_posts] == ['POST']
+        assert result['status'] == 'error'
+        assert result['outcome_unknown'] is True
+        assert DO_NOT_RESUBMIT in result['message']
+        assert 'list_commands' in result['message']
+
+    @pytest.mark.asyncio
+    async def test_execute_file_lost_upload_is_not_resent_and_runs_nothing(
+        self, lost_command_posts, mock_token_manager
+    ):
+        result = await execute_file(
+            server_id=VALID_SERVER_ID,
+            path='/opt/deploy.sh',
+            content='echo deploy\n',
+            write_file=True,
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert [r.url.path for r in lost_command_posts] == ['/api/webftp/uploads/']
+        assert result['status'] == 'error'
+        assert result['outcome_unknown'] is True
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('parallel', [True, False])
+    async def test_multi_server_marks_each_lost_submission(
+        self, lost_command_posts, mock_token_manager, parallel
+    ):
+        other_server = '22222222-2222-2222-2222-222222222222'
+
+        result = await execute_command_multi_server(
+            server_ids=[VALID_SERVER_ID, other_server],
+            command='ls',
+            workspace='testworkspace',
+            region='ap1',
+            parallel=parallel,
+        )
+
+        sent_to = sorted(json.loads(r.content)['server'] for r in lost_command_posts)
+        assert sent_to == sorted([VALID_SERVER_ID, other_server])
+        assert result['failed_count'] == 2
+        for entry in result['deploy_shell_results'].values():
+            assert entry['outcome_unknown'] is True
+            assert DO_NOT_RESUBMIT in entry['message']
+
+    @pytest.mark.asyncio
+    async def test_refused_submission_does_not_claim_the_command_may_have_run(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.post.return_value = {
+            'error': 'HTTP Error',
+            'status_code': HTTPStatus.FORBIDDEN,
+            'message': 'Permission denied',
+        }
+
+        result = await execute_command(
+            server_id=VALID_SERVER_ID,
+            command='ls',
+            workspace='testworkspace',
+            region='ap1',
+        )
+
+        assert result['status'] == 'error'
+        assert 'outcome_unknown' not in result
+        assert 'list_commands' not in result['message']
+
+
 class TestSudoGuidanceInToolDescriptions:
     """MCP prompts are opt-in—clients that read only tool schemas (Codex) must
     still learn that an unneeded sudo prefix blocks the session on a human.
@@ -1294,13 +1410,32 @@ class TestSudoGuidanceInToolDescriptions:
     async def test_description_states_the_sudo_cost(self, tool_name):
         descriptions = await tool_descriptions()
         text = descriptions[tool_name]
-        assert 'Do not prefix the command with sudo by default' in text
         assert 'human-in-the-loop' in text
-        # The carve-out and the hard-denial path are the reason the rule is
-        # qualified rather than absolute; pin both so neither regresses.
+        # The carve-out and the hard-denial path qualify the parameter's sudo rule;
+        # pin both on the tool so neither regresses.
         assert 'sudo policy already covers' in text
         assert 'denied outright' in text
         assert 'sudo_denial.category' in text
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        'tool_name', ['execute_command', 'execute_command_multi_server']
+    )
+    async def test_command_parameter_carries_the_sudo_rule(self, tool_name):
+        # Given the published tool list
+        tools = {t.name: t for t in await mcp.list_tools()}
+        descriptions = await tool_descriptions()
+
+        # When reading the command property
+        command = tools[tool_name].input_schema['properties']['command']
+
+        # Then the parameter carries the rule and the tool description does not
+        assert command['description'] == _COMMAND_DESCRIPTION
+        assert 'whitespace-only' in command['description']
+        assert 'with sudo by default' in command['description']
+        assert _COMMAND_DESCRIPTION not in descriptions[tool_name]
+        assert 'with sudo by default' not in descriptions[tool_name]
+        assert 'use sudo only when' not in descriptions[tool_name].lower()
 
 
 def test_no_worksession_policy_hint_names_the_request_tool():
@@ -3206,8 +3341,8 @@ def _route_download_status(
     log: list[str] | None = None,
 ) -> _Route:
     """Answer the transfer command and download status GETs the read path makes.
-
-    ``commands`` answers the command polls in order, its last entry repeating."""
+    `commands` answers the command polls in order, its last entry repeating.
+    """
 
     async def _get(*, endpoint: str, **_: object) -> JsonValue:
         if log is not None:
@@ -4214,6 +4349,10 @@ class TestUseFileExecutionRefusal:
         assert result['error_code'] == 'use_file_execution'
         assert result['command_id'] == 'cmd-uf1'
         assert result['message'].startswith('Run this script as a file instead.')
+        assert result['rejection_cause'] == 'use_file_execution'
+        assert result['rejection_gate'] == 'approval'
+        assert 'execute_file' in result['rejection_hint']
+        assert result['rejection_hint'] not in result['message']
         next_action = result['next_action']
         assert 'execute_file' in next_action
         assert 'write_file=true' in next_action
@@ -4435,3 +4574,252 @@ class TestUseFileExecutionRefusal:
             'file_exec_unsupported_agent'
             in descriptions['execute_command_multi_server']
         )
+
+
+def _rejected_row(**fields: object) -> dict[str, object]:
+    return {'id': 'cmd-r1', 'status': 'rejected', 'handled_at': None, **fields}
+
+
+class TestRejectionCause:
+    """A command a gate refused before it ran says why and whom to ask (#242)."""
+
+    async def _run(self, row: dict[str, object]) -> ToolResponse:
+        with (
+            patch('tools.command_tools._submit_command') as mock_submit,
+            patch('tools.command_tools._get_command_result') as mock_poll,
+        ):
+            mock_submit.return_value = {'id': 'cmd-r1'}
+            mock_poll.return_value = row
+            return await execute_command(
+                server_id=VALID_SERVER_ID,
+                command='systemctl restart nginx',
+                workspace='testworkspace',
+                timeout=10,
+            )
+
+    @pytest.mark.asyncio
+    async def test_a_known_cause_names_cause_gate_and_hint(self, mock_token_manager):
+        result = await self._run(
+            _rejected_row(
+                rejection_cause='approval_rejected', rejection_gate='approval'
+            )
+        )
+
+        assert result['status'] == 'error'
+        assert result['rejection_cause'] == 'approval_rejected'
+        assert result['rejection_gate'] == 'approval'
+        assert 'A human approver rejected this command' in result['rejection_hint']
+        assert result['rejection_hint'] in result['message']
+        assert result['message'].startswith('Command failed with status: rejected')
+
+    @pytest.mark.asyncio
+    async def test_a_null_cause_means_not_recorded(self, mock_token_manager):
+        result = await self._run(
+            _rejected_row(rejection_cause=None, rejection_gate=None)
+        )
+
+        assert result['status'] == 'error'
+        assert result['rejection_cause'] is None
+        assert 'did not record why' in result['rejection_hint']
+
+    @pytest.mark.asyncio
+    async def test_an_older_server_row_without_the_fields_is_not_recorded(
+        self, mock_token_manager
+    ):
+        result = await self._run(_rejected_row())
+
+        assert result['status'] == 'error'
+        assert result['rejection_cause'] is None
+        assert 'did not record why' in result['rejection_hint']
+
+    @pytest.mark.asyncio
+    async def test_an_unknown_cause_falls_back_to_its_gate(self, mock_token_manager):
+        result = await self._run(
+            _rejected_row(rejection_cause='risk_new_reason', rejection_gate='risk')
+        )
+
+        assert result['rejection_cause'] == 'risk_new_reason'
+        assert result['rejection_hint'].startswith(REFUSAL_GATE_HINT['risk'])
+        assert (
+            'Resubmitting the same command gets the same answer'
+            in (result['rejection_hint'])
+        )
+
+    @pytest.mark.asyncio
+    async def test_an_unknown_cause_and_gate_gets_the_generic_hint(
+        self, mock_token_manager
+    ):
+        result = await self._run(
+            _rejected_row(rejection_cause='brand_new', rejection_gate='brand_new_gate')
+        )
+
+        assert 'A gate refused this command before it ran' in result['rejection_hint']
+
+    @pytest.mark.asyncio
+    async def test_a_denied_command_without_a_cause_keeps_todays_error(
+        self, mock_token_manager
+    ):
+        result = await self._run(
+            {'id': 'cmd-r1', 'status': 'denied', 'handled_at': None}
+        )
+
+        assert result['status'] == 'error'
+        assert result['message'] == 'Command failed with status: denied'
+        assert 'rejection_hint' not in result
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        'cause',
+        [
+            'command_acl_denied',
+            'command_acl_unavailable',
+            'risk_denied',
+            'risk_unavailable',
+            'approval_policy_denied',
+            'approval_rejected',
+            'approval_expired',
+            'approval_cancelled',
+            'work_session_terminated',
+            'account_bound_to_other_person',
+            'unsigned_file',
+            'signature_invalid',
+        ],
+    )
+    async def test_every_known_cause_never_says_to_retry(
+        self, cause, mock_token_manager
+    ):
+        result = await self._run(_rejected_row(rejection_cause=cause))
+
+        assert (
+            'A gate refused this command before it ran' not in result['rejection_hint']
+        )
+        assert 'retry' not in result['rejection_hint'].lower()
+
+    @pytest.mark.asyncio
+    async def test_execute_file_carries_the_same_fields(self, mock_token_manager):
+        with (
+            patch('tools.command_tools._submit_file_execution') as mock_submit,
+            patch('tools.command_tools._get_command_result') as mock_poll,
+        ):
+            mock_submit.return_value = {'id': 'cmd-r1'}
+            mock_poll.return_value = _rejected_row(
+                rejection_cause='signature_invalid', rejection_gate=None
+            )
+
+            result = await execute_file(
+                server_id=VALID_SERVER_ID,
+                path='/opt/run.sh',
+                interpreter='/bin/bash',
+                content='echo hi\n',
+                workspace='testworkspace',
+                timeout=10,
+            )
+
+        assert result['status'] == 'error'
+        assert result['rejection_cause'] == 'signature_invalid'
+        assert result['rejection_gate'] is None
+        assert 'could not verify' in result['rejection_hint']
+
+    @pytest.mark.asyncio
+    async def test_list_commands_annotates_rejected_entries_only(
+        self, mock_http_client, mock_token_manager
+    ):
+        mock_http_client.get.return_value = {
+            'count': 2,
+            'results': [
+                {
+                    'id': 'cmd-1',
+                    'status': 'rejected',
+                    'rejection_cause': 'approval_expired',
+                    'rejection_gate': 'approval',
+                },
+                {'id': 'cmd-2', 'status': 'success', 'rejection_cause': None},
+            ],
+        }
+
+        result = await list_commands(workspace='testworkspace', region='ap1')
+
+        rejected, succeeded = result['data']['results']
+        assert result['status'] == 'success'
+        assert 'expired with no decision' in rejected['rejection_hint']
+        assert 'rejection_hint' not in succeeded
+
+
+class TestRefusalEnvelopeThroughTheTool:
+    """A coded refusal reaches the caller with its gate and missing (#242)."""
+
+    @pytest.mark.asyncio
+    async def test_a_403_with_gate_and_missing_suggests_no_endpoint(
+        self, mock_token_manager
+    ):
+        with patch('tools.command_tools._submit_command') as mock_submit:
+            mock_submit.return_value = {
+                'error': 'HTTP Error',
+                'status_code': HTTPStatus.FORBIDDEN,
+                'message': 'HTTP 403',
+                'response': json.dumps(
+                    {
+                        'code': 'command_not_preapproved',
+                        'gate': 'command_acl',
+                        'missing': 'command_preapproval',
+                    }
+                ),
+            }
+
+            result = await execute_command(
+                server_id=VALID_SERVER_ID,
+                command='ls',
+                workspace='testworkspace',
+                timeout=10,
+            )
+
+        assert result['status'] == 'error'
+        assert result['status_code'] == HTTPStatus.FORBIDDEN
+        assert result['gate'] == 'command_acl'
+        assert result['missing'] == 'command_preapproval'
+        assert 'create_command_acl' not in json.dumps(result)
+
+    @pytest.mark.asyncio
+    async def test_a_server_hint_reaches_the_caller_as_sent(self, mock_token_manager):
+        with patch('tools.command_tools._submit_command') as mock_submit:
+            mock_submit.return_value = {
+                'error': 'HTTP Error',
+                'status_code': HTTPStatus.FORBIDDEN,
+                'message': 'HTTP 403',
+                'response': json.dumps(
+                    {'code': 'some_new_code', 'hint': 'Ask your admin for X.'}
+                ),
+            }
+
+            result = await execute_command(
+                server_id=VALID_SERVER_ID,
+                command='ls',
+                workspace='testworkspace',
+                timeout=10,
+            )
+
+        assert result['status'] == 'error'
+        assert result['hint'] == 'Ask your admin for X.'
+        assert result['error_code'] == 'some_new_code'
+        assert 'recovery_hints' not in result
+
+    @pytest.mark.asyncio
+    async def test_an_older_server_403_keeps_its_status_hints(self, mock_token_manager):
+        with patch('tools.command_tools._submit_command') as mock_submit:
+            mock_submit.return_value = {
+                'error': 'HTTP Error',
+                'status_code': HTTPStatus.FORBIDDEN,
+                'message': 'HTTP 403',
+                'response': json.dumps({'code': 'permission_denied'}),
+            }
+
+            result = await execute_command(
+                server_id=VALID_SERVER_ID,
+                command='ls',
+                workspace='testworkspace',
+                timeout=10,
+            )
+
+        assert result['status'] == 'error'
+        assert 'gate' not in result
+        assert 'create_command_acl' in result['related_tools']

@@ -13,6 +13,7 @@ from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
+from utils.auth0_env import get_auth0_env
 from utils.common import MCP_VERSION, is_auth_enabled, serves_ledger_tools
 from utils.declared_agent import capture_declared_agent, use_environment_fallback
 from utils.health import get_health_info
@@ -89,11 +90,8 @@ ALWAYS_ON_TOOLSET_NAMES: frozenset[str] = frozenset(ALWAYS_ON)
 
 @asynccontextmanager
 async def app_lifespan(app: MCPServer[None]) -> AsyncIterator[None]:
-    """Manage application startup and shutdown lifecycle.
-
-    On startup: install SIGTERM handler (Unix only).
-    On shutdown: close all WebSocket connections and HTTP client.
-    """
+    """Lifespan: installs a SIGTERM handler on Unix; on shutdown closes the HTTP client
+    and stops the log listener."""
     original_handler = None
     handler_installed = False
 
@@ -132,7 +130,6 @@ async def app_lifespan(app: MCPServer[None]) -> AsyncIterator[None]:
 
 
 def _sigterm_handler(signum: int, frame: FrameType | None) -> NoReturn:
-    """Handle SIGTERM by raising KeyboardInterrupt for anyio's shutdown path."""
     raise KeyboardInterrupt
 
 
@@ -145,12 +142,8 @@ def resolve_port() -> int:
 
 
 def _create_mcp_server() -> MCPServer[None]:
-    """Create the MCP server instance with optional JWT auth.
-
-    When ALPACON_MCP_AUTH_ENABLED=true (set by main_http.py before import),
-    creates the server with Auth0 JWT authentication for HTTP transport.
-    Otherwise creates a standard server for stdio/SSE transport.
-    """
+    """Create the MCPServer; with ALPACON_MCP_AUTH_ENABLED=true it uses Auth0 JWT auth,
+    and a bad AUTH0_DOMAIN or ALPACON_MCP_RESOURCE_URL raises RuntimeError."""
     auth_enabled = is_auth_enabled()
 
     if auth_enabled:
@@ -160,12 +153,12 @@ def _create_mcp_server() -> MCPServer[None]:
 
         from utils.auth import Auth0TokenVerifier
 
-        auth0_domain = os.getenv('AUTH0_DOMAIN', '')
+        auth0_domain = get_auth0_env('AUTH0_ALPACON_DOMAIN', '')
         resource_url = os.getenv('ALPACON_MCP_RESOURCE_URL', 'https://mcp.alpacon.io')
 
         if not auth0_domain or not auth0_domain.strip():
             message = (
-                'AUTH0_DOMAIN environment variable must be set when '
+                'AUTH0_ALPACON_DOMAIN environment variable must be set when '
                 'ALPACON_MCP_AUTH_ENABLED=true.'
             )
             logger.error(message)
@@ -173,7 +166,7 @@ def _create_mcp_server() -> MCPServer[None]:
 
         if '://' in auth0_domain or '/' in auth0_domain:
             message = (
-                'AUTH0_DOMAIN must be a bare domain such as '
+                'AUTH0_ALPACON_DOMAIN must be a bare domain such as '
                 "'example.us.auth0.com', without scheme or path."
             )
             logger.error(message)
@@ -227,8 +220,8 @@ mcp = _create_mcp_server()
 
 
 class ToolsetError(ValueError):
-    """Bad --toolsets/env input. Subclasses ValueError so entry points can catch
-    it without also swallowing unrelated ValueErrors raised during tool import."""
+    """Bad --toolsets/env input; a ValueError subclass so entry points do not swallow
+    unrelated ones."""
 
 
 def resolve_toolsets(toolsets: str | None) -> set[str]:
@@ -268,7 +261,8 @@ def resolve_toolsets(toolsets: str | None) -> set[str]:
 
 
 def _modules_to_load(toolsets: str | None, remote_mode: bool) -> set[str]:
-    """Remote mode loads everything: client-side tool search optimizes there."""
+    """Remote mode loads every tool module and ignores toolsets; always-on modules are
+    added in both modes."""
     if remote_mode:
         # main_http.py has no --toolsets flag; a shared .env is the likely source.
         requested = toolsets or os.getenv(TOOLSETS_ENV_VAR)
@@ -283,11 +277,8 @@ def _modules_to_load(toolsets: str | None, remote_mode: bool) -> set[str]:
 
 
 def create_streamable_http_app(*, host: str) -> Starlette:
-    """Build the streamable-http ASGI app with this deployment's transport settings.
-
-    host decides DNS rebinding protection: the SDK enables it only for loopback
-    addresses, and it must match what the server actually binds to.
-    """
+    """Build the streamable-http ASGI app; host must be what the server binds, as it
+    decides DNS rebinding protection."""
     return mcp.streamable_http_app(
         host=host,
         json_response=True,
@@ -302,11 +293,8 @@ def resource_metadata_url() -> str:
 
 
 def _register_http_health_endpoint() -> None:
-    """Register HTTP /health endpoint for HTTP transports (SSE, streamable-http).
-
-    Bypasses auth for unauthenticated health probes
-    (e.g., Kubernetes liveness/readiness checks, docker-compose).
-    """
+    """Register /health for HTTP transports outside auth, for liveness and readiness
+    probes."""
     routes: RouteRegistry = mcp
 
     @routes.custom_route('/health', methods=['GET'])
@@ -327,7 +315,8 @@ def prepare(
     config_file: str | None = None,
     toolsets: str | None = None,
 ) -> None:
-    """Register OAuth routes, tool modules and resources for this transport."""
+    """Set up a transport: OAuth routes (remote mode, needs AUTH0_CLIENT_ID), /health
+    for HTTP transports, tool modules and resources."""
     logger.info('Starting MCP server with transport: %s', transport)
 
     # Set transport type for health check reporting
@@ -347,10 +336,10 @@ def prepare(
 
     if remote_mode:
         # Remote (streamable-http) mode: register OAuth routes
-        auth0_client_id = os.getenv('AUTH0_CLIENT_ID', '')
+        auth0_client_id = get_auth0_env('AUTH0_ALPACON_LOGIN_CLIENT_ID', '')
         if not auth0_client_id:
             raise RuntimeError(
-                'AUTH0_CLIENT_ID environment variable is required when '
+                'AUTH0_ALPACON_LOGIN_CLIENT_ID environment variable is required when '
                 'ALPACON_MCP_AUTH_ENABLED=true.'
             )
 
@@ -391,12 +380,8 @@ def run(
     host: str | None = None,
     port: int | None = None,
 ) -> None:
-    """Run the MCP server on the given transport.
-
-    host and port are ignored for stdio. They default to the ALPACON_MCP_HOST
-    and ALPACON_MCP_PORT environment variables. streamable-http is not served
-    here; main_http.py composes that app itself.
-    """
+    """Run the MCP server on stdio or SSE; host and port default to
+    ALPACON_MCP_HOST/PORT and are ignored for stdio."""
     prepare(transport, config_file=config_file, toolsets=toolsets)
 
     resolved_host = host if host is not None else resolve_host()

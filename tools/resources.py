@@ -1,16 +1,7 @@
-"""alpacon:// MCP resources — thin read-only wrappers over list_/get_ tools.
-
-Resources are generated from the RESOURCES registry table to avoid ~75 copies
-of identical boilerplate. Each wrapper is built via exec with real named
-parameters because the SDK matches URI template params to the function
-signature by name; a **kwargs wrapper fails its func_metadata check.
-
-Tool refs are `module.func` strings resolved lazily: importing this module must
-not import (and thereby register) any tool module, or --toolsets breaks.
-"""
+"""alpacon:// resources: read-only wrappers over list_/get_ tools, built from RESOURCES.
+Tool refs resolve lazily: importing this module must not import any tool module."""
 
 import importlib
-import inspect
 import re
 from collections.abc import Awaitable, Callable
 from types import FunctionType
@@ -437,11 +428,8 @@ REGISTRATIONS: list[tuple[str, str, str, dict[str, object] | None]] = [
 def build_resource_wrapper(
     uri: str, fn: _ToolFn, name: str, extra: dict[str, object] | None
 ) -> FunctionType:
-    """Build the named async wrapper an alpacon:// resource registers.
-
-    Path params in `uri` (e.g. {region}) become named arguments; `extra` injects
-    fixed keyword args (e.g. acknowledged=False) into the call.
-    """
+    """Build the named async wrapper: `{params}` in `uri` become arguments and
+    `extra` pins keyword args."""
     path_params = re.findall(r'\{(\w+)\}', uri)
     sig = ', '.join(f'{p}: str' for p in path_params)
     parts = [f'{p}={p}' for p in path_params]
@@ -463,9 +451,11 @@ def build_resource_wrapper(
 def register_resource(
     uri: str, fn: _ToolFn, name: str, extra: dict[str, object] | None = None
 ) -> None:
-    """Register an alpacon:// resource that proxies a read-only tool."""
+    """Register an alpacon:// resource over a read-only tool; it publishes the tool's own
+    description, or `name` for a non-tool, plus a line naming any filter `extra` pins."""
     wrapper = build_resource_wrapper(uri, fn, name, extra)
-    doc = inspect.getdoc(fn) or name
+    tool = mcp._tool_manager.get_tool(fn.__name__)  # SDK 2.x has no sync public lookup
+    doc = tool.description if tool and tool.fn is fn and tool.description else name
     if extra:
         # Surface the pinned filter so a filtered resource isn't mistaken for the bare one.
         pinned = ', '.join(f'{k}={v!r}' for k, v in extra.items())
@@ -483,10 +473,8 @@ def _resolve(ref: str) -> _ToolFn:
 
 
 def register_resources(enabled_modules: set[str]) -> None:
-    """Fewer placeholders first so a literal segment (/active/) beats a sibling
-    {id} wildcard—the SDK takes the first match. That holds only within one
-    call, so pass the complete enabled set at once.
-    """
+    """Register `enabled_modules`' resources, fewer placeholders first so a literal
+    segment beats {id}; that holds within one call, so pass the complete set."""
     selected = [r for r in REGISTRATIONS if r[1].split('.', 1)[0] in enabled_modules]
     for name, ref, uri, extra in sorted(selected, key=lambda r: r[2].count('{')):
         register_resource(uri, _resolve(ref), name, extra)

@@ -1,11 +1,11 @@
-"""Event management tools for Alpacon MCP server - Refactored version."""
+"""Event tools for Alpacon MCP server."""
 
 from utils.api_call import http_call_response
 from utils.common import build_list_params
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import READ_ONLY
-from utils.types import ToolResponse
+from utils.types import OptionalServerId, ToolResponse
 
 
 @mcp_tool_handler(
@@ -15,7 +15,7 @@ from utils.types import ToolResponse
 )
 async def list_events(
     workspace: str,
-    server_id: str | None = None,
+    server_id: OptionalServerId = None,
     reporter: str | None = None,
     limit: int = 50,
     region: str = '',
@@ -75,7 +75,7 @@ async def get_event(
 async def search_events(
     search_query: str,
     workspace: str,
-    server_id: str | None = None,
+    server_id: OptionalServerId = None,
     limit: int = 20,
     region: str = '',
     **kwargs: str,

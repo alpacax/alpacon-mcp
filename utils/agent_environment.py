@@ -1,14 +1,5 @@
 """Name the AI agent that launched this process from its environment markers.
-
-The same detection the Alpacon CLI runs: an agent sets these variables in the
-processes it spawns, so a stdio server, which the agent starts as a child,
-inherits them. Only the environment is read, never the process tree.
-
-Signals a person meets every day never count: CI, an editor's integrated
-terminal (``TERM_PROGRAM``), ``CLAUDECODE`` on its own (Claude Code's editor
-extensions set it in ordinary terminals), ``REPL_ID``, ``GOOSE_PROVIDER``, and
-``AGENT`` with any value but ``goose``. None of them is in the table below.
-"""
+Reads only the environment, never the process tree; CI and editors do not count."""
 
 import re
 from collections.abc import Callable, Mapping
@@ -86,10 +77,7 @@ def _clean(value: str, limit: int) -> str:
 
 
 def _parse_ai_agent(value: str) -> tuple[str, str] | None:
-    """An AI_AGENT value as a canonical name and a version, which may be empty.
-
-    Only the name is lowercased; the version keeps the case it was given.
-    """
+    """An AI_AGENT value as (canonical name, version); only the name is lowercased."""
     value = _clean(value, len(value))
     if not value:
         return None
@@ -110,10 +98,8 @@ def _parse_ai_agent(value: str) -> tuple[str, str] | None:
 
 
 def agent_from_environment(environ: Mapping[str, str]) -> tuple[str, str] | None:
-    """The agent the environment names, as (name, version); None when none.
-
-    The version is empty unless AI_AGENT states one.
-    """
+    """The agent the environment names as (name, version), or None.
+    The version is empty unless AI_AGENT states one."""
     if declared := _parse_ai_agent(environ.get(AI_AGENT, '')):
         return declared
     for name, variable, matches in _ROWS:

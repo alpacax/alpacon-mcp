@@ -1,9 +1,5 @@
-"""
-Unit tests for OAuth proxy endpoints.
-
-Tests the OAuth metadata, authorize, token, and callback endpoints
-including security constraints (grant_type allowlist, client_id enforcement,
-error handling).
+"""OAuth proxy endpoints: metadata, authorize, token, and callback. Includes security
+constraints: grant_type allowlist, client_id enforcement, error handling.
 """
 
 import base64
@@ -53,7 +49,7 @@ from utils.oauth import (
 )
 
 # Test configuration constants
-TEST_AUTH0_DOMAIN = 'test.us.auth0.com'
+TEST_AUTH0_ALPACON_DOMAIN = 'test.us.auth0.com'
 TEST_CLIENT_ID = 'test-client-id'
 TEST_CLIENT_SECRET = 'test-client-secret'
 TEST_RESOURCE_URL = 'https://mcp.test.alpacon.io'
@@ -76,10 +72,16 @@ CONNECTOR_REDIRECT_URI = 'https://chatgpt.com/connector/oauth/abc123'
 
 # Environment variables needed for OAuth config
 OAUTH_ENV = {
-    'AUTH0_DOMAIN': TEST_AUTH0_DOMAIN,
-    'AUTH0_CLIENT_ID': TEST_CLIENT_ID,
-    'AUTH0_CLIENT_SECRET': TEST_CLIENT_SECRET,
-    'AUTH0_AUDIENCE': 'https://alpacon.io/access/',
+    'AUTH0_ALPACON_DOMAIN': TEST_AUTH0_ALPACON_DOMAIN,
+    'AUTH0_ALPACON_LOGIN_CLIENT_ID': TEST_CLIENT_ID,
+    'AUTH0_ALPACON_LOGIN_CLIENT_SECRET': TEST_CLIENT_SECRET,
+    'AUTH0_ALPACON_USER_AUDIENCE': 'https://alpacon.io/access/',
+    'AUTH0_DOMAIN': '',
+    'AUTH0_CLIENT_ID': '',
+    'AUTH0_CLIENT_SECRET': '',
+    'AUTH0_AUDIENCE': '',
+    'AUTH0_MFA_AUDIENCE': '',
+    'AUTH0_NAMESPACE': '',
     'ALPACON_MCP_AUTH_ENABLED': 'true',
     'ALPACON_MCP_RESOURCE_URL': TEST_RESOURCE_URL,
     # Pinned empty so a developer's exported redirect_uri settings cannot
@@ -130,10 +132,8 @@ class MockMCPServer:
 
 @pytest.fixture
 def oauth_app():
-    """Create a minimal Starlette app with OAuth routes registered.
-
-    The client carries the nonce cookie a real browser would have, so callback
-    tests exercise the success path; use oauth_app_no_cookie for the negative.
+    """Minimal Starlette app with the OAuth routes registered. Its client carries the
+    nonce cookie a browser would; oauth_app_no_cookie is the negative.
     """
     mock_server = MockMCPServer()
     register_oauth_routes(mock_server)
@@ -218,8 +218,6 @@ def _authorize(oauth_app, scope='openid profile'):
 
 
 class TestAllowedRedirectUris:
-    """Tests for the endpoint-level redirect_uri allowlist configuration."""
-
     def test_defaults_cover_known_remote_clients(self):
         uris = _get_allowed_redirect_uris()
         assert 'https://claude.ai/api/mcp/auth_callback' in uris
@@ -270,8 +268,6 @@ class TestAllowedRedirectUris:
 
 
 class TestExactRedirectUriMatch:
-    """Tests for endpoint-level redirect_uri matching."""
-
     def test_listed_uri_matches(self):
         assert _is_exact_allowed_redirect_uri(LISTED_REDIRECT_URI)
         assert _is_exact_allowed_redirect_uri(
@@ -321,8 +317,6 @@ class TestExactRedirectUriMatch:
 
 
 class TestPkceExemption:
-    """Tests for the one redirect_uri that may skip PKCE."""
-
     def test_pkce_exempt_uri_is_the_copilot_studio_callback(self):
         assert _is_pkce_exempt_redirect_uri(EXEMPT_REDIRECT_URI)
 
@@ -353,8 +347,6 @@ class TestPkceExemption:
 
 
 class TestRedirectUriGate:
-    """Tests for the redirect_uri endpoint gate."""
-
     def test_rejects_untracked_path_by_default(self):
         assert not _check_redirect_uri(UNLISTED_PATH_URI)
 
@@ -394,8 +386,6 @@ class TestRedirectUriGate:
 
 
 class TestAuthorizeObservation:
-    """Tests for the observation-window log line."""
-
     def test_logs_redirect_uri_and_pkce_method(self, oauth_app, caplog):
         with caplog.at_level('INFO'):
             oauth_app.get(
@@ -442,8 +432,6 @@ class TestAuthorizeObservation:
 
 
 class TestStateSecret:
-    """Tests for state signing key derivation."""
-
     def test_explicit_env_secret_wins(self):
         with patch.dict('os.environ', {_STATE_SECRET_ENV: 'a1' * 32}):
             assert _get_state_secret() == b'\xa1' * 32
@@ -484,7 +472,8 @@ class TestStateSecret:
         """Without an explicit key the check stays off, so a deployment that
         starts with OAuth unconfigured keeps starting."""
         with patch.dict(
-            'os.environ', {_STATE_SECRET_ENV: '', 'AUTH0_CLIENT_SECRET': ''}
+            'os.environ',
+            {_STATE_SECRET_ENV: '', 'AUTH0_ALPACON_LOGIN_CLIENT_SECRET': ''},
         ):
             register_oauth_routes(MockMCPServer())
 
@@ -524,10 +513,8 @@ class TestGrantSecret:
 
 class TestMintedDeviceId:
     def test_mint_is_unpredictable(self):
-        """The per-grant property rests on the CSPRNG, not on a call count.
-
-        Every other minting test patches `_mint_device_id`, so this is the one
-        that would fail if its body became a constant.
+        """The per-grant property rests on the CSPRNG, not on a call count. Every other
+        minting test patches `_mint_device_id`; this one fails if it became a constant.
         """
         assert _mint_device_id() != _mint_device_id()
 
@@ -584,8 +571,6 @@ class TestSealedGrants:
 
 
 class TestNonceHelpers:
-    """Tests for the per-flow nonce that binds a state to one browser."""
-
     def test_new_nonce_differs_every_call(self):
         assert _new_nonce() != _new_nonce()
 
@@ -607,8 +592,6 @@ class TestNonceHelpers:
 
 
 class TestStateEnvelope:
-    """Tests for state signing and verification."""
-
     def test_round_trip_preserves_payload(self):
         signed = _sign_state({'redirect_uri': TRUSTED_REDIRECT_URI, 'state': 'xyz'})
         payload = _verify_state(signed)
@@ -668,8 +651,6 @@ class TestStateEnvelope:
 
 
 class TestBuildState:
-    """Tests for state payload assembly."""
-
     def test_carries_redirect_uri_and_client_state(self):
         decoded = _verify_state(_build_state(TRUSTED_REDIRECT_URI, 'xyz'))
         assert decoded is not None
@@ -686,8 +667,6 @@ class TestBuildState:
 
 
 class TestOAuthMetadata:
-    """Tests for /.well-known/oauth-authorization-server endpoint."""
-
     def test_metadata_returns_correct_endpoints(self, oauth_app):
         response = oauth_app.get('/.well-known/oauth-authorization-server')
         assert response.status_code == HTTPStatus.OK
@@ -697,7 +676,10 @@ class TestOAuthMetadata:
         assert data['authorization_endpoint'] == f'{TEST_RESOURCE_URL}/oauth/authorize'
         assert data['token_endpoint'] == f'{TEST_RESOURCE_URL}/oauth/token'
         assert data['registration_endpoint'] == f'{TEST_RESOURCE_URL}/oauth/register'
-        assert data['jwks_uri'] == f'https://{TEST_AUTH0_DOMAIN}/.well-known/jwks.json'
+        assert (
+            data['jwks_uri']
+            == f'https://{TEST_AUTH0_ALPACON_DOMAIN}/.well-known/jwks.json'
+        )
         assert 'code' in data['response_types_supported']
         assert 'S256' in data['code_challenge_methods_supported']
 
@@ -724,15 +706,13 @@ class TestOAuthMetadata:
 
     def test_metadata_error_is_readable_cross_origin(self, oauth_app):
         """Without the header a misconfigured deployment reads as a CORS failure."""
-        with patch.dict('os.environ', {'AUTH0_DOMAIN': ''}):
+        with patch.dict('os.environ', {'AUTH0_ALPACON_DOMAIN': ''}):
             response = oauth_app.get('/.well-known/oauth-authorization-server')
         assert response.status_code == HTTPStatus.INTERNAL_SERVER_ERROR
         assert response.headers['access-control-allow-origin'] == '*'
 
 
 class TestOAuthAuthorize:
-    """Tests for /oauth/authorize endpoint."""
-
     def test_authorize_redirects_to_auth0(self, oauth_app):
         response = oauth_app.get(
             '/oauth/authorize',
@@ -745,7 +725,7 @@ class TestOAuthAuthorize:
         )
         assert response.status_code == HTTPStatus.FOUND
         location = response.headers['location']
-        assert location.startswith(f'https://{TEST_AUTH0_DOMAIN}/authorize')
+        assert location.startswith(f'https://{TEST_AUTH0_ALPACON_DOMAIN}/authorize')
 
     def test_authorize_overrides_redirect_uri_to_server_callback(self, oauth_app):
         """redirect_uri sent to Auth0 should be the MCP server's own callback."""
@@ -904,10 +884,8 @@ class TestOAuthAuthorize:
             assert response.status_code == HTTPStatus.BAD_REQUEST
 
     def test_authorize_rejects_domain_override_without_uri_override(self, oauth_app):
-        """ALLOWED_REDIRECT_DOMAINS alone no longer admits a host.
-
-        Breaking change: the domain list clears the host check, but the endpoint
-        allowlist still has to list the callback URI.
+        """ALLOWED_REDIRECT_DOMAINS alone no longer admits a host. The domain list
+        clears the host check, but the endpoint allowlist must list the URI.
         """
         with patch.dict(
             'os.environ', {'ALLOWED_REDIRECT_DOMAINS': 'custom.example.com'}
@@ -1159,8 +1137,6 @@ class TestOAuthAuthorize:
 
 
 class TestAuthorizePkce:
-    """Tests for the S256 PKCE requirement at /oauth/authorize."""
-
     def test_pkce_missing_challenge_is_rejected(self, oauth_app):
         response = oauth_app.get(
             '/oauth/authorize',
@@ -1397,10 +1373,8 @@ class TestAuthorizePkceChallengeFormat:
 
     @pytest.mark.parametrize('method', ['s256', 'S256 ', ' S256', 'SHA256'])
     def test_pkce_method_comparison_is_exact(self, oauth_app, method):
-        """RFC 7636 §4.3 makes the method case-sensitive.
-
-        These pass only because the comparison is != on the raw string. A later
-        .strip().upper() cleanup would start accepting all four.
+        """RFC 7636 §4.3 makes the method case-sensitive. These pass only because the
+        comparison is != on the raw string; .strip().upper() would accept them.
         """
         response = oauth_app.get(
             '/oauth/authorize',
@@ -1418,10 +1392,7 @@ class TestAuthorizePkceChallengeFormat:
 
 class TestAuthorizePkceDuplicateParams:
     """The value the gate checks must be the value forwarded upstream.
-
-    dict(request.query_params) is last-wins and urlencode re-encodes that same
-    dict, so the two agree. The agreement is load-bearing and incidental: a move
-    to getlist, or a framework with first-wins semantics, would break it.
+    request.query_params is last-wins and urlencode reuses it; getlist would break that.
     """
 
     def test_pkce_duplicate_challenge_checks_the_forwarded_value(self, oauth_app):
@@ -1487,8 +1458,6 @@ class TestAuthorizePkceDuplicateParams:
 
 
 class TestOAuthToken:
-    """Tests for /oauth/token endpoint."""
-
     def test_token_allows_authorization_code_grant(self, oauth_app):
         mock_client = _mock_auth0_response()
         with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
@@ -1759,9 +1728,9 @@ class TestOAuthToken:
         mock_client.post.assert_not_called()
 
     def test_token_refresh_rejects_a_bare_refresh_token(self, oauth_app, caplog):
-        """A refresh token issued before sealing would refresh under a shared
-        key, so it is refused and the client logs in again. Every pre-sealing
-        session hits this once at rollout, so it is not a warning."""
+        """A refresh token issued before sealing would refresh under a shared key, so it
+        is refused. Every pre-sealing session hits this once at rollout; not a warning.
+        """
         mock_client = _mock_auth0_response()
         with patch('utils.oauth.httpx.AsyncClient', return_value=mock_client):
             with caplog.at_level('INFO'):
@@ -1821,9 +1790,7 @@ class TestOAuthToken:
 
     def test_token_auth_code_unseals_the_code(self, oauth_app):
         """Auth0 sees the code it issued, and no client device id on this grant.
-
-        The scope sent to /authorize already carried the id, so neither the body
-        field nor a `device:` scope has anything to replace here.
+        The scope sent to /authorize already carried the id, so no body field is needed.
         """
         mock_client = _mock_auth0_response(
             json_data={'access_token': 'jwt', 'refresh_token': 'v1.first'}
@@ -1938,20 +1905,22 @@ class TestOAuthToken:
         }
 
     def test_token_fails_without_client_secret(self):
-        """Token endpoint should return 500 when AUTH0_CLIENT_SECRET is missing."""
+        """Token endpoint should return 500 when AUTH0_ALPACON_LOGIN_CLIENT_SECRET is missing."""
         sealed_code = _seal_code('test-code', DEVICE_ID)
         env_without_secret = {
-            'AUTH0_DOMAIN': TEST_AUTH0_DOMAIN,
-            'AUTH0_CLIENT_ID': TEST_CLIENT_ID,
-            'AUTH0_AUDIENCE': 'https://alpacon.io/access/',
+            'AUTH0_ALPACON_DOMAIN': TEST_AUTH0_ALPACON_DOMAIN,
+            'AUTH0_ALPACON_LOGIN_CLIENT_ID': TEST_CLIENT_ID,
+            'AUTH0_ALPACON_USER_AUDIENCE': 'https://alpacon.io/access/',
             'ALPACON_MCP_AUTH_ENABLED': 'true',
             'ALPACON_MCP_RESOURCE_URL': TEST_RESOURCE_URL,
         }
 
         mock_server = MockMCPServer()
         with patch.dict('os.environ', env_without_secret, clear=False):
-            # Unset AUTH0_CLIENT_SECRET if present
-            with patch.dict('os.environ', {'AUTH0_CLIENT_SECRET': ''}, clear=False):
+            # Unset AUTH0_ALPACON_LOGIN_CLIENT_SECRET if present
+            with patch.dict(
+                'os.environ', {'AUTH0_ALPACON_LOGIN_CLIENT_SECRET': ''}, clear=False
+            ):
                 register_oauth_routes(mock_server)
                 app = Starlette(routes=mock_server.routes)
                 client = TestClient(app, raise_server_exceptions=False)
@@ -1964,7 +1933,7 @@ class TestOAuthToken:
                 )
         assert response.status_code == HTTPStatus.INTERNAL_SERVER_ERROR
         data = response.json()
-        assert 'AUTH0_CLIENT_SECRET' in data.get('error', '')
+        assert 'AUTH0_ALPACON_LOGIN_CLIENT_SECRET' in data.get('error', '')
 
     def test_token_overrides_redirect_uri_for_auth_code(self, oauth_app):
         """Token exchange should use server's callback URL, not client's."""
@@ -2263,7 +2232,7 @@ class TestOAuthFallbackRoutes:
         )
         assert response.status_code == HTTPStatus.FOUND
         location = response.headers['location']
-        assert location.startswith(f'https://{TEST_AUTH0_DOMAIN}/authorize')
+        assert location.startswith(f'https://{TEST_AUTH0_ALPACON_DOMAIN}/authorize')
 
     def test_register_fallback_returns_client_id(self, oauth_app):
         """POST /register should return the configured client_id."""
@@ -2300,9 +2269,7 @@ class TestOAuthCors:
     @pytest.mark.parametrize('path', ['/register', '/token'])
     def test_fallback_preflight_is_answered(self, oauth_app, path, caplog):
         """A client that never read the metadata preflights the fallback path.
-
-        The log there flags a client that lost its metadata; a preflight is not
-        that, so it must not appear in the log.
+        The log there flags a client that lost its metadata; a preflight is not that.
         """
         with caplog.at_level(logging.INFO, logger='alpacon_mcp.oauth'):
             response = oauth_app.options(path)
@@ -2360,11 +2327,8 @@ def _make_composite_state(redirect_uri='', state='', **extra):
 
 
 class TestMfaPkceReplay:
-    """The client's challenge has to survive the two-stage MFA flow.
-
-    Stage 1 authorizes against the MFA audience without the challenge, so the
-    signed state holds the only copy. Losing it strands the client: it still
-    holds a verifier, and the code it finally exchanges was issued without one.
+    """The client's PKCE challenge must survive the two-stage MFA flow.
+    Stage 1 authorizes without it, so the signed state holds the only copy.
     """
 
     def test_stage1_stashes_the_challenge_in_the_state(self, oauth_app):
@@ -2458,8 +2422,6 @@ class TestMfaPkceReplay:
 
 
 class TestOAuthCallback:
-    """Tests for /oauth/callback endpoint."""
-
     def test_callback_redirects_to_client(self, oauth_app):
         """Callback should redirect to the client's original redirect_uri."""
         composite = _make_composite_state(
@@ -2533,13 +2495,13 @@ class TestOAuthCallback:
 
     def test_callback_reports_missing_config_instead_of_crashing(self, oauth_app):
         """Missing client secret: same JSON 500 as other handlers, not a stack trace."""
-        with patch.dict('os.environ', {'AUTH0_CLIENT_SECRET': ''}):
+        with patch.dict('os.environ', {'AUTH0_ALPACON_LOGIN_CLIENT_SECRET': ''}):
             response = oauth_app.get(
                 '/oauth/callback',
                 params={'code': 'auth-code', 'state': 'aGVsbG8.c2ln'},
             )
         assert response.status_code == HTTPStatus.INTERNAL_SERVER_ERROR
-        assert 'AUTH0_CLIENT_SECRET' in response.json()['error']
+        assert 'AUTH0_ALPACON_LOGIN_CLIENT_SECRET' in response.json()['error']
 
     def test_callback_returns_json_without_redirect_uri(self, oauth_app):
         """Without a client redirect_uri in state, return JSON as fallback."""

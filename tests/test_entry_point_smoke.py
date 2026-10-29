@@ -1,6 +1,4 @@
-"""
-Start each transport entry point as a real process and observe it boot.
-
+"""Start each transport entry point as a real process and observe it boot.
 Deselected by default; run with ``pytest -m smoke``.
 """
 
@@ -53,7 +51,7 @@ INITIALIZE = {
 
 
 # Real main_http.py with only the token check stubbed: the JWKS URL is always
-# https://<AUTH0_DOMAIN>, so nothing could pass authentication on loopback.
+# https://<AUTH0_ALPACON_DOMAIN>, so nothing could pass authentication on loopback.
 STUBBED_AUTH_LAUNCH = """
 import runpy
 from mcp.server.auth.provider import AccessToken
@@ -90,8 +88,8 @@ def entry_env(tmp_path: Path) -> dict[str, str]:
         HOME=str(tmp_path),
         PYTHONPATH=REPO_ROOT,
         SMOKE_CONFIG_FILE=str(config),
-        AUTH0_DOMAIN='example.us.auth0.com',
-        AUTH0_CLIENT_ID='smoke-client-id',
+        AUTH0_ALPACON_DOMAIN='example.us.auth0.com',
+        AUTH0_ALPACON_LOGIN_CLIENT_ID='smoke-client-id',
         ALPACON_MCP_RESOURCE_URL='https://mcp.example.com',
     )
     return env
@@ -288,7 +286,9 @@ def test_main_http_reports_missing_auth0_vars_as_one_json_error_record(
     assert len(records) == 1
     assert records[0]['level'] == 'ERROR'
     assert records[0]['name'] == 'alpacon_mcp.main_http'
-    assert 'AUTH0_DOMAIN, AUTH0_CLIENT_ID' in records[0]['message']
+    assert (
+        'AUTH0_ALPACON_DOMAIN, AUTH0_ALPACON_LOGIN_CLIENT_ID' in records[0]['message']
+    )
     assert result.stderr == ''
 
 
@@ -300,11 +300,15 @@ def test_main_http_reports_missing_auth0_vars_on_stderr_in_text_mode(
     assert result.returncode == 1
     assert result.stdout == ''
     assert ' - ERROR - ' in result.stderr
-    assert 'AUTH0_DOMAIN, AUTH0_CLIENT_ID' in result.stderr
+    assert 'AUTH0_ALPACON_DOMAIN, AUTH0_ALPACON_LOGIN_CLIENT_ID' in result.stderr
 
 
-def test_main_http_does_not_reject_a_public_host_header(entry_env):
+@pytest.mark.parametrize('use_legacy', [False, True])
+def test_main_http_does_not_reject_a_public_host_header(entry_env, use_legacy):
     """main_http.py binds 0.0.0.0 when ALPACON_MCP_HOST is unset; the token check is stubbed."""
+    if use_legacy:
+        entry_env['AUTH0_DOMAIN'] = entry_env.pop('AUTH0_ALPACON_DOMAIN')
+        entry_env['AUTH0_CLIENT_ID'] = entry_env.pop('AUTH0_ALPACON_LOGIN_CLIENT_ID')
     with _serve_http(['-c', STUBBED_AUTH_LAUNCH], entry_env) as url:
         response = _post_initialize_as_public_host(url)
 

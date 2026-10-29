@@ -1,7 +1,9 @@
 """Type aliases shared across modules; importing it has no side effects."""
 
 from collections.abc import Awaitable, Callable, Mapping, Sequence
-from typing import Any
+from typing import Annotated, Any
+
+from pydantic import Field
 
 # Every value response.json() can produce; AlpaconHTTPClient methods return it.
 type JsonValue = (
@@ -12,6 +14,22 @@ type JsonValue = (
 type QueryValue = str | int | float | bool | None
 type QueryParam = QueryValue | Sequence[QueryValue]
 type QueryParams = Mapping[str, QueryParam]
+
+SERVER_ID_DESCRIPTION = (
+    'Server UUID, never a server name; list_servers maps a name to its UUID.'
+)
+
+WORK_SESSION_ID_DESCRIPTION = (
+    'Work Session to link this call to for audit. The server requires one for MCP '
+    'OAuth and browser-login callers; static API and service tokens may omit it. '
+    "Omitted, it falls back to ALPACON_WORK_SESSION in this MCP server's "
+    'environment; an explicit value wins.'
+)
+
+# Plain assignments, not `type`: pydantic publishes a TypeAliasType as a bare $ref.
+ServerId = Annotated[str, Field(description=SERVER_ID_DESCRIPTION)]
+OptionalServerId = Annotated[str | None, Field(description=SERVER_ID_DESCRIPTION)]
+WorkSessionId = Annotated[str | None, Field(description=WORK_SESSION_ID_DESCRIPTION)]
 
 type RequestBody = Mapping[str, object]  # a JSON request body
 

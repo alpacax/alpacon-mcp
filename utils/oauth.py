@@ -1,12 +1,5 @@
-"""OAuth 2.0 proxy endpoints for Auth0 integration.
-
-These endpoints allow MCP clients (e.g. claude.ai) to perform
-OAuth authorization code flow through this MCP server, which
-proxies requests to Auth0.
-
-All routes are registered via the MCP server's custom_route decorator,
-which bypasses MCP authentication — appropriate for OAuth flow endpoints.
-"""
+"""OAuth 2.0 proxy endpoints that let MCP clients run the authorization code flow
+through this server to Auth0; custom_route registers them outside MCP authentication."""
 
 import base64
 import binascii
@@ -26,6 +19,7 @@ import httpx
 from starlette.requests import Request
 from starlette.responses import JSONResponse, RedirectResponse, Response
 
+from utils.auth0_env import get_auth0_env
 from utils.common import is_remote_ledger_enabled
 from utils.error_handler import validate_workspace_format
 from utils.ledger_grant import (
@@ -193,11 +187,8 @@ _DEFAULT_REDIRECT_DOMAINS = tuple(
 
 
 def _get_server_url(request: Request) -> str:
-    """Build the MCP server's base URL from config or request.
-
-    Prefers ALPACON_MCP_RESOURCE_URL env var to avoid relying on
-    potentially spoofable forwarding headers.
-    """
+    """Build the server's base URL from ALPACON_MCP_RESOURCE_URL when set, else the
+    request, since forwarding headers can be spoofed."""
     configured_base_url = os.getenv('ALPACON_MCP_RESOURCE_URL')
     if configured_base_url:
         return configured_base_url.rstrip('/')
@@ -205,11 +196,8 @@ def _get_server_url(request: Request) -> str:
 
 
 def _get_allowed_redirect_domains() -> tuple[str, ...]:
-    """Return the set of allowed non-localhost redirect domains.
-
-    Reads from ALLOWED_REDIRECT_DOMAINS env var (comma-separated).
-    Falls back to _DEFAULT_REDIRECT_DOMAINS if not set.
-    """
+    """Return the legacy redirect host allowlist: ALLOWED_REDIRECT_DOMAINS
+    (comma-separated) when set, else the defaults."""
     env_domains = os.getenv(_ENV_ALLOWED_REDIRECT_DOMAINS, '').strip()
     if env_domains:
         return tuple(d.strip().lower() for d in env_domains.split(',') if d.strip())
@@ -217,10 +205,8 @@ def _get_allowed_redirect_domains() -> tuple[str, ...]:
 
 
 def _get_allowed_redirect_uris() -> tuple[str, ...]:
-    """Return the allowed non-loopback callback endpoints.
-
-    Reads ALLOWED_REDIRECT_URIS (comma-separated full URIs) when set.
-    """
+    """Return the allowed non-loopback callback endpoints: ALLOWED_REDIRECT_URIS
+    (comma-separated full URIs) when set, else the defaults."""
     env_uris = os.getenv(_ENV_ALLOWED_REDIRECT_URIS, '').strip()
     if env_uris:
         return tuple(u.strip() for u in env_uris.split(',') if u.strip())
@@ -232,11 +218,8 @@ def _redirect_uris_are_overridden() -> bool:
 
 
 def _is_allowed_redirect_host(url: str) -> bool:
-    """Whether the URL's host clears the legacy host allowlist.
-
-    https only, so an authorization code never travels over plaintext.
-    Clearing this check is not sufficient on its own — see _check_redirect_uri.
-    """
+    """Whether the URL is https on an allowlisted host; not sufficient alone, see
+    _check_redirect_uri."""
     parsed = urlparse(url)
     if parsed.scheme != 'https':
         return False
@@ -245,11 +228,8 @@ def _is_allowed_redirect_host(url: str) -> bool:
 
 
 def _is_exact_allowed_redirect_uri(url: str) -> bool:
-    """Return True when the URL is one of the allowed callback endpoints.
-
-    https only: a pinned endpoint bypasses the host allowlist, so the scheme
-    check that keeps authorization codes off plaintext lives here too.
-    """
+    """Whether the URL is a pinned https callback endpoint without query or fragment;
+    it bypasses the host allowlist, so the https check lives here too."""
     parsed = urlparse(url)
     if parsed.scheme != 'https' or parsed.query or parsed.fragment:
         return False
@@ -266,12 +246,8 @@ def _is_exact_allowed_redirect_uri(url: str) -> bool:
 
 
 def _is_pkce_exempt_redirect_uri(url: str) -> bool:
-    """Whether a destination may start an authorization flow with no PKCE.
-
-    Goes through _is_exact_allowed_redirect_uri, not _check_redirect_uri: the
-    latter accepts any path on an allowlisted host in report-only mode, which
-    would let an unrelated environment variable widen the exemption.
-    """
+    """Whether a destination may start a flow with no PKCE. Not _check_redirect_uri:
+    its report-only mode accepts any path on an allowlisted host."""
     return url in _PKCE_EXEMPT_REDIRECT_URIS and _is_exact_allowed_redirect_uri(url)
 
 
@@ -281,12 +257,8 @@ def _redirect_uri_report_only() -> bool:
 
 
 def _check_redirect_uri(url: str) -> bool:
-    """Decide whether a client redirect_uri may receive an authorization code.
-
-    Loopback is exempt: callback paths differ per client (/callback,
-    /oauth/callback, /) and pinning them would break clients without closing
-    the local-listener risk, which browser-session binding handles instead.
-    """
+    """Whether a client redirect_uri may receive an authorization code. Loopback is
+    exempt: paths differ per client, and browser-session binding covers that risk."""
     # A pinned endpoint is stricter than a host match, so it stands on its own;
     # otherwise every listed host would also have to be in the domain list.
     if _is_exact_allowed_redirect_uri(url):
@@ -324,13 +296,8 @@ def _is_registrable_uri_list(value: object) -> bool:
 
 
 def _allow_browser_clients(handler: RouteHandler) -> RouteHandler:
-    """Answer the CORS preflight and mark the response readable cross-origin.
-
-    Only for endpoints a browser-based client reaches with fetch: /oauth/authorize
-    and /oauth/callback are top-level navigations, which CORS never governs.
-    Starlette ships CORSMiddleware, but custom_route takes no per-route middleware
-    and installing it app-wide would also open the MCP transport endpoint.
-    """
+    """Answer the CORS preflight and mark responses cross-origin readable, per route:
+    CORSMiddleware app-wide would also open the MCP transport endpoint."""
 
     @wraps(handler)
     async def with_cors(request: Request) -> Response:
@@ -349,11 +316,8 @@ def _allow_browser_clients(handler: RouteHandler) -> RouteHandler:
 def _log_authorize_client_profile(
     redirect_uri: str, code_challenge_method: str
 ) -> None:
-    """Record what each client sends, to settle who reaches the exempt callback.
-
-    Remove once no client uses the PKCE-exempt redirect_uri and no deployment
-    needs report-only mode to cover a missing allowlist entry.
-    """
+    """Log each client's redirect_uri and PKCE method. Remove once no client uses the
+    PKCE-exempt callback and no deployment needs report-only mode."""
     logger.info(
         'authorize observed - redirect_uri: %s, pkce: %s',
         escape_for_log(redirect_uri) or '(none)',
@@ -372,19 +336,25 @@ def _build_redirect_url(base_url: str, extra_params: dict[str, str]) -> str:
 
 
 def _get_oauth_config() -> dict[str, str]:
-    """Get OAuth configuration from environment variables."""
-    domain = os.getenv('AUTH0_DOMAIN', '')
-    client_id = os.getenv('AUTH0_CLIENT_ID', '')
-    client_secret = os.getenv('AUTH0_CLIENT_SECRET', '')
-    audience = os.getenv('AUTH0_AUDIENCE', 'https://alpacon.io/access/')
-    mfa_audience = os.getenv('AUTH0_MFA_AUDIENCE', '')
+    """Read the Auth0 login settings; raises ValueError if domain, id or secret is unset."""
+    domain = get_auth0_env('AUTH0_ALPACON_DOMAIN', '')
+    client_id = get_auth0_env('AUTH0_ALPACON_LOGIN_CLIENT_ID', '')
+    client_secret = get_auth0_env('AUTH0_ALPACON_LOGIN_CLIENT_SECRET', '')
+    audience = get_auth0_env(
+        'AUTH0_ALPACON_USER_AUDIENCE', 'https://alpacon.io/access/'
+    )
+    mfa_audience = get_auth0_env('AUTH0_ALPACON_MFA_AUDIENCE', '')
 
     if not domain:
-        raise ValueError('AUTH0_DOMAIN environment variable is required')
+        raise ValueError('AUTH0_ALPACON_DOMAIN environment variable is required')
     if not client_id:
-        raise ValueError('AUTH0_CLIENT_ID environment variable is required')
+        raise ValueError(
+            'AUTH0_ALPACON_LOGIN_CLIENT_ID environment variable is required'
+        )
     if not client_secret:
-        raise ValueError('AUTH0_CLIENT_SECRET environment variable is required')
+        raise ValueError(
+            'AUTH0_ALPACON_LOGIN_CLIENT_SECRET environment variable is required'
+        )
 
     # Derive MFA audience from domain if not explicitly set
     if not mfa_audience:
@@ -401,7 +371,8 @@ def _get_oauth_config() -> dict[str, str]:
 
 
 def _explicit_hex_secret(env_name: str) -> bytes | None:
-    """The key an operator set, or None when the variable is unset."""
+    """The key an operator set, or None when unset; raises ValueError unless it is
+    hex of at least 32 bytes."""
     explicit = os.getenv(env_name, '')
     if not explicit:
         return None
@@ -422,10 +393,8 @@ def _explicit_hex_secret(env_name: str) -> bytes | None:
 
 
 def _derived_secret(info: bytes) -> bytes:
-    """Derived from AUTH0_CLIENT_SECRET so no extra secret needs provisioning,
-    and identical across replicas so a signed value verifies without shared
-    storage.
-    """
+    """Key derived from AUTH0_ALPACON_LOGIN_CLIENT_SECRET: nothing to provision, and
+    identical across replicas so a signed value verifies without shared storage."""
     client_secret = _get_oauth_config()['client_secret']
     return hmac.new(client_secret.encode(), info, hashlib.sha256).digest()
 
@@ -454,11 +423,8 @@ def ledger_grant_key() -> bytes:
 
 
 async def _read_bounded_body(request: Request) -> bytes | None:
-    """The body, or None once it passes `_MAX_REQUEST_BODY_BYTES`.
-
-    Streamed rather than read whole: a chunked request declares no length, so a
-    Content-Length check alone would still buffer everything before rejecting it.
-    """
+    """The body, or None once it passes the size cap. Streamed because a chunked
+    request declares no length."""
     declared = request.headers.get('content-length', '')
     if declared.isdigit() and int(declared) > _MAX_REQUEST_BODY_BYTES:
         return None
@@ -473,7 +439,7 @@ async def _read_bounded_body(request: Request) -> bytes | None:
 
 
 def _sign_state(payload: dict[str, object]) -> str:
-    """Serialise a state payload with an expiry and an HMAC signature."""
+    """Serialize a state payload with an expiry and an HMAC signature."""
     body = {**payload, 'exp': int(time.time()) + _STATE_TTL_SECONDS}
     encoded = base64.urlsafe_b64encode(
         json.dumps(body, separators=(',', ':')).encode()
@@ -485,11 +451,8 @@ def _sign_state(payload: dict[str, object]) -> str:
 
 
 def _verify_state(state: str) -> dict[str, object] | None:
-    """Return the state payload, or None when it is forged or expired.
-
-    The signature covers the encoded payload rather than the raw JSON so it can
-    be checked before anything is decoded.
-    """
+    """Return the state payload, or None when it is forged or expired; raises
+    ValueError when no state key can be resolved."""
     encoded, _, signature = state.rpartition('.')
     if not encoded or not signature:
         return None
@@ -567,12 +530,8 @@ def _mint_device_id() -> str:
 
 
 def _seal(kind: str, value: str, device_id: str, ledger: str = '') -> str:
-    """Bind a value the client echoes back opaquely to its grant's device id.
-
-    Codes and refresh tokens are the only carrier for the id without server-side
-    storage; the signature keeps a client from pointing one at another grant's
-    record. `ledger` is an encrypted ledger grant riding along, if any.
-    """
+    """Bind an opaque value the client echoes back to its grant's device id, with an
+    encrypted ledger grant riding along if any; the signature pins both."""
     payload: dict[str, str] = {'k': kind, 'v': value, 'd': device_id}
     if ledger:
         payload['l'] = ledger
@@ -641,12 +600,8 @@ def _unseal_refresh_token(sealed: object) -> tuple[str, str] | None:
 
 
 def _reject_unsealed(what: str, value: object) -> JSONResponse:
-    """Log and refuse a value this server did not seal.
-
-    One under our prefix that fails to verify is tampering or corruption and
-    worth a warning; a bare one is a session from before sealing, which every
-    client hits once at rollout, or an Auth0 token handed to the proxy directly.
-    """
+    """Log and refuse a value this server did not seal: a warning when it bears our
+    prefix but fails verification, an info line for a pre-sealing or bare token."""
     if isinstance(value, str) and value.startswith(f'{_SEALED_PREFIX}.'):
         logger.warning('Rejected a %s that failed seal verification', what)
     else:
@@ -870,12 +825,8 @@ def _carried_ledger_grant(
 
 
 def register_oauth_routes(mcp_server: RouteRegistry) -> None:
-    """Register OAuth proxy routes on the MCP server.
-
-    Raises:
-        ValueError: ALPACON_MCP_STATE_SECRET or ALPACON_MCP_GRANT_SECRET is set
-            to a malformed value.
-    """
+    """Register the OAuth proxy routes; raises ValueError when an explicit state or
+    grant secret is malformed."""
     # A malformed key otherwise surfaces on the first user's OAuth request,
     # long after the deployment reported success. Only the explicit keys are
     # checked: the derived path needs OAuth config, and deployments that run
@@ -890,12 +841,8 @@ def register_oauth_routes(mcp_server: RouteRegistry) -> None:
     @mcp_server.custom_route('/.well-known/oauth-authorization-server', methods=['GET'])
     @_allow_browser_clients
     async def oauth_metadata(request: Request) -> Response:
-        """OAuth 2.0 Authorization Server Metadata (RFC 8414).
-
-        Returns metadata advertising this MCP server as the OAuth
-        authorization server. The authorize, token, and register
-        endpoints proxy to Auth0; only jwks_uri points to Auth0 directly.
-        """
+        """OAuth 2.0 Authorization Server Metadata (RFC 8414): authorize, token and
+        register point here; only jwks_uri points to Auth0."""
         try:
             config = _get_oauth_config()
         except ValueError as e:
@@ -930,11 +877,8 @@ def register_oauth_routes(mcp_server: RouteRegistry) -> None:
 
     @mcp_server.custom_route('/oauth/authorize', methods=['GET'])
     async def oauth_authorize(request: Request) -> Response:
-        """Redirect to Auth0's authorization endpoint.
-
-        Proxies the OAuth authorize request to Auth0, adding the
-        configured client_id and audience.
-        """
+        """Validate redirect_uri and PKCE, then redirect to Auth0 with the configured
+        client_id, a signed state and a nonce cookie; 'mfa' scope runs two stages."""
         try:
             config = _get_oauth_config()
         except ValueError as e:
@@ -1120,12 +1064,8 @@ def register_oauth_routes(mcp_server: RouteRegistry) -> None:
     @mcp_server.custom_route('/oauth/token', methods=['POST', 'OPTIONS'])
     @_allow_browser_clients
     async def oauth_token(request: Request) -> Response:
-        """Proxy token exchange to Auth0.
-
-        Forwards the token request to Auth0's /oauth/token endpoint.
-        Injects the configured client_id and client_secret for
-        Auth0 token exchange (confidential client / RWA).
-        """
+        """Proxy token exchange to Auth0, injecting client_id and client_secret; allows
+        only authorization_code and refresh_token grants, over sealed values."""
         try:
             config = _get_oauth_config()
         except ValueError as e:
@@ -1350,12 +1290,8 @@ def register_oauth_routes(mcp_server: RouteRegistry) -> None:
     @mcp_server.custom_route('/oauth/register', methods=['POST', 'OPTIONS'])
     @_allow_browser_clients
     async def oauth_register(request: Request) -> Response:
-        """Dynamic Client Registration endpoint (RFC 7591).
-
-        Auth0 does not support Dynamic Client Registration on non-Enterprise
-        plans, so this endpoint returns the server's pre-configured client_id
-        to satisfy the MCP SDK's registration requirement.
-        """
+        """Dynamic Client Registration (RFC 7591): validates redirect_uris, returns the
+        pre-configured client_id, since Auth0 lacks DCR on non-Enterprise plans."""
         try:
             config = _get_oauth_config()
         except ValueError as e:
@@ -1441,13 +1377,8 @@ def register_oauth_routes(mcp_server: RouteRegistry) -> None:
 
     @mcp_server.custom_route('/oauth/callback', methods=['GET'])
     async def oauth_callback(request: Request) -> Response:
-        """Handle Auth0 callback after authorization.
-
-        Supports two-stage MFA flow:
-        - Stage 'mfa': MFA completed, exchange code then redirect to
-          regular audience (Stage 2) using Auth0 SSO session.
-        - Stage 'regular' or absent: forward code to MCP client.
-        """
+        """Handle the Auth0 callback after state and nonce-cookie checks. Stage 'mfa'
+        redirects on to Stage 2; otherwise a sealed code goes to the client."""
         # Extract callback parameters
         code = request.query_params.get('code')
         composite_state = request.query_params.get('state')
@@ -1701,34 +1632,21 @@ def register_oauth_routes(mcp_server: RouteRegistry) -> None:
 
     @mcp_server.custom_route('/token', methods=['POST', 'OPTIONS'])
     async def oauth_token_fallback(request: Request) -> Response:
-        """Fallback token endpoint at /token.
-
-        MCP SDK clients fall back to /token (instead of /oauth/token) when
-        oauth_metadata is not cached — e.g. after a client restart that
-        still has a stored refresh_token but lost the server metadata.
-        Delegating to the canonical handler avoids a silent 404.
-        """
+        """Fallback for /token, hit when oauth_metadata is not cached; delegates to
+        /oauth/token."""
         if request.method != 'OPTIONS':
             logger.info('/token fallback hit — delegating to /oauth/token handler')
         return await oauth_token(request)
 
     @mcp_server.custom_route('/authorize', methods=['GET'])
     async def oauth_authorize_fallback(request: Request) -> Response:
-        """Fallback authorize endpoint at /authorize.
-
-        MCP SDK clients fall back to /authorize when oauth_metadata
-        is not cached.
-        """
+        """Fallback for /authorize when oauth_metadata is not cached."""
         logger.info('/authorize fallback hit — delegating to /oauth/authorize handler')
         return await oauth_authorize(request)
 
     @mcp_server.custom_route('/register', methods=['POST', 'OPTIONS'])
     async def oauth_register_fallback(request: Request) -> Response:
-        """Fallback register endpoint at /register.
-
-        MCP SDK clients fall back to /register when oauth_metadata
-        is not cached.
-        """
+        """Fallback for /register when oauth_metadata is not cached."""
         if request.method != 'OPTIONS':
             logger.info(
                 '/register fallback hit — delegating to /oauth/register handler'

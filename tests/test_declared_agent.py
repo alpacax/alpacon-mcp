@@ -145,8 +145,7 @@ class TestHeaderSafety:
     @pytest.mark.asyncio
     async def test_oversized_values_are_cut_to_the_server_limits(self) -> None:
         """The server would truncate them too, but only if the request reaches it.
-
-        The limits are written out because they are alpacon-server's, not ours.
+        The limits are alpacon-server's, so they are written out, not imported.
         """
         headers = await _headers_inside(_ctx('a' * 100_000, '1' * 100_000))
         assert headers == {

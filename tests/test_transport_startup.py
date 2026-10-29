@@ -1,9 +1,5 @@
-"""Startup contract for the three transports.
-
-SDK 2.x moved host, port, json_response and stateless_http off the MCPServer
-constructor. These tests pin that server imports cleanly in both modes and that
-the streamable-http app it builds keeps its host, json_response and
-stateless_http contract.
+"""Startup contract for the three transports: server imports in both modes, and the
+streamable-http app keeps host, json_response and stateless_http (SDK 2.x moved them).
 """
 
 import os
@@ -44,7 +40,7 @@ def test_server_module_imports_in_auth_mode():
         'server',
         {
             'ALPACON_MCP_AUTH_ENABLED': 'true',
-            'AUTH0_DOMAIN': 'example.us.auth0.com',
+            'AUTH0_ALPACON_DOMAIN': 'example.us.auth0.com',
             'ALPACON_MCP_RESOURCE_URL': 'https://mcp.example.com',
         },
     )
@@ -151,10 +147,9 @@ async def test_streamable_http_app_mints_no_session():
 
 @pytest.mark.asyncio
 async def test_streamable_http_app_raises_body_limit_above_sdk_default():
-    """Given the app this deployment serves, When a body over the SDK's 4 MiB
-    default arrives, Then it is accepted rather than rejected as too large—the
-    limit was raised to MAX_REQUEST_BODY_SIZE (5 MiB) so oversized uploads reach
-    the tool's own error instead of a bare HTTP 413 (#144)."""
+    """A body over the SDK's 4 MiB default is accepted, not rejected as too large:
+    MAX_REQUEST_BODY_SIZE (5 MiB) lets uploads reach the tool's error, not a 413 (#144).
+    """
     oversized_body = b'{"pad": "' + b'x' * (4 * 1024 * 1024) + b'"}'
 
     async with streamable_http_client() as client:
@@ -172,9 +167,9 @@ async def test_streamable_http_app_raises_body_limit_above_sdk_default():
 
 @pytest.mark.asyncio
 async def test_streamable_http_app_rejects_body_over_configured_limit():
-    """Given the app this deployment serves, When a body over
-    MAX_REQUEST_BODY_SIZE arrives, Then the ASGI layer rejects it with 413,
-    proving the limit is actually enforced (not raised without bound)."""
+    """A body over MAX_REQUEST_BODY_SIZE gets a 413 at the ASGI layer,
+    proving the limit is enforced and not raised without bound.
+    """
     oversized_body = b'{"pad": "' + b'x' * (MAX_REQUEST_BODY_SIZE + 1) + b'"}'
 
     async with streamable_http_client() as client:

@@ -1,17 +1,5 @@
-"""Serve the deployment's composed app on a loopback port, for subscription tests.
-
-Run as a script, never imported by the test process: ``server`` builds its
-MCPServer at import time from the environment, so remote mode has to be the
-first thing this module does and cannot be turned on inside an already-imported
-test session without reloading the module.
-
-It composes what ``main_http.py`` composes—``prepare(TRANSPORT_STREAMABLE_HTTP)``,
-``create_streamable_http_app``, wrapped in ``UpstreamAuthErrorMiddleware``—plus
-two test-only endpoints and one test-only tool. Only the token verifier is
-stubbed, and it binds 127.0.0.1 where production binds 0.0.0.0, so DNS rebinding
-protection is on here and off there.
-
-Usage: ``python tests/subscription_harness.py <port>``
+"""The deployment's composed app on a loopback port, with only the token verifier
+stubbed. Run as a script: `server` reads remote mode at import.
 """
 
 import os
@@ -19,8 +7,8 @@ import sys
 from typing import cast
 
 os.environ['ALPACON_MCP_AUTH_ENABLED'] = 'true'
-os.environ['AUTH0_DOMAIN'] = 'example.us.auth0.com'
-os.environ['AUTH0_CLIENT_ID'] = 'test-client-id'
+os.environ['AUTH0_ALPACON_DOMAIN'] = 'example.us.auth0.com'
+os.environ['AUTH0_ALPACON_LOGIN_CLIENT_ID'] = 'test-client-id'
 os.environ['ALPACON_MCP_RESOURCE_URL'] = 'https://mcp.example.com'
 
 import uvicorn  # noqa: E402
@@ -41,10 +29,8 @@ SIGNALLING_TOOL = 'raise_upstream_401'
 
 
 async def _accept_test_token(self, token: str) -> AccessToken | None:
-    """Stand in for Auth0 verification; the rest of the auth path stays real.
-
-    Every token under TOKEN_PREFIX is accepted, so a test that must not share
-    the middleware's per-token re-auth cooldown can mint its own.
+    """Stand in for Auth0 verification; every TOKEN_PREFIX token is accepted.
+    A test can mint its own token to avoid the middleware's per-token re-auth cooldown.
     """
     if not token.startswith(TOKEN_PREFIX):
         return None

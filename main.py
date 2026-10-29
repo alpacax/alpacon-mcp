@@ -12,11 +12,8 @@ logger = get_logger('main')
 
 
 def _is_workspace_token_variable(name: str) -> bool:
-    """Whether name has the ALPACON_MCP_<REGION>_<WORKSPACE>_TOKEN shape TokenManager reads.
-
-    TokenManager builds the name from upper-cased region and workspace, so a name
-    with any lowercase letter is never read.
-    """
+    """Whether name is an upper-case ALPACON_MCP_<REGION>_<WORKSPACE>_TOKEN that
+    TokenManager reads."""
     prefix, suffix = 'ALPACON_MCP_', '_TOKEN'
     if name != name.upper():
         return False
@@ -27,12 +24,8 @@ def _is_workspace_token_variable(name: str) -> bool:
 
 
 def check_token_exists() -> bool:
-    """Check if any token source the server reads is configured.
-
-    Mirrors TokenManager: ALPACON_MCP_CONFIG_FILE, any
-    ALPACON_MCP_<REGION>_<WORKSPACE>_TOKEN variable (read before any file),
-    and the global and local token files.
-    """
+    """Whether any token source TokenManager reads exists: config-file or token env var,
+    or a token.json."""
     if os.getenv('ALPACON_MCP_CONFIG_FILE'):
         return True
     if any(
@@ -46,7 +39,6 @@ def check_token_exists() -> bool:
 
 
 def main() -> None:
-    """Main entry point for the CLI."""
     parser = argparse.ArgumentParser(
         description='Alpacon MCP Server - AI-powered server management',
         formatter_class=argparse.RawDescriptionHelpFormatter,

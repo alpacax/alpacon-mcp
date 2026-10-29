@@ -34,18 +34,8 @@ def _is_plain_int(value: object) -> bool:
 
 
 def _validate_rollout_policy(policy: object) -> str | None:
-    """Validate an `agent_rollout_policy` write locally before it reaches the API.
-
-    Mirrors the shape `AgentRolloutPolicyField.to_internal_value` accepts
-    (alpacon-server `workspaces/api/agent_rollout.py`), so a malformed write
-    fails fast with a field-specific message instead of round-tripping to the
-    server for a generic 400. A shape this check accepts can still be refused
-    server-side by state only the server knows—`n_minus_1` while pinned
-    upgrades are off comes back as the coded `preferences_agent_rollout_mode_unavailable`
-    (surfaced as `error_code` with a hint by `unwrap_http_result`).
-
-    Returns an error message, or None when the shape is valid.
-    """
+    """Check an `agent_rollout_policy` write locally; returns an error message, or None.
+    The server can still refuse a valid shape by state, e.g. `n_minus_1`."""
     if not isinstance(policy, dict) or not set(policy) <= _ROLLOUT_POLICY_KEYS:
         return (
             "agent_rollout_policy must be an object with only 'mode' and/or "
@@ -115,15 +105,7 @@ def _collect_workspaces_from_tokens(
     token_manager: TokenManager,
     target_region: str | None = None,
 ) -> list[dict[str, object]]:
-    """Collect workspace info from token.json data.
-
-    Args:
-        token_manager: TokenManager to read entries and pinned URL overrides from.
-        target_region: If provided, filter to this region only. None means all regions.
-
-    Returns:
-        List of workspace info dicts
-    """
+    """Workspace info dicts from token.json, limited to `target_region` when given."""
     workspaces = []
     for region_key, region_data in token_manager.get_all_tokens().items():
         if target_region and region_key != target_region:
@@ -154,16 +136,8 @@ def _collect_workspaces_from_tokens(
 def _saas_only_security_404(
     result: object, region: str, workspace: str
 ) -> ToolErrorResponse | None:
-    """Translate a SaaS-only 404 into a clear "not available" error.
-
-    The server registers the security settings routes (security settings and
-    their mfa-methods sub-route) under `/api/workspaces/security/` only where
-    step-up MFA is available (cloud deployments). A 404 means the deployment
-    does not offer them. Requires the http_client `error` key (matching
-    unwrap_http_result) so a success payload carrying status_code 404 is not
-    misread. Returns an error_response when the result is a 404 error envelope,
-    else None so the caller continues with normal unwrapping.
-    """
+    """Turn a 404 error envelope into 'not available' (cloud-only routes), else None;
+    a success payload carrying status_code 404 is left alone."""
     if (
         isinstance(result, dict)
         and 'error' in result
@@ -180,7 +154,7 @@ def _saas_only_security_404(
 
 
 @mcp_tool_handler(
-    description='List all available workspaces and their regions. Returns workspace names, region codes, domain hostnames, and unusable_entries: the count of workspace claim entries left out because they name no workspace or region, which is non-zero when an Auth0 organization has no region in its metadata. In local mode reads from token.json; in server mode extracts from JWT claims. When to use: first tool to call to discover which workspaces are configured. Related: list_servers (find servers in a workspace). Note: Most other tools require a workspace parameter from this list.',
+    description='List all available workspaces and their regions. Returns workspace names, region codes, domain hostnames, and unusable_entries: the count of workspace claim entries left out because they name no workspace or region, which is non-zero when an Auth0 organization has no region in its metadata; a region filter does not narrow it, and it is always 0 in local mode. In local mode reads from token.json; in server mode extracts from JWT claims. When to use: first tool to call to discover which workspaces are configured. Related: list_servers (find servers in a workspace). Note: Most other tools require a workspace parameter from this list.',
     annotations=READ_ONLY,
     meta={
         'anthropic/alwaysLoad': True,
@@ -534,32 +508,8 @@ async def update_workspace_preferences(
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
-    """Update the workspace-wide preferences (partial update).
-
-    Args:
-        workspace: Workspace name. Required parameter
-        front_url: Workspace front-end URL (optional)
-        country: Workspace country code (optional)
-        language: Workspace locale/language code (optional)
-        timezone: Workspace timezone; also the billing clock (optional)
-        invite_ttl: Invitation link time-to-live, in seconds (optional)
-        enabled_extensions: List of enabled extension names. Replaces the whole list
-            (not additive); read via get_workspace_preferences and merge before sending.
-            Narrowing this list fails with HTTP 402 on non-enterprise plans (optional)
-        websh_session_timeout: Websh idle session timeout, in seconds (optional)
-        package_proxy: Proxy server URL for package installation, e.g.
-            http://proxy.example.com:8080 (optional)
-        billing_email: Billing contact email; SaaS-only field (optional)
-        agent_rollout_policy: Agent-upgrade rollout policy: {"mode": "latest"|
-            "n_minus_1"|"manual", "window": {"days": [...], "start_hour": ...,
-            "length_hours": ..., "timezone": "..."}}. A write may name only part
-            of the object; the rest keeps its current value. Validated locally
-            before the request is sent (optional)
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        Workspace preferences update response.
-    """
+    """Partial update: only given fields are sent, and an empty
+    `agent_rollout_policy` counts as omitted. Errors when nothing is left to send."""
     token = kwargs.get('token')
 
     update_data: dict[str, object] = exclude_none(

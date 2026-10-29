@@ -9,7 +9,7 @@ Complete reference for all Alpacon MCP Server tools and capabilities.
 - **Server IDs are UUIDs**, never names. Get them from `list_servers`.
 - **Every other `*_id` is checked before the request is built.** A value must be a string of letters, digits, `.`, `_`, `~`, or `-`, and must not be `.` or `..`. Most of these identifiers are interpolated into the endpoint path, where a `/` or a `..` retargets the request; the ones that only reach a query parameter or a request body are held to the same rule, because the check goes by the argument name rather than by where the value ends up. Anything else—a `/`, a `?`, a `#`, a percent-encoded spelling of one, or a value that is not a string at all—comes back as a validation error naming the field, and no request is sent. `work_session_id` is the one exception: its surrounding whitespace is stripped on purpose, so the rule would reject values the `ALPACON_WORK_SESSION` route accepts.
 - **`limit` and `page_size` must be positive integers.** Both name a page size and reach the API as `page_size`, where a zero or a negative asks for a page that cannot exist. Either one comes back as a validation error naming the field, and no request is sent. Omitting the argument still gets the tool's own default.
-- **Work Session gate**: OAuth/browser callers must run command execution and file transfers inside an active Work Session; static API tokens bypass it. Blocked calls return `status="pending_approval"` or a `status="error"` with a `code` and `next_action`—see [Work session tools](#-work-session-tools).
+- **Work Session gate**: OAuth/browser callers must run command execution and file transfers inside an active Work Session; static API and service tokens bypass it. Blocked calls return `status="pending_approval"` or a `status="error"` with a `code` and `next_action`—see [Work session tools](#-work-session-tools).
 
 ## 📋 Response structure
 
@@ -44,6 +44,8 @@ All MCP tools follow a consistent response structure:
 
 > **Note**: `"status": "success"` indicates successful HTTP communication. Check the `data.error` field for API-level errors like ACL permission issues (403/404).
 
+A request is retried with backoff after a 5xx, a timeout, or a network error, with one exception: a `POST` or `PATCH` is retried only when it never reached the server—no connection opened or came free from the pool, the proxy refused the tunnel, the URL scheme cannot be sent, or the server answered 503 `auth_verification_unavailable`, which it sends before any view runs. Once it may have reached the server (a read or write timeout, a broken connection, any other 5xx, or an unexpected error such as a 2xx whose body cannot be read), the tool's error comes back at once with `outcome_unknown: true` and no `recovery_hints`, because sending it again could repeat what it did. Check whether the write took effect before calling the tool again. An error without the field was not acted on, or came from a method that is safe to resend (#392).
+
 ## 🖥️ Server management tools
 
 ### `list_servers`
@@ -59,7 +61,7 @@ List all servers in a region and workspace.
 Get detailed information about a specific server.
 
 **Parameters:**
-- `server_id` (string): Server ID to get details for
+- `server_id` (string): Server UUID to get details for
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 - `workspace` (string): Workspace name
 
@@ -69,7 +71,7 @@ Get detailed information about a specific server.
 List notes for a specific server.
 
 **Parameters:**
-- `server_id` (string): Server ID
+- `server_id` (string): Server UUID
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 - `workspace` (string): Workspace name
 
@@ -77,7 +79,7 @@ List notes for a specific server.
 Create a new note for a server.
 
 **Parameters:**
-- `server_id` (string): Server ID
+- `server_id` (string): Server UUID
 - `content` (string): Note content; capped at 512 characters
 - `private` (boolean, optional): Hide the note from other workspace members
 - `pinned` (boolean, optional): Pin the note; a server holds at most three pinned notes
@@ -97,13 +99,13 @@ Rename or relabel a server's Alpacon entry, or toggle its own offline-alert deli
 - `name` (string, optional): New display name
 - `description` (string, optional): New description
 - `offline_alert_enabled` (boolean, optional): This server's own offline-alert toggle, independent of any workspace rule; defaults to `true` on the server. Refused when the caller is the server's own agent credential
-- `region` (`ap1` or `us1`, optional): Region name
+- `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 
 ### `get_collection_profile`
 What a server collects and at what cadence, and what it does not collect. Not gated behind the metrics extension, so it answers on every plan.
 
 **Parameters:**
-- `server_id` (string): Server ID
+- `server_id` (string): Server UUID
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 - `workspace` (string): Workspace name
 
@@ -157,7 +159,7 @@ They run through a Work Session and `execute_command`—see "Keeping hosts curre
 Get CPU usage metrics for a server.
 
 **Parameters:**
-- `server_id` (string): Server ID to get metrics for
+- `server_id` (string): Server UUID to get metrics for
 - `start_date` (string, optional, default: 12 hours ago): Start date in ISO format; the server returns at most the last 12 hours
 - `end_date` (string, optional): End date in ISO format
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
@@ -181,8 +183,8 @@ Get memory usage metrics for a server.
 Get disk usage metrics for a server.
 
 **Parameters:**
-- `server_id` (string): Server ID
-- `device` (string, optional): Device path (e.g., '/dev/sda1')
+- `server_id` (string): Server UUID
+- `device` (string, optional): Device path (e.g., '/dev/sda1'); with neither `device` nor `partition`, the tool reads the alphabetically first device with data in the last day
 - `partition` (string, optional): Partition ID (UUID) from `/api/proc/partitions/`
 - `start_date` (string, optional, default: 12 hours ago): Start date; the server returns at most the last 12 hours
 - `end_date` (string, optional): End date
@@ -193,7 +195,7 @@ Get disk usage metrics for a server.
 Get network traffic metrics for a server.
 
 **Parameters:**
-- `server_id` (string): Server ID
+- `server_id` (string): Server UUID
 - `interface` (string): Interface ID (UUID) from `/api/proc/interfaces/`, required; the endpoint returns HTTP 400 when it is missing or is an interface name such as `eth0`
 - `start_date` (string, optional, default: 12 hours ago): Start date; the server returns at most the last 12 hours
 - `end_date` (string, optional): End date
@@ -204,11 +206,14 @@ Get network traffic metrics for a server.
 Get disk I/O performance metrics for a server.
 
 **Parameters:**
-- `server_id` (string): Server ID
+- `server_id` (string): Server UUID
+- `device` (string, optional): Disk device name (e.g., 'sda', 'nvme0n1'); when omitted or blank, the tool reads `/api/metrics/realtime/disk-io/device/` and uses the alphabetically first device with data in the last day, and returns an error without querying metrics when there is none
 - `start_date` (string, optional, default: 12 hours ago): Start date in ISO format; the server returns at most the last 12 hours
 - `end_date` (string, optional): End date in ISO format
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 - `workspace` (string): Workspace name
+
+**Response:** `data` is the unpaginated list of rows the Alpacon API server returns, newest first, one per device and sample: `id`, `device`, `disk`, `timestamp`, and that sample's `peak_read_bps`, `peak_write_bps`, `avg_read_bps` and `avg_write_bps` in bytes per second. The top-level `device` is the device read, and `devices` is the sorted list of discovered devices when `device` was omitted or blank, null otherwise; call again with another entry to read that device. A device listed for the last day can have no rows in the 12-hour window, which returns an empty `data`.
 
 ### `get_top_servers`
 Rank the top five servers by resource usage over the last 24 hours.
@@ -226,6 +231,10 @@ value is missing, stale, or not collected — use `get_cpu_usage` etc. for one s
 or `get_server_metrics_summary` for one server's detail. **Requires alpacon-server 2.37.0 or
 later.**
 
+Severity ordering and the `metric_severity`, `threshold`, `operator`, and `summary` fields
+require a server deployment that supports them. Earlier deployments ignore severity ordering
+(the default order applies) and omit those fields; without `alert:read` the ordering is ignored too.
+
 **Parameters:**
 - `workspace` (string): Workspace name
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
@@ -236,22 +245,31 @@ later.**
 - `state` (string, optional): `stale` (some family overdue, including a server storing nothing) or
   `no_data` (nothing stored at all); `stale` includes every `no_data` server
 - `ordering` (string, optional): `name`, `starred`, `sampled_at`, `cpu`, `memory`, `disk_usage` (or
-  `disk-usage`), `disk_io` (or `disk-io`), `net`, optionally prefixed with `-` for descending; a
-  server with no value for the field sorts last
+  `disk-usage`), `disk_io` (or `disk-io`), `net`, `metric_severity`, optionally prefixed with `-`
+  for descending; a server with no value for the field sorts last. `-metric_severity` puts
+  critical first; ties keep the default order
 - `page` (integer, optional): Page number for pagination
 - `page_size` (integer, optional): Number of results per page, up to 100
 
-**Response:** `count`, `current`, `next`, `previous`, `last`, and `results` — each result an
-`{id, name, is_connected, cpu, memory, "disk-usage", "disk-io", net}` row, every metric cell an
-object with `value`, `unit` (`percent` or `bytes_per_sec`), `sampled_at`, `device`, `collected`,
-`reason`, and `interval_s` (`value`, `sampled_at`, and `device` are null when no sample is stored
-for that family).
+**Response:** `count`, `current`, `next`, `previous`, `last`, `summary`, and `results`—each result an
+`{id, name, is_connected, metric_severity, cpu, memory, "disk-usage", "disk-io", net}` row, every
+metric cell an object with `value`, `unit` (`percent` or `bytes_per_sec`), `sampled_at`, `device`, `collected`,
+`reason`, `interval_s`, `threshold`, and `operator` (`value`, `sampled_at`, and `device` are null
+when no sample is stored for that family).
+
+`metric_severity` is `critical`, `warning`, `info`, or null without `alert:read`. Each cell's
+`threshold` is a number or null and `operator` is `gte`, `lte`, or null; both are always null
+for `disk-io` and `net`, and null when the caller cannot read rule overrides.
+
+`summary` contains server counts `{critical, warning, stale, no_data}` over the filtered set
+before pagination. `critical` and `warning` are null without `alert:read`; `warning` excludes
+servers counted as critical.
 
 ### `get_alert_rules`
 Get alert rules for servers.
 
 **Parameters:**
-- `server_id` (string, optional): Server ID to filter rules
+- `server_id` (string, optional): Server UUID to filter rules
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 - `workspace` (string): Workspace name
 
@@ -259,7 +277,7 @@ Get alert rules for servers.
 Comprehensive health overview for one server; for many servers at once, use `list_latest_metrics`.
 
 **Parameters:**
-- `server_id` (string): Server ID
+- `server_id` (string): Server UUID
 - `hours` (integer, default: 12, max: 12): Number of hours back to get metrics; the realtime endpoints keep only the last 12 hours, so a larger value is clamped to 12
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 - `workspace` (string): Workspace name
@@ -274,7 +292,7 @@ Comprehensive health overview for one server; for many servers at once, use `lis
 Get detailed system information for a server.
 
 **Parameters:**
-- `server_id` (string): Server ID
+- `server_id` (string): Server UUID
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 - `workspace` (string): Workspace name
 
@@ -284,7 +302,7 @@ Get detailed system information for a server.
 Get operating system version information.
 
 **Parameters:**
-- `server_id` (string): Server ID
+- `server_id` (string): Server UUID
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 - `workspace` (string): Workspace name
 
@@ -292,7 +310,7 @@ Get operating system version information.
 List system users on a server.
 
 **Parameters:**
-- `server_id` (string): Server ID
+- `server_id` (string): Server UUID
 - `username_filter` (string, optional): Username to search for
 - `login_enabled_only` (boolean, default: false): Only return users that can login
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
@@ -302,7 +320,7 @@ List system users on a server.
 List system groups on a server.
 
 **Parameters:**
-- `server_id` (string): Server ID
+- `server_id` (string): Server UUID
 - `groupname_filter` (string, optional): Group name to search for
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 - `workspace` (string): Workspace name
@@ -311,7 +329,7 @@ List system groups on a server.
 List installed system packages on a server.
 
 **Parameters:**
-- `server_id` (string): Server ID
+- `server_id` (string): Server UUID
 - `package_name` (string, optional): Package name to search for
 - `architecture` (string, optional): Architecture filter (e.g., 'x86_64')
 - `limit` (integer, default: 100): Maximum number of packages to return
@@ -322,7 +340,7 @@ List installed system packages on a server.
 Get network interfaces information for a server.
 
 **Parameters:**
-- `server_id` (string): Server ID
+- `server_id` (string): Server UUID
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 - `workspace` (string): Workspace name
 
@@ -330,7 +348,7 @@ Get network interfaces information for a server.
 Get disk and partition information for a server.
 
 **Parameters:**
-- `server_id` (string): Server ID
+- `server_id` (string): Server UUID
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 - `workspace` (string): Workspace name
 
@@ -340,7 +358,7 @@ Get disk and partition information for a server.
 Get system time and uptime information.
 
 **Parameters:**
-- `server_id` (string): Server ID
+- `server_id` (string): Server UUID
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 - `workspace` (string): Workspace name
 
@@ -348,7 +366,7 @@ Get system time and uptime information.
 Get comprehensive overview of server system information.
 
 **Parameters:**
-- `server_id` (string): Server ID
+- `server_id` (string): Server UUID
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 - `workspace` (string): Workspace name
 
@@ -362,7 +380,7 @@ Get comprehensive overview of server system information.
 List server events.
 
 **Parameters:**
-- `server_id` (string, optional): Server ID to filter events
+- `server_id` (string, optional): Server UUID to filter events
 - `reporter` (string, optional): Reporter name to filter events
 - `limit` (integer, default: 50): Maximum number of events to return
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
@@ -381,7 +399,7 @@ Search events by criteria.
 
 **Parameters:**
 - `search_query` (string): Search term to look for in events
-- `server_id` (string, optional): Server ID to limit search scope
+- `server_id` (string, optional): Server UUID to limit search scope
 - `limit` (integer, default: 20): Maximum number of results to return
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 - `workspace` (string): Workspace name
@@ -396,8 +414,8 @@ Search events by criteria.
 Execute a command on a server and wait for the result.
 
 **Parameters:**
-- `server_id` (string): Server ID
-- `command` (string): Command to execute; must not be empty or whitespace-only. Do not prefix it with `sudo` by default: unless a Work Session sudo policy already covers the command, a sudo invocation either routes to human approval and blocks until a human acts, or is denied outright with no request anyone can approve. Check `sudo_denial.category` before waiting—a `sudo_hint` with no `sudo_denial` is a hard denial that creates no request
+- `server_id` (string): Server UUID
+- `command` (string): Command to execute; must not be empty or whitespace-only. Do not prefix it with `sudo` by default; use `sudo` only when the command genuinely requires root and the Work Session carries the `sudo` scope. Unless a Work Session sudo policy already covers the command, a sudo invocation either routes to human approval and blocks until a human acts, or is denied outright with no request anyone can approve. Check `sudo_denial.category` before waiting—a `sudo_hint` with no `sudo_denial` is a hard denial that creates no request
 - `workspace` (string): Workspace name
 - `shell` (string, default: "system"): Shell type
 - `username` (string, optional): Username for execution
@@ -407,7 +425,7 @@ Execute a command on a server and wait for the result.
 - `scheduled_at` (string, optional): ISO 8601 datetime for scheduled execution
 - `data` (string, optional): Stdin data
 - `timeout` (integer, default: 300): Timeout in seconds
-- `work_session_id` (string, optional): Work Session to run under; falls back to `ALPACON_WORK_SESSION`
+- `work_session_id` (string, optional): Work Session to link the call to for audit; required for MCP OAuth and browser-login callers, optional for static API and service tokens; falls back to `ALPACON_WORK_SESSION` in the MCP server's environment when omitted, and an explicit value wins
 - `purpose` (string, optional): What this particular command is for (ADR 0052). The assessor judges the command with it in hand, so one that would otherwise queue for a human may clear on its own. State a fact local to this host that the Work Session description does not already imply; general knowledge adds nothing the assessor lacks, and a purpose cannot lower a command's intrinsic risk. Trimmed to 2000 characters rather than refused, and the response then carries `purpose_truncated: true`
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 
@@ -452,6 +470,10 @@ The refused command did not run, so nothing needs cancelling. The server attache
 `execute_file_suggestion` here: the script body is on the command line, so there is no path to read.
 `state_command_purpose` returns the same refusal when the re-judged command lands on it.
 
+**Rejected by a gate:** a command a gate refused before it ran ends in `status: "rejected"`, and the response is `status: "error"` with the command row in `details` plus three fields read from it (#242). `rejection_cause` is why the platform refused it (`command_acl_denied`, `command_acl_unavailable`, `risk_denied`, `risk_unavailable`, `approval_policy_denied`, `approval_rejected`, `approval_expired`, `approval_cancelled`, `work_session_terminated`, `account_bound_to_other_person`, `unsigned_file`, `signature_invalid`, `use_file_execution`). `rejection_gate` is the gate that refused it, `null` for the causes the agent's signature check or the account binding decided. `rejection_hint` says whom to ask or where to wait, and is also appended to `message`, except on a `use_file_execution` refusal, whose `message` and `next_action` already name the `execute_file` call. Resubmitting the same command gets the same answer, so no hint says to. A cause this server does not know takes the hint for its gate, and a gate it does not know takes a generic one. A rejected command whose `rejection_cause` is `null` or absent, from an older server or an older row, gets a hint saying the cause was not recorded; it is not an error of its own. A `denied` command carries no cause and keeps its plain error.
+
+**Lost submission:** the command is submitted once and never resent after its request may have reached the server (#392). The response is then `status: "error"` with `outcome_unknown: true`, as described under Response structure, and the command may have been created and may have run. Do not resubmit it until `list_commands` for that server shows it is not there, since a resubmission may run the command twice. Read back past the time of the call: `list_commands` returns the newest commands first, 20 by default, so raise `limit` until the oldest entry predates the call. A page holding only newer commands does not show the command is missing. The server returns at most 100 commands whatever `limit` asks for, so when 100 newer commands fill the page, ask a human to check before resubmitting.
+
 ### `execute_file`
 Run a script on a server as a verified file, and wait for the result. With `write_file`,
 the same call writes the script to the host first; with `read_from_server`, it reads the script
@@ -466,7 +488,7 @@ Once an approver marks a verified file standing, an unchanged re-run is admitted
 human, which a `bash /path` line on `execute_command` never is.
 
 **Parameters:**
-- `server_id` (string): Server ID
+- `server_id` (string): Server UUID
 - `path` (string): Absolute path of the file on the target host. Without `write_file` it must already exist there; the agent reads it from disk, and `content` is never shipped to the host
 - `workspace` (string): Workspace name
 - `content` (string, optional): The file's contents, byte-for-byte as they are on disk. Never stripped, trimmed, or normalized—the agent hashes the on-disk file with no normalization, so a dropped trailing newline fails closed. Non-empty, at most 64 KB (65536 UTF-8 bytes). Required unless `read_from_server` is true, and refused alongside it
@@ -481,7 +503,7 @@ human, which a `bash /path` line on `execute_command` never is.
 - `run_after` (array, optional): Command IDs to wait for before executing
 - `scheduled_at` (string, optional): ISO 8601 datetime for scheduled execution
 - `timeout` (integer, default: 300): Timeout in seconds
-- `work_session_id` (string, optional): Work Session to run under; falls back to `ALPACON_WORK_SESSION`. With `write_file` or `read_from_server`, the transfer is linked to it too
+- `work_session_id` (string, optional): Work Session to link the call to for audit; required for MCP OAuth and browser-login callers, optional for static API and service tokens; falls back to `ALPACON_WORK_SESSION` in the MCP server's environment when omitted, and an explicit value wins. With `write_file` or `read_from_server`, the transfer is linked to it too
 - `purpose` (string, optional): Same semantics as on `execute_command`
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 
@@ -537,6 +559,8 @@ denials, and the result all follow the same rules—plus a `file` object echoing
 and `args` (never `content`). `command` and `shell` are not echoed; the polled command row carries the
 server-rendered line.
 
+**Lost submission:** the command submission follows the `execute_command` rule: with `outcome_unknown: true` the command may exist and may have run, so check `list_commands` for that server, read back past the time of the call, before resubmitting, and ask a human once 100 newer commands fill the page. The `write_file` upload and the `read_from_server` download are POSTs too, and a failed one carries the same field, but there the call can be repeated: the upload's bytes go up and the host writes them only in later steps that never ran, and a download only reads, so no file was written and nothing was submitted.
+
 **Refusals** come back as `status: "error"` with `error_code` set, and a message stating the fix. None
 has a request waiting behind it, so a client acts on them rather than waiting or retrying as-is:
 `file_exec_unsupported_agent` (the agent on that server did not report support for this lane: an
@@ -563,7 +587,7 @@ and to `execute_command` results; other phases carry no hint.
 List recent command history.
 
 **Parameters:**
-- `server_id` (string, optional): Filter by server ID
+- `server_id` (string, optional): Filter by server UUID
 - `limit` (integer, default: 20): Maximum number of recent commands to return
 - `workspace` (string): Workspace name
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
@@ -572,6 +596,7 @@ An entry whose `error_phase` starts with `file_` gains `error_phase_hint`, as on
 An entry whose `rejection_cause` is `use_file_execution` gains `error_code: "use_file_execution"` and
 the same `next_action` as on `execute_command`, naming that entry's server and account, plus a
 reminder to rerun only that server rather than the original target set.
+A rejected entry gains `rejection_hint` beside the row's own `rejection_cause` and `rejection_gate`, as described under `execute_command` (#242).
 
 ### `execute_command_multi_server`
 Execute a command on multiple servers simultaneously.
@@ -585,7 +610,7 @@ Execute a command on multiple servers simultaneously.
 - `groupname` (string, default: "alpacon"): Group name
 - `env` (object, optional): Environment variables
 - `parallel` (boolean, default: true): Execute in parallel
-- `work_session_id` (string, optional): Work Session to run under
+- `work_session_id` (string, optional): Work Session to link the call to for audit; required for MCP OAuth and browser-login callers, optional for static API and service tokens; falls back to `ALPACON_WORK_SESSION` in the MCP server's environment when omitted, and an explicit value wins
 - `purpose` (string, optional): What this particular command is for (ADR 0052). The assessor judges the command with it in hand, so one that would otherwise queue for a human may clear on its own. State a fact local to this host that the Work Session description does not already imply; general knowledge adds nothing the assessor lacks, and a purpose cannot lower a command's intrinsic risk. Trimmed to 2000 characters rather than refused, and the response then carries `purpose_truncated: true`. This tool never waits, so it is never asked for a purpose after the fact—stating it up front is the only chance
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 
@@ -596,6 +621,8 @@ some targets may be refused. Read it from `list_commands`, where each refused en
 refused servers only, with the same account: the file lane needs every target server to support it,
 so resubmitting the original target set can fail with `file_exec_unsupported_agent` on a server that
 was never refused.
+
+**Lost submission:** a server whose entry in `deploy_shell_results` carries `outcome_unknown: true` follows the `execute_command` rule: its command may exist and may have run, so check `list_commands` for that server, read back past the time of the call, before resubmitting to it, and ask a human once 100 newer commands fill the page.
 
 ### `state_command_purpose`
 Answer the purpose demand on a command the verification gate is holding, then wait for the outcome.
@@ -625,17 +652,17 @@ principal share one server error, so a refusal cannot say which happened: read t
 Create a new WebFTP session for file transfer.
 
 **Parameters:**
-- `server_id` (string): Server ID
+- `server_id` (string): Server UUID
 - `workspace` (string): Workspace name
 - `username` (string, optional): Username for FTP access (defaults to the authenticated user)
-- `work_session_id` (string, optional): Work Session to attribute the session to
+- `work_session_id` (string, optional): Work Session to link the call to for audit; required for MCP OAuth and browser-login callers, optional for static API and service tokens; falls back to `ALPACON_WORK_SESSION` in the MCP server's environment when omitted, and an explicit value wins
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 
 ### `webftp_sessions_list`
 Get list of WebFTP sessions.
 
 **Parameters:**
-- `server_id` (string, optional): Filter by server ID
+- `server_id` (string, optional): Filter by server UUID
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 - `workspace` (string): Workspace name
 
@@ -643,11 +670,12 @@ Get list of WebFTP sessions.
 Upload a local file to a server using S3 presigned URLs.
 
 **Parameters:**
-- `server_id` (string): Server ID
+- `server_id` (string): Server UUID
 - `local_file_path` (string): Absolute path to local file
 - `remote_file_path` (string): Absolute path on server
 - `workspace` (string): Workspace name
 - `username` (string, optional): Username (defaults to authenticated user)
+- `work_session_id` (string, optional): Work Session to link the call to for audit; required for MCP OAuth and browser-login callers, optional for static API and service tokens; falls back to `ALPACON_WORK_SESSION` in the MCP server's environment when omitted, and an explicit value wins
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 - `allow_overwrite` (boolean, default: true): Allow overwriting existing files
 
@@ -662,12 +690,13 @@ A transfer the host or server reports as failed returns `code: "download_failed"
 A scoped API or service token without `command:read` (the `file_download` and `file_transfer` presets) cannot read the host's transfer command. The call then waits on the transfer status alone and fetches the file only after it reports success, so a command the host never runs ends in `download_timeout` rather than an early `download_failed`. `execute_file` with `read_from_server` behaves the same way.
 
 **Parameters:**
-- `server_id` (string): Server ID
+- `server_id` (string): Server UUID
 - `remote_file_path` (string): Absolute path on server
 - `local_file_path` (string): Absolute path for local download
 - `workspace` (string): Workspace name
 - `resource_type` (string, default: "file"): "file" or "folder" (folders download as .zip)
 - `username` (string, optional): Username (defaults to authenticated user)
+- `work_session_id` (string, optional): Work Session to link the call to for audit; required for MCP OAuth and browser-login callers, optional for static API and service tokens; falls back to `ALPACON_WORK_SESSION` in the MCP server's environment when omitted, and an explicit value wins
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 
 ### `webftp_upload_content`
@@ -676,25 +705,40 @@ Upload base64-encoded bytes as a file, with no local file on disk. Useful in hos
 On streamable-http and SSE, `file_content` is capped at 3 MiB of decoded (original) file bytes—base64 inflates bytes 4/3x, so the encoded string is larger. A file over this limit gets a tool error naming the limit and the size sent; use `webftp_upload_file` in local mode instead. A request far larger than that never reaches the tool at all—MCP SDK 2.x caps the streamable-http/SSE request body itself, and an oversized request fails as a plain-text HTTP 413 before any MCP error is produced. This limit is a stopgap around that SDK change; the upload path's design is being reconsidered in #275. Under stdio, no such request-body cap exists, so this tool imposes none either.
 
 **Parameters:**
-- `server_id` (string): Server ID
+- `server_id` (string): Server UUID
 - `file_content` (string): Base64-encoded content
 - `remote_file_path` (string): Absolute path on server
 - `workspace` (string): Workspace name
 - `file_name` (string, optional): Name to record for the upload
 - `username` (string, optional): Username (defaults to authenticated user)
-- `work_session_id` (string, optional): Work Session to attribute the transfer to
+- `work_session_id` (string, optional): Work Session to link the call to for audit; required for MCP OAuth and browser-login callers, optional for static API and service tokens; falls back to `ALPACON_WORK_SESSION` in the MCP server's environment when omitted, and an explicit value wins
 - `allow_overwrite` (boolean, default: true)
-- `region` (`ap1` or `us1`, optional): Region name
+- `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 
 ### `webftp_bulk_upload`
 Upload several local files to one directory in a single operation.
 
-**Parameters:** `server_id`, `local_file_paths` (array), `remote_directory`, `workspace`, `username` (optional), `work_session_id` (optional), `allow_overwrite`, `region` (`ap1` or `us1`, optional)
+**Parameters:**
+- `server_id` (string): Server UUID
+- `local_file_paths` (array): Absolute paths to local files; must not be empty
+- `remote_directory` (string): Absolute directory on server that receives every file
+- `workspace` (string): Workspace name
+- `username` (string, optional): Username (defaults to authenticated user)
+- `work_session_id` (string, optional): Work Session to link the call to for audit; required for MCP OAuth and browser-login callers, optional for static API and service tokens; falls back to `ALPACON_WORK_SESSION` in the MCP server's environment when omitted, and an explicit value wins
+- `allow_overwrite` (boolean, default: true): Allow overwriting existing files
+- `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 
 ### `webftp_bulk_download`
 Download several files or folders as one ZIP archive.
 
-**Parameters:** `server_id`, `remote_paths` (array), `local_file_path`, `workspace`, `username` (optional), `work_session_id` (optional), `region` (`ap1` or `us1`, optional)
+**Parameters:**
+- `server_id` (string): Server UUID
+- `remote_paths` (array): Absolute paths on server sharing one parent directory; must not be empty
+- `local_file_path` (string): Absolute path for the local ZIP archive
+- `workspace` (string): Workspace name
+- `username` (string, optional): Username (defaults to authenticated user)
+- `work_session_id` (string, optional): Work Session to link the call to for audit; required for MCP OAuth and browser-login callers, optional for static API and service tokens; falls back to `ALPACON_WORK_SESSION` in the MCP server's environment when omitted, and an explicit value wins
+- `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 
 ### `webftp_check_status`
 Check the status of an in-flight transfer.
@@ -706,7 +750,7 @@ List uploaded files (upload history).
 
 **Parameters:**
 - `workspace` (string): Workspace name
-- `server_id` (string, optional): Filter by server ID
+- `server_id` (string, optional): Filter by server UUID
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 
 ### `webftp_downloads_list`
@@ -714,7 +758,7 @@ List download requests (download history).
 
 **Parameters:**
 - `workspace` (string): Workspace name
-- `server_id` (string, optional): Filter by server ID
+- `server_id` (string, optional): Filter by server UUID
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 
 ---
@@ -870,9 +914,9 @@ Send an email invitation to join the workspace (Auth0-enabled deployments). **Pa
 A Work Session is the unit of authorized work: a scope, a set of servers, an expiry, and an audit trail. OAuth/browser callers must have one active before executing commands or transferring files; static API tokens and service tokens bypass the gate.
 
 ### `work_session_create`
-Open a session. **Parameters:** `workspace`, `scopes` (array; agents may request `command`, `webftp`, `tunnel`, and `sudo`—request `sudo` only when the work genuinely requires root, since a sudo invocation no policy covers routes to human approval), `servers` (array of UUIDs), `expires_at` (ISO 8601), `description`, `title` (optional), `target_account_username` (optional; the OS account commands will run as, such as `root`—set it when you intend to run as another account so it is approved with the session, then pass the same account as `username` to `execute_command` and `execute_file`; running directly as `root` is declared here, while the `sudo` scope is for elevation from another account; sent only when given), `region` (`ap1` or `us1`, optional). Only `title`, `target_account_username` and `region` may be omitted—a session with no expiry or no stated reason is not a session anyone can approve.
+Open a session. **Parameters:** `workspace`, `scopes` (array; agents may request `command` for `execute_command` and `execute_file`, `webftp` for file transfers, `tunnel` for port forwarding, and `sudo` for privilege elevation—request `sudo` only when the work genuinely requires root, since a sudo invocation no policy covers routes to human approval), `servers` (array of UUIDs), `expires_at` (ISO 8601), `description`, `title` (optional), `target_account_username` (optional; the OS account commands will run as, such as `root`—set it when you intend to run as another account so it is approved with the session, then pass the same account as `username` to `execute_command` and `execute_file`; running directly as `root` is declared here, while the `sudo` scope is for elevation from another account; sent only when given), `region` (`ap1` or `us1`, optional). Only `title`, `target_account_username` and `region` may be omitted—a session with no expiry or no stated reason is not a session anyone can approve.
 
-`description` is prose for the human who approves the session. It is not a command list and nothing in it is executed; commands run via `execute_command` once the session is active.
+`description` is prose for the human who approves the session. It is not a command list and nothing in it is executed; commands run via `execute_command` once the session is active. Be specific: name the targets, the action, and what will not be touched, since a bare word like "maintenance" gives the approver nothing to decide on. Markdown is supported.
 
 A session that needs human approval comes back with `status="pending_approval"`, and no command or file transfer runs in it until a human approves it out-of-band (Alpacon web console or Slack). Surface it to a person, then call `work_session_get` and proceed once `data.status` is `active`; stop if it is `rejected`, `cancelled`, `expired`, `revoked`, or `completed`, since those never become active.
 
@@ -880,12 +924,12 @@ A session that needs human approval comes back with `status="pending_approval"`,
 Read one session (`session_id`) or list them (`status`, `requester_type`, `limit` filters).
 
 ### `work_session_update` / `work_session_extend`
-Partial update of `title`, `description`, `scopes`, `servers` (and `expires_at` for pending sessions only), or extend `expires_at` on an approved/active session. `description` carries the same prose-only rule as on `work_session_create`. An update that needs approval is queued as a modification request.
+Partial update of `title`, `description`, `scopes`, `servers` (and `expires_at` for pending sessions only), or extend `expires_at` on an approved/active session. `description` carries the same prose-only rule as on `work_session_create`. `scopes` replaces the whole scope list, so list every scope the session keeps. An update that needs approval is queued as a modification request.
 
 `work_session_extend` **parameters:** `session_id`, `workspace`, `expires_at` (ISO 8601, must be later than the current expiry), `reason` (required—a short justification the human approver judges the request by), `region` (`ap1` or `us1`, optional). Whether the extension applies immediately or waits for approval follows the workspace's approval policy, the same rule `work_session_create` uses: an auto-approve lane extends directly and the tool returns a normal success; any other lane queues an extension request instead, and the tool returns `status="pending_approval"`—the session's `expires_at` stays at its prior value until a human decides out-of-band. Poll `work_session_get` until `expires_at` changes to see the outcome; the session's `pending_extension_request` field names the open request until then. A blank `reason` is rejected with `error_code: work_session_extension_reason_required`.
 
 ### `work_session_timeline`
-Chronological record of commands, file transfers, websh activity, and sudo grants, oldest first. **Parameters:** `session_id`, `workspace`, `region` (`ap1` or `us1`, optional), `cursor`, `page_size` (1 to 500; the server defaults to 100, and a larger value is refused locally with a `validation` error), and `include_records`, which is retired and refused. The endpoint pages only when a request names `cursor`, so the tool names it on every request, empty on the first, and walks the cursor the same way the audit tools do—see **Audit tools** for the `pagination` object and how to resume. Three things differ from those lists. The walk reads forward, so a result stopped at the bound holds the start of the session and omits its most recent activity. The paged timeline carries no websh terminal recordings; it names the sessions that have one, and `work_session_records` below reads them. `include_records` is still declared only so that passing it can be refused, since the SDK discards an argument the published schema does not name before the call. Any value, `true` or `false`, is answered with `status: "error"`, `error_code: "validation"` and `field: "include_records"` before any request is made. And an alpacon-server that predates the paged timeline ignores `cursor` and answers with the whole session and no `next`; that first answer is read as the whole list, reported `stopped_because: unpaginated_server` with `complete: true`, a value only this tool can return. If the call sent a `cursor` the server ignored, the `note` says so, because the records then start at the beginning of the session. A later page without `next` is an error, as it is for every list.
+Chronological record of commands, file transfers, websh activity, and sudo grants, oldest first. **Parameters:** `session_id`, `workspace`, `region` (`ap1` or `us1`, optional), `cursor`, `page_size` (1 to 500; the server defaults to 100, and a larger value is refused locally with a `validation` error), and `include_records`, which is retired and refused. The endpoint pages only when a request names `cursor`, so the tool names it on every request, empty on the first, and walks the cursor the same way the audit tools do—see **Audit tools** for the `pagination` object and how to resume. Three things differ from those lists. The walk reads forward, so a result stopped at the bound holds the start of the session and omits its most recent activity. The paged timeline carries no websh terminal recordings; it names the sessions that have one, and `work_session_records` below reads them. `include_records` is still declared only so that passing it can be refused, since the SDK discards an argument the published schema does not name before the call. Any value, `true` or `false`, is answered with `status: "error"`, `error_code: "validation"` and `field: "include_records"` before any request is made. And an alpacon-server that predates the paged timeline ignores `cursor` and answers with the whole session and no `next`; that first answer is read as the whole list, reported `stopped_because: unpaginated_server` with `complete: true`, a value only this tool can return. If the call sent a `cursor` the server ignored, the `note` says so, because the records then start at the beginning of the session. A later page without `next` is an error, as it is for every list. A `command` item with a non-null `rejection_cause` gains `rejection_hint`, worded as on `execute_command` (#242); the timeline carries no `status`, so an item without a cause gets none.
 
 ### `work_session_records`
 One page of one websh terminal recording captured inside the session: the output in chunks, oldest first, as `{added_at, record}` items. **Parameters:** `session_id` (the work session), `websh_session_id`, `workspace`, `region` (`ap1` or `us1`, optional), `cursor` (optional), `page_size` (1 to 16, default 8; a value outside that range is refused locally with a `validation` error before any request). Wraps `GET /api/work-sessions/sessions/{id}/records/?session=<websh session id>` and **requires alpacon-server 2.42.0 or later**.
@@ -907,7 +951,7 @@ Close a session (triggers AI security analysis) or re-run analysis on a terminal
 - `get_approval_request`: `request_id`, `workspace`, `region` (`ap1` or `us1`, optional)
 - `explain_approval_decision`: `workspace`, `request_id` (optional), `region` (`ap1` or `us1`, optional). Explains that deciding is human-only and out of band; performs no mutation
 - `list_sudo_policies`: `workspace`, `region` (`ap1` or `us1`, optional), `page`, `page_size`, `user` (UUID), `server_id` (UUID)
-- `request_sudo_policy`: `workspace`, `servers` (UUID list), `commands`, `reason`, `users` (optional UUID list), `valid_from`, `valid_until`, `region` (`ap1` or `us1`, optional). Creates an approval request, not a policy; returns `status="pending_approval"`. Omitting `users` scopes the approved policy to the requester alone, not to the whole workspace. `allow_bypass_mfa` is not accepted: the server refuses it on this endpoint
+- `request_sudo_policy`: `workspace`, `servers` (UUID list), `commands`, `reason`, `users` (optional UUID list), `valid_from`, `valid_until`, `region` (`ap1` or `us1`, optional). Creates an approval request, not a policy; returns `status="pending_approval"`. Omitting `users` scopes the approved policy to the requester alone, not to the whole workspace. `session_authorized` is not accepted: the server refuses it on this endpoint. For session-authorized sudo, a human must set `session_authorized` on the Work Session's sudo policy in the Alpacon web console; this needs an enterprise plan and a usable Work Session
 
 There is intentionally no `approve_request`/`reject_request` tool: the Alpacon server refuses approve/reject from agent and token channels with HTTP 403. Approval happens in the web console or Slack.
 
@@ -917,7 +961,7 @@ There is intentionally no `approve_request`/`reject_request` tool: the Alpacon s
 
 - `list_alerts`: `workspace`, `server_id`, `alert_type`, `severity` (`critical`, `warning`, `info`), `server_name`, `acknowledged`, `dismissed`, `resolved`, `region` (`ap1` or `us1`, optional), `page`, `page_size`. `resolved` omitted returns open alerts only; `true` returns the resolved history instead
 - `get_alert`: `alert_id`, `workspace`, `region` (`ap1` or `us1`, optional)
-- `acknowledge_alert`: `alert_id`, `workspace`, `action_type` (`checked` or `dismissed`), `region` (`ap1` or `us1`, optional). One acknowledgement per user per alert, and it cannot be changed afterwards
+- `acknowledge_alert`: `alert_id`, `workspace`, `action_type` (`checked` or `dismissed`), `region` (`ap1` or `us1`, optional). One acknowledgement per user per alert, and it cannot be changed afterwards. A repeat call by the same user (alpacon-server 2.35.0 or later) returns `status: "success"` with `already_acknowledged: true`, a `message`, and no `data`. That call records nothing whatever `action_type` it sends; the existing acknowledgement's `action_type` is not in the response, and `get_alert` returns it as `action_type`. An older server refuses the repeat with `error_code` `invalid`, and any other `400` stays an error
 - `create_alert_rule`: `workspace`, `name`, `target`, `threshold`, `is_default`, `operator` (`gte` or `lte`, default `gte`), `duration_s` (seconds the condition must hold; `0`, the default, fires on a single sample), `recovery_threshold`, `no_data_after_s` (floored at the target's collection interval), `device` (disk/interface name; device-scoped targets only), `severity` (`critical`, `warning`, `info`; default `warning`), `notify_email` (`all`, `admins`, `group_members`, or `none`; default `all`), `notify_slack_channel` (boolean; default `true`), `region` (`ap1` or `us1`, optional). `target` is a metric the workspace exposes, e.g. `cpu-usage`, `memory-usage`, `disk-usage`, or one of the peak/avg bps or pps network and disk rates; the server holds the authoritative list and rejects an unrecognized value with `400`. `device` is accepted only for a device-scoped target—`cpu-usage` and `memory-usage` are host-wide. `notify_email` and `notify_slack_channel` decide who hears about alerts this rule raises; only a human caller may set them—a service-token or agent write naming either is refused with `400` (`metrics_alert_rule_destination_not_allowed`), and an `info`-severity rule sends no mail and posts to no channel regardless of either setting
 - `update_alert_rule`: `rule_id`, `workspace`, and any of `name`, `target`, `threshold`, `is_default`, `operator`, `duration_s`, `recovery_threshold`, `no_data_after_s`, `device`, `severity`, `notify_email`, `notify_slack_channel`—sent only for the fields given. `target`, when given, is subject to the same rule as `create_alert_rule`: the server holds the authoritative list and rejects an unrecognized value with `400`. `notify_email`, when given, is one of the same four choices as on `create_alert_rule` (`all`, `admins`, `group_members`, `none`); `notify_slack_channel` is a boolean. Both carry the same human-only restriction and `info`-severity behavior as on `create_alert_rule`; omitted, each keeps the rule's current value
 - `delete_alert_rule`: by `rule_id`. A rule with `is_default=true` cannot be deleted
@@ -1061,7 +1105,7 @@ Get the authenticated user: username, email, role, UID, shell, home directory.
 
 **Parameters:**
 - `workspace` (string): Workspace name
-- `region` (`ap1` or `us1`, optional): Region name
+- `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 
 ### `health_check`
 Check MCP server health: version, uptime, authentication mode, connection pool. Takes no parameters.
@@ -1175,6 +1219,23 @@ Common error scenarios:
 - **403 Forbidden**: Insufficient permissions
 - **404 Not Found**: Server, resource, or session not found
 - **500 Internal Error**: Server-side error
+
+### Refusal fields
+
+A coded refusal from a current alpacon-server can carry up to four more fields, and each one rides the error result as sent when present (#242). `gate` is the class of control that refused (`work_session`, `role`, `token_scope`, `server_reach`, `command_acl`, `file_acl`, `approval`, `presence`, `risk`, `sudo`, `plan`, `rate`). `missing` is the class of prerequisite that is absent, or a `scope:<scope>` literal a token lacked, as a string or a list of strings. `next` is a self-relative status path or documentation reference: read it as where to look or wait, never as a call to make. `hint` is the server's guidance sentence.
+
+```json
+{
+  "status": "error",
+  "status_code": 403,
+  "error_code": "auth_token_scope_insufficient",
+  "gate": "token_scope",
+  "missing": "scope:command:execute",
+  "message": "HTTP 403 The credential lacks the command:execute scope. Ask a workspace admin for a token that carries it; you cannot add a scope yourself."
+}
+```
+
+A server `hint` is appended to `message` and replaces every local hint: the per-code hint, the gate hint, and `recovery_hints`/`related_tools`. Without one, a code with its own hint keeps it. Otherwise a known `missing` class, then a known `gate`, picks a local hint that names whom to ask or where to wait and never a tool that creates the missing thing; a recognized `gate` or `missing` also drops the status-based `recovery_hints`. `plan` and `rate` have no gate hint here, so the 402 and 429 recovery hints still apply to them. A gate or class this server does not know rides through with no local hint. An older server sends none of these fields, and its errors come back exactly as before; any other unknown field is ignored. A Work Session gate result and a plan-limit result carry the same fields beside their own, but keep their own `message` and `next_action`: a server `hint` rides there as a field only.
 
 ### Plan-limit refusals (402)
 

@@ -8,6 +8,7 @@ import re
 from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
+from typing import Literal, TypeGuard, assert_never, get_args
 from urllib.parse import urlparse
 
 from pydantic import TypeAdapter, ValidationError
@@ -85,9 +86,10 @@ _NEXT_ACTION_BY_CATEGORY: dict[str, str] = {
     'SUDO_NO_WORKSESSION_POLICY': (
         'This command is not covered by the Work Session sudo policy. You can '
         'submit a request with request_sudo_policy, but a human must approve it '
-        'before it takes effect, and an MFA-bypass policy cannot be requested '
-        'that way at all. Retry once the policy is live; you cannot grant it '
-        'yourself.'
+        'before it takes effect, and a session-authorized sudo policy cannot be '
+        'requested that way at all. A human must set session_authorized on the '
+        'Work Session sudo policy in the Alpacon web console. Retry once the '
+        'policy is live; you cannot grant it yourself.'
     ),
     'SUDO_POLICY_REQUEST_PENDING': (
         'The policy does not exist yet: an admin must approve this request '
@@ -96,9 +98,10 @@ _NEXT_ACTION_BY_CATEGORY: dict[str, str] = {
         'resubmit, which only creates a duplicate request.'
     ),
     'SUDO_POLICY_MFA_REQUIRED': (
-        'A sudo policy covers this command but is not an MFA-bypass policy, and '
-        'a command runs non-interactively so it can never supply MFA. A human '
-        'must set allow_bypass_mfa on the covering Work Session sudo policy '
+        'A sudo policy covers this command but is not a session-authorized sudo '
+        'policy, and a command runs non-interactively so it can never supply MFA. '
+        'A human must set session_authorized on the covering Work Session sudo '
+        'policy in the Alpacon web console '
         '(enterprise plan, and the policy must be tied to a usable Work '
         'Session), then retry. You cannot grant it yourself.'
     ),
@@ -131,40 +134,25 @@ _NEXT_ACTION_BY_CATEGORY: dict[str, str] = {
 }
 _DEFAULT_NEXT_ACTION = _NEXT_ACTION_BY_CATEGORY['SUDO_APPROVAL_REQUIRED']
 
-# Server WorkSession gate codes → next-action telling the agent how to get inside a valid session (mirrors alpacon-cli worksession_error.go).
-_WORK_SESSION_GATE_NEXT_ACTION: dict[str, str] = {
-    'work_session_required': (
-        'No Work Session is attached. Create one with work_session_create '
-        '(scope covering this operation—"command" for command execution, '
-        '"webftp" for file transfers—plus the target server), have a human '
-        'approve it out-of-band, then retry passing its id as work_session_id.'
-    ),
-    'work_session_not_usable': (
-        'The attached Work Session is in a terminal state and cannot be used. '
-        'Create a new Work Session, get it approved, then retry.'
-    ),
-    'work_session_expired': (
-        'The attached Work Session has expired. Extend it with '
-        'work_session_extend, or create a new one, then retry.'
-    ),
-    'work_session_scope_not_allowed': _SCOPE_NOT_ALLOWED_NEXT_ACTION,
-    'work_session_server_not_allowed': (
-        'The target server is not in the attached Work Session. Add it with '
-        'work_session_update, or create a new session including the server, '
-        'then retry.'
-    ),
-    'work_session_assignee_mismatch': (
-        'The attached Work Session is assigned to a different principal. Use a '
-        'session assigned to you, or create your own, then retry.'
-    ),
-}
+# Mirrors alpacon-cli worksession_error.go.
+type WorkSessionGateCode = Literal[
+    'work_session_not_active',
+    'work_session_required',
+    'work_session_not_usable',
+    'work_session_expired',
+    'work_session_scope_not_allowed',
+    'work_session_server_not_allowed',
+    'work_session_assignee_mismatch',
+]
 
-# Session exists but is unapproved; routes to pending-approval, not error.
-_WORK_SESSION_PENDING_CODE = 'work_session_not_active'
+_WORK_SESSION_GATE_CODES: frozenset[str] = frozenset(
+    get_args(WorkSessionGateCode.__value__)
+)
 
-_WORK_SESSION_GATE_CODES: frozenset[str] = frozenset(_WORK_SESSION_GATE_NEXT_ACTION) | {
-    _WORK_SESSION_PENDING_CODE
-}
+
+def _is_work_session_gate_code(code: str) -> TypeGuard[WorkSessionGateCode]:
+    return code in _WORK_SESSION_GATE_CODES
+
 
 #: Refusals the file lane (ADR 0053) answers with on submit, each a 400 carrying
 #: the code. None of them has a human behind it—every one is something the
@@ -358,6 +346,103 @@ _ERROR_CODE_HINT: dict[str, str] = {
     'work_session_extension_reason_required': WORK_SESSION_EXTENSION_REASON_REQUIRED_HINT,
 }
 
+#: Guidance by the class of control that refused (`gate`, #242), for a refusal
+#: whose code has no entry above. Each names whom to ask or where to wait, never
+#: a tool that creates what is missing. `plan` and `rate` stay with the 402 and
+#: 429 status hints, which say more.
+REFUSAL_GATE_HINT: dict[str, str] = {
+    'work_session': (
+        'A Work Session gate refused this: the attached session is missing, '
+        'no longer active, or does not cover it. Check the session with '
+        'work_session_get; a human approves a new or changed session out-of-band.'
+    ),
+    'role': (
+        'Your role in this workspace does not allow this. Ask a workspace admin '
+        'for a role that does; you cannot change your own role.'
+    ),
+    'token_scope': (
+        "The credential's scopes do not cover this. Ask a workspace admin for a "
+        'token that carries the scope; you cannot add one yourself.'
+    ),
+    'server_reach': (
+        'This credential cannot reach the server. Ask its owner or a workspace '
+        'admin for access; list_servers shows the servers you can reach.'
+    ),
+    'command_acl': (
+        'No command pre-approval admits this. A Command ACL admin grants it under '
+        "Pre-approved commands on the service token's page in the web console; "
+        'you cannot grant it yourself.'
+    ),
+    'file_acl': (
+        'No file transfer rule on the token covers this path, account and action. '
+        'Ask a workspace admin to add one; you cannot grant it yourself.'
+    ),
+    'approval': (
+        'This needs a human decision, made out-of-band (Alpacon web console or '
+        'Slack). You cannot approve it yourself; wait for the decision.'
+    ),
+    'presence': (
+        'This needs a fresh MFA step-up by a human. You cannot complete MFA '
+        'yourself; wait for the human to do it.'
+    ),
+    'risk': (
+        'The risk assessor refused this. Tell the user; a human reviewer decides '
+        'whether it may run.'
+    ),
+    'sudo': (
+        'The sudo policy refused this. A human must change the Work Session sudo '
+        'policy in the Alpacon web console; you cannot grant it yourself.'
+    ),
+}
+
+#: The same by the class of prerequisite absent (`missing`), which is more
+#: specific than the gate and so read first.
+_MISSING_CLASS_HINT: dict[str, str] = {
+    'command_preapproval': REFUSAL_GATE_HINT['command_acl'],
+    'file_preapproval': REFUSAL_GATE_HINT['file_acl'],
+    'approval': REFUSAL_GATE_HINT['approval'],
+    'presence': REFUSAL_GATE_HINT['presence'],
+    'work_session': REFUSAL_GATE_HINT['work_session'],
+    'role': REFUSAL_GATE_HINT['role'],
+    'approved_account': (
+        "The Work Session's approval does not cover this account. Use an "
+        'account the approval covers, or ask a human for an approval that does.'
+    ),
+    'other_approver': (
+        'Nobody but the requester could decide this, and a requester cannot '
+        'approve their own request. Ask another member with approval rights.'
+    ),
+    'allowed_agent': (
+        "The workspace's approval policy does not allow this agent. Ask a "
+        'workspace admin to allow it in the approval policy.'
+    ),
+}
+
+#: What marks a `missing` value as a scope literal rather than a class.
+_SCOPE_LITERAL_PREFIX = 'scope:'
+
+
+def refusal_hint(gate: object, missing: object) -> str | None:
+    """Local guidance for a refusal's `gate` and `missing` classes, or None when
+    neither is known here; a scope literal is named in the text."""
+    named = [missing] if isinstance(missing, str) else missing
+    items = [m for m in named if isinstance(m, str)] if isinstance(named, list) else []
+    scopes = [
+        m.removeprefix(_SCOPE_LITERAL_PREFIX)
+        for m in items
+        if m.startswith(_SCOPE_LITERAL_PREFIX)
+    ]
+    if scopes:
+        return (
+            f'The credential lacks the {", ".join(scopes)} scope. Ask a workspace '
+            'admin for a token that carries it; you cannot add a scope yourself.'
+        )
+    for item in items:
+        if hint := _MISSING_CLASS_HINT.get(item):
+            return hint
+    return REFUSAL_GATE_HINT.get(gate) if isinstance(gate, str) else None
+
+
 # Replaces an _ERROR_CODE_HINT entry on a server that registers the tools these
 # name: stdio, or remote mode with the ledger enabled.
 _STDIO_ERROR_CODE_HINT: dict[str, str] = {
@@ -412,21 +497,14 @@ _ALPACON_CLOUD_HOST_RE = re.compile(r'^(?P<label>[^.]+)\.[^.]+\.alpacon\.io$')
 
 
 def is_auth_enabled() -> bool:
-    """Check if remote (streamable-http) mode with Auth0 JWT auth is enabled.
-
-    True when ALPACON_MCP_AUTH_ENABLED=true. False in stdio/SSE mode, which
-    authenticates with tokens from token.json.
-    """
+    """Whether remote mode with Auth0 JWT auth is on (ALPACON_MCP_AUTH_ENABLED=true);
+    stdio and SSE authenticate with tokens from token.json."""
     return os.getenv('ALPACON_MCP_AUTH_ENABLED', '').lower() == 'true'
 
 
 def is_stdio_transport() -> bool:
-    """Whether this process serves the stdio transport.
-
-    `server.prepare()` sets ALPACON_MCP_TRANSPORT before any tool module is
-    imported. An unset value means a caller outside prepare() and reads as
-    not stdio, so a stdio-only path fails closed.
-    """
+    """Whether this process serves stdio (ALPACON_MCP_TRANSPORT, set by prepare()).
+    Unset reads as not stdio, so a stdio-only path fails closed."""
     return os.getenv('ALPACON_MCP_TRANSPORT', '') == 'stdio'
 
 
@@ -455,10 +533,7 @@ def serves_ledger_tools() -> bool:
 
 
 def resolve_work_session_id(explicit: str | None) -> str | None:
-    """Resolve the effective Work Session id: explicit arg > ALPACON_WORK_SESSION env.
-
-    Mirrors alpacon-cli's resolve.go (flag > env). Returns None when neither is set.
-    """
+    """Return the explicit id, else ALPACON_WORK_SESSION, else None."""
     return (
         (explicit or '').strip()
         or os.environ.get('ALPACON_WORK_SESSION', '').strip()
@@ -471,25 +546,13 @@ def build_list_params(
     page_size: int | None = None,
     **filters: QueryParam,
 ) -> dict[str, QueryParam]:
-    """Assemble the query params of a list endpoint from its optional arguments.
-
-    Args:
-        page: Page number
-        page_size: Number of items per page
-        **filters: Filter values keyed by the name the API expects, which is
-            not always the tool argument's name (``server=server_id``)
-
-    Returns:
-        Query params carrying only the arguments that were supplied
-    """
+    """Assemble a list endpoint's query params, omitting what is None. Filter keys are
+    the names the API expects, not always the tool argument's (``server=server_id``)."""
     return exclude_none(page=page, page_size=page_size, **filters)
 
 
 def exclude_none[T](**fields: T | None) -> dict[str, T]:
-    """Drop the fields whose value is None, keeping argument order.
-
-    Only None means omitted: ``acknowledged=False`` or ``0`` is a value the caller meant.
-    """
+    """Drop the fields whose value is None; ``False`` and ``0`` are values and stay."""
     return {name: value for name, value in fields.items() if value is not None}
 
 
@@ -504,42 +567,19 @@ def resolve_time_window(
 
 
 def error_response(message: str, **kwargs: object) -> ToolErrorResponse:
-    """Create standardized error response.
-
-    Args:
-        message: Error message
-        **kwargs: Additional fields to include in response
-
-    Returns:
-        Standardized error response dict
-    """
+    """Build an error result; extra kwargs become fields."""
     response: ToolErrorResponse = {'status': 'error', 'message': message}
     response.update(kwargs)
     return response
 
 
 def empty_value_error(field: str) -> ToolErrorResponse:
-    """Reject an argument that was supplied but carries no value.
-
-    Args:
-        field: Argument name, as the caller spells it
-
-    Returns:
-        Standardized error response dict
-    """
+    """Reject an argument that was supplied but carries no value."""
     return error_response(f'{field} must not be empty')
 
 
 def success_response(data: object = None, **kwargs: object) -> ToolResponse:
-    """Create standardized success response.
-
-    Args:
-        data: Response data
-        **kwargs: Additional fields to include in response
-
-    Returns:
-        Standardized success response dict
-    """
+    """Build a success result; ``data`` is omitted when None."""
     response: ToolResponse = {'status': 'success'}
     if data is not None:
         response['data'] = data
@@ -553,31 +593,8 @@ def pending_approval_response(
     category: str,
     **kwargs: object,
 ) -> ToolResponse:
-    """Create a structured "pending human approval" result (ADR 0015).
-
-    AI agents reaching Alpacon through MCP are a request/execution surface and
-    cannot approve privileged-access requests. When an action needs human
-    approval (a sudo HITL denial such as ``SUDO_APPROVAL_REQUIRED``, or a Work
-    Session that lands ``pending``), the agent must be told—in a
-    machine-actionable way—that the request is pending, a human must approve it
-    out-of-band (web/Slack), and the agent cannot approve it itself. This keeps
-    the agent waiting/escalating instead of retry-spamming or hallucinating
-    success.
-
-    The result uses ``status='pending_approval'`` (distinct from ``success`` and
-    ``error``) plus stable boolean flags so a caller can branch without parsing
-    free text. Only the denial *category* and the next action are disclosed—
-    never internal risk scores or factors.
-
-    Args:
-        message: Human-readable explanation of what is pending and what to do.
-        category: Stable machine code for the denial/pending category
-            (e.g. ``SUDO_APPROVAL_REQUIRED``, ``WORK_SESSION_PENDING``).
-        **kwargs: Additional context fields (region, workspace, ids, raw data).
-
-    Returns:
-        Structured pending-approval response dict.
-    """
+    """Build a ``pending_approval`` result (ADR 0015): a human must approve out-of-band;
+    the agent cannot. Fixed flags win over kwargs; no risk scores are disclosed."""
     # Apply caller context first so the fixed, security-relevant fields below
     # (the flags and category) always win and cannot be overridden by a kwarg.
     response: ToolResponse = {**kwargs}
@@ -596,15 +613,7 @@ def pending_approval_response(
 
 
 def validate_token(region: str, workspace: str) -> str | None:
-    """Validate and retrieve token for given region and workspace.
-
-    Args:
-        region: Region (ap1, us1)
-        workspace: Workspace name
-
-    Returns:
-        Token string if found, None otherwise
-    """
+    """Return the token for region and workspace, or None (logged) if absent."""
     token = token_manager.get_token(region, workspace)
     if not token:
         logger.error('No token found for %s.%s', workspace, region)
@@ -612,15 +621,7 @@ def validate_token(region: str, workspace: str) -> str | None:
 
 
 def token_error_response(region: str, workspace: str) -> ToolErrorResponse:
-    """Create standardized token error response.
-
-    Args:
-        region: Region
-        workspace: Workspace name
-
-    Returns:
-        Token error response
-    """
+    """Build the error result for a missing token."""
     return error_response(
         f'No token found for {workspace}.{region}. Please set token first.',
         region=region,
@@ -628,42 +629,65 @@ def token_error_response(region: str, workspace: str) -> ToolErrorResponse:
     )
 
 
-def work_session_gate_response(code: str, **kwargs: object) -> ToolResponse:
-    """Translate a server WorkSession gate error code into an agent-actionable result.
-
-    ``work_session_not_active`` becomes a pending-approval result (a human must
-    approve the existing session). Every other gate code becomes an error result
-    carrying the gate ``code`` and a ``next_action`` describing how to get inside
-    a valid session. See ADR 0014 (zero standing privilege).
-    """
-    if code == _WORK_SESSION_PENDING_CODE:
-        return pending_approval_response(
-            'The attached Work Session is not active yet. A human must approve '
-            'it out-of-band (Alpacon web console or Slack) before this operation '
-            'will run. Call work_session_get and retry once data.status is active; '
-            'stop if it is rejected, cancelled, expired, revoked, or completed.',
-            category='WORK_SESSION_PENDING',
-            **kwargs,
-        )
+def work_session_gate_response(
+    code: WorkSessionGateCode, **kwargs: object
+) -> ToolResponse:
+    """Turn a WorkSession gate code (ADR 0014) into an agent-actionable result:
+    ``work_session_not_active`` is pending approval; any other code errors."""
+    match code:
+        case 'work_session_not_active':
+            return pending_approval_response(
+                'The attached Work Session is not active yet. A human must approve '
+                'it out-of-band (Alpacon web console or Slack) before this operation '
+                'will run. Call work_session_get and retry once data.status is active; '
+                'stop if it is rejected, cancelled, expired, revoked, or completed.',
+                category='WORK_SESSION_PENDING',
+                **kwargs,
+            )
+        case 'work_session_required':
+            next_action = (
+                'No Work Session is attached. Create one with work_session_create '
+                '(scope covering this operation—"command" for command execution, '
+                '"webftp" for file transfers—plus the target server), have a human '
+                'approve it out-of-band, then retry passing its id as work_session_id.'
+            )
+        case 'work_session_not_usable':
+            next_action = (
+                'The attached Work Session is in a terminal state and cannot be used. '
+                'Create a new Work Session, get it approved, then retry.'
+            )
+        case 'work_session_expired':
+            next_action = (
+                'The attached Work Session has expired. Extend it with '
+                'work_session_extend, or create a new one, then retry.'
+            )
+        case 'work_session_scope_not_allowed':
+            next_action = _SCOPE_NOT_ALLOWED_NEXT_ACTION
+        case 'work_session_server_not_allowed':
+            next_action = (
+                'The target server is not in the attached Work Session. Add it with '
+                'work_session_update, or create a new session including the server, '
+                'then retry.'
+            )
+        case 'work_session_assignee_mismatch':
+            next_action = (
+                'The attached Work Session is assigned to a different principal. Use a '
+                'session assigned to you, or create your own, then retry.'
+            )
+        case _:
+            assert_never(code)
     return error_response(
         f'Operation blocked by the Work Session gate: {code}.',
         code=code,
-        next_action=_WORK_SESSION_GATE_NEXT_ACTION[code],
+        next_action=next_action,
         requires_human_approval=False,
         **kwargs,
     )
 
 
 def _plan_limit_billing_link(region: object, workspace: object) -> str:
-    """Console billing link for a plan-limit next_action.
-
-    Derived from the workspace host the tool was called for (#296): an
-    Alpacon Cloud host, `<label>.<region>.alpacon.io`—including a pinned
-    base-URL override that still resolves to one—gets the direct billing
-    page. A self-hosted deployment, or a call whose `region`/`workspace`
-    unwrap_http_result was not given, gets the words instead of a guessed or
-    broken link.
-    """
+    """Console billing URL for an Alpacon Cloud host, also via a pinned base URL;
+    words for a self-hosted one or a missing region or workspace (#296)."""
     if not (
         isinstance(region, str) and region and isinstance(workspace, str) and workspace
     ):
@@ -712,22 +736,8 @@ def _plan_limit_next_action(axis: str, region: object, workspace: object) -> str
 def _plan_limit_axis(
     body: Mapping[str, JsonValue] | None, code: str | None
 ) -> str | None:
-    """Classify an http error body as a plan-limit refusal, and on which axis.
-
-    Rule 1 (current alpacon-server): `gate == "plan"` and `axis` is a
-    non-empty string -> that axis. A feature lock also carries
-    `gate: "plan"` but no `axis`, so it falls through to None here and keeps
-    the generic _ERROR_CODE_HINT/(402, "general") handling.
-
-    Rule 2 (an older or self-hosted alpacon-server, kept for backward
-    compatibility): no `gate` at all, but `code` is one of the six legacy
-    `*_limit_exceeded` codes -> the axis _LIMIT_EXCEEDED_CODE_TO_AXIS maps it
-    to. A `gate` present with any other value (a non-plan gate, or "plan"
-    with no axis) is never treated as this legacy shape, even if `code`
-    happens to match.
-
-    Anything else is not a plan limit -> None.
-    """
+    """Return the axis of a 402 plan-limit body, else None: ``gate: "plan"`` with an
+    ``axis``, or no gate and a legacy ``*_limit_exceeded`` code. Feature lock: None."""
     if not isinstance(body, dict):
         return None
     gate = body.get('gate')
@@ -746,37 +756,8 @@ def plan_limit_response(
     next_value: str | None,
     **kwargs: object,
 ) -> ToolResponse:
-    """Build the agent-facing result for a plan-limit 402 (see _plan_limit_axis).
-
-    Unlike a feature lock, which needs no more than the generic
-    _ERROR_CODE_HINT/(402, "general") "ask for a higher plan" hint, a plan
-    limit is usually something the caller—human or agent—can get past
-    directly (delete a server, wait for the monthly reset, or subscribe), so
-    it gets a dedicated `next_action` telling the agent not to retry and what
-    to tell the user instead, built from `axis` and the console billing link
-    derived from the workspace this call was made against (#296).
-
-    Args:
-        error_code: The server's `code` string (e.g. `server_limit_exceeded`),
-            passed through unmodified.
-        axis: One of `server`, `user`, `application`, `websh`, `webftp`,
-            `websh-share`, `workspace` (#296).
-        next_value: The body's `next` string (None for any other value), for a
-            machine caller that wants to read current usage numbers: the
-            server's self-relative entitlements-read API path (e.g.
-            `/api/workspaces/workspaces/<id>/entitlements/`) on a count cap,
-            or None on a monthly axis or an older server that never sent one.
-            Deliberately never used to build the billing link in
-            `next_action`—it is an API path to call, not a console page to
-            open, and the workspace host decides that link instead (see
-            _plan_limit_billing_link).
-        **kwargs: Extra identifiers merged into the response (region,
-            workspace, status_code, ...); `region` and `workspace` also
-            decide the billing link in `next_action`.
-
-    Returns:
-        Structured plan-limit response dict.
-    """
+    """Build the plan-limit 402 result; ``next_action`` says not to retry and names
+    the remedy and billing link (from ``region``/``workspace`` kwargs, #296)."""
     # Apply caller context first so the fixed fields below always win and
     # cannot be overridden by a kwarg (mirrors pending_approval_response).
     response: ToolResponse = {**kwargs}
@@ -807,39 +788,9 @@ def unwrap_http_result(
     default_message: str,
     **id_context: object,
 ) -> ToolErrorResponse | None:
-    """Convert an http_client error-dict into an error_response.
-
-    Returns the error_response dict if `result` is the error envelope produced
-    by `utils.http_client` on 4xx/5xx; otherwise returns None so the caller
-    can wrap the payload with `success_response`.
-
-    WorkSession gate codes (``_WORK_SESSION_GATE_CODES``) take the dedicated
-    ``work_session_gate_response`` path, unchanged from before. On a 402, a
-    plan-limit refusal (``gate: "plan"`` with an ``axis``, or a gate-less
-    legacy ``*_limit_exceeded`` code) takes the dedicated
-    ``plan_limit_response`` path next—see ``_plan_limit_axis``. This check is
-    402-only: alpacon-server's plan-limit contract is specific to that status,
-    so a different status carrying a similarly shaped body is never
-    misclassified. Any other server `code` found in the error body is now
-    surfaced as `error_code` in the returned response
-    instead of being silently dropped—alpacon-server's 4xx bodies carry only
-    ``{"code": "..."}``, no message, so without this the caller only ever
-    sees a generic "Client error '400 Bad Request'" string. A curated subset
-    of codes (``_ERROR_CODE_HINT``) also get an actionable hint appended to
-    the message, e.g. `command_inline_credential` (see
-    alpacax/alpacon-server#2745) telling the agent to retry via the `env`
-    parameter. A feature lock (``gate: "plan"``, no ``axis``) falls through to
-    this same generic path.
-
-    Args:
-        result: Raw value returned by an http_client method.
-        default_message: Fallback message when the upstream response has none.
-        **id_context: Extra identifiers (e.g. note_id, region, workspace) merged
-            into the error response for caller debugging.
-
-    Returns:
-        error_response dict if result is an error envelope, else None.
-    """
+    """Return an error result for an http_client 4xx/5xx envelope, else None.
+    Gate codes and 402 plan limits get dedicated results; other codes set error_code.
+    The body's gate, missing, next and hint ride every result; a server hint wins."""
     if not (isinstance(result, dict) and 'error' in result):
         return None
 
@@ -847,12 +798,14 @@ def unwrap_http_result(
     status_code = result.get('status_code')
     if status_code is not None:
         error_kwargs['status_code'] = status_code
+    if result.get('outcome_unknown') is True:  # a POST or PATCH that may have acted
+        error_kwargs['outcome_unknown'] = True
+    body = _parse_error_body(result)
+    refusal = _refusal_fields(body)
+    error_kwargs.update(refusal)
 
-    # Parse the body's `code` once; it decides whether this is a WorkSession
-    # gate (membership in _WORK_SESSION_GATE_CODES) and, on the generic path
-    # below, what gets surfaced as `error_code`.
     code = http_error_code(result)
-    if code is not None and code in _WORK_SESSION_GATE_CODES:
+    if code is not None and _is_work_session_gate_code(code):
         return work_session_gate_response(code, **error_kwargs)
 
     # A plan-limit refusal gets its own actionable result, ahead of the
@@ -861,7 +814,6 @@ def unwrap_http_result(
     # different status that happens to carry a similarly shaped body (e.g. a
     # 400 or 500) is never misclassified as a plan limit.
     if status_code == HTTPStatus.PAYMENT_REQUIRED:
-        body = _parse_error_body(result)
         axis = _plan_limit_axis(body, code)
         if axis is not None:
             next_value = body.get('next') if body is not None else None
@@ -873,23 +825,43 @@ def unwrap_http_result(
             )
 
     message = result.get('message', default_message)
+    hint = refusal.get('hint')
     if code is not None:
         error_kwargs['error_code'] = code
-        hint = _ERROR_CODE_HINT.get(code)
-        if serves_ledger_tools():
-            hint = _STDIO_ERROR_CODE_HINT.get(code, hint)
-        if hint is not None:
-            message = f'{message} {hint}'
+        if hint is None:
+            hint = _ERROR_CODE_HINT.get(code)
+            if serves_ledger_tools():
+                hint = _STDIO_ERROR_CODE_HINT.get(code, hint)
+    if hint is None:
+        hint = refusal_hint(refusal.get('gate'), refusal.get('missing'))
+    if hint is not None:
+        message = f'{message} {hint}'
 
     return error_response(message, **error_kwargs)
 
 
-def _parse_error_body(result: Mapping[str, object]) -> dict[str, JsonValue] | None:
-    """Return the JSON object an http error envelope carries in its body, if any.
+def _refusal_fields(body: Mapping[str, JsonValue] | None) -> dict[str, JsonValue]:
+    """The refusal envelope's gate, missing, next and hint as sent (#242); a field
+    absent, empty or of another type is left out, and so is every unknown one."""
+    if body is None:
+        return {}
+    fields: dict[str, JsonValue] = {
+        name: value
+        for name in ('gate', 'next', 'hint')
+        if isinstance(value := body.get(name), str) and value
+    }
+    missing = body.get('missing')
+    if (isinstance(missing, str) and missing) or (
+        isinstance(missing, list)
+        and missing
+        and all(isinstance(m, str) and m for m in missing)
+    ):
+        fields['missing'] = missing
+    return fields
 
-    ``utils.http_client`` carries the raw body text in the ``response`` key.
-    Returns None when the body is missing, not JSON, or not a JSON object.
-    """
+
+def _parse_error_body(result: Mapping[str, object]) -> dict[str, JsonValue] | None:
+    """Return the JSON object in the envelope's ``response`` text, or None."""
     raw = result.get('response')
     if not isinstance(raw, str):
         return None
@@ -901,13 +873,8 @@ def _parse_error_body(result: Mapping[str, object]) -> dict[str, JsonValue] | No
 
 
 def http_error_code(result: Mapping[str, object]) -> str | None:
-    """Return the `code` field carried by an http error envelope's body, if any.
-
-    alpacon-server's exception handler returns 4xx bodies shaped as at least
-    ``{"code": "<error_code>"}``. Returns None when the body is missing, not
-    JSON, not a JSON object, or lacks a string `code` field. An explicit
-    string ``error_code`` on the envelope (a 5xx never carries its body) wins.
-    """
+    """Return the string ``code`` from an http error envelope's body, or None. An
+    explicit string ``error_code`` on the envelope wins (a 5xx carries no body)."""
     explicit = result.get('error_code')
     if isinstance(explicit, str):
         return explicit
@@ -923,7 +890,7 @@ class UnexpectedResponseShapeError(ValueError):
 
 
 def expect_json_object(result: JsonValue) -> dict[str, JsonValue]:
-    """Return `result` when it is a JSON object, else raise UnexpectedResponseShapeError."""
+    """Return `result` if a JSON object, else raise UnexpectedResponseShapeError."""
     if not isinstance(result, dict):
         raise UnexpectedResponseShapeError(
             f'Expected a JSON object from upstream, got {type(result).__name__}'
@@ -934,8 +901,7 @@ def expect_json_object(result: JsonValue) -> dict[str, JsonValue]:
 def json_records(
     result: JsonValue, *, single_object_as_record: bool = False
 ) -> list[JsonValue]:
-    """Return a list body, or an object's `results`; an object without it is one record or none.
-
+    """Return a list body or an object's `results`; with no `results`, [] or [object].
     Raises UnexpectedResponseShapeError on a scalar body or a non-list `results`."""
     if isinstance(result, list):
         return result
@@ -951,9 +917,8 @@ def json_records(
 
 
 def validate_response[T](adapter: TypeAdapter[T], result: JsonValue) -> T:
-    """Return `result` validated strictly by `adapter`; undeclared keys are dropped.
-
-    Raises UnexpectedResponseShapeError naming field paths, never the rejected values."""
+    """Return `result` validated strictly by `adapter`, dropping undeclared keys.
+    Raises UnexpectedResponseShapeError naming field paths, never the values."""
     try:
         return adapter.validate_python(result, strict=True)
     except ValidationError as e:  # field paths and reasons only: inputs may be secret

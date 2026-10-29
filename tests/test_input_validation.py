@@ -26,10 +26,7 @@ SESSION_ID = '550e8400-e29b-41d4-a716-446655440000'
 
 def _make_decorated_func(extra_params=None):
     """Build a minimal async function wrapped by with_token_validation.
-
-    Args:
-        extra_params: list of extra keyword arg names the inner function accepts
-                      (e.g. ["server_id", "server_ids"])
+    extra_params names the keyword args the inner function accepts, e.g. ['server_id'].
     """
     extra_params = extra_params or []
 
@@ -59,8 +56,6 @@ def _make_decorated_func(extra_params=None):
 
 
 class TestRegionValidation:
-    """Tests that invalid region values are rejected early."""
-
     @pytest.mark.asyncio
     async def test_invalid_region_rejected(self):
         func = _make_decorated_func()
@@ -89,7 +84,6 @@ class TestRegionValidation:
     @pytest.mark.asyncio
     async def test_eu1_rejected(self):
         """eu1 is not a served region, so it fails validation instead of DNS.
-
         No token patch: rejection must happen before the token lookup.
         """
         func = _make_decorated_func()
@@ -112,8 +106,6 @@ class TestRegionValidation:
 
 
 class TestRegionAutoDetection:
-    """Tests that region auto-detection resolves correctly from token.json and JWT."""
-
     @pytest.mark.asyncio
     @patch('utils.decorators.validate_token', return_value='fake-token')
     @patch('utils.decorators._get_jwt_token', return_value=None)
@@ -197,8 +189,6 @@ class TestRegionAutoDetection:
 
 
 class TestWorkspaceValidation:
-    """Tests that invalid workspace values are rejected early."""
-
     @pytest.mark.asyncio
     async def test_missing_workspace_rejected(self):
         func = _make_decorated_func()
@@ -243,8 +233,6 @@ class TestWorkspaceValidation:
 
 
 class TestServerIdValidation:
-    """Tests that invalid server_id values are rejected early."""
-
     @pytest.mark.asyncio
     @patch('utils.decorators.validate_token', return_value='fake-token')
     async def test_invalid_server_id_rejected(self, mock_token):
@@ -287,8 +275,6 @@ class TestServerIdValidation:
 
 
 class TestServerIdsValidation:
-    """Tests that invalid server_ids list values are rejected early."""
-
     @pytest.mark.asyncio
     @patch('utils.decorators.validate_token', return_value='fake-token')
     async def test_invalid_server_ids_rejected(self, mock_token):
@@ -431,11 +417,8 @@ class TestServersValidation:
 
 
 class TestSessionIdValidation:
-    """Tests that invalid session_id values are rejected early.
-
-    session_id is interpolated into URL paths (work_session_tools), so a
-    non-UUID value (e.g. containing ``../`` or ``?``) must be rejected
-    before any HTTP request is built.
+    """Invalid session_id values are rejected early. It is interpolated into URL paths,
+    so a non-UUID (`../`, `?`) must fail before any request.
     """
 
     @pytest.mark.asyncio
@@ -482,10 +465,8 @@ class TestSessionIdValidation:
 
 
 class TestPathIdentifierValidation:
-    """Tests that identifiers interpolated into URL paths cannot retarget a request.
-
-    ``http_client`` resolves endpoints with ``urljoin``, which treats ``..`` as a
-    path climb, so an unvalidated value rewrites the endpoint the request reaches.
+    """Identifiers interpolated into URL paths cannot retarget a request.
+    http_client resolves endpoints with urljoin, which treats `..` as a path climb.
     """
 
     # server_id and session_id are absent: the decorator already validates them.
@@ -720,6 +701,7 @@ class TestPathIdentifierValidation:
     # never grow this set just to turn the test green.
     ENDPOINT_CHOICES = frozenset(
         {
+            'metrics_tools.py: metric.device_endpoint',
             'metrics_tools.py: metric_endpoints[metric]',
             'security_tools.py: endpoint',
             'webftp_tools.py: endpoint_map[transfer_type]',
@@ -727,19 +709,8 @@ class TestPathIdentifierValidation:
     )
 
     def test_every_interpolated_endpoint_name_ends_in_id(self):
-        """The gate matches on an ``_id`` suffix, so a path parameter named
-        otherwise would reach the URL unchecked.
-
-        Walks the syntax tree rather than the text, so a path built any other
-        way—``.format()``, a template constant used bare—is caught too. A way of
-        building an endpoint that this does not recognize fails as well: it has
-        to be read before it can be trusted.
-
-        What this holds is the naming convention at the interpolation site:
-        the name read there ends in ``_id``. It does not trace where the value
-        came from, so a client value rebound to a local ``_id`` name, or one
-        smuggled into a constant behind an ``ENDPOINT_CHOICES`` entry, passes
-        unseen. That provenance is what review is for.
+        """The gate matches an `_id` suffix; an unreadable endpoint construction fails.
+        It checks the name at the interpolation site, not provenance; review does.
         """
 
         def root_name(node):
@@ -838,13 +809,8 @@ class TestPathIdentifierValidation:
         )
 
     def test_every_id_parameter_appears_in_a_case_list(self):
-        """The case lists above are hand-written, so they drift as tools land.
-
-        The gate picks arguments by the ``_id`` suffix, not by where the value
-        ends up, so an identifier missing from both lists is one the suite never
-        holds the gate to. Reading the parameters out of ``tools/`` is what keeps
-        the lists honest; the split between them still has to be made by hand,
-        because only reading the tool says whether a value reaches a path.
+        """The hand-written case lists drift as tools land; the gate keys on `_id`
+        names. Reading tools/ keeps them honest; the list split still needs a human.
         """
         tools_dir = Path(__file__).resolve().parent.parent / 'tools'
         declared = set()
@@ -934,8 +900,6 @@ class TestPathIdentifierValidation:
 
 
 class TestFilePathValidation:
-    """Tests that invalid file paths are rejected in webftp upload/download."""
-
     @pytest.mark.asyncio
     @patch('utils.decorators.validate_token', return_value='fake-token')
     async def test_upload_rejects_relative_local_path(self, mock_token):

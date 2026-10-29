@@ -3,6 +3,7 @@
 import asyncio
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime, timedelta
+from enum import Enum
 from typing import TypedDict
 
 from pydantic import TypeAdapter
@@ -21,10 +22,17 @@ from utils.common import (
     validate_response,
 )
 from utils.decorators import mcp_tool_handler
-from utils.error_handler import UpstreamAuthError, format_validation_error
+from utils.error_handler import format_validation_error
 from utils.http_client import http_client
 from utils.tool_annotations import READ_ONLY
-from utils.types import JsonValue, QueryParam, ToolResponse
+from utils.types import (
+    JsonValue,
+    OptionalServerId,
+    QueryParam,
+    ServerId,
+    ToolResponse,
+    ToolResult,
+)
 
 #: `?state=` values `/api/metrics/latest/` accepts; mirrors alpacon-server's
 #: `metrics.latest.LATEST_STATES`. `stale` covers `no_data`: never-stored is overdue.
@@ -47,6 +55,7 @@ VALID_LATEST_METRIC_ORDERING_FIELDS = frozenset(
         'disk_io',
         'disk-io',
         'net',
+        'metric_severity',
     }
 )
 _LATEST_ORDERING_SENTENCE = (
@@ -96,6 +105,23 @@ class _NextPage(TypedDict, total=False):  # a page-number list envelope
     next: int | None
 
 
+class _DiskMetric(Enum):
+    """A realtime disk metric whose list endpoint needs a device."""
+
+    USAGE = (
+        '/api/metrics/realtime/disk-usage/device/',
+        'No disk devices found for this server',
+    )
+    IO = (
+        '/api/metrics/realtime/disk-io/device/',
+        'No disk I/O devices found for this server',
+    )
+
+    def __init__(self, device_endpoint: str, empty_message: str) -> None:
+        self.device_endpoint = device_endpoint
+        self.empty_message = empty_message
+
+
 _USAGE_ROWS = TypeAdapter(list[_UsageRow])
 _DISK_USAGE_ROWS = TypeAdapter(list[_DiskUsageRow])
 _TRAFFIC_ROWS = TypeAdapter(list[_TrafficRow])
@@ -104,7 +130,8 @@ _NEXT_PAGE = TypeAdapter(_NextPage)
 
 
 def _metric_rows[R](adapter: TypeAdapter[list[R]], result: JsonValue) -> list[R]:
-    """The time-series rows of a /api/metrics/ answer; raises on a row the adapter rejects."""
+    """Time-series rows of a /api/metrics/ answer; raises on a row the adapter
+    rejects."""
     return validate_response(adapter, json_records(result))
 
 
@@ -120,19 +147,13 @@ def _timestamp_key(entry: _TimedRow) -> datetime:
 
 
 def _oldest_first[R: _TimedRow](results: list[R]) -> list[R]:
-    """Order metric rows by the instant of their timestamp; the API returns newest first."""
+    """Order metric rows by timestamp instant; the API returns newest first."""
     return sorted(results, key=_timestamp_key)
 
 
 def parse_cpu_metrics(results: list[_UsageRow]) -> dict[str, object]:
-    """Parse CPU usage metrics to extract meaningful statistics.
-
-    Args:
-        results: List of CPU usage data points
-
-    Returns:
-        Parsed statistics including average, min, max, current usage with user-friendly format
-    """
+    """Summarize CPU rows (current, average, min, max, status, health);
+    `available` is False when there are no rows or no `usage` values."""
     if not results:
         return {'available': False, 'message': 'No CPU data available'}
 
@@ -193,7 +214,7 @@ def parse_cpu_metrics(results: list[_UsageRow]) -> dict[str, object]:
     meta={'anthropic/searchHint': 'cpu usage load processor utilization performance'},
 )
 async def get_cpu_usage(
-    server_id: str,
+    server_id: ServerId,
     workspace: str,
     start_date: str | None = None,
     end_date: str | None = None,
@@ -248,14 +269,8 @@ async def get_cpu_usage(
 
 
 def parse_memory_metrics(results: list[_UsageRow]) -> dict[str, object]:
-    """Parse memory usage metrics to extract meaningful statistics.
-
-    Args:
-        results: List of memory usage data points
-
-    Returns:
-        Parsed statistics including average, min, max, current usage with user-friendly format
-    """
+    """Summarize memory rows (current, average, min, max, status, health);
+    `available` is False when there are no rows or no `usage` values."""
     if not results:
         return {'available': False, 'message': 'No memory data available'}
 
@@ -316,7 +331,7 @@ def parse_memory_metrics(results: list[_UsageRow]) -> dict[str, object]:
     meta={'anthropic/searchHint': 'memory ram usage utilization'},
 )
 async def get_memory_usage(
-    server_id: str,
+    server_id: ServerId,
     workspace: str,
     start_date: str | None = None,
     end_date: str | None = None,
@@ -371,14 +386,8 @@ async def get_memory_usage(
 
 
 def parse_disk_metrics(results: list[_DiskUsageRow]) -> dict[str, object]:
-    """Parse disk usage metrics to extract meaningful statistics.
-
-    Args:
-        results: List of disk usage data points
-
-    Returns:
-        Parsed statistics including average, min, max, current usage and space info
-    """
+    """Summarize disk rows (current, average, min, max, space_info);
+    `available` is False when there are no rows or no `usage` values."""
     if not results:
         return {'available': False, 'message': 'No disk data available'}
 
@@ -424,13 +433,50 @@ def parse_disk_metrics(results: list[_DiskUsageRow]) -> dict[str, object]:
     }
 
 
+async def _disk_devices(
+    metric: _DiskMetric,
+    *,
+    server_id: str,
+    workspace: str,
+    region: str,
+    token: str | None,
+) -> ToolResult[list[str]]:
+    """Sorted devices with `metric` data in the last day, or an error result when
+    the lookup fails or finds none."""
+    result = await http_client.get(
+        region=region,
+        workspace=workspace,
+        endpoint=metric.device_endpoint,
+        token=token,
+        params={'server': server_id},
+    )
+    err = unwrap_http_result(
+        result,
+        default_message='Failed to fetch disk devices',
+        server_id=server_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
+    devices = sorted(validate_response(_DISK_DEVICES, result).get('devices', []))
+    if not devices:
+        return error_response(
+            message=metric.empty_message,
+            server_id=server_id,
+            region=region,
+            workspace=workspace,
+        )
+    return devices
+
+
 @mcp_tool_handler(
-    description='Get disk space usage metrics for a server by device or partition. Returns usage percentage and total/used/free space. When to use: checking available disk space or monitoring storage growth. Related: get_disk_io (I/O throughput, not space), get_disk_info (physical disk layout). Note: Auto-discovers first device if none specified. Defaults to the last 12 hours; the realtime endpoint returns at most the last 12 hours.',
+    description='Get disk space usage metrics for a server by device or partition. Returns usage percentage and total/used/free space. When to use: checking available disk space or monitoring storage growth. Related: get_disk_io (I/O throughput, not space), get_disk_info (physical disk layout). Note: Without device or partition, reads the alphabetically first device with data in the last day. Defaults to the last 12 hours; the realtime endpoint returns at most the last 12 hours.',
     annotations=READ_ONLY,
     meta={'anthropic/searchHint': 'disk space storage partition mount usage'},
 )
 async def get_disk_usage(
-    server_id: str,
+    server_id: ServerId,
     workspace: str,
     device: str | None = None,
     partition: str | None = None,
@@ -447,7 +493,7 @@ async def get_disk_usage(
     Args:
         server_id: Server ID to get metrics for
         workspace: Workspace name. Required parameter
-        device: Optional device path (e.g., '/dev/sda1'). If not provided, will fetch first available device
+        device: Optional device path (e.g., '/dev/sda1'). Without device or partition, reads the alphabetically first discovered device
         partition: Optional partition ID (UUID) from /api/proc/partitions/
         start_date: Start date in ISO format (e.g., '2024-01-01T00:00:00Z')
         end_date: End date in ISO format (e.g., '2024-01-02T00:00:00Z')
@@ -458,53 +504,17 @@ async def get_disk_usage(
     """
     token = kwargs.get('token')
 
-    # If no device or partition provided, fetch available devices first
     if not device and not partition:
-        try:
-            devices_result = await http_client.get(
-                region=region,
-                workspace=workspace,
-                endpoint='/api/metrics/realtime/disk-usage/device/',
-                token=token,
-                params={'server': server_id},
-            )
-
-            # A 4xx/5xx here must surface as the real error, not be masked as
-            # "no devices found" by the empty-list fallback below.
-            err = unwrap_http_result(
-                devices_result,
-                default_message='Failed to fetch disk devices',
-                server_id=server_id,
-                region=region,
-                workspace=workspace,
-            )
-            if err:
-                return err
-
-            # Extract device list from response
-            available_devices = validate_response(_DISK_DEVICES, devices_result).get(
-                'devices', []
-            )
-
-            if available_devices:
-                # Use the first available device
-                device = available_devices[0]
-            else:
-                return error_response(
-                    message='No disk devices found for this server',
-                    server_id=server_id,
-                    region=region,
-                    workspace=workspace,
-                )
-        except UpstreamAuthError:
-            raise
-        except Exception as e:
-            return error_response(
-                message=f'Failed to fetch disk devices: {str(e)}',
-                server_id=server_id,
-                region=region,
-                workspace=workspace,
-            )
+        devices = await _disk_devices(
+            _DiskMetric.USAGE,
+            server_id=server_id,
+            workspace=workspace,
+            region=region,
+            token=token,
+        )
+        if isinstance(devices, dict):
+            return devices
+        device = devices[0]
 
     start, end = resolve_time_window(start_date, end_date)
     params = build_list_params(
@@ -548,14 +558,8 @@ async def get_disk_usage(
 
 
 def parse_network_metrics(results: list[_TrafficRow]) -> dict[str, object]:
-    """Parse network traffic metrics to extract meaningful statistics.
-
-    Args:
-        results: List of network traffic data points
-
-    Returns:
-        Parsed statistics including average, peak input/output in bps and pps
-    """
+    """Summarize traffic rows (average and peak input/output in bps and pps);
+    `available` is False when there are no rows."""
     if not results:
         return {'available': False, 'message': 'No network data available'}
 
@@ -639,14 +643,14 @@ def parse_network_metrics(results: list[_TrafficRow]) -> dict[str, object]:
 
 
 @mcp_tool_handler(
-    description='Get disk I/O read/write throughput metrics for a server. Returns peak and average transfer rates per device. When to use: diagnosing storage performance bottlenecks or slow I/O. Related: get_disk_usage (space, not I/O), get_top_servers (compare I/O across servers). Note: Defaults to the last 12 hours; the realtime endpoint returns at most the last 12 hours.',
+    description='Get disk I/O read/write throughput metrics for a server. Returns peak and average transfer rates per device. When to use: diagnosing storage performance bottlenecks or slow I/O. Related: get_disk_usage (space, not I/O), get_top_servers (compare I/O across servers). Note: Without device (or with a blank one), reads the alphabetically first device with data in the last day and lists every such device in `devices`; pass one of them as device to read another. Defaults to the last 12 hours; the realtime endpoint returns at most the last 12 hours.',
     annotations=READ_ONLY,
     meta={
         'anthropic/searchHint': 'disk io read write throughput iops storage performance'
     },
 )
 async def get_disk_io(
-    server_id: str,
+    server_id: ServerId,
     workspace: str,
     device: str | None = None,
     start_date: str | None = None,
@@ -661,15 +665,30 @@ async def get_disk_io(
     Args:
         server_id: Server ID to get disk I/O metrics for
         workspace: Workspace name. Required parameter
-        device: Optional disk device name (e.g., 'sda', 'nvme0n1')
+        device: Optional disk device name (e.g., 'sda', 'nvme0n1'). Omitted or blank reads the alphabetically first discovered device
         start_date: Start date for metrics (ISO 8601 format). Defaults to the last 12 hours; older data is not returned
         end_date: End date for metrics (ISO 8601 format)
         region: Region (ap1, us1). Auto-detected if not provided
 
     Returns:
-        Disk I/O metrics response with device, read/write rates, and timestamps
+        Disk I/O metrics response with device, read/write rates, and timestamps;
+        `devices` lists the discovered devices when device was omitted or blank
     """
     token = kwargs.get('token')
+
+    devices: list[str] | None = None
+    if not device:
+        discovered = await _disk_devices(
+            _DiskMetric.IO,
+            server_id=server_id,
+            workspace=workspace,
+            region=region,
+            token=token,
+        )
+        if isinstance(discovered, dict):
+            return discovered
+        devices = discovered
+        device = devices[0]
 
     start, end = resolve_time_window(start_date, end_date)
     params = build_list_params(
@@ -702,6 +721,7 @@ async def get_disk_io(
         data=result,
         server_id=server_id,
         device=device,
+        devices=devices,
         start_date=start_date,
         end_date=end_date,
         region=region,
@@ -715,7 +735,7 @@ async def get_disk_io(
     meta={'anthropic/searchHint': 'network traffic bandwidth interface bps packets'},
 )
 async def get_network_traffic(
-    server_id: str,
+    server_id: ServerId,
     workspace: str,
     interface: str,
     start_date: str | None = None,
@@ -778,7 +798,7 @@ async def get_network_traffic(
 
 
 @mcp_tool_handler(
-    description='Get the top servers ranked by resource usage in the last 24 hours. When to use: finding the busiest or most loaded servers in a workspace, comparing resource usage across servers. Related: get_cpu_usage, get_memory_usage (detailed metrics for a specific server). Note: Supports cpu, memory, disk_io, traffic. Pass comma-separated or leave empty for all.',
+    description='Get the top servers ranked by resource usage in the last 24 hours. When to use: finding the busiest or most loaded servers in a workspace, comparing resource usage across servers. Related: get_cpu_usage, get_memory_usage (detailed metrics for a specific server). Note: Supports cpu, memory, disk_io, traffic. Pass comma-separated or leave empty for all. Several types come back as `data` keyed by metric type, where a type that failed holds `{error, available: false}` instead of failing the call; a single type comes back as `data` directly, with `metric_type` set to `<type>_top` (e.g. `cpu_top`).',
     annotations=READ_ONLY,
     meta={
         'anthropic/searchHint': 'top servers ranking busiest compare metrics workspace'
@@ -902,7 +922,7 @@ async def get_top_servers(
     },
 )
 async def get_alert_rules(
-    workspace: str, server_id: str | None = None, region: str = '', **kwargs: str
+    workspace: str, server_id: OptionalServerId = None, region: str = '', **kwargs: str
 ) -> ToolResponse:
     """Get alert rules for servers.
 
@@ -934,10 +954,8 @@ async def get_alert_rules(
 def _find_record_id(
     result: object, predicate: Callable[[_ProcRecord], bool]
 ) -> str | None:
-    """Return the id of the first /api/proc/ record matching predicate.
-
-    Those endpoints answer with a plain list or a paginated `results` dict.
-    """
+    """Return the id of the first /api/proc/ record matching predicate; the
+    answer is a plain list or a paginated `results` dict."""
     if isinstance(result, dict) and not is_http_error(result):
         result = result.get('results')
     if not isinstance(result, list):
@@ -974,10 +992,8 @@ _MAX_INTERFACE_PAGES = 20  # with page_size=100, at most 2000 interfaces
 async def _list_all_interfaces(
     *, region: str, workspace: str, token: str | None, server_id: str
 ) -> list[JsonValue] | dict[str, JsonValue]:
-    """Collect a server's /api/proc/interfaces/ records, or return the error dict.
-
-    `next` is a page number; paging stops after `_MAX_INTERFACE_PAGES` pages.
-    """
+    """Collect a server's /api/proc/interfaces/ records, or return the error
+    dict; paging stops after `_MAX_INTERFACE_PAGES` pages."""
     base_params: dict[str, QueryParam] = {'server': server_id, 'page_size': 100}
     params = base_params
     records: list[JsonValue] = []
@@ -1006,7 +1022,7 @@ async def _list_all_interfaces(
 
 
 @mcp_tool_handler(
-    description="Get one server's detail: a comprehensive monitoring overview combining CPU, memory, disk, and network metrics for that single server. Returns a compact summary with data availability status. When to use: quick health check of one server or starting point for investigation. Related: get_cpu_usage, get_memory_usage, get_disk_usage, get_network_traffic (full detailed data per metric), list_latest_metrics (latest reading for many servers at once). Note: Use individual metric tools for time-series data.",
+    description="Get one server's detail: a comprehensive monitoring overview combining CPU, memory, disk, and network metrics for that single server. Returns a compact summary with data availability status, read over the last `hours`, 12 by default and capped at 12, the window the realtime endpoints keep. When to use: quick health check of one server or starting point for investigation. Related: get_cpu_usage, get_memory_usage, get_disk_usage, get_network_traffic (full detailed data per metric), list_latest_metrics (latest reading for many servers at once). Note: Use individual metric tools for time-series data.",
     annotations=READ_ONLY,
     meta={
         'anthropic/searchHint': 'server metrics summary overview health monitoring dashboard single server detail',
@@ -1014,7 +1030,11 @@ async def _list_all_interfaces(
     },
 )
 async def get_server_metrics_summary(
-    server_id: str, workspace: str, hours: int = 12, region: str = '', **kwargs: str
+    server_id: ServerId,
+    workspace: str,
+    hours: int = 12,
+    region: str = '',
+    **kwargs: str,
 ) -> ToolResponse:
     """Get comprehensive metrics summary for a server.
 
@@ -1220,9 +1240,28 @@ async def get_server_metrics_summary(
     description=(
         'Latest CPU, memory, disk usage, disk I/O and network reading for many '
         'servers in one request; each cell says whether the value is missing, '
-        "stale or not collected. For one server's time series use get_cpu_usage "
+        'stale or not collected. Each row carries the cells `cpu`, `memory`, '
+        '`disk-usage`, `disk-io`, and `net`, each holding `value`, `unit` '
+        '("percent" or "bytes_per_sec"), `sampled_at`, `device`, `collected`, '
+        '`reason`, and `interval_s`; `value`, `sampled_at`, and `device` are '
+        'null when no sample is stored for that family. Results are paginated '
+        'the same way as list_servers: compare `count` with `results` and '
+        "follow `next`. state='stale' selects servers where some family is overdue, "
+        "including one storing nothing at all, so it includes every 'no_data' "
+        'server. Order by metric_severity or -metric_severity '
+        '(critical first descending; ties keep the default order). Rows include '
+        'metric_severity (critical, warning, info or null without alert:read). '
+        'Cells include threshold (number or null) and operator (gte, lte or null); '
+        'both are null for disk-io and net, or without rule override read access. '
+        'summary counts critical, warning, stale and no_data over the filtered '
+        'set before pagination; critical and warning are null without alert:read, '
+        'and warning excludes critical servers. '
+        "For one server's time series use get_cpu_usage "
         "etc.; for one server's detail use get_server_metrics_summary. Requires "
-        'alpacon-server 2.37.0 or later.'
+        'alpacon-server 2.37.0 or later. Severity ordering, metric_severity, '
+        'threshold, operator and summary require server support; earlier '
+        'deployments ignore that ordering (default order) and omit those fields; '
+        'without alert:read the ordering is ignored too.'
     ),
     annotations=READ_ONLY,
     meta={
@@ -1248,6 +1287,10 @@ async def list_latest_metrics(
     metric cells added: the filters, search, and pagination are `list_servers`'
     own, plus `state` and `ordering`.
 
+    Severity ordering, metric_severity, threshold, operator, and summary require
+    server support; earlier deployments ignore that ordering (default order) and
+    omit those fields, and without alert:read the ordering is ignored too.
+
     Args:
         workspace: Workspace name. Required parameter
         region: Region (ap1, us1). Auto-detected if not provided
@@ -1261,18 +1304,28 @@ async def list_latest_metrics(
             server. (optional)
         ordering: Sort field, one of VALID_LATEST_METRIC_ORDERING_FIELDS
             (name, starred, sampled_at, cpu, memory, disk_usage/disk-usage,
-            disk_io/disk-io, net), optionally prefixed with "-" for descending.
-            A server with no value for the field sorts last. (optional)
+            disk_io/disk-io, net, metric_severity), optionally prefixed with "-"
+            for descending. A server with no value for the field sorts last.
+            -metric_severity puts critical first; ties keep the default order.
+            (optional)
         page: Page number for pagination (optional)
         page_size: Number of results per page, up to 100 (optional)
 
     Returns:
-        Paginated response: `count`, `current`, `next`, `previous`, `last`, and
-        `results` — each result an `{id, name, is_connected, cpu, memory,
-        "disk-usage", "disk-io", net}` row, every metric cell an object with
+        Paginated response: `count`, `current`, `next`, `previous`, `last`,
+        `summary`, and `results`—each result an `{id, name, is_connected,
+        metric_severity, cpu, memory, "disk-usage", "disk-io", net}` row,
+        every metric cell an object with
         `value`, `unit` ("percent" or "bytes_per_sec"), `sampled_at`, `device`,
-        `collected`, `reason`, and `interval_s` (`value`, `sampled_at`, and
-        `device` are null when no sample is stored for that family).
+        `collected`, `reason`, `interval_s`, `threshold`, and `operator`
+        (`value`, `sampled_at`, and `device` are null when no sample is stored
+        for that family).
+        `metric_severity` is critical, warning, info, or null without alert:read.
+        `threshold` is a number or null; `operator` is gte, lte, or null. Both
+        are null for disk-io and net, or without rule override read access.
+        `summary` counts critical, warning, stale, and no_data over the filtered
+        set before pagination. `critical` and `warning` are null without
+        alert:read; `warning` excludes servers counted as critical.
     """
     if state is not None and state not in VALID_LATEST_METRIC_STATES:
         return format_validation_error('state', state, _LATEST_STATE_SENTENCE)

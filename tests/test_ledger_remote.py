@@ -137,7 +137,11 @@ class TestFlag:
         monkeypatch.setenv('ALPACON_MCP_TRANSPORT', 'restored-on-teardown')
         monkeypatch.setenv('ALPACON_MCP_AUTH_ENABLED', auth)
         monkeypatch.setenv('ALPACON_MCP_REMOTE_LEDGER', flag)
-        for name in ('AUTH0_DOMAIN', 'AUTH0_CLIENT_ID', 'AUTH0_CLIENT_SECRET'):
+        for name in (
+            'AUTH0_ALPACON_DOMAIN',
+            'AUTH0_ALPACON_LOGIN_CLIENT_ID',
+            'AUTH0_ALPACON_LOGIN_CLIENT_SECRET',
+        ):
             monkeypatch.setenv(name, OAUTH_ENV[name])
 
         with patch('importlib.import_module'):
@@ -306,7 +310,7 @@ class TestAuthorize:
         assert response.status_code == HTTPStatus.FOUND
         query = _query(response)
         assert query['audience'] == 'https://alpacon.ai/'
-        assert query['client_id'] == OAUTH_ENV['AUTH0_CLIENT_ID']
+        assert query['client_id'] == OAUTH_ENV['AUTH0_ALPACON_LOGIN_CLIENT_ID']
         assert query['scope'] == f'openid profile email org:{WORKSPACE}'
         assert 'offline_access' not in query['scope']
         assert 'code_challenge' not in query
@@ -320,7 +324,7 @@ class TestAuthorize:
     def test_the_flag_off_drops_the_ledger_scope(self, oauth, monkeypatch):
         monkeypatch.setenv('ALPACON_MCP_REMOTE_LEDGER', '')
         query = _query(_authorize(oauth, f'openid ledger:{WORKSPACE}'))
-        assert query['audience'] == OAUTH_ENV['AUTH0_AUDIENCE']
+        assert query['audience'] == OAUTH_ENV['AUTH0_ALPACON_USER_AUDIENCE']
         assert 'ledger:' not in query['scope']
         state = _verify_state(query['state'])
         assert state is not None
@@ -329,7 +333,7 @@ class TestAuthorize:
     @pytest.mark.parametrize('org', ['', 'bad"name', 'a/b', '-x'])
     def test_a_malformed_workspace_is_ignored(self, oauth, org):
         query = _query(_authorize(oauth, f'openid ledger:{org}'))
-        assert query['audience'] == OAUTH_ENV['AUTH0_AUDIENCE']
+        assert query['audience'] == OAUTH_ENV['AUTH0_ALPACON_USER_AUDIENCE']
         assert 'ledger:' not in query['scope']
 
     def test_mfa_runs_first_and_keeps_the_ledger_for_later(self, oauth):
@@ -358,9 +362,9 @@ class TestCallback:
         assert response.status_code == HTTPStatus.FOUND
         sent = auth0.post.call_args.kwargs['data']
         assert sent['code'] == 'ledger-code'
-        assert sent['client_secret'] == OAUTH_ENV['AUTH0_CLIENT_SECRET']
+        assert sent['client_secret'] == OAUTH_ENV['AUTH0_ALPACON_LOGIN_CLIENT_SECRET']
         query = _query(response)
-        assert query['audience'] == OAUTH_ENV['AUTH0_AUDIENCE']
+        assert query['audience'] == OAUTH_ENV['AUTH0_ALPACON_USER_AUDIENCE']
         assert query['code_challenge'] == PKCE_PARAMS['code_challenge']
         state = _verify_state(query['state'])
         assert state is not None
@@ -385,7 +389,7 @@ class TestCallback:
                 follow_redirects=False,
             )
         assert response.status_code == HTTPStatus.FOUND
-        assert _query(response)['audience'] == OAUTH_ENV['AUTH0_AUDIENCE']
+        assert _query(response)['audience'] == OAUTH_ENV['AUTH0_ALPACON_USER_AUDIENCE']
         assert not response.cookies.get(_LEDGER_COOKIE_NAME)
 
     def test_mfa_stage_hands_over_to_the_ledger_stage(self, oauth):

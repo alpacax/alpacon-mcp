@@ -1,12 +1,8 @@
-"""
-Unit tests for HTTP client utility.
-
-Tests the HTTP client functionality including GET, POST, PATCH, DELETE operations
-and error handling.
-"""
+"""Unit tests for the HTTP client: GET, POST, PATCH, DELETE, and error handling."""
 
 import inspect
 import logging
+from collections.abc import Mapping
 from http import HTTPStatus
 from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
@@ -55,9 +51,7 @@ def mock_httpx_client(monkeypatch):
 @pytest.fixture
 def no_retry_delay(monkeypatch):
     """Drop the backoff sleep for tests that exhaust the retries.
-
-    monkeypatch, not assignment: http_client is a module-level singleton, so
-    the value would leak into the rest of the suite.
+    monkeypatch, not assignment: http_client is a singleton, so a set value would leak.
     """
     monkeypatch.setattr(http_client, 'retry_delay', 0)
 
@@ -93,11 +87,8 @@ def create_mock_response(
 
 
 class TestHTTPClientGet:
-    """Test HTTP GET operations."""
-
     @pytest.mark.asyncio
     async def test_get_success(self, mock_httpx_client):
-        """Test successful GET request."""
         mock_response = create_mock_response(
             status_code=HTTPStatus.OK, json_data={'result': 'success'}
         )
@@ -114,7 +105,6 @@ class TestHTTPClientGet:
 
     @pytest.mark.asyncio
     async def test_get_with_params(self, mock_httpx_client):
-        """Test GET request with query parameters."""
         mock_response = create_mock_response(
             status_code=HTTPStatus.OK, json_data={'results': []}
         )
@@ -133,7 +123,6 @@ class TestHTTPClientGet:
 
     @pytest.mark.asyncio
     async def test_get_404_error(self, mock_httpx_client):
-        """Test GET request with 404 error."""
         mock_response = create_mock_response(status_code=HTTPStatus.NOT_FOUND)
         mock_httpx_client.request.return_value = mock_response
 
@@ -181,9 +170,8 @@ class TestHTTPClientGet:
     async def test_get_500_exhaustion_enriches_across_tool_domains(
         self, mock_httpx_client, no_retry_delay, tool_name, domain
     ):
-        """tool_name mirrors the live enrich call and outranks the message, so the
-        domain varies by caller; 500 has only a (500, 'general') entry so the hints
-        converge, and a domain-specific one would split them here.
+        """tool_name mirrors the live enrich call and outranks the message. 500 has one
+        (500, 'general') entry, so hints converge; a domain-specific one would split.
         """
         mock_response = create_mock_response(
             status_code=HTTPStatus.INTERNAL_SERVER_ERROR
@@ -212,11 +200,8 @@ class TestHTTPClientGet:
 
 
 class TestHTTPClientPost:
-    """Test HTTP POST operations."""
-
     @pytest.mark.asyncio
     async def test_post_success(self, mock_httpx_client):
-        """Test successful POST request."""
         mock_response = create_mock_response(
             status_code=HTTPStatus.CREATED, json_data={'id': 123, 'created': True}
         )
@@ -234,7 +219,6 @@ class TestHTTPClientPost:
 
     @pytest.mark.asyncio
     async def test_post_validation_error(self, mock_httpx_client):
-        """Test POST request with validation error."""
         mock_response = create_mock_response(status_code=HTTPStatus.BAD_REQUEST)
         mock_httpx_client.request.return_value = mock_response
 
@@ -252,11 +236,8 @@ class TestHTTPClientPost:
 
 
 class TestHTTPClientPatch:
-    """Test HTTP PATCH operations."""
-
     @pytest.mark.asyncio
     async def test_patch_success(self, mock_httpx_client):
-        """Test successful PATCH request."""
         mock_response = create_mock_response(
             status_code=HTTPStatus.OK, json_data={'updated': True}
         )
@@ -305,8 +286,6 @@ class TestHTTPClientBodyShapes:
 
 
 class TestHTTPClientDelete:
-    """Test HTTP DELETE operations."""
-
     @pytest.mark.asyncio
     async def test_delete_success(self, mock_httpx_client):
         """Test successful DELETE request (no content)."""
@@ -326,7 +305,6 @@ class TestHTTPClientDelete:
 
     @pytest.mark.asyncio
     async def test_delete_with_response(self, mock_httpx_client):
-        """Test DELETE request with response body."""
         mock_response = create_mock_response(
             status_code=HTTPStatus.OK, json_data={'deleted': True, 'id': 123}
         )
@@ -343,11 +321,8 @@ class TestHTTPClientDelete:
 
 
 class TestURLConstruction:
-    """Test URL construction for different regions."""
-
     @pytest.mark.asyncio
     async def test_url_construction_all_regions(self, mock_httpx_client):
-        """Test URL construction for all supported regions."""
         mock_response = create_mock_response(
             status_code=HTTPStatus.OK, json_data={'region': 'test'}
         )
@@ -373,10 +348,8 @@ class TestURLConstruction:
 
     @pytest.mark.asyncio
     async def test_configured_base_url_override_is_used(self, mock_httpx_client):
-        """A pinned base URL is used verbatim instead of the derived host.
-
-        This keeps a workspace addressable across a URL slug change (ADR 0027):
-        the host is a persisted value, not re-derived from the workspace label.
+        """A pinned base URL is used verbatim instead of the derived host (ADR 0027).
+        The host is persisted, so a workspace survives a URL slug change.
         """
         mock_response = create_mock_response(
             status_code=HTTPStatus.OK, json_data={'ok': True}
@@ -441,11 +414,8 @@ class TestURLConstruction:
 
 
 class TestErrorHandling:
-    """Test error handling scenarios."""
-
     @pytest.mark.asyncio
     async def test_network_timeout(self, mock_httpx_client, no_retry_delay):
-        """Test network timeout handling."""
         mock_httpx_client.request.side_effect = httpx.TimeoutException(
             'Request timeout'
         )
@@ -462,7 +432,6 @@ class TestErrorHandling:
 
     @pytest.mark.asyncio
     async def test_connection_error(self, mock_httpx_client, no_retry_delay):
-        """Test connection error handling."""
         mock_httpx_client.request.side_effect = httpx.ConnectError('Connection failed')
 
         result = await http_client.get(
@@ -477,7 +446,6 @@ class TestErrorHandling:
 
     @pytest.mark.asyncio
     async def test_invalid_json_response(self, mock_httpx_client):
-        """Test handling of invalid JSON response."""
         # Create a response that will cause json() to fail
         mock_response = MagicMock()
         mock_response.status_code = HTTPStatus.OK
@@ -501,11 +469,8 @@ class TestErrorHandling:
 
 
 class TestHTTPClientJWTAuth:
-    """Test JWT vs API token authentication header selection."""
-
     @pytest.mark.asyncio
     async def test_jwt_token_uses_bearer_header(self, mock_httpx_client):
-        """Test that JWT-like tokens use Bearer authorization header."""
         mock_response = create_mock_response(
             status_code=HTTPStatus.OK, json_data={'result': 'success'}
         )
@@ -526,7 +491,6 @@ class TestHTTPClientJWTAuth:
 
     @pytest.mark.asyncio
     async def test_api_token_uses_token_header(self, mock_httpx_client):
-        """Test that API tokens use token= authorization header."""
         mock_response = create_mock_response(
             status_code=HTTPStatus.OK, json_data={'result': 'success'}
         )
@@ -545,7 +509,6 @@ class TestHTTPClientJWTAuth:
         assert call_kwargs.kwargs['headers']['Authorization'] == f'token={api_token}'
 
     def test_is_jwt_detection(self):
-        """Test JWT format detection logic."""
         assert AlpaconHTTPClient._is_jwt('a.b.c') is True
         assert AlpaconHTTPClient._is_jwt('eyJ.eyJ.sig') is True
         assert AlpaconHTTPClient._is_jwt('simple-token') is False
@@ -554,8 +517,6 @@ class TestHTTPClientJWTAuth:
 
 
 class TestHandleUpstream401:
-    """Test _handle_upstream_401 MFA detection and flag signaling."""
-
     def _make_401_exc(self, json_body=None, text=''):
         """Create a mock HTTPStatusError with 401 response."""
         mock_response = MagicMock()
@@ -703,11 +664,8 @@ class TestHandleUpstream401:
 
 
 class TestNoResponseCache:
-    """The client must not answer a read from an earlier response.
-
-    Every read worth caching comes back filtered by the caller's permissions,
-    and a grant revoked outside this process is invisible here, so a cached
-    read would keep serving access the caller has already lost.
+    """A read is never answered from an earlier response. Reads come back filtered by
+    the caller's permissions; a cache would keep serving revoked access.
     """
 
     LIST_URL = 'https://ws.ap1.alpacon.io/api/servers/servers/'
@@ -905,3 +863,205 @@ class TestHTTPVerbsConstant:
         }
 
         assert set(HTTP_VERBS) == public_async - self.NON_VERB_ASYNC_METHODS
+
+
+COMMAND_URL = 'https://ws.ap1.alpacon.io/api/events/commands/'
+SERVERS_URL = 'https://ws.ap1.alpacon.io/api/servers/servers/'
+NON_IDEMPOTENT = pytest.mark.parametrize('method', ['POST', 'PATCH'])
+IDEMPOTENT = pytest.mark.parametrize('method', ['GET', 'PUT', 'DELETE'])
+MAY_HAVE_LANDED = pytest.mark.parametrize(
+    ('error', 'expected'),
+    [
+        (httpx.ReadTimeout, 'Timeout'),
+        (httpx.WriteTimeout, 'Timeout'),
+        (httpx.ReadError, 'Request Error'),
+        (httpx.RemoteProtocolError, 'Request Error'),
+        (httpx.LocalProtocolError, 'Request Error'),
+    ],
+)
+NEVER_SENT = pytest.mark.parametrize(
+    ('error', 'expected'),
+    [
+        (httpx.ConnectError, 'Request Error'),
+        (httpx.ConnectTimeout, 'Timeout'),
+        (httpx.PoolTimeout, 'Timeout'),
+        (httpx.ProxyError, 'Request Error'),
+        (httpx.UnsupportedProtocol, 'Request Error'),
+    ],
+)
+CREATED = (HTTPStatus.CREATED, {'id': 'command-1'})
+
+
+def scripted(*steps: type[httpx.TransportError] | tuple[int, Mapping[str, str]]):
+    """A transport raising or answering each step in turn, and the requests it saw."""
+    seen: list[httpx.Request] = []
+
+    def answer(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        step = steps[min(len(seen), len(steps)) - 1]
+        if isinstance(step, tuple):
+            status, body = step
+            return httpx.Response(status, json=body)
+        raise step('scripted failure', request=request)
+
+    return httpx.MockTransport(answer), seen
+
+
+class TestNonIdempotentRequestIsNotReplayed:
+    @NON_IDEMPOTENT
+    @MAY_HAVE_LANDED
+    async def test_request_that_may_have_reached_the_server_is_sent_once(
+        self, make_client, method, error, expected
+    ):
+        transport, seen = scripted(error, CREATED)
+        client = make_client(transport)
+
+        result = await client.request(method, COMMAND_URL, json_data={'line': 'ls'})
+
+        assert [r.method for r in seen] == [method]
+        assert result['error'] == expected
+        assert result['outcome_unknown'] is True
+        assert result['message'].endswith(
+            f'The {method} was not resent: the server may already have acted on it.'
+        )
+
+    @NON_IDEMPOTENT
+    @pytest.mark.parametrize(
+        ('body', 'error_code'),
+        [({'code': 'db_unavailable'}, 'db_unavailable'), ({}, None)],
+    )
+    async def test_server_error_is_returned_without_a_second_request(
+        self, make_client, method, body, error_code
+    ):
+        transport, seen = scripted((HTTPStatus.BAD_GATEWAY, body), CREATED)
+        client = make_client(transport)
+
+        result = await client.request(method, COMMAND_URL, json_data={'line': 'ls'})
+
+        assert len(seen) == 1
+        assert result['error'] == 'HTTP Error'
+        assert result['status_code'] == HTTPStatus.BAD_GATEWAY
+        assert result.get('error_code') == error_code
+        assert result['outcome_unknown'] is True
+
+    @NON_IDEMPOTENT
+    async def test_credential_check_outage_is_retried_as_never_reaching_a_view(
+        self, make_client, method
+    ):
+        unavailable = (
+            HTTPStatus.SERVICE_UNAVAILABLE,
+            {'code': 'auth_verification_unavailable'},
+        )
+        transport, seen = scripted(unavailable, CREATED)
+        client = make_client(transport)
+
+        result = await client.request(method, COMMAND_URL, json_data={'line': 'ls'})
+
+        assert len(seen) == 2
+        assert result == {'id': 'command-1'}
+
+    async def test_post_credential_check_outage_exhausts_retries_with_a_known_outcome(
+        self, make_client
+    ):
+        transport, seen = scripted(
+            (HTTPStatus.SERVICE_UNAVAILABLE, {'code': 'auth_verification_unavailable'})
+        )
+        client = make_client(transport)
+
+        result = await client.request('POST', COMMAND_URL, json_data={'line': 'ls'})
+
+        assert len(seen) == client.max_retries
+        assert result['error_code'] == 'auth_verification_unavailable'
+        assert 'outcome_unknown' not in result
+
+    @NON_IDEMPOTENT
+    @NEVER_SENT
+    async def test_request_that_never_left_is_retried_and_succeeds(
+        self, make_client, method, error, expected
+    ):
+        transport, seen = scripted(error, CREATED)
+        client = make_client(transport)
+
+        result = await client.request(method, COMMAND_URL, json_data={'line': 'ls'})
+
+        assert len(seen) == 2
+        assert result == {'id': 'command-1'}
+
+    @NON_IDEMPOTENT
+    @NEVER_SENT
+    async def test_request_that_never_left_exhausts_retries_with_a_known_outcome(
+        self, make_client, method, error, expected
+    ):
+        transport, seen = scripted(error)
+        client = make_client(transport)
+
+        result = await client.request(method, COMMAND_URL, json_data={'line': 'ls'})
+
+        assert len(seen) == client.max_retries
+        assert result['error'] == expected
+        assert 'outcome_unknown' not in result
+
+    @NON_IDEMPOTENT
+    async def test_retry_after_a_failed_connect_stops_at_the_first_lost_response(
+        self, make_client, method
+    ):
+        transport, seen = scripted(httpx.ConnectError, httpx.ReadTimeout, CREATED)
+        client = make_client(transport)
+
+        result = await client.request(method, COMMAND_URL, json_data={'line': 'ls'})
+
+        assert len(seen) == 2  # only the second attempt could have reached the server
+        assert result['outcome_unknown'] is True
+
+    async def test_post_answered_with_an_unreadable_body_may_have_run(
+        self, make_client
+    ):
+        client = make_client(
+            httpx.MockTransport(
+                lambda request: httpx.Response(HTTPStatus.OK, text='<html>ok</html>')
+            )
+        )
+
+        result = await client.request('POST', COMMAND_URL, json_data={'line': 'ls'})
+
+        assert result['error'] == 'Unexpected Error'
+        assert result['outcome_unknown'] is True
+
+
+class TestIdempotentRequestIsRetried:
+    @IDEMPOTENT
+    async def test_request_whose_response_timed_out_is_retried(
+        self, make_client, method
+    ):
+        transport, seen = scripted(httpx.ReadTimeout, (HTTPStatus.OK, {'id': 'x'}))
+        client = make_client(transport)
+
+        result = await client.request(method, SERVERS_URL)
+
+        assert len(seen) == 2
+        assert result == {'id': 'x'}
+
+    @IDEMPOTENT
+    async def test_server_error_is_retried(self, make_client, method):
+        transport, seen = scripted(
+            (HTTPStatus.BAD_GATEWAY, {}), (HTTPStatus.OK, {'id': 'x'})
+        )
+        client = make_client(transport)
+
+        result = await client.request(method, SERVERS_URL)
+
+        assert len(seen) == 2
+        assert result == {'id': 'x'}
+
+    @IDEMPOTENT
+    async def test_exhausted_retries_carry_no_outcome_unknown(
+        self, make_client, method
+    ):
+        transport, seen = scripted(httpx.ReadTimeout)
+        client = make_client(transport)
+
+        result = await client.request(method, SERVERS_URL)
+
+        assert len(seen) == client.max_retries
+        assert result['error'] == 'Timeout'
+        assert 'outcome_unknown' not in result

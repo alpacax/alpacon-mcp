@@ -1,25 +1,6 @@
-"""User authorization for the command pre-approval ledger.
-
-The ledger is served by a separate resource server whose audience is not the
-one Alpacon API tokens or remote-mode logins are minted for, and it accepts
-only a person's token. So this module runs its own OAuth 2.0 device
-authorization (RFC 8628) against the workspace's Auth0 tenant, for the ledger
-audience only, and keeps the result in memory:
-
-- No refresh token is requested. The ledger is an admin surface, and a
-  long-lived refresh credential for it would be a standing privilege; when the
-  access token expires, the person authorizes again.
-- Nothing is written to disk. A restarted MCP process asks again.
-- The flow never blocks a tool call. The first call starts it and returns the
-  verification link for a person to open; a later call polls once and, when
-  the person has approved, proceeds with the token.
-
-Only a stdio server uses this. The cache is process-global and keyed by
-workspace, not by caller, which is safe only where the process serves one
-person; SSE and streamable-http may serve several from one process. Remote
-mode carries its ledger token in each caller's credential instead (see
-`utils.ledger_grant`).
-"""
+"""In-memory device-flow (RFC 8628) sign-in for the pre-approval ledger: no refresh
+token, never blocks a call. Stdio only; the cache is process-global (remote mode
+uses `utils.ledger_grant`)."""
 
 import asyncio
 import time
@@ -76,12 +57,8 @@ def _now() -> float:
 
 @dataclass(frozen=True)
 class LedgerTarget:
-    """The Auth0 tenant and organization a ledger token is minted for.
-
-    `org_name` is the workspace's schema name, which is its Auth0 organization
-    name; the device flow names it as an `org:<name>` scope so the login action
-    stamps the organization claim the ledger reads.
-    """
+    """The Auth0 tenant and organization a ledger token is minted for; org_name is
+    requested as an org:<name> scope."""
 
     domain: str
     client_id: str
@@ -124,7 +101,6 @@ def _positive_int(value: JsonValue, default: int) -> int:
 
 
 async def _post_form(url: str, data: dict[str, str]) -> tuple[int, _Auth0Body]:
-    """POST a form to Auth0 and return the status and the JSON object body."""
     async with httpx.AsyncClient(timeout=_AUTH0_TIMEOUT) as client:
         response = await client.post(
             url,
@@ -152,8 +128,6 @@ def _token_lifetime(body: _Auth0Body) -> float:
 
 
 class LedgerAuthorizer:
-    """Device authorizations and their tokens, one per `LedgerTarget`."""
-
     def __init__(self) -> None:
         self._tokens: dict[tuple[str, str, str, str], _CachedToken] = {}
         self._pending: dict[tuple[str, str, str, str], _PendingAuthorization] = {}
@@ -169,17 +143,12 @@ class LedgerAuthorizer:
         self._tokens.pop(target.key, None)
 
     def clear(self) -> None:
-        """Drop every token and pending authorization."""
         self._tokens.clear()
         self._pending.clear()
 
     async def token_for(self, target: LedgerTarget) -> str | ToolResponse:
-        """Return a ledger token, or the response telling a person to authorize.
-
-        Returns:
-            The access token string, or a response dict: `authorization_required`
-            with the verification link, or an error.
-        """
+        """Return a ledger token, or the authorization_required response with the
+        verification link, or an error."""
         async with self._lock:
             key = target.key
             cached = self._tokens.get(key)

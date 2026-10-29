@@ -8,6 +8,8 @@ from mcp.types import CallToolResult
 from server import mcp
 from tests.conftest import http_client_fixture, tool_descriptions
 from tools.work_session_tools import (
+    _SCOPES_DESCRIPTION,
+    _SESSION_DESCRIPTION,
     work_session_analyze,
     work_session_close,
     work_session_create,
@@ -513,11 +515,8 @@ class TestWorkSessionUpdate:
     async def test_update_queued_modification_surfaces_approval_signal(
         self, mock_http_client, mock_token_manager
     ):
-        """A queued modification (server HTTP 202) is surfaced as pending approval.
-
-        Scope/server changes on an approved/active session are not applied
-        immediately—the server queues a ``work_session_mod`` approval request
-        and reports it via a non-null ``pending_modification_request``.
+        """A queued modification (HTTP 202) surfaces as pending approval.
+        The server queues a ``work_session_mod`` request (pending_modification_request).
         """
 
         mock_http_client.patch.return_value = {
@@ -615,11 +614,8 @@ class TestWorkSessionExtend:
     async def test_extend_queued_surfaces_approval_signal(
         self, mock_http_client, mock_token_manager
     ):
-        """A queued extension (server HTTP 202) is surfaced as pending approval.
-
-        An extension on a lane other than auto-approve is not applied
-        immediately—the server queues a ``work_session_mod`` approval request
-        and reports it via a non-null ``pending_extension_request``.
+        """A queued extension (HTTP 202) surfaces as pending approval.
+        Off the auto-approve lane the server queues a ``work_session_mod`` request.
         """
 
         mock_http_client.post.return_value = {
@@ -679,9 +675,7 @@ class TestWorkSessionExtend:
         self, mock_http_client, mock_token_manager
     ):
         """The server's reason-required refusal comes back with an actionable hint.
-
-        Only reachable when reason is supplied but blank/whitespace—the tool's
-        own required parameter stops an omitted reason before any request.
+        Reachable only with a blank reason; the required parameter stops an omitted one.
         """
 
         mock_http_client.post.return_value = {
@@ -711,7 +705,6 @@ _ALWAYS = {'include_records': 'false'}
 
 def _timeline_server(pages):
     """A fake alpacon-server 2.42+: the whole list without `cursor`, a page with it.
-
     `pages` maps each cursor ('' is the first page) to `(items, next_cursor)`.
     """
     whole = [item for items, _ in pages.values() for item in items]
@@ -1071,10 +1064,7 @@ class TestWorkSessionRecords:
         self, mock_http_client, mock_token_manager
     ):
         """Reading a recording whole is paid-only, and a paywall is not a 403.
-
-        The server's own refusal is a feature lock—`gate: "plan"` with no
-        `axis`—so it keeps the generic coded-error shape rather than the
-        plan-limit one below.
+        The refusal is a feature lock (`gate: "plan"`, no `axis`): generic coded shape.
         """
         mock_http_client.get.return_value = {
             'error': 'HTTP Error',
@@ -1269,10 +1259,24 @@ class TestDescriptionIsNotAnExecutionChannel:
         'tool_name', ['work_session_create', 'work_session_update']
     )
     async def test_description_field_is_declared_non_executable(self, tool_name):
+        # Given the published tool list
+        tools = {t.name: t for t in await mcp.list_tools()}
         descriptions = await tool_descriptions()
-        text = descriptions[tool_name]
-        assert 'NOT a command list' in text
-        assert 'nothing in it is executed' in text
+
+        # When reading the description property
+        field = tools[tool_name].input_schema['properties']['description']
+
+        # Then the parameter carries the rule and the tool description does not
+        assert field['description'] == _SESSION_DESCRIPTION
+        assert 'NOT a command list' in field['description']
+        assert 'nothing in it is executed' in field['description']
+        assert '"maintenance"' in field['description']
+        for phrase in (
+            'NOT a command list',
+            'nothing in it is executed',
+            '"maintenance"',
+        ):
+            assert phrase not in descriptions[tool_name]
 
     @pytest.mark.asyncio
     async def test_create_description_names_work_session_id_pending_approval_and_stop_states(
@@ -1288,6 +1292,52 @@ class TestDescriptionIsNotAnExecutionChannel:
         for state in ('rejected', 'cancelled', 'expired', 'revoked', 'completed'):
             assert state in text
         assert 'pass session_id' not in text
+
+
+class TestWorkSessionParameterDescriptions:
+    """Each scope's meaning is read when `scopes` is filled, so it sits on the field."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        'tool_name', ['work_session_create', 'work_session_update']
+    )
+    async def test_scopes_field_pairs_each_scope_with_what_it_allows(self, tool_name):
+        # Given the published tool list
+        tools = {t.name: t for t in await mcp.list_tools()}
+        descriptions = await tool_descriptions()
+
+        # When reading the scopes property
+        field = tools[tool_name].input_schema['properties']['scopes']
+
+        # Then the parameter carries each scope's meaning and the tool description does not
+        assert _SCOPES_DESCRIPTION in field['description']
+        for meaning in (
+            '"command" (execute_command, execute_file)',
+            '"webftp" (file transfers)',
+            '"tunnel" (port forwarding)',
+            '"sudo" (privilege elevation)',
+        ):
+            assert meaning in field['description']
+        assert 'Request "sudo" only when' in field['description']
+        for phrase in (
+            '(execute_command, execute_file)',
+            '(file transfers)',
+            '(port forwarding)',
+            '(privilege elevation)',
+            'Request "sudo" only when',
+        ):
+            assert phrase not in descriptions[tool_name]
+
+    @pytest.mark.asyncio
+    async def test_update_scopes_field_says_the_list_is_replaced(self):
+        # Given the published tool list
+        tools = {t.name: t for t in await mcp.list_tools()}
+
+        # When reading work_session_update's scopes property
+        field = tools['work_session_update'].input_schema['properties']['scopes']
+
+        # Then it warns that the list replaces the session's scopes
+        assert 'Replaces the whole scope list' in field['description']
 
 
 class TestWorkSessionListParams:
@@ -1328,3 +1378,37 @@ class TestWorkSessionListParams:
             token='test-token',
             params=expected_params,
         )
+
+
+class TestWorkSessionTimelineRejection:
+    """A rejected command on the timeline says why and whom to ask (#242)."""
+
+    @pytest.mark.asyncio
+    async def test_a_rejected_command_item_gets_a_hint_and_others_do_not(
+        self, mock_http_client, mock_token_manager
+    ):
+        rejected = {
+            'type': 'command',
+            'id': 'cmd-1',
+            'rejection_cause': 'work_session_terminated',
+            'rejection_gate': 'work_session',
+        }
+        ran = {'type': 'command', 'id': 'cmd-2', 'rejection_cause': None}
+        grant = {'type': 'sudo_grant', 'rejection_cause': 'approval_rejected'}
+        mock_http_client.get.side_effect = _timeline_server(
+            {'': ([rejected, ran, grant], None)}
+        )
+
+        result = await work_session_timeline(
+            session_id=SESSION_ID, workspace='testworkspace', region='ap1'
+        )
+
+        first, second, third = result['data']['results']
+        assert result['status'] == 'success'
+        assert first['rejection_gate'] == 'work_session'
+        assert (
+            'The Work Session ended while the command was held'
+            in (first['rejection_hint'])
+        )
+        assert 'rejection_hint' not in second
+        assert 'rejection_hint' not in third

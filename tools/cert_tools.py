@@ -5,7 +5,7 @@ from utils.common import build_list_params, error_response, exclude_none
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ_ONLY
-from utils.types import ToolResponse
+from utils.types import ServerId, ToolResponse
 
 # ===============================
 # CERTIFICATE AUTHORITY TOOLS
@@ -60,7 +60,7 @@ async def create_certificate_authority(
     name: str,
     domain: str,
     organization: str,
-    server_id: str,
+    server_id: ServerId,
     owner: str,
     root_valid_days: int | None = None,
     default_valid_days: int | None = None,
@@ -71,26 +71,8 @@ async def create_certificate_authority(
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
-    """Create a certificate authority.
-
-    Args:
-        workspace: Workspace name. Required parameter
-        name: Name of the certificate authority (e.g. 'AlpacaX Root CA')
-        domain: Root domain of the CA, must be unique (e.g. 'alpacax.com')
-        organization: Organization name that this CA belongs to
-        server_id: Server (agent) UUID that runs this CA
-        owner: Owner user UUID
-        root_valid_days: Validity of the root certificate in days (optional)
-        default_valid_days: Default validity for child certificates in days (optional)
-        max_valid_days: Maximum validity users can request in days (optional)
-        key_algorithm: Key algorithm, 'rsa' or 'ecdsa' (optional)
-        key_size: Key size in bits, 2048/4096 for RSA or 256/384 for ECDSA (optional)
-        install: Install the CA automatically on the agent (optional)
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        Certificate authority creation response
-    """
+    """Create a CA; domain must be unique and server_id is the agent that
+    hosts it."""
     token = kwargs.get('token')
 
     ca_data: dict[str, object] = {
@@ -168,19 +150,8 @@ async def update_certificate_authority(
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
-    """Update a certificate authority (partial update).
-
-    Args:
-        ca_id: Certificate authority ID
-        workspace: Workspace name. Required parameter
-        default_valid_days: New default validity for child certificates in days (optional)
-        max_valid_days: New maximum validity users can request in days (optional)
-        owner: New owner user UUID (optional)
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        Updated certificate authority response
-    """
+    """Partially update a CA (default_valid_days, max_valid_days, owner);
+    errors when no field is given."""
     token = kwargs.get('token')
 
     patch_data: dict[str, object] = exclude_none(
@@ -228,16 +199,7 @@ async def delete_certificate_authority(
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
-    """Delete a certificate authority that has never received a sign request.
-
-    Args:
-        ca_id: Certificate authority ID to delete
-        workspace: Workspace name. Required parameter
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        Deletion confirmation response
-    """
+    """Delete a certificate authority that has never received a sign request."""
     token = kwargs.get('token')
 
     return await http_call_response(
@@ -307,18 +269,7 @@ async def create_sign_request(
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
-    """Create a certificate signing request.
-
-    Args:
-        workspace: Workspace name. Required parameter
-        domain_list: Subject Alternative Names - DNS entries (optional)
-        ip_list: Subject Alternative Names - IP addresses (optional)
-        valid_days: Certificate validity in days (optional)
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        Certificate signing request creation response
-    """
+    """Create a CSR; at least one of domain_list or ip_list is required."""
     token = kwargs.get('token')
 
     domains = domain_list or []
@@ -390,16 +341,7 @@ async def delete_sign_request(
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
-    """Cancel a certificate signing request.
-
-    Args:
-        csr_id: Certificate signing request ID to cancel
-        workspace: Workspace name. Required parameter
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        Cancellation confirmation response
-    """
+    """Cancel a certificate signing request."""
     token = kwargs.get('token')
 
     return await http_call_response(
@@ -424,16 +366,7 @@ async def approve_sign_request(
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
-    """Approve a certificate signing request.
-
-    Args:
-        csr_id: Certificate signing request ID to approve
-        workspace: Workspace name. Required parameter
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        Approval response
-    """
+    """Approve a certificate signing request."""
     token = kwargs.get('token')
 
     return await http_call_response(
@@ -459,16 +392,7 @@ async def deny_sign_request(
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
-    """Deny a certificate signing request.
-
-    Args:
-        csr_id: Certificate signing request ID to deny
-        workspace: Workspace name. Required parameter
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        Denial response
-    """
+    """Deny a certificate signing request."""
     token = kwargs.get('token')
 
     return await http_call_response(
@@ -496,16 +420,7 @@ async def retry_sign_request(
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
-    """Retry a certificate signing request stuck in the signing state.
-
-    Args:
-        csr_id: Certificate signing request ID to retry
-        workspace: Workspace name. Required parameter
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        Retry response
-    """
+    """Retry a certificate signing request stuck in the signing state."""
     token = kwargs.get('token')
 
     return await http_call_response(
@@ -616,22 +531,8 @@ async def revoke_certificate(
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
-    """Create a certificate revocation request.
-
-    If the caller is the CA owner or an admin the request is auto-approved and
-    the certificate is revoked immediately; otherwise it waits for approval.
-
-    Args:
-        certificate_id: Certificate ID to revoke
-        workspace: Workspace name. Required parameter
-        reason: RFC 5280 revocation reason code (optional, default 0=unspecified).
-            One of 0,1,2,3,4,5,6,9,10
-        requested_reason: Free-text explanation for the revocation (optional)
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        Certificate revocation request response
-    """
+    """Create a revocation request; the CA owner or an admin gets it
+    auto-approved and revoked at once, anyone else waits for approval."""
     token = kwargs.get('token')
 
     data: dict[str, object] = {
@@ -739,16 +640,7 @@ async def approve_revoke_request(
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
-    """Approve a certificate revocation request.
-
-    Args:
-        revoke_id: Revocation request ID to approve
-        workspace: Workspace name. Required parameter
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        Approval response
-    """
+    """Approve a certificate revocation request."""
     token = kwargs.get('token')
 
     return await http_call_response(
@@ -774,16 +666,7 @@ async def deny_revoke_request(
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
-    """Deny a certificate revocation request.
-
-    Args:
-        revoke_id: Revocation request ID to deny
-        workspace: Workspace name. Required parameter
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        Denial response
-    """
+    """Deny a certificate revocation request."""
     token = kwargs.get('token')
 
     return await http_call_response(
@@ -811,16 +694,7 @@ async def retry_revoke_request(
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
-    """Retry a certificate revocation request stuck in the revoking state.
-
-    Args:
-        revoke_id: Revocation request ID to retry
-        workspace: Workspace name. Required parameter
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        Retry response
-    """
+    """Retry a certificate revocation request stuck in the revoking state."""
     token = kwargs.get('token')
 
     return await http_call_response(
@@ -846,16 +720,7 @@ async def cancel_revoke_request(
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
-    """Cancel a pending certificate revocation request.
-
-    Args:
-        revoke_id: Revocation request ID to cancel
-        workspace: Workspace name. Required parameter
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        Cancellation response
-    """
+    """Cancel a pending certificate revocation request."""
     token = kwargs.get('token')
 
     return await http_call_response(

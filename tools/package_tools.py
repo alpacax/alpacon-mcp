@@ -5,7 +5,7 @@ from utils.common import build_list_params, exclude_none
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, READ_ONLY
-from utils.types import ToolResponse
+from utils.types import ServerId, ToolResponse
 
 # ===============================
 # SYSTEM PACKAGE TOOLS
@@ -18,7 +18,7 @@ from utils.types import ToolResponse
     meta={'anthropic/searchHint': 'system package entries installed server'},
 )
 async def list_system_package_entries(
-    server_id: str,
+    server_id: ServerId,
     workspace: str,
     region: str = '',
     page: int | None = None,
@@ -59,25 +59,14 @@ async def list_system_package_entries(
     meta={'anthropic/searchHint': 'system package install add server'},
 )
 async def install_system_package(
-    server_id: str,
+    server_id: ServerId,
     package_name: str,
     workspace: str,
     version: str | None = None,
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
-    """Install a system package on a server.
-
-    Args:
-        server_id: Server ID to install the package on
-        package_name: Name of the package to install
-        workspace: Workspace name. Required parameter
-        version: Specific version to install (optional)
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        Package installation response
-    """
+    """Queue an install on the server; it runs asynchronously on the host."""
     token = kwargs.get('token')
 
     package_data: dict[str, object] = {
@@ -106,16 +95,7 @@ async def install_system_package(
 async def remove_system_package(
     entry_id: str, workspace: str, region: str = '', **kwargs: str
 ) -> ToolResponse:
-    """Remove a system package entry.
-
-    Args:
-        entry_id: Package entry ID to remove
-        workspace: Workspace name. Required parameter
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        Package removal response
-    """
+    """Queue removal of an entry; get `entry_id` from list_system_package_entries."""
     token = kwargs.get('token')
 
     return await http_call_response(
@@ -140,7 +120,7 @@ async def remove_system_package(
     meta={'anthropic/searchHint': 'python package pip installed server'},
 )
 async def list_python_packages(
-    server_id: str,
+    server_id: ServerId,
     workspace: str,
     region: str = '',
     page: int | None = None,
@@ -181,25 +161,14 @@ async def list_python_packages(
     meta={'anthropic/searchHint': 'python package pip install add'},
 )
 async def install_python_package(
-    server_id: str,
+    server_id: ServerId,
     package_name: str,
     workspace: str,
     version: str | None = None,
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
-    """Install a Python package on a server.
-
-    Args:
-        server_id: Server ID to install the package on
-        package_name: Name of the Python package to install
-        workspace: Workspace name. Required parameter
-        version: Specific version to install (optional)
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        Python package installation response
-    """
+    """Queue an install on the server; it runs asynchronously on the host."""
     token = kwargs.get('token')
 
     package_data: dict[str, object] = {
@@ -228,16 +197,7 @@ async def install_python_package(
 async def remove_python_package(
     entry_id: str, workspace: str, region: str = '', **kwargs: str
 ) -> ToolResponse:
-    """Remove a Python package entry.
-
-    Args:
-        entry_id: Python package entry ID to remove
-        workspace: Workspace name. Required parameter
-        region: Region (ap1, us1). Auto-detected if not provided
-
-    Returns:
-        Python package removal response
-    """
+    """Queue removal of an entry; get `entry_id` from list_python_packages."""
     token = kwargs.get('token')
 
     return await http_call_response(

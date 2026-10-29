@@ -1,7 +1,5 @@
 """Shared fixtures for all tests.
-
-Provides autouse fixtures that prevent tests from hitting the real
-TokenManager (which requires ~/.alpacon-mcp/token.json to exist).
+Autouse fixtures keep tests off the real TokenManager and its token.json.
 """
 
 from collections.abc import AsyncIterator
@@ -14,6 +12,7 @@ import pytest
 
 from server import create_streamable_http_app, mcp
 from utils import request_signal
+from utils.http_client import AlpaconHTTPClient
 
 # The AlpaconHTTPClient methods a tool calls.
 HTTP_VERBS = ('get', 'post', 'put', 'patch', 'delete')
@@ -115,14 +114,8 @@ def mock_token_manager():
 
 @pytest.fixture(autouse=True)
 def mock_region_auto_detect():
-    """Prevent _resolve_region from accessing real token.json in all tests.
-
-    The with_token_validation decorator calls get_token_manager() when region
-    is empty to auto-detect it. Without this fixture, tests that omit region
-    fail in CI where no token.json exists.
-
-    Tests that need custom get_token_manager behavior (e.g. TestRegionAutoDetection)
-    apply their own @patch which takes precedence over this fixture.
+    """Keep _resolve_region_local off the real token.json when a test omits region.
+    A test needing its own get_token_manager behavior patches it over this one.
     """
     mock_tm = MagicMock()
     mock_tm.find_region_for_workspace.return_value = 'ap1'
@@ -141,3 +134,19 @@ def mock_region_auto_detect():
         patch('tools.workspace_tools.get_token_manager', return_value=mock_tm),
     ):
         yield mock_tm
+
+
+@pytest.fixture
+async def make_client():
+    """Build AlpaconHTTPClients over a given transport, with no retry delay."""
+    clients: list[AlpaconHTTPClient] = []
+
+    def build(transport: httpx.AsyncBaseTransport) -> AlpaconHTTPClient:
+        client = AlpaconHTTPClient(transport=transport)
+        client.retry_delay = 0
+        clients.append(client)
+        return client
+
+    yield build
+    for client in clients:
+        await client.close()

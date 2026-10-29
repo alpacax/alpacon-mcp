@@ -1,16 +1,5 @@
-"""Subscription lifecycle over the composed, authenticated app.
-
-Two things shape this harness. httpx's ASGITransport waits for the response to
-finish, which never happens for a subscription, so these tests talk over TCP to
-a real uvicorn. And the app under test is the one the deployment serves: OAuth
-routes registered, wrapped in UpstreamAuthErrorMiddleware, requests carrying a
-bearer token. Only the token verifier is mocked. `tests/subscription_harness.py`
-builds it in a child process, because remote mode is decided when `server` is
-imported.
-
-At the 2026-07-28 revision the transport rejects a POST whose `Mcp-Method`
-header is absent or disagrees with the body (-32020), so every request here
-carries it.
+"""Subscription lifecycle against a real uvicorn over TCP (ASGITransport waits for end).
+The app runs in a child process; every request carries Mcp-Method (-32020 else).
 """
 
 import asyncio
@@ -115,10 +104,8 @@ def _envelope(method: str, params: JsonObject, request_id: int) -> JsonObject:
 
 
 async def _next_sse_payload(lines: AsyncIterator[str]) -> JsonObject:
-    """Read the next `data:` frame off an open subscription stream.
-
-    The caller keeps the iterator: dropping httpx's line iterator closes the
-    response, which would end the very subscription these tests watch.
+    """Read the next `data:` frame off an open subscription stream. The caller keeps the
+    iterator: dropping it closes the response and ends the subscription.
     """
 
     async def read() -> JsonObject:
@@ -302,9 +289,9 @@ async def test_a_signalled_request_still_becomes_401_under_the_composed_app(base
 
 @pytest.mark.asyncio
 async def test_a_signalled_request_becomes_401_on_the_2025_stateless_path(base_url):
-    """Given a 2025-era handshake version routed to the stateless path, When a
-    tool signals an upstream 401 without a prior initialize, Then the
-    middleware still answers 401 rather than the tool's own error."""
+    """Given a 2025-era handshake on the stateless path, When a tool signals an upstream
+    401 with no prior initialize, Then the middleware answers 401, not the tool's error.
+    """
     headers = {
         'Content-Type': 'application/json',
         'Accept': 'application/json, text/event-stream',

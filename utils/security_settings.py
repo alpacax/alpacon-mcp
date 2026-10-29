@@ -1,9 +1,5 @@
-"""Workspace security settings cache for MFA pre-check.
-
-Fetches and caches per-workspace security settings from the Alpacon
-account service. Used in remote (streamable-http) mode to proactively
-determine whether MFA is required before making API calls.
-"""
+"""Cache per-workspace security settings from the account service for the MFA pre-check
+in remote mode."""
 
 import asyncio
 import hashlib
@@ -14,6 +10,7 @@ from datetime import UTC, datetime
 
 import httpx
 
+from utils.auth0_env import get_auth0_env
 from utils.logger import escape_for_log, get_logger
 from utils.types import JsonValue
 
@@ -32,8 +29,6 @@ def _str_list(value: JsonValue) -> list[str] | None:
 
 
 class WorkspaceSecuritySettings:
-    """Parsed security settings for a single workspace."""
-
     def __init__(self, data: Mapping[str, JsonValue]) -> None:
         # A malformed field reads as its strictest value, never looser than meant.
         self.mfa_required = bool(data.get('mfa_required', False))
@@ -48,7 +43,6 @@ class WorkspaceSecuritySettings:
         self.allowed_mfa_methods = _str_list(data.get('allowed_mfa_methods', []))
 
     def is_action_mfa_required(self, action: str) -> bool:
-        """Check if a specific action requires MFA."""
         if not self.mfa_required:
             return False
         actions = self.mfa_required_actions
@@ -56,11 +50,8 @@ class WorkspaceSecuritySettings:
 
 
 class SecuritySettingsCache:
-    """In-memory cache for workspace security settings.
-
-    Fetches from the account service API and caches per-user (token hash)
-    with a configurable TTL.
-    """
+    """In-memory settings cache keyed by token hash, so one user's settings never serve
+    another."""
 
     def __init__(self, ttl: float = _CACHE_TTL) -> None:
         self._ttl = ttl
@@ -75,15 +66,10 @@ class SecuritySettingsCache:
 
     @staticmethod
     def _token_key(token: str) -> str:
-        """Derive a short hash key from a JWT for cache isolation."""
         return hashlib.sha256(token.encode()).hexdigest()[:16]
 
     def _prune_expired(self) -> None:
-        """Remove all expired entries across all tokens.
-
-        Called opportunistically from get_settings, at most once per TTL
-        period to avoid excessive iteration on every lookup.
-        """
+        """Drop expired entries; runs from get_settings at most once per TTL period."""
         now = time.time()
         if (now - self._last_prune) < self._ttl:
             return
@@ -102,7 +88,6 @@ class SecuritySettingsCache:
     def get_cached(
         self, token: str, workspace: str
     ) -> WorkspaceSecuritySettings | None:
-        """Return cached settings if still valid, None otherwise."""
         key = self._token_key(token)
         user_cache = self._cache.get(key)
         if not user_cache:
@@ -124,7 +109,6 @@ class SecuritySettingsCache:
     def _put_bulk(
         self, token: str, settings_by_workspace: dict[str, WorkspaceSecuritySettings]
     ) -> None:
-        """Store multiple workspace settings at once."""
         key = self._token_key(token)
         if key not in self._cache:
             self._cache[key] = {}
@@ -133,14 +117,8 @@ class SecuritySettingsCache:
             self._cache[key][workspace] = (settings, expiry)
 
     async def fetch_and_cache(self, token: str) -> dict[str, WorkspaceSecuritySettings]:
-        """Fetch security settings from account service and cache them.
-
-        Args:
-            token: JWT token for authentication
-
-        Returns:
-            Dict of workspace name -> settings
-        """
+        """Fetch and cache the token's workspace settings; returns {} when
+        ALPACON_ACCOUNT_URL is unset or the fetch fails."""
         account_url = os.getenv('ALPACON_ACCOUNT_URL', '').rstrip('/')
         if not account_url:
             if not hasattr(self, '_account_url_warned'):
@@ -184,14 +162,8 @@ class SecuritySettingsCache:
     async def get_settings(
         self, token: str, workspace: str
     ) -> WorkspaceSecuritySettings | None:
-        """Get settings for a workspace, fetching if not cached.
-
-        Uses per-token in-flight deduplication to prevent thundering herd
-        when multiple concurrent tool calls trigger a cache miss for the
-        same token.
-
-        Returns None if settings cannot be determined (fail-open).
-        """
+        """Settings for a workspace, fetched on a cache miss with concurrent fetches per
+        token shared; None when undeterminable (fail-open)."""
         self._prune_expired()
 
         cached = self.get_cached(token, workspace)
@@ -222,18 +194,12 @@ def check_mfa_completed(
     jwt_claims: Mapping[str, object],
     settings: WorkspaceSecuritySettings,
 ) -> bool:
-    """Check if JWT has valid (non-expired) MFA completion.
-
-    Mirrors alpacon-server's check_mfa_completed() logic.
-
-    Args:
-        jwt_claims: Decoded JWT claims
-        settings: Workspace security settings
-
-    Returns:
-        True if MFA is completed and within timeout, False otherwise
-    """
-    namespace = os.getenv('AUTH0_NAMESPACE', 'https://alpacon.io/').rstrip('/') + '/'
+    """True when a non-expired MFA completion in the JWT satisfies the settings; mirrors
+    alpacon-server's check_mfa_completed()."""
+    namespace = (
+        get_auth0_env('AUTH0_ALPACON_NAMESPACE', 'https://alpacon.io/').rstrip('/')
+        + '/'
+    )
     mfa_claim_key = f'{namespace}completed_mfa_methods'
     completed_mfa = jwt_claims.get(mfa_claim_key, {})
 
@@ -284,10 +250,7 @@ def check_mfa_completed(
 
 
 def get_action_for_tool(tool_name: str) -> str | None:
-    """Determine MFA action type from tool function name.
-
-    Returns 'webftp', 'command', or None.
-    """
+    """Return the MFA action type ('webftp' or 'command') for a tool name, or None."""
     if tool_name.startswith('webftp_'):
         return 'webftp'
     if tool_name in (

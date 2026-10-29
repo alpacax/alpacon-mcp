@@ -31,6 +31,21 @@ _ERR_UNEXPECTED = 'Unexpected Error'
 # demands, or the workspace's sign-in MFA the token lacks (a refresh keeps it lacking).
 _MFA_REAUTH_CODES = frozenset({'auth_mfa_required', 'auth_token_mfa_missing'})
 
+# A replay of these can repeat a side effect, and alpacon-server takes no idempotency key:
+# they are resent only after an error raised before the request reached the server.
+_NON_IDEMPOTENT_METHODS = frozenset({'POST', 'PATCH'})
+# Raised before the request reaches Alpacon.
+# LocalProtocolError is left out: h11 can raise it mid-body.
+_NEVER_SENT_ERRORS = (
+    httpx.ConnectError,
+    httpx.ConnectTimeout,
+    httpx.PoolTimeout,
+    httpx.ProxyError,
+    httpx.UnsupportedProtocol,
+)
+# 5xx codes alpacon-server answers while checking the credential, before any view runs.
+_REJECTED_BEFORE_VIEW_CODES = frozenset({'auth_verification_unavailable'})
+
 
 def _error_code_of(text: str) -> str | None:
     """The `code` of a JSON object error body; None for HTML, arrays or no code."""
@@ -50,15 +65,35 @@ def _error_body_for_log(response: httpx.Response) -> object:
         return redact_for_log(response.text)
 
 
-class AlpaconHTTPClient:
-    """Async HTTP client for Alpacon API with connection pooling.
+def _may_act_twice(
+    idempotent: bool, error: httpx.HTTPError, code: str | None = None
+) -> bool:
+    """Whether resending after `error` could repeat what the server already did;
+    ``code`` is the 5xx body's error code, already parsed by the caller."""
+    if idempotent or isinstance(error, _NEVER_SENT_ERRORS):
+        return False
+    if isinstance(error, httpx.HTTPStatusError):
+        return code not in _REJECTED_BEFORE_VIEW_CODES
+    return True
 
-    Responses are never cached. Every endpoint worth caching here—the server
-    list, process info, IAM users and groups—comes back filtered by the calling
-    token's permissions, and no in-process scheme can see a grant revoked
-    elsewhere (the web console, Slack, another MCP process), so a cached read
-    would keep answering with access the caller has already lost.
-    """
+
+def _outcome_unknown(
+    method: str, reason: str, **fields: JsonValue
+) -> dict[str, JsonValue]:
+    """Error dict for a POST or PATCH that may have reached the server."""
+    return {
+        **fields,
+        'message': (
+            f'{reason}. The {method} was not resent: the server may already '
+            'have acted on it.'
+        ),
+        'outcome_unknown': True,
+    }
+
+
+class AlpaconHTTPClient:
+    """Pooled async client for the Alpacon API. It never caches a response: reads are
+    filtered by the token's permissions, so a hit could outlive a revoked grant."""
 
     def __init__(self, transport: httpx.AsyncBaseTransport | None = None):
         """``transport`` replaces the network under the pooled client."""
@@ -80,7 +115,6 @@ class AlpaconHTTPClient:
         )
 
     async def __aenter__(self) -> Self:
-        """Async context manager entry."""
         return self
 
     async def __aexit__(
@@ -89,17 +123,12 @@ class AlpaconHTTPClient:
         exc_val: BaseException | None,
         exc_tb: TracebackType | None,
     ) -> None:
-        """Async context manager exit - close client."""
         await self._close_client()
 
     # __del__ removed: lifespan handles cleanup via close()
 
     async def close(self) -> None:
-        """Close the HTTP client.
-
-        This is the primary public method for cleanup. Safe to call
-        multiple times (idempotent).
-        """
+        """Close the pool; safe to call more than once."""
         async with self._client_lock:
             if self._client and not self._client.is_closed:
                 await self._client.aclose()
@@ -107,31 +136,15 @@ class AlpaconHTTPClient:
         logger.info('HTTP client closed')
 
     async def _close_client(self) -> None:
-        """Close the shared client. Alias for close() for backward compatibility."""
         await self.close()
 
     @property
     def pool_active(self) -> bool:
-        """Whether the HTTP connection pool has an active client."""
         return self._client is not None and not self._client.is_closed
 
     def get_base_url(self, region: str, workspace: str) -> str:
-        """Get base URL for API calls.
-
-        Prefers an explicitly configured base URL (token.json object form or the
-        ``ALPACON_MCP_<REGION>_<WORKSPACE>_URL`` env var) so the host is a pinned,
-        persisted value rather than one re-derived from the workspace label on
-        every call. This keeps a workspace addressable across a URL slug change
-        (ADR 0027), where a freed slug can later be reused by another workspace.
-        Falls back to the default Alpacon Cloud host derivation.
-
-        Args:
-            region: Region (ap1, us1)
-            workspace: Workspace name
-
-        Returns:
-            Base URL for API calls
-        """
+        """Base URL: a configured override (token.json or
+        ALPACON_MCP_<REGION>_<WORKSPACE>_URL), else derived."""
         # Local import keeps the singleton lazy and lets tests patch
         # get_token_manager; the isinstance guard tolerates a mocked manager
         # whose override method returns a non-string sentinel.
@@ -156,23 +169,8 @@ class AlpaconHTTPClient:
         params: QueryParams | None = None,
         timeout: float | None = None,
     ) -> JsonValue:
-        """Execute HTTP request with retry logic.
-
-        Args:
-            method: HTTP method (GET, POST, PUT, DELETE)
-            url: Full URL for the request
-            token: API token for authentication
-            headers: Additional headers
-            json_data: JSON data for request body
-            params: Query parameters
-            timeout: Request timeout in seconds
-
-        Returns:
-            The parsed JSON body (object, list, or scalar), or an error dict on failure
-
-        Raises:
-            httpx.HTTPError: If request fails after retries
-        """
+        """Send with retry, but never resend a POST or PATCH that may have reached the
+        server. Raises UpstreamAuthError on a 401 in remote JWT mode."""
         # Prepare headers
         request_headers = {
             'Content-Type': 'application/json',
@@ -193,13 +191,13 @@ class AlpaconHTTPClient:
 
         # Set timeout
         request_timeout = httpx.Timeout(timeout or 10.0, connect=5.0)
+        idempotent = method.upper() not in _NON_IDEMPOTENT_METHODS
 
         # Retry logic
         retry_count = 0
         retry_delay = self.retry_delay
 
         async def backoff(reason: str) -> bool:
-            """False once retries are exhausted."""
             nonlocal retry_count, retry_delay
             retry_count += 1
             if retry_count >= self.max_retries:
@@ -278,6 +276,19 @@ class AlpaconHTTPClient:
                     logger.error('Response body: %s', _error_body_for_log(e.response))
 
                 if e.response.status_code >= HTTPStatus.INTERNAL_SERVER_ERROR:
+                    code = _error_code_of(e.response.text)
+                    code_field: dict[str, JsonValue] = (
+                        {'error_code': code} if code else {}
+                    )
+                    if _may_act_twice(idempotent, e, code):  # already logged above
+                        return _outcome_unknown(
+                            method,
+                            f'Server error {e.response.status_code}',
+                            error=_ERR_HTTP,
+                            status_code=e.response.status_code,
+                            **code_field,
+                        )
+
                     # Server error - retry
                     if await backoff('Server error'):
                         continue
@@ -286,10 +297,9 @@ class AlpaconHTTPClient:
                         'error': _ERR_MAX_RETRIES,
                         'status_code': e.response.status_code,
                         'message': f'Server error after {self.max_retries} attempts',
+                        **code_field,
                     }
                     logger.error('Server error after all retries: %s', error_response)
-                    if code := _error_code_of(e.response.text):
-                        error_response['error_code'] = code
                     return error_response
                 else:
                     # Client error - don't retry
@@ -308,32 +318,43 @@ class AlpaconHTTPClient:
                     )
                     return error_response
 
-            except httpx.TimeoutException:
-                # Timeout - retry
-                if await backoff('Request timeout'):
-                    continue
-
-                error_response = {
-                    'error': _ERR_TIMEOUT,
-                    'message': f'Request timed out after {self.max_retries} retries',
-                }
-                logger.error('Request timeout after all retries: %s', error_response)
-                return error_response
-
             except httpx.RequestError as e:
-                # Network error - retry
-                if await backoff(f'Network error: {e}'):
+                timed_out = isinstance(e, httpx.TimeoutException)
+                reason = 'Request timed out' if timed_out else f'Network error: {e}'
+                if _may_act_twice(idempotent, e):
+                    logger.error('%s: %s, not resending', method, reason)
+                    return _outcome_unknown(
+                        method,
+                        reason,
+                        error=_ERR_TIMEOUT if timed_out else _ERR_REQUEST,
+                    )
+
+                # Timeout or network error - retry
+                if await backoff(reason):
                     continue
 
-                error_response = {'error': _ERR_REQUEST, 'message': str(e)}
-                logger.error('Network error after all retries: %s', error_response)
+                if timed_out:
+                    error_response = {
+                        'error': _ERR_TIMEOUT,
+                        'message': f'Request timed out after {self.max_retries} retries',
+                    }
+                    logger.error(
+                        'Request timeout after all retries: %s', error_response
+                    )
+                else:
+                    error_response = {'error': _ERR_REQUEST, 'message': str(e)}
+                    logger.error('Network error after all retries: %s', error_response)
                 return error_response
 
             except Exception as e:
                 # Unexpected error - don't retry
-                error_response = {'error': _ERR_UNEXPECTED, 'message': str(e)}
-                logger.exception('Unexpected error: %s', error_response)
-                return error_response
+                logger.exception('Unexpected error: %s', e)
+                # It may have run: a 2xx whose body failed to parse lands here.
+                if not idempotent:
+                    return _outcome_unknown(
+                        method, f'Unexpected error: {e}', error=_ERR_UNEXPECTED
+                    )
+                return {'error': _ERR_UNEXPECTED, 'message': str(e)}
 
         # Every branch above returns, so this is only reached when max_retries <= 0
         error_response = {
@@ -351,18 +372,7 @@ class AlpaconHTTPClient:
         token: str | None = None,
         params: QueryParams | None = None,
     ) -> JsonValue:
-        """Execute GET request.
-
-        Args:
-            region: Region (ap1, us1)
-            workspace: Workspace name
-            endpoint: API endpoint path
-            token: API token
-            params: Query parameters
-
-        Returns:
-            The parsed JSON body, or an error dict on failure
-        """
+        """GET; returns the parsed JSON body or an error dict."""
         base_url = self.get_base_url(region, workspace)
         full_url = urljoin(base_url, endpoint)
 
@@ -379,19 +389,7 @@ class AlpaconHTTPClient:
         data: RequestBody | None = None,
         params: QueryParams | None = None,
     ) -> JsonValue:
-        """Execute POST request.
-
-        Args:
-            region: Region (ap1, us1)
-            workspace: Workspace name
-            endpoint: API endpoint path
-            token: API token
-            data: Request body data
-            params: Query parameters
-
-        Returns:
-            The parsed JSON body, or an error dict on failure
-        """
+        """POST; returns the parsed JSON body or an error dict."""
         base_url = self.get_base_url(region, workspace)
         full_url = urljoin(base_url, endpoint)
 
@@ -407,18 +405,7 @@ class AlpaconHTTPClient:
         token: str | None = None,
         data: RequestBody | None = None,
     ) -> JsonValue:
-        """Execute PUT request.
-
-        Args:
-            region: Region (ap1, us1)
-            workspace: Workspace name
-            endpoint: API endpoint path
-            token: API token
-            data: Request body data
-
-        Returns:
-            The parsed JSON body, or an error dict on failure
-        """
+        """PUT; returns the parsed JSON body or an error dict."""
         base_url = self.get_base_url(region, workspace)
         full_url = urljoin(base_url, endpoint)
 
@@ -434,18 +421,7 @@ class AlpaconHTTPClient:
         token: str | None = None,
         data: RequestBody | None = None,
     ) -> JsonValue:
-        """Execute PATCH request.
-
-        Args:
-            region: Region (ap1, us1)
-            workspace: Workspace name
-            endpoint: API endpoint path
-            token: API token
-            data: Request body data
-
-        Returns:
-            The parsed JSON body, or an error dict on failure
-        """
+        """PATCH; returns the parsed JSON body or an error dict."""
         base_url = self.get_base_url(region, workspace)
         full_url = urljoin(base_url, endpoint)
 
@@ -461,18 +437,7 @@ class AlpaconHTTPClient:
         token: str | None = None,
         params: QueryParams | None = None,
     ) -> JsonValue:
-        """Execute DELETE request.
-
-        Args:
-            region: Region (ap1, us1)
-            workspace: Workspace name
-            endpoint: API endpoint path
-            token: API token
-            params: Query parameters
-
-        Returns:
-            The parsed JSON body, or an error dict on failure
-        """
+        """DELETE; returns the parsed JSON body or an error dict."""
         base_url = self.get_base_url(region, workspace)
         full_url = urljoin(base_url, endpoint)
 
@@ -481,7 +446,6 @@ class AlpaconHTTPClient:
         )
 
     async def _get_client(self) -> httpx.AsyncClient:
-        """Get or create shared async client for connection pooling."""
         async with self._client_lock:
             if self._client is None or self._client.is_closed:
                 self._client = httpx.AsyncClient(
@@ -498,7 +462,6 @@ class AlpaconHTTPClient:
 
     @staticmethod
     def _is_jwt(token: str) -> bool:
-        """Check if a token is a JWT (header.payload.signature format)."""
         parts = token.split('.')
         return len(parts) == 3 and all(parts)
 
@@ -506,17 +469,8 @@ class AlpaconHTTPClient:
     def _handle_upstream_401(
         exc: httpx.HTTPStatusError, token: str | None = None
     ) -> dict[str, JsonValue]:
-        """Handle upstream API 401 responses.
-
-        Detects MFA-required errors from the Alpacon API response body and
-        records them on the in-flight request, which the ASGI middleware reads
-        after the app returns. SDK 2.x converts a handler exception to a wire
-        response before any middleware sees it, so UpstreamAuthError only cuts
-        this call short—it does not carry the signal across layers.
-
-        In stdio/SSE mode (auth not enabled), only returns an error dict without
-        recording or raising.
-        """
+        """Map an upstream 401 to an MFA-aware error dict. In remote mode with a JWT it
+        records the signal for the middleware and raises UpstreamAuthError instead."""
         mfa_required = False
         source = ''
 

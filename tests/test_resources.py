@@ -8,19 +8,19 @@ from mcp.shared.uri_template import UriTemplate
 
 import tools.resources as res
 from server import ALL_TOOL_MODULES, ALWAYS_ON_MODULES, mcp
-from tests.conftest import http_client_fixture
+from tests.conftest import http_client_fixture, tool_descriptions
 
 mock_metrics_http_client = http_client_fixture('tools.metrics_tools')
 
 
 @pytest.fixture(scope='module', autouse=True)
 def _register_all_resources():
-    """Resources are no longer registered at import time."""
+    """Register every resource once for this module."""
     res.register_resources(set(ALL_TOOL_MODULES) | ALWAYS_ON_MODULES)
 
 
 async def _registered_uris():
-    """All registered alpacon:// URIs — templated (with {params}) and static."""
+    """All registered alpacon:// URIs: templated (with {params}) and static."""
     templates = {t.uri_template for t in await mcp.list_resource_templates()}
     static = {str(r.uri) for r in await mcp.list_resources()}
     return templates | static
@@ -93,9 +93,73 @@ class TestResourceRegistration:
         assert len(table_uris) == len(res.RESOURCES)
 
     @pytest.mark.asyncio
+    async def test_every_resource_publishes_its_tool_description(self):
+        """A resource reads the text its tool publishes in tools/list, never the
+        tool's docstring, so the two cannot drift apart."""
+        tools = await tool_descriptions()
+        published = {
+            t.uri_template: t.description for t in await mcp.list_resource_templates()
+        }
+        published |= {str(r.uri): r.description for r in await mcp.list_resources()}
+
+        drifted = []
+        for name, ref, uri, extra in res.REGISTRATIONS:
+            want = tools[ref.split('.', 1)[1]]
+            if extra:
+                pinned = ', '.join(f'{k}={v!r}' for k, v in extra.items())
+                want = f'{want}\n\nThis resource pins: {pinned}.'
+            if published[uri] != want:
+                drifted.append(name)
+
+        assert not drifted, f'drifted from their tool description: {drifted}'
+
+    @pytest.mark.asyncio
+    async def test_resource_over_a_non_tool_is_described_by_its_name(self):
+        """A callable no tool registration knows falls back to the resource name,
+        not to its docstring."""
+
+        async def untracked_fn(region, workspace):
+            """Developer-only docstring."""
+            return {'ok': True}
+
+        res.register_resource(
+            'alpacon://test-untracked/{region}/{workspace}',
+            untracked_fn,
+            'untracked_probe',
+        )
+
+        template = next(
+            t
+            for t in await mcp.list_resource_templates()
+            if t.uri_template == 'alpacon://test-untracked/{region}/{workspace}'
+        )
+        assert template.description == 'untracked_probe'
+
+    @pytest.mark.asyncio
+    async def test_resource_over_a_namesake_of_a_tool_is_described_by_its_name(self):
+        """A callable that only shares a registered tool's name does not borrow
+        that tool's description."""
+
+        async def list_servers(region, workspace):
+            return {'ok': True}
+
+        res.register_resource(
+            'alpacon://test-namesake/{region}/{workspace}',
+            list_servers,
+            'namesake_probe',
+        )
+
+        template = next(
+            t
+            for t in await mcp.list_resource_templates()
+            if t.uri_template == 'alpacon://test-namesake/{region}/{workspace}'
+        )
+        assert template.description == 'namesake_probe'
+
+    @pytest.mark.asyncio
     async def test_filtered_resource_describes_its_pin(self):
         """A resource registered with extra kwargs must surface the pinned
-        filter in its description, not just inherit the tool docstring."""
+        filter in its description, not just inherit the tool description."""
         active = next(
             t
             for t in await mcp.list_resource_templates()
@@ -106,9 +170,9 @@ class TestResourceRegistration:
 
     @pytest.mark.asyncio
     async def test_metrics_latest_stale_registered_and_describes_its_pin(self):
-        """alpacon://.../latest/stale is registered separately from the bare
-        .../latest resource, and its description surfaces the state='stale'
-        pin rather than just inheriting list_latest_metrics's own docstring."""
+        """alpacon://.../latest/stale is registered apart from .../latest, and its
+        description names the state='stale' pin instead of inheriting the tool's.
+        """
         uris = await _registered_uris()
         assert 'alpacon://metrics/{region}/{workspace}/latest' in uris
         assert 'alpacon://metrics/{region}/{workspace}/latest/stale' in uris
@@ -140,13 +204,9 @@ class TestResourceRegistration:
         )
 
     def test_wrapper_named_after_resource(self):
-        """The exec'd wrapper must adopt the resource name and this module's
-        identity, not stay '_wrapper' with a '<string>' traceback frame, so
-        stack traces and name-based diagnostics stay legible.
-
-        Built directly rather than read back out of the SDK's resource manager:
-        the published ResourceTemplate does not carry the callable, and the name
-        is ours to get right, not the SDK's to store."""
+        """The exec'd wrapper must adopt the resource name and this module, not
+        '_wrapper'. Built directly: the SDK's ResourceTemplate keeps no callable.
+        """
 
         async def fake_fn(region, workspace):
             return {'ok': True}
@@ -162,7 +222,7 @@ class TestResourceRegistration:
 
     def test_uri_params_match_function_signatures(self):
         """Every URI {param} and extra kwarg must be a real parameter of its
-        backing function — a typo breaks at read time, not import; catch it here."""
+        backing function: a typo breaks at read time, not import; catch it here."""
         for name, ref, uri, extra in res.REGISTRATIONS:
             fn = res._resolve(ref)
             wanted = set(re.findall(r'\{(\w+)\}', uri)) | set(extra or {})
@@ -184,10 +244,9 @@ class TestResourceRegistration:
 
     @pytest.mark.asyncio
     async def test_no_resource_is_shadowed(self):
-        """Every registered template, filled with concrete values, must resolve to
-        its own handler — a general guard so a future literal/{id} sibling pair
-        can't silently shadow one another. Subsumes the specific /active/, /scopes/,
-        etc. cases without hard-coding them."""
+        """Every registered template, filled with concrete values, must resolve to its
+        own handler, so a future literal/{id} sibling pair cannot shadow one another.
+        """
         templates = await mcp.list_resource_templates()
         statics = await mcp.list_resources()
 

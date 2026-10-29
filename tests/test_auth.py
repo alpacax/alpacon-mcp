@@ -1,9 +1,4 @@
-"""
-Unit tests for Auth0 JWT verification.
-
-Tests Auth0TokenVerifier including JWKS fetching, signing key selection,
-and token verification (valid, expired, invalid kid, audience mismatch).
-"""
+"""Auth0 JWT verification: JWKS fetch, signing-key selection, expiry, kid, and audience."""
 
 import asyncio
 import logging
@@ -30,8 +25,8 @@ from utils.auth import (
 )
 
 AUTH_ENV = {
-    'AUTH0_DOMAIN': 'test.us.auth0.com',
-    'AUTH0_AUDIENCE': 'https://alpacon.io/access/',
+    'AUTH0_ALPACON_DOMAIN': 'test.us.auth0.com',
+    'AUTH0_ALPACON_USER_AUDIENCE': 'https://alpacon.io/access/',
 }
 
 
@@ -107,8 +102,6 @@ def _reset_jwks_cache():
 
 
 class TestGetSigningKey:
-    """Tests for _get_signing_key function."""
-
     def test_returns_key_for_matching_kid(self, rsa_keypair, jwks_response):
         token = _make_token(rsa_keypair, kid='test-kid-1')
         key = _get_signing_key(jwks_response, token)
@@ -141,8 +134,6 @@ class TestGetSigningKey:
 
 
 class TestDecodeJwt:
-    """Tests for decode_jwt function."""
-
     def test_decodes_valid_token(self, rsa_keypair, jwks_response):
         token = _make_token(rsa_keypair)
         public_key = _get_signing_key(jwks_response, token)
@@ -190,8 +181,6 @@ class TestDecodeJwt:
 
 
 class TestExtractWorkspaces:
-    """Tests for extract_workspaces function."""
-
     def test_extracts_workspaces(self):
         claims = {
             'https://alpacon.io/workspaces': [
@@ -287,8 +276,6 @@ class TestExtractWorkspaces:
 
 
 class TestMatchWorkspace:
-    """Tests for match_workspace function."""
-
     def test_matches_valid_workspace(self):
         workspaces: list[WorkspaceClaim] = [{'schema_name': 'prod', 'region': 'ap1'}]
         assert match_workspace(workspaces, 'ap1', 'prod') is True
@@ -303,8 +290,6 @@ class TestMatchWorkspace:
 
 
 class TestAuth0TokenVerifier:
-    """Tests for Auth0TokenVerifier.verify_token."""
-
     @pytest.mark.asyncio
     async def test_verify_valid_token(self, rsa_keypair, jwks_response):
         mock_response = MagicMock()
@@ -443,8 +428,6 @@ class TestAuth0TokenVerifier:
 
 
 class TestJwksCaching:
-    """Tests for JWKS caching behavior."""
-
     @pytest.mark.asyncio
     async def test_caches_jwks_response(self, jwks_response):
         mock_response = MagicMock()

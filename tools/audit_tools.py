@@ -6,7 +6,7 @@ from utils.cursor_pagination import CURSOR_WALK_DESCRIPTION, cursor_list_respons
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import READ_ONLY
-from utils.types import ToolResponse
+from utils.types import OptionalServerId, ToolResponse
 
 # ===============================
 # ACTIVITY LOG TOOLS
@@ -109,7 +109,7 @@ async def get_activity_log(
 )
 async def list_server_logs(
     workspace: str,
-    server_id: str | None = None,
+    server_id: OptionalServerId = None,
     region: str = '',
     cursor: str | None = None,
     page_size: int | None = None,
@@ -159,7 +159,7 @@ async def list_server_logs(
 )
 async def list_webftp_logs(
     workspace: str,
-    server_id: str | None = None,
+    server_id: OptionalServerId = None,
     region: str = '',
     cursor: str | None = None,
     page_size: int | None = None,
@@ -208,7 +208,7 @@ async def list_webftp_logs(
 )
 async def list_session_analyses(
     workspace: str,
-    server_id: str | None = None,
+    server_id: OptionalServerId = None,
     status: str | None = None,
     risk_score: str | None = None,
     region: str = '',

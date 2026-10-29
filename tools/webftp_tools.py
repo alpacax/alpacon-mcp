@@ -43,7 +43,13 @@ from utils.host_transfer import (
 )
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, READ_ONLY
-from utils.types import ToolErrorResponse, ToolResponse
+from utils.types import (
+    OptionalServerId,
+    ServerId,
+    ToolErrorResponse,
+    ToolResponse,
+    WorkSessionId,
+)
 from utils.webftp_shapes import (
     TRANSFER_REQUEST,
     TRANSFER_STATE,
@@ -129,11 +135,7 @@ async def _ensure_parent_dir(local_path: str) -> None:
 
 
 async def _save_stream(response: httpx.Response, local_path: str) -> int:
-    """Save streaming response body to a local file. Returns bytes written.
-
-    On any failure during the write loop (network error, OSError), the
-    partially-written file is removed so retries do not see stale data.
-    """
+    """Write the body to `local_path`, return bytes written; failure deletes it."""
     try:
         dest_file = await asyncio.to_thread(open, local_path, 'wb')
     except OSError as e:
@@ -378,15 +380,15 @@ async def _download_remote_mode(
 
 
 @mcp_tool_handler(
-    description='Create a new WebFTP file transfer session on a server. Returns session ID and connection details. Pass work_session_id to link this WebFTP session to a Work Session for audit. When to use: advanced session management. For simple file transfers, use webftp_upload_file or webftp_download_file directly. Related: webftp_sessions_list (view sessions), webftp_upload_file, webftp_download_file, work_session_create (create a Work Session).',
+    description='Create a new WebFTP file transfer session on a server. Returns session ID and connection details. When to use: advanced session management. For simple file transfers, use webftp_upload_file or webftp_download_file directly. Related: webftp_sessions_list (view sessions), webftp_upload_file, webftp_download_file, work_session_create (create a Work Session).',
     annotations=ADDITIVE,
     meta={'anthropic/searchHint': 'webftp session create file transfer'},
 )
 async def webftp_session_create(
-    server_id: str,
+    server_id: ServerId,
     workspace: str,
     username: str | None = None,
-    work_session_id: str | None = None,
+    work_session_id: WorkSessionId = None,
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
@@ -431,7 +433,7 @@ async def webftp_session_create(
     meta={'anthropic/searchHint': 'webftp sessions list active file transfer'},
 )
 async def webftp_sessions_list(
-    workspace: str, server_id: str | None = None, region: str = '', **kwargs: str
+    workspace: str, server_id: OptionalServerId = None, region: str = '', **kwargs: str
 ) -> ToolResponse:
     """Get list of WebFTP sessions."""
     token = kwargs.get('token')
@@ -451,17 +453,17 @@ async def webftp_sessions_list(
 
 
 @mcp_tool_handler(
-    description='Upload a local file to a remote server. Reads the file from a local absolute path, transfers it via S3 presigned URL, and places it at the specified remote path on the server. Pass work_session_id to link this upload to a Work Session for audit; the server enforces this for MCP OAuth and browser-based auth. In remote mode (ALPACON_MCP_AUTH_ENABLED=true) the MCP server cannot reach your local filesystem, so this returns error code remote_mode_unsupported; use webftp_upload_content instead. When to use: transferring a single file to a server. Related: webftp_bulk_upload (multiple files), webftp_download_file (download from server), webftp_uploads_list (check upload history), work_session_create (create a Work Session). Note: Both local and remote paths must be absolute.',
+    description='Upload a local file to a remote server. Reads the file from a local absolute path, transfers it via S3 presigned URL, and places it at the specified remote path on the server. In remote mode (ALPACON_MCP_AUTH_ENABLED=true) the MCP server cannot reach your local filesystem, so this returns error code remote_mode_unsupported; use webftp_upload_content instead. When to use: transferring a single file to a server. Related: webftp_bulk_upload (multiple files), webftp_download_file (download from server), webftp_uploads_list (check upload history), work_session_create (create a Work Session). Note: Both local and remote paths must be absolute.',
     annotations=ADDITIVE,
     meta={'anthropic/searchHint': 'file upload transfer scp sftp send server'},
 )
 async def webftp_upload_file(
-    server_id: str,
+    server_id: ServerId,
     local_file_path: str,
     remote_file_path: str,
     workspace: str,
     username: str | None = None,
-    work_session_id: str | None = None,
+    work_session_id: WorkSessionId = None,
     region: str = '',
     allow_overwrite: bool = True,
     **kwargs: str,
@@ -574,23 +576,19 @@ async def webftp_upload_file(
     meta={'anthropic/searchHint': 'file upload content base64 remote mode attach'},
 )
 async def webftp_upload_content(
-    server_id: str,
+    server_id: ServerId,
     file_content: str,
     remote_file_path: str,
     workspace: str,
     file_name: str | None = None,
     username: str | None = None,
-    work_session_id: str | None = None,
+    work_session_id: WorkSessionId = None,
     region: str = '',
     allow_overwrite: bool = True,
     **kwargs: str,
 ) -> ToolResponse:
-    """Upload base64-encoded file content to a server via WebFTP.
-
-    On streamable-http/SSE, file_content is limited to 3 MiB decoded (base64
-    inflates bytes 4/3x). stdio has no such cap. Larger files must use
-    webftp_upload_file in local mode.
-    """
+    """Non-stdio transports cap decoded `file_content` at 3 MiB (content_too_large);
+    use webftp_upload_file in local mode for larger files."""
     token = kwargs.get('token')
 
     try:
@@ -705,8 +703,6 @@ async def webftp_upload_content(
         'In remote mode (streamable-http): returns a presigned download URL valid for 24 hours—'
         'open it in a browser or run the curl command in the response. '
         'For folders, content is packaged as a ZIP archive. '
-        'Pass work_session_id to link this download to a Work Session for audit; '
-        'the server enforces this for MCP OAuth and browser-based auth. '
         'Related: webftp_bulk_download (multiple files as ZIP), '
         'webftp_upload_file (upload to server), '
         'webftp_downloads_list (check download history), '
@@ -717,13 +713,13 @@ async def webftp_upload_content(
     meta={'anthropic/searchHint': 'file download transfer get retrieve server'},
 )
 async def webftp_download_file(
-    server_id: str,
+    server_id: ServerId,
     remote_file_path: str,
     workspace: str,
     local_file_path: str | None = None,
     resource_type: str = 'file',
     username: str | None = None,
-    work_session_id: str | None = None,
+    work_session_id: WorkSessionId = None,
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
@@ -836,7 +832,7 @@ async def webftp_download_file(
     meta={'anthropic/searchHint': 'webftp uploads history list files'},
 )
 async def webftp_uploads_list(
-    workspace: str, server_id: str | None = None, region: str = '', **kwargs: str
+    workspace: str, server_id: OptionalServerId = None, region: str = '', **kwargs: str
 ) -> ToolResponse:
     """List uploaded files (upload history)."""
     token = kwargs.get('token')
@@ -861,7 +857,7 @@ async def webftp_uploads_list(
     meta={'anthropic/searchHint': 'webftp downloads history list files'},
 )
 async def webftp_downloads_list(
-    workspace: str, server_id: str | None = None, region: str = '', **kwargs: str
+    workspace: str, server_id: OptionalServerId = None, region: str = '', **kwargs: str
 ) -> ToolResponse:
     """List download requests (download history)."""
     token = kwargs.get('token')
@@ -881,17 +877,17 @@ async def webftp_downloads_list(
 
 
 @mcp_tool_handler(
-    description='Upload multiple local files to a remote server in a single operation. All files are placed in the same destination directory. Uses S3 presigned URLs with concurrent uploads. Pass work_session_id to link this upload to a Work Session for audit; the server enforces this for MCP OAuth and browser-based auth. In remote mode (ALPACON_MCP_AUTH_ENABLED=true) the MCP server cannot reach your local filesystem, so this returns error code remote_mode_unsupported; use webftp_upload_content instead. When to use: uploading several files at once (more efficient than repeated webftp_upload_file calls). Related: webftp_upload_file (single file), webftp_bulk_download (download multiple), work_session_create (create a Work Session). Note: All files go to the same remote directory.',
+    description='Upload multiple local files to a remote server in a single operation. All files are placed in the same destination directory. Uses S3 presigned URLs with concurrent uploads. In remote mode (ALPACON_MCP_AUTH_ENABLED=true) the MCP server cannot reach your local filesystem, so this returns error code remote_mode_unsupported; use webftp_upload_content instead. When to use: uploading several files at once (more efficient than repeated webftp_upload_file calls). Related: webftp_upload_file (single file), webftp_bulk_download (download multiple), work_session_create (create a Work Session). Note: All files go to the same remote directory.',
     annotations=ADDITIVE,
     meta={'anthropic/searchHint': 'bulk upload multiple files batch transfer'},
 )
 async def webftp_bulk_upload(
-    server_id: str,
+    server_id: ServerId,
     local_file_paths: list[str],
     remote_directory: str,
     workspace: str,
     username: str | None = None,
-    work_session_id: str | None = None,
+    work_session_id: WorkSessionId = None,
     region: str = '',
     allow_overwrite: bool = True,
     **kwargs: str,
@@ -1038,17 +1034,17 @@ async def webftp_bulk_upload(
 
 
 @mcp_tool_handler(
-    description='Download multiple files or folders from a remote server as a single ZIP archive. All paths must share the same parent directory. Pass work_session_id to link this download to a Work Session for audit; the server enforces this for MCP OAuth and browser-based auth. In remote mode (ALPACON_MCP_AUTH_ENABLED=true) the MCP server cannot reach your local filesystem, so this returns error code remote_mode_unsupported; use webftp_download_file per file instead. When to use: downloading several files at once. Related: webftp_download_file (single file), webftp_bulk_upload (upload multiple), webftp_check_status (poll if still processing), work_session_create (create a Work Session). Note: If ZIP is not ready, poll with webftp_check_status then retry.',
+    description='Download multiple files or folders from a remote server as a single ZIP archive. All paths must share the same parent directory. In remote mode (ALPACON_MCP_AUTH_ENABLED=true) the MCP server cannot reach your local filesystem, so this returns error code remote_mode_unsupported; use webftp_download_file per file instead. When to use: downloading several files at once. Related: webftp_download_file (single file), webftp_bulk_upload (upload multiple), webftp_check_status (poll if still processing), work_session_create (create a Work Session). Note: If ZIP is not ready, poll with webftp_check_status then retry.',
     annotations=ADDITIVE,
     meta={'anthropic/searchHint': 'bulk download multiple files zip archive batch'},
 )
 async def webftp_bulk_download(
-    server_id: str,
+    server_id: ServerId,
     remote_paths: list[str],
     local_file_path: str,
     workspace: str,
     username: str | None = None,
-    work_session_id: str | None = None,
+    work_session_id: WorkSessionId = None,
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:

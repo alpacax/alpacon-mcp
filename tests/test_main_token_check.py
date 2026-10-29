@@ -1,9 +1,5 @@
-"""
-Decide between starting the stdio server and running the setup wizard.
-
-The wizard writes to stdout and reads stdin, which are the JSON-RPC channel
-when an MCP client launches main.py, so it must run only when nothing is
-configured and a person is at a terminal.
+"""Choose between starting the stdio server and running the setup wizard. The wizard
+shares stdout/stdin with JSON-RPC, so it runs only unconfigured, at a terminal.
 """
 
 import os
