@@ -246,11 +246,11 @@ FILE_EXEC_INLINE_CREDENTIAL_HINT = (
 #: cannot use them.
 #: 402 means the plan itself excludes the extension; 403 means the plan
 #: allows it but a workspace admin has not turned it on yet. The body does not
-#: name the extension, so the hint stays generic.
+#: name the extension, so the hint stays generic. The 402 also refuses adding
+#: an extension to enabled_extensions.
 WORKSPACE_EXTENSION_PLAN_REQUIRED_HINT = (
-    "This workspace's plan does not include the extension that owns this "
-    'endpoint; upgrading the plan is required before its endpoints are '
-    'available.'
+    "This workspace's plan does not include the extension this request needs; "
+    'upgrading the plan is required before it is available.'
 )
 WORKSPACE_EXTENSION_NOT_ENABLED_HINT = (
     'The workspace extension that owns this endpoint is not enabled; a '
@@ -319,6 +319,19 @@ AGENT_ROLLOUT_POLICY_REFUSAL_HINTS: dict[str, str] = {
     ),
 }
 
+#: `enabled_extensions` writes on `update_workspace_preferences`, which the
+#: server sends without a hint of its own.
+ENABLED_EXTENSIONS_REFUSAL_HINTS: dict[str, str] = {
+    'workspace_extension_requires_extension': (
+        'dns and proxy require ip: send ip in the same enabled_extensions list, '
+        'and do not remove ip while dns or proxy stays in it.'
+    ),
+    'extension_not_available': (
+        'This workspace is not allowlisted for the extension, so no plan '
+        'upgrade adds it; leave it out of enabled_extensions.'
+    ),
+}
+
 #: 405 on every command-ACL write once the server moved command pre-approvals
 #: to the ledger. Only a server that registers the ledger tools names them;
 #: every transport gets the web console.
@@ -341,6 +354,7 @@ _ERROR_CODE_HINT: dict[str, str] = {
     **FILE_EXEC_REFUSAL_HINTS,
     **ALERT_RULE_PREVIEW_REFUSAL_HINTS,
     **AGENT_ROLLOUT_POLICY_REFUSAL_HINTS,
+    **ENABLED_EXTENSIONS_REFUSAL_HINTS,
     'workspace_extension_plan_required': WORKSPACE_EXTENSION_PLAN_REQUIRED_HINT,
     'workspace_extension_not_enabled': WORKSPACE_EXTENSION_NOT_ENABLED_HINT,
     'work_session_extension_reason_required': WORK_SESSION_EXTENSION_REASON_REQUIRED_HINT,

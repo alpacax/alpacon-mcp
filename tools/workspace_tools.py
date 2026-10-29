@@ -46,8 +46,14 @@ _TIMEZONE_DESCRIPTION = (
 _EXTENSIONS_DESCRIPTION = (
     'REPLACES the whole list, it does not append: read the current value via '
     'get_workspace_preferences, merge, then send the full list to avoid dropping '
-    'existing entries. Narrowing it additionally fails with HTTP 402 on '
-    'non-enterprise plans.'
+    'existing entries. Each newly added extension is checked in request order. '
+    'firewall on a workspace not allowlisted for it answers 400 '
+    'extension_not_available. An extension above the plan answers 402 '
+    'workspace_enterprise_plan_required or workspace_extension_plan_required; '
+    'extensions[].available from get_workspace_preferences says which are '
+    'reachable. Then the whole change is checked: dns or proxy without ip answers '
+    '400 workspace_extension_requires_extension, whether ip is missing or being '
+    'removed. Removing an extension is never refused for the plan.'
 )
 _BILLING_EMAIL_DESCRIPTION = 'Only accepted by the server on SaaS deployments.'
 
@@ -445,8 +451,11 @@ async def list_workspace_mfa_methods(
 @mcp_tool_handler(
     description=(
         'Get the workspace-wide preferences: timezone, locale (country/language), '
-        'front_url, invite_ttl, enabled_extensions, websh_session_timeout, '
-        'agent_rollout_policy, package_proxy, and billing_email. '
+        'front_url, invite_ttl, enabled_extensions, extensions, '
+        'websh_session_timeout, agent_rollout_policy, package_proxy, and '
+        'billing_email. extensions lists every extension id with available (the '
+        'plan and the allowlist let this workspace turn it on) and allowed (the '
+        'allowlist alone). '
         'agent_rollout_policy is {"mode": "latest"|"n_minus_1"|"manual", "window": '
         '{"days": [0-6, Monday is 0], "start_hour": 0-23, "length_hours": 1-24, '
         '"timezone": "<IANA>"}} and controls automatic agent upgrades. '
