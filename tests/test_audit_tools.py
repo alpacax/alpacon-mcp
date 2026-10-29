@@ -4,7 +4,7 @@ import inspect
 
 import pytest
 
-from tests.conftest import HTTP_ERROR_ENVELOPE, http_client_fixture
+from tests.conftest import HTTP_ERROR_ENVELOPE, http_client_fixture, published_rule
 from tools.audit_tools import (
     get_activity_log,
     get_session_analysis_detail,
@@ -13,6 +13,7 @@ from tools.audit_tools import (
     list_session_analyses,
     list_webftp_logs,
 )
+from utils.cursor_pagination import CURSOR_DESCRIPTION
 
 mock_http_client = http_client_fixture('tools.audit_tools')
 
@@ -247,3 +248,20 @@ class TestListSessionAnalysesStaysPageNumbered:
             token='test-token',
             params={'page': 2},
         )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    'tool_name', ['list_activity_logs', 'list_server_logs', 'list_webftp_logs']
+)
+async def test_cursor_resume_rule_lives_on_the_parameter(tool_name):
+    # Given a cursor-paginated tool
+
+    # When reading the published cursor and tool description
+    on_parameter, on_tool = await published_rule(tool_name, 'cursor')
+
+    # Then the parameter says how to resume and the tool keeps the walk behavior
+    assert on_parameter == CURSOR_DESCRIPTION
+    assert 'pagination.next_cursor' in on_parameter
+    assert 'pagination.next_cursor' not in on_tool
+    assert 'pagination.complete' in on_tool

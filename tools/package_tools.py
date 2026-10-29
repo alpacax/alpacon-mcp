@@ -1,5 +1,9 @@
 """Package management tools for Alpacon MCP server."""
 
+from typing import Annotated
+
+from pydantic import Field
+
 from utils.api_call import http_call_response
 from utils.common import build_list_params, exclude_none
 from utils.decorators import mcp_tool_handler
@@ -7,13 +11,15 @@ from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, READ_ONLY
 from utils.types import ServerId, ToolResponse
 
+_VERSION_DESCRIPTION = 'Specific version to pin.'
+
 # ===============================
 # SYSTEM PACKAGE TOOLS
 # ===============================
 
 
 @mcp_tool_handler(
-    description='List system package entries on a specific server. Returns package names, versions, and installation details from the OS package manager. server_id is required. Use this to audit installed OS-level packages or check for specific software. Related: install_system_package (add packages), list_system_packages (proc-level package list).',
+    description='List system package entries on a specific server. Returns package names, versions, and installation details from the OS package manager. Use this to audit installed OS-level packages or check for specific software. Related: install_system_package (add packages), list_system_packages (proc-level package list).',
     annotations=READ_ONLY,
     meta={'anthropic/searchHint': 'system package entries installed server'},
 )
@@ -54,7 +60,7 @@ async def list_system_package_entries(
 
 
 @mcp_tool_handler(
-    description='Install a system package on a server via the OS package manager. Specify the server ID and package name. Optionally pin a specific version. The installation runs asynchronously on the target server. Related: list_system_package_entries (check installed), remove_system_package.',
+    description='Install a system package on a server via the OS package manager. Specify the server ID and package name. The installation runs asynchronously on the target server. Related: list_system_package_entries (check installed), remove_system_package.',
     annotations=ADDITIVE,
     meta={'anthropic/searchHint': 'system package install add server'},
 )
@@ -62,7 +68,7 @@ async def install_system_package(
     server_id: ServerId,
     package_name: str,
     workspace: str,
-    version: str | None = None,
+    version: Annotated[str | None, Field(description=_VERSION_DESCRIPTION)] = None,
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
@@ -115,7 +121,7 @@ async def remove_system_package(
 
 
 @mcp_tool_handler(
-    description='List Python packages installed on a specific server. Returns package names, versions, and installation details. server_id is required. Use this to audit Python dependencies or check for specific libraries. Related: install_python_package (add packages), remove_python_package.',
+    description='List Python packages installed on a specific server. Returns package names, versions, and installation details. Use this to audit Python dependencies or check for specific libraries. Related: install_python_package (add packages), remove_python_package.',
     annotations=READ_ONLY,
     meta={'anthropic/searchHint': 'python package pip installed server'},
 )
@@ -156,7 +162,7 @@ async def list_python_packages(
 
 
 @mcp_tool_handler(
-    description='Install a Python package on a server via pip. Specify the server ID and package name. Optionally pin a specific version. The installation runs asynchronously on the target server. Related: list_python_packages (check installed), remove_python_package.',
+    description='Install a Python package on a server via pip. Specify the server ID and package name. The installation runs asynchronously on the target server. Related: list_python_packages (check installed), remove_python_package.',
     annotations=ADDITIVE,
     meta={'anthropic/searchHint': 'python package pip install add'},
 )
@@ -164,7 +170,7 @@ async def install_python_package(
     server_id: ServerId,
     package_name: str,
     workspace: str,
-    version: str | None = None,
+    version: Annotated[str | None, Field(description=_VERSION_DESCRIPTION)] = None,
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:

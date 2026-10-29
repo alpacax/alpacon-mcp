@@ -1,12 +1,26 @@
 """Approval and sudo policy tools; approvals are read-only here (ADR 0015).
 An agent cannot approve or reject: a human decides in the web console or Slack."""
 
+from typing import Annotated
+
+from pydantic import Field
+
 from utils.api_call import http_call_response
 from utils.common import build_list_params, exclude_none, pending_approval_response
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, READ_ONLY
-from utils.types import OptionalServerId, ToolResponse
+from utils.types import OptionalServerId, ServerIds, ToolResponse
+
+_STATUS_DESCRIPTION = (
+    'Filter by status: pending, approved, rejected, cancelled or expired.'
+)
+_USER_DESCRIPTION = 'Filter by the UUID of the user the policy applies to.'
+_USERS_DESCRIPTION = (
+    'User UUIDs the policy applies to. Omitted, the approved policy is scoped to the '
+    'requester alone, not the whole workspace, and the server reports no error when '
+    'it narrows it that way; a non-superuser may name only themselves.'
+)
 
 # ===============================
 # APPROVAL REQUEST TOOLS
@@ -14,13 +28,13 @@ from utils.types import OptionalServerId, ToolResponse
 
 
 @mcp_tool_handler(
-    description='List pending and historical approval requests in a workspace. Returns request ID, type, status, and requester details. Filterable by status (pending, approved, rejected, cancelled, expired). Use this to review access requests that need approval or check approval history.',
+    description='List pending and historical approval requests in a workspace. Returns request ID, type, status, and requester details. Use this to review access requests that need approval or check approval history.',
     annotations=READ_ONLY,
     meta={'anthropic/searchHint': 'approval requests pending review'},
 )
 async def list_approval_requests(
     workspace: str,
-    status: str | None = None,
+    status: Annotated[str | None, Field(description=_STATUS_DESCRIPTION)] = None,
     region: str = '',
     page: int | None = None,
     page_size: int | None = None,
@@ -132,7 +146,7 @@ async def explain_approval_decision(
 
 
 @mcp_tool_handler(
-    description='List sudo policies that define elevated privilege rules. Returns policy names, allowed commands, assigned users/servers, and validity periods. Filterable by user UUID or server UUID. Use this to audit which sudo privileges are configured in the workspace.',
+    description='List sudo policies that define elevated privilege rules. Returns policy names, allowed commands, assigned users/servers, and validity periods. Use this to audit which sudo privileges are configured in the workspace.',
     annotations=READ_ONLY,
     meta={'anthropic/searchHint': 'sudo policy privilege elevation rules'},
 )
@@ -141,7 +155,7 @@ async def list_sudo_policies(
     region: str = '',
     page: int | None = None,
     page_size: int | None = None,
-    user: str | None = None,
+    user: Annotated[str | None, Field(description=_USER_DESCRIPTION)] = None,
     server_id: OptionalServerId = None,
     **kwargs: str,
 ) -> ToolResponse:
@@ -183,9 +197,7 @@ async def list_sudo_policies(
         'Request a sudo policy: ask for named commands to be allowed under sudo on named servers. '
         'This creates an approval request, not a policy—an admin must approve it out-of-band '
         '(Alpacon web console or Slack) before the policy exists, and the tool returns '
-        'status="pending_approval". Omitting users scopes the approved policy to the requester '
-        'alone, not to the whole workspace, and the server reports no error when it narrows it '
-        'that way; a non-superuser may name only themselves. A session-authorized sudo policy, '
+        'status="pending_approval". A session-authorized sudo policy, '
         'which lets matching sudo commands run inside an approved Work Session without an MFA '
         'prompt, cannot be requested here at all—the server refuses it on this endpoint, and '
         'such a policy needs an enterprise plan and a usable Work Session. A human must set '
@@ -198,10 +210,10 @@ async def list_sudo_policies(
 )
 async def request_sudo_policy(
     workspace: str,
-    servers: list[str],
+    servers: ServerIds,
     commands: list[str],
     reason: str,
-    users: list[str] | None = None,
+    users: Annotated[list[str] | None, Field(description=_USERS_DESCRIPTION)] = None,
     valid_from: str | None = None,
     valid_until: str | None = None,
     region: str = '',

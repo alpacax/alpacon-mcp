@@ -2,7 +2,10 @@
 
 from collections.abc import Mapping
 from http import HTTPStatus
+from typing import Annotated
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+from pydantic import Field
 
 from utils.api_call import http_call_response
 from utils.auth import get_token_workspaces_with_dropped
@@ -26,6 +29,27 @@ from utils.types import ToolErrorResponse, ToolResponse
 _ROLLOUT_MODES = frozenset({'latest', 'n_minus_1', 'manual'})
 _ROLLOUT_POLICY_KEYS = frozenset({'mode', 'window'})
 _ROLLOUT_WINDOW_KEYS = frozenset({'days', 'start_hour', 'length_hours', 'timezone'})
+
+_ROLLOUT_POLICY_DESCRIPTION = (
+    'Controls automatic agent upgrades: {"mode": "latest"|"n_minus_1"|"manual", '
+    '"window": {"days": [0-6, Monday is 0], "start_hour": 0-23, "length_hours": '
+    '1-24, "timezone": "<IANA>"}}. A write may name only part of the object (e.g. '
+    'just "mode"); what it leaves out keeps its current value. Validated locally '
+    'before sending; the server may still refuse n_minus_1 with 400 '
+    'preferences_agent_rollout_mode_unavailable when this deployment has no '
+    'pinned-upgrade targets enabled yet.'
+)
+_TIMEZONE_DESCRIPTION = (
+    "The workspace's billing clock: changing it shifts the daily usage-aggregation "
+    'boundary.'
+)
+_EXTENSIONS_DESCRIPTION = (
+    'REPLACES the whole list, it does not append: read the current value via '
+    'get_workspace_preferences, merge, then send the full list to avoid dropping '
+    'existing entries. Narrowing it additionally fails with HTTP 402 on '
+    'non-enterprise plans.'
+)
+_BILLING_EMAIL_DESCRIPTION = 'Only accepted by the server on SaaS deployments.'
 
 
 def _is_plain_int(value: object) -> bool:
@@ -471,21 +495,6 @@ async def get_workspace_preferences(
         'update). Fields: front_url, country, language, timezone, invite_ttl, '
         'enabled_extensions, websh_session_timeout, agent_rollout_policy, package_proxy, '
         'billing_email. '
-        'agent_rollout_policy controls automatic agent upgrades: {"mode": '
-        '"latest"|"n_minus_1"|"manual", "window": {"days": [0-6, Monday is 0], '
-        '"start_hour": 0-23, "length_hours": 1-24, "timezone": "<IANA>"}}. A write may '
-        'name only part of the object (e.g. just "mode"); what it leaves out keeps its '
-        'current value. Validated locally before sending; the server may still refuse '
-        'n_minus_1 with 400 preferences_agent_rollout_mode_unavailable when this '
-        'deployment has no pinned-upgrade targets enabled yet. '
-        "Warning: timezone is the workspace's billing clock—changing it shifts the daily "
-        'usage-aggregation boundary. '
-        'Warning: enabled_extensions REPLACES the whole list, it does not append; '
-        'read the current value via get_workspace_preferences, '
-        'merge, then send the full list to avoid dropping existing entries. Narrowing '
-        'enabled_extensions additionally fails with HTTP 402 on non-enterprise plans. '
-        'Warning: billing_email is only accepted by the server on SaaS '
-        'deployments. '
         'Related: get_workspace_preferences.'
     ),
     annotations=IDEMPOTENT_WRITE,
@@ -498,13 +507,19 @@ async def update_workspace_preferences(
     front_url: str | None = None,
     country: str | None = None,
     language: str | None = None,
-    timezone: str | None = None,
+    timezone: Annotated[str | None, Field(description=_TIMEZONE_DESCRIPTION)] = None,
     invite_ttl: int | None = None,
-    enabled_extensions: list[str] | None = None,
+    enabled_extensions: Annotated[
+        list[str] | None, Field(description=_EXTENSIONS_DESCRIPTION)
+    ] = None,
     websh_session_timeout: int | None = None,
     package_proxy: str | None = None,
-    billing_email: str | None = None,
-    agent_rollout_policy: Mapping[str, object] | None = None,
+    billing_email: Annotated[
+        str | None, Field(description=_BILLING_EMAIL_DESCRIPTION)
+    ] = None,
+    agent_rollout_policy: Annotated[
+        Mapping[str, object] | None, Field(description=_ROLLOUT_POLICY_DESCRIPTION)
+    ] = None,
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:

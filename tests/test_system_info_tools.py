@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
-from tests.conftest import HTTP_ERROR_ENVELOPE, http_client_fixture
+from tests.conftest import HTTP_ERROR_ENVELOPE, http_client_fixture, published_rule
 from tools.system_info_tools import (
     get_disk_info,
     get_network_interfaces,
@@ -926,6 +926,26 @@ class TestListSystemPackagesParams:
             token='test-token',
             params=expected_params,
         )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    'tool_name, param, phrase, gone',
+    [
+        ('list_system_packages', 'architecture', 'x86_64 or aarch64', '(x86_64'),
+    ],
+)
+async def test_system_info_argument_rule_lives_on_the_parameter(
+    tool_name, param, phrase, gone
+):
+    # Given a tool whose argument rule used to sit in its description
+
+    # When reading the published parameter and tool description
+    on_parameter, on_tool = await published_rule(tool_name, param)
+
+    # Then the parameter states the rule and the tool no longer does
+    assert phrase in on_parameter
+    assert gone not in on_tool
 
 
 if __name__ == '__main__':

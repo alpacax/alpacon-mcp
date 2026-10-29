@@ -1,5 +1,9 @@
 """Webhook and event subscription tools for Alpacon MCP server."""
 
+from typing import Annotated
+
+from pydantic import Field
+
 from utils.api_call import http_call_response
 from utils.common import build_list_params, exclude_none
 from utils.decorators import mcp_tool_handler
@@ -18,6 +22,16 @@ _PROVIDERS_SENTENCE = (
 )
 _PROVIDERS_FILTER_SENTENCE = f'provider must be one of: {_PROVIDERS_LIST}.'
 _OWNER_SENTENCE = "owner must be a user's UUID; a username is rejected."
+
+_OWNER_DESCRIPTION = "A user's UUID; a username is rejected."
+_PROVIDER_FILTER_DESCRIPTION = f'Filter by provider: {_PROVIDERS_LIST}.'
+_PROVIDER_DESCRIPTION = (
+    f'One of {_PROVIDERS_LIST}, or omitted to let the server detect it from the URL.'
+)
+_EVENT_TYPE_DESCRIPTION = (
+    'One of command_fin, servers_commit, sudo, metric_threshold_crossed, '
+    'metric_threshold_resolved.'
+)
 
 # ===============================
 # EVENT SUBSCRIPTION TOOLS
@@ -63,14 +77,14 @@ async def list_event_subscriptions(
 
 
 @mcp_tool_handler(
-    description='Create an event subscription to receive notifications when specific events occur. Requires a notification channel ID and event type (command_fin, servers_commit, sudo, metric_threshold_crossed, metric_threshold_resolved). Optionally filter by target resource ID. Users can only manage their own subscriptions. Related: list_webhooks (find channel IDs), delete_event_subscription.',
+    description='Create an event subscription to receive notifications when specific events occur. Requires a notification channel ID and event type. Optionally filter by target resource ID. Users can only manage their own subscriptions. Related: list_webhooks (find channel IDs), delete_event_subscription.',
     annotations=ADDITIVE,
     meta={'anthropic/searchHint': 'event subscription create notification'},
 )
 async def create_event_subscription(
     workspace: str,
     channel: str,
-    event_type: str,
+    event_type: Annotated[str, Field(description=_EVENT_TYPE_DESCRIPTION)],
     target_id: str | None = None,
     region: str = '',
     **kwargs: str,
@@ -125,7 +139,7 @@ async def delete_event_subscription(
 @mcp_tool_handler(
     description=(
         'List configured webhooks in a workspace, optionally filtered by '
-        f'provider. {_PROVIDERS_FILTER_SENTENCE} Returns webhook ID, name, URL, '
+        'provider. Returns webhook ID, name, URL, '
         'provider, SSL verification setting, and enabled status. Needs an '
         'admin account. Related: create_webhook, list_event_subscriptions.'
     ),
@@ -134,7 +148,9 @@ async def delete_event_subscription(
 )
 async def list_webhooks(
     workspace: str,
-    provider: str | None = None,
+    provider: Annotated[
+        str | None, Field(description=_PROVIDER_FILTER_DESCRIPTION)
+    ] = None,
     region: str = '',
     page: int | None = None,
     page_size: int | None = None,
@@ -214,9 +230,8 @@ async def get_webhook(
 @mcp_tool_handler(
     description=(
         'Create a webhook endpoint to receive HTTP callbacks when subscribed '
-        f'events occur. Requires a name, a URL, and an owner. {_OWNER_SENTENCE} '
-        f'{_PROVIDERS_SENTENCE} Needs an admin account, and creating or '
-        'updating a webhook needs a paid plan.'
+        'events occur. Requires a name, a URL, and an owner. Needs an admin '
+        'account, and creating or updating a webhook needs a paid plan.'
     ),
     annotations=ADDITIVE,
     meta={'anthropic/searchHint': 'webhook create endpoint callback'},
@@ -225,8 +240,8 @@ async def create_webhook(
     workspace: str,
     name: str,
     url: str,
-    owner: str,
-    provider: str | None = None,
+    owner: Annotated[str, Field(description=_OWNER_DESCRIPTION)],
+    provider: Annotated[str | None, Field(description=_PROVIDER_DESCRIPTION)] = None,
     ssl_verify: bool = True,
     enabled: bool = True,
     region: str = '',

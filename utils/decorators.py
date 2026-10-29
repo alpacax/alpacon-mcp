@@ -379,6 +379,16 @@ REGION_DESCRIPTION = (
 ALL_REGIONS_DESCRIPTION = 'Lists only the workspaces in this region, ap1 or us1. Omit it to list every region.'
 
 
+WORKSPACE_DESCRIPTION = 'Workspace name, as list_workspaces returns it.'
+
+
+def _published_workspace(param: inspect.Parameter) -> inspect.Parameter:
+    """Attach the workspace rule to the published signature; the annotation stays str."""
+    return param.replace(
+        annotation=Annotated[str, Field(description=WORKSPACE_DESCRIPTION)]
+    )
+
+
 def _published_region(
     param: inspect.Parameter, requires_workspace: bool
 ) -> inspect.Parameter:
@@ -552,11 +562,15 @@ def with_token_validation[**P, R](
         return await func(*bound_args.args, **bound_args.kwargs)
 
     # The SDK publishes a VAR_KEYWORD as a required field, not a catch-all.
-    new_params = [
-        _published_region(p, requires_workspace) if p.name == 'region' else p
-        for p in original_sig.parameters.values()
-        if p.name != catch_all
-    ]
+    new_params = []
+    for p in original_sig.parameters.values():
+        if p.name == catch_all:
+            continue
+        if p.name == 'region':
+            p = _published_region(p, requires_workspace)
+        elif p.name == 'workspace' and requires_workspace:
+            p = _published_workspace(p)
+        new_params.append(p)
     wrapper.__signature__ = original_sig.replace(parameters=new_params)  # type: ignore[attr-defined]
 
     return wrapper

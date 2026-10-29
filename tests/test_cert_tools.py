@@ -2,7 +2,7 @@
 
 import pytest
 
-from tests.conftest import HTTP_ERROR_ENVELOPE, http_client_fixture
+from tests.conftest import HTTP_ERROR_ENVELOPE, http_client_fixture, published_rule
 from tools.cert_tools import (
     approve_revoke_request,
     approve_sign_request,
@@ -779,3 +779,38 @@ class TestRevokeRequests:
             endpoint='/api/cert/revoke-requests/rev-1/',
             token='test-token',
         )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    'tool_name, param, phrase, gone',
+    [
+        (
+            'create_certificate_authority',
+            'key_algorithm',
+            'rsa or ecdsa',
+            'key algorithm (rsa',
+        ),
+        (
+            'create_certificate_authority',
+            'key_size',
+            '256 or 384 for ECDSA',
+            '2048/4096',
+        ),
+        ('create_sign_request', 'domain_list', 'DNS names', '(DNS names)'),
+        ('create_sign_request', 'ip_list', 'IP addresses', '(IP addresses)'),
+        ('revoke_certificate', 'reason', '10=AA compromise', 'RFC 5280'),
+        ('revoke_certificate', 'requested_reason', 'Free-text', 'free-text'),
+    ],
+)
+async def test_certificate_argument_rule_lives_on_the_parameter(
+    tool_name, param, phrase, gone
+):
+    # Given a tool whose argument rule used to sit in its description
+
+    # When reading the published parameter and tool description
+    on_parameter, on_tool = await published_rule(tool_name, param)
+
+    # Then the parameter states the rule and the tool no longer does
+    assert phrase in on_parameter
+    assert gone not in on_tool

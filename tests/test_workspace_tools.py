@@ -8,7 +8,7 @@ import pytest
 from mcp.types import CallToolResult
 
 from server import mcp
-from tests.conftest import HTTP_ERROR_ENVELOPE, http_client_fixture
+from tests.conftest import HTTP_ERROR_ENVELOPE, http_client_fixture, published_rule
 from tools.workspace_tools import (
     get_current_user,
     get_workspace_access_control,
@@ -941,6 +941,39 @@ class TestUpdateWorkspacePreferencesAgentRolloutPolicy:
         assert result['status'] == 'error'
         assert result['error_code'] == 'preferences_agent_rollout_window_days_invalid'
         assert 'window.days' in result['message']
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    'tool_name, param, phrase, gone',
+    [
+        (
+            'update_workspace_preferences',
+            'agent_rollout_policy',
+            'n_minus_1',
+            'agent_rollout_policy controls',
+        ),
+        ('update_workspace_preferences', 'timezone', 'billing clock', 'billing clock'),
+        (
+            'update_workspace_preferences',
+            'enabled_extensions',
+            'REPLACES the whole list',
+            'REPLACES',
+        ),
+        ('update_workspace_preferences', 'billing_email', 'SaaS deployments', 'SaaS'),
+    ],
+)
+async def test_workspace_preference_rule_lives_on_the_parameter(
+    tool_name, param, phrase, gone
+):
+    # Given a tool whose argument rule used to sit in its description
+
+    # When reading the published parameter and tool description
+    on_parameter, on_tool = await published_rule(tool_name, param)
+
+    # Then the parameter states the rule and the tool no longer does
+    assert phrase in on_parameter
+    assert gone not in on_tool
 
 
 if __name__ == '__main__':

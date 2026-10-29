@@ -252,16 +252,15 @@ class TestDisruptiveActionForce:
         assert 'force' not in inspect.signature(install_pam).parameters
 
     @pytest.mark.asyncio
-    async def test_every_disruptive_description_carries_the_force_note(self):
+    async def test_every_disruptive_force_parameter_carries_the_force_note(self):
         """The note lives in one constant; a client must still read it on both tools."""
         descriptions = await tool_descriptions()
+        tools = {t.name: t for t in await mcp.list_tools()}
 
         for _, action in self.DISRUPTIVE:
-            description = descriptions[action]
-            assert (
-                'pass force=True to run anyway, which tears that live work down.'
-                in description
-            )
+            force = tools[action].input_schema['properties']['force']['description']
+            assert 'pass True to run anyway, which tears that live work down.' in force
+            assert 'force=True' not in descriptions[action]
         update_description = descriptions['update_information']
         pam_description = descriptions['install_pam']
         assert 'force=True' not in update_description

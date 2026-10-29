@@ -1,5 +1,9 @@
 """Server management tools for Alpacon MCP server."""
 
+from typing import Annotated
+
+from pydantic import Field
+
 from utils.api_call import http_call_response
 from utils.common import build_list_params, exclude_none
 from utils.decorators import mcp_tool_handler
@@ -10,24 +14,46 @@ from utils.types import ServerId, ToolErrorResponse, ToolResponse
 
 VALID_PLATFORMS = frozenset({'debian', 'rhel', 'suse', 'darwin', 'windows'})
 _PLATFORM_LIST_STR = ', '.join(f'"{p}"' for p in sorted(VALID_PLATFORMS))
-_FORCE_BUSY_NOTE = (
-    'The server refuses this action while the host is busy with an open Websh or WebFTP '
-    'session or an in-flight command; pass force=True to run anyway, which tears that live '
-    'work down. '
+_FORCE_DESCRIPTION = (
+    'The server refuses this action while the host is busy with an open Websh or '
+    'WebFTP session or an in-flight command; pass True to run anyway, which tears '
+    'that live work down.'
 )
+_PAGE_SIZE_DESCRIPTION = 'Servers per page, up to 100; the server defaults to 15.'
+_NOTE_PINNED_DESCRIPTION = (
+    'A server holds at most three pinned notes; only the server can enforce that limit.'
+)
+_OFFLINE_ALERT_DESCRIPTION = (
+    'Defaults to true on the server and is independent of any workspace alert rule. '
+    "The server refuses the field from the host's own agent credential, so only a "
+    'human or service caller may set it.'
+)
+_AUTO_DESCRIPTION = (
+    'With the default (false) the server refuses a still-connected host with 400 '
+    'SERVER_CANNOT_BE_DELETED; set it to true to tear the Alpamon agent off a host '
+    'that is still running.'
+)
+_PURGE_DESCRIPTION = (
+    'Also deletes the OS accounts Alpacon provisioned on that host; on an '
+    'already-disconnected host the purge is skipped, because the host cannot be '
+    'reached.'
+)
+_PLATFORM_DESCRIPTION = f'One of {_PLATFORM_LIST_STR}.'
+_SERVER_NAME_DESCRIPTION = 'Pre-names the host.'
+_STAR_STATUS_DESCRIPTION = 'True pins the server, False unpins it.'
 
 # Mirrors Note.content max_length; a longer body is a guaranteed 400.
 NOTE_CONTENT_MAX_LENGTH = 512
 _CONTENT_SENTENCE = f'content must be at most {NOTE_CONTENT_MAX_LENGTH} characters.'
+_NOTE_CONTENT_DESCRIPTION = f'At most {NOTE_CONTENT_MAX_LENGTH} characters.'
 
 
 @mcp_tool_handler(
     description=(
         'List all servers in a workspace. Returns server names, UUIDs, status, OS, and connection info. '
         'Use this to discover available servers and obtain server IDs required by other tools. '
-        'Results are paginated: 15 per page by default. Compare the response `count` against the '
-        'number of `results` and follow the `next` page number—or pass page_size (max 100)—to see '
-        'every server. '
+        'Results are paginated: compare the response `count` against the number of `results` '
+        'and follow the `next` page number to see every server. '
         'Related: get_server (single server details), get_server_overview (full system info).'
     ),
     annotations=READ_ONLY,
@@ -40,7 +66,7 @@ async def list_servers(
     workspace: str,
     region: str = '',
     page: int | None = None,
-    page_size: int | None = None,
+    page_size: Annotated[int | None, Field(description=_PAGE_SIZE_DESCRIPTION)] = None,
     **kwargs: str,
 ) -> ToolResponse:
     """Get list of servers.
@@ -205,7 +231,7 @@ async def list_server_notes(
 
 @mcp_tool_handler(
     description=(
-        f'Create a documentation note on a server. The content is capped at {NOTE_CONTENT_MAX_LENGTH} characters, and a server holds at most three pinned notes—a limit only the server can enforce. '
+        'Create a documentation note on a server. '
         'Use this to record operational notes, maintenance logs, or configuration documentation for a server. '
         'Related: list_server_notes (view existing notes).'
     ),
@@ -214,10 +240,10 @@ async def list_server_notes(
 )
 async def create_server_note(
     server_id: ServerId,
-    content: str,
+    content: Annotated[str, Field(description=_NOTE_CONTENT_DESCRIPTION)],
     workspace: str,
     private: bool | None = None,
-    pinned: bool | None = None,
+    pinned: Annotated[bool | None, Field(description=_NOTE_PINNED_DESCRIPTION)] = None,
     mentioned_users: list[str] | None = None,
     region: str = '',
     **kwargs: str,
@@ -383,7 +409,6 @@ async def _server_action(
     description=(
         'Restart the Alpacon agent process on a server. The agent will briefly go offline during restart. '
         'Use this when the agent is unresponsive or after configuration changes. Returns a command object tracking the restart operation. '
-        f'{_FORCE_BUSY_NOTE}'
         'Related: upgrade_agent. Note: Server will briefly go offline.'
     ),
     annotations=DESTRUCTIVE,
@@ -393,7 +418,7 @@ async def restart_agent(
     server_id: ServerId,
     workspace: str,
     region: str = '',
-    force: bool = False,
+    force: Annotated[bool, Field(description=_FORCE_DESCRIPTION)] = False,
     **kwargs: str,
 ) -> ToolResponse:
     """Restart the agent; force=True runs it even while the host is busy,
@@ -415,7 +440,6 @@ async def restart_agent(
     description=(
         'Upgrade the Alpacon agent on a server to the latest available version. The agent will briefly restart during the upgrade process. '
         'Use this to keep agents up to date with the latest features and security patches. Returns a command object tracking the upgrade operation. '
-        f'{_FORCE_BUSY_NOTE}'
         'Related: restart_agent. Note: Agent briefly restarts during upgrade.'
     ),
     annotations=DESTRUCTIVE,
@@ -425,7 +449,7 @@ async def upgrade_agent(
     server_id: ServerId,
     workspace: str,
     region: str = '',
-    force: bool = False,
+    force: Annotated[bool, Field(description=_FORCE_DESCRIPTION)] = False,
     **kwargs: str,
 ) -> ToolResponse:
     """Upgrade the agent; force=True runs it even while the host is busy,
@@ -507,9 +531,6 @@ async def update_information(
         'or toggle its own offline-alert delivery (`offline_alert_enabled`). '
         'Use `name`/`description` when a server is re-purposed or moved between '
         'teams—those update the fleet-inventory metadata only. '
-        '`offline_alert_enabled` defaults to true on the server and is independent '
-        "of any workspace alert rule; the server refuses the field from the host's "
-        'own agent credential, so only a human or service caller may set it. '
         'Related: get_server (view current state), unregister_server.'
     ),
     annotations=IDEMPOTENT_WRITE,
@@ -523,7 +544,9 @@ async def update_server(
     name: str | None = None,
     description: str | None = None,
     region: str = '',
-    offline_alert_enabled: bool | None = None,
+    offline_alert_enabled: Annotated[
+        bool | None, Field(description=_OFFLINE_ALERT_DESCRIPTION)
+    ] = None,
     **kwargs: str,
 ) -> ToolResponse:
     """Partially update a server (name, description, offline_alert_enabled);
@@ -556,12 +579,7 @@ async def update_server(
 
 @mcp_tool_handler(
     description=(
-        'Unregister a host from this workspace by UUID. With `auto` left at its default the '
-        'server refuses a still-connected host with 400 SERVER_CANNOT_BE_DELETED; set it to True '
-        'to tear the Alpamon agent off a host that is still running. '
-        '`purge_provisioned_accounts` also deletes the '
-        'OS accounts Alpacon provisioned on that host—on an already-disconnected host the purge '
-        'is skipped, because the host cannot be reached. The host is removed from all listings '
+        'Unregister a host from this workspace by UUID. The host is removed from all listings '
         'and no new Work Sessions can target it. Cannot be undone by this tool—re-enrolling the '
         'host requires running the install script with a registration token again. '
         'Related: list_servers (find UUID), get_server (confirm before unregistering).'
@@ -573,8 +591,10 @@ async def unregister_server(
     server_id: ServerId,
     workspace: str,
     region: str = '',
-    auto: bool = False,
-    purge_provisioned_accounts: bool = False,
+    auto: Annotated[bool, Field(description=_AUTO_DESCRIPTION)] = False,
+    purge_provisioned_accounts: Annotated[
+        bool, Field(description=_PURGE_DESCRIPTION)
+    ] = False,
     **kwargs: str,
 ) -> ToolResponse:
     """Unregister a server; auto=True removes the agent from a connected host,
@@ -597,14 +617,18 @@ async def unregister_server(
     description=(
         'Pin or unpin a server for the caller for faster access—a personal-preference '
         'flag, not a fleet-wide setting. Does not change visibility, RBAC, or ACLs '
-        'for any other principal. Use `status=True` to pin, `False` to unpin. '
+        'for any other principal. '
         'Related: list_servers (the unfiltered inventory).'
     ),
     annotations=IDEMPOTENT_WRITE,
     meta={'anthropic/searchHint': 'server star pin favorite bookmark personalization'},
 )
 async def star_server(
-    server_id: ServerId, status: bool, workspace: str, region: str = '', **kwargs: str
+    server_id: ServerId,
+    status: Annotated[bool, Field(description=_STAR_STATUS_DESCRIPTION)],
+    workspace: str,
+    region: str = '',
+    **kwargs: str,
 ) -> ToolResponse:
     """Set star status on a server."""
     token = kwargs.get('token')
@@ -737,8 +761,6 @@ async def delete_registration_token(
         'Get the platform-specific Alpamon install script for a registration token. '
         'Returns the exact shell commands an Operator runs on the target host to '
         "bring it under Alpacon's control plane. "
-        f'The `platform` must be one of: {_PLATFORM_LIST_STR}. '
-        'Optionally pre-name the host via `server_name`. '
         'Related: list_registration_tokens (get token ID), create_registration_token.'
     ),
     annotations=READ_ONLY,
@@ -749,8 +771,10 @@ async def delete_registration_token(
 async def get_registration_guide(
     token_id: str,
     workspace: str,
-    platform: str,
-    server_name: str | None = None,
+    platform: Annotated[str, Field(description=_PLATFORM_DESCRIPTION)],
+    server_name: Annotated[
+        str | None, Field(description=_SERVER_NAME_DESCRIPTION)
+    ] = None,
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:

@@ -24,15 +24,19 @@ UPSTREAM_ERROR = 'upstream_error'
 # ``opt_in_pagination``, and only on the first request.
 UNPAGINATED_SERVER = 'unpaginated_server'
 
-# Shared by the three tool descriptions so they cannot drift apart.
+# Shared by the tool descriptions and the `cursor` parameter so they cannot drift apart.
 CURSOR_WALK_DESCRIPTION = (
     'This endpoint is cursor-paginated, not page-numbered: the tool follows the '
     f'cursor for up to {MAX_CURSOR_PAGES} requests and merges the pages into one '
-    'result. Check `pagination.complete` before concluding the list is whole, and '
-    'pass `pagination.next_cursor` back as `cursor` to resume a walk that stopped '
-    'at the bound. A resumed call holds only the records after its `cursor`, so it '
-    'is never `complete` on its own; `stopped_because: end_of_list` says it read '
-    'to the end.'
+    'result. Check `pagination.complete` before concluding the list is whole. A '
+    'call that resumed from a `cursor` holds only the records after it, so it is '
+    'never `complete` on its own; `stopped_because: end_of_list` says it read to '
+    'the end.'
+)
+
+CURSOR_DESCRIPTION = (
+    "Pass a previous call's `pagination.next_cursor` to resume a walk that stopped "
+    'at the bound.'
 )
 
 _CURSOR_PARAM = 'cursor'

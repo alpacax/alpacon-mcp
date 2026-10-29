@@ -4,7 +4,7 @@ from http import HTTPStatus
 
 import pytest
 
-from tests.conftest import HTTP_ERROR_ENVELOPE, http_client_fixture
+from tests.conftest import HTTP_ERROR_ENVELOPE, http_client_fixture, published_rule
 from tools.package_tools import (
     install_python_package,
     install_system_package,
@@ -276,3 +276,31 @@ class TestPythonPackages:
 
         assert result['status'] == 'error'
         assert result['status_code'] == HTTPStatus.NOT_FOUND
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    'tool_name, param, phrase, gone',
+    [
+        ('install_system_package', 'version', 'Specific version', 'Optionally pin'),
+        ('install_python_package', 'version', 'Specific version', 'Optionally pin'),
+        (
+            'list_system_package_entries',
+            'server_id',
+            'Server UUID',
+            'server_id is required',
+        ),
+        ('list_python_packages', 'server_id', 'Server UUID', 'server_id is required'),
+    ],
+)
+async def test_package_argument_rule_lives_on_the_parameter(
+    tool_name, param, phrase, gone
+):
+    # Given a tool whose argument rule used to sit in its description
+
+    # When reading the published parameter and tool description
+    on_parameter, on_tool = await published_rule(tool_name, param)
+
+    # Then the parameter states the rule and the tool no longer does
+    assert phrase in on_parameter
+    assert gone not in on_tool
