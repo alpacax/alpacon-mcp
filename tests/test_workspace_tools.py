@@ -644,6 +644,35 @@ class TestGetWorkspacePreferences:
 
 
 class TestUpdateWorkspacePreferences:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        'extensions, code, phrase',
+        [
+            (['dns'], 'workspace_extension_requires_extension', 'send ip in the same'),
+            (['firewall'], 'extension_not_available', 'no plan upgrade adds it'),
+        ],
+    )
+    async def test_enabled_extensions_400_names_the_fix(
+        self, mock_http_client, mock_token, extensions, code, phrase
+    ):
+        # Given a server that refuses the extension change without a hint
+        mock_http_client.patch.return_value = {
+            'error': 'HTTP Error',
+            'status_code': HTTPStatus.BAD_REQUEST,
+            'message': 'HTTP 400',
+            'response': json.dumps({'code': code}),
+        }
+
+        # When sending the change it refuses
+        result = await update_workspace_preferences(
+            workspace='testworkspace', enabled_extensions=extensions, region='ap1'
+        )
+
+        # Then the error carries the code and a hint saying what to change
+        assert result['status'] == 'error'
+        assert result['error_code'] == code
+        assert phrase in result['message']
+
     def test_allowed_domains_is_not_in_tool_schema(self):
         tool = mcp._tool_manager.get_tool('update_workspace_preferences')
         assert tool is not None
@@ -974,6 +1003,28 @@ async def test_workspace_preference_rule_lives_on_the_parameter(
     # Then the parameter states the rule and the tool no longer does
     assert phrase in on_parameter
     assert gone not in on_tool
+
+
+@pytest.mark.asyncio
+async def test_enabled_extensions_description_states_how_the_server_refuses_a_change():
+    # Given the published enabled_extensions parameter
+
+    # When reading its description
+    on_parameter, _ = await published_rule(
+        'update_workspace_preferences', 'enabled_extensions'
+    )
+
+    # Then it names the allowlist, plan and ip refusal codes, and drops the old 402 claim
+    for code in (
+        'extension_not_available',
+        'workspace_enterprise_plan_required',
+        'workspace_extension_plan_required',
+        'workspace_extension_requires_extension',
+    ):
+        assert code in on_parameter
+    assert 'newly added' in on_parameter
+    assert 'never refused for the plan' in on_parameter
+    assert 'narrow' not in on_parameter.lower()
 
 
 if __name__ == '__main__':

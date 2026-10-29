@@ -1142,7 +1142,7 @@ List the MFA methods allowed for the workspace (`allowed_mfa_methods`, `passkey_
 **Note:** Like `get_workspace_security`, this requires JWT (OAuth/SSO) authentication (a static API token is rejected up front) and the route is SaaS-only.
 
 ### `get_workspace_preferences`
-Get the workspace-wide preferences: timezone, locale, `front_url`, `invite_ttl`, `enabled_extensions`, `websh_session_timeout`, `agent_rollout_policy`, `package_proxy`, `billing_email`. Workspace-global configuration, not per-user.
+Get the workspace-wide preferences: timezone, locale, `front_url`, `invite_ttl`, `enabled_extensions`, `websh_session_timeout`, `agent_rollout_policy`, `package_proxy`, `billing_email`, `extensions`. Workspace-global configuration, not per-user. `extensions` lists every extension id with `available` (the plan and the allowlist let this workspace turn it on) and `allowed` (the allowlist alone).
 
 **Parameters:**
 - `workspace` (string): Workspace name
@@ -1160,7 +1160,7 @@ Update workspace-wide preferences. Only the fields you provide are sent (partial
 - `language` (string, optional): Workspace locale/language code
 - `timezone` (string, optional): Workspace timezone; also the billing clock
 - `invite_ttl` (integer, optional): Invitation link time-to-live, in seconds
-- `enabled_extensions` (array, optional): List of enabled extension names. Replaces the whole list (not additive); read via `get_workspace_preferences` and merge before sending. Narrowing it fails with HTTP 402 on non-enterprise plans
+- `enabled_extensions` (array, optional): List of enabled extension names. Replaces the whole list (not additive); read via `get_workspace_preferences` and merge before sending. Each newly added extension is checked in request order. `firewall` on a workspace not allowlisted for it answers `400` (`error_code: extension_not_available`). An extension above the plan answers `402` (`error_code: workspace_enterprise_plan_required` or `workspace_extension_plan_required`); `extensions[].available` from `get_workspace_preferences` says which are reachable. Then the whole change is checked: `dns` or `proxy` without `ip` answers `400` (`error_code: workspace_extension_requires_extension`), whether `ip` is missing or being removed. Removing an extension is never refused for the plan
 - `websh_session_timeout` (integer, optional): Websh idle session timeout, in seconds
 - `agent_rollout_policy` (object, optional): The agent-upgrade rollout policy: `{"mode": "latest"|"n_minus_1"|"manual", "window": {"days": [0-6, Monday is 0], "start_hour": 0-23, "length_hours": 1-24, "timezone": "<IANA>"}}`. A write may name only part of the object (just `mode`, or just one `window` key); whatever it leaves out keeps its current value. `manual` runs no automatic upgrade; `latest` and `n_minus_1` (one release behind) run the scheduled upgrade inside the window. The shape is validated locally before the request is sent
 - `package_proxy` (string, optional): Proxy server URL for package installation
