@@ -14,7 +14,12 @@ import pybase64
 import pytest
 
 from server import MAX_REQUEST_BODY_SIZE
-from tests.conftest import VALID_SERVER_ID, http_client_fixture, tool_descriptions
+from tests.conftest import (
+    VALID_SERVER_ID,
+    http_client_fixture,
+    published_rule,
+    tool_descriptions,
+)
 from tools.webftp_tools import (
     _MAX_UPLOAD_CONTENT_BYTES,
     _STATUS_ERROR,
@@ -2370,6 +2375,63 @@ class TestNonObjectResponseBodies:
 
         assert result['status'] == 'error'
         assert 'success: ' in result['message']
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    'tool_name, param, phrase, gone',
+    [
+        (
+            'webftp_upload_content',
+            'file_content',
+            'Base64-encoded bytes',
+            'must be base64-encoded',
+        ),
+        ('webftp_upload_content', 'file_content', '3 MiB decoded', '3 MiB'),
+        ('webftp_download_file', 'resource_type', '"folder"', 'resource_type="folder"'),
+    ],
+)
+async def test_webftp_argument_rule_lives_on_the_parameter(
+    tool_name, param, phrase, gone
+):
+    # Given a tool whose argument rule used to sit in its description
+
+    # When reading the published parameter and tool description
+    on_parameter, on_tool = await published_rule(tool_name, param)
+
+    # Then the parameter states the rule and the tool no longer does
+    assert phrase in on_parameter
+    assert gone not in on_tool
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    'tool_name, param, phrase, gone',
+    [
+        (
+            'webftp_upload_file',
+            'local_file_path',
+            'Absolute path',
+            'Both local and remote',
+        ),
+        ('webftp_upload_file', 'remote_file_path', 'Absolute path', 'must be absolute'),
+        (
+            'webftp_bulk_download',
+            'remote_paths',
+            'same parent directory',
+            'same parent directory',
+        ),
+    ],
+)
+async def test_webftp_path_rules_live_on_the_parameters(tool_name, param, phrase, gone):
+    # Given a tool whose argument rule used to sit in its description
+
+    # When reading the published parameter and tool description
+    on_parameter, on_tool = await published_rule(tool_name, param)
+
+    # Then the parameter states the rule and the tool no longer does
+    assert phrase in on_parameter
+    assert gone not in on_tool
 
 
 if __name__ == '__main__':

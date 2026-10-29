@@ -1,6 +1,9 @@
 """System information tools for Alpacon MCP server."""
 
 import asyncio
+from typing import Annotated
+
+from pydantic import Field
 
 from utils.api_call import http_call_response
 from utils.common import (
@@ -13,6 +16,8 @@ from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import READ_ONLY
 from utils.types import ServerId, ToolResponse
+
+_ARCHITECTURE_DESCRIPTION = 'Filter by architecture, e.g. x86_64 or aarch64.'
 
 
 @mcp_tool_handler(
@@ -199,7 +204,7 @@ async def list_system_groups(
 
 
 @mcp_tool_handler(
-    description='List installed software packages (rpm/deb) on a server. Searchable by package name and filterable by architecture (x86_64, aarch64, etc.). Returns package name, version, and architecture. Related: list_system_package_entries (package management entries), install_system_package.',
+    description='List installed software packages (rpm/deb) on a server. Searchable by package name and filterable by architecture. Returns package name, version, and architecture. Related: list_system_package_entries (package management entries), install_system_package.',
     annotations=READ_ONLY,
     meta={'anthropic/searchHint': 'system packages installed software rpm deb'},
 )
@@ -207,7 +212,9 @@ async def list_system_packages(
     server_id: ServerId,
     workspace: str,
     package_name: str | None = None,
-    architecture: str | None = None,
+    architecture: Annotated[
+        str | None, Field(description=_ARCHITECTURE_DESCRIPTION)
+    ] = None,
     limit: int = 100,
     region: str = '',
     **kwargs: str,

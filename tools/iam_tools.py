@@ -1,6 +1,9 @@
 """IAM (Identity and Access Management) tools for Alpacon MCP server."""
 
 import re
+from typing import Annotated
+
+from pydantic import Field
 
 from utils.api_call import http_call_response
 from utils.common import build_list_params, error_response, exclude_none
@@ -13,6 +16,15 @@ from utils.types import ToolResponse
 VALID_MEMBERSHIP_ROLES = frozenset({'member', 'manager', 'owner'})
 VALID_SERVICE_TYPES = frozenset({'ci_cd', 'monitoring', 'automation', 'integration'})
 GROUP_NAME_PATTERN = re.compile(r'^[a-z0-9_-]+$')
+
+_GROUP_NAME_DESCRIPTION = (
+    'Group name: lowercase letters, digits, hyphens, and underscores only.'
+)
+_MEMBERSHIP_GROUP_DESCRIPTION = 'Filter by group ID to list the members of one group.'
+_ROLE_DESCRIPTION = 'member, manager or owner; default member.'
+_SERVICE_TYPE_DESCRIPTION = (
+    'ci_cd, monitoring, automation or integration; default integration.'
+)
 
 
 # ===============================
@@ -98,7 +110,7 @@ async def get_iam_user(
 
 
 @mcp_tool_handler(
-    description='Create a new IAM user account in the workspace. Requires username and email. Optionally set first/last name. The user is active by default. Use add_iam_member to assign the user to groups after creation. Related: update_iam_user, delete_iam_user, add_iam_member.',
+    description='Create a new IAM user account in the workspace. Requires username and email. Optionally set first/last name. Use add_iam_member to assign the user to groups after creation. Related: update_iam_user, delete_iam_user, add_iam_member.',
     annotations=ADDITIVE,
     meta={'anthropic/searchHint': 'iam user create add new account'},
 )
@@ -247,12 +259,12 @@ async def list_iam_groups(
 
 
 @mcp_tool_handler(
-    description='Create a new IAM permission group in the workspace. Requires a group name (lowercase letters, digits, hyphens, and underscores only). Optionally set a display name and description. Users can then be added to this group via add_iam_member.',
+    description='Create a new IAM permission group in the workspace. Requires a group name. Optionally set a display name and description. Users can then be added to this group via add_iam_member.',
     annotations=ADDITIVE,
     meta={'anthropic/searchHint': 'iam group create add new'},
 )
 async def create_iam_group(
-    name: str,
+    name: Annotated[str, Field(description=_GROUP_NAME_DESCRIPTION)],
     workspace: str,
     display_name: str | None = None,
     description: str | None = None,
@@ -411,13 +423,15 @@ async def delete_iam_group(
 
 
 @mcp_tool_handler(
-    description='List IAM group memberships in the workspace. Optionally filter by group ID to see members of a specific group. Supports pagination. Related: add_iam_member, remove_iam_member.',
+    description='List IAM group memberships in the workspace. Supports pagination. Related: add_iam_member, remove_iam_member.',
     annotations=READ_ONLY,
     meta={'anthropic/searchHint': 'iam memberships list group members'},
 )
 async def list_iam_memberships(
     workspace: str,
-    group_id: str | None = None,
+    group_id: Annotated[
+        str | None, Field(description=_MEMBERSHIP_GROUP_DESCRIPTION)
+    ] = None,
     region: str = '',
     page: int | None = None,
     page_size: int | None = None,
@@ -456,7 +470,7 @@ async def list_iam_memberships(
 
 
 @mcp_tool_handler(
-    description='Add a user to an IAM group by creating a membership. Requires both group ID and user ID. Optionally set the role (member, manager, or owner; default member). Related: remove_iam_member, list_iam_memberships.',
+    description='Add a user to an IAM group by creating a membership. Requires both group ID and user ID. Related: remove_iam_member, list_iam_memberships.',
     annotations=ADDITIVE,
     meta={'anthropic/searchHint': 'iam member add group user membership'},
 )
@@ -464,7 +478,7 @@ async def add_iam_member(
     group_id: str,
     user_id: str,
     workspace: str,
-    role: str = 'member',
+    role: Annotated[str, Field(description=_ROLE_DESCRIPTION)] = 'member',
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
@@ -594,7 +608,7 @@ async def list_iam_applications(
 
 
 @mcp_tool_handler(
-    description='Create a new IAM application (machine service account) in the workspace. Requires a name. Optionally set a description and service type (ci_cd, monitoring, automation, or integration; default integration). Related: list_iam_applications, get_iam_application, assign_application_system_users.',
+    description='Create a new IAM application (machine service account) in the workspace. Requires a name. Optionally set a description and service type. Related: list_iam_applications, get_iam_application, assign_application_system_users.',
     annotations=ADDITIVE,
     meta={'anthropic/searchHint': 'iam application create new service account'},
 )
@@ -602,7 +616,9 @@ async def create_iam_application(
     name: str,
     workspace: str,
     description: str | None = None,
-    service_type: str | None = None,
+    service_type: Annotated[
+        str | None, Field(description=_SERVICE_TYPE_DESCRIPTION)
+    ] = None,
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:

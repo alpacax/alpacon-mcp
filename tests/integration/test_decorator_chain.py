@@ -22,8 +22,17 @@ from tools.approval_tools import request_sudo_policy
 from tools.command_tools import execute_command
 from tools.server_tools import get_server, list_servers
 from tools.webftp_tools import webftp_upload_content
-from utils.decorators import ALL_REGIONS_DESCRIPTION, REGION_DESCRIPTION
-from utils.types import SERVER_ID_DESCRIPTION, WORK_SESSION_ID_DESCRIPTION
+from utils.decorators import (
+    ALL_REGIONS_DESCRIPTION,
+    REGION_DESCRIPTION,
+    WORKSPACE_DESCRIPTION,
+)
+from utils.types import (
+    SERVER_ID_DESCRIPTION,
+    SERVER_IDS_DESCRIPTION,
+    SESSION_ID_DESCRIPTION,
+    WORK_SESSION_ID_DESCRIPTION,
+)
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
@@ -597,6 +606,92 @@ class TestPublishedSchema:
                 'ALPACON_WORK_SESSION',
             )
             if phrase in text
+        ]
+
+    async def test_every_workspace_names_where_the_value_comes_from(self):
+        # Given every registered tool
+        _tool_functions()
+        tools = await mcp.list_tools()
+
+        # When collecting each workspace property
+        carriers = {
+            t.name: t.input_schema['properties']['workspace']
+            for t in tools
+            if 'workspace' in t.input_schema.get('properties', {})
+        }
+
+        # Then every one carries the rule, and list_workspaces takes none
+        assert {'get_server', 'execute_command', 'list_alerts'} <= set(carriers)
+        assert not {
+            name: prop
+            for name, prop in carriers.items()
+            if prop.get('description') != WORKSPACE_DESCRIPTION
+        }
+        assert 'list_workspaces' not in carriers
+        assert 'list_workspaces' in WORKSPACE_DESCRIPTION
+        assert not [
+            t.name for t in tools if WORKSPACE_DESCRIPTION in (t.description or '')
+        ]
+
+    async def test_every_servers_list_says_uuid_never_a_name(self):
+        # Given every registered tool
+        _tool_functions()
+        tools = await mcp.list_tools()
+
+        # When collecting each servers and server_ids property
+        carriers = {
+            (t.name, key): (t.input_schema['properties'][key], t.description or '')
+            for t in tools
+            for key in ('servers', 'server_ids')
+            if key in t.input_schema.get('properties', {})
+        }
+
+        # Then every one carries the rule, an optional one stays nullable, and
+        # no tool description restates it
+        assert {
+            ('work_session_create', 'servers'),
+            ('execute_command_multi_server', 'server_ids'),
+            ('preview_alert_rule', 'servers'),
+        } <= set(carriers)
+        assert not {
+            key: prop
+            for key, (prop, _) in carriers.items()
+            if prop.get('description') != SERVER_IDS_DESCRIPTION
+        }
+        assert {'type': 'null'} in carriers[('preview_alert_rule', 'servers')][0][
+            'anyOf'
+        ]
+        assert 'never server names' in SERVER_IDS_DESCRIPTION
+        assert 'list_servers' in SERVER_IDS_DESCRIPTION
+        assert not [
+            key
+            for key, (_, text) in carriers.items()
+            if 'server UUIDs' in text or 'never server names' in text
+        ]
+
+    async def test_every_session_id_says_work_session_uuid(self):
+        # Given every registered tool
+        _tool_functions()
+        tools = await mcp.list_tools()
+
+        # When collecting each session_id property
+        carriers = {
+            t.name: (t.input_schema['properties']['session_id'], t.description or '')
+            for t in tools
+            if 'session_id' in t.input_schema.get('properties', {})
+        }
+
+        # Then all seven work_session_* tools carry it and no description restates it
+        assert len(carriers) == 7
+        assert all(name.startswith('work_session_') for name in carriers)
+        assert not {
+            name: prop
+            for name, (prop, _) in carriers.items()
+            if prop.get('description') != SESSION_ID_DESCRIPTION
+        }
+        assert 'Work Session UUID' in SESSION_ID_DESCRIPTION
+        assert not [
+            name for name, (_, text) in carriers.items() if 'Work Session UUID' in text
         ]
 
     @pytest.mark.parametrize('region', ['dev', '', 'AP1'])

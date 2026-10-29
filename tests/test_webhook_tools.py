@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from server import mcp
-from tests.conftest import HTTP_ERROR_ENVELOPE, http_client_fixture
+from tests.conftest import HTTP_ERROR_ENVELOPE, http_client_fixture, published_rule
 from tools.webhook_tools import (
     create_event_subscription,
     create_webhook,
@@ -497,3 +497,36 @@ class TestGetWebhook:
             endpoint='/api/notifications/webhooks/wh-1/',
             token='test-token',
         )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    'tool_name, param, phrase, gone',
+    [
+        (
+            'create_event_subscription',
+            'event_type',
+            'metric_threshold_resolved',
+            '(command_fin',
+        ),
+        (
+            'list_webhooks',
+            'provider',
+            'slack, discord, teams, telegram, custom',
+            'must be one of',
+        ),
+        ('create_webhook', 'owner', 'username is rejected', 'owner must be'),
+        ('create_webhook', 'provider', 'detect it from the URL', 'provider must be'),
+    ],
+)
+async def test_webhook_argument_rule_lives_on_the_parameter(
+    tool_name, param, phrase, gone
+):
+    # Given a tool whose argument rule used to sit in its description
+
+    # When reading the published parameter and tool description
+    on_parameter, on_tool = await published_rule(tool_name, param)
+
+    # Then the parameter states the rule and the tool no longer does
+    assert phrase in on_parameter
+    assert gone not in on_tool

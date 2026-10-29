@@ -11,7 +11,7 @@ from utils.common import (
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ_ONLY
-from utils.types import OptionalServerId, ServerId, ToolResponse
+from utils.types import OptionalServerId, ServerId, ServerIds, ToolResponse
 
 VALID_BULK_ACTIONS = ('add', 'remove')
 _BULK_ACTIONS_STR = ', '.join(f"'{a}'" for a in VALID_BULK_ACTIONS)
@@ -393,7 +393,7 @@ async def delete_server_acl(
 async def bulk_server_acl(
     workspace: str,
     action: str,
-    server_ids: list[str],
+    server_ids: ServerIds,
     api_token_id: str | None = None,
     service_token_id: str | None = None,
     region: str = '',

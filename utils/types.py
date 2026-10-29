@@ -19,6 +19,14 @@ SERVER_ID_DESCRIPTION = (
     'Server UUID, never a server name; list_servers maps a name to its UUID.'
 )
 
+SERVER_IDS_DESCRIPTION = (
+    'Server UUIDs, never server names; list_servers maps a name to its UUID.'
+)
+
+SESSION_ID_DESCRIPTION = (
+    'Work Session UUID, as work_session_create or work_session_list returns it.'
+)
+
 WORK_SESSION_ID_DESCRIPTION = (
     'Work Session to link this call to for audit. The server requires one for MCP '
     'OAuth and browser-login callers; static API and service tokens may omit it. '
@@ -29,6 +37,11 @@ WORK_SESSION_ID_DESCRIPTION = (
 # Plain assignments, not `type`: pydantic publishes a TypeAliasType as a bare $ref.
 ServerId = Annotated[str, Field(description=SERVER_ID_DESCRIPTION)]
 OptionalServerId = Annotated[str | None, Field(description=SERVER_ID_DESCRIPTION)]
+ServerIds = Annotated[list[str], Field(description=SERVER_IDS_DESCRIPTION)]
+OptionalServerIds = Annotated[
+    list[str] | None, Field(description=SERVER_IDS_DESCRIPTION)
+]
+SessionId = Annotated[str, Field(description=SESSION_ID_DESCRIPTION)]
 WorkSessionId = Annotated[str | None, Field(description=WORK_SESSION_ID_DESCRIPTION)]
 
 type RequestBody = Mapping[str, object]  # a JSON request body

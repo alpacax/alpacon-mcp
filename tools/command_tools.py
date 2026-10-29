@@ -44,6 +44,7 @@ from utils.types import (
     JsonValue,
     OptionalServerId,
     ServerId,
+    ServerIds,
     ToolErrorResponse,
     ToolResponse,
     WorkSessionId,
@@ -93,6 +94,82 @@ _FILE_READ_POLL_INTERVAL = 1.0
 #: its own reason—double execution here, a second approval request there—but the
 #: instruction itself lives in one place so one copy cannot be reworded alone.
 DO_NOT_RESUBMIT = 'Do not resubmit the command'
+
+_PURPOSE_DESCRIPTION = (
+    'What this particular command is for, in one or two sentences; pass it whenever '
+    'the command is not trivially routine. State a fact local to this host that the '
+    'Work Session description does not already imply; general knowledge adds nothing '
+    "the assessor does not have, and a purpose cannot lower a command's intrinsic "
+    f'risk. Over {PURPOSE_MAX_LENGTH} characters it is trimmed to fit rather than refused, and the '
+    'response then carries purpose_truncated: true, so keep it short enough to '
+    'survive whole.'
+)
+
+_BATCH_PURPOSE_DESCRIPTION = (
+    'What the batch is for; it rides every submission and the assessor judges each '
+    f'command with it in hand. Over {PURPOSE_MAX_LENGTH} characters it is trimmed rather than '
+    'refused, and the response then carries purpose_truncated: true.'
+)
+
+_PARALLEL_DESCRIPTION = 'False runs the servers one after another.'
+
+_FILE_PURPOSE_DESCRIPTION = 'What this run is for.'
+
+_ANSWER_PURPOSE_DESCRIPTION = (
+    'A fact local to this host that the Work Session description does not already '
+    'imply. General knowledge carries nothing the assessor lacks, a purpose cannot '
+    "lower the command's intrinsic risk or outrank the session description, and an "
+    'attempt to argue the verdict down is reported and denied.'
+)
+
+_PURPOSE_COMMAND_ID_DESCRIPTION = (
+    'ID of the held command, from the execute_command purpose_required response.'
+)
+
+_TIMEOUT_DESCRIPTION = (
+    'Seconds to wait for the result, default 300 (5 minutes). The timeout resets '
+    'while the command is actively running.'
+)
+
+_FILE_TIMEOUT_DESCRIPTION = 'Seconds to wait for the result, default 300 (5 minutes).'
+
+_FILE_PATH_DESCRIPTION = (
+    'Absolute path of the script on the host, e.g. /opt/deploy.sh; a relative path '
+    'is refused.'
+)
+
+_FILE_INTERPRETER_DESCRIPTION = (
+    'Absolute path of the interpreter, e.g. /bin/bash; a bare "bash" is refused.'
+)
+
+_FILE_CONTENT_DESCRIPTION = (
+    'Whenever you pass it, pass the full contents, byte-for-byte as they are on '
+    'disk: do not strip a trailing newline or normalize line endings, because the '
+    'agent hashes the on-disk file with no normalization and a mismatch fails '
+    f'closed. Whether passed or read from the host, it is capped at '
+    f'{FILE_CONTENT_MAX_BYTES // 1024} KB and must '
+    'be non-empty.'
+)
+
+_FILE_USERNAME_DESCRIPTION = (
+    'Pass it whenever ownership matters; omitted, the writing account is the '
+    "server's WebFTP default."
+)
+
+_REUSE_DAYS_DESCRIPTION = (
+    f'Integer, 1 to {FILE_REUSE_DAYS_MAX}: how many days the approver should let this exact file be '
+    'rerun without a new review. Standing approvals always expire: the workspace '
+    f'sets a ceiling of 1 to {FILE_REUSE_DAYS_MAX} days (default 90), and you may propose a shorter '
+    'period than that, never a longer one. It is a proposal, not a grant: the '
+    'approver may decline reuse, and a workspace ceiling lowered after submission '
+    'can shorten it; the approver cannot choose another period for you. A proposal '
+    'above the workspace ceiling is refused with file_exec_reuse_exceeds_max, never '
+    'shortened. Propose a duration when you expect to rerun the same unchanged '
+    'script (same bytes, server, account, args) within that window, sized to how '
+    'long you expect to need it. Omitting it proposes no duration and does not make '
+    'the run one-shot: if the approver opts in, they may still grant reuse up to '
+    'the workspace ceiling.'
+)
 
 _COMMAND_DESCRIPTION = (
     'Shell command to run; must not be empty or whitespace-only. Do not prefix it '
@@ -680,7 +757,7 @@ async def list_commands(
 
 
 @mcp_tool_handler(
-    description="Run a shell command on a server and wait for the result (up to 5 minutes by default). Returns stdout, stderr, and exit code in a single call. Requires ACL permission. Unless a Work Session sudo policy already covers the command, a sudo invocation either routes to human-in-the-loop approval and blocks until a human acts, or is denied outright with no request anyone can approve. Check sudo_denial.category before waiting; a sudo_hint with no sudo_denial is a hard denial that creates no request, so do not wait on it. The timeout resets when the command is actively running. Supports dependency chains (run_after), scheduled execution (scheduled_at), and stdin data. Pass purpose to say what this particular command is for, in one or two sentences, whenever the command is not trivially routine: the assessor judges it with the purpose in hand, and a command that would otherwise queue for a human may clear on its own. State a fact local to this host that the Work Session description does not already imply; general knowledge adds nothing the assessor does not have, and a purpose cannot lower a command's intrinsic risk. If you omit it the gate may hold the command and ask—a status of purpose_required, which you answer with state_command_purpose within about a minute. A purpose over 2000 characters is trimmed to fit rather than refused, and the response then carries purpose_truncated: true—the assessor judges what was sent, so keep it short enough to survive whole. For a script, a heredoc, or any \"bash /path/to/file\" line, use execute_file instead: with write_file=true when you have the script's text, so one call writes it to the host and runs it as a verified file, or with read_from_server=true when the script already exists on the host, so one call reads its exact bytes from there and submits them. A verified file an approver has marked standing is re-run unchanged without paging a human, which a shell line never is. A line that carries a script body can be refused after verification when the workspace approval policy blocks script bodies, with error_code use_file_execution; it did not run, and next_action names the execute_file call. A command a gate refused before it ran fails with rejection_cause, rejection_gate and rejection_hint: follow the hint and do not resubmit it, since the same command gets the same answer. When to use: the recommended way to run a one-off command on a server. Related: execute_file (write and run a script whose bytes are reviewed and hashed), execute_command_multi_server (run on multiple servers), state_command_purpose (answer a held command's purpose demand), list_commands (browse history), work_session_create (create a Work Session). Note: Default timeout is 300 seconds (5 minutes).",
+    description='Run a shell command on a server and wait for the result (up to 5 minutes by default). Returns stdout, stderr, and exit code in a single call. Requires ACL permission. Unless a Work Session sudo policy already covers the command, a sudo invocation either routes to human-in-the-loop approval and blocks until a human acts, or is denied outright with no request anyone can approve. Check sudo_denial.category before waiting; a sudo_hint with no sudo_denial is a hard denial that creates no request, so do not wait on it. Supports dependency chains (run_after), scheduled execution (scheduled_at), and stdin data. The assessor judges the command with its purpose in hand, and a command that would otherwise queue for a human may clear on its own. If you omit purpose the gate may hold the command and ask—a status of purpose_required, which you answer with state_command_purpose within about a minute. For a script, a heredoc, or any "bash /path/to/file" line, use execute_file instead: with write_file=true when you have the script\'s text, so one call writes it to the host and runs it as a verified file, or with read_from_server=true when the script already exists on the host, so one call reads its exact bytes from there and submits them. A verified file an approver has marked standing is re-run unchanged without paging a human, which a shell line never is. A line that carries a script body can be refused after verification when the workspace approval policy blocks script bodies, with error_code use_file_execution; it did not run, and next_action names the execute_file call. A command a gate refused before it ran fails with rejection_cause, rejection_gate and rejection_hint: follow the hint and do not resubmit it, since the same command gets the same answer. When to use: the recommended way to run a one-off command on a server. Related: execute_file (write and run a script whose bytes are reviewed and hashed), execute_command_multi_server (run on multiple servers), state_command_purpose (answer a held command\'s purpose demand), list_commands (browse history), work_session_create (create a Work Session).',
     annotations=ADDITIVE,
     meta={
         'anthropic/alwaysLoad': True,
@@ -698,9 +775,9 @@ async def execute_command(
     run_after: list[str] | None = None,
     scheduled_at: str | None = None,
     data: str | None = None,
-    timeout: int = 300,
+    timeout: Annotated[int, Field(description=_TIMEOUT_DESCRIPTION)] = 300,
     work_session_id: WorkSessionId = None,
-    purpose: str | None = None,
+    purpose: Annotated[str | None, Field(description=_PURPOSE_DESCRIPTION)] = None,
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
@@ -1173,7 +1250,7 @@ def _file_exec_refusal(code: str, **kwargs: object) -> ToolErrorResponse:
 
 
 @mcp_tool_handler(
-    description='Run a script on a server as a verified file, writing it there first in the same call when write_file is true, or reading its bytes from there when read_from_server is true: the reviewer and the assessor judge the exact bytes you submit, and the agent executes the file only if the bytes on the host\'s disk hash to the same digest. Prefer this over execute_command for anything longer than a one-off line—a script, a heredoc, a "bash /tmp/deploy.sh" line. Why: once an approver marks a verified file standing, an unchanged re-run of it (same bytes, same server, same account, same args) is admitted without paging a human; a "bash /path" shell line never can be, because nothing about the path proves what runs. What approving means: it authorizes exactly these bytes, on this server, as this account, with these arguments—not "this file is safe". One changed byte re-queues human review. The environment, libraries, interpreter version, and anything the script fetches or executes at runtime are not verified and stay the executor\'s responsibility; only this first entrypoint is. How to use: for any script or heredoc, pass write_file=true with the script as content—the one-step form. This call then writes content to path on the host through WebFTP and submits those same bytes for review only once the host reports the file written. An existing file at path is refused (error_code file_write_failed, saying the file already exists) unless you also pass overwrite=true; to re-run a script already on the host, use read_from_server instead of writing it again. overwrite requires write_file (error_code file_exec_invalid_options otherwise). A new file is owned by username and that account\'s own group, or by groupname when you pass one other than the default; an existing file replaced with overwrite keeps its owner and mode, and must be writable by username. The account also needs write access to the directory for a new file; pass username whenever ownership matters, since an omitted one leaves the writing account to the server\'s WebFTP default. No execute bit is needed, because the interpreter runs the file. The write happens before the run is reviewed, as a webftp_upload_content call would, so a run that is later denied leaves the new file in place. Waiting for the write (up to about a minute) comes before, and on top of, timeout. If the write fails, nothing is submitted: error_code file_write_failed (fix the cause, such as the path or the account\'s permissions, and re-run; a server refusal that names its own code, such as a Work Session gate, keeps that code instead) or file_write_timeout (the host did not report the file written within about a minute; re-run once the host is reachable). For a script that already exists on the host—the usual "bash /opt/deploy.sh"—pass read_from_server=true and omit content: the call downloads the file at path as username through WebFTP and submits those exact bytes, so you never copy the script by hand. read_from_server cannot be combined with write_file or content (error_code file_exec_invalid_options). If the read fails, nothing is submitted: error_code file_read_failed (the file is missing, the account cannot read it, or it is not UTF-8 text; a server refusal that names its own code keeps that code) or file_read_timeout; an empty file is refused with file_exec_empty_content and one over 64 KB with file_exec_content_too_large. Waiting for the read (up to about a minute) also comes before timeout. The agent still hashes the on-disk file at execution, so a file changed after the read fails closed. write_file and read_from_server both default to false: then the file must already exist at path on the target host, and content is what the reviewer judges; it is never shipped to the host. Whenever you pass content yourself, pass the full contents, byte-for-byte as they are on disk—do not strip a trailing newline or normalize line endings, because the agent hashes the on-disk file with no normalization and a mismatch fails closed. path and interpreter must be absolute (/opt/deploy.sh, /bin/bash; a bare "bash" is refused). Put composition inside the script: pipes, redirection, &&, and environment variables are reviewed there. Free-text composition around a verified file (a pipe into it, an env prefix, extra shell) is not possible on this lane, by design—a one-off composition belongs on execute_command. content, passed or read from the host, is capped at 64 KB and must be non-empty. reuse_days (integer, 1 to 366) proposes how many days the approver should let this exact file be rerun without a new review. Standing approvals always expire: the workspace sets a ceiling of 1 to 366 days (default 90), and you may propose a shorter period than that, never a longer one. It is a proposal, not a grant: the approver may decline reuse, and a workspace ceiling lowered after submission can shorten it; the approver cannot choose another period for you. A proposal above the workspace ceiling is refused with file_exec_reuse_exceeds_max, never shortened. Propose a duration when you expect to rerun the same unchanged script (same bytes, server, account, args) within that window, sized to how long you expect to need it. Omitting it proposes no duration and does not make the run one-shot: if the approver opts in, they may still grant reuse up to the workspace ceiling. Refusals to act on rather than retry, each returned as error_code: file_exec_unsupported_agent (the agent on that server did not report support for this lane: if it runs alpamon older than 2.8.3, upgrade it to 2.8.3 or newer or use execute_command; if it already runs 2.8.3 or newer, its build has no file lane on that platform, such as Windows, so upgrading does not help—use execute_command), file_exec_assessor_disabled (this deployment has the command assessor off, so the lane is unavailable—use execute_command), file_exec_invalid_path (path or interpreter is not absolute), file_exec_content_too_large, file_exec_empty_content, file_exec_line_too_long (interpreter + path + args exceed the command line ceiling—shorten args), file_exec_invalid_reuse_days (reuse_days is outside 1 to 366—fix it or omit it), file_exec_reuse_exceeds_max (reuse_days is above the workspace\'s ceiling—resubmit with a shorter duration or none). None of these has a request waiting behind it, so do not wait on them. Otherwise the run follows the same rules as execute_command: sudo inside the script routes to human approval or is denied outright, a status of awaiting_approval means a human decides out-of-band, purpose_required is answered with state_command_purpose, and the result carries stdout, stderr, and exit code. Pass purpose to say what this run is for. When to use: deploy or maintenance scripts, anything you would otherwise run as "bash file" or feed through a heredoc, a script already on the host whose "bash /path" line was held for approval, and any script you expect to run again unchanged. Related: execute_command (one-off shell line), webftp_upload_content (put a file on the host without running it), state_command_purpose, list_commands. Note: Default timeout is 300 seconds (5 minutes).',
+    description='Run a script on a server as a verified file, writing it there first in the same call when write_file is true, or reading its bytes from there when read_from_server is true: the reviewer and the assessor judge the exact bytes you submit, and the agent executes the file only if the bytes on the host\'s disk hash to the same digest. Prefer this over execute_command for anything longer than a one-off line—a script, a heredoc, a "bash /tmp/deploy.sh" line. Why: once an approver marks a verified file standing, an unchanged re-run of it (same bytes, same server, same account, same args) is admitted without paging a human; a "bash /path" shell line never can be, because nothing about the path proves what runs. What approving means: it authorizes exactly these bytes, on this server, as this account, with these arguments—not "this file is safe". One changed byte re-queues human review. The environment, libraries, interpreter version, and anything the script fetches or executes at runtime are not verified and stay the executor\'s responsibility; only this first entrypoint is. How to use: for any script or heredoc, pass write_file=true with the script as content—the one-step form. This call then writes content to path on the host through WebFTP and submits those same bytes for review only once the host reports the file written. An existing file at path is refused (error_code file_write_failed, saying the file already exists) unless you also pass overwrite=true; to re-run a script already on the host, use read_from_server instead of writing it again. overwrite requires write_file (error_code file_exec_invalid_options otherwise). A new file is owned by username and that account\'s own group, or by groupname when you pass one other than the default; an existing file replaced with overwrite keeps its owner and mode, and must be writable by username. The account also needs write access to the directory for a new file. No execute bit is needed, because the interpreter runs the file. The write happens before the run is reviewed, as a webftp_upload_content call would, so a run that is later denied leaves the new file in place. Waiting for the write (up to about a minute) comes before, and on top of, timeout. If the write fails, nothing is submitted: error_code file_write_failed (fix the cause, such as the path or the account\'s permissions, and re-run; a server refusal that names its own code, such as a Work Session gate, keeps that code instead) or file_write_timeout (the host did not report the file written within about a minute; re-run once the host is reachable). For a script that already exists on the host—the usual "bash /opt/deploy.sh"—pass read_from_server=true and omit content: the call downloads the file at path as username through WebFTP and submits those exact bytes, so you never copy the script by hand. read_from_server cannot be combined with write_file or content (error_code file_exec_invalid_options). If the read fails, nothing is submitted: error_code file_read_failed (the file is missing, the account cannot read it, or it is not UTF-8 text; a server refusal that names its own code keeps that code) or file_read_timeout; an empty file is refused with file_exec_empty_content and one over 64 KB with file_exec_content_too_large. Waiting for the read (up to about a minute) also comes before timeout. The agent still hashes the on-disk file at execution, so a file changed after the read fails closed. write_file and read_from_server both default to false: then the file must already exist at path on the target host, and content is what the reviewer judges; it is never shipped to the host. Put composition inside the script: pipes, redirection, &&, and environment variables are reviewed there. Free-text composition around a verified file (a pipe into it, an env prefix, extra shell) is not possible on this lane, by design—a one-off composition belongs on execute_command. Refusals to act on rather than retry, each returned as error_code: file_exec_unsupported_agent (the agent on that server did not report support for this lane: if it runs alpamon older than 2.8.3, upgrade it to 2.8.3 or newer or use execute_command; if it already runs 2.8.3 or newer, its build has no file lane on that platform, such as Windows, so upgrading does not help—use execute_command), file_exec_assessor_disabled (this deployment has the command assessor off, so the lane is unavailable—use execute_command), file_exec_invalid_path (path or interpreter is not absolute), file_exec_content_too_large, file_exec_empty_content, file_exec_line_too_long (interpreter + path + args exceed the command line ceiling—shorten args), file_exec_invalid_reuse_days (reuse_days is outside 1 to 366—fix it or omit it), file_exec_reuse_exceeds_max (reuse_days is above the workspace\'s ceiling—resubmit with a shorter duration or none). None of these has a request waiting behind it, so do not wait on them. Otherwise the run follows the same rules as execute_command: sudo inside the script routes to human approval or is denied outright, a status of awaiting_approval means a human decides out-of-band, purpose_required is answered with state_command_purpose, and the result carries stdout, stderr, and exit code. When to use: deploy or maintenance scripts, anything you would otherwise run as "bash file" or feed through a heredoc, a script already on the host whose "bash /path" line was held for approval, and any script you expect to run again unchanged. Related: execute_command (one-off shell line), webftp_upload_content (put a file on the host without running it), state_command_purpose, list_commands.',
     annotations=ADDITIVE,
     meta={
         'anthropic/alwaysLoad': True,
@@ -1182,22 +1259,28 @@ def _file_exec_refusal(code: str, **kwargs: object) -> ToolErrorResponse:
 )
 async def execute_file(
     server_id: ServerId,
-    path: str,
+    path: Annotated[str, Field(description=_FILE_PATH_DESCRIPTION)],
     workspace: str,
-    content: str = '',
-    interpreter: str = DEFAULT_INTERPRETER,
+    content: Annotated[str, Field(description=_FILE_CONTENT_DESCRIPTION)] = '',
+    interpreter: Annotated[
+        str, Field(description=_FILE_INTERPRETER_DESCRIPTION)
+    ] = DEFAULT_INTERPRETER,
     args: list[str] | None = None,
-    reuse_days: Annotated[int, Strict()] | None = None,
+    reuse_days: Annotated[
+        Annotated[int, Strict()] | None, Field(description=_REUSE_DAYS_DESCRIPTION)
+    ] = None,
     write_file: bool = False,
     overwrite: bool = False,
     read_from_server: bool = False,
-    username: str | None = None,
+    username: Annotated[
+        str | None, Field(description=_FILE_USERNAME_DESCRIPTION)
+    ] = None,
     groupname: str = 'alpacon',
     run_after: list[str] | None = None,
     scheduled_at: str | None = None,
-    timeout: int = 300,
+    timeout: Annotated[int, Field(description=_FILE_TIMEOUT_DESCRIPTION)] = 300,
     work_session_id: WorkSessionId = None,
-    purpose: str | None = None,
+    purpose: Annotated[str | None, Field(description=_FILE_PURPOSE_DESCRIPTION)] = None,
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
@@ -1612,13 +1695,13 @@ async def _poll_command_result(
 
 
 @mcp_tool_handler(
-    description='Answer the purpose demand on a command the verification gate is holding, then wait for the outcome. Use this when execute_command returned status "purpose_required"; the command_id is in that response. The command re-enters judgment once with your purpose attached and this call returns whatever that second verdict produces—the command output when it clears, an approval-pending result when a human is still needed, or an error when it is denied. Answer promptly: the demand expires in about a minute, and there is exactly one demand per command, so a late or second answer is refused. Write a purpose that states a fact local to this host which the Work Session description does not already imply. General knowledge carries nothing the assessor lacks, a purpose cannot lower the command\'s intrinsic risk or outrank the session description, and an attempt to argue the verdict down is reported and denied. Only the principal that submitted the command may answer. When to use: only in response to a purpose_required result. Related: execute_command (pass purpose up front and skip this round trip entirely).',
+    description='Answer the purpose demand on a command the verification gate is holding, then wait for the outcome. Use this when execute_command returned status "purpose_required". The command re-enters judgment once with your purpose attached and this call returns whatever that second verdict produces—the command output when it clears, an approval-pending result when a human is still needed, or an error when it is denied. Answer promptly: the demand expires in about a minute, and there is exactly one demand per command, so a late or second answer is refused. Only the principal that submitted the command may answer. When to use: only in response to a purpose_required result. Related: execute_command (pass purpose up front and skip this round trip entirely).',
     annotations=ADDITIVE,
     meta={'anthropic/searchHint': 'command purpose demand answer held justification'},
 )
 async def state_command_purpose(
-    command_id: str,
-    purpose: str,
+    command_id: Annotated[str, Field(description=_PURPOSE_COMMAND_ID_DESCRIPTION)],
+    purpose: Annotated[str, Field(description=_ANSWER_PURPOSE_DESCRIPTION)],
     workspace: str,
     timeout: int = 300,
     region: str = '',
@@ -1680,12 +1763,12 @@ async def state_command_purpose(
 
 
 @mcp_tool_handler(
-    description="Run the same shell command on multiple servers simultaneously or sequentially. Returns per-server results with success/failure status. Requires ACL permission. Unless a Work Session sudo policy already covers the command, a sudo invocation either routes to human-in-the-loop approval and stalls that server's command until a human acts—once per server—or is denied outright with no request anyone can approve. The denial surfaces on that server's list_commands entry: check sudo_denial.category there before waiting; a sudo_hint with no sudo_denial is a hard denial that creates no request, so do not wait on it. Pass purpose to state what the batch is for; it rides every submission and the assessor judges each command with it in hand. Unlike execute_command this tool never waits, so it is never asked for a purpose after the fact—stating it up front is the only chance. A purpose over 2000 characters is trimmed rather than refused, and the response then carries purpose_truncated: true. When to use: batch operations like deploying configs, checking status, or running diagnostics across a fleet. A line that carries a script body (a heredoc, a multi-line -c or -e body, a decoded payload piped into a shell or interpreter) can be refused per server after verification when the workspace approval policy blocks script bodies, so only some targets may be refused: their list_commands entries carry error_code use_file_execution. Rerun the script with execute_file (write_file=true) on the refused servers only, with the same account; resubmitting the original target set can fail with file_exec_unsupported_agent on a server whose agent lacks the file lane. Related: execute_command (single server), execute_file, work_session_create (create a Work Session). Note: Set parallel=false for sequential execution. This submits commands without waiting for results—use list_commands to check status.",
+    description="Run the same shell command on multiple servers simultaneously or sequentially. Returns per-server results with success/failure status. Requires ACL permission. Unless a Work Session sudo policy already covers the command, a sudo invocation either routes to human-in-the-loop approval and stalls that server's command until a human acts—once per server—or is denied outright with no request anyone can approve. The denial surfaces on that server's list_commands entry: check sudo_denial.category there before waiting; a sudo_hint with no sudo_denial is a hard denial that creates no request, so do not wait on it. Unlike execute_command this tool never waits, so it is never asked for a purpose after the fact—stating purpose up front is the only chance. When to use: batch operations like deploying configs, checking status, or running diagnostics across a fleet. A line that carries a script body (a heredoc, a multi-line -c or -e body, a decoded payload piped into a shell or interpreter) can be refused per server after verification when the workspace approval policy blocks script bodies, so only some targets may be refused: their list_commands entries carry error_code use_file_execution. Rerun the script with execute_file (write_file=true) on the refused servers only, with the same account; resubmitting the original target set can fail with file_exec_unsupported_agent on a server whose agent lacks the file lane. Related: execute_command (single server), execute_file, work_session_create (create a Work Session). This submits commands without waiting for results—use list_commands to check status.",
     annotations=ADDITIVE,
     meta={'anthropic/searchHint': 'command multi server batch deploy fleet parallel'},
 )
 async def execute_command_multi_server(
-    server_ids: list[str],
+    server_ids: ServerIds,
     command: Annotated[str, Field(description=_COMMAND_DESCRIPTION)],
     workspace: str,
     shell: str = 'system',
@@ -1693,9 +1776,11 @@ async def execute_command_multi_server(
     groupname: str = 'alpacon',
     env: dict[str, str] | None = None,
     region: str = '',
-    parallel: bool = True,
+    parallel: Annotated[bool, Field(description=_PARALLEL_DESCRIPTION)] = True,
     work_session_id: WorkSessionId = None,
-    purpose: str | None = None,
+    purpose: Annotated[
+        str | None, Field(description=_BATCH_PURPOSE_DESCRIPTION)
+    ] = None,
     **kwargs: str,
 ) -> ToolResponse:
     """Submit a command to many servers without waiting; read results via

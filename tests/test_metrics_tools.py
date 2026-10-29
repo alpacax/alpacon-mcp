@@ -10,7 +10,7 @@ from unittest.mock import call, patch
 import pytest
 
 from server import mcp
-from tests.conftest import HTTP_ERROR_ENVELOPE, http_client_fixture
+from tests.conftest import HTTP_ERROR_ENVELOPE, http_client_fixture, published_rule
 from tools.metrics_tools import (
     _MAX_INTERFACE_PAGES,
     _DiskUsageRow,
@@ -2141,10 +2141,6 @@ class TestListLatestMetrics:
         assert 'No token found' in result['message']
 
 
-if __name__ == '__main__':
-    pytest.main([__file__, '-v'])
-
-
 class TestMetricsToolsBodyShapes:
     """The four usage tools read a list or a paginated object alike, and refuse a scalar."""
 
@@ -2253,3 +2249,70 @@ class TestMetricsToolsBodyShapes:
 
         assert result['status'] == 'error'
         assert '`results`' in result['message']
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    'tool_name, param, phrase, gone',
+    [
+        (
+            'get_disk_io',
+            'device',
+            'pass one of the devices listed in `devices`',
+            'pass one of them as device',
+        ),
+        (
+            'get_server_metrics_summary',
+            'hours',
+            'capped at 12',
+            'read over the last `hours`',
+        ),
+        (
+            'list_latest_metrics',
+            'state',
+            'includes every "no_data" server',
+            "state='stale'",
+        ),
+        (
+            'list_latest_metrics',
+            'ordering',
+            '-metric_severity puts critical first',
+            'critical first descending',
+        ),
+    ],
+)
+async def test_metrics_argument_rule_lives_on_the_parameter(
+    tool_name, param, phrase, gone
+):
+    # Given a tool whose argument rule used to sit in its description
+
+    # When reading the published parameter and tool description
+    on_parameter, on_tool = await published_rule(tool_name, param)
+
+    # Then the parameter states the rule and the tool no longer does
+    assert phrase in on_parameter
+    assert gone not in on_tool
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    'tool_name, param, phrase, gone',
+    [
+        ('get_top_servers', 'metric_types', 'disk_io and traffic', 'Supports cpu'),
+    ],
+)
+async def test_top_servers_argument_rule_lives_on_the_parameter(
+    tool_name, param, phrase, gone
+):
+    # Given a tool whose argument rule used to sit in its description
+
+    # When reading the published parameter and tool description
+    on_parameter, on_tool = await published_rule(tool_name, param)
+
+    # Then the parameter states the rule and the tool no longer does
+    assert phrase in on_parameter
+    assert gone not in on_tool
+
+
+if __name__ == '__main__':
+    pytest.main([__file__, '-v'])

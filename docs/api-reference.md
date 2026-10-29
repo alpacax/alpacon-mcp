@@ -4,9 +4,9 @@ Complete reference for all Alpacon MCP Server tools and capabilities.
 
 ## 📌 Conventions
 
-- **`workspace` is always required.** Every tool that talks to the API takes it.
+- **`workspace` is always required.** Every tool that talks to the API takes it, as the name `list_workspaces` returns.
 - **`region` is optional.** Leave it out and the server resolves it from the workspace—via `token.json` in local mode, via the JWT claims in hosted mode. Supply it (`ap1` or `us1`; the schema refuses any other value, including an empty string) when one token spans several regions. An unresolvable region comes back as a validation error, not a silent default.
-- **Server IDs are UUIDs**, never names. Get them from `list_servers`.
+- **Server IDs are UUIDs**, never names. Get them from `list_servers`. The same holds for each entry of `servers` and `server_ids`, and `session_id` on the Work Session tools is a Work Session UUID.
 - **Every other `*_id` is checked before the request is built.** A value must be a string of letters, digits, `.`, `_`, `~`, or `-`, and must not be `.` or `..`. Most of these identifiers are interpolated into the endpoint path, where a `/` or a `..` retargets the request; the ones that only reach a query parameter or a request body are held to the same rule, because the check goes by the argument name rather than by where the value ends up. Anything else—a `/`, a `?`, a `#`, a percent-encoded spelling of one, or a value that is not a string at all—comes back as a validation error naming the field, and no request is sent. `work_session_id` is the one exception: its surrounding whitespace is stripped on purpose, so the rule would reject values the `ALPACON_WORK_SESSION` route accepts.
 - **`limit` and `page_size` must be positive integers.** Both name a page size and reach the API as `page_size`, where a zero or a negative asks for a page that cannot exist. Either one comes back as a validation error naming the field, and no request is sent. Omitting the argument still gets the tool's own default.
 - **Work Session gate**: OAuth/browser callers must run command execution and file transfers inside an active Work Session; static API and service tokens bypass it. Blocked calls return `status="pending_approval"` or a `status="error"` with a `code` and `next_action`—see [Work session tools](#-work-session-tools).
@@ -54,6 +54,8 @@ List all servers in a region and workspace.
 **Parameters:**
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
 - `workspace` (string): Workspace name
+- `page` (integer, optional): Page number
+- `page_size` (integer, optional): Servers per page, up to 100; the server defaults to 15
 
 **Returns:** Array of server objects with ID, name, status, and metadata.
 
@@ -119,7 +121,7 @@ Unregister a host from the workspace. The agent stays installed; bringing the ho
 ### `star_server`
 Pin or unpin a server for the calling user. A personal preference flag, not a fleet-wide setting.
 
-**Parameters:** `server_id`, `status` (boolean), `workspace`, `region` (`ap1` or `us1`, optional)
+**Parameters:** `server_id`, `status` (boolean: `true` pins the server, `false` unpins it), `workspace`, `region` (`ap1` or `us1`, optional)
 
 ### Agent actions
 
@@ -609,7 +611,7 @@ Execute a command on multiple servers simultaneously.
 - `username` (string, optional): Username for execution
 - `groupname` (string, default: "alpacon"): Group name
 - `env` (object, optional): Environment variables
-- `parallel` (boolean, default: true): Execute in parallel
+- `parallel` (boolean, default: true): Execute in parallel; `false` runs the servers one after another
 - `work_session_id` (string, optional): Work Session to link the call to for audit; required for MCP OAuth and browser-login callers, optional for static API and service tokens; falls back to `ALPACON_WORK_SESSION` in the MCP server's environment when omitted, and an explicit value wins
 - `purpose` (string, optional): What this particular command is for (ADR 0052). The assessor judges the command with it in hand, so one that would otherwise queue for a human may clear on its own. State a fact local to this host that the Work Session description does not already imply; general knowledge adds nothing the assessor lacks, and a purpose cannot lower a command's intrinsic risk. Trimmed to 2000 characters rather than refused, and the response then carries `purpose_truncated: true`. This tool never waits, so it is never asked for a purpose after the fact—stating it up front is the only chance
 - `region` (`ap1` or `us1`, optional): Region name; resolved from the workspace when omitted
@@ -865,7 +867,7 @@ List all IAM groups in workspace with pagination support.
 Create a new IAM group.
 
 **Parameters:**
-- `name` (string): Group name (immutable once created)
+- `name` (string): Group name: lowercase letters, digits, hyphens, and underscores only (immutable once created)
 - `workspace` (string): Workspace name
 - `display_name` (string, optional): Human-readable name
 - `description` (string, optional): Group description
@@ -887,10 +889,10 @@ Read a group by `group_id`, update its `display_name`/`description` (the `name` 
 ### Membership management
 
 #### `list_iam_memberships`
-List group memberships. **Parameters:** `workspace`, `group_id` (optional filter), `region` (`ap1` or `us1`, optional), `page`, `page_size`.
+List group memberships. **Parameters:** `workspace`, `group_id` (optional filter: lists the members of one group), `region` (`ap1` or `us1`, optional), `page`, `page_size`.
 
 #### `add_iam_member`
-Add a user to a group. **Parameters:** `group_id`, `user_id`, `workspace`, `role` (`member`, `manager`, or `owner`), `region` (`ap1` or `us1`, optional).
+Add a user to a group. **Parameters:** `group_id`, `user_id`, `workspace`, `role` (`member`, `manager`, or `owner`; default `member`), `region` (`ap1` or `us1`, optional).
 
 #### `remove_iam_member`
 Remove a membership. **Parameters:** `membership_id`, `workspace`, `region` (`ap1` or `us1`, optional).
@@ -901,7 +903,7 @@ Send an email invitation to join the workspace (Auth0-enabled deployments). **Pa
 ### Application management (machine service accounts)
 
 - `list_iam_applications`: `workspace`, `region` (`ap1` or `us1`, optional), `page`, `page_size`
-- `create_iam_application`: `name`, `workspace`, `description` (optional), `service_type` (optional), `region` (`ap1` or `us1`, optional)
+- `create_iam_application`: `name`, `workspace`, `description` (optional), `service_type` (optional: `ci_cd`, `monitoring`, `automation` or `integration`; default `integration`), `region` (`ap1` or `us1`, optional)
 - `get_iam_application` / `update_iam_application` / `delete_iam_application`: by `app_id`
 - `assign_application_system_users` / `unassign_application_system_users`: `app_id`, `system_user_ids` (array), `workspace`, `region` (`ap1` or `us1`, optional)
 
@@ -959,9 +961,9 @@ There is intentionally no `approve_request`/`reject_request` tool: the Alpacon s
 
 ## 🔔 Alert tools
 
-- `list_alerts`: `workspace`, `server_id`, `alert_type`, `severity` (`critical`, `warning`, `info`), `server_name`, `acknowledged`, `dismissed`, `resolved`, `region` (`ap1` or `us1`, optional), `page`, `page_size`. `resolved` omitted returns open alerts only; `true` returns the resolved history instead
+- `list_alerts`: `workspace`, `server_id`, `alert_type`, `severity` (`critical`, `warning`, `info`), `server_name`, `acknowledged`, `dismissed`, `resolved`, `region` (`ap1` or `us1`, optional), `page`, `page_size`. `acknowledged=false` selects the active, unacknowledged alerts. `resolved` omitted returns open alerts only; `true` returns the resolved history instead; `false` is the explicit spelling of the default
 - `get_alert`: `alert_id`, `workspace`, `region` (`ap1` or `us1`, optional)
-- `acknowledge_alert`: `alert_id`, `workspace`, `action_type` (`checked` or `dismissed`), `region` (`ap1` or `us1`, optional). One acknowledgement per user per alert, and it cannot be changed afterwards. A repeat call by the same user (alpacon-server 2.35.0 or later) returns `status: "success"` with `already_acknowledged: true`, a `message`, and no `data`. That call records nothing whatever `action_type` it sends; the existing acknowledgement's `action_type` is not in the response, and `get_alert` returns it as `action_type`. An older server refuses the repeat with `error_code` `invalid`, and any other `400` stays an error
+- `acknowledge_alert`: `alert_id`, `workspace`, `action_type` (`checked` marks the alert as seen, `dismissed` as not worth acting on), `region` (`ap1` or `us1`, optional). One acknowledgement per user per alert, and it cannot be changed afterwards. A repeat call by the same user (alpacon-server 2.35.0 or later) returns `status: "success"` with `already_acknowledged: true`, a `message`, and no `data`. That call records nothing whatever `action_type` it sends; the existing acknowledgement's `action_type` is not in the response, and `get_alert` returns it as `action_type`. An older server refuses the repeat with `error_code` `invalid`, and any other `400` stays an error
 - `create_alert_rule`: `workspace`, `name`, `target`, `threshold`, `is_default`, `operator` (`gte` or `lte`, default `gte`), `duration_s` (seconds the condition must hold; `0`, the default, fires on a single sample), `recovery_threshold`, `no_data_after_s` (floored at the target's collection interval), `device` (disk/interface name; device-scoped targets only), `severity` (`critical`, `warning`, `info`; default `warning`), `notify_email` (`all`, `admins`, `group_members`, or `none`; default `all`), `notify_slack_channel` (boolean; default `true`), `region` (`ap1` or `us1`, optional). `target` is a metric the workspace exposes, e.g. `cpu-usage`, `memory-usage`, `disk-usage`, or one of the peak/avg bps or pps network and disk rates; the server holds the authoritative list and rejects an unrecognized value with `400`. `device` is accepted only for a device-scoped target—`cpu-usage` and `memory-usage` are host-wide. `notify_email` and `notify_slack_channel` decide who hears about alerts this rule raises; only a human caller may set them—a service-token or agent write naming either is refused with `400` (`metrics_alert_rule_destination_not_allowed`), and an `info`-severity rule sends no mail and posts to no channel regardless of either setting
 - `update_alert_rule`: `rule_id`, `workspace`, and any of `name`, `target`, `threshold`, `is_default`, `operator`, `duration_s`, `recovery_threshold`, `no_data_after_s`, `device`, `severity`, `notify_email`, `notify_slack_channel`—sent only for the fields given. `target`, when given, is subject to the same rule as `create_alert_rule`: the server holds the authoritative list and rejects an unrecognized value with `400`. `notify_email`, when given, is one of the same four choices as on `create_alert_rule` (`all`, `admins`, `group_members`, `none`); `notify_slack_channel` is a boolean. Both carry the same human-only restriction and `info`-severity behavior as on `create_alert_rule`; omitted, each keeps the rule's current value
 - `delete_alert_rule`: by `rule_id`. A rule with `is_default=true` cannot be deleted
@@ -1052,11 +1054,11 @@ The list and issue tools, and `grant_ledger_admin`, name the workspace's id to t
 
 ## 📜 Certificate tools
 
-**Authorities:** `list_certificate_authorities`, `create_certificate_authority` (`name`, `domain`, `organization`, `server_id`, `owner`, `root_valid_days`, `default_valid_days`, `max_valid_days`, `key_algorithm`, `key_size`, `install`), `get_certificate_authority`, `update_certificate_authority` (`default_valid_days`, `max_valid_days`, `owner`), `delete_certificate_authority` (only a CA that has never received a sign request; otherwise the server answers 400 with `cert_authority_cannot_be_deleted` and keeps the CA and its sign requests, certificates, and revoke requests. Retiring such a CA means removing its whole host with `unregister_server`, which takes the host out of the workspace, so do it only when the host itself is to be retired; a still-connected host needs `auto=True`, which also removes its Alpamon agent. Once the host is gone the CA leaves the list and takes no new sign requests; requests already pending are not cancelled).
+**Authorities:** `list_certificate_authorities`, `create_certificate_authority` (`name`, `domain`, `organization`, `server_id`, `owner`, `root_valid_days`, `default_valid_days`, `max_valid_days`, `key_algorithm` (`rsa` or `ecdsa`), `key_size` (2048 or 4096 for RSA, 256 or 384 for ECDSA), `install`), `get_certificate_authority`, `update_certificate_authority` (`default_valid_days`, `max_valid_days`, `owner`), `delete_certificate_authority` (only a CA that has never received a sign request; otherwise the server answers 400 with `cert_authority_cannot_be_deleted` and keeps the CA and its sign requests, certificates, and revoke requests. Retiring such a CA means removing its whole host with `unregister_server`, which takes the host out of the workspace, so do it only when the host itself is to be retired; a still-connected host needs `auto=True`, which also removes its Alpamon agent. Once the host is gone the CA leaves the list and takes no new sign requests; requests already pending are not cancelled).
 
-**Signing requests:** `list_sign_requests`, `create_sign_request` (`domain_list`, `ip_list`, `valid_days`), `get_sign_request`, `approve_sign_request`, `deny_sign_request`, `retry_sign_request` (for a CSR stuck in signing), `delete_sign_request` (cancels a pending CSR).
+**Signing requests:** `list_sign_requests`, `create_sign_request` (`domain_list` for DNS names, `ip_list` for IP addresses, `valid_days`), `get_sign_request`, `approve_sign_request`, `deny_sign_request`, `retry_sign_request` (for a CSR stuck in signing), `delete_sign_request` (cancels a pending CSR).
 
-**Certificates:** `list_certificates` (`authority_id` filter), `get_certificate`, `revoke_certificate` (`reason`, `requested_reason`; auto-approved when the caller owns the CA or is an admin, otherwise it waits for approval).
+**Certificates:** `list_certificates` (`authority_id` filter), `get_certificate`, `revoke_certificate` (`reason`, an RFC 5280 code: 0 unspecified, 1 key compromise, 2 CA compromise, 3 affiliation changed, 4 superseded, 5 cessation of operation, 6 certificate hold, 9 privilege withdrawn, 10 AA compromise; `requested_reason`, free text; auto-approved when the caller owns the CA or is an admin, otherwise it waits for approval).
 
 **Revocation requests:** `list_revoke_requests`, `get_revoke_request`, `approve_revoke_request`, `deny_revoke_request`, `retry_revoke_request`, `cancel_revoke_request`.
 
