@@ -31,13 +31,13 @@ _BOTH_TOKENS_ERROR = 'Provide either api_token_id or service_token_id, not both'
 _TOKEN_REQUIRED_ERROR = 'Either api_token_id or service_token_id must be provided'
 
 
-def _command_acl_moved_note(stdio: bool) -> str:
+def _command_acl_moved_note(serves_ledger: bool) -> str:
     """Note for the command-ACL write tools; only a server that registers the ledger
     tools (stdio, or remote with the ledger on) names them."""
     ledger_tools = (
         ', or with issue_ledger_entries and revoke_ledger_entry on this server '
         '(get_ledger_capability reports command_acl_surface "ai")'
-        if stdio
+        if serves_ledger
         else ''
     )
     return (
@@ -49,11 +49,11 @@ def _command_acl_moved_note(stdio: bool) -> str:
     )
 
 
-def _command_acl_list_note(stdio: bool) -> str:
+def _command_acl_list_note(serves_ledger: bool) -> str:
     """The note list_command_acls carries about the ledger."""
     where = (
         'use list_ledger_entries.'
-        if stdio
+        if serves_ledger
         else "see Pre-approved commands on the service token's page in the web console."
     )
     return (

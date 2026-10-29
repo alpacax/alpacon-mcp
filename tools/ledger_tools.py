@@ -27,7 +27,7 @@ from utils.ledger_auth import (
     ledger_authorizer,
     ledger_base_url,
 )
-from utils.ledger_grant import ledger_grant_of
+from utils.ledger_grant import RETRY_WINDOW_SECONDS, ledger_grant_of
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ_ONLY
 from utils.types import (
     JsonValue,
@@ -154,14 +154,8 @@ async def _ledger_target(
 
 
 def _remote_authorization_required(target: LedgerTarget) -> ToolResponse:
-    """Ask the remote client to sign in again, this time for the ledger too.
-
-    The signal makes the transport answer 403 insufficient_scope with
-    `ledger:<workspace>`, which the client turns into a new authorization
-    request; the OAuth proxy runs the ledger sign-in inside it. The response
-    below reaches the agent only when the transport could not replace it, e.g.
-    within the re-auth cooldown.
-    """
+    """Signal a 403 step-up naming `ledger:<workspace>`; the response reaches the
+    agent only when the transport cannot replace it (e.g. within the cooldown)."""
     request_signal.signal_upstream_auth_error(
         {'ledger_org': target.org_name, 'source': 'ledger'}
     )
@@ -179,15 +173,33 @@ def _remote_authorization_required(target: LedgerTarget) -> ToolResponse:
     }
 
 
-def _remote_ledger_token(target: LedgerTarget) -> str | ToolResponse:
-    """The ledger token this caller's own credential carries for the workspace.
+def _remote_ledger_unavailable(target: LedgerTarget, **context: object) -> ToolResponse:
+    """A ledger sign-in just ran and left no working token, so another one would end
+    the same way; report it instead of sending the person around again."""
+    return error_response(
+        'The sign-in for the command pre-approval ledger in workspace '
+        f'{target.org_name} finished but did not produce a token the ledger '
+        'accepts. Another sign-in would end the same way, so none was started. '
+        'This usually means the MCP server is not yet allowed the ledger '
+        'audience; ask the operator. Calling again after '
+        f'{RETRY_WINDOW_SECONDS // 60} minutes starts a new sign-in.',
+        **context,
+    )
 
-    Only this request's credential is read, so one caller can never be handed
-    another's token, and any replica can answer.
-    """
+
+def _remote_ledger_token(target: LedgerTarget, **context: object) -> str | ToolResponse:
+    """The ledger token this caller's own credential carries for the workspace; any
+    replica can read it, and no other caller's credential is ever consulted."""
     grant = ledger_grant_of(get_access_token())
     if grant is not None and grant.usable_for(target.org_name):
         return grant.token
+    if (
+        grant is not None
+        and grant.org == target.org_name
+        and grant.is_failure
+        and grant.is_recent()
+    ):
+        return _remote_ledger_unavailable(target, **context)
     return _remote_authorization_required(target)
 
 
@@ -209,7 +221,7 @@ async def _ledger_request(
     remote = is_remote_ledger_enabled()
     if remote:
         reused = True
-        ledger_token = _remote_ledger_token(target)
+        ledger_token = _remote_ledger_token(target, **context)
     else:
         reused = ledger_authorizer.has_token(target)
         ledger_token = await ledger_authorizer.token_for(target)
@@ -222,6 +234,9 @@ async def _ledger_request(
         token=ledger_token,
         json_data=json_data,
         params=params,
+        # The ledger token is not the session's JWT; a 401 here is the ledger's,
+        # answered below, not a reason to re-authenticate the session.
+        reauth_on_401=False,
     )
 
     if (
@@ -230,6 +245,13 @@ async def _ledger_request(
     ):
         detail = _error_detail(result)
         if remote:
+            grant = ledger_grant_of(get_access_token())
+            if grant is not None and grant.is_recent():
+                # Minted moments ago and refused already: misconfiguration.
+                refused = _remote_ledger_unavailable(target, **context)
+                refused['status_code'] = HTTPStatus.UNAUTHORIZED
+                refused['detail'] = detail
+                return refused
             # Revoked or rejected early; only a new sign-in replaces it.
             return {
                 **_remote_authorization_required(target),

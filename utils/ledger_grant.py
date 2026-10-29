@@ -1,26 +1,5 @@
-"""A remote caller's command pre-approval ledger token, carried in its own credential.
-
-The ledger accepts only a person's token for its own audience and issues no
-refresh token, so a remote session needs a second authorization for it. Where
-that token lives decides who can use it. A process-wide cache would be shared
-by everyone the process serves, and a streamable-http deployment is stateless
-and may run several replicas, so a per-process store would not even find it.
-
-So the token is never stored here. The OAuth proxy obtains it during the
-caller's own sign-in and encrypts it into the access token it hands that one
-client. Every request carries it back, and every replica can decrypt it,
-because the key is derived from the grant secret the replicas already share.
-No other connection holds that credential, so no other connection can use it,
-and the token verifier drops a ledger token whose subject is not the session's.
-
-Three envelopes share one AES-GCM key and are kept apart by their associated
-data, so none can be replayed as another:
-
-- `stage`: the token between the two Auth0 callbacks of one sign-in, in a
-  cookie, bound to that browser's nonce.
-- `grant`: the token inside a sealed authorization code or refresh token.
-- `access`: the access token a client presents, wrapping the Auth0 one.
-"""
+"""A remote caller's ledger token, AES-GCM encrypted into that caller's own credential:
+no server-side store, any replica can read it, and no other connection holds it."""
 
 import base64
 import binascii
@@ -28,7 +7,7 @@ import json
 import os
 import time
 from dataclasses import dataclass
-from typing import Self
+from typing import Self, TypeGuard
 
 import jwt
 from cryptography.exceptions import InvalidTag
@@ -68,26 +47,58 @@ PURPOSE_ACCESS = b'alpacon-mcp-ledger-access-v1'
 # call does not leave with a token that lapses on the way.
 EXPIRY_SKEW_SECONDS = 60
 
+# A ledger sign-in that finished this recently and still left no working token
+# is reported as a configuration problem instead of being asked for again: each
+# re-auth mints a new bearer, so the middleware's cooldown cannot stop a loop.
+RETRY_WINDOW_SECONDS = 600
+
 _NONCE_BYTES = 12
+
+
+def _is_int(value: JsonValue) -> TypeGuard[int]:
+    return isinstance(value, int) and not isinstance(value, bool)
 
 
 @dataclass(frozen=True)
 class LedgerGrant:
-    """A ledger access token and what it was issued for.
-
-    `org` is the workspace schema name the token's organization was requested
-    for; `subject` is the token's own `sub`; `expires_at` is epoch seconds.
-    """
+    """A ledger token for workspace `org`, or, with `token` and `subject` empty, the
+    record of a ledger sign-in that returned none; times are epoch seconds."""
 
     token: str
     org: str
     subject: str
     expires_at: int
+    issued_at: int
+
+    @classmethod
+    def failed(cls, org: str, now: float | None = None) -> Self:
+        """The record of a ledger sign-in for `org` that produced no token."""
+        issued_at = int(time.time() if now is None else now)
+        return cls('', org, '', issued_at + RETRY_WINDOW_SECONDS, issued_at)
+
+    @property
+    def is_failure(self) -> bool:
+        return not self.token
 
     def usable_for(self, org: str, now: float | None = None) -> bool:
-        """Whether this grant may be presented for `org` right now."""
+        """Whether this grant holds a token that may be presented for `org` now."""
         current = time.time() if now is None else now
-        return self.org == org and self.expires_at - EXPIRY_SKEW_SECONDS > current
+        return (
+            not self.is_failure
+            and self.org == org
+            and self.expires_at - EXPIRY_SKEW_SECONDS > current
+        )
+
+    def is_live(self, now: float | None = None) -> bool:
+        """Whether this grant is still worth carrying into a new access token."""
+        current = time.time() if now is None else now
+        skew = 0 if self.is_failure else EXPIRY_SKEW_SECONDS
+        return self.expires_at - skew > current
+
+    def is_recent(self, now: float | None = None) -> bool:
+        """Whether its ledger sign-in finished within `RETRY_WINDOW_SECONDS`."""
+        current = time.time() if now is None else now
+        return current - self.issued_at < RETRY_WINDOW_SECONDS
 
     def to_json(self) -> dict[str, JsonValue]:
         return {
@@ -95,30 +106,26 @@ class LedgerGrant:
             'o': self.org,
             's': self.subject,
             'e': self.expires_at,
+            'i': self.issued_at,
         }
 
     @classmethod
     def from_json(cls, value: JsonValue) -> Self | None:
         if not isinstance(value, dict):
             return None
-        token, org, subject, expires_at = (
-            value.get('t'),
-            value.get('o'),
-            value.get('s'),
-            value.get('e'),
-        )
+        token, org, subject = value.get('t'), value.get('o'), value.get('s')
+        expires_at, issued_at = value.get('e'), value.get('i')
         if not (
             isinstance(token, str)
-            and token
+            and isinstance(subject, str)
+            and bool(token) == bool(subject)  # both, or a failure record
             and isinstance(org, str)
             and org
-            and isinstance(subject, str)
-            and subject
-            and isinstance(expires_at, int)
-            and not isinstance(expires_at, bool)
+            and _is_int(expires_at)
+            and _is_int(issued_at)
         ):
             return None
-        return cls(token=token, org=org, subject=subject, expires_at=expires_at)
+        return cls(token, org, subject, expires_at, issued_at)
 
 
 # Where the verifier leaves the grant on the SDK's AccessToken. `claims` is the
@@ -157,13 +164,8 @@ def subject_of(token: str) -> str:
 def grant_from_token_response(
     body: dict[str, JsonValue], org: str, now: float | None = None
 ) -> LedgerGrant | None:
-    """Build a grant from an Auth0 token response for the ledger audience.
-
-    The body came straight from Auth0 over the server's own back channel, so its
-    claims are read without verifying the signature; the ledger verifies the
-    token itself on every call. A token without a subject or a lifetime is
-    refused rather than guessed.
-    """
+    """A grant from Auth0's ledger-audience token response, read unverified (it came
+    over our own back channel; the ledger verifies it); no `sub` or lifetime, None."""
     token = body.get('access_token')
     if not isinstance(token, str) or not token:
         return None
@@ -171,6 +173,7 @@ def grant_from_token_response(
     subject = claims.get('sub')
     if not isinstance(subject, str) or not subject:
         return None
+    issued_at = int(time.time() if now is None else now)
     exp = claims.get('exp')
     if isinstance(exp, int) and not isinstance(exp, bool):
         expires_at = exp
@@ -178,8 +181,8 @@ def grant_from_token_response(
         expires_in = body.get('expires_in')
         if not isinstance(expires_in, int) or isinstance(expires_in, bool):
             return None
-        expires_at = int(time.time() if now is None else now) + expires_in
-    return LedgerGrant(token=token, org=org, subject=subject, expires_at=expires_at)
+        expires_at = issued_at + expires_in
+    return LedgerGrant(token, org, subject, expires_at, issued_at)
 
 
 def _b64encode(raw: bytes) -> str:

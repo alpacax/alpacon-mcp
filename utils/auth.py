@@ -354,7 +354,7 @@ class Auth0TokenVerifier:
             ):
                 logger.warning('JWT sub, scope or exp claim has an unexpected type')
                 return None
-            if grant is not None and grant.subject != sub:
+            if grant is not None and not grant.is_failure and grant.subject != sub:
                 # Wrapped together at sign-in, so a mismatch is not this
                 # server's doing; the session goes on without the ledger.
                 logger.warning(

@@ -729,8 +729,8 @@ class TestAdmins:
 
 
 class TestTransportAwarePointers:
-    """Only a stdio server registers the ledger tools, so nothing returned on
-    another transport may tell the caller to use them."""
+    """Only a server that registers the ledger tools may point to them, so nothing
+    returned on another transport may tell the caller to use them."""
 
     MOVED = {
         'error': 'HTTP Error',

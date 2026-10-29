@@ -445,7 +445,7 @@ def refusal_hint(gate: object, missing: object) -> str | None:
 
 # Replaces an _ERROR_CODE_HINT entry on a server that registers the tools these
 # name: stdio, or remote mode with the ledger enabled.
-_STDIO_ERROR_CODE_HINT: dict[str, str] = {
+_LEDGER_ERROR_CODE_HINT: dict[str, str] = {
     'command_acl_moved': COMMAND_ACL_MOVED_STDIO_HINT,
 }
 
@@ -512,14 +512,8 @@ REMOTE_LEDGER_ENV = 'ALPACON_MCP_REMOTE_LEDGER'
 
 
 def is_remote_ledger_enabled() -> bool:
-    """Whether remote mode serves the command pre-approval ledger tools.
-
-    Off unless the operator sets ALPACON_MCP_REMOTE_LEDGER=true, because the
-    MCP's Auth0 application has to be allowed the ledger audience first;
-    without that every ledger call would send its user around a sign-in that
-    cannot succeed. Only an authenticated streamable-http server qualifies:
-    SSE has no signed-in person to bind a ledger token to.
-    """
+    """Remote ledger tools: off until the Auth0 app is allowed the ledger audience,
+    and only on authenticated streamable-http (SSE has no person to bind to)."""
     return (
         is_auth_enabled()
         and os.getenv('ALPACON_MCP_TRANSPORT', '') == 'streamable-http'
@@ -831,7 +825,7 @@ def unwrap_http_result(
         if hint is None:
             hint = _ERROR_CODE_HINT.get(code)
             if serves_ledger_tools():
-                hint = _STDIO_ERROR_CODE_HINT.get(code, hint)
+                hint = _LEDGER_ERROR_CODE_HINT.get(code, hint)
     if hint is None:
         hint = refusal_hint(refusal.get('gate'), refusal.get('missing'))
     if hint is not None:

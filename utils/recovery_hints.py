@@ -193,7 +193,7 @@ def _parse_status_code(raw: int | str | None) -> int | None:
 
 # Appended on a server that registers the ledger tools (stdio, or remote mode
 # with the ledger enabled); any other is never pointed at a tool it does not serve.
-_STDIO_HINT_ADDITIONS: dict[tuple[int, str], dict[str, list[str]]] = {
+_LEDGER_HINT_ADDITIONS: dict[tuple[int, str], dict[str, list[str]]] = {
     (HTTPStatus.FORBIDDEN, 'command'): {
         'recovery_hints': [
             (
@@ -233,7 +233,7 @@ def get_recovery_hints(
     hints = _HINT_REGISTRY.get((code, domain))
     if hints:
         found = _copy_hints(hints)
-        extra = _STDIO_HINT_ADDITIONS.get((code, domain))
+        extra = _LEDGER_HINT_ADDITIONS.get((code, domain))
         if extra and serves_ledger_tools():
             found['recovery_hints'] += extra['recovery_hints']
             found['related_tools'] += extra['related_tools']

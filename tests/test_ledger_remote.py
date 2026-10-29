@@ -5,11 +5,13 @@ so these tests pin who can read it: the person who authorized it, through the
 connection that authorized it, until it expires, on any replica.
 """
 
+import json
 import time
 from http import HTTPStatus
 from unittest.mock import AsyncMock, MagicMock, patch
 from urllib.parse import parse_qs, urlparse
 
+import httpx
 import jwt
 import pytest
 from mcp.server.auth.provider import AccessToken
@@ -32,6 +34,7 @@ from utils import declared_agent, request_signal
 from utils.auth import Auth0TokenVerifier
 from utils.auth_error_middleware import UpstreamAuthErrorMiddleware
 from utils.common import is_remote_ledger_enabled, serves_ledger_tools
+from utils.error_handler import UpstreamAuthError
 from utils.ledger_auth import AUTHORIZATION_REQUIRED
 from utils.ledger_grant import (
     EXPIRY_SKEW_SECONDS,
@@ -82,13 +85,17 @@ def _jwt(sub: str, exp: int | None = None, **extra: object) -> str:
     return jwt.encode(claims, 'unverified-test-key-of-32-bytes!!', algorithm='HS256')
 
 
-def _grant(sub: str = ALICE, org: str = WORKSPACE, ttl: int = 3600) -> LedgerGrant:
-    expires_at = int(time.time()) + ttl
+def _grant(
+    sub: str = ALICE, org: str = WORKSPACE, ttl: int = 3600, age: int = 3600
+) -> LedgerGrant:
+    """A grant issued `age` seconds ago; the default is past the retry window."""
+    now = int(time.time())
     return LedgerGrant(
-        token=_jwt(sub, expires_at, aud='https://alpacon.ai/'),
+        token=_jwt(sub, now + ttl, aud='https://alpacon.ai/'),
         org=org,
         subject=sub,
-        expires_at=expires_at,
+        expires_at=now + ttl,
+        issued_at=now - age,
     )
 
 
@@ -247,6 +254,20 @@ class TestGrant:
             WORKSPACE, now=grant.expires_at - EXPIRY_SKEW_SECONDS
         )
 
+    def test_a_failure_record(self):
+        record = LedgerGrant.failed(WORKSPACE, now=1000)
+        assert record.is_failure
+        assert not record.usable_for(WORKSPACE, now=1000)
+        assert record.is_recent(now=1000 + 599)
+        assert not record.is_recent(now=1000 + 600)
+        assert record.is_live(now=1000 + 599)
+        assert not record.is_live(now=1000 + 600)
+        assert LedgerGrant.from_json(record.to_json()) == record
+
+    def test_a_token_without_a_subject_does_not_parse(self):
+        half = {**_grant().to_json(), 's': ''}
+        assert LedgerGrant.from_json(half) is None
+
     def test_claims_round_trip_through_an_access_token(self):
         grant = _grant()
         access = AccessToken(
@@ -336,6 +357,17 @@ class TestAuthorize:
         assert query['audience'] == OAUTH_ENV['AUTH0_ALPACON_USER_AUDIENCE']
         assert 'ledger:' not in query['scope']
 
+    def test_the_latest_challenged_workspace_wins(self, oauth):
+        # Clients append the new challenge to their scope union.
+        query = _query(
+            _authorize(oauth, 'openid ledger:workspace-a ledger:workspace-b')
+        )
+        assert query['scope'] == 'openid profile email org:workspace-b'
+        state = _verify_state(query['state'])
+        assert state is not None
+        assert state['ledger_org'] == 'workspace-b'
+        assert 'ledger:' not in str(state['original_scope'])
+
     def test_mfa_runs_first_and_keeps_the_ledger_for_later(self, oauth):
         query = _query(_authorize(oauth, f'openid mfa ledger:{WORKSPACE}'))
         assert query['audience'].endswith('/mfa/')
@@ -375,6 +407,18 @@ class TestCallback:
         assert grant is not None
         assert (grant.token, grant.subject, grant.org) == (token, ALICE, WORKSPACE)
 
+    def _assert_failure_staged(self, response):
+        assert response.status_code == HTTPStatus.FOUND
+        assert _query(response)['audience'] == OAUTH_ENV['AUTH0_ALPACON_USER_AUDIENCE']
+        staged = open_stage(
+            ledger_grant_key(),
+            response.cookies.get(_LEDGER_COOKIE_NAME),
+            _hash_nonce(TEST_NONCE),
+        )
+        assert staged is not None
+        assert staged.is_failure
+        assert staged.org == WORKSPACE
+
     def test_a_failed_ledger_exchange_still_signs_the_person_in(self, oauth):
         auth0 = _mock_auth0_response(
             status_code=HTTPStatus.FORBIDDEN, json_data={'error': 'access_denied'}
@@ -388,9 +432,22 @@ class TestCallback:
                 },
                 follow_redirects=False,
             )
-        assert response.status_code == HTTPStatus.FOUND
-        assert _query(response)['audience'] == OAUTH_ENV['AUTH0_ALPACON_USER_AUDIENCE']
-        assert not response.cookies.get(_LEDGER_COOKIE_NAME)
+        self._assert_failure_staged(response)
+
+    def test_an_auth0_error_on_the_ledger_stage_still_signs_the_person_in(self, oauth):
+        auth0 = _mock_auth0_response()
+        with patch('utils.oauth.httpx.AsyncClient', return_value=auth0):
+            response = oauth.get(
+                '/oauth/callback',
+                params={
+                    'error': 'access_denied',
+                    'error_description': 'not a member of the organization',
+                    'state': _state(stage='ledger', ledger_org=WORKSPACE),
+                },
+                follow_redirects=False,
+            )
+        self._assert_failure_staged(response)
+        auth0.post.assert_not_called()
 
     def test_mfa_stage_hands_over_to_the_ledger_stage(self, oauth):
         with patch(
@@ -434,10 +491,14 @@ class TestCallback:
         assert opened[:2] == ('final-code', DEVICE_ID)
         assert open_grant(ledger_grant_key(), opened[2]) == grant
         assert grant.token not in response.headers['location']
-        assert (
-            f'{_LEDGER_COOKIE_NAME.lower()}='
-            in str(response.headers.get_list('set-cookie')).lower()
-        )
+        cleared = [
+            c
+            for c in response.headers.get_list('set-cookie')
+            if c.startswith(f'{_LEDGER_COOKIE_NAME}=')
+        ]
+        assert len(cleared) == 1
+        assert cleared[0].startswith(f'{_LEDGER_COOKIE_NAME}="";')
+        assert 'max-age=0' in cleared[0].lower()
 
     @pytest.mark.parametrize('case', ['other-browser', 'other-org', 'garbage', 'none'])
     def test_a_grant_that_is_not_this_flows_is_left_out(self, oauth, case):
@@ -458,6 +519,30 @@ class TestCallback:
 
 
 class TestTokenEndpoint:
+    def test_a_refresh_never_forwards_the_pseudo_scopes(self, oauth):
+        auth0 = _mock_auth0_response(json_data={'access_token': 'a'})
+        with patch('utils.oauth.httpx.AsyncClient', return_value=auth0):
+            oauth.post(
+                '/oauth/token',
+                data={
+                    'grant_type': 'refresh_token',
+                    'refresh_token': _seal_refresh_token('r', DEVICE_ID),
+                    'scope': f'openid offline_access mfa ledger:{WORKSPACE}',
+                },
+            )
+        assert auth0.post.call_args.kwargs['data']['scope'] == 'openid offline_access'
+
+    def test_a_failure_record_rides_without_a_subject_check(self, oauth):
+        access = _jwt(ALICE, int(time.time()) + 600)
+        failed = LedgerGrant.failed(WORKSPACE)
+        body = self._exchange(
+            oauth, {'access_token': access}, seal_grant(ledger_grant_key(), failed)
+        )
+        assert unwrap_access_token(ledger_grant_key(), body['access_token']) == (
+            access,
+            failed,
+        )
+
     def _exchange(
         self, oauth, auth0_body, ledger: str, grant_type='authorization_code'
     ):
@@ -575,6 +660,15 @@ class TestVerifier:
         with self._decoded(ALICE) as decode:
             assert await verifier.verify_token(forged) is None
         decode.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_a_failure_record_reaches_the_tool(self, verifier):
+        failed = LedgerGrant.failed(WORKSPACE)
+        wrapped = wrap_access_token(ledger_grant_key(), 'inner-jwt', failed)
+        with self._decoded(ALICE):
+            access = await verifier.verify_token(wrapped)
+        assert access is not None
+        assert ledger_grant_of(access) == failed
 
     @pytest.mark.asyncio
     async def test_a_bare_token_carries_no_grant(self, verifier):
@@ -738,6 +832,62 @@ class TestRemoteTools:
         remote.request.assert_called_once()
 
     @pytest.mark.asyncio
+    async def test_a_ledger_401_right_after_sign_in_is_not_asked_again(self, remote):
+        remote.request.return_value = UNAUTHORIZED_ENVELOPE
+        signal = request_signal.begin_request()
+        try:
+            with _session(_grant(age=5)):
+                result = await list_ledger_entries(workspace=WORKSPACE, region='ap1')
+        finally:
+            request_signal.end_request()
+
+        assert result['status'] == 'error'
+        assert result['status_code'] == HTTPStatus.UNAUTHORIZED
+        assert result['detail'] == {'detail': 'Invalid token audience.'}
+        assert 'operator' in result['message']
+        assert signal == {}
+
+    @pytest.mark.asyncio
+    async def test_a_recent_failed_sign_in_is_not_asked_again(self, remote):
+        signal = request_signal.begin_request()
+        try:
+            with _session(LedgerGrant.failed(WORKSPACE)):
+                result = await list_ledger_entries(workspace=WORKSPACE, region='ap1')
+        finally:
+            request_signal.end_request()
+
+        assert result['status'] == 'error'
+        assert 'did not produce a token' in result['message']
+        assert signal == {}
+        remote.request.assert_not_called()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        'record',
+        [
+            LedgerGrant.failed(WORKSPACE, now=time.time() - 3600),
+            LedgerGrant.failed('otherws'),
+        ],
+        ids=['past-the-window', 'other-workspace'],
+    )
+    async def test_an_old_or_other_failed_sign_in_asks_again(self, remote, record):
+        signal = request_signal.begin_request()
+        try:
+            with _session(record):
+                result = await list_ledger_entries(workspace=WORKSPACE, region='ap1')
+        finally:
+            request_signal.end_request()
+
+        assert result['status'] == AUTHORIZATION_REQUIRED
+        assert signal['ledger_org'] == WORKSPACE
+
+    @pytest.mark.asyncio
+    async def test_a_ledger_call_never_triggers_the_session_reauth(self, remote):
+        with _session(_grant()):
+            await list_ledger_entries(workspace=WORKSPACE, region='ap1')
+        assert remote.request.call_args.kwargs['reauth_on_401'] is False
+
+    @pytest.mark.asyncio
     async def test_the_flag_off_refuses_before_any_grant_is_read(
         self, remote, monkeypatch
     ):
@@ -748,3 +898,39 @@ class TestRemoteTools:
         assert 'stdio MCP server' in result['message']
         session.assert_not_called()
         remote.request.assert_not_called()
+
+
+class TestLedgerUnauthorizedIsNotASessionReauth:
+    """A 401 from the ledger is about the ledger token, not the session's JWT."""
+
+    @pytest.mark.asyncio
+    async def test_the_401_comes_back_with_its_body(self, make_client, remote_env):
+        body = {'detail': 'Invalid token audience.'}
+        client = make_client(
+            httpx.MockTransport(lambda r: httpx.Response(401, json=body))
+        )
+        signal = request_signal.begin_request()
+        try:
+            result = await client.request(
+                'GET', f'{LEDGER}entries/', token=_grant().token, reauth_on_401=False
+            )
+        finally:
+            request_signal.end_request()
+
+        assert isinstance(result, dict)
+        assert result['status_code'] == HTTPStatus.UNAUTHORIZED
+        assert json.loads(str(result['response'])) == body
+        assert signal == {}
+
+    @pytest.mark.asyncio
+    async def test_the_default_still_reauthenticates_the_session(
+        self, make_client, remote_env
+    ):
+        client = make_client(httpx.MockTransport(lambda r: httpx.Response(401)))
+        signal = request_signal.begin_request()
+        try:
+            with pytest.raises(UpstreamAuthError):
+                await client.request('GET', f'{LEDGER}entries/', token=_grant().token)
+        finally:
+            request_signal.end_request()
+        assert 'mfa_required' in signal
