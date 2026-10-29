@@ -332,7 +332,11 @@ class TestAuthorize:
         query = _query(response)
         assert query['audience'] == 'https://alpacon.ai/'
         assert query['client_id'] == OAUTH_ENV['AUTH0_ALPACON_LOGIN_CLIENT_ID']
-        assert query['scope'] == f'openid profile email org:{WORKSPACE}'
+        state = _verify_state(query['state'])
+        assert state is not None
+        assert query['scope'] == (
+            f'openid profile email org:{WORKSPACE} device:{state["device_id"]}'
+        )
         assert 'offline_access' not in query['scope']
         assert 'code_challenge' not in query
         state = _verify_state(query['state'])
@@ -362,7 +366,7 @@ class TestAuthorize:
         query = _query(
             _authorize(oauth, 'openid ledger:workspace-a ledger:workspace-b')
         )
-        assert query['scope'] == 'openid profile email org:workspace-b'
+        assert query['scope'].startswith('openid profile email org:workspace-b ')
         state = _verify_state(query['state'])
         assert state is not None
         assert state['ledger_org'] == 'workspace-b'
@@ -466,6 +470,23 @@ class TestCallback:
         state = _verify_state(query['state'])
         assert state is not None
         assert state['stage'] == 'ledger'
+        # The same id as the grant's regular sign-in, not a new one.
+        assert f'device:{DEVICE_ID}' in query['scope'].split()
+        assert state['device_id'] == DEVICE_ID
+
+    def test_the_ledger_leg_uses_the_grants_device_id(self, oauth):
+        response = oauth.get(
+            '/oauth/authorize',
+            params={
+                'response_type': 'code',
+                'redirect_uri': 'http://localhost:8080/callback',
+                'scope': f'openid device:{DEVICE_ID} ledger:{WORKSPACE}',
+                **PKCE_PARAMS,
+            },
+            follow_redirects=False,
+        )
+        scope = _query(response)['scope'].split()
+        assert [p for p in scope if p.startswith('device:')] == [f'device:{DEVICE_ID}']
 
     def _final(self, oauth, cookie: str | None, ledger_org: str = WORKSPACE):
         if cookie is not None:

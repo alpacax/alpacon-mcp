@@ -12,6 +12,7 @@ import httpx
 
 from utils.auth import decode_claims_unverified
 from utils.common import error_response
+from utils.device_id import installation_device_id
 from utils.ledger_grant import (
     DEFAULT_LEDGER_AUDIENCE,
     DEFAULT_LEDGER_URL,
@@ -177,7 +178,12 @@ class LedgerAuthorizer:
             'audience': ledger_audience(),
             # No offline_access: a refresh credential for an admin surface
             # would be a standing privilege.
-            'scope': f'openid profile email org:{target.org_name}',
+            # The installation's device id keys the login action's MFA record,
+            # as for the CLI; without it the action falls back to a fingerprint.
+            'scope': (
+                f'openid profile email org:{target.org_name} '
+                f'device:{installation_device_id()}'
+            ),
         }
         try:
             status, body = await _post_form(

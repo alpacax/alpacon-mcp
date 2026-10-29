@@ -21,6 +21,7 @@ from starlette.responses import JSONResponse, RedirectResponse, Response
 
 from utils.auth0_env import get_auth0_env
 from utils.common import is_remote_ledger_enabled
+from utils.device_id import DEVICE_ID_PATTERN
 from utils.error_handler import validate_workspace_format
 from utils.ledger_grant import (
     LedgerGrant,
@@ -106,7 +107,7 @@ _ALLOWED_LOOPBACK_HOSTS = ('localhost', '127.0.0.1', '::1')
 # Mirrors the validator in the Auth0 action's code.js. The check and its
 # consumer sit in different repos, so a value we accept but the action rejects
 # would silently fall back to the fingerprint keying this fix exists to avoid.
-_DEVICE_ID_PATTERN = re.compile(r'^[A-Za-z0-9-]{8,64}$')
+_DEVICE_ID_PATTERN = DEVICE_ID_PATTERN
 
 # A real client registers one or two callbacks. The cap keeps one unauthenticated
 # registration from driving a check — and in report-only mode a warning — per entry.
@@ -664,7 +665,11 @@ def _ledger_state(ledger_org: str) -> dict[str, str]:
 
 
 def _ledger_stage_url(
-    config: dict[str, str], server_url: str, state: str, ledger_org: str
+    config: dict[str, str],
+    server_url: str,
+    state: str,
+    ledger_org: str,
+    device_id: str,
 ) -> str:
     """Auth0 authorize URL for the ledger audience: this app, no offline_access (the
     ledger allows no refresh), and the CLI's `org:` scope for the org claim."""
@@ -673,7 +678,9 @@ def _ledger_stage_url(
         'client_id': config['client_id'],
         'audience': ledger_audience(),
         'redirect_uri': f'{server_url}/oauth/callback',
-        'scope': f'openid profile email org:{ledger_org}',
+        # The grant's own device id, so the login action reads and writes the
+        # same MFA record as this installation's regular sign-in.
+        'scope': f'openid profile email org:{ledger_org} device:{device_id}',
         'state': state,
     }
     return f'{config["auth0_base_url"]}/authorize?{urlencode(params)}'
@@ -1012,6 +1019,7 @@ def register_oauth_routes(mcp_server: RouteRegistry) -> None:
                         ledger_org=ledger_org,
                     ),
                     ledger_org,
+                    device_id,
                 )
                 logger.info('Redirecting to Auth0 for the ledger audience first')
             else:
@@ -1559,6 +1567,7 @@ def register_oauth_routes(mcp_server: RouteRegistry) -> None:
                         ledger_org=ledger_org,
                     ),
                     ledger_org,
+                    device_id,
                 )
                 logger.info('Stage 2: Redirecting to Auth0 for the ledger audience')
             else:

@@ -136,6 +136,15 @@ def mock_region_auto_detect():
         yield mock_tm
 
 
+@pytest.fixture(autouse=True)
+def isolated_device_id_dir(tmp_path):
+    """Keep the stdio device id file out of the real ~/.alpacon-mcp."""
+    manager = MagicMock()
+    manager.config_dir = tmp_path
+    with patch('utils.device_id.get_token_manager', return_value=manager):
+        yield tmp_path
+
+
 @pytest.fixture
 async def make_client():
     """Build AlpaconHTTPClients over a given transport, with no retry delay."""
