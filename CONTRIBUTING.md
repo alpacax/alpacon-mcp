@@ -72,7 +72,7 @@ We use the following tools for code quality:
 - **ruff** for linting, import sorting, and formatting
 - **mypy** for type checking
 
-Both run as pre-commit hooks, and CI runs `ruff check`, `ruff format --check`, `mypy`, and `pytest` under a coverage floor set in `.github/workflows/test.yml`.
+Both run as pre-commit hooks, and CI runs `ruff check`, `ruff format --check`, `mypy`, and `pytest` under a coverage floor set in `.github/workflows/test.yml`, plus a non-blocking `pip-audit` of `uv.lock` on the Python 3.14 leg.
 
 `uv.lock` pins both versions, so `pre-commit autoupdate` has nothing to update. Upgrade one with `uv lock --upgrade-package ruff` and commit the lockfile.
 
@@ -487,7 +487,7 @@ Brief description of changes.
 
 - Keep dependencies updated
 - Review security advisories
-- Use tools like `safety` to check for vulnerabilities
+- Check `uv.lock` for known vulnerabilities the way CI does: `uv export --quiet --locked --extra dev --no-emit-project --format requirements-txt -o /tmp/requirements.txt && uvx pip-audit==2.10.1 -r /tmp/requirements.txt --disable-pip`
 
 ## 🏷️ Release process
 

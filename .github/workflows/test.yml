@@ -38,6 +38,20 @@ jobs:
     - name: Install dependencies
       run: uv sync --extra dev --locked
 
+    # Includes the dev extra: constraint-dependencies already floors dev-only packages for advisories.
+    # uvx, not the dev extra: pip-audit and its dependencies stay out of uv.lock.
+    - name: Audit locked dependencies with pip-audit
+      id: audit
+      if: matrix.python-version == '3.14'  # the image's Python; the export has no python_version markers today
+      continue-on-error: true  # non-blocking: a new advisory, possibly with no fixed release, would fail unrelated PRs
+      run: |
+        uv export --quiet --locked --extra dev --no-emit-project --format requirements-txt -o "$RUNNER_TEMP/requirements.txt"
+        uvx pip-audit==2.10.1 -r "$RUNNER_TEMP/requirements.txt" --disable-pip --progress-spinner off
+
+    - name: Warn when pip-audit fails
+      if: steps.audit.outcome == 'failure'  # the job stays green, so surface the failure on the PR summary
+      run: echo "::warning title=pip-audit::pip-audit reported a failure on uv.lock; see the audit step log"
+
     - name: Lint with ruff
       run: uv run --no-sync python -m ruff check .
 
