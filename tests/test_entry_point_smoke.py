@@ -151,18 +151,24 @@ def _serve_http(
             process.stderr.close()
 
 
-def _post_initialize_as_public_host(url: str) -> httpx.Response:
+def _post_mcp(
+    url: str, payload: dict[str, object], extra_headers: dict[str, str] | None = None
+) -> httpx.Response:
     return httpx.post(
         f'{url}/mcp',
         headers={
-            'Host': PUBLIC_HOST,
             'Authorization': 'Bearer smoke-jwt',
             'Content-Type': 'application/json',
             'Accept': 'application/json, text/event-stream',
+            **(extra_headers or {}),
         },
-        json=INITIALIZE,
+        json=payload,
         trust_env=False,
     )
+
+
+def _post_initialize_as_public_host(url: str) -> httpx.Response:
+    return _post_mcp(url, INITIALIZE, {'Host': PUBLIC_HOST})
 
 
 def _initialize_over_stdio(
@@ -259,10 +265,7 @@ except KeyboardInterrupt:
     assert output['stderr'] == ''
 
 
-def _run_main_http_without_auth0(
-    env: dict[str, str], cwd: Path
-) -> subprocess.CompletedProcess[str]:
-    env = {k: v for k, v in env.items() if not k.startswith('AUTH0_')}
+def _run_main_http(env: dict[str, str], cwd: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.run(  # noqa: S603
         [sys.executable, str(Path(REPO_ROOT) / 'main_http.py')],
         cwd=cwd,
@@ -271,6 +274,14 @@ def _run_main_http_without_auth0(
         text=True,
         timeout=BOOT_TIMEOUT,
         check=False,
+    )
+
+
+def _run_main_http_without_auth0(
+    env: dict[str, str], cwd: Path
+) -> subprocess.CompletedProcess[str]:
+    return _run_main_http(
+        {k: v for k, v in env.items() if not k.startswith('AUTH0_')}, cwd
     )
 
 
@@ -326,3 +337,43 @@ def test_main_http_rejects_a_public_host_header_when_bound_to_loopback(entry_env
 
     assert response.status_code == HTTP_MISDIRECTED
     assert 'Invalid Host header' in response.text
+
+
+def _list_tool_names(url: str) -> set[str]:
+    response = _post_mcp(
+        url, {'jsonrpc': '2.0', 'id': 2, 'method': 'tools/list', 'params': {}}
+    )
+    assert response.status_code == 200, response.text
+    return {tool['name'] for tool in response.json()['result']['tools']}
+
+
+def test_main_http_publishes_only_the_selected_toolsets(entry_env):
+    env = {
+        **entry_env,
+        'ALPACON_MCP_HOST': '127.0.0.1',
+        'ALPACON_MCP_TOOLSETS': 'metrics',
+    }
+    with _serve_http(['-c', STUBBED_AUTH_LAUNCH], env) as url:
+        names = _list_tool_names(url)
+
+    assert 'get_cpu_usage' in names
+    assert 'list_workspaces' in names  # always-on
+    assert 'list_servers' not in names
+    assert 'execute_command' not in names
+
+
+def test_main_http_publishes_every_toolset_by_default(entry_env):
+    env = {**entry_env, 'ALPACON_MCP_HOST': '127.0.0.1'}
+    with _serve_http(['-c', STUBBED_AUTH_LAUNCH], env) as url:
+        names = _list_tool_names(url)
+
+    assert {'get_cpu_usage', 'list_servers', 'execute_command'} <= names
+
+
+def test_main_http_reports_an_unknown_toolset_without_a_traceback(entry_env, tmp_path):
+    env = {**entry_env, 'ALPACON_MCP_TOOLSETS': 'metrics,bogus'}
+    result = _run_main_http(env, tmp_path)
+
+    assert result.returncode == 2
+    assert 'Invalid ALPACON_MCP_TOOLSETS: Unknown toolset(s): bogus' in result.stderr
+    assert 'Traceback' not in result.stderr

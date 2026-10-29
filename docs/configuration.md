@@ -181,7 +181,7 @@ python main.py
 # Custom config file
 python main.py --config-file /path/to/config.json
 
-# Register only some toolsets (local mode)
+# Register only some toolsets
 python main.py --toolsets servers,commands,webftp
 
 # SSE mode
@@ -191,7 +191,7 @@ python main_sse.py
 python main.py --help
 ```
 
-The `alpacon-mcp` CLI takes the same flags plus the `setup`, `test`, `list`, and `add` subcommands. `--toolsets` is also accepted by `main_sse.py`; the `ALPACON_MCP_TOOLSETS` environment variable is the equivalent, and the flag wins when both are set. Available toolsets: `servers`, `commands`, `webftp`, `metrics`, `alerts`, `events`, `system-info`, `iam`, `security`, `audit`, `approvals`, `webhooks`, `packages`, `certs`, `tokens`, `ledger` (stdio, or streamable-http with `ALPACON_MCP_REMOTE_LEDGER=true`; `main_sse.py` skips it). Workspace, health, Work Session tools, and prompts are always registered. Remote mode ignores the setting. A few resources cross module boundaries—`alpacon://servers/.../overview` is backed by `system_info_tools`, so `--toolsets servers` alone silently drops it; add `system-info` to keep it. `commands` alone still writes and reads files through WebFTP when `execute_file` is called with `write_file` or `read_from_server`, so leaving out `webftp` does not keep file transfers away from the agent.
+The `alpacon-mcp` CLI takes the same flags plus the `setup`, `test`, `list`, and `add` subcommands. `--toolsets` is also accepted by `main_sse.py`; the `ALPACON_MCP_TOOLSETS` environment variable is the equivalent, and the flag wins when both are set. `main_http.py` takes no flags, so remote mode reads the environment variable alone; unset, it registers every toolset, and an unknown name stops it at startup with exit code 2. Available toolsets: `servers`, `commands`, `webftp`, `metrics`, `alerts`, `events`, `system-info`, `iam`, `security`, `audit`, `approvals`, `webhooks`, `packages`, `certs`, `tokens`, `ledger` (stdio, or streamable-http with `ALPACON_MCP_REMOTE_LEDGER=true`; `main_sse.py` skips it). Workspace, health, Work Session tools, and prompts are always registered. A few resources cross module boundaries—`alpacon://servers/.../overview` is backed by `system_info_tools`, so `--toolsets servers` alone drops it; add `system-info` to keep it. The server logs a warning at startup for each resource dropped this way, naming the toolset that would keep it. `commands` alone still writes and reads files through WebFTP when `execute_file` is called with `write_file` or `read_from_server`, so leaving out `webftp` does not keep file transfers away from the agent.
 
 ### Transport modes
 
@@ -256,7 +256,7 @@ export ALPACON_MCP_CONFIG_FILE="/path/to/custom-tokens.json"  # Custom token fil
 export ALPACON_MCP_AP1_PRODUCTION_TOKEN="alpat-..."           # Per-workspace token
 export ALPACON_MCP_AP1_PRODUCTION_URL="https://production.ap1.alpacon.io"  # Pin the API host
 
-# Tool registration (local mode only)
+# Tool registration (the only way to select toolsets in remote mode)
 export ALPACON_MCP_TOOLSETS="servers,commands,webftp"
 
 # Default Work Session for tools called without work_session_id

@@ -14,7 +14,12 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from utils.auth0_env import get_auth0_env
-from utils.common import MCP_VERSION, is_auth_enabled, serves_ledger_tools
+from utils.common import (
+    MCP_VERSION,
+    is_auth_enabled,
+    select_ledger_toolset,
+    serves_ledger_tools,
+)
 from utils.declared_agent import capture_declared_agent, use_environment_fallback
 from utils.health import get_health_info
 from utils.http_client import http_client
@@ -50,7 +55,6 @@ TOOLSETS_HELP = (
     f'e.g. servers,commands,webftp (default: {TOOLSETS_ALL})'
 )
 
-# Local (stdio/SSE) mode can register a subset of these; remote loads all.
 TOOLSET_REGISTRY: dict[str, str] = {
     'servers': 'server_tools',
     'commands': 'command_tools',
@@ -70,6 +74,7 @@ TOOLSET_REGISTRY: dict[str, str] = {
     'ledger': 'ledger_tools',
 }
 ALL_TOOL_MODULES: frozenset[str] = frozenset(TOOLSET_REGISTRY.values())
+TOOLSET_OF_MODULE: dict[str, str] = {m: n for n, m in TOOLSET_REGISTRY.items()}
 
 # Served over stdio, and over streamable-http once ALPACON_MCP_REMOTE_LEDGER is
 # on. stdio caches a person's sign-in in the process; remote mode carries it in
@@ -260,20 +265,8 @@ def resolve_toolsets(toolsets: str | None) -> set[str]:
     return selected
 
 
-def _modules_to_load(toolsets: str | None, remote_mode: bool) -> set[str]:
-    """Remote mode loads every tool module and ignores toolsets; always-on modules are
-    added in both modes."""
-    if remote_mode:
-        # main_http.py has no --toolsets flag; a shared .env is the likely source.
-        requested = toolsets or os.getenv(TOOLSETS_ENV_VAR)
-        if requested:
-            logger.info(
-                'Remote mode registers all tools; ignoring toolsets=%s', requested
-            )
-        enabled = set(ALL_TOOL_MODULES)
-    else:
-        enabled = resolve_toolsets(toolsets)
-    return enabled | ALWAYS_ON_MODULES
+def _modules_to_load(toolsets: str | None) -> set[str]:
+    return resolve_toolsets(toolsets) | ALWAYS_ON_MODULES
 
 
 def create_streamable_http_app(*, host: str) -> Starlette:
@@ -354,7 +347,8 @@ def prepare(
         logger.info('HTTP /health endpoint registered for transport: %s', transport)
 
     # Import triggers registration: @mcp_tool_handler runs at import time.
-    modules = _modules_to_load(toolsets, remote_mode)
+    modules = _modules_to_load(toolsets)
+    select_ledger_toolset(bool(modules & LEDGER_MODULES))
     if not serves_ledger_tools() and modules & LEDGER_MODULES:
         logger.info(
             'Not registering ledger modules on %s: %s',
@@ -368,8 +362,15 @@ def prepare(
     logger.info('Registered tool modules: %s', ', '.join(ordered))
 
     # Local: real circular import—tools/resources.py does `from server import TOOLS_PACKAGE, mcp` at its own top level.
-    from tools.resources import register_resources
+    from tools.resources import register_resources, stranded_resources
 
+    for uri, module in stranded_resources(modules):
+        logger.warning(
+            'Toolset selection drops %s while serving other resources in its URI '
+            'family; add the %s toolset to serve it',
+            uri,
+            TOOLSET_OF_MODULE[module],
+        )
     register_resources(modules)
 
 

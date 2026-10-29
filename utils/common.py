@@ -535,9 +535,19 @@ def is_remote_ledger_enabled() -> bool:
     )
 
 
+_ledger_selected = True  # prepare() narrows it to the toolset selection
+
+
+def select_ledger_toolset(selected: bool) -> None:
+    """Record whether the toolset selection includes the ledger tools; prepare() calls
+    it before any tool module imports, as their descriptions read serves_ledger_tools()."""
+    global _ledger_selected
+    _ledger_selected = selected
+
+
 def serves_ledger_tools() -> bool:
     """Whether this process registers the command pre-approval ledger tools."""
-    return is_stdio_transport() or is_remote_ledger_enabled()
+    return _ledger_selected and (is_stdio_transport() or is_remote_ledger_enabled())
 
 
 def resolve_work_session_id(explicit: str | None) -> str | None:

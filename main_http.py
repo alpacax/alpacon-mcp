@@ -46,7 +46,9 @@ def main() -> None:
     logger.info('Starting Alpacon MCP Server (HTTP Streamable transport)')
 
     from server import (
+        TOOLSETS_ENV_VAR,
         TRANSPORT_STREAMABLE_HTTP,
+        ToolsetError,
         create_streamable_http_app,
         prepare,
         resolve_host,
@@ -76,6 +78,10 @@ def main() -> None:
                 server_header=False,
             )
         ).run()
+    except ToolsetError as e:
+        # A toolsets typo is a config error, not a crash: one clean line, no traceback.
+        logger.error('Invalid %s: %s', TOOLSETS_ENV_VAR, e)
+        raise SystemExit(2)
     except Exception as e:
         logger.exception('Failed to start MCP server: %s', e)
         raise

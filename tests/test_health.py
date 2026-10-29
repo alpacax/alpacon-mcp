@@ -226,13 +226,10 @@ class TestHealthCheckRemoteMode:
         assert result['data']['auth']['mode'] == 'jwt'
 
     def test_server_module_imports_health_tools_unconditionally(self):
-        """health_tools is always-on: no remote_mode or --toolsets value may drop it."""
         assert 'health_tools' in server.ALWAYS_ON_MODULES
 
-        for remote_mode in (True, False):
-            for toolsets in (None, 'servers'):
-                modules = server._modules_to_load(toolsets, remote_mode=remote_mode)
-                assert 'health_tools' in modules
+        for toolsets in (None, 'servers'):
+            assert 'health_tools' in server._modules_to_load(toolsets)
 
 
 if __name__ == '__main__':

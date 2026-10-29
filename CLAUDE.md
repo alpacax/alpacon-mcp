@@ -50,9 +50,11 @@ Things the code will not tell you at a glance:
 - **Toolset selection crosses module boundaries.** `--toolsets` /
   `ALPACON_MCP_TOOLSETS` gates imports, and registration is an import-time side
   effect. `alpacon://servers/.../overview` is backed by `system_info_tools`, so
-  `--toolsets servers` alone silently drops it. Remote mode is gated on
-  `ALPACON_MCP_AUTH_ENABLED=true`, not on the transport name, and ignores the
-  setting entirely.
+  `--toolsets servers` alone drops it, with a startup warning. Remote mode is
+  gated on `ALPACON_MCP_AUTH_ENABLED=true`, not on the transport name, and
+  reads the selection from `ALPACON_MCP_TOOLSETS` alone: `main_http.py` takes
+  no flags. Ledger hints elsewhere follow the selection through
+  `serves_ledger_tools()`, which `prepare()` narrows before any tool import.
 - **`@mcp_tool_handler` owns validation, token injection, error shape, and
   logging.** Never write a try/except around an HTTP call in a tool. `region`,
   `workspace`, `server_id`, `server_ids`, `servers`, `session_id`, `limit`, and

@@ -1195,7 +1195,7 @@ Most read tools are also exposed as read-only MCP resources under the `alpacon:/
 - `alpacon://workspaces`, `alpacon://workspaces/{region}`, `alpacon://current-user/{region}/{workspace}`
 - `alpacon://workspace-settings/{access-control|security|mfa-methods|preferences}/{region}/{workspace}`
 
-A resource is registered only when its backing tool module is enabled, so a narrow `--toolsets` selection drops the matching resources too.
+A resource is registered only when its backing tool module is enabled, so a narrow `--toolsets` or `ALPACON_MCP_TOOLSETS` selection drops the matching resources too, in every mode. When a selection keeps some resources of a URI family and drops others, such as `alpacon://servers/.../overview` under `servers` alone, the server logs a startup warning for each dropped resource, naming the toolset that would keep it.
 
 **Prompts** (workflow guides, defined in `tools/prompts.py`):
 

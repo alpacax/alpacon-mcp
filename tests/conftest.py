@@ -11,7 +11,7 @@ import httpx
 import pytest
 
 from server import create_streamable_http_app, mcp
-from utils import request_signal
+from utils import common, request_signal
 from utils.http_client import AlpaconHTTPClient
 
 # The AlpaconHTTPClient methods a tool calls.
@@ -58,6 +58,12 @@ async def published_rule(tool: str, param: str) -> tuple[str, str]:
     return found.input_schema['properties'][param][
         'description'
     ], found.description or ''
+
+
+@pytest.fixture(autouse=True)
+def _restore_ledger_selection(monkeypatch):
+    """prepare() records the toolset selection in utils.common; undo it per test."""
+    monkeypatch.setattr(common, '_ledger_selected', True)
 
 
 @pytest.fixture(autouse=True)

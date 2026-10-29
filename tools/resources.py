@@ -472,9 +472,29 @@ def _resolve(ref: str) -> _ToolFn:
     return fn
 
 
+def _module_of(ref: str) -> str:
+    return ref.split('.', 1)[0]
+
+
+def _family(uri: str) -> str:
+    return uri.split('://', 1)[1].split('/', 1)[0]
+
+
+def stranded_resources(enabled_modules: set[str]) -> list[tuple[str, str]]:
+    """(URI, backing module) of each resource `enabled_modules` drops while serving
+    another resource in its URI family, e.g. servers/.../overview under server_tools."""
+    rows = [(uri, _module_of(ref)) for _, ref, uri, _ in REGISTRATIONS]
+    served = {_family(uri) for uri, module in rows if module in enabled_modules}
+    return [
+        (uri, module)
+        for uri, module in rows
+        if module not in enabled_modules and _family(uri) in served
+    ]
+
+
 def register_resources(enabled_modules: set[str]) -> None:
     """Register `enabled_modules`' resources, fewer placeholders first so a literal
     segment beats {id}; that holds within one call, so pass the complete set."""
-    selected = [r for r in REGISTRATIONS if r[1].split('.', 1)[0] in enabled_modules]
+    selected = [r for r in REGISTRATIONS if _module_of(r[1]) in enabled_modules]
     for name, ref, uri, extra in sorted(selected, key=lambda r: r[2].count('{')):
         register_resource(uri, _resolve(ref), name, extra)

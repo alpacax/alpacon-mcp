@@ -1,16 +1,19 @@
-"""Tests for --toolsets selective tool registration (issue #34)."""
+"""Tests for --toolsets selective tool registration (issues #34, #221)."""
 
 import ast
 import importlib
 import importlib.util
+import logging
 import sys
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
 import server
 import tools.resources as res
 import utils.declared_agent as declared_agent
+from utils.common import serves_ledger_tools
 
 ALL_MODULES = set(server.TOOLSET_REGISTRY.values())
 
@@ -205,7 +208,7 @@ class TestRunWiring:
 
         server.run('stdio', toolsets='servers')
 
-        expected = server._modules_to_load('servers', remote_mode=False)
+        expected = server._modules_to_load('servers')
         prefix = f'{server.TOOLS_PACKAGE}.'
         assert {n for n in imported if n.startswith(prefix)} == {
             prefix + m for m in expected
@@ -214,14 +217,131 @@ class TestRunWiring:
 
 
 class TestModulesToLoad:
-    def test_local_mode_selects_subset_plus_always_on(self):
-        modules = server._modules_to_load('servers,metrics', remote_mode=False)
+    def test_selection_is_subset_plus_always_on(self):
+        modules = server._modules_to_load('servers,metrics')
         assert modules == {'server_tools', 'metrics_tools', *server.ALWAYS_ON_MODULES}
 
-    def test_remote_mode_ignores_toolsets(self):
-        modules = server._modules_to_load('servers', remote_mode=True)
+    def test_default_loads_everything(self):
+        modules = server._modules_to_load(None)
         assert modules == ALL_MODULES | server.ALWAYS_ON_MODULES
 
-    def test_local_default_loads_everything(self):
-        modules = server._modules_to_load(None, remote_mode=False)
-        assert modules == ALL_MODULES | server.ALWAYS_ON_MODULES
+
+class TestRemoteModeSelection:
+    """Remote mode reads ALPACON_MCP_TOOLSETS, since main_http.py takes no flag (#221)."""
+
+    @pytest.fixture
+    def handed(self, monkeypatch) -> dict[str, set[str]]:
+        handed: dict[str, set[str]] = {}
+        monkeypatch.setattr(res, 'register_resources', lambda m: handed.update(m=m))
+        monkeypatch.setattr(declared_agent, '_environment_fallback', False)
+        monkeypatch.setattr(server, 'mcp', MagicMock())
+        monkeypatch.setattr(importlib, 'import_module', MagicMock())
+        monkeypatch.setenv('ALPACON_MCP_TRANSPORT', 'restored-on-teardown')
+        monkeypatch.setenv('ALPACON_MCP_AUTH_ENABLED', 'true')
+        monkeypatch.setenv('AUTH0_ALPACON_LOGIN_CLIENT_ID', 'client-id')
+        monkeypatch.delenv('ALPACON_MCP_REMOTE_LEDGER', raising=False)
+        return handed
+
+    def test_remote_mode_registers_only_the_env_selection(self, monkeypatch, handed):
+        monkeypatch.setenv(server.TOOLSETS_ENV_VAR, 'metrics,alerts')
+
+        server.prepare(server.TRANSPORT_STREAMABLE_HTTP)
+
+        assert handed['m'] == {
+            'metrics_tools',
+            'alert_tools',
+            *server.ALWAYS_ON_MODULES,
+        }
+
+    @pytest.mark.parametrize('selection', [None, ''])
+    def test_remote_mode_without_selection_registers_everything(
+        self, monkeypatch, handed, caplog, selection
+    ):
+        if selection is not None:
+            monkeypatch.setenv(server.TOOLSETS_ENV_VAR, selection)
+
+        with caplog.at_level(logging.WARNING, logger='alpacon_mcp.server'):
+            server.prepare(server.TRANSPORT_STREAMABLE_HTTP)
+
+        assert (
+            handed['m']
+            == (ALL_MODULES - server.LEDGER_MODULES) | server.ALWAYS_ON_MODULES
+        )
+        assert not [r for r in caplog.records if r.levelname == 'WARNING']
+
+    @pytest.mark.parametrize(
+        ('selection', 'served'), [('security', False), ('security,ledger', True)]
+    )
+    def test_ledger_hints_follow_the_selection(
+        self, monkeypatch, handed, selection, served
+    ):
+        monkeypatch.setenv('ALPACON_MCP_REMOTE_LEDGER', 'true')
+        monkeypatch.setenv(server.TOOLSETS_ENV_VAR, selection)
+
+        server.prepare(server.TRANSPORT_STREAMABLE_HTTP)
+
+        assert ('ledger_tools' in handed['m']) is served
+        assert serves_ledger_tools() is served
+
+    def test_remote_mode_rejects_an_unknown_toolset(self, monkeypatch, handed):
+        monkeypatch.setenv(server.TOOLSETS_ENV_VAR, 'metrics,bogus')
+
+        with pytest.raises(server.ToolsetError, match='bogus'):
+            server.prepare(server.TRANSPORT_STREAMABLE_HTTP)
+
+        assert 'm' not in handed
+
+    def test_selection_that_strands_a_resource_warns_naming_it(
+        self, monkeypatch, handed, caplog
+    ):
+        monkeypatch.setenv(server.TOOLSETS_ENV_VAR, 'servers')
+
+        with caplog.at_level(logging.WARNING, logger='alpacon_mcp.server'):
+            server.prepare(server.TRANSPORT_STREAMABLE_HTTP)
+
+        warnings = [r.getMessage() for r in caplog.records if r.levelname == 'WARNING']
+        assert any(
+            '{server_id}/overview' in w and 'system-info toolset' in w for w in warnings
+        )
+
+
+class TestStrandedResources:
+    def test_servers_alone_strands_the_system_info_backed_overview(self):
+        stranded = res.stranded_resources({'server_tools'})
+        assert stranded == [
+            (
+                'alpacon://servers/{region}/{workspace}/{server_id}/overview',
+                'system_info_tools',
+            )
+        ]
+
+    def test_alerts_alone_strands_the_metrics_backed_alert_rules(self):
+        stranded = res.stranded_resources({'alert_tools'})
+        assert {module for _, module in stranded} == {'metrics_tools'}
+        assert all(uri.startswith('alpacon://alert-rules/') for uri, _ in stranded)
+
+    def test_system_info_alone_strands_the_server_tools_backed_server_resources(self):
+        stranded = res.stranded_resources({'system_info_tools'})
+        assert stranded
+        assert {module for _, module in stranded} == {'server_tools'}
+        assert all(uri.startswith('alpacon://servers/') for uri, _ in stranded)
+
+    def test_metrics_alone_strands_the_alert_tools_backed_recipients(self):
+        stranded = res.stranded_resources({'metrics_tools'})
+        assert stranded == [
+            (
+                'alpacon://alert-rules/{region}/{workspace}/{rule_id}/recipients',
+                'alert_tools',
+            )
+        ]
+
+    def test_selecting_both_backing_modules_strands_nothing(self):
+        selected = {'server_tools', 'system_info_tools', 'alert_tools', 'metrics_tools'}
+        assert res.stranded_resources(selected) == []
+
+    def test_a_wholly_unselected_family_is_not_stranded(self):
+        assert res.stranded_resources({'iam_tools'}) == []
+
+    def test_everything_selected_strands_nothing(self):
+        modules = ALL_MODULES | server.ALWAYS_ON_MODULES
+        assert res.stranded_resources(modules) == []
