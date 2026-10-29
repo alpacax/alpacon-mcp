@@ -1,6 +1,6 @@
 {
   "name": "alpacon",
-  "description": "Connects Claude to the hosted Alpacon MCP server at https://mcp.alpacon.io/mcp.",
+  "description": "The hosted Alpacon MCP server, with a skill and a hook that keep Claude on Alpacon's rules for servers, Work Sessions, and approvals.",
   "author": {
     "name": "AlpacaX"
   },
