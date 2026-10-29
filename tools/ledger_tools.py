@@ -34,6 +34,10 @@ from utils.types import (
 _API_AUTH_ENV = '/api/auth/env/'
 _API_ACL = '/api/acl/'
 
+_SUBJECT_DESCRIPTION = (
+    "The person's Auth0 user id, e.g. auth0|abc123; a machine principal is refused."
+)
+
 # Mirrors the ledger's own batch bound.
 _BULK_MAX_ENTRIES = 200
 
@@ -545,8 +549,7 @@ async def list_ledger_admins(
 @mcp_tool_handler(
     description=(
         'Make a person a Command ACL admin of the workspace, so they may change '
-        'its command pre-approval ledger. Takes the Auth0 user id (subject); a '
-        'machine principal is refused. Requires a Command ACL admin. Related: '
+        'its command pre-approval ledger. Requires a Command ACL admin. Related: '
         'list_ledger_admins, revoke_ledger_admin.'
     ),
     annotations=ADDITIVE,
@@ -554,7 +557,7 @@ async def list_ledger_admins(
 )
 async def grant_ledger_admin(
     workspace: str,
-    subject: str,
+    subject: Annotated[str, Field(description=_SUBJECT_DESCRIPTION)],
     email: str = '',
     region: str = '',
     **kwargs: str,

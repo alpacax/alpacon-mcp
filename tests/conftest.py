@@ -52,6 +52,14 @@ async def tool_descriptions() -> dict[str, str]:
     return descriptions
 
 
+async def published_rule(tool: str, param: str) -> tuple[str, str]:
+    """The schema description of one parameter and the tool's own description."""
+    found = {t.name: t for t in await mcp.list_tools()}[tool]
+    return found.input_schema['properties'][param][
+        'description'
+    ], found.description or ''
+
+
 @pytest.fixture(autouse=True)
 def _reset_request_signal():
     """A sync test's begin_request() call sets the ContextVar in the main

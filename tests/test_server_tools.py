@@ -5,7 +5,11 @@ from http import HTTPStatus
 
 import pytest
 
-from tests.conftest import HTTP_ERROR_ENVELOPE, http_client_fixture, tool_descriptions
+from tests.conftest import (
+    HTTP_ERROR_ENVELOPE,
+    http_client_fixture,
+    published_rule,
+)
 from tools.server_tools import (
     create_registration_token,
     create_server_note,
@@ -1361,13 +1365,12 @@ class TestGetRegistrationGuide:
     @pytest.mark.asyncio
     async def test_description_lists_every_valid_platform(self):
         """A client reading only the tool schema must see every platform."""
-        descriptions = await tool_descriptions()
-
-        description = descriptions['get_registration_guide']
-        assert (
-            'The `platform` must be one of: '
-            '"darwin", "debian", "rhel", "suse", "windows".' in description
+        description, on_tool = await published_rule(
+            'get_registration_guide', 'platform'
         )
+
+        assert 'One of "darwin", "debian", "rhel", "suse", "windows".' == description
+        assert '"darwin"' not in on_tool
 
     @pytest.mark.asyncio
     async def test_get_registration_guide_invalid_platform(
@@ -1385,6 +1388,70 @@ class TestGetRegistrationGuide:
         assert result['error_code'] == 'validation'
         assert result['field'] == 'platform'
         mock_http_client.post.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    'tool_name, param, phrase, gone',
+    [
+        ('list_servers', 'page_size', 'up to 100', 'max 100'),
+        ('create_server_note', 'content', '512 characters', 'capped at'),
+        ('create_server_note', 'pinned', 'three pinned notes', 'three pinned notes'),
+        ('restart_agent', 'force', 'tears that live work down', 'force=True'),
+        ('upgrade_agent', 'force', 'tears that live work down', 'force=True'),
+        (
+            'update_server',
+            'offline_alert_enabled',
+            'agent credential',
+            'agent credential',
+        ),
+        (
+            'unregister_server',
+            'auto',
+            'SERVER_CANNOT_BE_DELETED',
+            'SERVER_CANNOT_BE_DELETED',
+        ),
+        (
+            'unregister_server',
+            'purge_provisioned_accounts',
+            'already-disconnected',
+            'already-disconnected',
+        ),
+        ('star_server', 'status', 'unpins', '`status=True`'),
+    ],
+)
+async def test_server_argument_rule_lives_on_the_parameter(
+    tool_name, param, phrase, gone
+):
+    # Given a tool whose argument rule used to sit in its description
+
+    # When reading the published parameter and tool description
+    on_parameter, on_tool = await published_rule(tool_name, param)
+
+    # Then the parameter states the rule and the tool no longer does
+    assert phrase in on_parameter
+    assert gone not in on_tool
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    'tool_name, param, phrase, gone',
+    [
+        ('get_registration_guide', 'platform', '"darwin"', 'must be one of'),
+        ('get_registration_guide', 'server_name', 'Pre-names', 'pre-name'),
+    ],
+)
+async def test_registration_guide_argument_rule_lives_on_the_parameter(
+    tool_name, param, phrase, gone
+):
+    # Given a tool whose argument rule used to sit in its description
+
+    # When reading the published parameter and tool description
+    on_parameter, on_tool = await published_rule(tool_name, param)
+
+    # Then the parameter states the rule and the tool no longer does
+    assert phrase in on_parameter
+    assert gone not in on_tool
 
 
 if __name__ == '__main__':

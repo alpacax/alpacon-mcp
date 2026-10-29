@@ -1,11 +1,26 @@
 """Certificate and PKI management tools for Alpacon MCP server."""
 
+from typing import Annotated
+
+from pydantic import Field
+
 from utils.api_call import http_call_response
 from utils.common import build_list_params, error_response, exclude_none
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ_ONLY
 from utils.types import ServerId, ToolResponse
+
+_KEY_ALGORITHM_DESCRIPTION = 'Key algorithm: rsa or ecdsa.'
+_KEY_SIZE_DESCRIPTION = '2048 or 4096 for RSA, 256 or 384 for ECDSA.'
+_DOMAIN_LIST_DESCRIPTION = 'DNS names to put in the Subject Alternative Name.'
+_IP_LIST_DESCRIPTION = 'IP addresses to put in the Subject Alternative Name.'
+_REVOKE_REASON_DESCRIPTION = (
+    'RFC 5280 reason code: 0=unspecified, 1=key compromise, 2=CA compromise, '
+    '3=affiliation changed, 4=superseded, 5=cessation of operation, '
+    '6=certificate hold, 9=privilege withdrawn, 10=AA compromise.'
+)
+_REQUESTED_REASON_DESCRIPTION = 'Free-text reason for the revocation request.'
 
 # ===============================
 # CERTIFICATE AUTHORITY TOOLS
@@ -51,7 +66,7 @@ async def list_certificate_authorities(
 
 
 @mcp_tool_handler(
-    description='Create a new certificate authority (CA) for signing certificates within the workspace. Requires a name, root domain, organization, the server (agent) that hosts the CA, and an owner user. Optionally specify validity periods (root/default/max valid days), key algorithm (rsa, ecdsa), key size (2048/4096 for RSA, 256/384 for ECDSA), and whether to install automatically. Related: list_certificate_authorities (view existing CAs), create_sign_request (request certificate from CA).',
+    description='Create a new certificate authority (CA) for signing certificates within the workspace. Requires a name, root domain, organization, the server (agent) that hosts the CA, and an owner user. Optionally specify validity periods (root/default/max valid days) and whether to install automatically. Related: list_certificate_authorities (view existing CAs), create_sign_request (request certificate from CA).',
     annotations=ADDITIVE,
     meta={'anthropic/searchHint': 'certificate CA authority create TLS SSL'},
 )
@@ -65,8 +80,10 @@ async def create_certificate_authority(
     root_valid_days: int | None = None,
     default_valid_days: int | None = None,
     max_valid_days: int | None = None,
-    key_algorithm: str | None = None,
-    key_size: int | None = None,
+    key_algorithm: Annotated[
+        str | None, Field(description=_KEY_ALGORITHM_DESCRIPTION)
+    ] = None,
+    key_size: Annotated[int | None, Field(description=_KEY_SIZE_DESCRIPTION)] = None,
     install: bool | None = None,
     region: str = '',
     **kwargs: str,
@@ -257,14 +274,18 @@ async def list_sign_requests(
 
 
 @mcp_tool_handler(
-    description='Create a certificate signing request (CSR) to request a new certificate. Provide at least one Subject Alternative Name via domain_list (DNS names) or ip_list (IP addresses); at least one entry across the two is required. The certificate authority is selected automatically by matching the SAN against each CA root domain, and the common name is derived from the first SAN entry. The organization is inherited from the matched CA. Optionally specify the validity period. Related: list_certificate_authorities (view CAs), list_certificates (view issued certs).',
+    description='Create a certificate signing request (CSR) to request a new certificate. Provide at least one Subject Alternative Name via domain_list or ip_list; at least one entry across the two is required. The certificate authority is selected automatically by matching the SAN against each CA root domain, and the common name is derived from the first SAN entry. The organization is inherited from the matched CA. Optionally specify the validity period. Related: list_certificate_authorities (view CAs), list_certificates (view issued certs).',
     annotations=ADDITIVE,
     meta={'anthropic/searchHint': 'certificate CSR signing request create'},
 )
 async def create_sign_request(
     workspace: str,
-    domain_list: list[str] | None = None,
-    ip_list: list[str] | None = None,
+    domain_list: Annotated[
+        list[str] | None, Field(description=_DOMAIN_LIST_DESCRIPTION)
+    ] = None,
+    ip_list: Annotated[
+        list[str] | None, Field(description=_IP_LIST_DESCRIPTION)
+    ] = None,
     valid_days: int | None = None,
     region: str = '',
     **kwargs: str,
@@ -519,15 +540,17 @@ async def get_certificate(
 
 
 @mcp_tool_handler(
-    description='Create a certificate revocation request to invalidate an issued certificate. Requires the certificate ID. Optionally include a reason code (RFC 5280: 0=unspecified, 1=key compromise, 2=CA compromise, 3=affiliation changed, 4=superseded, 5=cessation of operation, 6=certificate hold, 9=privilege withdrawn, 10=AA compromise) and a free-text requested_reason. If the caller is the CA owner or an admin the request is auto-approved and the certificate is revoked immediately; otherwise it waits for approval.',
+    description='Create a certificate revocation request to invalidate an issued certificate. Requires the certificate ID. If the caller is the CA owner or an admin the request is auto-approved and the certificate is revoked immediately; otherwise it waits for approval.',
     annotations=DESTRUCTIVE,
     meta={'anthropic/searchHint': 'certificate revoke invalidate'},
 )
 async def revoke_certificate(
     certificate_id: str,
     workspace: str,
-    reason: int | None = None,
-    requested_reason: str | None = None,
+    reason: Annotated[int | None, Field(description=_REVOKE_REASON_DESCRIPTION)] = None,
+    requested_reason: Annotated[
+        str | None, Field(description=_REQUESTED_REASON_DESCRIPTION)
+    ] = None,
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:

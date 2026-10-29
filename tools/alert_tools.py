@@ -1,7 +1,9 @@
 """Alert management tools for Alpacon MCP server."""
 
 from http import HTTPStatus
-from typing import TypedDict
+from typing import Annotated, TypedDict
+
+from pydantic import Field
 
 from utils.api_call import http_call_response
 from utils.common import build_list_params, exclude_none, success_response
@@ -9,7 +11,12 @@ from utils.decorators import mcp_tool_handler
 from utils.error_handler import format_validation_error
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ_ONLY
-from utils.types import OptionalServerId, ServerId, ToolResponse
+from utils.types import (
+    OptionalServerId,
+    OptionalServerIds,
+    ServerId,
+    ToolResponse,
+)
 
 # Mirrors AlertAcknowledgement.ACTION_TYPE_CHOICES; the server takes nothing else.
 ALERT_ACTION_TYPES = frozenset({'checked', 'dismissed'})
@@ -31,13 +38,41 @@ _EMAIL_DESTINATIONS_SENTENCE = f'One of {", ".join(sorted(ALERT_EMAIL_DESTINATIO
 # peak/avg-{read,write}-bps, peak/avg-{input,output}-{pps,bps}. The server's
 # AlertRule.TARGET_METRICS is the authoritative list; an unrecognized target
 # is rejected there with a 400, not pre-validated here.
-_TARGETS_SENTENCE = (
-    'target must be a metric the workspace exposes, e.g. cpu-usage, '
-    'memory-usage, disk-usage, or one of the peak/avg bps or pps network and '
-    'disk rates; the server rejects an unrecognized one with a 400. Every '
-    'target but cpu-usage and memory-usage is device-scoped and accepts a '
-    'device narrowing the rule to one disk or interface; the two host-wide '
-    'targets do not.'
+_TARGET_DESCRIPTION = (
+    'Metric the workspace exposes, e.g. cpu-usage, memory-usage, disk-usage, or '
+    'one of the peak/avg bps or pps network and disk rates; the server rejects an '
+    'unrecognized one with a 400.'
+)
+_DEVICE_DESCRIPTION = (
+    'Narrows the rule to one disk or interface. Every target but cpu-usage and '
+    'memory-usage is device-scoped and accepts it; those two host-wide targets do not.'
+)
+_IS_DEFAULT_DESCRIPTION = (
+    'Whether this is the default rule for its target; only one rule per target may be.'
+)
+_NOTIFY_EMAIL_DESCRIPTION = (
+    f'Who is emailed about alerts this rule raises. {_EMAIL_DESTINATIONS_SENTENCE} '
+    'Only a human caller may set it; a service-token or agent write naming it is '
+    'refused with a 400.'
+)
+_NOTIFY_SLACK_DESCRIPTION = (
+    'Whether alerts this rule raises go to Slack. Only a human caller may set it; a '
+    'service-token or agent write naming it is refused with a 400.'
+)
+_WINDOW_S_DESCRIPTION = 'Replay window in seconds, 60 to 604800 (default 86400).'
+_OVERRIDE_ENABLED_DESCRIPTION = 'False exempts the server from the whole rule.'
+_ACK_ACTION_DESCRIPTION = (
+    '"checked" marks the alert as seen, "dismissed" as not worth acting on. '
+    f'{_ACTION_TYPES_SENTENCE}'
+)
+_RESOLVED_DESCRIPTION = (
+    'Omitted returns open alerts only; true returns the resolved history instead; '
+    'false is the explicit spelling of the default.'
+)
+_ACKNOWLEDGED_DESCRIPTION = 'False selects the active, unacknowledged alerts.'
+_OVERRIDE_ENABLED_FILTER_DESCRIPTION = (
+    'Filter by enabled state; an override with enabled=false exempts its server '
+    'from the whole rule.'
 )
 
 # ===============================
@@ -46,7 +81,7 @@ _TARGETS_SENTENCE = (
 
 
 @mcp_tool_handler(
-    description='List alerts with optional filtering by server, alert type, severity, resolution state, or server name. When to use: checking active alerts, or pass resolved=true to review resolved history. Without resolved, only open alerts are returned; acknowledged=false selects the active, unacknowledged ones. Each alert can carry device and severity from the rule that raised it, and resolved_at once the condition clears. Related: get_alert (full details), get_alert_rules (threshold configuration), acknowledge_alert (mark one as seen).',
+    description='List alerts with optional filtering by server, alert type, severity, resolution state, or server name. When to use: checking active alerts or reviewing resolved history. Each alert can carry device and severity from the rule that raised it, and resolved_at once the condition clears. Related: get_alert (full details), get_alert_rules (threshold configuration), acknowledge_alert (mark one as seen).',
     annotations=READ_ONLY,
     meta={
         'anthropic/alwaysLoad': True,
@@ -62,9 +97,11 @@ async def list_alerts(
     region: str = '',
     page: int | None = None,
     page_size: int | None = None,
-    acknowledged: bool | None = None,
+    acknowledged: Annotated[
+        bool | None, Field(description=_ACKNOWLEDGED_DESCRIPTION)
+    ] = None,
     dismissed: bool | None = None,
-    resolved: bool | None = None,
+    resolved: Annotated[bool | None, Field(description=_RESOLVED_DESCRIPTION)] = None,
     **kwargs: str,
 ) -> ToolResponse:
     """List alerts.
@@ -149,8 +186,7 @@ async def get_alert(
 @mcp_tool_handler(
     description=(
         'Record an acknowledgement against an alert. When to use: marking an '
-        'alert as seen (action_type="checked") or as not worth acting on '
-        '(action_type="dismissed"). The server allows one acknowledgement per '
+        'alert as seen or as not worth acting on. The server allows one acknowledgement per '
         'user per alert and it cannot be changed afterwards. On alpacon-server '
         '2.35.0+, a repeat call succeeds with already_acknowledged=true and '
         'records nothing: the existing acknowledgement stands whatever '
@@ -164,7 +200,7 @@ async def get_alert(
 async def acknowledge_alert(
     alert_id: str,
     workspace: str,
-    action_type: str,
+    action_type: Annotated[str, Field(description=_ACK_ACTION_DESCRIPTION)],
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
@@ -219,12 +255,8 @@ async def acknowledge_alert(
     description=(
         'Create a workspace-level alert rule that watches one target metric. '
         'When to use: defining a new threshold before attaching it to servers '
-        f'with attach_alert_rule. {_TARGETS_SENTENCE} Authoring a rule needs a '
-        'paid plan, while attaching one works on any plan. Only one rule per '
-        'target may carry is_default=true. notify_email and '
-        'notify_slack_channel decide who hears about alerts this rule '
-        'raises; only a human caller may name them—a service-token or agent '
-        'write naming either is refused with a 400. Related: get_alert_rules, '
+        'with attach_alert_rule. Authoring a rule needs a paid plan, while '
+        'attaching one works on any plan. Related: get_alert_rules, '
         'attach_alert_rule, update_alert_rule, get_alert_rule_recipients '
         '(preview who a rule reaches).'
     ),
@@ -234,18 +266,22 @@ async def acknowledge_alert(
 async def create_alert_rule(
     workspace: str,
     name: str,
-    target: str,
+    target: Annotated[str, Field(description=_TARGET_DESCRIPTION)],
     threshold: float,
-    is_default: bool = False,
+    is_default: Annotated[bool, Field(description=_IS_DEFAULT_DESCRIPTION)] = False,
     region: str = '',
     operator: str | None = None,
     duration_s: int | None = None,
     recovery_threshold: float | None = None,
     no_data_after_s: int | None = None,
-    device: str | None = None,
+    device: Annotated[str | None, Field(description=_DEVICE_DESCRIPTION)] = None,
     severity: str | None = None,
-    notify_email: str | None = None,
-    notify_slack_channel: bool | None = None,
+    notify_email: Annotated[
+        str | None, Field(description=_NOTIFY_EMAIL_DESCRIPTION)
+    ] = None,
+    notify_slack_channel: Annotated[
+        bool | None, Field(description=_NOTIFY_SLACK_DESCRIPTION)
+    ] = None,
     **kwargs: str,
 ) -> ToolResponse:
     """Create an alert rule; notify_email must be in ALERT_EMAIL_DESTINATIONS,
@@ -290,11 +326,7 @@ async def create_alert_rule(
 @mcp_tool_handler(
     description=(
         'Update an existing alert rule. When to use: retuning a threshold or '
-        f'renaming a rule. {_TARGETS_SENTENCE} Updating a rule needs a paid '
-        'plan, and only one rule per target may carry is_default=true. '
-        'notify_email and notify_slack_channel decide who hears about alerts '
-        'this rule raises; only a human caller may name them—a '
-        'service-token or agent write naming either is refused with a 400. '
+        'renaming a rule. Updating a rule needs a paid plan. '
         'Related: get_alert_rules, create_alert_rule, delete_alert_rule, '
         'get_alert_rule_recipients (preview who a rule reaches).'
     ),
@@ -305,18 +337,24 @@ async def update_alert_rule(
     rule_id: str,
     workspace: str,
     name: str | None = None,
-    target: str | None = None,
+    target: Annotated[str | None, Field(description=_TARGET_DESCRIPTION)] = None,
     threshold: float | None = None,
-    is_default: bool | None = None,
+    is_default: Annotated[
+        bool | None, Field(description=_IS_DEFAULT_DESCRIPTION)
+    ] = None,
     region: str = '',
     operator: str | None = None,
     duration_s: int | None = None,
     recovery_threshold: float | None = None,
     no_data_after_s: int | None = None,
-    device: str | None = None,
+    device: Annotated[str | None, Field(description=_DEVICE_DESCRIPTION)] = None,
     severity: str | None = None,
-    notify_email: str | None = None,
-    notify_slack_channel: bool | None = None,
+    notify_email: Annotated[
+        str | None, Field(description=_NOTIFY_EMAIL_DESCRIPTION)
+    ] = None,
+    notify_slack_channel: Annotated[
+        bool | None, Field(description=_NOTIFY_SLACK_DESCRIPTION)
+    ] = None,
     **kwargs: str,
 ) -> ToolResponse:
     """Partially update an alert rule; errors when no field is given. The
@@ -531,9 +569,8 @@ async def get_alert_rule_recipients(
         'the rule fields to try; with rule_id they are a partial body over '
         "that saved rule (omit them all to preview it unchanged) and the rule's "
         'server overrides apply. servers defaults to the servers rule_id is '
-        'attached to and is required without rule_id. Limits: window_s is '
-        '60 to 604800 seconds (default 86400), at most 20 servers, servers x '
-        'window_s at most 5 x 604800, and at most 300,000 samples per replay; '
+        'attached to and is required without rule_id. Limits: at most 20 '
+        'servers, servers x window_s at most 5 x 604800, and at most 300,000 samples per replay; '
         'each limit is refused with its own error_code. Stores nothing and '
         'records no activity. Related: create_alert_rule, update_alert_rule, '
         'get_alert_rule_recipients.'
@@ -546,8 +583,8 @@ async def get_alert_rule_recipients(
 async def preview_alert_rule(
     workspace: str,
     rule_id: str | None = None,
-    servers: list[str] | None = None,
-    window_s: int | None = None,
+    servers: OptionalServerIds = None,
+    window_s: Annotated[int | None, Field(description=_WINDOW_S_DESCRIPTION)] = None,
     target: str | None = None,
     threshold: float | None = None,
     operator: str | None = None,
@@ -613,8 +650,7 @@ async def preview_alert_rule(
         'List per-server departures from workspace alert rules. When to use: '
         'auditing which servers exempt themselves from a rule or run a '
         'different threshold than the fleet. Filter by server, rule, or '
-        'enabled state; an override with enabled=false exempts its server '
-        'from the whole rule. Related: get_rule_override (full details), '
+        'enabled state. Related: get_rule_override (full details), '
         'create_rule_override, get_alert_rules (the workspace-wide rules '
         'these depart from).'
     ),
@@ -627,7 +663,9 @@ async def list_rule_overrides(
     workspace: str,
     server_id: OptionalServerId = None,
     rule_id: str | None = None,
-    enabled: bool | None = None,
+    enabled: Annotated[
+        bool | None, Field(description=_OVERRIDE_ENABLED_FILTER_DESCRIPTION)
+    ] = None,
     region: str = '',
     page: int | None = None,
     page_size: int | None = None,
@@ -708,7 +746,7 @@ async def get_rule_override(
     description=(
         'Create a per-server departure from a workspace alert rule: replace '
         'the threshold, recovery_threshold, or duration_s for one server, or '
-        'set enabled=False to exempt the server from the rule entirely. When '
+        'exempt the server from the rule entirely. When '
         'to use: a rule fits the fleet but one host needs a different number '
         "or should not fire at all. A field left unset keeps the rule's own "
         'value for that server—an override only overrides what it is given. '
@@ -728,7 +766,9 @@ async def create_rule_override(
     threshold: float | None = None,
     recovery_threshold: float | None = None,
     duration_s: int | None = None,
-    enabled: bool | None = None,
+    enabled: Annotated[
+        bool | None, Field(description=_OVERRIDE_ENABLED_DESCRIPTION)
+    ] = None,
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
@@ -763,8 +803,7 @@ async def create_rule_override(
 @mcp_tool_handler(
     description=(
         'Update an existing rule override. When to use: retuning an '
-        'overridden threshold or flipping enabled to exempt or re-include a '
-        'server. Only the fields given are sent; an omitted field keeps its '
+        'overridden threshold or exempting or re-including a server. Only the fields given are sent; an omitted field keeps its '
         "current value on the override—it does not clear back to the rule's "
         'own value. Related: get_rule_override, list_rule_overrides, '
         'delete_rule_override.'
@@ -780,7 +819,9 @@ async def update_rule_override(
     threshold: float | None = None,
     recovery_threshold: float | None = None,
     duration_s: int | None = None,
-    enabled: bool | None = None,
+    enabled: Annotated[
+        bool | None, Field(description=_OVERRIDE_ENABLED_DESCRIPTION)
+    ] = None,
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:

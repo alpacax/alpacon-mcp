@@ -12,7 +12,12 @@ import pytest
 from mcp.server.mcpserver.exceptions import ToolError
 
 from server import mcp
-from tests.conftest import VALID_SERVER_ID, http_client_fixture, tool_descriptions
+from tests.conftest import (
+    VALID_SERVER_ID,
+    http_client_fixture,
+    published_rule,
+    tool_descriptions,
+)
 from tools.command_tools import (
     _COMMAND_DESCRIPTION,
     _FILE_PHASE_GENERIC_HINT,
@@ -1789,12 +1794,19 @@ class TestPurposeDemand:
         exec_text = descriptions['execute_command']
         assert 'purpose_required' in exec_text
         assert 'state_command_purpose' in exec_text
-        # What makes a purpose useful, not just that the field exists.
-        assert 'local to this host' in exec_text
 
         answer_text = descriptions['state_command_purpose']
         assert 'one demand per command' in answer_text
-        assert 'cannot lower' in answer_text
+
+    @pytest.mark.asyncio
+    async def test_purpose_parameters_teach_what_makes_a_purpose_useful(self):
+        tools = {t.name: t for t in await mcp.list_tools()}
+
+        for name in ('execute_command', 'state_command_purpose'):
+            purpose = tools[name].input_schema['properties']['purpose']['description']
+            assert 'local to this host' in purpose
+            assert 'cannot lower' in purpose
+            assert 'local to this host' not in (tools[name].description or '')
 
 
 class TestPurposeDemandWindow:
@@ -4263,9 +4275,18 @@ class TestExecuteFileRegistration:
             assert code in text
         assert '2.8.3' in text
         assert 'Windows' in text
+        assert 'file_exec_reuse_exceeds_max' in text
+        assert 'Standing approvals always expire' not in text
+
+    @pytest.mark.asyncio
+    async def test_reuse_days_parameter_states_the_proposal_rules(self):
+        tools = {t.name: t for t in await mcp.list_tools()}
+
+        reuse = tools['execute_file'].input_schema['properties']['reuse_days']
+
         # The approver only opts in or not, and omitting reuse_days still lets
         # an opted-in grant reach the ceiling, so neither may read otherwise.
-        assert 'reuse_days' in text
+        text = reuse['description']
         assert 'proposal' in text
         assert 'the approver cannot choose another period' in text
         assert 'Standing approvals always expire' in text
@@ -4823,3 +4844,71 @@ class TestRefusalEnvelopeThroughTheTool:
         assert result['status'] == 'error'
         assert 'gate' not in result
         assert 'create_command_acl' in result['related_tools']
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    'tool_name, param, phrase, gone',
+    [
+        (
+            'execute_command',
+            'timeout',
+            'resets while the command is actively running',
+            'timeout resets',
+        ),
+        ('execute_command', 'timeout', 'default 300', 'Default timeout is'),
+        (
+            'execute_command_multi_server',
+            'purpose',
+            'purpose_truncated',
+            'purpose_truncated',
+        ),
+        (
+            'state_command_purpose',
+            'command_id',
+            'purpose_required response',
+            'the command_id is in that response',
+        ),
+        ('execute_file', 'path', '/opt/deploy.sh', 'must be absolute'),
+        ('execute_file', 'interpreter', 'a bare "bash" is refused', 'a bare "bash"'),
+        ('execute_file', 'content', 'byte-for-byte', 'byte-for-byte'),
+        ('execute_file', 'content', '64 KB', 'capped at 64 KB'),
+        ('execute_file', 'username', 'WebFTP default', 'pass username whenever'),
+        ('execute_file', 'timeout', 'default 300', 'Default timeout is'),
+        ('execute_file', 'purpose', 'What this run is for', 'Pass purpose to say'),
+    ],
+)
+async def test_command_argument_rule_lives_on_the_parameter(
+    tool_name, param, phrase, gone
+):
+    # Given a tool whose argument rule used to sit in its description
+
+    # When reading the published parameter and tool description
+    on_parameter, on_tool = await published_rule(tool_name, param)
+
+    # Then the parameter states the rule and the tool no longer does
+    assert phrase in on_parameter
+    assert gone not in on_tool
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    'tool_name, param, phrase, gone',
+    [
+        (
+            'execute_command_multi_server',
+            'parallel',
+            'one after another',
+            'parallel=false',
+        ),
+    ],
+)
+async def test_parallel_rule_lives_on_the_parameter(tool_name, param, phrase, gone):
+    # Given a tool whose argument rule used to sit in its description
+
+    # When reading the published parameter and tool description
+    on_parameter, on_tool = await published_rule(tool_name, param)
+
+    # Then the parameter states the rule and the tool no longer does
+    assert phrase in on_parameter
+    assert gone not in on_tool

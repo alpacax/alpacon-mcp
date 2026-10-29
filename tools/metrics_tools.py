@@ -4,9 +4,9 @@ import asyncio
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime, timedelta
 from enum import Enum
-from typing import TypedDict
+from typing import Annotated, TypedDict
 
-from pydantic import TypeAdapter
+from pydantic import Field, TypeAdapter
 
 from utils.api_call import http_call_response
 from utils.common import (
@@ -64,6 +64,29 @@ _LATEST_ORDERING_SENTENCE = (
     "optionally prefixed with '-' for descending."
 )
 
+_LATEST_STATE_DESCRIPTION = (
+    f'One of {", ".join(sorted(VALID_LATEST_METRIC_STATES))}. "stale" selects servers '
+    'where some family is overdue, including one storing nothing at all, so it '
+    'includes every "no_data" server.'
+)
+_LATEST_ORDERING_DESCRIPTION = (
+    f'One of {", ".join(sorted(VALID_LATEST_METRIC_ORDERING_FIELDS))}, optionally '
+    'prefixed with "-" for descending. -metric_severity puts critical first; ties '
+    'keep the default order. Severity ordering needs a server that supports it and '
+    'alert:read; otherwise it is ignored and the default order applies.'
+)
+_METRIC_TYPES_DESCRIPTION = (
+    'Comma-separated list of cpu, memory, disk_io and traffic; empty means all.'
+)
+_DISK_IO_DEVICE_DESCRIPTION = (
+    'Omitted or blank, it reads the alphabetically first device with data in the '
+    'last day; pass one of the devices listed in `devices` to read another.'
+)
+_MAX_SUMMARY_HOURS = 12  # the server clamps a realtime `start` older than this
+_SUMMARY_HOURS_DESCRIPTION = (
+    f'Hours back to read, {_MAX_SUMMARY_HOURS} by default and capped at '
+    f'{_MAX_SUMMARY_HOURS}, the window the realtime endpoints keep.'
+)
 
 _EPOCH = datetime.min.replace(tzinfo=UTC)
 
@@ -643,7 +666,7 @@ def parse_network_metrics(results: list[_TrafficRow]) -> dict[str, object]:
 
 
 @mcp_tool_handler(
-    description='Get disk I/O read/write throughput metrics for a server. Returns peak and average transfer rates per device. When to use: diagnosing storage performance bottlenecks or slow I/O. Related: get_disk_usage (space, not I/O), get_top_servers (compare I/O across servers). Note: Without device (or with a blank one), reads the alphabetically first device with data in the last day and lists every such device in `devices`; pass one of them as device to read another. Defaults to the last 12 hours; the realtime endpoint returns at most the last 12 hours.',
+    description='Get disk I/O read/write throughput metrics for a server. Returns peak and average transfer rates per device. When to use: diagnosing storage performance bottlenecks or slow I/O. Related: get_disk_usage (space, not I/O), get_top_servers (compare I/O across servers). Note: The response lists every device with data in the last day in `devices`. Defaults to the last 12 hours; the realtime endpoint returns at most the last 12 hours.',
     annotations=READ_ONLY,
     meta={
         'anthropic/searchHint': 'disk io read write throughput iops storage performance'
@@ -652,7 +675,9 @@ def parse_network_metrics(results: list[_TrafficRow]) -> dict[str, object]:
 async def get_disk_io(
     server_id: ServerId,
     workspace: str,
-    device: str | None = None,
+    device: Annotated[
+        str | None, Field(description=_DISK_IO_DEVICE_DESCRIPTION)
+    ] = None,
     start_date: str | None = None,
     end_date: str | None = None,
     region: str = '',
@@ -798,14 +823,17 @@ async def get_network_traffic(
 
 
 @mcp_tool_handler(
-    description='Get the top servers ranked by resource usage in the last 24 hours. When to use: finding the busiest or most loaded servers in a workspace, comparing resource usage across servers. Related: get_cpu_usage, get_memory_usage (detailed metrics for a specific server). Note: Supports cpu, memory, disk_io, traffic. Pass comma-separated or leave empty for all. Several types come back as `data` keyed by metric type, where a type that failed holds `{error, available: false}` instead of failing the call; a single type comes back as `data` directly, with `metric_type` set to `<type>_top` (e.g. `cpu_top`).',
+    description='Get the top servers ranked by resource usage in the last 24 hours. When to use: finding the busiest or most loaded servers in a workspace, comparing resource usage across servers. Related: get_cpu_usage, get_memory_usage (detailed metrics for a specific server). Note: Several types come back as `data` keyed by metric type, where a type that failed holds `{error, available: false}` instead of failing the call; a single type comes back as `data` directly, with `metric_type` set to `<type>_top` (e.g. `cpu_top`).',
     annotations=READ_ONLY,
     meta={
         'anthropic/searchHint': 'top servers ranking busiest compare metrics workspace'
     },
 )
 async def get_top_servers(
-    workspace: str, metric_types: str = '', region: str = '', **kwargs: str
+    workspace: str,
+    metric_types: Annotated[str, Field(description=_METRIC_TYPES_DESCRIPTION)] = '',
+    region: str = '',
+    **kwargs: str,
 ) -> ToolResponse:
     """Get top 5 servers by specified metric types in the last 24 hours.
 
@@ -968,8 +996,6 @@ def _find_record_id(
     return None
 
 
-_MAX_SUMMARY_HOURS = 12  # the server clamps a realtime `start` older than this
-
 # Interfaces the server has no virtual flag for; the summary avoids them by name.
 _VIRTUAL_INTERFACE_PREFIXES = (
     'docker',
@@ -1022,7 +1048,7 @@ async def _list_all_interfaces(
 
 
 @mcp_tool_handler(
-    description="Get one server's detail: a comprehensive monitoring overview combining CPU, memory, disk, and network metrics for that single server. Returns a compact summary with data availability status, read over the last `hours`, 12 by default and capped at 12, the window the realtime endpoints keep. When to use: quick health check of one server or starting point for investigation. Related: get_cpu_usage, get_memory_usage, get_disk_usage, get_network_traffic (full detailed data per metric), list_latest_metrics (latest reading for many servers at once). Note: Use individual metric tools for time-series data.",
+    description="Get one server's detail: a comprehensive monitoring overview combining CPU, memory, disk, and network metrics for that single server. Returns a compact summary with data availability status. When to use: quick health check of one server or starting point for investigation. Related: get_cpu_usage, get_memory_usage, get_disk_usage, get_network_traffic (full detailed data per metric), list_latest_metrics (latest reading for many servers at once). Note: Use individual metric tools for time-series data.",
     annotations=READ_ONLY,
     meta={
         'anthropic/searchHint': 'server metrics summary overview health monitoring dashboard single server detail',
@@ -1032,7 +1058,7 @@ async def _list_all_interfaces(
 async def get_server_metrics_summary(
     server_id: ServerId,
     workspace: str,
-    hours: int = 12,
+    hours: Annotated[int, Field(description=_SUMMARY_HOURS_DESCRIPTION)] = 12,
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
@@ -1246,10 +1272,7 @@ async def get_server_metrics_summary(
         '`reason`, and `interval_s`; `value`, `sampled_at`, and `device` are '
         'null when no sample is stored for that family. Results are paginated '
         'the same way as list_servers: compare `count` with `results` and '
-        "follow `next`. state='stale' selects servers where some family is overdue, "
-        "including one storing nothing at all, so it includes every 'no_data' "
-        'server. Order by metric_severity or -metric_severity '
-        '(critical first descending; ties keep the default order). Rows include '
+        'follow `next`. Rows include '
         'metric_severity (critical, warning, info or null without alert:read). '
         'Cells include threshold (number or null) and operator (gte, lte or null); '
         'both are null for disk-io and net, or without rule override read access. '
@@ -1258,10 +1281,9 @@ async def get_server_metrics_summary(
         'and warning excludes critical servers. '
         "For one server's time series use get_cpu_usage "
         "etc.; for one server's detail use get_server_metrics_summary. Requires "
-        'alpacon-server 2.37.0 or later. Severity ordering, metric_severity, '
+        'alpacon-server 2.37.0 or later. metric_severity, '
         'threshold, operator and summary require server support; earlier '
-        'deployments ignore that ordering (default order) and omit those fields; '
-        'without alert:read the ordering is ignored too.'
+        'deployments omit those fields.'
     ),
     annotations=READ_ONLY,
     meta={
@@ -1275,8 +1297,10 @@ async def list_latest_metrics(
     groups: str | None = None,
     tag: str | None = None,
     is_connected: bool | None = None,
-    state: str | None = None,
-    ordering: str | None = None,
+    state: Annotated[str | None, Field(description=_LATEST_STATE_DESCRIPTION)] = None,
+    ordering: Annotated[
+        str | None, Field(description=_LATEST_ORDERING_DESCRIPTION)
+    ] = None,
     page: int | None = None,
     page_size: int | None = None,
     **kwargs: str,
@@ -1287,9 +1311,8 @@ async def list_latest_metrics(
     metric cells added: the filters, search, and pagination are `list_servers`'
     own, plus `state` and `ordering`.
 
-    Severity ordering, metric_severity, threshold, operator, and summary require
-    server support; earlier deployments ignore that ordering (default order) and
-    omit those fields, and without alert:read the ordering is ignored too.
+    metric_severity, threshold, operator, and summary require server support;
+    earlier deployments omit those fields.
 
     Args:
         workspace: Workspace name. Required parameter
@@ -1307,7 +1330,8 @@ async def list_latest_metrics(
             disk_io/disk-io, net, metric_severity), optionally prefixed with "-"
             for descending. A server with no value for the field sorts last.
             -metric_severity puts critical first; ties keep the default order.
-            (optional)
+            Severity ordering needs a server that supports it and alert:read;
+            otherwise it is ignored and the default order applies. (optional)
         page: Page number for pagination (optional)
         page_size: Number of results per page, up to 100 (optional)
 

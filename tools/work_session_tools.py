@@ -14,12 +14,16 @@ from utils.common import (
     success_response,
     unwrap_http_result,
 )
-from utils.cursor_pagination import CURSOR_WALK_DESCRIPTION, cursor_list_response
+from utils.cursor_pagination import (
+    CURSOR_DESCRIPTION,
+    CURSOR_WALK_DESCRIPTION,
+    cursor_list_response,
+)
 from utils.decorators import mcp_tool_handler
 from utils.error_handler import format_validation_error
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ_ONLY
-from utils.types import ToolResponse
+from utils.types import OptionalServerIds, ServerIds, SessionId, ToolResponse
 
 _API_SESSIONS = '/api/work-sessions/sessions/'
 
@@ -40,6 +44,69 @@ _INCLUDE_RECORDS_REFUSED = (
 _RECORD_MAX_PAGE_SIZE = 16
 _RECORD_DEFAULT_PAGE_SIZE = 8
 
+_INCLUDE_RECORDS_DESCRIPTION = (
+    'Do not pass it: the timeline carries no recordings, so any value is refused '
+    'rather than quietly ignored. Read a recording with work_session_records.'
+)
+
+_WEBSH_SESSION_ID_DESCRIPTION = (
+    'Websh session to read: the `id` of a `websh_session` item on '
+    'work_session_timeline, so call that first to learn which sessions a Work '
+    'Session recorded.'
+)
+
+_RECORDS_CURSOR_DESCRIPTION = (
+    "The previous page's `data.next`, to read the page after it; stop when `next` "
+    'is null. It is bound to the websh session it was minted for, so keep sending '
+    'the same websh_session_id while paging one recording.'
+)
+
+_RECORDS_PAGE_SIZE_DESCRIPTION = (
+    f'1 to {_RECORD_MAX_PAGE_SIZE}, default {_RECORD_DEFAULT_PAGE_SIZE}; a value '
+    'outside that is refused before any request.'
+)
+
+_ISO_EXPIRES_DESCRIPTION = 'ISO 8601 datetime string.'
+
+_UPDATE_EXPIRES_DESCRIPTION = (
+    'ISO 8601 datetime string. Honored only for pending sessions; for approved or '
+    'active ones it is ignored, so use work_session_extend instead.'
+)
+
+_EXTEND_EXPIRES_DESCRIPTION = (
+    'New expiry as an ISO 8601 datetime string; it must be later than the current one.'
+)
+
+_EXTEND_REASON_DESCRIPTION = (
+    'Required on every request: a short justification for why more time is needed, '
+    'shown to the human approver when this extension needs a decision.'
+)
+
+_TARGET_ACCOUNT_DESCRIPTION = (
+    'The single OS account the commands will run as, such as "root". Set it whenever '
+    'you intend to run commands as another account, so that account is approved '
+    'together with the session, then pass the same account as username to '
+    'execute_command and execute_file; omit it to run as the default account. '
+    'Running directly as root is declared here; the "sudo" scope is for elevation '
+    'from another account.'
+)
+
+_STATUS_FILTER_DESCRIPTION = (
+    'Filter by status: "pending", "approved", "active", "completed", "rejected", '
+    '"cancelled", "expired" or "revoked".'
+)
+
+_REQUESTER_TYPE_DESCRIPTION = (
+    'Filter by requester: "user" (human) or "agent" (AI agent).'
+)
+
+_TITLE_DESCRIPTION = 'Pass an empty string to clear it.'
+
+_FORCE_DESCRIPTION = (
+    'Retry an analysis stuck in pending or processing; the server enforces a '
+    'minimum age guard and never discards completed results.'
+)
+
 _SCOPES_DESCRIPTION = (
     'Operations the session allows: "command" (execute_command, execute_file), '
     '"webftp" (file transfers), "tunnel" (port forwarding), "sudo" (privilege elevation). '
@@ -59,21 +126,12 @@ _SESSION_DESCRIPTION = (
     description=(
         'Create a Work Session to scope all infrastructure actions under an auditable, '
         'approval-gated session. Every execute_command and file transfer should be linked '
-        'to a Work Session—the server enforces this for MCP OAuth and browser-based auth '
-        '(work_session_id is optional for other auth methods such as service tokens). '
+        'to a Work Session—the server enforces this for MCP OAuth and browser-based auth. '
         'A new session usually lands in pending: this tool then returns '
         'status="pending_approval", and no command or file transfer runs in it until a '
         'human approves out-of-band (Alpacon web console or Slack). Do not open another '
         'session; call work_session_get and proceed once data.status is active, or stop '
         'if it is rejected, cancelled, expired, revoked, or completed, since those never become active. '
-        'servers is the list of target server UUIDs. '
-        'expires_at is an ISO 8601 datetime string. '
-        'target_account_username (optional) is the single OS account the commands will run '
-        'as, such as "root". Set it whenever you intend to run commands as another account, '
-        'so that account is approved together with the session, then pass the same '
-        'account as username to execute_command and execute_file; omit it to run as '
-        'the default account. Running directly as root is declared here; the "sudo" '
-        'scope is for elevation from another account. '
         'Related: work_session_close (end session), execute_command (pass work_session_id).'
     ),
     annotations=ADDITIVE,
@@ -82,12 +140,14 @@ _SESSION_DESCRIPTION = (
 async def work_session_create(
     workspace: str,
     scopes: Annotated[list[str], Field(description=_SCOPES_DESCRIPTION)],
-    servers: list[str],
-    expires_at: str,
+    servers: ServerIds,
+    expires_at: Annotated[str, Field(description=_ISO_EXPIRES_DESCRIPTION)],
     description: Annotated[str, Field(description=_SESSION_DESCRIPTION)],
     title: str | None = None,
     region: str = '',
-    target_account_username: str | None = None,
+    target_account_username: Annotated[
+        str | None, Field(description=_TARGET_ACCOUNT_DESCRIPTION)
+    ] = None,
     **kwargs: str,
 ) -> ToolResponse:
     """Create a Work Session for auditable, approval-gated infrastructure access."""
@@ -154,7 +214,7 @@ async def work_session_create(
     meta={'anthropic/searchHint': 'work session close complete end finish'},
 )
 async def work_session_close(
-    session_id: str,
+    session_id: SessionId,
     workspace: str,
     region: str = '',
     **kwargs: str,
@@ -184,7 +244,7 @@ async def work_session_close(
     meta={'anthropic/searchHint': 'work session get detail status timeline'},
 )
 async def work_session_get(
-    session_id: str,
+    session_id: SessionId,
     workspace: str,
     region: str = '',
     **kwargs: str,
@@ -205,10 +265,7 @@ async def work_session_get(
 
 @mcp_tool_handler(
     description=(
-        'List Work Sessions in a workspace. Optional status filter: '
-        '"pending", "approved", "active", "completed", "rejected", "cancelled", '
-        '"expired", "revoked". '
-        'Optional requester_type filter: "user" (human) or "agent" (AI agent). '
+        'List Work Sessions in a workspace. '
         'Related: work_session_create (create session), work_session_get (single session detail).'
     ),
     annotations=READ_ONLY,
@@ -216,8 +273,10 @@ async def work_session_get(
 )
 async def work_session_list(
     workspace: str,
-    status: str | None = None,
-    requester_type: str | None = None,
+    status: Annotated[str | None, Field(description=_STATUS_FILTER_DESCRIPTION)] = None,
+    requester_type: Annotated[
+        str | None, Field(description=_REQUESTER_TYPE_DESCRIPTION)
+    ] = None,
     limit: int = 20,
     region: str = '',
     **kwargs: str,
@@ -243,14 +302,11 @@ async def work_session_list(
 # IDEMPOTENT_WRITE: repeated PATCH cannot stack approval requests (server WORK_SESSION_MOD_ALREADY_PENDING guard).
 @mcp_tool_handler(
     description=(
-        'Update a Work Session (partial update). Only provided fields are sent; '
-        'pass an empty string to clear a text field such as title. '
+        'Update a Work Session (partial update). Only provided fields are sent. '
         'Pending sessions update immediately; approved/active sessions go through '
         'the modification flow—when the server queues an approval request, this '
         'tool returns status="pending_approval" and the changes only apply after '
         'a human approves them out-of-band. '
-        'expires_at is only honored for pending sessions—for approved/active sessions '
-        'it is ignored, so use work_session_extend instead. '
         'Terminal sessions (completed/rejected/cancelled/expired/revoked) cannot be updated. '
         'Related: work_session_get (check status), work_session_extend (extend expiry only).'
     ),
@@ -260,9 +316,9 @@ async def work_session_list(
     },
 )
 async def work_session_update(
-    session_id: str,
+    session_id: SessionId,
     workspace: str,
-    title: str | None = None,
+    title: Annotated[str | None, Field(description=_TITLE_DESCRIPTION)] = None,
     description: Annotated[str | None, Field(description=_SESSION_DESCRIPTION)] = None,
     scopes: Annotated[
         list[str] | None,
@@ -271,8 +327,10 @@ async def work_session_update(
             'session keeps. ' + _SCOPES_DESCRIPTION
         ),
     ] = None,
-    servers: list[str] | None = None,
-    expires_at: str | None = None,
+    servers: OptionalServerIds = None,
+    expires_at: Annotated[
+        str | None, Field(description=_UPDATE_EXPIRES_DESCRIPTION)
+    ] = None,
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
@@ -336,11 +394,7 @@ async def work_session_update(
 @mcp_tool_handler(
     description=(
         'Extend the expiry time of a Work Session. Only approved or active sessions '
-        'can be extended, and the new expires_at must be later than the current one. '
-        'Bound sudo policies are extended together. '
-        'expires_at is an ISO 8601 datetime string. '
-        'reason is required on every request: a short justification for why more time '
-        'is needed, shown to the human approver when this extension needs a decision. '
+        'can be extended. Bound sudo policies are extended together. '
         'Whether the extension applies immediately or waits for approval follows the '
         "workspace's approval policy, the same rule work_session_create uses: an "
         'auto-approve lane extends directly and this tool returns a normal success; '
@@ -354,10 +408,10 @@ async def work_session_update(
     meta={'anthropic/searchHint': 'work session extend expiry expires prolong'},
 )
 async def work_session_extend(
-    session_id: str,
+    session_id: SessionId,
     workspace: str,
-    expires_at: str,
-    reason: str,
+    expires_at: Annotated[str, Field(description=_EXTEND_EXPIRES_DESCRIPTION)],
+    reason: Annotated[str, Field(description=_EXTEND_REASON_DESCRIPTION)],
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:
@@ -414,8 +468,7 @@ async def work_session_extend(
         'its most recent activity—do not read it as what the session ended up '
         'doing. The timeline carries no websh terminal recordings: it names the '
         'sessions that have one, as `websh_session` items whose `id` '
-        'work_session_records then reads the recording of, and include_records '
-        'is refused rather than quietly ignored—do not pass it. A `command` item '
+        'work_session_records then reads the recording of. A `command` item '
         'with a rejection_cause also carries rejection_hint, saying whom to ask. '
         'Related: work_session_get (session detail), work_session_records (one '
         "websh session's recording), list_session_analyses / "
@@ -427,12 +480,14 @@ async def work_session_extend(
     },
 )
 async def work_session_timeline(
-    session_id: str,
+    session_id: SessionId,
     workspace: str,
     region: str = '',
-    cursor: str | None = None,
+    cursor: Annotated[str | None, Field(description=CURSOR_DESCRIPTION)] = None,
     page_size: int | None = None,
-    include_records: bool | None = None,
+    include_records: Annotated[
+        bool | None, Field(description=_INCLUDE_RECORDS_DESCRIPTION)
+    ] = None,
     **kwargs: str,
 ) -> ToolResponse:
     """Read the timeline, following the cursor up to the request bound; `page_size`
@@ -477,19 +532,11 @@ async def work_session_timeline(
     description=(
         'Read one page of a websh terminal recording captured inside a Work '
         "Session: the terminal's output in chunks, oldest first, as "
-        '`{added_at, record}` items. websh_session_id names the websh session '
-        'to read, and is the `id` of a `websh_session` item on '
-        'work_session_timeline—call that first to learn which sessions a Work '
-        'Session recorded. The session must belong to this Work Session and '
+        '`{added_at, record}` items. The websh session must belong to this Work Session and '
         'must not be a tunnel, which records no terminal. '
-        'One call reads one page and never pages on by itself: pass '
-        '`data.next` back as `cursor` to read the page after it, and stop when '
-        '`next` is null. A page is cut by a byte budget as well as by '
-        'page_size, so a page holding fewer items than asked for is not the '
-        'end of the recording—only `next: null` is. page_size is 1 to 16 and '
-        'defaults to 8; a value outside that is refused before any request. A '
-        'cursor is bound to the websh session it was minted for, so keep '
-        'sending the same websh_session_id while paging one recording. '
+        'One call reads one page and never pages on by itself. A page is cut by '
+        'a byte budget as well as by page_size, so a page holding fewer items '
+        'than asked for is not the end of the recording—only `next: null` is. '
         'Reading a recording is a paid-plan feature: a Free workspace, and a '
         "session older than the plan's audit window, is answered 402. "
         'Related: work_session_timeline (which sessions have a recording, and '
@@ -502,12 +549,16 @@ async def work_session_timeline(
     },
 )
 async def work_session_records(
-    session_id: str,
-    websh_session_id: str,
+    session_id: SessionId,
+    websh_session_id: Annotated[str, Field(description=_WEBSH_SESSION_ID_DESCRIPTION)],
     workspace: str,
     region: str = '',
-    cursor: str | None = None,
-    page_size: int = _RECORD_DEFAULT_PAGE_SIZE,
+    cursor: Annotated[
+        str | None, Field(description=_RECORDS_CURSOR_DESCRIPTION)
+    ] = None,
+    page_size: Annotated[
+        int, Field(description=_RECORDS_PAGE_SIZE_DESCRIPTION)
+    ] = _RECORD_DEFAULT_PAGE_SIZE,
     **kwargs: str,
 ) -> ToolResponse:
     """Read one page of a Websh recording; pass `next` back as `cursor`, and only
@@ -542,17 +593,15 @@ async def work_session_records(
         '(completed, expired, or revoked—rejected and cancelled sessions never '
         'activated, so there is nothing to analyze). Analysis runs automatically on '
         'work_session_close; use this to re-run a failed analysis. '
-        'Set force=True to retry an analysis stuck in pending/processing '
-        '(the server enforces a minimum age guard and never discards completed results). '
         'Related: list_session_analyses / get_session_analysis_detail (view results).'
     ),
     annotations=IDEMPOTENT_WRITE,
     meta={'anthropic/searchHint': 'work session analyze AI security analysis retry'},
 )
 async def work_session_analyze(
-    session_id: str,
+    session_id: SessionId,
     workspace: str,
-    force: bool = False,
+    force: Annotated[bool, Field(description=_FORCE_DESCRIPTION)] = False,
     region: str = '',
     **kwargs: str,
 ) -> ToolResponse:

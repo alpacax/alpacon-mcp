@@ -1,8 +1,16 @@
 """Audit and logging tools for Alpacon MCP server."""
 
+from typing import Annotated
+
+from pydantic import Field
+
 from utils.api_call import http_call_response
 from utils.common import build_list_params
-from utils.cursor_pagination import CURSOR_WALK_DESCRIPTION, cursor_list_response
+from utils.cursor_pagination import (
+    CURSOR_DESCRIPTION,
+    CURSOR_WALK_DESCRIPTION,
+    cursor_list_response,
+)
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import READ_ONLY
@@ -27,7 +35,7 @@ from utils.types import OptionalServerId, ToolResponse
 async def list_activity_logs(
     workspace: str,
     region: str = '',
-    cursor: str | None = None,
+    cursor: Annotated[str | None, Field(description=CURSOR_DESCRIPTION)] = None,
     page_size: int | None = None,
     **kwargs: str,
 ) -> ToolResponse:
@@ -111,7 +119,7 @@ async def list_server_logs(
     workspace: str,
     server_id: OptionalServerId = None,
     region: str = '',
-    cursor: str | None = None,
+    cursor: Annotated[str | None, Field(description=CURSOR_DESCRIPTION)] = None,
     page_size: int | None = None,
     **kwargs: str,
 ) -> ToolResponse:
@@ -161,7 +169,7 @@ async def list_webftp_logs(
     workspace: str,
     server_id: OptionalServerId = None,
     region: str = '',
-    cursor: str | None = None,
+    cursor: Annotated[str | None, Field(description=CURSOR_DESCRIPTION)] = None,
     page_size: int | None = None,
     **kwargs: str,
 ) -> ToolResponse:

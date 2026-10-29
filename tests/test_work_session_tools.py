@@ -6,7 +6,7 @@ import pytest
 from mcp.types import CallToolResult
 
 from server import mcp
-from tests.conftest import http_client_fixture, tool_descriptions
+from tests.conftest import http_client_fixture, published_rule, tool_descriptions
 from tools.work_session_tools import (
     _SCOPES_DESCRIPTION,
     _SESSION_DESCRIPTION,
@@ -1171,13 +1171,14 @@ class TestWorkSessionRecords:
     @pytest.mark.asyncio
     async def test_the_description_says_where_a_websh_session_id_comes_from(self):
         """A model cannot guess the id, and the timeline is the only source."""
-        descriptions = await tool_descriptions()
+        on_parameter, on_tool = await published_rule(
+            'work_session_records', 'websh_session_id'
+        )
 
-        text = descriptions['work_session_records']
-
-        assert 'work_session_timeline' in text
-        assert 'websh_session' in text
-        assert 'next: null' in text
+        assert 'work_session_timeline' in on_parameter
+        assert 'websh_session' in on_parameter
+        assert 'websh_session_id names' not in on_tool
+        assert 'next: null' in on_tool
 
 
 class TestWorkSessionAnalyze:
@@ -1412,3 +1413,50 @@ class TestWorkSessionTimelineRejection:
         )
         assert 'rejection_hint' not in second
         assert 'rejection_hint' not in third
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    'tool_name, param, phrase, gone',
+    [
+        ('work_session_create', 'expires_at', 'ISO 8601', 'ISO 8601'),
+        (
+            'work_session_create',
+            'target_account_username',
+            'such as "root"',
+            'such as "root"',
+        ),
+        ('work_session_list', 'status', '"revoked"', '"revoked"'),
+        ('work_session_list', 'requester_type', '"agent" (AI agent)', '(AI agent)'),
+        ('work_session_update', 'title', 'empty string', 'empty string'),
+        (
+            'work_session_update',
+            'expires_at',
+            'only for pending sessions',
+            'only honored',
+        ),
+        ('work_session_extend', 'expires_at', 'later than the current one', 'ISO 8601'),
+        ('work_session_extend', 'reason', 'justification', 'reason is required'),
+        ('work_session_analyze', 'force', 'minimum age guard', 'minimum age guard'),
+        ('work_session_records', 'cursor', 'data.next', 'data.next'),
+        ('work_session_records', 'page_size', '1 to 16, default 8', 'is 1 to 16'),
+        (
+            'work_session_timeline',
+            'cursor',
+            'next_cursor',
+            'pass `pagination.next_cursor`',
+        ),
+        ('work_session_timeline', 'include_records', 'refused', 'include_records'),
+    ],
+)
+async def test_work_session_argument_rule_lives_on_the_parameter(
+    tool_name, param, phrase, gone
+):
+    # Given a tool whose argument rule used to sit in its description
+
+    # When reading the published parameter and tool description
+    on_parameter, on_tool = await published_rule(tool_name, param)
+
+    # Then the parameter states the rule and the tool no longer does
+    assert phrase in on_parameter
+    assert gone not in on_tool

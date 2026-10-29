@@ -4,7 +4,6 @@ import inspect
 import json
 import sys
 from http import HTTPStatus
-from pathlib import Path
 from typing import TypedDict, cast
 
 import pytest
@@ -12,7 +11,10 @@ import pytest
 from server import mcp
 from tests.conftest import HTTP_ERROR_ENVELOPE, http_client_fixture
 from tools.alert_tools import (
-    _TARGETS_SENTENCE,
+    _DEVICE_DESCRIPTION,
+    _IS_DEFAULT_DESCRIPTION,
+    _NOTIFY_EMAIL_DESCRIPTION,
+    _TARGET_DESCRIPTION,
     acknowledge_alert,
     attach_alert_rule,
     create_alert_rule,
@@ -394,14 +396,30 @@ class TestCreateAlertRule:
             },
         )
 
-    def test_targets_sentence_reaches_both_descriptions(self):
-        # mcp.tool() hands back the bare function, so the description is not
-        # reachable from the tool object; assert on the sentence both
-        # descriptions interpolate, and that they both still interpolate it.
-        assert 'cpu-usage' in _TARGETS_SENTENCE
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('tool_name', ['create_alert_rule', 'update_alert_rule'])
+    async def test_rule_parameters_carry_their_own_rules(self, tool_name):
+        # Given the published tool list
+        tools = {t.name: t for t in await mcp.list_tools()}
+        tool = tools[tool_name]
 
-        source = Path('tools/alert_tools.py').read_text()
-        assert source.count('{_TARGETS_SENTENCE}') == 2
+        # When reading the properties the rule fields publish
+        props = tool.input_schema['properties']
+
+        # Then each parameter carries its rule and the tool description does not
+        assert props['target']['description'] == _TARGET_DESCRIPTION
+        assert 'cpu-usage' in props['target']['description']
+        assert props['device']['description'] == _DEVICE_DESCRIPTION
+        assert props['is_default']['description'] == _IS_DEFAULT_DESCRIPTION
+        assert props['notify_email']['description'] == _NOTIFY_EMAIL_DESCRIPTION
+        assert 'refused with a 400' in props['notify_slack_channel']['description']
+        for phrase in (
+            'must be a metric',
+            'device-scoped',
+            'is_default=true',
+            'who hears about alerts',
+        ):
+            assert phrase not in (tool.description or '')
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize('field, value', NEW_RULE_FIELDS)
@@ -1388,3 +1406,42 @@ async def test_http_error_returns_error(
     result = await func(workspace='testworkspace', region='ap1', **kwargs)
 
     assert result['status'] == 'error'
+
+
+class TestSingleArgumentRulesLiveOnTheParameters:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        'tool_name, param, phrase, gone',
+        [
+            ('list_alerts', 'resolved', 'resolved history', 'Without resolved'),
+            ('list_alerts', 'acknowledged', 'unacknowledged', 'acknowledged=false'),
+            (
+                'acknowledge_alert',
+                'action_type',
+                'not worth acting on',
+                'action_type="',
+            ),
+            ('preview_alert_rule', 'window_s', '604800 (default 86400)', 'window_s is'),
+            ('list_rule_overrides', 'enabled', 'exempts its server', 'enabled=false'),
+            ('create_rule_override', 'enabled', 'exempts the server', 'enabled=False'),
+            (
+                'update_rule_override',
+                'enabled',
+                'exempts the server',
+                'flipping enabled',
+            ),
+        ],
+    )
+    async def test_parameter_carries_the_rule_and_the_tool_drops_it(
+        self, tool_name, param, phrase, gone
+    ):
+        # Given the published tool list
+        tools = {t.name: t for t in await mcp.list_tools()}
+        tool = tools[tool_name]
+
+        # When reading the parameter and the tool description
+        description = tool.input_schema['properties'][param]['description']
+
+        # Then the parameter states the rule and the tool no longer does
+        assert phrase in description
+        assert gone not in (tool.description or '')
