@@ -11,7 +11,7 @@ from http import HTTPStatus
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from utils import request_signal
-from utils.error_handler import UpstreamAuthError
+from utils.error_handler import UpstreamAuthError, validate_workspace_format
 from utils.logger import get_logger
 
 AsgiMessage = MutableMapping[str, object]
@@ -190,6 +190,11 @@ class UpstreamAuthErrorMiddleware:
         last_401 = self._client_cooldowns.get(client_key)
         mfa_required = bool(signal.get('mfa_required', False))
         source = str(signal.get('source', ''))
+        ledger_org = signal.get('ledger_org')
+        # The name lands inside a quoted header value; anything a workspace
+        # cannot be called is dropped rather than escaped.
+        if not isinstance(ledger_org, str) or not validate_workspace_format(ledger_org):
+            ledger_org = ''
 
         if last_401 is not None and (now - last_401) <= self._cooldown_seconds:
             remaining = self._cooldown_seconds - (now - last_401)
@@ -202,12 +207,15 @@ class UpstreamAuthErrorMiddleware:
 
         self._client_cooldowns[client_key] = now
         logger.info(
-            'Upstream 401 detected (mfa_required=%s, source=%s), returning a '
-            're-auth challenge',
+            'Upstream 401 detected (mfa_required=%s, ledger=%s, source=%s), '
+            'returning a re-auth challenge',
             mfa_required,
+            bool(ledger_org),
             source,
         )
-        await self._send_challenge(send, mfa_required=mfa_required)
+        await self._send_challenge(
+            send, mfa_required=mfa_required, ledger_org=ledger_org
+        )
         return True
 
     async def _send_error(
@@ -236,14 +244,22 @@ class UpstreamAuthErrorMiddleware:
             }
         )
 
-    async def _send_challenge(self, send: Send, *, mfa_required: bool = False) -> None:
-        """Send a 401 invalid_token, or 403 insufficient_scope with an 'mfa' scope when
-        MFA is needed, so clients re-run /oauth/authorize instead of refreshing."""
+    async def _send_challenge(
+        self, send: Send, *, mfa_required: bool = False, ledger_org: str = ''
+    ) -> None:
+        """Send a 401 invalid_token, or 403 insufficient_scope with an 'mfa' or
+        'ledger:<workspace>:<ms>' scope, so clients re-run /oauth/authorize instead of refreshing."""
         scopes = 'openid profile email offline_access'
         error = 'invalid_token'
         status = HTTPStatus.UNAUTHORIZED
         if mfa_required:
             scopes += ' mfa'
+        if ledger_org:
+            # A fresh tag per challenge: a client's scope union skips a scope it
+            # already holds, so a bare ledger:<ws> asked a second time would be
+            # lost behind a later workspace's.
+            scopes += f' ledger:{ledger_org}:{time.time_ns() // 1_000_000}'
+        if mfa_required or ledger_org:
             error = 'insufficient_scope'
             status = HTTPStatus.FORBIDDEN
 
@@ -253,11 +269,15 @@ class UpstreamAuthErrorMiddleware:
 
         www_authenticate = f'Bearer {", ".join(www_auth_parts)}'
 
-        description = (
-            'MFA verification required. Re-authentication needed.'
-            if mfa_required
-            else 'Authentication expired. Re-authentication needed.'
-        )
+        if mfa_required:
+            description = 'MFA verification required. Re-authentication needed.'
+        elif ledger_org:
+            description = (
+                'The command pre-approval ledger needs its own authorization. '
+                'Re-authentication needed.'
+            )
+        else:
+            description = 'Authentication expired. Re-authentication needed.'
         body = json.dumps(
             {
                 'error': error,

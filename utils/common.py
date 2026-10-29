@@ -320,8 +320,8 @@ AGENT_ROLLOUT_POLICY_REFUSAL_HINTS: dict[str, str] = {
 }
 
 #: 405 on every command-ACL write once the server moved command pre-approvals
-#: to the ledger. Only a stdio server registers the ledger tools, so only it
-#: names them; every transport gets the web console.
+#: to the ledger. Only a server that registers the ledger tools names them;
+#: every transport gets the web console.
 COMMAND_ACL_MOVED_HINT = (
     'Command ACLs are now managed on the command pre-approval ledger, so this '
     'endpoint no longer accepts writes. A Command ACL admin can issue or revoke '
@@ -443,9 +443,9 @@ def refusal_hint(gate: object, missing: object) -> str | None:
     return REFUSAL_GATE_HINT.get(gate) if isinstance(gate, str) else None
 
 
-# Replaces an _ERROR_CODE_HINT entry on a stdio server, the only transport that
-# registers the tools these name.
-_STDIO_ERROR_CODE_HINT: dict[str, str] = {
+# Replaces an _ERROR_CODE_HINT entry on a server that registers the tools these
+# name: stdio, or remote mode with the ledger enabled.
+_LEDGER_ERROR_CODE_HINT: dict[str, str] = {
     'command_acl_moved': COMMAND_ACL_MOVED_STDIO_HINT,
 }
 
@@ -506,6 +506,24 @@ def is_stdio_transport() -> bool:
     """Whether this process serves stdio (ALPACON_MCP_TRANSPORT, set by prepare()).
     Unset reads as not stdio, so a stdio-only path fails closed."""
     return os.getenv('ALPACON_MCP_TRANSPORT', '') == 'stdio'
+
+
+REMOTE_LEDGER_ENV = 'ALPACON_MCP_REMOTE_LEDGER'
+
+
+def is_remote_ledger_enabled() -> bool:
+    """Remote ledger tools: off until the Auth0 app is allowed the ledger audience,
+    and only on authenticated streamable-http (SSE has no person to bind to)."""
+    return (
+        is_auth_enabled()
+        and os.getenv('ALPACON_MCP_TRANSPORT', '') == 'streamable-http'
+        and os.getenv(REMOTE_LEDGER_ENV, '').lower() == 'true'
+    )
+
+
+def serves_ledger_tools() -> bool:
+    """Whether this process registers the command pre-approval ledger tools."""
+    return is_stdio_transport() or is_remote_ledger_enabled()
 
 
 def resolve_work_session_id(explicit: str | None) -> str | None:
@@ -806,8 +824,8 @@ def unwrap_http_result(
         error_kwargs['error_code'] = code
         if hint is None:
             hint = _ERROR_CODE_HINT.get(code)
-            if is_stdio_transport():
-                hint = _STDIO_ERROR_CODE_HINT.get(code, hint)
+            if serves_ledger_tools():
+                hint = _LEDGER_ERROR_CODE_HINT.get(code, hint)
     if hint is None:
         hint = refusal_hint(refusal.get('gate'), refusal.get('missing'))
     if hint is not None:

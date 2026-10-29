@@ -106,6 +106,12 @@ Things the code will not tell you at a glance:
   server**, carrying the device id minted for that grant. Rotating
   `ALPACON_MCP_GRANT_SECRET` (or `AUTH0_ALPACON_LOGIN_CLIENT_SECRET`, which it is derived
   from by default) logs every remote session out.
+- **A remote access token may not be an Auth0 JWT.** With
+  `ALPACON_MCP_REMOTE_LEDGER=true`, `/oauth/token` wraps a command pre-approval
+  ledger token into an encrypted `amcpl1.` value (`utils/ledger_grant.py`), and
+  `Auth0TokenVerifier` unwraps it before verifying, so `AccessToken.token` is
+  always the bare JWT. That credential is the only place a remote ledger token
+  lives; never cache one in the process.
 - **Transport settings live at the entry point, not on the constructor.** SDK 2.x
   takes `host`, `json_response` and `stateless_http` on
   `mcp.streamable_http_app()`, so `create_streamable_http_app(host=...)` carries

@@ -168,9 +168,12 @@ class AlpaconHTTPClient:
         json_data: RequestBody | None = None,
         params: QueryParams | None = None,
         timeout: float | None = None,
+        *,
+        reauth_on_401: bool = True,
     ) -> JsonValue:
         """Send with retry, but never resend a POST or PATCH that may have reached the
-        server. Raises UpstreamAuthError on a 401 in remote JWT mode."""
+        server. Raises UpstreamAuthError on a 401 in remote JWT mode unless
+        `reauth_on_401` is off, for a JWT that is not the session's own."""
         # Prepare headers
         request_headers = {
             'Content-Type': 'application/json',
@@ -303,7 +306,10 @@ class AlpaconHTTPClient:
                     return error_response
                 else:
                     # Client error - don't retry
-                    if e.response.status_code == HTTPStatus.UNAUTHORIZED:
+                    if (
+                        e.response.status_code == HTTPStatus.UNAUTHORIZED
+                        and reauth_on_401
+                    ):
                         return self._handle_upstream_401(e, token=token)
 
                     error_response = {

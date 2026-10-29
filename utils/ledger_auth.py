@@ -1,8 +1,8 @@
 """In-memory device-flow (RFC 8628) sign-in for the pre-approval ledger: no refresh
-token, never blocks a call. Stdio only; the cache is process-global."""
+token, never blocks a call. Stdio only; the cache is process-global (remote mode
+uses `utils.ledger_grant`)."""
 
 import asyncio
-import os
 import time
 from dataclasses import dataclass
 from http import HTTPStatus
@@ -12,17 +12,34 @@ import httpx
 
 from utils.auth import decode_claims_unverified
 from utils.common import error_response
+from utils.device_id import installation_device_id
+from utils.ledger_grant import (
+    DEFAULT_LEDGER_AUDIENCE,
+    DEFAULT_LEDGER_URL,
+    LEDGER_AUDIENCE_ENV,
+    LEDGER_URL_ENV,
+    ledger_audience,
+    ledger_base_url,
+)
 from utils.logger import get_logger
 from utils.types import JsonValue, ToolResponse
 
 logger = get_logger('ledger_auth')
 
-LEDGER_URL_ENV = 'ALPACON_MCP_LEDGER_URL'
-LEDGER_AUDIENCE_ENV = 'ALPACON_MCP_LEDGER_AUDIENCE'
-DEFAULT_LEDGER_URL = 'https://alpacon.ai'
-# An audience is an opaque identifier matched character for character; the
-# trailing slash is part of it.
-DEFAULT_LEDGER_AUDIENCE = 'https://alpacon.ai/'
+# The ledger host and audience moved to utils.ledger_grant, which the OAuth
+# proxy imports without this module's dependencies; they stay importable here.
+__all__ = [
+    'AUTHORIZATION_REQUIRED',
+    'DEFAULT_LEDGER_AUDIENCE',
+    'DEFAULT_LEDGER_URL',
+    'LEDGER_AUDIENCE_ENV',
+    'LEDGER_URL_ENV',
+    'LedgerAuthorizer',
+    'LedgerTarget',
+    'ledger_audience',
+    'ledger_authorizer',
+    'ledger_base_url',
+]
 
 AUTHORIZATION_REQUIRED = 'authorization_required'
 
@@ -33,15 +50,6 @@ _DEFAULT_INTERVAL = 5
 # with a token that lapses on the way.
 _EXPIRY_SKEW = 60
 _AUTH0_TIMEOUT = httpx.Timeout(10.0, connect=5.0)
-
-
-def ledger_base_url() -> str:
-    url = os.getenv(LEDGER_URL_ENV, '').strip() or DEFAULT_LEDGER_URL
-    return url.rstrip('/')
-
-
-def ledger_audience() -> str:
-    return os.getenv(LEDGER_AUDIENCE_ENV, '').strip() or DEFAULT_LEDGER_AUDIENCE
 
 
 def _now() -> float:
@@ -170,7 +178,12 @@ class LedgerAuthorizer:
             'audience': ledger_audience(),
             # No offline_access: a refresh credential for an admin surface
             # would be a standing privilege.
-            'scope': f'openid profile email org:{target.org_name}',
+            # The installation's device id keys the login action's MFA record,
+            # as for the CLI; without it the action falls back to a fingerprint.
+            'scope': (
+                f'openid profile email org:{target.org_name} '
+                f'device:{installation_device_id()}'
+            ),
         }
         try:
             status, body = await _post_form(

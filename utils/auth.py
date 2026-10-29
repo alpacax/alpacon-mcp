@@ -12,7 +12,14 @@ from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicKey
 from mcp.server.auth.provider import AccessToken
 
 from utils.auth0_env import get_auth0_env
+from utils.ledger_grant import (
+    LedgerGrant,
+    is_wrapped_access_token,
+    ledger_claims,
+    unwrap_access_token,
+)
 from utils.logger import escape_for_log, get_logger
+from utils.oauth import ledger_grant_key
 from utils.types import JsonValue
 
 logger = get_logger('auth')
@@ -300,6 +307,16 @@ class Auth0TokenVerifier:
         """AccessToken for a valid Bearer token, else None on any failure; an unknown
         kid forces one JWKS refetch."""
         try:
+            # A credential this server wrapped carries a ledger grant beside
+            # the Auth0 token; everything below verifies the Auth0 token alone.
+            grant: LedgerGrant | None = None
+            if is_wrapped_access_token(token):
+                unwrapped = unwrap_access_token(ledger_grant_key(), token)
+                if unwrapped is None:
+                    logger.warning('Rejected a wrapped access token that did not open')
+                    return None
+                token, grant = unwrapped
+
             # Fetch JWKS and find signing key
             jwks = await _fetch_jwks(self._config['jwks_url'])
             public_key = _get_signing_key(jwks, token, quiet_miss=True)
@@ -337,8 +354,19 @@ class Auth0TokenVerifier:
             ):
                 logger.warning('JWT sub, scope or exp claim has an unexpected type')
                 return None
+            if grant is not None and not grant.is_failure and grant.subject != sub:
+                # Wrapped together at sign-in, so a mismatch is not this
+                # server's doing; the session goes on without the ledger.
+                logger.warning(
+                    'Dropped a ledger grant whose subject is not the session'
+                )
+                grant = None
             return AccessToken(
-                token=token, client_id=sub, scopes=scope.split(), expires_at=exp
+                token=token,
+                client_id=sub,
+                scopes=scope.split(),
+                expires_at=exp,
+                claims=ledger_claims(grant) if grant is not None else None,
             )
 
         except ValueError as e:

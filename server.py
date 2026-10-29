@@ -14,7 +14,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from utils.auth0_env import get_auth0_env
-from utils.common import MCP_VERSION, is_auth_enabled
+from utils.common import MCP_VERSION, is_auth_enabled, serves_ledger_tools
 from utils.declared_agent import capture_declared_agent, use_environment_fallback
 from utils.health import get_health_info
 from utils.http_client import http_client
@@ -71,9 +71,10 @@ TOOLSET_REGISTRY: dict[str, str] = {
 }
 ALL_TOOL_MODULES: frozenset[str] = frozenset(TOOLSET_REGISTRY.values())
 
-# Served over stdio only. Their tools cache a person's sign-in in the process,
-# and every other transport may share one process between several callers.
-STDIO_ONLY_MODULES: frozenset[str] = frozenset({'ledger_tools'})
+# Served over stdio, and over streamable-http once ALPACON_MCP_REMOTE_LEDGER is
+# on. stdio caches a person's sign-in in the process; remote mode carries it in
+# each caller's own credential. SSE has neither, so it never serves them.
+LEDGER_MODULES: frozenset[str] = frozenset({'ledger_tools'})
 
 # Always registered; these names are accepted in --toolsets but select nothing.
 # work_session_tools must stay: gate denials tell the agent to call work_session_*.
@@ -354,13 +355,13 @@ def prepare(
 
     # Import triggers registration: @mcp_tool_handler runs at import time.
     modules = _modules_to_load(toolsets, remote_mode)
-    if transport != TRANSPORT_STDIO and modules & STDIO_ONLY_MODULES:
+    if not serves_ledger_tools() and modules & LEDGER_MODULES:
         logger.info(
-            'Not registering stdio-only modules on %s: %s',
+            'Not registering ledger modules on %s: %s',
             transport,
-            ', '.join(sorted(modules & STDIO_ONLY_MODULES)),
+            ', '.join(sorted(modules & LEDGER_MODULES)),
         )
-        modules -= STDIO_ONLY_MODULES
+        modules -= LEDGER_MODULES
     ordered = sorted(modules)
     for module_name in ordered:
         importlib.import_module(f'{TOOLS_PACKAGE}.{module_name}')

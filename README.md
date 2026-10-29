@@ -464,7 +464,7 @@ OAuth/browser callers must scope command execution and file transfers under an a
 - **revoke_ledger_entry** / **revoke_ledger_entries** / **disable_ledger_entry** / **enable_ledger_entry**: Withdraw or pause an entry
 - **list_ledger_admins** / **grant_ledger_admin** / **revoke_ledger_admin**: Who may change the ledger
 
-These are served over stdio only and need a separate browser sign-in on first use; see `docs/api-reference.md`.
+These are served over stdio, and in remote mode once the operator enables them, and need a separate browser sign-in on first use; see `docs/api-reference.md`.
 
 ### ✅ Approvals & sudo
 - **list_approval_requests** / **get_approval_request**: Pending and historical approval requests
