@@ -1,0 +1,14 @@
+{
+  "name": "alpacon",
+  "description": "Connects Claude to the hosted Alpacon MCP server at https://mcp.alpacon.io/mcp.",
+  "author": {
+    "name": "AlpacaX"
+  },
+  "repository": "https://github.com/alpacax/alpacon-mcp",
+  "license": "MIT",
+  "keywords": [
+    "alpacon",
+    "mcp",
+    "infrastructure"
+  ]
+}

@@ -190,5 +190,32 @@ class TestProjectStructure:
             assert (docs_dir / 'api-reference.md').exists()
 
 
+class TestClaudePluginManifests:
+    project_root = Path(__file__).parent.parent
+
+    def test_plugin_mcp_json_points_at_hosted_server_over_http(self):
+        mcp_json = self.project_root / 'plugins' / 'alpacon' / '.mcp.json'
+
+        config = json.loads(mcp_json.read_text())
+
+        assert config == {
+            'mcpServers': {
+                'alpacon': {'type': 'http', 'url': 'https://mcp.alpacon.io/mcp'}
+            }
+        }
+
+    def test_marketplace_entries_resolve_to_a_plugin_of_the_same_name(self):
+        marketplace = self.project_root / '.claude-plugin' / 'marketplace.json'
+
+        entries = json.loads(marketplace.read_text())['plugins']
+
+        assert entries
+        for entry in entries:
+            manifest = (
+                self.project_root / entry['source'] / '.claude-plugin' / 'plugin.json'
+            )
+            assert json.loads(manifest.read_text())['name'] == entry['name']
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])

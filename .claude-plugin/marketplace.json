@@ -1,0 +1,14 @@
+{
+  "name": "alpacon-mcp",
+  "owner": {
+    "name": "AlpacaX"
+  },
+  "description": "Claude plugins for Alpacon.",
+  "plugins": [
+    {
+      "name": "alpacon",
+      "source": "./plugins/alpacon",
+      "description": "Connects Claude to the hosted Alpacon MCP server at https://mcp.alpacon.io/mcp."
+    }
+  ]
+}

@@ -167,6 +167,26 @@ On first use, Claude Code opens your browser to sign in. Verify with `claude mcp
 
 > **Tip**: Any MCP client that supports remote/streamable-http servers can connect—just give it the URL `https://mcp.alpacon.io/mcp`. Clients that only support local (stdio) servers should use the `mcp-remote` bridge shown above for Claude Desktop.
 
+### Claude Tag (Claude in Slack)
+
+Claude Tag does not take a URL directly. It loads an MCP server only from a plugin an administrator attaches, and an `.mcp.json` in a repository the agent clones is ignored. This repository ships that plugin in [`plugins/alpacon/`](plugins/alpacon/), and the `.claude-plugin/marketplace.json` at the repository root lists it. The plugin names the server; a connector gives the channel a credential for it.
+
+A channel session has no browser, so it cannot sign in the way the clients above do. Two credential routes exist, and neither is confirmed end to end yet:
+
+- **MCP Connector**: first add `https://mcp.alpacon.io/mcp` as a custom connector on claude.ai, then pick it as the credential and sign in once with an Alpacon account made for Claude. This is an OAuth login, so the WorkSession gate applies to it. This route has not been tested with Alpacon.
+- **Bearer**: a static Alpacon API token. Remote mode does not accept one yet; [#220](https://github.com/alpacax/alpacon-mcp/issues/220) tracks that. A static token bypasses the WorkSession gate, so actions a browser caller must open a session for go through unsessioned.
+
+Whichever route you take, everyone in the channel acts as the account behind the credential, so give it the narrowest role, scopes, and command ACL that do the job. Approvals stay with people: a tool that returns `status="pending_approval"` waits for a human in the web console or Slack, and the agent cannot approve its own request.
+
+An Owner or a member with the Claude Tag Admin permission attaches it:
+
+1. Add the plugin to your organization's catalog in [Organization settings > Plugins & skills](https://claude.ai/admin-settings/skills?tab=inventory) > **Add**. Either choose **Upload a plugin** with a zip of `plugins/alpacon/` (the archive root, or its single top-level folder, must hold `.claude-plugin/plugin.json`), or choose **Sync from GitHub** with a private fork of this repository—Claude Tag cannot select a public repository.
+2. In [Organization settings > Claude Tag](https://claude.ai/admin-settings/claude-tag), open a bundle on the **Bundles** tab under **Claude's access** (or create one), click **Add** under **What's in it**, choose **Plugin**, and pick `alpacon`. To cover all of Slack instead, add the plugin from the **Skills and plugins** tab and the connector in step 3 from the **Connectors** tab.
+3. On the same bundle, click **Add**, choose **Connector**, then **Custom connector**. Pick the **Credential type** for your route and set **Allowed websites** to `mcp.alpacon.io`. The sandbox blocks a request to a host no allow rule covers, so without this connector the plugin names a server Claude cannot reach.
+4. In a channel the bundle applies to, start a new thread and ask Claude to call `health_check`. A thread already running keeps the plugins it began with.
+
+To try the plugin in Claude Code, run `/plugin marketplace add alpacax/alpacon-mcp` and then `/plugin install alpacon@alpacon-mcp`, or load the folder for one session with `claude --plugin-dir plugins/alpacon`.
+
 ### Hosted vs. local—which should I use?
 
 | | Hosted (remote MCP) | Local (`uvx alpacon-mcp`) |

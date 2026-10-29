@@ -18,3 +18,5 @@ logs
 config/token.json
 .env
 .mcp.json
+.claude-plugin
+plugins

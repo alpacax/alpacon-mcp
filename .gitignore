@@ -63,6 +63,7 @@ node_modules/
 # MCP configuration with real API keys
 .mcp.json
 mcp.json
+!plugins/alpacon/.mcp.json
 
 # Editor directories and files
 *.suo

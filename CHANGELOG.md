@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- An `alpacon` Claude plugin in `plugins/alpacon/`, listed by a marketplace at the repository root, whose `.mcp.json` names the hosted server `https://mcp.alpacon.io/mcp` over streamable-http (#222). A Claude Tag administrator attaches it to an Access bundle, as the README describes; a static-token credential for channel sessions waits on #220. The tool surface and every response are unchanged.
 - The command pre-approval ledger tools can be served in remote mode (streamable-http) when the operator sets
   `ALPACON_MCP_REMOTE_LEDGER=true` (#362). A ledger call without a usable ledger token asks the MCP client to sign
   in again through a 403 `insufficient_scope` challenge naming `ledger:<workspace>`; the OAuth proxy then obtains a
