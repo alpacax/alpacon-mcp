@@ -167,6 +167,31 @@ On first use, Claude Code opens your browser to sign in. Verify with `claude mcp
 
 > **Tip**: Any MCP client that supports remote/streamable-http servers can connect—just give it the URL `https://mcp.alpacon.io/mcp`. Clients that only support local (stdio) servers should use the `mcp-remote` bridge shown above for Claude Desktop.
 
+### Agent plugin
+
+Claude Code, Codex, Copilot CLI, and Cursor can install the hosted server as a plugin instead of a bare URL. Besides the connection, the plugin carries the rules for using the tools, which a bare URL cannot:
+
+- `.mcp.json`: names `https://mcp.alpacon.io/mcp` over HTTP. The server stays hosted; nothing runs on your machine, and the first tool call opens the browser sign-in.
+- `using-alpacon` skill: teaches Claude that `server_id` is a UUID from `list_servers`, that commands run inside a Work Session, that a `pending_approval` result waits for a person, and that a write with `outcome_unknown: true` is checked before it is retried.
+- A `PreToolUse` hook on Bash: refuses a command that runs the `alpacon` CLI, so Claude stays on the MCP tools when a call fails. It needs `python3` on the `PATH`.
+
+```bash
+/plugin marketplace add alpacax/alpacon-mcp
+/plugin install alpacon@alpacon-mcp
+```
+
+To try a local checkout for one session, run `claude --plugin-dir plugins/alpacon`.
+
+#### Codex, Copilot CLI, and Cursor
+
+The same plugin directory installs in three other agents. Each one loads the skill and the server, and asks for the browser sign-in on the first tool call:
+
+- Codex: reads the Claude manifest. Run `codex plugin marketplace add alpacax/alpacon-mcp` and `codex plugin add alpacon@alpacon-mcp`. Codex runs a plugin's hook only after you trust it in `/hooks`. An MCP server you already named `alpacon` in `config.toml` takes the plugin's place, so remove or rename it first.
+- Copilot CLI: reads the Claude manifest. Run `copilot plugin marketplace add alpacax/alpacon-mcp` and `copilot plugin install alpacon@alpacon-mcp`. The hook refuses the command, but the agent sees only that the hook exited with code 2, not the reason.
+- Cursor: reads `.cursor-plugin/plugin.json`, which points at the same `.mcp.json` and runs the same hook script on `beforeShellExecution`. Run `cursor-agent --plugin-dir plugins/alpacon` from a checkout, or copy the directory to `~/.cursor/plugins/local/alpacon` for the desktop app.
+
+Do not add a root `plugin.json` (the Agent Plugins manifest) to the plugin: Codex then reads that manifest instead and stops running the hook.
+
 ### Hosted vs. local—which should I use?
 
 | | Hosted (remote MCP) | Local (`uvx alpacon-mcp`) |
@@ -627,6 +652,8 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 ## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+The Alpacon name and logo, including `plugins/alpacon/assets/icon.svg`, are trademarks of AlpacaX and are not covered by the MIT License.
 
 ---
 

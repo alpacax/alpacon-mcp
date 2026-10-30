@@ -1,0 +1,27 @@
+{
+  "name": "alpacon",
+  "displayName": "Alpacon",
+  "description": "Let AI agents operate your infrastructure under your control. Connects the agent to Alpacon, which checks each command at runtime, holds risky ones for human approval, and records them for audit. A bundled skill and hook keep the agent on Alpacon's MCP tools.",
+  "author": {
+    "name": "AlpacaX",
+    "email": "support@alpacon.io",
+    "url": "https://www.alpacax.com"
+  },
+  "homepage": "https://github.com/alpacax/alpacon-mcp#agent-plugin",
+  "repository": "https://github.com/alpacax/alpacon-mcp",
+  "license": "MIT",
+  "keywords": [
+    "alpacon",
+    "mcp",
+    "ai-agents",
+    "pam",
+    "privileged-access",
+    "human-in-the-loop",
+    "audit",
+    "infrastructure"
+  ],
+  "supportUrl": "https://github.com/alpacax/alpacon-mcp/issues",
+  "privacyPolicyUrl": "https://www.alpacax.com/legal/privacy/",
+  "termsOfServiceUrl": "https://www.alpacax.com/legal/terms/",
+  "icon": "./assets/icon.svg"
+}
