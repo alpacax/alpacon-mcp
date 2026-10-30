@@ -673,6 +673,8 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
+The Alpacon name and logo, including `plugins/alpacon/assets/icon.svg`, are trademarks of AlpacaX and are not covered by the MIT License.
+
 ---
 
 **Ready to give your AI agents secure infrastructure access?**
