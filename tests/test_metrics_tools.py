@@ -1391,6 +1391,46 @@ class TestParseMemoryMetrics:
         assert parsed['available'] is False
 
 
+class TestUsageStatusAndHealthBoundaries:
+    """Each band's upper bound is exclusive: the bound itself reads as the next band."""
+
+    @pytest.mark.parametrize(
+        ('metric', 'usage', 'status', 'health'),
+        [
+            (_UsageMetric.CPU, 19.99, 'idle', 'healthy'),
+            (_UsageMetric.CPU, 20.0, 'low', 'healthy'),
+            (_UsageMetric.CPU, 49.99, 'low', 'healthy'),
+            (_UsageMetric.CPU, 50.0, 'moderate', 'healthy'),
+            (_UsageMetric.CPU, 69.99, 'moderate', 'healthy'),
+            (_UsageMetric.CPU, 70.0, 'high', 'healthy'),
+            (_UsageMetric.CPU, 79.99, 'high', 'healthy'),
+            (_UsageMetric.CPU, 80.0, 'high', 'warning'),
+            (_UsageMetric.CPU, 89.99, 'high', 'warning'),
+            (_UsageMetric.CPU, 90.0, 'critical', 'warning'),
+            (_UsageMetric.CPU, 94.99, 'critical', 'warning'),
+            (_UsageMetric.CPU, 95.0, 'critical', 'critical'),
+            (_UsageMetric.MEMORY, 29.99, 'idle', 'healthy'),
+            (_UsageMetric.MEMORY, 30.0, 'low', 'healthy'),
+            (_UsageMetric.MEMORY, 59.99, 'low', 'healthy'),
+            (_UsageMetric.MEMORY, 60.0, 'moderate', 'healthy'),
+            (_UsageMetric.MEMORY, 79.99, 'moderate', 'healthy'),
+            (_UsageMetric.MEMORY, 80.0, 'high', 'healthy'),
+            (_UsageMetric.MEMORY, 84.99, 'high', 'healthy'),
+            (_UsageMetric.MEMORY, 85.0, 'high', 'warning'),
+            (_UsageMetric.MEMORY, 94.99, 'high', 'warning'),
+            (_UsageMetric.MEMORY, 95.0, 'critical', 'critical'),
+        ],
+    )
+    def test_current_usage_maps_to_its_status_and_health(
+        self, metric, usage, status, health
+    ):
+        rows: list[_UsageRow] = [{'timestamp': '2024-01-01T00:00:00Z', 'usage': usage}]
+
+        parsed = parse_usage_metrics(metric, rows)
+
+        assert (parsed['status'], parsed['health']) == (status, health)
+
+
 class TestOldestFirst:
     """Rows order by the instant they name, not by the timestamp text."""
 
