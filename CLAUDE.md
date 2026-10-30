@@ -114,7 +114,8 @@ Things the code will not tell you at a glance:
   or PATCH of the same call succeeded lists those requests in `already_sent`
   and never asks for the whole call again; one with no such request does. A
   read-only tool always asks for the whole call again. Once recorded, every later
-  `AlpaconHTTPClient.request` in that call raises before sending, so a refusal
+  `AlpaconHTTPClient.request` the tool makes raises before sending (the `mfa_url`
+  fetch runs after the holder is released), so a refusal
   is not followed by more side effects. There is no MFA pre-check: Alpacon
   decides. `auth_token_mfa_missing` keeps the 403 re-login.
 - **The code and refresh token a remote client holds are sealed by this

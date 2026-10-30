@@ -101,8 +101,8 @@ def note_sent(request: str) -> None:
 
 
 def refuse_if_recorded() -> None:
-    """Raise MfaStepUpRequired once the call in flight recorded a step-up, so a refused
-    call sends nothing more."""
+    """Raise MfaStepUpRequired once the call in flight recorded a step-up, so the refused
+    tool sends nothing more."""
     holder = _holder.get()
     if holder is not None and holder.required:
         raise MfaStepUpRequired(holder.source)
