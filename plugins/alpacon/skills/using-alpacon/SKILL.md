@@ -24,7 +24,7 @@ Give each non-routine command a `purpose` naming a fact about this host. A `stat
 
 ## Approvals belong to people
 
-No tool approves a request, and Claude must not try. When any tool returns `status="pending_approval"`, show the user what is waiting and where a person decides it (the Alpacon web console or Slack), then retry or read back once they say it is done.
+No tool approves a request, and the agent must not try. When any tool returns `status="pending_approval"`, show the user what is waiting and where a person decides it (the Alpacon web console or Slack), then retry or read back once they say it is done.
 
 ## A write whose outcome is unknown
 

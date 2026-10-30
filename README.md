@@ -167,9 +167,9 @@ On first use, Claude Code opens your browser to sign in. Verify with `claude mcp
 
 > **Tip**: Any MCP client that supports remote/streamable-http servers can connect—just give it the URL `https://mcp.alpacon.io/mcp`. Clients that only support local (stdio) servers should use the `mcp-remote` bridge shown above for Claude Desktop.
 
-### Claude plugin
+### Agent plugin
 
-Claude Code can install the hosted server as a plugin instead of a bare URL. Besides the connection, the plugin carries the rules for using the tools, which a bare URL cannot:
+Claude Code, Codex, Copilot CLI, and Cursor can install the hosted server as a plugin instead of a bare URL. Besides the connection, the plugin carries the rules for using the tools, which a bare URL cannot:
 
 - `.mcp.json`: names `https://mcp.alpacon.io/mcp` over HTTP. The server stays hosted; nothing runs on your machine, and the first tool call opens the browser sign-in.
 - `using-alpacon` skill: teaches Claude that `server_id` is a UUID from `list_servers`, that commands run inside a Work Session, that a `pending_approval` result waits for a person, and that a write with `outcome_unknown: true` is checked before it is retried.

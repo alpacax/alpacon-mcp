@@ -1,16 +1,25 @@
 {
   "name": "alpacon",
-  "description": "The hosted Alpacon MCP server, with a skill and a hook that keep the agent on Alpacon's rules for servers, Work Sessions, and approvals.",
+  "description": "Let AI agents operate your infrastructure under your control. Connects the agent to Alpacon, which checks each command at runtime, holds risky ones for human approval, and records them for audit. A bundled skill and hook keep the agent on Alpacon's MCP tools.",
   "author": {
-    "name": "AlpacaX"
+    "name": "AlpacaX",
+    "email": "support@alpacon.io",
+    "url": "https://www.alpacax.com"
   },
+  "homepage": "https://github.com/alpacax/alpacon-mcp#agent-plugin",
   "repository": "https://github.com/alpacax/alpacon-mcp",
   "license": "MIT",
   "keywords": [
     "alpacon",
     "mcp",
+    "ai-agents",
+    "pam",
+    "privileged-access",
+    "human-in-the-loop",
+    "audit",
     "infrastructure"
   ],
   "mcpServers": "./.mcp.json",
-  "hooks": "./hooks/cursor-hooks.json"
+  "hooks": "./hooks/cursor-hooks.json",
+  "logo": "./assets/icon.svg"
 }

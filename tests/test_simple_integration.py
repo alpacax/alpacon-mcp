@@ -225,6 +225,8 @@ class TestClaudePluginManifests:
         assert cursor['name'] == claude['name']
         assert (plugin / cursor['mcpServers']).is_file()
         assert (plugin / cursor['hooks']).is_file()
+        assert (plugin / cursor['logo']).is_file()
+        assert (plugin / claude['icon']).is_file()
 
     def test_plugin_has_no_root_manifest_that_would_hide_its_hooks_from_codex(self):
         plugin = self.project_root / 'plugins' / 'alpacon'

@@ -1,14 +1,18 @@
 {
   "name": "alpacon-mcp",
   "owner": {
-    "name": "AlpacaX"
+    "name": "AlpacaX",
+    "email": "support@alpacon.io",
+    "url": "https://www.alpacax.com"
   },
-  "description": "Claude plugins for Alpacon.",
+  "description": "Alpacon plugins from AlpacaX that let AI agents operate your infrastructure under your control.",
   "plugins": [
     {
       "name": "alpacon",
+      "displayName": "Alpacon",
       "source": "./plugins/alpacon",
-      "description": "The hosted Alpacon MCP server, with a skill and a hook that keep Claude on Alpacon's rules for servers, Work Sessions, and approvals."
+      "description": "Let AI agents operate your infrastructure under your control. Connects the agent to Alpacon, which checks each command at runtime, holds risky ones for human approval, and records them for audit. A bundled skill and hook keep the agent on Alpacon's MCP tools.",
+      "category": "security"
     }
   ]
 }
