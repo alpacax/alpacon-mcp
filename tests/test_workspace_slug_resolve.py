@@ -8,7 +8,8 @@ import httpx
 import pytest
 
 from utils import workspace_resolver
-from utils.decorators import with_token_validation
+from utils.decorators import with_error_handling, with_token_validation
+from utils.http_client import AlpaconHTTPClient
 from utils.workspace_resolver import clear_cache
 
 CLAIMS = [
@@ -44,7 +45,7 @@ def _lookup_client(status=200, body=None, error=None):
     return client_cls, client
 
 
-def _jwt_mode(claims=None, mfa=None, decode=None):
+def _jwt_mode(claims=None, decode=None):
     claims = CLAIMS if claims is None else claims
     return (
         patch.dict(
@@ -59,12 +60,11 @@ def _jwt_mode(claims=None, mfa=None, decode=None):
             'utils.decorators.get_token_workspaces',
             new=decode or MagicMock(return_value=claims),
         ),
-        patch('utils.decorators._check_mfa_requirement', new=mfa or AsyncMock()),
     )
 
 
-async def _call(workspace, client_cls, claims=None, region='', mfa=None, decode=None):
-    patches = _jwt_mode(claims, mfa, decode)
+async def _call(workspace, client_cls, claims=None, region='', decode=None):
+    patches = _jwt_mode(claims, decode)
     for p in patches:
         p.start()
     try:
@@ -89,6 +89,52 @@ async def test_renamed_slug_is_accepted_and_mapped():
     assert client.get.await_args.kwargs['params'] == {'slug': 'acme-renamed'}
     # Mapping the slug reads the claims the handler already decoded.
     decode.assert_called_once_with('jwt')
+
+
+@pytest.mark.asyncio
+async def test_mfa_step_up_link_is_fetched_for_the_resolved_schema_name():
+    client_cls, _ = _lookup_client(body={'organization': 'acme_internal'})
+    refusal = MagicMock()
+    refusal.status_code = 401
+    refusal.text = ''
+    refusal.json.return_value = {'code': 'auth_mfa_required', 'source': 'command'}
+
+    async def _inner(workspace: str, region: str = '', **kwargs):
+        AlpaconHTTPClient._handle_upstream_401(
+            httpx.HTTPStatusError('HTTP 401', request=MagicMock(), response=refusal),
+            token='header.payload.signature',
+        )
+
+    tool = with_token_validation(with_error_handling(_inner))
+    patches = _jwt_mode()
+    for p in patches:
+        p.start()
+    try:
+        with (
+            patch('httpx.AsyncClient', client_cls),
+            patch(
+                'utils.decorators._get_jwt_token',
+                return_value='header.payload.signature',
+            ),
+            patch(
+                'utils.decorators.http_client.get',
+                AsyncMock(return_value={'mfa_url': 'https://link'}),
+            ) as fetch,
+        ):
+            result = await tool(workspace='acme-renamed', region='')
+    finally:
+        for p in patches:
+            p.stop()
+
+    assert result['status'] == 'mfa_required'
+    assert (result['workspace'], result['region']) == ('acme_internal', 'ap1')
+    fetch.assert_awaited_once_with(
+        'ap1',
+        'acme_internal',
+        '/api/auth0/mfa/',
+        token='header.payload.signature',
+        params={'location': 'cli', 'workspace': 'acme_internal'},
+    )
 
 
 @pytest.mark.asyncio
@@ -223,17 +269,6 @@ async def test_stdio_mode_makes_no_lookup():
 
     assert result['status'] == 'error'
     client_cls.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_mfa_check_receives_schema_name():
-    client_cls, _ = _lookup_client(body={'organization': 'acme_internal'})
-    mfa = AsyncMock()
-
-    await _call('acme-renamed', client_cls, mfa=mfa)
-
-    assert mfa.await_args is not None
-    assert mfa.await_args.args[2] == 'acme_internal'
 
 
 @pytest.mark.asyncio

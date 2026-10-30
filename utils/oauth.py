@@ -905,9 +905,9 @@ def register_oauth_routes(mcp_server: RouteRegistry) -> None:
             device_id = _mint_device_id()
         scope = f'{_strip_device_scopes(scope)} device:{device_id}'.strip()
 
-        # A ledger tool asks for `ledger:<workspace>` the way the MFA pre-check
-        # asks for `mfa`; it becomes a sign-in for the ledger audience ahead of
-        # the regular one, and never reaches Auth0 as a scope.
+        # A ledger tool asks for `ledger:<workspace>` the way an auth_token_mfa_missing
+        # refusal asks for `mfa`; it becomes a sign-in for the ledger audience ahead
+        # of the regular one, and never reaches Auth0 as a scope.
         ledger_org = _ledger_org(scope)
         scope = _strip_ledger_scopes(scope)
 

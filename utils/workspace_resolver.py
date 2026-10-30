@@ -29,7 +29,6 @@ def clear_cache() -> None:
 
 
 def _account_base_url() -> str:
-    # Same variable as the MFA pre-check; unset disables the lookup.
     return os.getenv('ALPACON_ACCOUNT_URL', '').rstrip('/')
 
 
