@@ -17,6 +17,7 @@ from tools.metrics_tools import (
     _oldest_first,
     _TimedRow,
     _TrafficRow,
+    _UsageMetric,
     _UsageRow,
     get_alert_rules,
     get_cpu_usage,
@@ -27,10 +28,9 @@ from tools.metrics_tools import (
     get_server_metrics_summary,
     get_top_servers,
     list_latest_metrics,
-    parse_cpu_metrics,
     parse_disk_metrics,
-    parse_memory_metrics,
     parse_network_metrics,
+    parse_usage_metrics,
 )
 from utils.types import ToolResponse
 
@@ -1343,14 +1343,14 @@ class TestServerMetricsSummaryLookups:
 
 
 class TestParseCpuMetrics:
-    def test_parse_cpu_metrics_with_data(self):
+    def test_cpu_rows_summarize_current_average_min_max(self):
         results: list[_UsageRow] = [
             {'timestamp': '2024-01-01T00:00:00Z', 'usage': 25.0},
             {'timestamp': '2024-01-01T01:00:00Z', 'usage': 50.0},
             {'timestamp': '2024-01-01T02:00:00Z', 'usage': 75.0},
         ]
 
-        parsed = parse_cpu_metrics(results)
+        parsed = parse_usage_metrics(_UsageMetric.CPU, results)
 
         assert parsed['available'] is True
         assert parsed['raw_values'] == {
@@ -1361,20 +1361,20 @@ class TestParseCpuMetrics:
         }
         assert parsed['data_points'] == 3
 
-    def test_parse_cpu_metrics_empty(self):
-        parsed = parse_cpu_metrics([])
+    def test_no_cpu_rows_is_unavailable(self):
+        parsed = parse_usage_metrics(_UsageMetric.CPU, [])
 
         assert parsed['available'] is False
 
 
 class TestParseMemoryMetrics:
-    def test_parse_memory_metrics_with_data(self):
+    def test_memory_rows_summarize_current_average_min_max(self):
         results: list[_UsageRow] = [
             {'timestamp': '2024-01-01T00:00:00Z', 'usage': 40.0},
             {'timestamp': '2024-01-01T01:00:00Z', 'usage': 60.0},
         ]
 
-        parsed = parse_memory_metrics(results)
+        parsed = parse_usage_metrics(_UsageMetric.MEMORY, results)
 
         assert parsed['available'] is True
         assert parsed['raw_values'] == {
@@ -1385,10 +1385,50 @@ class TestParseMemoryMetrics:
         }
         assert parsed['data_points'] == 2
 
-    def test_parse_memory_metrics_empty(self):
-        parsed = parse_memory_metrics([])
+    def test_no_memory_rows_is_unavailable(self):
+        parsed = parse_usage_metrics(_UsageMetric.MEMORY, [])
 
         assert parsed['available'] is False
+
+
+class TestUsageStatusAndHealthBoundaries:
+    """Each band's upper bound is exclusive: the bound itself reads as the next band."""
+
+    @pytest.mark.parametrize(
+        ('metric', 'usage', 'status', 'health'),
+        [
+            (_UsageMetric.CPU, 19.99, 'idle', 'healthy'),
+            (_UsageMetric.CPU, 20.0, 'low', 'healthy'),
+            (_UsageMetric.CPU, 49.99, 'low', 'healthy'),
+            (_UsageMetric.CPU, 50.0, 'moderate', 'healthy'),
+            (_UsageMetric.CPU, 69.99, 'moderate', 'healthy'),
+            (_UsageMetric.CPU, 70.0, 'high', 'healthy'),
+            (_UsageMetric.CPU, 79.99, 'high', 'healthy'),
+            (_UsageMetric.CPU, 80.0, 'high', 'warning'),
+            (_UsageMetric.CPU, 89.99, 'high', 'warning'),
+            (_UsageMetric.CPU, 90.0, 'critical', 'warning'),
+            (_UsageMetric.CPU, 94.99, 'critical', 'warning'),
+            (_UsageMetric.CPU, 95.0, 'critical', 'critical'),
+            (_UsageMetric.MEMORY, 29.99, 'idle', 'healthy'),
+            (_UsageMetric.MEMORY, 30.0, 'low', 'healthy'),
+            (_UsageMetric.MEMORY, 59.99, 'low', 'healthy'),
+            (_UsageMetric.MEMORY, 60.0, 'moderate', 'healthy'),
+            (_UsageMetric.MEMORY, 79.99, 'moderate', 'healthy'),
+            (_UsageMetric.MEMORY, 80.0, 'high', 'healthy'),
+            (_UsageMetric.MEMORY, 84.99, 'high', 'healthy'),
+            (_UsageMetric.MEMORY, 85.0, 'high', 'warning'),
+            (_UsageMetric.MEMORY, 94.99, 'high', 'warning'),
+            (_UsageMetric.MEMORY, 95.0, 'critical', 'critical'),
+        ],
+    )
+    def test_current_usage_maps_to_its_status_and_health(
+        self, metric, usage, status, health
+    ):
+        rows: list[_UsageRow] = [{'timestamp': '2024-01-01T00:00:00Z', 'usage': usage}]
+
+        parsed = parse_usage_metrics(metric, rows)
+
+        assert (parsed['status'], parsed['health']) == (status, health)
 
 
 class TestOldestFirst:
@@ -1428,7 +1468,7 @@ class TestParsersReadNewestFirstRows:
             {'timestamp': self.OLDEST, 'usage': 25.0},
         ]
 
-        parsed = parse_cpu_metrics(results)
+        parsed = parse_usage_metrics(_UsageMetric.CPU, results)
 
         assert parsed['raw_values'] == {
             'current': 75.0,
@@ -1444,7 +1484,7 @@ class TestParsersReadNewestFirstRows:
             {'timestamp': self.OLDEST, 'usage': 40.0},
         ]
 
-        parsed = parse_memory_metrics(results)
+        parsed = parse_usage_metrics(_UsageMetric.MEMORY, results)
 
         assert parsed['raw_values'] == {
             'current': 60.0,

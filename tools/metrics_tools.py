@@ -174,11 +174,50 @@ def _oldest_first[R: _TimedRow](results: list[R]) -> list[R]:
     return sorted(results, key=_timestamp_key)
 
 
-def parse_cpu_metrics(results: list[_UsageRow]) -> dict[str, object]:
-    """Summarize CPU rows (current, average, min, max, status, health);
+class _UsageMetric(Enum):
+    """A realtime percentage metric: its endpoint, status bands and warning line."""
+
+    CPU = (
+        'CPU',
+        '/api/metrics/realtime/cpu/',
+        ((20, 'idle'), (50, 'low'), (70, 'moderate'), (90, 'high')),
+        80,
+    )
+    MEMORY = (
+        'memory',
+        '/api/metrics/realtime/memory/',
+        ((30, 'idle'), (60, 'low'), (80, 'moderate'), (95, 'high')),
+        85,
+    )
+
+    def __init__(
+        self,
+        label: str,
+        endpoint: str,
+        status_bands: tuple[tuple[float, str], ...],
+        warning_at: float,
+    ) -> None:
+        self.label = label
+        self.endpoint = endpoint
+        self.status_bands = status_bands  # (exclusive upper bound, status), ascending
+        self.warning_at = warning_at
+
+    def status(self, usage: float) -> str:
+        return next((s for bound, s in self.status_bands if usage < bound), 'critical')
+
+    def health(self, usage: float) -> str:
+        if usage < self.warning_at:
+            return 'healthy'
+        return 'warning' if usage < 95 else 'critical'
+
+
+def parse_usage_metrics(
+    metric: _UsageMetric, results: list[_UsageRow]
+) -> dict[str, object]:
+    """Summarize CPU or memory rows (current, average, min, max, status, health);
     `available` is False when there are no rows or no `usage` values."""
     if not results:
-        return {'available': False, 'message': 'No CPU data available'}
+        return {'available': False, 'message': f'No {metric.label} data available'}
 
     results = _oldest_first(results)
 
@@ -192,35 +231,18 @@ def parse_cpu_metrics(results: list[_UsageRow]) -> dict[str, object]:
     minimum = min(usage_values)
     maximum = max(usage_values)
 
-    # Determine usage status
-    def get_status(usage: float) -> str:
-        if usage < 20:
-            return 'idle'
-        elif usage < 50:
-            return 'low'
-        elif usage < 70:
-            return 'moderate'
-        elif usage < 90:
-            return 'high'
-        else:
-            return 'critical'
-
     return {
         'available': True,
         'current_usage_percent': f'{current:.2f}%',
         'average_usage_percent': f'{average:.2f}%',
         'min_usage_percent': f'{minimum:.2f}%',
         'max_usage_percent': f'{maximum:.2f}%',
-        'status': get_status(current),
-        'health': 'healthy'
-        if current < 80
-        else 'warning'
-        if current < 95
-        else 'critical',
+        'status': metric.status(current),
+        'health': metric.health(current),
         'data_points': len(usage_values),
         'time_range': {
-            'start': results[0].get('timestamp') if results else None,
-            'end': results[-1].get('timestamp') if results else None,
+            'start': results[0].get('timestamp'),
+            'end': results[-1].get('timestamp'),
         },
         'raw_values': {
             'current': current,
@@ -229,6 +251,44 @@ def parse_cpu_metrics(results: list[_UsageRow]) -> dict[str, object]:
             'max': maximum,
         },
     }
+
+
+async def _realtime_usage(
+    metric: _UsageMetric,
+    *,
+    server_id: str,
+    workspace: str,
+    start_date: str | None,
+    end_date: str | None,
+    region: str,
+    token: str | None,
+) -> ToolResponse:
+    start, end = resolve_time_window(start_date, end_date)
+    result = await http_client.get(
+        region=region,
+        workspace=workspace,
+        endpoint=metric.endpoint,
+        token=token,
+        params=build_list_params(server=server_id, start=start, end=end),
+    )
+
+    err = unwrap_http_result(
+        result,
+        default_message=f'Failed to get {metric.label} usage metrics',
+        server_id=server_id,
+        region=region,
+        workspace=workspace,
+    )
+    if err:
+        return err
+
+    parsed_data = {
+        'server_id': server_id,
+        'metric_type': f'{metric.name.lower()}_usage',
+        'statistics': parse_usage_metrics(metric, _metric_rows(_USAGE_ROWS, result)),
+        'raw_data_available': True,
+    }
+    return success_response(data=parsed_data, region=region, workspace=workspace)
 
 
 @mcp_tool_handler(
@@ -256,96 +316,15 @@ async def get_cpu_usage(
     Returns:
         CPU usage metrics with parsed statistics (current, average, min, max)
     """
-    token = kwargs.get('token')
-
-    start, end = resolve_time_window(start_date, end_date)
-    params = build_list_params(server=server_id, start=start, end=end)
-
-    # Make async call to get CPU metrics
-    result = await http_client.get(
-        region=region,
-        workspace=workspace,
-        endpoint='/api/metrics/realtime/cpu/',
-        token=token,
-        params=params,
-    )
-
-    err = unwrap_http_result(
-        result,
-        default_message='Failed to get CPU usage metrics',
+    return await _realtime_usage(
+        _UsageMetric.CPU,
         server_id=server_id,
-        region=region,
         workspace=workspace,
+        start_date=start_date,
+        end_date=end_date,
+        region=region,
+        token=kwargs.get('token'),
     )
-    if err:
-        return err
-
-    # Parse metrics for better readability
-    parsed_data = {
-        'server_id': server_id,
-        'metric_type': 'cpu_usage',
-        'statistics': parse_cpu_metrics(_metric_rows(_USAGE_ROWS, result)),
-        'raw_data_available': True,
-    }
-
-    return success_response(data=parsed_data, region=region, workspace=workspace)
-
-
-def parse_memory_metrics(results: list[_UsageRow]) -> dict[str, object]:
-    """Summarize memory rows (current, average, min, max, status, health);
-    `available` is False when there are no rows or no `usage` values."""
-    if not results:
-        return {'available': False, 'message': 'No memory data available'}
-
-    results = _oldest_first(results)
-
-    usage_values = [entry.get('usage', 0) for entry in results if 'usage' in entry]
-
-    if not usage_values:
-        return {'available': False, 'message': 'No usage values found'}
-
-    current = usage_values[-1]
-    average = round(sum(usage_values) / len(usage_values), 2)
-    minimum = min(usage_values)
-    maximum = max(usage_values)
-
-    # Determine usage status
-    def get_status(usage: float) -> str:
-        if usage < 30:
-            return 'idle'
-        elif usage < 60:
-            return 'low'
-        elif usage < 80:
-            return 'moderate'
-        elif usage < 95:
-            return 'high'
-        else:
-            return 'critical'
-
-    return {
-        'available': True,
-        'current_usage_percent': f'{current:.2f}%',
-        'average_usage_percent': f'{average:.2f}%',
-        'min_usage_percent': f'{minimum:.2f}%',
-        'max_usage_percent': f'{maximum:.2f}%',
-        'status': get_status(current),
-        'health': 'healthy'
-        if current < 85
-        else 'warning'
-        if current < 95
-        else 'critical',
-        'data_points': len(usage_values),
-        'time_range': {
-            'start': results[0].get('timestamp') if results else None,
-            'end': results[-1].get('timestamp') if results else None,
-        },
-        'raw_values': {
-            'current': current,
-            'average': average,
-            'min': minimum,
-            'max': maximum,
-        },
-    }
 
 
 @mcp_tool_handler(
@@ -373,39 +352,15 @@ async def get_memory_usage(
     Returns:
         Memory usage metrics with parsed statistics (current, average, min, max)
     """
-    token = kwargs.get('token')
-
-    start, end = resolve_time_window(start_date, end_date)
-    params = build_list_params(server=server_id, start=start, end=end)
-
-    # Make async call to get memory metrics
-    result = await http_client.get(
-        region=region,
-        workspace=workspace,
-        endpoint='/api/metrics/realtime/memory/',
-        token=token,
-        params=params,
-    )
-
-    err = unwrap_http_result(
-        result,
-        default_message='Failed to get memory usage metrics',
+    return await _realtime_usage(
+        _UsageMetric.MEMORY,
         server_id=server_id,
-        region=region,
         workspace=workspace,
+        start_date=start_date,
+        end_date=end_date,
+        region=region,
+        token=kwargs.get('token'),
     )
-    if err:
-        return err
-
-    # Parse metrics for better readability
-    parsed_data = {
-        'server_id': server_id,
-        'metric_type': 'memory_usage',
-        'statistics': parse_memory_metrics(_metric_rows(_USAGE_ROWS, result)),
-        'raw_data_available': True,
-    }
-
-    return success_response(data=parsed_data, region=region, workspace=workspace)
 
 
 def parse_disk_metrics(results: list[_DiskUsageRow]) -> dict[str, object]:
