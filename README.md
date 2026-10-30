@@ -182,6 +182,16 @@ Claude Code can install the hosted server as a plugin instead of a bare URL. Bes
 
 To try a local checkout for one session, run `claude --plugin-dir plugins/alpacon`.
 
+#### Codex, Copilot CLI, and Cursor
+
+The same plugin directory installs in three other agents. Each one loads the skill and the server, and asks for the browser sign-in on the first tool call:
+
+- Codex: reads the Claude manifest. Run `codex plugin marketplace add alpacax/alpacon-mcp` and `codex plugin add alpacon@alpacon-mcp`. Codex runs a plugin's hook only after you trust it in `/hooks`.
+- Copilot CLI: reads the Claude manifest. Run `copilot plugin marketplace add alpacax/alpacon-mcp` and `copilot plugin install alpacon@alpacon-mcp`. The hook refuses the command, but the agent sees only that the hook exited with code 2, not the reason.
+- Cursor: reads `.cursor-plugin/plugin.json`, which points at the same `.mcp.json` and runs the same hook script on `beforeShellExecution`. Run `cursor-agent --plugin-dir plugins/alpacon` from a checkout, or copy the directory to `~/.cursor/plugins/local/alpacon` for the desktop app.
+
+Do not add a root `plugin.json` (the Agent Plugins manifest) to the plugin: Codex then reads that manifest instead and stops running the hook.
+
 #### Claude Tag (Claude in Slack)
 
 Claude Tag does not take a URL directly. It loads an MCP server only from a plugin an administrator attaches, and an `.mcp.json` in a repository the agent clones is ignored. The same plugin serves it: the plugin names the server, and a connector gives the channel a credential for it.

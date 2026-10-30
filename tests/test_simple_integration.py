@@ -216,6 +216,21 @@ class TestClaudePluginManifests:
             )
             assert json.loads(manifest.read_text())['name'] == entry['name']
 
+    def test_cursor_manifest_names_the_claude_plugin_and_points_at_its_files(self):
+        plugin = self.project_root / 'plugins' / 'alpacon'
+
+        cursor = json.loads((plugin / '.cursor-plugin' / 'plugin.json').read_text())
+        claude = json.loads((plugin / '.claude-plugin' / 'plugin.json').read_text())
+
+        assert cursor['name'] == claude['name']
+        assert (plugin / cursor['mcpServers']).is_file()
+        assert (plugin / cursor['hooks']).is_file()
+
+    def test_plugin_has_no_root_manifest_that_would_hide_its_hooks_from_codex(self):
+        plugin = self.project_root / 'plugins' / 'alpacon'
+
+        assert not (plugin / 'plugin.json').exists()
+
 
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])

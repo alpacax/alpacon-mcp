@@ -1,4 +1,4 @@
-"""PreToolUse hook: exit 2 refuses a Bash command running the alpacon CLI, exit 0 allows it.
+"""Shell hook: exit 2 refuses a command running the alpacon CLI, exit 0 allows it.
 A habit guard, not a boundary: eval, aliases, case patterns and arrays escape it.
 """
 
@@ -180,7 +180,9 @@ def runs_alpacon_cli(command: str) -> bool:
 
 
 def main() -> int:
-    command = json.load(sys.stdin).get('tool_input', {}).get('command', '')
+    event = json.load(sys.stdin)
+    cursor_command = event.get('command', '')  # Cursor's beforeShellExecution
+    command = event.get('tool_input', {}).get('command') or cursor_command
     if runs_alpacon_cli(command):
         print(REFUSAL, file=sys.stderr)
         return 2

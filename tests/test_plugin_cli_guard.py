@@ -118,6 +118,27 @@ def test_hook_passes_a_command_that_only_mentions_alpacon(command):
     assert result.stderr == ''
 
 
+def run_cursor_hook(command: str) -> subprocess.CompletedProcess[str]:
+    payload = json.dumps({'command': command, 'cwd': '/tmp', 'sandbox': False})
+    return subprocess.run(  # noqa: S603
+        [sys.executable, str(HOOK)], input=payload, capture_output=True, text=True
+    )
+
+
+def test_hook_refuses_the_alpacon_cli_in_a_cursor_shell_event():
+    result = run_cursor_hook('cd /tmp && alpacon server ls')
+
+    assert result.returncode == 2
+    assert 'mcp__alpacon' in result.stderr
+
+
+def test_hook_passes_a_cursor_shell_event_that_only_mentions_alpacon():
+    result = run_cursor_hook('grep -rn alpacon README.md')
+
+    assert result.returncode == 0
+    assert result.stderr == ''
+
+
 def test_hooks_json_runs_the_guard_script_on_bash():
     hooks = json.loads((PLUGIN / 'hooks' / 'hooks.json').read_text())
 
@@ -125,3 +146,12 @@ def test_hooks_json_runs_the_guard_script_on_bash():
 
     assert entry['matcher'] == 'Bash'
     assert entry['hooks'][0]['command'].endswith(f'/hooks/{HOOK.name}"')
+
+
+def test_cursor_hooks_json_runs_the_guard_script_before_shell_execution():
+    hooks = json.loads((PLUGIN / 'hooks' / 'cursor-hooks.json').read_text())
+
+    (entry,) = hooks['hooks']['beforeShellExecution']
+
+    assert entry['command'].startswith('python3 "${CURSOR_PLUGIN_ROOT}/')
+    assert entry['command'].endswith(f'/hooks/{HOOK.name}"')

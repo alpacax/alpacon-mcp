@@ -1,0 +1,16 @@
+{
+  "name": "alpacon",
+  "description": "The hosted Alpacon MCP server, with a skill and a hook that keep the agent on Alpacon's rules for servers, Work Sessions, and approvals.",
+  "author": {
+    "name": "AlpacaX"
+  },
+  "repository": "https://github.com/alpacax/alpacon-mcp",
+  "license": "MIT",
+  "keywords": [
+    "alpacon",
+    "mcp",
+    "infrastructure"
+  ],
+  "mcpServers": "./.mcp.json",
+  "hooks": "./hooks/cursor-hooks.json"
+}
