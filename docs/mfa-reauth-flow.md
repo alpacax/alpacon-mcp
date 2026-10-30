@@ -4,9 +4,7 @@ This document describes how the MCP server handles workspace-level MFA requireme
 
 ## Overview
 
-Some Alpacon workspaces require MFA for sensitive actions (websh, webftp, command). The MCP server proactively detects this by caching workspace security settings from the account service, and triggers a two-stage OAuth flow when MFA is needed.
-
-In remote mode (`ALPACON_MCP_AUTH_ENABLED=true`, a JWT caller), the flow also starts when the Alpacon API answers 401 with `auth_mfa_required` (an action asked for a fresh MFA) or `auth_token_mfa_missing` (the token lacks the workspace's sign-in MFA, which a refresh never adds).
+Some Alpacon workspaces require MFA for sensitive actions (`websh`, `webftp`, `command`). The MCP server does not decide that itself: it calls Alpacon, and Alpacon's own gate refuses before the view runs. In remote mode (`ALPACON_MCP_AUTH_ENABLED=true`, a JWT caller), the two-stage OAuth flow starts when the Alpacon API answers 401 with `auth_mfa_required` (an action asked for a fresh MFA) or `auth_token_mfa_missing` (the token lacks the workspace's sign-in MFA, which a refresh never adds).
 
 The challenge is a 403 `insufficient_scope`, not a 401. MCP clients answer a 401 by refreshing the token first and drop the challenge's scope while the refresh succeeds, so a 401 never reaches `/oauth/authorize` and the refreshed token still lacks MFA. On `insufficient_scope` the TypeScript SDK and Claude's clients skip the refresh and authorize with the union of the granted and challenged scopes.
 
@@ -21,13 +19,12 @@ sequenceDiagram
     participant A as Alpacon API
 
     C->>S: Tool Call (workspace=ws1)
-    S->>S: security_cache check<br/>mfa_required=false
     S->>A: API call
     A-->>S: 200 OK
     S-->>C: Tool Result
 ```
 
-### Case 2: MFA required, not yet completed
+### Case 2: MFA required
 
 ```mermaid
 sequenceDiagram
@@ -35,9 +32,11 @@ sequenceDiagram
     participant S as MCP Server
     participant A0 as Auth0
     participant B as Browser
+    participant API as Alpacon API
 
     C->>S: Tool Call (workspace=ws2)
-    S->>S: security_cache check<br/>mfa_required=true<br/>JWT MFA expired
+    S->>API: API call (JWT)
+    API-->>S: 401 auth_mfa_required or auth_token_mfa_missing
 
     S->>S: signal_upstream_auth_error<br/>(mfa_required=true)
     S-->>C: HTTP 403<br/>WWW-Authenticate: error="insufficient_scope", scope="...mfa"
@@ -73,26 +72,8 @@ sequenceDiagram
     Note over C: SDK retries original tool call
 
     C->>S: Tool Call (retry, new token)
-    S->>S: security_cache check<br/>MFA valid ✓
-
-    participant API as Alpacon API
     S->>API: API call (JWT with MFA)
     API-->>S: 200 OK
-    S-->>C: Tool Result
-```
-
-### Case 3: MFA required, already completed (cache hit)
-
-```mermaid
-sequenceDiagram
-    participant C as MCP Client
-    participant S as MCP Server
-    participant A as Alpacon API
-
-    C->>S: Tool Call (workspace=ws2)
-    S->>S: security_cache check<br/>mfa_required=true<br/>JWT MFA valid ✓
-    S->>A: API call (JWT with MFA)
-    A-->>S: 200 OK
     S-->>C: Tool Result
 ```
 
@@ -106,8 +87,6 @@ One id per grant means one MFA record per MCP client installation: a step-up in 
 
 | Component | File | Role |
 |-----------|------|------|
-| Security settings cache | `utils/security_settings.py` | Caches workspace MFA settings from account service |
-| MFA pre-check | `utils/decorators.py` | Checks MFA before API call, signals MFA re-auth if needed |
 | Upstream 401 detection | `utils/http_client.py` | Signals MFA re-auth when the API answers `auth_mfa_required` or `auth_token_mfa_missing` |
 | Auth error middleware | `utils/auth_error_middleware.py` | Answers an MFA signal with 403 `insufficient_scope` and `mfa` in the scope |
 | OAuth proxy (authorize) | `utils/oauth.py` | Routes to MFA or regular audience based on scope |
@@ -123,7 +102,6 @@ The legacy Auth0 environment variable names still work as fallbacks and will be 
 
 | Environment variable | Description | Example |
 |---------------------|-------------|---------|
-| `ALPACON_ACCOUNT_URL` | Account service base URL | `https://account.alpacax.com` |
 | `AUTH0_ALPACON_MFA_AUDIENCE` | Auth0 MFA API audience | `https://{domain}/mfa/` |
 | `AUTH0_ALPACON_NAMESPACE` | JWT custom claim namespace | `https://alpacon.io/` |
 | `ALPACON_MCP_GRANT_SECRET` | Key that seals codes and refresh tokens (optional; derived from the client secret otherwise) | `openssl rand -hex 32` |

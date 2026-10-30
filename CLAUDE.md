@@ -60,7 +60,7 @@ Things the code will not tell you at a glance:
   `validate_file_path()` inline in any tool taking a path.
   `requires_workspace=False` is for a tool that answers before a workspace is
   known: it drops the workspace checks, the workspace-keyed region resolution,
-  the JWT workspace authorization, the MFA pre-check, and the stdio token
+  the JWT workspace authorization, and the stdio token
   injection. `list_workspaces` is the only tool using it. Whatever a tool
   declares, the decorator publishes `region` as `ap1`, `us1` or null, so the
   SDK refuses anything else, `''` and `dev` included. The decorator also
@@ -83,8 +83,8 @@ Things the code will not tell you at a glance:
   revoked in the web console, in Slack, or by another MCP process. Do not
   reintroduce a response cache in the shared client: a hit would answer with
   access the caller has lost. The auth-path caches stay: the JWKS keys in
-  `utils/auth.py` and the workspace security settings in
-  `utils/security_settings.py` are not permission-filtered tool data.
+  `utils/auth.py` and the renamed-slug lookup in
+  `utils/workspace_resolver.py` are not permission-filtered tool data.
 - **`AlpaconHTTPClient` never resends a POST or PATCH that may have reached the
   server** (#392). Only the errors in `_NEVER_SENT_ERRORS`, raised before the
   request goes out, and the 5xx codes in `_REJECTED_BEFORE_VIEW_CODES` retry

@@ -13,10 +13,9 @@ from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
-from utils import request_signal, token_manager
+from utils import token_manager
 from utils.auth import (
     WorkspaceClaim,
-    decode_claims_unverified,
     get_token_workspaces,
     match_workspace,
 )
@@ -37,11 +36,6 @@ from utils.error_handler import (
 from utils.http_client import AlpaconHTTPClient
 from utils.logger import describe_for_log, get_logger
 from utils.recovery_hints import enrich_error_response
-from utils.security_settings import (
-    check_mfa_completed,
-    get_action_for_tool,
-    security_cache,
-)
 from utils.types import ToolErrorResponse, ToolResult
 from utils.workspace_resolver import resolve_workspace
 
@@ -281,45 +275,6 @@ def _resolve_region_local(workspace: str | None) -> tuple[str | None, str | None
     return None, 'No regions configured. Please run setup first.'
 
 
-async def _check_mfa_requirement(
-    tool_name: str, jwt_token: str, workspace: str
-) -> None:
-    """Signal and raise UpstreamAuthError when the tool's MFA action is required but not
-    completed; any other failure is ignored (fail-open)."""
-    action = get_action_for_tool(tool_name)
-    if not action:
-        return
-
-    try:
-        settings = await security_cache.get_settings(jwt_token, workspace)
-        if not settings or not settings.is_action_mfa_required(action):
-            return
-
-        claims = decode_claims_unverified(jwt_token)
-        if not claims:
-            return
-
-        if check_mfa_completed(claims, settings):
-            return
-
-        # MFA required but not completed
-        request_signal.signal_upstream_auth_error(
-            {'mfa_required': True, 'source': action},
-        )
-        logger.info(
-            'MFA pre-check: %s requires MFA for workspace %s, raising UpstreamAuthError',
-            action,
-            workspace,
-        )
-        raise UpstreamAuthError(mfa_required=True, source=action)
-    except UpstreamAuthError:
-        raise
-    except Exception as e:
-        # Fail-open: if pre-check fails, let the API call proceed.
-        # The upstream API's own MFA check will catch it as a fallback.
-        logger.debug('MFA pre-check failed (non-fatal): %s', e)
-
-
 def _validate_path_identifier(field: str, value: object) -> ToolErrorResponse | None:
     # A non-str never matches the pattern, but the f-string that builds the
     # endpoint stringifies it anyway, so its separators reach the path.
@@ -413,7 +368,7 @@ def with_token_validation[**P, R](
     catch-all is dropped from the published signature, which also offers region as
     ap1, us1 or None. requires_workspace=False (list_workspaces only) is for a tool
     that answers before a workspace is known; it skips workspace checks, region
-    resolution, JWT authorization, the MFA pre-check and stdio token injection, and
+    resolution, JWT authorization and stdio token injection, and
     reads an omitted region as all regions (a given one is still validated), so a tool
     reaching any workspace-scoped resource must not set it. ALPACON_MCP_AUTH_ENABLED=true
     uses the JWT and never token.json; otherwise token.json and never JWT."""
@@ -536,17 +491,14 @@ def with_token_validation[**P, R](
 
         if auth_enabled:
             # Streamable-HTTP mode — JWT auth only
-            if requires_workspace:
-                if not _validate_jwt_workspace(jwt_workspaces, region, workspace):
-                    return error_response(
-                        f'Workspace {workspace}.{region} not authorized by JWT',
-                        region=region,
-                        workspace=workspace,
-                    )
-
-                # Signals request_signal and raises when MFA is required but
-                # not done; the ASGI middleware reads the signal for HTTP 401.
-                await _check_mfa_requirement(func.__name__, jwt_token, workspace)
+            if requires_workspace and not _validate_jwt_workspace(
+                jwt_workspaces, region, workspace
+            ):
+                return error_response(
+                    f'Workspace {workspace}.{region} not authorized by JWT',
+                    region=region,
+                    workspace=workspace,
+                )
 
             extra_kwargs['token'] = jwt_token
         elif requires_workspace:

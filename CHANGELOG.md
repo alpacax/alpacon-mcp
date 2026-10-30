@@ -52,6 +52,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   without the ledger still accepts these writes.
 
 ### Removed
+- The MCP server no longer pre-checks MFA itself in remote mode (#427): Alpacon decides, and `ALPACON_ACCOUNT_URL` now only drives renamed-slug resolution. The null `mfa_timeout` reading and the strict reading of `mfa_required_actions`, `allowed_mfa_methods` and `mfa_timeout` (both released in v1.21.0) no longer apply, because those settings are not read.
 - BREAKING: `update_workspace_preferences` no longer accepts `allowed_domains`, which the server already ignored (#377). The SDK drops this argument before the request: a call that sends only it returns `No update data provided`, while other fields in the same call are still sent. The response shape is unchanged.
 - BREAKING: `update_workspace_preferences` no longer accepts the deprecated `auto_agent_upgrade` boolean; use the existing `agent_rollout_policy` object instead (`{"mode": "manual"}` replaces the old `false`) (#376). Responses no longer include the alias-specific `deprecation_note`; the preferences response shape is otherwise unchanged. The SDK drops the alias before the request: a call that sends only it returns `No update data provided`, while other fields in the same call are still sent.
 
