@@ -11,7 +11,13 @@ from utils.common import (
 from utils.decorators import mcp_tool_handler
 from utils.http_client import http_client
 from utils.tool_annotations import ADDITIVE, DESTRUCTIVE, IDEMPOTENT_WRITE, READ_ONLY
-from utils.types import OptionalServerId, ServerId, ServerIds, ToolResponse
+from utils.types import (
+    OptionalServerId,
+    ServerId,
+    ServerIds,
+    ToolErrorResponse,
+    ToolResponse,
+)
 
 VALID_BULK_ACTIONS = ('add', 'remove')
 _BULK_ACTIONS_STR = ', '.join(f"'{a}'" for a in VALID_BULK_ACTIONS)
@@ -29,6 +35,17 @@ _BULK_MAX_SERVERS = 100
 
 _BOTH_TOKENS_ERROR = 'Provide either api_token_id or service_token_id, not both'
 _TOKEN_REQUIRED_ERROR = 'Either api_token_id or service_token_id must be provided'
+
+
+def _token_binding_error(
+    api_token_id: str | None, service_token_id: str | None
+) -> ToolErrorResponse | None:
+    """Error unless exactly one of the two token ids binds the rule."""
+    if api_token_id is None and service_token_id is None:
+        return error_response(_TOKEN_REQUIRED_ERROR)
+    if api_token_id is not None and service_token_id is not None:
+        return error_response(_BOTH_TOKENS_ERROR)
+    return None
 
 
 def _command_acl_moved_note(serves_ledger: bool) -> str:
@@ -139,10 +156,8 @@ async def create_command_acl(
     Empty `username` means token owner only, '*' any user; empty `groupname`, any."""
     if not command.strip():
         return empty_value_error('command')
-    if api_token_id is None and service_token_id is None:
-        return error_response(_TOKEN_REQUIRED_ERROR)
-    if api_token_id is not None and service_token_id is not None:
-        return error_response(_BOTH_TOKENS_ERROR)
+    if err := _token_binding_error(api_token_id, service_token_id):
+        return err
 
     token = kwargs.get('token')
 
@@ -151,10 +166,7 @@ async def create_command_acl(
         'username': username,
         'groupname': groupname,
     }
-    if api_token_id is not None:
-        acl_data['token'] = api_token_id
-    else:
-        acl_data['service_token'] = service_token_id
+    acl_data.update(exclude_none(token=api_token_id, service_token=service_token_id))
 
     return await http_call_response(
         http_client.post,
@@ -294,18 +306,13 @@ async def create_server_acl(
     **kwargs: str,
 ) -> ToolResponse:
     """Grant exactly one of `api_token_id`, `service_token_id` access to one server."""
-    if api_token_id is None and service_token_id is None:
-        return error_response(_TOKEN_REQUIRED_ERROR)
-    if api_token_id is not None and service_token_id is not None:
-        return error_response(_BOTH_TOKENS_ERROR)
+    if err := _token_binding_error(api_token_id, service_token_id):
+        return err
 
     token = kwargs.get('token')
 
     acl_data: dict[str, object] = {'server': server_id}
-    if api_token_id is not None:
-        acl_data['token'] = api_token_id
-    else:
-        acl_data['service_token'] = service_token_id
+    acl_data.update(exclude_none(token=api_token_id, service_token=service_token_id))
 
     return await http_call_response(
         http_client.post,
@@ -410,18 +417,13 @@ async def bulk_server_acl(
         return error_response(
             f'server_ids must contain at most {_BULK_MAX_SERVERS} items'
         )
-    if api_token_id is None and service_token_id is None:
-        return error_response(_TOKEN_REQUIRED_ERROR)
-    if api_token_id is not None and service_token_id is not None:
-        return error_response(_BOTH_TOKENS_ERROR)
+    if err := _token_binding_error(api_token_id, service_token_id):
+        return err
 
     token = kwargs.get('token')
 
     body: dict[str, object] = {'servers': server_ids}
-    if api_token_id is not None:
-        body['token'] = api_token_id
-    else:
-        body['service_token'] = service_token_id
+    body.update(exclude_none(token=api_token_id, service_token=service_token_id))
 
     endpoint = _API_SERVER_ACL_BULK if action == 'add' else _API_SERVER_ACL_BULK_DELETE
 
@@ -513,10 +515,8 @@ async def create_file_acl(
         return error_response(
             f"Invalid action '{action}'. Must be one of: {_FILE_ACL_ACTIONS_STR}."
         )
-    if api_token_id is None and service_token_id is None:
-        return error_response(_TOKEN_REQUIRED_ERROR)
-    if api_token_id is not None and service_token_id is not None:
-        return error_response(_BOTH_TOKENS_ERROR)
+    if err := _token_binding_error(api_token_id, service_token_id):
+        return err
 
     token = kwargs.get('token')
 
@@ -526,10 +526,7 @@ async def create_file_acl(
         'username': username,
         'groupname': groupname,
     }
-    if api_token_id is not None:
-        acl_data['token'] = api_token_id
-    else:
-        acl_data['service_token'] = service_token_id
+    acl_data.update(exclude_none(token=api_token_id, service_token=service_token_id))
 
     return await http_call_response(
         http_client.post,
