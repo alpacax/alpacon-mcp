@@ -259,6 +259,9 @@ export ALPACON_MCP_AP1_PRODUCTION_URL="https://production.ap1.alpacon.io"  # Pin
 # Tool registration (local mode only)
 export ALPACON_MCP_TOOLSETS="servers,commands,webftp"
 
+# Deployment name; staging or dev also offers the internal dev region in tool schemas
+export ALPACON_MCP_ENV=prod
+
 # Default Work Session for tools called without work_session_id
 export ALPACON_WORK_SESSION="<work-session-uuid>"
 

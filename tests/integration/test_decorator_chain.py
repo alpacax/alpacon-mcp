@@ -13,6 +13,7 @@ from unittest.mock import patch
 
 import httpx
 import pytest
+from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import CallToolResult, InputRequiredResult
 
@@ -731,6 +732,98 @@ class TestPublishedSchema:
 
         assert structured['status'] == 'success'
         assert hosts == ['testworkspace.ap1.alpacon.io']
+
+
+def _list_servers_under(deployment: str) -> MCPServer[None]:
+    """list_servers re-decorated as an import under ALPACON_MCP_ENV=deployment would,
+    on a server of its own so the shared one stays as is."""
+    with patch.dict('os.environ', {'ALPACON_MCP_ENV': deployment}):
+        tool = decorators.with_logging(
+            decorators.with_token_validation(
+                decorators.with_error_handling(inspect.unwrap(list_servers))
+            )
+        )
+    server: MCPServer[None] = MCPServer('dev-region-test')
+    server.tool(name='list_servers')(tool)
+    return server
+
+
+async def _region_enum(server: MCPServer[None]) -> object:
+    tools = {t.name: t for t in await server.list_tools()}
+    return tools['list_servers'].input_schema['properties']['region']['anyOf'][0][
+        'enum'
+    ]
+
+
+@pytest.fixture
+def dev_region_server() -> MCPServer[None]:
+    return _list_servers_under('staging')
+
+
+class TestDevRegionDeployment:
+    @pytest.mark.parametrize('deployment', ['staging', 'dev', 'STAGING', ' dev '])
+    async def test_staging_or_dev_deployment_offers_dev(self, deployment):
+        assert await _region_enum(_list_servers_under(deployment)) == [
+            'ap1',
+            'us1',
+            'dev',
+        ]
+
+    @pytest.mark.parametrize('deployment', ['', 'prod', 'production', 'development'])
+    async def test_any_other_deployment_offers_the_served_regions_only(
+        self, deployment
+    ):
+        assert await _region_enum(_list_servers_under(deployment)) == ['ap1', 'us1']
+
+    async def test_call_tool_sends_region_dev_to_the_dev_host(
+        self,
+        dev_region_server,
+        patched_http_client,
+        mock_token_for_integration,
+        sample_api_responses,
+    ):
+        # Given a dev deployment answering the server list
+        servers_payload = sample_api_responses()['servers_list']
+        hosts: list[str] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            hosts.append(request.url.host)
+            return httpx.Response(HTTPStatus.OK, json=servers_payload)
+
+        patched_http_client.set_handler(handler)
+
+        # When a client passes region=dev, as list_workspaces reported it
+        structured = _structured(
+            await dev_region_server.call_tool(
+                'list_servers', {'workspace': 'testworkspace', 'region': 'dev'}
+            )
+        )
+
+        # Then the call reaches the dev host
+        assert structured['status'] == 'success'
+        assert hosts == ['testworkspace.dev.alpacon.io']
+
+    @pytest.mark.parametrize('region', ['', 'AP1', 'DEV'])
+    async def test_call_tool_still_refuses_a_region_outside_the_accepted_set(
+        self, region, dev_region_server, patched_http_client, mock_token_for_integration
+    ):
+        # Given a dev deployment recording every request
+        sent: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            sent.append(request)
+            return httpx.Response(HTTPStatus.OK, json={})
+
+        patched_http_client.set_handler(handler)
+
+        # When a client passes a region the schema does not list
+        with pytest.raises(ToolError, match="Input should be 'ap1', 'us1' or 'dev'"):
+            await dev_region_server.call_tool(
+                'list_servers', {'workspace': 'testworkspace', 'region': region}
+            )
+
+        # Then nothing is sent
+        assert not sent
 
 
 class TestLoggedParameterSurface:
