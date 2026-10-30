@@ -110,8 +110,10 @@ Things the code will not tell you at a glance:
   with Alpacon's `mfa_url`, even when a fan-out tool swallowed the exception; a
   tool that is not read-only and returned normally keeps its result as
   `partial_result` (it may hold no successful part), and the message asks for a
-  retry of the refused parts only. A read-only tool always asks for the whole
-  call again. Once recorded, every later
+  retry of the refused parts only. A tool whose refusal propagated after a POST
+  or PATCH of the same call succeeded lists those requests in `already_sent`
+  and never asks for the whole call again; one with no such request does. A
+  read-only tool always asks for the whole call again. Once recorded, every later
   `AlpaconHTTPClient.request` in that call raises before sending, so a refusal
   is not followed by more side effects. There is no MFA pre-check: Alpacon
   decides. `auth_token_mfa_missing` keeps the 403 re-login.

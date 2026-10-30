@@ -1,4 +1,4 @@
-"""Which MCP surfaces the connected client declared, and a per-tools/call log of it.
+"""Which MCP surfaces the connected client declared, and a log line of it on every tools/call.
 ClientSurfaces is kept for Steps 2 and 4 of #427; apps means the extension key is declared."""
 
 import logging

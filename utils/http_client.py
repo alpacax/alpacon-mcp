@@ -6,7 +6,7 @@ import logging
 from http import HTTPStatus
 from types import TracebackType
 from typing import Self
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlsplit
 
 import httpx
 
@@ -232,10 +232,10 @@ class AlpaconHTTPClient:
                 logger.debug('Request body: %s', redact_for_log(json_data))
 
         while retry_count < self.max_retries:
-            # Before every attempt, resends included: a refused call must not add side effects.
+            client = await self._get_client()
+            # After the pool wait, before every attempt: a refused call adds no side effects.
             mfa_step_up.refuse_if_recorded()
             try:
-                client = await self._get_client()
                 response = await client.request(
                     method=method,
                     url=url,
@@ -247,6 +247,8 @@ class AlpaconHTTPClient:
 
                 # Check for success
                 response.raise_for_status()
+                if not idempotent:
+                    mfa_step_up.note_sent(f'{method.upper()} {urlsplit(url).path}')
 
                 # Log successful response
                 logger.info(

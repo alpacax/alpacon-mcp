@@ -1,11 +1,11 @@
 """The MFA step-up Alpacon asks for with 401 ``auth_mfa_required``: the tool call
 answers ``mfa_required`` with a link instead of a 403 re-login challenge."""
 
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
-from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Literal
 
 from mcp.server.mcpserver.exceptions import ToolError
 
@@ -34,22 +34,18 @@ _RETRY_PARTIAL = 'then retry only the refused parts, never the whole call.'
 _PARTIAL_PREFIX = (
     'Part of this call was refused for MFA and partial_result shows what already ran. '
 )
+_RETRY_SENT = (
+    'then check what the already_sent requests did (list_commands shows a submitted '
+    'command) and retry only what did not run, never the whole call.'
+)
+_SENT_PREFIX = (
+    'This call was refused for MFA after the already_sent requests changed state, '
+    'so a whole retry would repeat them. '
+)
 
-
-def _execute_file_note(arguments: Mapping[str, object]) -> str | None:
-    if arguments.get('write_file') is not True:
-        return None
-    return (
-        'then retry with read_from_server=true and without write_file and content: '
-        'write_file was true, so the file may already be on the host, and a repeat '
-        'write without overwrite fails with file_write_failed.'
-    )
-
-
-# Per tool: replaces the whole-call retry when a plain retry would repeat a side effect.
-_RETRY_NOTES: dict[str, Callable[[Mapping[str, object]], str | None]] = {
-    'execute_file': _execute_file_note,
-}
+# whole: nothing ran or the tool is read-only; sent: writes went through before the
+# refusal ended the call; partial: the tool caught the refusal and returned.
+Retry = Literal['whole', 'sent', 'partial']
 
 
 class MfaStepUpRequired(ToolError):  # noqa: N818  # a signal, named for the state
@@ -65,6 +61,9 @@ class MfaStepUpRequired(ToolError):  # noqa: N818  # a signal, named for the sta
 class _Holder:
     required: bool = False
     source: str = ''
+    sent: list[str] = field(
+        default_factory=list
+    )  # 'METHOD /path' of each write that ran
 
 
 # A mutable holder, never rebound below the call that installed it: child tasks of a
@@ -94,6 +93,13 @@ def record(source: str) -> None:
         holder.required, holder.source = True, source
 
 
+def note_sent(request: str) -> None:
+    """Note a state-changing request that succeeded in the tool call in flight."""
+    holder = _holder.get()
+    if holder is not None and request not in holder.sent:
+        holder.sent.append(request)
+
+
 def refuse_if_recorded() -> None:
     """Raise MfaStepUpRequired once the call in flight recorded a step-up, so a refused
     call sends nothing more."""
@@ -109,13 +115,12 @@ async def step_up_result(
     region: str,
     token: str | None,
     source: str,
-    tool_name: str,
-    arguments: Mapping[str, object],
-    retry_whole: bool,
+    retry: Retry,
+    already_sent: list[str],
     partial_result: JsonValue = None,
 ) -> dict[str, JsonValue]:
     """The ``mfa_required`` result. An UpstreamAuthError from the link fetch propagates; any
-    other failure leaves ``mfa_url`` None. Without retry_whole the tool's result is partial_result."""
+    other failure leaves ``mfa_url`` None. partial_result is kept only for a partial retry."""
     mfa_url: str | None = None
     lead = _LEAD_NO_LINK
     try:
@@ -146,12 +151,13 @@ async def step_up_result(
                 sorted(body) if isinstance(body, dict) else type(body).__name__,
             )
 
-    if retry_whole:
-        note_for = _RETRY_NOTES.get(tool_name)
-        note = note_for(arguments) if note_for else None
-        message = lead + (note or _RETRY_WHOLE)
-    else:
-        message = _PARTIAL_PREFIX + lead + _RETRY_PARTIAL
+    match retry:
+        case 'whole':
+            message = lead + _RETRY_WHOLE
+        case 'sent':
+            message = _SENT_PREFIX + lead + _RETRY_SENT
+        case 'partial':
+            message = _PARTIAL_PREFIX + lead + _RETRY_PARTIAL
 
     result: dict[str, JsonValue] = {
         'status': 'mfa_required',
@@ -162,6 +168,8 @@ async def step_up_result(
     }
     if source:
         result['source'] = source
-    if not retry_whole:
+    if retry == 'sent':
+        result['already_sent'] = list(already_sent)
+    elif retry == 'partial':
         result['partial_result'] = partial_result
     return result

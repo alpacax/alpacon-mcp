@@ -586,18 +586,20 @@ def with_error_handling[**P, R](
         # The holder is released above, so the link fetch is not refused by it.
         logger.info('%s needs an MFA step-up (source=%s)', func_name, call.source)
         token = kwargs.get('token')
-        arguments = call_arguments(
-            *args, **{k: v for k, v in kwargs.items() if k != 'token'}
-        )
+        arguments = call_arguments(*args, **kwargs)
+        retry: mfa_step_up.Retry
+        if read_only or (raised and not call.sent):
+            retry = 'whole'
+        else:
+            retry = 'sent' if raised else 'partial'
         return await mfa_step_up.step_up_result(
             http_client,
             workspace=str(arguments.get('workspace', 'unknown')),
             region=str(arguments.get('region', 'unknown')),
             token=token if isinstance(token, str) else None,
             source=call.source,
-            tool_name=func_name,
-            arguments=arguments,
-            retry_whole=raised or read_only,
+            retry=retry,
+            already_sent=call.sent,
             partial_result=cast(JsonValue, result),
         )
 

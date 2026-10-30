@@ -10,7 +10,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from server import mcp
 from tools import command_tools, system_info_tools
 from utils import mfa_step_up, request_signal
 from utils.decorators import with_error_handling
@@ -470,7 +469,7 @@ class TestPartialWrites:
 
     @pytest.mark.asyncio
     async def test_a_request_after_a_recorded_step_up_is_never_sent(self, remote):
-        sent = AsyncMock()
+        sent = MagicMock(request=AsyncMock())
 
         @with_error_handling
         async def tool(workspace='acme', region='ap1', **kwargs):
@@ -480,31 +479,40 @@ class TestPartialWrites:
             )
 
         with (
-            patch.object(AlpaconHTTPClient, '_get_client', sent),
+            patch.object(
+                AlpaconHTTPClient, '_get_client', AsyncMock(return_value=sent)
+            ),
             patch('utils.decorators.http_client.get', AsyncMock(return_value={})),
         ):
             result = await tool(token=JWT)
 
         assert result['status'] == 'mfa_required'
-        sent.assert_not_awaited()
+        sent.request.assert_not_awaited()
 
-    @pytest.mark.parametrize(
-        ('write_file', 'noted'), [(True, True), (False, False)], ids=['write', 'read']
-    )
     @pytest.mark.asyncio
-    async def test_execute_file_note_applies_only_when_it_wrote_the_file(
-        self, remote, mfa_fetch, write_file, noted
+    async def test_a_step_up_recorded_during_the_pool_wait_stops_the_request(
+        self, remote
     ):
+        pool = MagicMock(request=AsyncMock())
+
+        async def wait_for_pool(self: AlpaconHTTPClient) -> MagicMock:
+            mfa_step_up.record('command')  # a sibling request was refused meanwhile
+            return pool
+
         @with_error_handling
-        async def execute_file(
-            workspace='acme', region='ap1', write_file=False, **kwargs
+        async def tool(workspace='acme', region='ap1', **kwargs):
+            return await http_client.request(
+                'POST', 'https://acme.ap1.alpacon.io/api/events/commands/', token=JWT
+            )
+
+        with (
+            patch.object(AlpaconHTTPClient, '_get_client', wait_for_pool),
+            patch('utils.decorators.http_client.get', AsyncMock(return_value={})),
         ):
-            _refuse()
+            result = await tool(token=JWT)
 
-        result = await execute_file(write_file=write_file, token=JWT)
-
-        assert ('read_from_server=true' in result['message']) is noted
-        assert ('same arguments' in result['message']) is not noted
+        assert result['status'] == 'mfa_required'
+        pool.request.assert_not_awaited()
 
 
 async def _refusing_child():
@@ -590,28 +598,50 @@ class TestRealStack:
             assert entries[SERVER_C]['status'] == 'mfa_required'
 
     @pytest.mark.asyncio
-    async def test_execute_file_after_a_write_points_to_read_from_server(self, remote):
-        def handler(request: httpx.Request) -> httpx.Response:
-            return _answer(request, refused={SERVER_A})
+    async def test_execute_file_refused_at_the_upload_asks_for_the_same_call(
+        self, remote
+    ):
+        sent: list[str] = []
 
-        with (
-            _real_stack(handler),
-            patch.object(
-                command_tools, '_write_file_to_host', AsyncMock(return_value=None)
-            ),
-        ):
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.path == '/api/auth0/mfa/':
+                return httpx.Response(200, json={'mfa_url': LINK})
+            sent.append(f'{request.method} {request.url.path}')
+            return httpx.Response(401, json=STEP_UP_BODY)
+
+        with _real_stack(handler):
             result = await command_tools.execute_file(
                 SERVER_A, '/tmp/run.sh', 'acme', content='echo hi', write_file=True
             )
 
         assert result['status'] == 'mfa_required'
-        assert 'read_from_server=true' in result['message']
-        assert 'without write_file and content' in result['message']
+        assert 'retry the same call once with the same arguments' in result['message']
+        assert 'already_sent' not in result
+        assert sent == ['POST /api/webftp/uploads/']
+
+    @pytest.mark.asyncio
+    async def test_command_refused_while_polling_is_not_resubmitted(self, remote):
+        posted: list[str] = []
+        link_auth: list[str | None] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.path == '/api/auth0/mfa/':
+                link_auth.append(request.headers.get('authorization'))
+                return httpx.Response(200, json={'mfa_url': LINK})
+            if request.method == 'POST':
+                posted.append(request.url.path)
+                return httpx.Response(201, json=[{'id': 'cmd-1', 'server': SERVER_A}])
+            return httpx.Response(401, json=STEP_UP_BODY)
+
+        with _real_stack(handler):
+            result = await command_tools.execute_command(
+                SERVER_A, 'uptime', 'acme', region='ap1'
+            )
+
+        assert result['status'] == 'mfa_required'
+        assert result['already_sent'] == ['POST /api/events/commands/']
+        assert 'never the whole call' in result['message']
         assert 'same arguments' not in result['message']
-
-
-@pytest.mark.asyncio
-async def test_every_retry_note_names_a_registered_tool():
-    registered = {tool.name for tool in await mcp.list_tools()}
-
-    assert set(mfa_step_up._RETRY_NOTES) <= registered
+        assert 'partial_result' not in result
+        assert posted == ['/api/events/commands/']
+        assert link_auth == [f'Bearer {JWT}']
