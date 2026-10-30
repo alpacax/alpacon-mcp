@@ -438,7 +438,7 @@ Execute a command on a server and wait for the result.
 If no purpose arrives by that deadline, the command is judged again without one: it runs, waits for a
 human approver (who is notified then), or is refused. Read the result with `list_commands`; do not resubmit.
 No approval request exists during the purpose demand, so a client must not treat it as a pending
-approval: answer it with `state_command_purpose`. The purpose window stays at 60 seconds.
+approval: answer it with `state_command_purpose`. The window is the server's demand deadline, which `deadline_at` and `deadline_seconds` report.
 
 **Held for approval:** a `status: "pending_approval"` response with `category:
 "COMMAND_AWAITING_APPROVAL"` says in its `message` that a script already on the host can move to
