@@ -27,9 +27,11 @@ from utils.common import (
     validate_token,
 )
 from utils.error_handler import (
+    Region,
     ServedRegion,
     UpstreamAuthError,
     format_validation_error,
+    serves_dev_region,
     validate_region_format,
     validate_uuid_format,
     validate_workspace_format,
@@ -394,10 +396,9 @@ def _published_region(
 ) -> inspect.Parameter:
     """Advertise the served regions and what an omitted one means; it arrives as None."""
     description = REGION_DESCRIPTION if requires_workspace else ALL_REGIONS_DESCRIPTION
+    accepted = Region.__value__ if serves_dev_region() else ServedRegion.__value__
     return param.replace(
-        annotation=Annotated[
-            ServedRegion.__value__ | None, Field(description=description)
-        ],
+        annotation=Annotated[accepted | None, Field(description=description)],
         default=None,
     )
 

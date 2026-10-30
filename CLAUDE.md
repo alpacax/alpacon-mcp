@@ -44,7 +44,9 @@ The legacy Auth0 environment variable names still work as fallbacks and will be 
 Things the code will not tell you at a glance:
 
 - **Regions are `ap1` and `us1` only** (the internal `dev` is not a served
-  region). An omitted `region` is resolved from the JWT in remote mode and from
+  region), except where `ALPACON_MCP_ENV` is `staging` or `dev`: there the JWT
+  names `dev`, so tool schemas accept it too. The setting is read when the
+  tools are decorated, at import. An omitted `region` is resolved from the JWT in remote mode and from
   `token.json` in local mode, then validated; resolution fails when the
   workspace is unknown or its token spans several regions.
 - **Toolset selection crosses module boundaries.** `--toolsets` /
@@ -62,8 +64,9 @@ Things the code will not tell you at a glance:
   known: it drops the workspace checks, the workspace-keyed region resolution,
   the JWT workspace authorization, the MFA pre-check, and the stdio token
   injection. `list_workspaces` is the only tool using it. Whatever a tool
-  declares, the decorator publishes `region` as `ap1`, `us1` or null, so the
-  SDK refuses anything else, `''` and `dev` included. The decorator also
+  declares, the decorator publishes `region` as `ap1`, `us1` or null (plus
+  `dev` on a staging or dev deployment), so the SDK refuses anything else, `''`
+  included. The decorator also
   rewrites the published signature, dropping the `**kwargs` it injects the token
   into: the SDK reads that catch-all as an ordinary required field and would
   publish it to clients. Two rules follow: a tool must declare `**kwargs`

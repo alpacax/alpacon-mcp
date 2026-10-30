@@ -1,16 +1,24 @@
 """Enhanced error handling utilities for Alpacon MCP server."""
 
+import os
 import re
 import uuid
 from typing import Literal, TypeGuard
 
 from mcp.server.mcpserver.exceptions import ToolError
 
-# 'dev' is internal-only: tool schemas refuse it, so only region resolution yields it.
+# 'dev' is internal: tool schemas offer it only on a staging or dev deployment.
 type ServedRegion = Literal['ap1', 'us1']
-type Region = ServedRegion | Literal['dev']
+type Region = Literal['ap1', 'us1', 'dev']  # flat, so a schema lists one enum
 SERVED_REGIONS: tuple[ServedRegion, ...] = ('ap1', 'us1')
 VALID_REGIONS: tuple[Region, ...] = (*SERVED_REGIONS, 'dev')
+DEPLOYMENT_ENV = 'ALPACON_MCP_ENV'
+DEV_REGION_DEPLOYMENTS = ('staging', 'dev')
+
+
+def serves_dev_region() -> bool:
+    """Whether tool schemas offer 'dev': a staging or dev deployment, whose JWT names it."""
+    return os.getenv(DEPLOYMENT_ENV, '').strip().lower() in DEV_REGION_DEPLOYMENTS
 
 
 class UpstreamAuthError(ToolError):
