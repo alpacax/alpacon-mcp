@@ -646,10 +646,16 @@ async def _answer_purpose_demand(
 
 
 def _purpose_required_response(
-    deadline_seconds: int | None = None, **kwargs: object
+    expires_at: JsonValue = None, **kwargs: object
 ) -> ToolResponse:
     """Report an open purpose demand as the agent's own move, deliberately not
     `pending_approval_response`: no approver has been asked yet (ADR 0052)."""
+    deadline_seconds = _remaining_purpose_window(expires_at)
+    deadline = (
+        f'by {expires_at} (about {deadline_seconds} s)'
+        if deadline_seconds is not None
+        else 'before the demand expires'
+    )
     response: ToolResponse = {**kwargs}
     response.update(
         {
@@ -658,9 +664,10 @@ def _purpose_required_response(
             'message': (
                 'The gate is asking what this command is for. Answer now with '
                 'state_command_purpose; the assessor re-judges once and that '
-                'call returns the outcome. The demand expires shortly, and '
-                f'{DO_NOT_RESUBMIT.lower()}: there is one demand per command, '
-                'and a resubmission may double-execute it.'
+                f'call returns the outcome. If no purpose arrives {deadline}, '
+                'the command is judged again without one: it runs, waits for a '
+                'human approver (who is notified then), or is refused. Read the '
+                'result with list_commands; do not resubmit.'
             ),
             # Only the rules that bind the next call. The worked examples and
             # the manipulation paragraph live in the tool descriptions, which
@@ -681,6 +688,7 @@ def _purpose_required_response(
     )
     if deadline_seconds is not None:
         response['deadline_seconds'] = deadline_seconds
+        response['deadline_at'] = expires_at
     return response
 
 
@@ -1621,9 +1629,7 @@ async def _poll_command_result(
                         command_id=command_id,
                         region=region,
                         workspace=workspace,
-                        deadline_seconds=_remaining_purpose_window(
-                            result.get('purpose_expires_at')
-                        ),
+                        expires_at=result.get('purpose_expires_at'),
                         **echo,
                     )
 

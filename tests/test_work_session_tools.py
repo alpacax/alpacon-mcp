@@ -1385,6 +1385,45 @@ class TestWorkSessionTimelineRejection:
     """A rejected command on the timeline says why and whom to ask (#242)."""
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        'cause,expected',
+        [
+            (
+                'approval_expired',
+                (
+                    'The approval request expired with no decision. Do not resubmit on '
+                    'your own; ask the user whether an approver can decide a new request.'
+                ),
+            ),
+            (
+                'approval_rejected',
+                (
+                    'A human approver rejected this command. Do not resubmit it; ask '
+                    'the approver why, out-of-band.'
+                ),
+            ),
+        ],
+    )
+    async def test_expiry_is_not_a_human_rejection(
+        self, cause, expected, mock_http_client, mock_token_manager
+    ):
+        command = {
+            'type': 'command',
+            'id': 'cmd-1',
+            'rejection_cause': cause,
+            'rejection_gate': 'approval',
+        }
+        mock_http_client.get.side_effect = _timeline_server({'': ([command], None)})
+
+        result = await work_session_timeline(
+            session_id=SESSION_ID, workspace='testworkspace', region='ap1'
+        )
+
+        item = result['data']['results'][0]
+        assert item['rejection_cause'] == cause
+        assert item['rejection_hint'] == expected
+
+    @pytest.mark.asyncio
     async def test_a_rejected_command_item_gets_a_hint_and_others_do_not(
         self, mock_http_client, mock_token_manager
     ):

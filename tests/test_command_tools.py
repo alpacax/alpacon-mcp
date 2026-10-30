@@ -1848,6 +1848,14 @@ class TestPurposeDemandWindow:
         result = await self._demand(self._parked(expiry.isoformat()))
 
         assert abs(result['deadline_seconds'] - 30) <= 2
+        assert result['deadline_at'] == expiry.isoformat()
+        assert (
+            f'If no purpose arrives by {expiry.isoformat()} '
+            f'(about {result["deadline_seconds"]} s), the command is judged again '
+            'without one: it runs, waits for a human approver (who is notified '
+            'then), or is refused. Read the result with list_commands; do not '
+            'resubmit.'
+        ) in result['message']
 
     @pytest.mark.asyncio
     async def test_an_elapsed_window_reports_zero_not_a_negative(
@@ -1857,6 +1865,13 @@ class TestPurposeDemandWindow:
         result = await self._demand(self._parked(expiry.isoformat()))
 
         assert result['deadline_seconds'] == 0
+        assert result['deadline_at'] == expiry.isoformat()
+        assert (
+            f'If no purpose arrives by {expiry.isoformat()} (about 0 s), '
+            'the command is judged again without one: it runs, waits for a '
+            'human approver (who is notified then), or is refused. Read the '
+            'result with list_commands; do not resubmit.'
+        ) in result['message']
 
     @pytest.mark.asyncio
     async def test_no_expiry_means_no_deadline_rather_than_a_guess(
@@ -1867,6 +1882,11 @@ class TestPurposeDemandWindow:
         result = await self._demand(self._parked(None))
 
         assert 'deadline_seconds' not in result
+        assert 'deadline_at' not in result
+        assert 'the command is judged again without one' in result['message']
+        assert (
+            'Read the result with list_commands; do not resubmit.' in result['message']
+        )
 
     @pytest.mark.asyncio
     async def test_an_unparseable_expiry_is_not_a_crash(
@@ -1876,6 +1896,7 @@ class TestPurposeDemandWindow:
 
         assert result['status'] == 'purpose_required'
         assert 'deadline_seconds' not in result
+        assert 'deadline_at' not in result
 
 
 class TestPurposeDemandHonesty:
@@ -4603,6 +4624,78 @@ def _rejected_row(**fields: object) -> dict[str, object]:
 
 class TestRejectionCause:
     """A command a gate refused before it ran says why and whom to ask (#242)."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        'cause,expected,absent',
+        [
+            (
+                'approval_expired',
+                (
+                    'The approval request expired with no decision. Do not resubmit on '
+                    'your own; ask the user whether an approver can decide a new request.'
+                ),
+                'A human approver rejected this command',
+            ),
+            (
+                'approval_rejected',
+                (
+                    'A human approver rejected this command. Do not resubmit it; ask '
+                    'the approver why, out-of-band.'
+                ),
+                'The approval request expired',
+            ),
+        ],
+    )
+    @pytest.mark.parametrize(
+        'tool',
+        ['execute_command', 'execute_file', 'state_command_purpose', 'list_commands'],
+    )
+    async def test_expiry_is_not_a_human_rejection(
+        self, tool, cause, expected, absent, mock_http_client, mock_token_manager
+    ):
+        row = _rejected_row(rejection_cause=cause, rejection_gate='approval')
+        with (
+            patch('tools.command_tools._submit_command', return_value={'id': 'cmd-r1'}),
+            patch(
+                'tools.command_tools._submit_file_execution',
+                return_value={'id': 'cmd-r1'},
+            ),
+            patch('tools.command_tools._answer_purpose_demand', return_value={}),
+            patch('tools.command_tools._get_command_result', return_value=row),
+        ):
+            if tool == 'execute_command':
+                result = await self._run(row)
+            elif tool == 'execute_file':
+                result = await execute_file(
+                    server_id=VALID_SERVER_ID,
+                    path='/opt/run.sh',
+                    content='echo hi',
+                    workspace='testworkspace',
+                    timeout=10,
+                )
+            elif tool == 'state_command_purpose':
+                result = await state_command_purpose(
+                    command_id='cmd-r1',
+                    purpose='Check the service on this host',
+                    workspace='testworkspace',
+                    timeout=10,
+                )
+            else:
+                mock_http_client.get.return_value = {'count': 1, 'results': [row]}
+                result = await list_commands(workspace='testworkspace')
+                result = result['data']['results'][0]
+
+        assert result['rejection_cause'] == cause
+        assert result['rejection_gate'] == 'approval'
+        assert result['rejection_hint'] == expected
+        assert absent not in json.dumps(result)
+        assert 'rejected by a reviewer' not in json.dumps(result)
+        if tool != 'list_commands':
+            assert result['status'] == 'error'
+            assert (
+                result['message'] == f'Command failed with status: rejected. {expected}'
+            )
 
     async def _run(self, row: dict[str, object]) -> ToolResponse:
         with (

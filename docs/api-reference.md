@@ -434,8 +434,11 @@ Execute a command on a server and wait for the result.
 **Held for its purpose:** when no `purpose` was stated and the gate holds the command, the response is
 `status: "purpose_required"` rather than a result. It carries `command_id`, `requires_human_approval: false`,
 `answerable_by_agent: true`, `purpose_guidance`, and—when the server reports the demand's expiry—
-`deadline_seconds`, the number of seconds left. No approval request exists at that point, so a client must not treat it as a pending
-approval: answer it with `state_command_purpose`.
+`deadline_at`, the absolute ISO 8601 deadline, alongside `deadline_seconds`, the number of seconds left.
+If no purpose arrives by that deadline, the command is judged again without one: it runs, waits for a
+human approver (who is notified then), or is refused. Read the result with `list_commands`; do not resubmit.
+No approval request exists during the purpose demand, so a client must not treat it as a pending
+approval: answer it with `state_command_purpose`. The window is the server's demand deadline, which `deadline_at` and `deadline_seconds` report.
 
 **Held for approval:** a `status: "pending_approval"` response with `category:
 "COMMAND_AWAITING_APPROVAL"` says in its `message` that a script already on the host can move to
