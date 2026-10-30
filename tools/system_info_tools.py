@@ -444,45 +444,29 @@ async def get_server_overview(
     """
     # Never forward **kwargs here: these five are decorated tools whose published
     # signature has no catch-all, and each injects its own token anyway.
-    tasks = [
-        get_system_info(server_id, workspace, region),
-        get_os_version(server_id, workspace, region),
-        get_system_time(server_id, workspace, region),
-        get_network_interfaces(server_id, workspace, region),
-        get_disk_info(server_id, workspace, region),
-    ]
-
-    # Wait for all requests
-    results = await asyncio.gather(*tasks, return_exceptions=True)
-
-    # Prepare overview
-    overview = {
-        'server_id': server_id,
-        'region': region,
-        'workspace': workspace,
-        'system_info': {},
-        'os_version': {},
-        'system_time': {},
-        'network_interfaces': {},
-        'disk_info': {},
+    parts = {  # built per call, so a patched module attribute is the one that runs
+        'system_info': get_system_info,
+        'os_version': get_os_version,
+        'system_time': get_system_time,
+        'network_interfaces': get_network_interfaces,
+        'disk_info': get_disk_info,
     }
-
-    # Process results
-    task_keys = [
-        'system_info',
-        'os_version',
-        'system_time',
-        'network_interfaces',
-        'disk_info',
-    ]
+    results = await asyncio.gather(
+        *(tool(server_id, workspace, region) for tool in parts.values()),
+        return_exceptions=True,
+    )
 
     # Re-raise BaseExceptions that are not regular Exceptions (e.g. CancelledError)
     for result in results:
         if isinstance(result, BaseException) and not isinstance(result, Exception):
             raise result
 
-    for i, result in enumerate(results):
-        key = task_keys[i]
+    overview: dict[str, object] = {
+        'server_id': server_id,
+        'region': region,
+        'workspace': workspace,
+    }
+    for key, result in zip(parts, results, strict=True):
         if isinstance(result, BaseException):
             overview[key] = {'error': str(result)}
         elif result.get('status') == 'success':

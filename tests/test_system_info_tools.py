@@ -1,6 +1,7 @@
 """Unit tests for system_info_tools: system, OS, users, groups, packages, network, disk."""
 
 import asyncio
+import contextlib
 from http import HTTPStatus
 from unittest.mock import patch
 
@@ -699,6 +700,36 @@ class TestGetServerOverview:
             mock_sys_time.assert_called_once()
             mock_network.assert_called_once()
             mock_disk.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_server_overview_files_each_result_under_its_own_key(
+        self, mock_http_client, mock_token_manager
+    ):
+        parts = {
+            'system_info': 'get_system_info',
+            'os_version': 'get_os_version',
+            'system_time': 'get_system_time',
+            'network_interfaces': 'get_network_interfaces',
+            'disk_info': 'get_disk_info',
+        }
+        with contextlib.ExitStack() as stack:
+            for key, tool in parts.items():
+                mock = stack.enter_context(patch(f'tools.system_info_tools.{tool}'))
+                mock.return_value = {'status': 'success', 'data': {'from': key}}
+
+            result = await get_server_overview(
+                server_id=SERVER_ID, workspace='testworkspace', region='ap1'
+            )
+
+        assert result['status'] == 'success'
+        assert list(result['data']) == [
+            'server_id',
+            'region',
+            'workspace',
+            *parts,
+        ]
+        for key in parts:
+            assert result['data'][key] == {'from': key}
 
     @pytest.mark.asyncio
     async def test_server_overview_partial_failure(
