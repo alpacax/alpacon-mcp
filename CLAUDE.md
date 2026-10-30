@@ -102,6 +102,21 @@ Things the code will not tell you at a glance:
   presets catalogs are exempt.
 - **MFA re-authentication exists only in remote/streamable-http mode**, with a
   60-second cooldown against re-auth loops.
+- **A remote `auth_mfa_required` answers in the tool result, not as a 403.**
+  `_handle_upstream_401` records the step-up in `utils/mfa_step_up.py`'s
+  per-call holder and raises `MfaStepUpRequired`, never writing to
+  `request_signal` (any entry there replaces the response with a re-auth
+  challenge). The outermost `with_error_handling` returns `status="mfa_required"`
+  with Alpacon's `mfa_url`, even when a fan-out tool swallowed the exception; a
+  tool that is not read-only and returned normally keeps its result as
+  `partial_result` (it may hold no successful part), and the message asks for a
+  retry of the refused parts only. A tool whose refusal propagated after a POST
+  or PATCH of the same call succeeded lists those requests in `already_sent`
+  and never asks for the whole call again; one with no such request does. A
+  read-only tool always asks for the whole call again. Once recorded, every later
+  `AlpaconHTTPClient.request` in that call raises before sending, so a refusal
+  is not followed by more side effects. There is no MFA pre-check: Alpacon
+  decides. `auth_token_mfa_missing` keeps the 403 re-login.
 - **The code and refresh token a remote client holds are sealed by this
   server**, carrying the device id minted for that grant. Rotating
   `ALPACON_MCP_GRANT_SECRET` (or `AUTH0_ALPACON_LOGIN_CLIENT_SECRET`, which it is derived

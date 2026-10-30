@@ -9,6 +9,7 @@ Complete reference for all Alpacon MCP Server tools and capabilities.
 - **Server IDs are UUIDs**, never names. Get them from `list_servers`. The same holds for each entry of `servers` and `server_ids`, and `session_id` on the Work Session tools is a Work Session UUID.
 - **Every other `*_id` is checked before the request is built.** A value must be a string of letters, digits, `.`, `_`, `~`, or `-`, and must not be `.` or `..`. Most of these identifiers are interpolated into the endpoint path, where a `/` or a `..` retargets the request; the ones that only reach a query parameter or a request body are held to the same rule, because the check goes by the argument name rather than by where the value ends up. Anything else—a `/`, a `?`, a `#`, a percent-encoded spelling of one, or a value that is not a string at all—comes back as a validation error naming the field, and no request is sent. `work_session_id` is the one exception: its surrounding whitespace is stripped on purpose, so the rule would reject values the `ALPACON_WORK_SESSION` route accepts.
 - **`limit` and `page_size` must be positive integers.** Both name a page size and reach the API as `page_size`, where a zero or a negative asks for a page that cannot exist. Either one comes back as a validation error naming the field, and no request is sent. Omitting the argument still gets the tool's own default.
+- **MFA step-up**: in hosted mode a call can return `status="mfa_required"` with an `mfa_url`; see [MFA step-up required](#mfa-step-up-required).
 - **Work Session gate**: OAuth/browser callers must run command execution and file transfers inside an active Work Session; static API and service tokens bypass it. Blocked calls return `status="pending_approval"` or a `status="error"` with a `code` and `next_action`—see [Work session tools](#-work-session-tools).
 
 ## 📋 Response structure
@@ -45,6 +46,22 @@ All MCP tools follow a consistent response structure:
 > **Note**: `"status": "success"` indicates successful HTTP communication. Check the `data.error` field for API-level errors like ACL permission issues (403/404).
 
 A request is retried with backoff after a 5xx, a timeout, or a network error, with one exception: a `POST` or `PATCH` is retried only when it never reached the server—no connection opened or came free from the pool, the proxy refused the tunnel, the URL scheme cannot be sent, or the server answered 503 `auth_verification_unavailable`, which it sends before any view runs. Once it may have reached the server (a read or write timeout, a broken connection, any other 5xx, or an unexpected error such as a 2xx whose body cannot be read), the tool's error comes back at once with `outcome_unknown: true` and no `recovery_hints`, because sending it again could repeat what it did. Check whether the write took effect before calling the tool again. An error without the field was not acted on, or came from a method that is safe to resend (#392).
+
+### MFA step-up required
+In hosted (remote) mode, when Alpacon answers an action with `auth_mfa_required`, the tool returns a normal result instead of a re-login challenge:
+
+```json
+{
+  "status": "mfa_required",
+  "mfa_url": "https://<auth0-domain>/authorize?...",
+  "message": "Alpacon needs a fresh MFA for this action. Show the mfa_url link to the person and wait until they finish MFA in the browser, then retry the same call once with the same arguments.",
+  "workspace": "production",
+  "region": "ap1",
+  "source": "command"
+}
+```
+
+Show `mfa_url` to the person, wait until they finish MFA in the browser, then retry the same call once with the same arguments; the same token passes. `mfa_url` is Auth0's MFA link from Alpacon, and `null` when Alpacon reports MFA already completed (retry once) or the link could not be fetched (a person completes MFA in the Alpacon web console, then retries). `source` is present only when Alpacon names one. When a tool that is not read-only (such as `execute_command_multi_server`) caught the refusal and returned normally, the result adds `partial_result`, the tool's own result as returned, which may hold no successful part, and the message asks for a retry of the refused parts only, never the whole call. When the refusal ended a tool that is not read-only after a POST or PATCH of the same call had succeeded, such as `execute_command` refused while polling a command it already submitted, the result adds `already_sent`, those requests as `METHOD /path` (for example `POST /api/events/commands/`), and the message asks to check what they did and retry only what did not run, never the whole call. A read-only tool always gets the whole-call retry message, with no `partial_result` or `already_sent`. A refused call sends no further request. `auth_token_mfa_missing` is unchanged and still answers with the 403 re-login challenge, and local mode keeps its `status="error"` response.
 
 ## 🖥️ Server management tools
 
@@ -623,6 +640,8 @@ some targets may be refused. Read it from `list_commands`, where each refused en
 refused servers only, with the same account: the file lane needs every target server to support it,
 so resubmitting the original target set can fail with `file_exec_unsupported_agent` on a server that
 was never refused.
+
+**MFA step-up:** a server whose entry in `deploy_shell_results` has `status: "mfa_required"` was refused for a fresh MFA, unlike a `status: "error"` entry, which a retry will not clear. It still counts in `failed_count`. The tool then answers `status: "mfa_required"` with the link and the entries above as `partial_result`; retry the `mfa_required` servers only, and with `parallel: false` the servers after the refused one were never sent.
 
 **Lost submission:** a server whose entry in `deploy_shell_results` carries `outcome_unknown: true` follows the `execute_command` rule: its command may exist and may have run, so check `list_commands` for that server, read back past the time of the call, before resubmitting to it, and ask a human once 100 newer commands fill the page.
 

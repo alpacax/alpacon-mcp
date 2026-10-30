@@ -6,11 +6,11 @@ import logging
 from http import HTTPStatus
 from types import TracebackType
 from typing import Self
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlsplit
 
 import httpx
 
-from utils import request_signal
+from utils import mfa_step_up, request_signal
 from utils.common import MCP_USER_AGENT, is_auth_enabled
 from utils.declared_agent import declared_agent_headers
 from utils.error_handler import UpstreamAuthError
@@ -27,9 +27,11 @@ _ERR_REQUEST = 'Request Error'
 _ERR_TIMEOUT = 'Timeout'
 _ERR_UNEXPECTED = 'Unexpected Error'
 
-# 401 codes that only a new sign-in through Auth0 MFA clears: the fresh MFA an action
-# demands, or the workspace's sign-in MFA the token lacks (a refresh keeps it lacking).
-_MFA_REAUTH_CODES = frozenset({'auth_mfa_required', 'auth_token_mfa_missing'})
+# A fresh MFA an action demands: a browser step-up clears it, the same token retries.
+_MFA_STEP_UP_CODE = 'auth_mfa_required'
+
+# The workspace's sign-in MFA the token lacks: only a new Auth0 sign-in adds it.
+_MFA_SIGN_IN_CODE = 'auth_token_mfa_missing'
 
 # A replay of these can repeat a side effect, and alpacon-server takes no idempotency key:
 # they are resent only after an error raised before the request reached the server.
@@ -89,6 +91,12 @@ def _outcome_unknown(
         ),
         'outcome_unknown': True,
     }
+
+
+async def _refuse_before_send(event: str, info: dict[str, object]) -> None:
+    # An httpcore trace hook: past the connection pool wait, before the first byte.
+    if event.endswith('.send_request_headers.started'):
+        mfa_step_up.refuse_if_recorded()
 
 
 class AlpaconHTTPClient:
@@ -230,6 +238,7 @@ class AlpaconHTTPClient:
                 logger.debug('Request body: %s', redact_for_log(json_data))
 
         while retry_count < self.max_retries:
+            mfa_step_up.refuse_if_recorded()  # a refused call adds no side effects
             try:
                 client = await self._get_client()
                 response = await client.request(
@@ -239,10 +248,13 @@ class AlpaconHTTPClient:
                     json=json_data,
                     params=params,
                     timeout=request_timeout,
+                    extensions={'trace': _refuse_before_send},
                 )
 
                 # Check for success
                 response.raise_for_status()
+                if not idempotent:
+                    mfa_step_up.note_sent(f'{method.upper()} {urlsplit(url).path}')
 
                 # Log successful response
                 logger.info(
@@ -351,6 +363,9 @@ class AlpaconHTTPClient:
                     error_response = {'error': _ERR_REQUEST, 'message': str(e)}
                     logger.error('Network error after all retries: %s', error_response)
                 return error_response
+
+            except mfa_step_up.MfaStepUpRequired:
+                raise  # raised before the request was sent
 
             except Exception as e:
                 # Unexpected error - don't retry
@@ -475,19 +490,22 @@ class AlpaconHTTPClient:
     def _handle_upstream_401(
         exc: httpx.HTTPStatusError, token: str | None = None
     ) -> dict[str, JsonValue]:
-        """Map an upstream 401 to an MFA-aware error dict. In remote mode with a JWT it
-        records the signal for the middleware and raises UpstreamAuthError instead."""
-        mfa_required = False
-        source = ''
+        """Map an upstream 401 to an MFA-aware error dict. With a JWT in remote mode it raises
+        MfaStepUpRequired on auth_mfa_required, else UpstreamAuthError after the signal."""
+        code: object = None
+        raw_source: object = None
 
         try:
             body = exc.response.json()
-            code = body.get('code') if isinstance(body, dict) else None
-            if isinstance(code, str) and code in _MFA_REAUTH_CODES:
-                mfa_required = True
-                source = body.get('source', '')
+            if isinstance(body, dict):
+                code = body.get('code')
+                raw_source = body.get('source')
         except Exception as parse_exc:
             logger.debug('Failed to parse 401 response body as JSON: %s', parse_exc)
+
+        step_up = code == _MFA_STEP_UP_CODE
+        mfa_required = step_up or code == _MFA_SIGN_IN_CODE
+        source = raw_source if mfa_required and isinstance(raw_source, str) else ''
 
         auth_enabled = is_auth_enabled()
         is_jwt = bool(token and AlpaconHTTPClient._is_jwt(token))
@@ -505,6 +523,12 @@ class AlpaconHTTPClient:
             source,
             signals,
         )
+
+        if signals and step_up:
+            # No request_signal entry here: any entry there replaces the response
+            # with a re-auth challenge.
+            mfa_step_up.record(source)
+            raise mfa_step_up.MfaStepUpRequired(source)
 
         if signals:
             request_signal.signal_upstream_auth_error(

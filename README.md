@@ -118,7 +118,7 @@ Don't want to run anything locally? Alpacon hosts a managed MCP server at **`htt
 
 ### How authentication works
 
-The first time your client connects, it opens a browser window for you to log in to Alpacon (Auth0). After you sign in, the client receives a short-lived token and uses it for every request—the same identity, RBAC, and audit trail as the Alpacon web console. If your session needs multi-factor re-verification (for example after an MFA timeout), the client automatically reopens the browser to complete it.
+The first time your client connects, it opens a browser window for you to log in to Alpacon (Auth0). After you sign in, the client receives a short-lived token and uses it for every request—the same identity, RBAC, and audit trail as the Alpacon web console. If an action needs a fresh MFA, the tool result carries a link for you to open and finish MFA in the browser, and the agent then retries the call; if your session lacks the workspace's sign-in MFA, the client reopens the browser to sign in again.
 
 Because access is granted per login, you **do not** set `region`, `workspace`, or any API token in your client config. Instead, you name the **workspace** in your prompt (e.g. *"in the `production` workspace"*)—tools require it, and the AI passes it along. The **region** is resolved automatically from your authorized workspaces, so you rarely need to mention it.
 
