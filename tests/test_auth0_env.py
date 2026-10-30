@@ -3,7 +3,6 @@
 import hashlib
 import hmac
 import logging
-from datetime import UTC, datetime
 from unittest.mock import patch
 
 import pytest
@@ -18,7 +17,6 @@ from utils.oauth import (
     _get_oauth_config,
     _get_state_secret,
 )
-from utils.security_settings import WorkspaceSecuritySettings, check_mfa_completed
 
 ENV_NAMES = [
     ('AUTH0_ALPACON_DOMAIN', 'AUTH0_DOMAIN'),
@@ -127,10 +125,6 @@ def test_namespace_normalization_at_all_consumers(monkeypatch, use_legacy, names
     expected = namespace.rstrip('/') + '/'
     assert _get_auth0_config()['namespace'] == expected
 
-    claims = {
-        f'{expected}workspaces': [None],
-        f'{expected}completed_mfa_methods': {'otp': datetime.now(tz=UTC).isoformat()},
-    }
+    claims = {f'{expected}workspaces': [None]}
     with patch('utils.auth.decode_claims_unverified', return_value=claims):
         assert get_token_workspaces_with_dropped('dummy-jwt') == ([], 1)
-    assert check_mfa_completed(claims, WorkspaceSecuritySettings({})) is True

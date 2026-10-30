@@ -14,6 +14,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from utils.auth0_env import get_auth0_env
+from utils.client_surfaces import log_client_surfaces
 from utils.common import MCP_VERSION, is_auth_enabled, serves_ledger_tools
 from utils.declared_agent import capture_declared_agent, use_environment_fallback
 from utils.health import get_health_info
@@ -22,6 +23,8 @@ from utils.logger import get_logger, stop_log_listener
 from utils.routes import RouteRegistry
 
 logger = get_logger('server')
+
+SERVER_MIDDLEWARE = [capture_declared_agent, log_client_surfaces]
 
 TRANSPORT_STDIO: Final = 'stdio'
 TRANSPORT_SSE: Final = 'sse'
@@ -204,7 +207,7 @@ def _create_mcp_server() -> MCPServer[None]:
             auth=auth_settings,
             token_verifier=token_verifier,
             lifespan=app_lifespan,
-            middleware=[capture_declared_agent],
+            middleware=SERVER_MIDDLEWARE,
         )
     else:
         logger.info('Creating MCP server without auth (stdio/SSE mode)')
@@ -212,7 +215,7 @@ def _create_mcp_server() -> MCPServer[None]:
             'alpacon',
             version=MCP_VERSION,
             lifespan=app_lifespan,
-            middleware=[capture_declared_agent],
+            middleware=SERVER_MIDDLEWARE,
         )
 
 

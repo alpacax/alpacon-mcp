@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- In remote mode, a tool call that Alpacon refuses with `auth_mfa_required` now returns `status="mfa_required"` with an `mfa_url` (Auth0's MFA link from Alpacon, or `null`) and a retry instruction instead of the 403 `insufficient_scope` challenge (#427). A client parsing results must handle the new `status`. When a tool that is not read-only caught the refusal and returned normally, the result also carries `partial_result`, the tool's own result as returned (it may hold no successful part), and asks for a retry of the refused parts only; a read-only tool asks for the whole call to be retried. A refused call sends no further request, and `execute_command_multi_server` marks a refused server `status: "mfa_required"` in `deploy_shell_results`. `auth_token_mfa_missing` still answers with the 403 re-login.
 - The command pre-approval ledger tools can be served in remote mode (streamable-http) when the operator sets
   `ALPACON_MCP_REMOTE_LEDGER=true` (#362). A ledger call without a usable ledger token asks the MCP client to sign
   in again through a 403 `insufficient_scope` challenge naming `ledger:<workspace>`; the OAuth proxy then obtains a
@@ -51,6 +52,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   without the ledger still accepts these writes.
 
 ### Removed
+- The MCP server no longer pre-checks MFA itself in remote mode (#427): Alpacon decides, and `ALPACON_ACCOUNT_URL` now only drives renamed-slug resolution. The null `mfa_timeout` reading and the strict reading of `mfa_required_actions`, `allowed_mfa_methods` and `mfa_timeout` (both released in v1.21.0) no longer apply, because those settings are not read.
 - BREAKING: `update_workspace_preferences` no longer accepts `allowed_domains`, which the server already ignored (#377). The SDK drops this argument before the request: a call that sends only it returns `No update data provided`, while other fields in the same call are still sent. The response shape is unchanged.
 - BREAKING: `update_workspace_preferences` no longer accepts the deprecated `auto_agent_upgrade` boolean; use the existing `agent_rollout_policy` object instead (`{"mode": "manual"}` replaces the old `false`) (#376). Responses no longer include the alias-specific `deprecation_note`; the preferences response shape is otherwise unchanged. The SDK drops the alias before the request: a call that sends only it returns `No update data provided`, while other fields in the same call are still sent.
 

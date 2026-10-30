@@ -9,6 +9,7 @@ from typing import Annotated, TypedDict
 import httpx
 from pydantic import Field, Strict, TypeAdapter
 
+from utils import mfa_step_up
 from utils.command_rejection import attach_rejection
 from utils.common import (
     FILE_EXEC_INLINE_CREDENTIAL_HINT,
@@ -837,6 +838,13 @@ async def execute_command(
         if work_session_id is not None:
             arguments['work_session_id'] = work_session_id
     return response
+
+
+def _failed_entry(exc: Exception) -> dict[str, JsonValue]:
+    """A per-server entry for an exception; an MFA step-up stays distinguishable."""
+    if isinstance(exc, mfa_step_up.MfaStepUpRequired):
+        return {'status': 'mfa_required', 'message': str(exc)}
+    return {'status': 'error', 'message': str(exc)}
 
 
 def _submission_error(
@@ -1822,10 +1830,7 @@ async def execute_command_multi_server(
             if isinstance(result, BaseException):
                 if not isinstance(result, Exception):
                     raise result
-                deploy_results[sid] = {
-                    'status': 'error',
-                    'message': str(result),
-                }
+                deploy_results[sid] = _failed_entry(result)
                 failed_count += 1
             elif err := _submission_error(
                 result, server_id=sid, region=region, workspace=workspace
@@ -1848,7 +1853,7 @@ async def execute_command_multi_server(
                     deploy_results[sid] = {'status': 'success', 'data': result}
                     successful_count += 1
             except Exception as e:
-                deploy_results[sid] = {'status': 'error', 'message': str(e)}
+                deploy_results[sid] = _failed_entry(e)
                 failed_count += 1
 
     response = success_response(
