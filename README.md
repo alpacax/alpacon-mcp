@@ -192,26 +192,6 @@ The same plugin directory installs in three other agents. Each one loads the ski
 
 Do not add a root `plugin.json` (the Agent Plugins manifest) to the plugin: Codex then reads that manifest instead and stops running the hook.
 
-#### Claude Tag (Claude in Slack)
-
-Claude Tag does not take a URL directly. It loads an MCP server only from a plugin an administrator attaches, and an `.mcp.json` in a repository the agent clones is ignored. The same plugin serves it: the plugin names the server, and a connector gives the channel a credential for it.
-
-A channel session has no browser, so it cannot sign in the way the clients above do. Two credential routes exist, and neither is confirmed end to end yet:
-
-- **MCP Connector**: pick the claude.ai custom connector for `https://mcp.alpacon.io/mcp` as the credential and sign in once with an Alpacon account made for Claude. This is an OAuth login, so the Work Session gate applies to it. This route has not been tested with Alpacon.
-- **Bearer**: an Alpacon [service token](https://alpacon.io/docs/use/iam/applications/service-tokens), since a new personal API token cannot hold command-execution or file-transfer scopes. Remote mode does not accept a static token yet; [#220](https://github.com/alpacax/alpacon-mcp/issues/220) tracks that. A service token bypasses the Work Session gate, so actions a browser caller must open a session for go through unsessioned.
-
-Whichever route you take, everyone in the channel acts as the account behind the credential, so give it the narrowest role, scopes, and command ACL that do the job. Approvals stay with people: a tool that returns `status="pending_approval"` waits for a human in the web console or Slack, and the agent cannot approve its own request.
-
-An Owner or a member with the Claude Tag Admin permission attaches it:
-
-1. Add the plugin to your organization's catalog in [Organization settings > Plugins & skills](https://claude.ai/admin-settings/skills?tab=inventory) > **Add** > **Upload a plugin**, with a zip of `plugins/alpacon/` (the archive root, or its single top-level folder, must hold `.claude-plugin/plugin.json`). **Sync from GitHub** takes private repositories only, so it works with a private fork of this one, not with this repository.
-2. In [Organization settings > Claude Tag](https://claude.ai/admin-settings/claude-tag), open a bundle on the **Bundles** tab under **Claude's access** (or create one), click **Add** under **What's in it**, choose **Plugin**, and pick `alpacon`. To cover all of Slack instead, add the plugin from the **Skills and plugins** tab and the connector in step 3 from the **Connectors** tab.
-3. On the same bundle, click **Add**, choose **Connector**, then **Custom connector**. Pick the **Credential type** for your route and set **Allowed websites** to `mcp.alpacon.io`. The sandbox blocks a request to a host no allow rule covers, so without this connector the plugin names a server Claude cannot reach.
-4. In a channel the bundle applies to, start a new thread and ask Claude to call `health_check`. A thread already running keeps the plugins it began with.
-
-Whether the channel sandbox runs the plugin's hook, which needs `python3`, has not been checked; the skill does not depend on it.
-
 ### Hosted vs. local—which should I use?
 
 | | Hosted (remote MCP) | Local (`uvx alpacon-mcp`) |
