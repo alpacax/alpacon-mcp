@@ -186,7 +186,7 @@ To try a local checkout for one session, run `claude --plugin-dir plugins/alpaco
 
 The same plugin directory installs in three other agents. Each one loads the skill and the server, and asks for the browser sign-in on the first tool call:
 
-- Codex: reads the Claude manifest. Run `codex plugin marketplace add alpacax/alpacon-mcp` and `codex plugin add alpacon@alpacon-mcp`. Codex runs a plugin's hook only after you trust it in `/hooks`.
+- Codex: reads the Claude manifest. Run `codex plugin marketplace add alpacax/alpacon-mcp` and `codex plugin add alpacon@alpacon-mcp`. Codex runs a plugin's hook only after you trust it in `/hooks`. An MCP server you already named `alpacon` in `config.toml` takes the plugin's place, so remove or rename it first.
 - Copilot CLI: reads the Claude manifest. Run `copilot plugin marketplace add alpacax/alpacon-mcp` and `copilot plugin install alpacon@alpacon-mcp`. The hook refuses the command, but the agent sees only that the hook exited with code 2, not the reason.
 - Cursor: reads `.cursor-plugin/plugin.json`, which points at the same `.mcp.json` and runs the same hook script on `beforeShellExecution`. Run `cursor-agent --plugin-dir plugins/alpacon` from a checkout, or copy the directory to `~/.cursor/plugins/local/alpacon` for the desktop app.
 
