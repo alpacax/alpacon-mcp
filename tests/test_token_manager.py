@@ -4,6 +4,8 @@
 
 import json
 import logging
+import os
+import stat
 
 import pytest
 
@@ -164,3 +166,82 @@ class TestNonObjectRegionValue:
 
         saved = json.loads((tmp_path / 'token.json').read_text())
         assert saved == {'_comment': 'edited by hand', 'ap1': {'production': 't'}}
+
+
+class TestSecurePersistence:
+    """Credential persistence should be atomic and private on POSIX."""
+
+    def test_serialization_failure_preserves_existing_file(self, tmp_path, monkeypatch):
+        import utils.credential_store as store
+
+        path = tmp_path / 'token.json'
+        original = '{"ap1": {"prod": "old-token"}}'
+        path.write_text(original)
+
+        def fail_serialization(*args, **kwargs):
+            raise TypeError('simulated serialization failure')
+
+        monkeypatch.setattr(store.json, 'dumps', fail_serialization)
+        with pytest.raises(TypeError, match='simulated serialization failure'):
+            store.save_json_securely({'ap1': {'prod': 'new-token'}}, path)
+
+        assert path.read_text() == original
+        assert list(tmp_path.iterdir()) == [path]
+
+    def test_write_failure_preserves_existing_file(self, tmp_path, monkeypatch):
+        import utils.credential_store as store
+
+        path = tmp_path / 'token.json'
+        original = '{"ap1": {"prod": "old-token"}}'
+        path.write_text(original)
+        real_fdopen = store.os.fdopen
+
+        class BrokenWriter:
+            def __init__(self, fd, *args, **kwargs):
+                self.stream = real_fdopen(fd, *args, **kwargs)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                self.stream.close()
+                return False
+
+            def write(self, value):
+                self.stream.write(value[:8])
+                self.stream.flush()
+                raise OSError('simulated disk write failure')
+
+        def broken_fdopen(fd, *args, **kwargs):
+            return BrokenWriter(fd, *args, **kwargs)
+
+        monkeypatch.setattr(store.os, 'fdopen', broken_fdopen)
+        with pytest.raises(OSError, match='simulated disk write failure'):
+            store.save_json_securely({'ap1': {'prod': 'new-token'}}, path)
+
+        assert path.read_text() == original
+        assert list(tmp_path.iterdir()) == [path]
+
+    @pytest.mark.skipif(os.name != 'posix', reason='requires POSIX file modes')
+    def test_new_credentials_file_is_0600_under_umask_022(self, tmp_path):
+        path = tmp_path / 'token.json'
+        previous_umask = os.umask(0o022)
+        try:
+            manager = TokenManager(config_file=str(path))
+            manager.set_token('ap1', 'prod', 'secret')
+        finally:
+            os.umask(previous_umask)
+
+        assert stat.S_IMODE(path.stat().st_mode) == 0o600
+
+    @pytest.mark.skipif(os.name != 'posix', reason='requires POSIX directory modes')
+    def test_default_application_config_directory_is_0700(
+        self, tmp_path, monkeypatch
+    ):
+        monkeypatch.setattr('pathlib.Path.home', lambda: tmp_path)
+        monkeypatch.chdir(tmp_path)
+
+        TokenManager()
+
+        directory = tmp_path / '.alpacon-mcp'
+        assert stat.S_IMODE(directory.stat().st_mode) == 0o700

@@ -1,10 +1,13 @@
 """Tests for the setup wizard's region validation."""
 
+import json
+import os
+import stat
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from utils.setup_wizard import add_workspace, run_setup_wizard
+from utils.setup_wizard import add_workspace, run_setup_wizard, save_config
 from utils.setup_wizard import test_connection as run_test_connection
 from utils.setup_wizard import test_credentials as run_test_credentials
 
@@ -95,3 +98,12 @@ class TestConnectionResponseShape:
                 ),
             ):
                 assert run_test_connection('ap1', 'myws', 'tok') is expected
+
+
+def test_save_config_uses_atomic_private_writer(tmp_path):
+    path = tmp_path / 'token.json'
+    save_config({'ap1': {'prod': 'secret'}}, path)
+
+    assert json.loads(path.read_text()) == {'ap1': {'prod': 'secret'}}
+    if os.name == 'posix':
+        assert stat.S_IMODE(path.stat().st_mode) == 0o600

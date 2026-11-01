@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 from typing import TypedDict
 
+from utils.credential_store import ensure_private_directory, save_json_securely
 from utils.logger import get_logger
 from utils.types import JsonValue
 
@@ -31,6 +32,7 @@ class TokenManager:
     def __init__(self, config_file: str | None = None):
         """Config file: explicit path, else ALPACON_MCP_CONFIG_FILE, else the existing
         ~/.alpacon-mcp/token.json or ./config/token.json, else the global path."""
+        use_private_directory = False
         if config_file:
             # Use specific config file path, expand ~ to home directory
             expanded_path = os.path.expanduser(config_file)
@@ -51,13 +53,16 @@ class TokenManager:
 
                 if global_config.exists():
                     self.token_file = global_config
+                    use_private_directory = True
                     logger.info('Using global config file: %s', self.token_file)
                 elif local_config.exists():
                     self.token_file = local_config
+                    use_private_directory = True
                     logger.info('Using local config file: %s', self.token_file)
                 else:
                     # Default to global config location
                     self.token_file = global_config
+                    use_private_directory = True
                     logger.info(
                         'No config found, will use global location: %s', self.token_file
                     )
@@ -65,7 +70,10 @@ class TokenManager:
         self.config_dir = self.token_file.parent
 
         # Ensure config directory exists
-        self.config_dir.mkdir(parents=True, exist_ok=True)
+        if use_private_directory:
+            ensure_private_directory(self.config_dir)
+        else:
+            self.config_dir.mkdir(parents=True, exist_ok=True)
         logger.debug('Config directory created/verified: %s', self.config_dir)
 
         self.tokens = self._load_tokens()
@@ -102,11 +110,8 @@ class TokenManager:
     def _save_tokens_to_file(
         self, tokens: dict[str, JsonValue], file_path: Path
     ) -> None:
-        """Write the tokens to file_path."""
-        # Ensure directory exists
-        file_path.parent.mkdir(exist_ok=True)
-        with open(file_path, 'w') as f:
-            json.dump(tokens, f, indent=2)
+        """Atomically save tokens with owner-only file permissions."""
+        save_json_securely(tokens, file_path)
 
     def _save_tokens(self) -> None:
         """Persist the tokens to the config file."""

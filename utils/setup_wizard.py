@@ -6,6 +6,7 @@ import sys
 from getpass import getpass
 from pathlib import Path
 
+from .credential_store import ensure_private_directory, save_json_securely
 from .error_handler import SERVED_REGIONS, validate_region_format
 from .http_client import AlpaconHTTPClient
 from .token_manager import TokenManager
@@ -26,14 +27,14 @@ def _region_accepted(region: str) -> bool:
 def get_global_config_path() -> Path:
     """Path of the global token.json; creates ~/.alpacon-mcp if missing."""
     config_dir = Path.home() / '.alpacon-mcp'
-    config_dir.mkdir(parents=True, exist_ok=True)
+    ensure_private_directory(config_dir)
     return config_dir / 'token.json'
 
 
 def get_local_config_path() -> Path:
     """Path of the local token.json; creates ./config if missing."""
     config_dir = Path('config')
-    config_dir.mkdir(parents=True, exist_ok=True)
+    ensure_private_directory(config_dir)
     return config_dir / 'token.json'
 
 
@@ -50,8 +51,7 @@ def load_existing_config(config_path: Path) -> dict[str, dict[str, str]]:
 
 
 def save_config(config: dict[str, dict[str, str]], config_path: Path) -> None:
-    with open(config_path, 'w') as f:
-        json.dump(config, f, indent=2)
+    save_json_securely(config, config_path)
 
 
 def test_connection(region: str, workspace: str, token: str) -> bool:
