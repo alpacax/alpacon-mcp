@@ -32,6 +32,69 @@ UNKNOWN_SESSION_ID = '550e8400-e29b-41d4-a716-446655440099'
 
 class TestWorkSessionCreate:
     @pytest.mark.asyncio
+    @pytest.mark.parametrize('status', ['approved', 'active', 'pending'])
+    async def test_create_guides_to_update_same_session(
+        self, mock_http_client, mock_token_manager, status
+    ):
+        mock_http_client.post.return_value = {'id': SESSION_ID, 'status': status}
+
+        result = await work_session_create(
+            workspace='testworkspace',
+            scopes=['command'],
+            servers=[SERVER_ID],
+            expires_at='2026-05-19T13:00:00+00:00',
+            description='Fix nginx config',
+            region='ap1',
+        )
+
+        assert result['status'] == (
+            'pending_approval' if status == 'pending' else 'success'
+        )
+        assert result['data'] == {'id': SESSION_ID, 'status': status}
+        assert result['next_action'].endswith(
+            'If you need more servers, use work_session_update with '
+            f'session_id="{SESSION_ID}" and every server the session keeps (the '
+            'list replaces the current one) to widen this session instead of '
+            'creating another one.'
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        'response',
+        [
+            {'id': SESSION_ID, 'status': status}
+            for status in ('rejected', 'cancelled', 'expired', 'revoked', 'completed')
+        ]
+        + [
+            {'status': 'active'},
+            {
+                'error': 'Forbidden',
+                'message': 'Work Session creation refused',
+                'status_code': HTTPStatus.FORBIDDEN,
+            },
+        ],
+    )
+    async def test_create_does_not_suggest_widening_on_refusal_or_without_session_id(
+        self, mock_http_client, mock_token_manager, response
+    ):
+        mock_http_client.post.return_value = response
+
+        result = await work_session_create(
+            workspace='testworkspace',
+            scopes=['command'],
+            servers=[SERVER_ID],
+            expires_at='2026-05-19T13:00:00+00:00',
+            description='Fix nginx config',
+            region='ap1',
+        )
+
+        assert 'work_session_update' not in result.get('next_action', '')
+        assert 'work_session_update' not in result.get('message', '')
+        if 'error' in response:
+            assert result['status'] == 'error'
+            assert result['message'] == 'Work Session creation refused'
+
+    @pytest.mark.asyncio
     async def test_create_success(self, mock_http_client, mock_token_manager):
 
         # Verifies the request payload sent to the server. Use an active session
@@ -1290,9 +1353,23 @@ class TestDescriptionIsNotAnExecutionChannel:
         assert 'work_session_id' in text
         assert 'pending_approval' in text
         assert 'data.status' in text
+        assert (
+            'Use work_session_update to add servers to an existing session (pass '
+            'every server it keeps; the list replaces the current one) instead of '
+            'creating a new one.'
+        ) in text
         for state in ('rejected', 'cancelled', 'expired', 'revoked', 'completed'):
             assert state in text
         assert 'pass session_id' not in text
+
+    @pytest.mark.asyncio
+    async def test_update_description_says_to_pass_every_server_the_session_keeps(self):
+        descriptions = await tool_descriptions()
+
+        assert (
+            'servers replaces the whole server list, so pass every server the session '
+            'keeps.'
+        ) in descriptions['work_session_update']
 
 
 class TestWorkSessionParameterDescriptions:

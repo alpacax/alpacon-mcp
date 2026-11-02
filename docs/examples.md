@@ -86,6 +86,8 @@ When you reach Alpacon through OAuth (the hosted server at `mcp.alpacon.io`, or 
 5. work_session_close(session_id, workspace)
 ```
 
+The create result's `next_action` names `work_session_update` and this session's ID: if more servers are needed mid-task, widen this session with the full server list instead of creating another one. A pending result still requires human approval before any command or file transfer runs.
+
 Ask for the narrowest scope that does the job: `command`, `webftp`, and `tunnel` are the scopes an agent may request. A session scoped to one server and one purpose is approved faster and audits cleanly.
 
 Setting `ALPACON_WORK_SESSION` supplies a default session id, so tools called without `work_session_id` still land inside it. An explicit argument always wins.

@@ -132,6 +132,9 @@ _SESSION_DESCRIPTION = (
         'human approves out-of-band (Alpacon web console or Slack). Do not open another '
         'session; call work_session_get and proceed once data.status is active, or stop '
         'if it is rejected, cancelled, expired, revoked, or completed, since those never become active. '
+        'Use work_session_update to add servers to an existing session (pass every '
+        'server it keeps; the list replaces the current one) instead of creating a '
+        'new one. '
         'Related: work_session_close (end session), execute_command (pass work_session_id).'
     ),
     annotations=ADDITIVE,
@@ -188,7 +191,7 @@ async def work_session_create(
     # to run commands against a session that is not yet active.
     if isinstance(result, dict) and result.get('status') == 'pending':
         session_id = result.get('id')
-        return pending_approval_response(
+        response = pending_approval_response(
             'This Work Session was created but is pending human approval. A '
             'human must approve it out-of-band (Alpacon web console or Slack) '
             'before any command or file transfer in this session will run. Call '
@@ -200,8 +203,28 @@ async def work_session_create(
             region=region,
             workspace=workspace,
         )
+    else:
+        response = success_response(data=result, region=region, workspace=workspace)
 
-    return success_response(data=result, region=region, workspace=workspace)
+    if (
+        isinstance(result, dict)
+        and result.get('status') in ('pending', 'approved', 'active')
+        and isinstance(session_id := result.get('id'), str)
+        and session_id
+    ):
+        guidance = (
+            'If you need more servers, use work_session_update with '
+            f'session_id="{session_id}" and every server the session keeps (the '
+            'list replaces the current one) to widen this session instead of '
+            'creating another one.'
+        )
+        response['next_action'] = (
+            f'{response["next_action"]} {guidance}'
+            if 'next_action' in response
+            else guidance
+        )
+
+    return response
 
 
 @mcp_tool_handler(
@@ -303,6 +326,8 @@ async def work_session_list(
 @mcp_tool_handler(
     description=(
         'Update a Work Session (partial update). Only provided fields are sent. '
+        'servers replaces the whole server list, so pass every server the session '
+        'keeps. '
         'Pending sessions update immediately; approved/active sessions go through '
         'the modification flow—when the server queues an approval request, this '
         'tool returns status="pending_approval" and the changes only apply after '
