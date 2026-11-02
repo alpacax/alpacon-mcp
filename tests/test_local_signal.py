@@ -839,7 +839,8 @@ def test_rate_state_expiration_key_cap_and_pruning(monkeypatch):
     }
     assert limiter.take('future', 'denied') == 0
     assert ('old', 'denied') not in limiter._windows
-    assert limiter.take('folded', 'denied') == 2
+    assert ('folded', 'denied') not in limiter._windows
+    assert limiter.take('folded', 'denied') == 0
     assert limiter.take('s' * 1000, 'denied') == 0
     assert limiter.take('s' * 128, 'denied') is None
     assert max(len(key[0]) for key in limiter._windows) <= 128
@@ -847,7 +848,8 @@ def test_rate_state_expiration_key_cap_and_pruning(monkeypatch):
     limiter.take('new', 'paused')
     assert ('future', 'denied') not in limiter._windows
     assert ('folded', 'denied') not in limiter._windows
-    assert ('s' * 128, 'denied') in limiter._windows  # pending folded count
+    assert ('s' * 128, 'denied') not in limiter._windows
+    assert limiter.take('s' * 128, 'denied') == 0
 
 
 @pytest.mark.asyncio
@@ -975,6 +977,24 @@ def test_approval_lapse_never_denies(cause, shape):
         result = {'status': 'error', 'details': row}
     else:
         result = {**row, 'status': 'error'}
+    assert local_signal._from_result(result, {}, 'execute_command') is None
+
+
+@pytest.mark.parametrize('code', ['approval_expired', 'approval_cancelled'])
+@pytest.mark.parametrize('field', ['error_code', 'code'])
+@pytest.mark.parametrize('shape', ['http', 'row', 'details', 'flat'])
+def test_approval_lapse_code_never_denies(code, field, shape):
+    row: dict[str, object] = {'status': 'rejected', 'rejection_gate': 'approval'}
+    if shape == 'http':
+        result = {'status': 'error', 'status_code': 403, 'gate': 'approval'}
+    elif shape == 'row':
+        result = {'status': 'success', 'data': row}
+    elif shape == 'details':
+        result = {'status': 'error', 'details': row}
+    else:
+        result = row
+    result['code' if field == 'error_code' else 'error_code'] = 'approval_denied'
+    result[field] = code
     assert local_signal._from_result(result, {}, 'execute_command') is None
 
 

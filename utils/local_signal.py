@@ -246,7 +246,7 @@ class RateLimiter:
         self._windows = {
             key: value
             for key, value in self._windows.items()
-            if value[1] or now - value[0] <= 24 * 60 * 60
+            if now - value[0] <= 24 * 60 * 60
         }
         key = (session_id[:128], kind)
         previous = self._windows.get(key)
@@ -429,6 +429,8 @@ def _from_result(
         tool_name in DENIAL_TOOLS
         and gate in _REFUSAL_GATES
         and cause not in _APPROVAL_LAPSES
+        and _string(result, 'error_code') not in _APPROVAL_LAPSES
+        and _string(result, 'code') not in _APPROVAL_LAPSES
         and not excluded_missing
         and not (
             isinstance(code, str) and code.startswith(('auth_', 'mfa_', 'validation'))
