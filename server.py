@@ -13,6 +13,7 @@ from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
+from utils import local_signal
 from utils.auth0_env import get_auth0_env
 from utils.client_surfaces import log_client_surfaces
 from utils.common import MCP_VERSION, is_auth_enabled, serves_ledger_tools
@@ -393,7 +394,8 @@ def run(
     try:
         logger.info('Starting MCP server...')
         if transport == TRANSPORT_STDIO:
-            mcp.run(transport=TRANSPORT_STDIO)
+            with local_signal.stdio_transport():
+                mcp.run(transport=TRANSPORT_STDIO)
         elif transport == TRANSPORT_SSE:
             mcp.run(
                 transport=TRANSPORT_SSE,

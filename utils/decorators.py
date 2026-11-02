@@ -13,7 +13,7 @@ from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
-from utils import mfa_step_up, token_manager
+from utils import local_signal, mfa_step_up, token_manager
 from utils.auth import (
     WorkspaceClaim,
     get_token_workspaces,
@@ -583,6 +583,9 @@ def with_error_handling[**P, R](
                     raise
                 raised = True
         if call is None or not call.required:
+            local_signal.signal_result(
+                result, call_arguments(*args, **kwargs), tool_name=func_name
+            )
             return cast(ToolResult[R], result)
         # The holder is released above, so the link fetch is not refused by it.
         logger.info('%s needs an MFA step-up (source=%s)', func_name, call.source)

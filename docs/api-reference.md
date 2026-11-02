@@ -1261,6 +1261,29 @@ A coded refusal from a current alpacon-server can carry up to four more fields, 
 
 A server `hint` is appended to `message` and replaces every local hint: the per-code hint, the gate hint, and `recovery_hints`/`related_tools`. Without one, a code with its own hint keeps it. Otherwise a known `missing` class, then a known `gate`, picks a local hint that names whom to ask or where to wait and never a tool that creates the missing thing; a recognized `gate` or `missing` also drops the status-based `recovery_hints`. `plan` and `rate` have no gate hint here, so the 402 and 429 recovery hints still apply to them. A gate or class this server does not know rides through with no local hint. An older server sends none of these fields, and its errors come back exactly as before; any other unknown field is ignored. A Work Session gate result and a plan-limit result carry the same fields beside their own, but keep their own `message` and `next_action`: a server `hint` rides there as a field only.
 
+### Local desktop signals
+
+When the MCP server runs locally over stdio, a gate refusal raises an
+`Alpacon: command denied` desktop notification, a `pending_approval` tool result
+raises `Alpacon: approval pending`, and a refusal with code `session_paused`
+raises `Alpacon: session paused`. A denial alone does not indicate a paused
+session. Approvals and session recovery still require a human; the notification
+does not grant access or retry an operation.
+
+Notifications contain only the command's first word with its path stripped, the
+server name when already available, the OS account, the gate, and the Work Session
+id or title. Unknown clauses are omitted, and command arguments are never shown.
+Repeated events for the same session and kind are limited to one notification
+per 60 seconds; the next notification appends `+N more` for events folded during
+the previous window. Without a session id, the limit applies to the kind alone.
+
+SSE and streamable-http never raise desktop notifications. Local notifications
+are also skipped in CI, SSH shells, Linux sessions without a display and a D-Bus
+session bus, and Windows session 0. They use the operating system's notification
+tools without a new dependency or an opt-out setting. Delivery runs in the
+background with a two-second timeout and failures logged only at debug level.
+Tool results and stdout/stderr are unchanged.
+
 ### Plan-limit refusals (402)
 
 A 402 whose body carries `gate: "plan"` and an `axis`—or, from an older or

@@ -318,6 +318,27 @@ An OAuth/browser caller must run infrastructure actions inside an active Work Se
 
 A command that escalates privileges can come back as `status="pending_approval"` with `SUDO_APPROVAL_REQUIRED` or `SUDO_INTENT_DEVIATION`. An agent cannot approve its own request—that is deliberate. Surface it to a human, who approves out of band, then retry the call.
 
+### 5b. Local desktop notifications
+
+The local stdio server raises an OS notification when a gate refuses a call,
+a tool returns `pending_approval`, or a refusal reports `session_paused`.
+No banner is written to MCP stderr. The response remains unchanged; follow its
+approval or recovery instructions. A denial notification does not mean the
+session paused, and an approval notification does not mean a command was denied.
+
+Notifications are limited to one per Work Session and kind per 60 seconds.
+Suppressed events appear as `+N more` on the next notification. Command arguments
+are omitted, as are server names the response does not already provide.
+
+No notification appears over SSE or streamable-http, in CI, or in an SSH shell.
+On Linux, a display (`DISPLAY` or `WAYLAND_DISPLAY`),
+`DBUS_SESSION_BUS_ADDRESS`, and `notify-send` on PATH are required. Windows
+services in session 0 do not notify. On macOS, delivery uses `/usr/bin/osascript`;
+on Windows, it uses PowerShell and the Windows toast API. OS notification
+permissions and Focus/Do Not Disturb settings also control what appears.
+An unavailable or failing platform tool is skipped silently, with a debug log;
+it cannot delay or change the tool result. There is no local-signal opt-out setting.
+
 ---
 
 ### 6. File upload/download issues

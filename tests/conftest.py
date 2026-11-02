@@ -14,6 +14,14 @@ from server import create_streamable_http_app, mcp
 from utils import request_signal
 from utils.http_client import AlpaconHTTPClient
 
+
+@pytest.fixture(autouse=True)
+def desktop_notifications(monkeypatch):
+    notifier = MagicMock()
+    monkeypatch.setattr('utils.local_signal.notify', notifier)
+    return notifier
+
+
 # The AlpaconHTTPClient methods a tool calls.
 HTTP_VERBS = ('get', 'post', 'put', 'patch', 'delete')
 
