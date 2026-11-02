@@ -1275,6 +1275,11 @@ does not grant access or retry an operation.
 Notifications contain only the command's first word with its path stripped, the
 server name when already available, the OS account, the gate, and the Work Session
 id or title. Unknown clauses are omitted, and command arguments are never shown.
+Console links must share the workspace API origin, or, for a workspace on a
+subdomain of the built-in cloud domain `alpacon.io`, use `alpacon.io` or one of
+its subdomains with the same scheme and its default port; all links must be
+ASCII, at most 2048 characters, and free of whitespace, fragments, and userinfo,
+and are re-serialized before display.
 Repeated events for the same session and kind are limited to one notification
 per 60 seconds; the next notification appends `+N more` for events folded during
 the previous window. Without a session id, the limit applies to the kind alone.

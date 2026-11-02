@@ -78,6 +78,7 @@ _ASSIGNMENT = re.compile(r'[A-Za-z_][A-Za-z0-9_]*=')
 _SESSION_ID = re.compile(r'[A-Za-z0-9_-]{1,64}')
 _WORD_SPACE = ' \t\n\r'
 _MAX_BODY = 256
+_CLOUD_BASE_DOMAIN = 'alpacon.io'
 
 
 def is_stdio() -> bool:
@@ -95,7 +96,7 @@ def clean(value: str) -> str:
 def _normalized_host(host: str) -> str:
     host = host.lower()
     try:
-        return str(ipaddress.ip_address(host))
+        address = ipaddress.ip_address(host)
     except ValueError:
         host = httpx.URL(host=host).raw_host.decode('ascii').removesuffix('.')
         if not all(
@@ -104,11 +105,21 @@ def _normalized_host(host: str) -> str:
         ):
             raise ValueError('Invalid URL host')
         return host
+    if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped:
+        raise ValueError('Mapped IPv6 host')
+    return str(address)
 
 
 def _origin(value: str) -> tuple[str, str, int]:
-    if len(value) > 2048 or any(
-        unicodedata.category(character) in ('Cc', 'Cf') for character in value
+    if (
+        len(value) > 2048
+        or not value.isascii()
+        or '#' in value
+        or re.search(r'%(?![0-9A-Fa-f]{2})', value)
+        or any(
+            character.isspace() or ord(character) < 32 or ord(character) == 127
+            for character in value
+        )
     ):
         raise ValueError('Invalid URL text')
     parsed = urlsplit(value)
@@ -125,9 +136,7 @@ def _origin(value: str) -> tuple[str, str, int]:
     return parsed.scheme, _normalized_host(parsed.hostname), port
 
 
-def _console_url(value: str, workspace_url: str, base_domain: str = '') -> str:
-    if not value.isascii() or '#' in value or any(c.isspace() for c in value):
-        return ''
+def _console_url(value: str, workspace_url: str) -> str:
     try:
         scheme, host, port = _origin(value)
         serialized = urlunsplit(urlsplit(value))
@@ -136,12 +145,12 @@ def _console_url(value: str, workspace_url: str, base_domain: str = '') -> str:
             return ''
         if host == workspace_host and port == workspace_port:
             return serialized
-        if base_domain:
-            domain = _normalized_host(base_domain)
-            if (host == domain or host.endswith('.' + domain)) and port == (
-                443 if scheme == 'https' else 80
-            ):
-                return serialized
+        if (
+            workspace_host.endswith('.' + _CLOUD_BASE_DOMAIN)
+            and (host == _CLOUD_BASE_DOMAIN or host.endswith('.' + _CLOUD_BASE_DOMAIN))
+            and port == (443 if scheme == 'https' else 80)
+        ):
+            return serialized
         return ''
     except (ValueError, httpx.InvalidURL):
         return ''
@@ -221,13 +230,12 @@ class Signal:
     session_id: str = ''
     console_url: str = ''
     workspace_url: str = ''
-    base_domain: str = ''
 
     def __post_init__(self) -> None:
         object.__setattr__(
             self,
             'console_url',
-            _console_url(self.console_url, self.workspace_url, self.base_domain),
+            _console_url(self.console_url, self.workspace_url),
         )
         for field in fields(self):
             object.__setattr__(self, field.name, clean(getattr(self, field.name)))
@@ -383,11 +391,10 @@ def notify(
     console_url: str = '',
     *,
     workspace_url: str = '',
-    base_domain: str = '',
 ) -> None:
     try:
         title, body = clean(title), clean(body)
-        console_url = _console_url(console_url, workspace_url, base_domain)
+        console_url = _console_url(console_url, workspace_url)
         if is_headless():
             return
         if sys.platform == 'darwin':
@@ -542,7 +549,7 @@ def _from_result(
         session_id=session_id,
         console_url=console_url,
         workspace_url=workspace_url,
-        # MCP has no base_domain configuration; never infer one from the API host.
+        # Cloud console links use the built-in domain, never an inferred API parent.
     )
 
 
@@ -555,7 +562,6 @@ async def _deliver(title: str, body: str, signal: Signal) -> None:
                 body,
                 signal.console_url,
                 workspace_url=signal.workspace_url,
-                base_domain=signal.base_domain,
             )
         else:
             await asyncio.to_thread(notify, title, body, '')

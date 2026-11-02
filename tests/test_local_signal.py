@@ -48,17 +48,253 @@ async def drain_signals():
         await asyncio.gather(*local_signal._tasks)
 
 
-@pytest.mark.parametrize(
-    'workspace_url, url, kept',
-    [
-        ('https://alpacax.ap1.alpacon.io', 'https://alpacon.io/alpacax/1', False),
-        ('https://alpacax.ap1.alpacon.io', 'https://alpacax.ap1.alpacon.io/1', True),
-        ('http://10.0.0.5:8080', 'http://10.0.0.5:8080/1', True),
-        ('http://10.0.0.5:8080', 'http://10.0.0.6:8080/1', False),
-        ('https://alpacax.ap1.alpacon.io', 'https://evil-alpacon.io/1', False),
-        ('https://alpacax.ap1.alpacon.io', 'https://alpacon.io.evil.com/1', False),
-    ],
-)
+_CLOUD_WORKSPACE = 'https://alpacax.ap1.alpacon.io'
+CONSOLE_LINK_CASES = [
+    pytest.param(
+        _CLOUD_WORKSPACE, 'https://alpacon.io/alpacax/x', True, id='cloud console'
+    ),
+    pytest.param(
+        _CLOUD_WORKSPACE,
+        'https://alpacax.ap1.alpacon.io/commands/1',
+        True,
+        id='same workspace',
+    ),
+    pytest.param(
+        'http://10.0.0.5:8080',
+        'http://10.0.0.5:8080/commands/1',
+        True,
+        id='self hosted same origin',
+    ),
+    pytest.param(
+        'http://10.0.0.5:8080',
+        'http://10.0.0.6:8080/commands/1',
+        False,
+        id='self hosted different host',
+    ),
+    pytest.param(
+        _CLOUD_WORKSPACE, 'https://evil-alpacon.io/', False, id='prefix lookalike'
+    ),
+    pytest.param(
+        _CLOUD_WORKSPACE, 'https://alpacon.io.evil.com/', False, id='suffix lookalike'
+    ),
+    pytest.param(
+        _CLOUD_WORKSPACE, 'https://alpacon.io:8443/', False, id='base nondefault port'
+    ),
+    pytest.param(_CLOUD_WORKSPACE, 'http://alpacon.io/', False, id='different scheme'),
+    pytest.param(_CLOUD_WORKSPACE, 'https://alice@alpacon.io/', False, id='userinfo'),
+    pytest.param(_CLOUD_WORKSPACE, 'file:///tmp/approval', False, id='file'),
+    pytest.param(_CLOUD_WORKSPACE, 'javascript:alert%281%29', False, id='javascript'),
+    pytest.param(_CLOUD_WORKSPACE, 'search-ms:query=approval', False, id='search'),
+    pytest.param(
+        _CLOUD_WORKSPACE, 'https://alpacon.io/', True, id='built in cloud domain'
+    ),
+    pytest.param(
+        _CLOUD_WORKSPACE, 'https://other.ap1.alpacon.io/', True, id='cloud sibling'
+    ),
+    pytest.param(
+        _CLOUD_WORKSPACE, 'https://console.alpacon.io/', True, id='base subdomain'
+    ),
+    pytest.param(
+        _CLOUD_WORKSPACE,
+        'https://CONSOLE.ALPACON.IO./',
+        True,
+        id='case and trailing dot',
+    ),
+    pytest.param(
+        'https://bücher.example',
+        'https://xn--bcher-kva.example/',
+        False,
+        id='non ASCII workspace',
+    ),
+    pytest.param(
+        'https://xn--bcher-kva.example',
+        'https://xn--bcher-kva.example/',
+        True,
+        id='ASCII punycode same host',
+    ),
+    pytest.param(
+        _CLOUD_WORKSPACE,
+        'https://console.bücher.example/',
+        False,
+        id='non ASCII link host',
+    ),
+    pytest.param(
+        'http://10.0.0.5:8080',
+        'http://192.168.0.5/x',
+        False,
+        id='login derived IP base',
+    ),
+    pytest.param(
+        'https://alpacon.corp.example.co.uk',
+        'https://attacker.co.uk/',
+        False,
+        id='login derived public suffix',
+    ),
+    pytest.param(
+        'https://alpacon.corp.example.co.uk',
+        'https://ALPACON.CORP.EXAMPLE.CO.UK.:443/x',
+        True,
+        id='self hosted DNS same origin',
+    ),
+    pytest.param(
+        'https://my-server.example',
+        'https://alpacon.io/',
+        False,
+        id='cloud base on unrelated workspace',
+    ),
+    pytest.param(
+        'https://10.0.0.5',
+        'https://alpacon.io/',
+        False,
+        id='cloud base on IP workspace',
+    ),
+    pytest.param(
+        'https://alpacon.io',
+        'https://console.alpacon.io/',
+        False,
+        id='cloud base on apex workspace',
+    ),
+    pytest.param(
+        'https://evil-alpacon.io',
+        'https://alpacon.io/',
+        False,
+        id='workspace prefix lookalike',
+    ),
+    pytest.param(
+        'https://alpacon.io.evil.com',
+        'https://alpacon.io/',
+        False,
+        id='workspace suffix lookalike',
+    ),
+    pytest.param(
+        _CLOUD_WORKSPACE, 'https://ａｌｐａｃｏｎ.io/', False, id='fullwidth host'
+    ),
+    pytest.param(
+        _CLOUD_WORKSPACE,
+        'https://console。alpacon.io/',
+        False,
+        id='ideographic dot host',
+    ),
+    pytest.param(
+        'http://10.0.0.5:8080',
+        'http://[::ffff:10.0.0.5]:8080/x',
+        False,
+        id='mapped IPv6 against IPv4',
+    ),
+    pytest.param(
+        'http://[::ffff:10.0.0.5]:8080',
+        'http://[::ffff:10.0.0.5]:8080/x',
+        False,
+        id='mapped IPv6 same host',
+    ),
+    pytest.param(
+        'http://[::ffff:a00:5]:8080',
+        'http://[::ffff:10.0.0.5]:8080/x',
+        False,
+        id='mapped IPv6 spelling',
+    ),
+    pytest.param(
+        'http://[::ffff:10.0.0.5]:8080',
+        'http://10.0.0.5:8080/x',
+        False,
+        id='IPv4 against mapped IPv6 workspace',
+    ),
+    pytest.param(
+        'http://[::1]:8080', 'http://[0:0:0:0:0:0:0:1]:8080/x', True, id='IPv6 spelling'
+    ),
+    pytest.param(
+        _CLOUD_WORKSPACE,
+        'https://alpacax.ap1.alpacon.io:443/',
+        True,
+        id='same host default port',
+    ),
+    pytest.param(
+        _CLOUD_WORKSPACE,
+        'https://alpacon.io:443/',
+        True,
+        id='base explicit default port',
+    ),
+    pytest.param(
+        'http://my-server', 'http://my-server:80/', True, id='http default port'
+    ),
+    pytest.param(
+        'http://10.0.0.5:8080', 'http://10.0.0.5/', False, id='same host wrong port'
+    ),
+    pytest.param('http://[::1]:8080', 'http://[::1]:8080/', True, id='IPv6 same host'),
+    pytest.param(_CLOUD_WORKSPACE, 'https://alpacon.io/\x01', False, id='control'),
+    pytest.param(
+        _CLOUD_WORKSPACE, 'https://alpacon.io/' + 'a' * 2048, False, id='too long'
+    ),
+    pytest.param(
+        _CLOUD_WORKSPACE,
+        'https://alpacon.io/' + 'a' * (2048 - len('https://alpacon.io/')),
+        True,
+        id='at length limit',
+    ),
+    pytest.param(_CLOUD_WORKSPACE, '/commands/1', False, id='relative'),
+    pytest.param(_CLOUD_WORKSPACE, 'https:///commands/1', False, id='no host'),
+    pytest.param(
+        _CLOUD_WORKSPACE, 'https://alpacon.io/%zz', False, id='invalid escape'
+    ),
+    pytest.param(
+        _CLOUD_WORKSPACE, 'https://alpacon.io:65536/', False, id='invalid port'
+    ),
+    pytest.param(_CLOUD_WORKSPACE, 'https://alpacon.io:/', False, id='empty port'),
+    pytest.param('', 'https://alpacon.io/', False, id='missing workspace'),
+    pytest.param(
+        'https://faß.example',
+        'https://xn--fa-hia.example/1',
+        False,
+        id='sharp s workspace',
+    ),
+    pytest.param(
+        'https://faß.example', 'https://fass.example/1', False, id='sharp s is not ss'
+    ),
+    pytest.param(
+        'http://workspace.example:8080',
+        'http://console.example:80/1',
+        False,
+        id='self hosted DNS different host',
+    ),
+    pytest.param(
+        'http://workspace.example:8080',
+        'http://console.example:8080/1',
+        False,
+        id='self hosted DNS different origin',
+    ),
+    pytest.param(
+        'http://10.0.0.5:8080',
+        'https://10.0.0.5:8080/1',
+        False,
+        id='IP different scheme',
+    ),
+    pytest.param(_CLOUD_WORKSPACE, 'https://alpacon.io/\n1', False, id='newline'),
+    pytest.param(
+        _CLOUD_WORKSPACE, 'https://alpacon.io/\x851', False, id='non ASCII control'
+    ),
+    pytest.param(
+        _CLOUD_WORKSPACE, 'https://alpacon.io/\u200e1', False, id='format control'
+    ),
+    pytest.param(
+        _CLOUD_WORKSPACE, 'https://alpacon.io:invalid/1', False, id='nonnumeric port'
+    ),
+    pytest.param(
+        _CLOUD_WORKSPACE,
+        'https://alpacon.io\\@evil.com/1',
+        False,
+        id='backslash userinfo',
+    ),
+    pytest.param(_CLOUD_WORKSPACE, '//alpacon.io/1', False, id='scheme relative'),
+    pytest.param(
+        'https://[::1]:8443', 'https://[::1]:8443/1', True, id='IPv6 custom port'
+    ),
+    pytest.param(
+        'https://alpacon.io', 'https://alpacon.io../1', False, id='double trailing dot'
+    ),
+]
+
+
+@pytest.mark.parametrize('workspace_url, url, kept', CONSOLE_LINK_CASES)
 def test_console_link_uses_resolved_workspace_origin(
     monkeypatch, workspace_url, url, kept
 ):
@@ -76,115 +312,9 @@ def test_console_link_uses_resolved_workspace_origin(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize('platform', ['darwin', 'linux', 'win32'])
-@pytest.mark.parametrize(
-    'workspace_url, base_domain, url, kept',
-    [
-        (
-            'https://alpacax.ap1.alpacon.io',
-            'alpacon.io',
-            'https://alpacon.io/alpacax/1',
-            True,
-        ),
-        (
-            'https://alpacax.ap1.alpacon.io',
-            '',
-            'https://alpacax.ap1.alpacon.io/1',
-            True,
-        ),
-        ('http://10.0.0.5:8080', '', 'http://10.0.0.5:8080/1', True),
-        ('http://10.0.0.5:8080', '', 'http://10.0.0.6:8080/1', False),
-        (
-            'https://alpacax.ap1.alpacon.io',
-            'alpacon.io',
-            'https://evil-alpacon.io/1',
-            False,
-        ),
-        (
-            'https://alpacax.ap1.alpacon.io',
-            'alpacon.io',
-            'https://alpacon.io.evil.com/1',
-            False,
-        ),
-        (
-            'https://alpacax.ap1.alpacon.io',
-            'alpacon.io',
-            'https://alpacon.io:8443/1',
-            False,
-        ),
-        ('https://alpacax.ap1.alpacon.io', 'alpacon.io', 'http://alpacon.io/1', False),
-        (
-            'https://alpacax.ap1.alpacon.io',
-            'alpacon.io',
-            'https://user@alpacon.io/1',
-            False,
-        ),
-        ('https://alpacax.ap1.alpacon.io', 'alpacon.io', 'file:///tmp/example', False),
-        ('https://alpacax.ap1.alpacon.io', 'alpacon.io', 'javascript:alert(1)', False),
-        (
-            'https://alpacax.ap1.alpacon.io',
-            'alpacon.io',
-            'search-ms:query=example',
-            False,
-        ),
-        ('https://alpacax.ap1.alpacon.io', '', 'https://alpacon.io/alpacax/1', False),
-        (
-            'https://alpacax.ap1.alpacon.io',
-            'alpacon.io',
-            'https://x.alpacon.io/1',
-            True,
-        ),
-        (
-            'https://alpacax.ap1.alpacon.io',
-            'alpacon.io',
-            'https://ALPACON.IO.:443/1',
-            True,
-        ),
-        ('https://bücher.example', '', 'https://xn--bcher-kva.example/1', True),
-        ('https://faß.example', '', 'https://xn--fa-hia.example/1', True),
-        ('https://faß.example', '', 'https://fass.example/1', False),
-        (
-            'https://workspace.example',
-            'bücher.example',
-            'https://x.xn--bcher-kva.example/1',
-            True,
-        ),
-        (
-            'https://alpacax.ap1.alpacon.io',
-            '',
-            'https://alpacax.ap1.alpacon.io:443/1',
-            True,
-        ),
-        ('http://10.0.0.5:8080', '', 'http://10.0.0.5/1', False),
-        (
-            'http://workspace.example:8080',
-            'example',
-            'http://console.example:80/1',
-            True,
-        ),
-        (
-            'http://workspace.example:8080',
-            'example',
-            'http://console.example:8080/1',
-            False,
-        ),
-        ('http://10.0.0.5:8080', '', 'https://10.0.0.5:8080/1', False),
-        ('https://alpacon.io', '', 'https://alpacon.io/\n1', False),
-        ('https://alpacon.io', '', 'https://alpacon.io/\x851', False),
-        ('https://alpacon.io', '', 'https://alpacon.io/\u200e1', False),
-        ('https://alpacon.io', '', 'https://alpacon.io/' + 'x' * 2030, False),
-        ('https://alpacon.io', '', 'https://alpacon.io/' + 'x' * 2029, True),
-        ('https://alpacon.io', '', 'https://alpacon.io:invalid/1', False),
-        ('https://alpacon.io', '', 'https://alpacon.io:65536/1', False),
-        ('https://alpacon.io', '', 'https://alpacon.io:/1', False),
-        ('https://alpacon.io', '', 'https://alpacon.io\\@evil.com/1', False),
-        ('https://alpacon.io', '', '//alpacon.io/1', False),
-        ('https://alpacon.io', '', '/1', False),
-        ('https://[::1]:8443', '', 'https://[::1]:8443/1', True),
-        ('https://alpacon.io', '', 'https://alpacon.io../1', False),
-    ],
-)
+@pytest.mark.parametrize('workspace_url, url, kept', CONSOLE_LINK_CASES)
 async def test_console_link_rule_on_every_platform(
-    monkeypatch, capsys, platform, workspace_url, base_domain, url, kept
+    monkeypatch, capsys, platform, workspace_url, url, kept
 ):
     run = Mock()
     monkeypatch.setattr('utils.local_signal.sys.platform', platform)
@@ -194,9 +324,7 @@ async def test_console_link_rule_on_every_platform(
         'utils.local_signal.shutil.which', lambda name, **kwargs: '/usr/bin/notify-send'
     )
     monkeypatch.setattr('utils.local_signal.subprocess.run', run)
-    signal = local_signal.Signal(
-        'denied', console_url=url, workspace_url=workspace_url, base_domain=base_domain
-    )
+    signal = local_signal.Signal('denied', console_url=url, workspace_url=workspace_url)
     assert signal.console_url == (url if kept else '')
     title, body = signal.text()
     await local_signal._deliver(title, body, signal)
