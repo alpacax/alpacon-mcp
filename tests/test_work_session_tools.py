@@ -1362,6 +1362,15 @@ class TestDescriptionIsNotAnExecutionChannel:
             assert state in text
         assert 'pass session_id' not in text
 
+    @pytest.mark.asyncio
+    async def test_update_description_says_to_pass_every_server_the_session_keeps(self):
+        descriptions = await tool_descriptions()
+
+        assert (
+            'servers replaces the whole server list, so pass every server the session '
+            'keeps.'
+        ) in descriptions['work_session_update']
+
 
 class TestWorkSessionParameterDescriptions:
     """Each scope's meaning is read when `scopes` is filled, so it sits on the field."""
