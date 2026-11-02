@@ -27,7 +27,7 @@ def current_signal() -> AuthSignal | None:
 
 def signal_upstream_auth_error(error_info: AuthSignal) -> None:
     """Record an upstream 401 for the request in flight; a no-op outside a request
-    (stdio, SSE)."""
+    (stdio)."""
     holder = _signal.get()
     if holder is None:
         return

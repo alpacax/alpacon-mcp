@@ -221,7 +221,7 @@ uvx alpacon-mcp --toolsets servers,commands,webftp   # Register only these tools
 
 ### Toolsets (selective tool registration)
 
-Local (stdio/SSE) mode can register a subset of toolsets to stay within
+Local (stdio) mode can register a subset of toolsets to stay within
 client tool limits and reduce per-request token cost. Remote mode
 (streamable-http with JWT auth, i.e. `ALPACON_MCP_AUTH_ENABLED=true`)
 always registers all tools and relies on the client's tool search
@@ -614,13 +614,6 @@ docker build -t alpacon-mcp .
 # from the mounted token instead, which the container's uid 200 must be able to read
 docker run -i -v $(pwd)/config:/app/config:ro \
   -e ALPACON_MCP_CONFIG_FILE=/app/config/token.json alpacon-mcp python main.py
-```
-
-### SSE mode (HTTP transport)
-```bash
-# Run in Server-Sent Events mode for web integration
-python main_sse.py
-# Server available at http://localhost:8237
 ```
 
 ## 🔒 Security & best practices

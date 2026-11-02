@@ -113,9 +113,8 @@ class TestFlag:
         [
             ('true', 'streamable-http', 'true', True),
             ('true', 'streamable-http', '', False),
-            ('true', 'sse', 'true', False),
-            ('', 'sse', 'true', False),
             ('', 'stdio', 'true', False),
+            ('true', 'stdio', 'true', False),
         ],
     )
     def test_only_authenticated_streamable_http_with_the_flag(
@@ -132,7 +131,6 @@ class TestFlag:
         [
             ('streamable-http', 'true', 'true', True),
             ('streamable-http', 'true', '', False),
-            ('sse', '', 'true', False),
             ('stdio', '', '', True),
         ],
     )

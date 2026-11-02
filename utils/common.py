@@ -512,7 +512,7 @@ _ALPACON_CLOUD_HOST_RE = re.compile(r'^(?P<label>[^.]+)\.[^.]+\.alpacon\.io$')
 
 def is_auth_enabled() -> bool:
     """Whether remote mode with Auth0 JWT auth is on (ALPACON_MCP_AUTH_ENABLED=true);
-    stdio and SSE authenticate with tokens from token.json."""
+    stdio authenticates with tokens from token.json."""
     return os.getenv('ALPACON_MCP_AUTH_ENABLED', '').lower() == 'true'
 
 
@@ -527,7 +527,7 @@ REMOTE_LEDGER_ENV = 'ALPACON_MCP_REMOTE_LEDGER'
 
 def is_remote_ledger_enabled() -> bool:
     """Remote ledger tools: off until the Auth0 app is allowed the ledger audience,
-    and only on authenticated streamable-http (SSE has no person to bind to)."""
+    and only on authenticated streamable-http."""
     return (
         is_auth_enabled()
         and os.getenv('ALPACON_MCP_TRANSPORT', '') == 'streamable-http'

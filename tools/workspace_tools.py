@@ -197,7 +197,7 @@ async def list_workspaces(
 ) -> ToolResponse:
     """Get list of available workspaces.
 
-    In local (stdio/SSE) mode, reads from token.json. If region is not specified,
+    In local (stdio) mode, reads from token.json. If region is not specified,
     lists workspaces across all configured regions.
 
     In server (HTTP/JWT) mode, decodes the JWT token to extract workspace information.

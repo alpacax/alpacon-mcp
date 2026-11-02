@@ -218,7 +218,7 @@ class TestStdioOnly:
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize('cached', [True, False])
-    @pytest.mark.parametrize('transport', ['sse', 'streamable-http', None])
+    @pytest.mark.parametrize('transport', ['streamable-http', None])
     async def test_a_network_or_unknown_transport_never_reaches_the_cache(
         self, mock_http_client, mock_token_manager, monkeypatch, cached, transport
     ):
@@ -252,7 +252,7 @@ class TestStdioOnly:
         mock_http_client.request.assert_not_called()
 
     @pytest.mark.parametrize(
-        ('transport', 'registered'), [('sse', False), ('stdio', True)]
+        ('transport', 'registered'), [('streamable-http', False), ('stdio', True)]
     )
     def test_the_toolset_is_registered_on_stdio_only(
         self, monkeypatch, transport, registered
@@ -739,7 +739,9 @@ class TestTransportAwarePointers:
         'response': '{"code": "command_acl_moved"}',
     }
 
-    @pytest.mark.parametrize(('transport', 'named'), [('stdio', True), ('sse', False)])
+    @pytest.mark.parametrize(
+        ('transport', 'named'), [('stdio', True), ('streamable-http', False)]
+    )
     def test_command_acl_moved_hint(self, monkeypatch, transport, named):
         monkeypatch.setenv('ALPACON_MCP_TRANSPORT', transport)
 
@@ -750,7 +752,9 @@ class TestTransportAwarePointers:
         assert 'personal API token has no command list' in result['message']
         assert ('issue_ledger_entries' in result['message']) is named
 
-    @pytest.mark.parametrize(('transport', 'named'), [('stdio', True), ('sse', False)])
+    @pytest.mark.parametrize(
+        ('transport', 'named'), [('stdio', True), ('streamable-http', False)]
+    )
     def test_recovery_hints(self, monkeypatch, transport, named):
         monkeypatch.setenv('ALPACON_MCP_TRANSPORT', transport)
 

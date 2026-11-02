@@ -275,12 +275,6 @@ python main.py --toolsets servers,commands,webftp,metrics
 
 Useful when your client has a tool limit. Workspace, health, and Work Session tools are always registered.
 
-### SSE mode (Server-Sent Events)
-
-```bash
-python main_sse.py   # 127.0.0.1:8237 by default
-```
-
 ## 🚨 Common issues
 
 ### 1. Python not found

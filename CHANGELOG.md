@@ -36,6 +36,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `api_token` stays a `list_ledger_entries` filter so entries such a token already has can still be
   listed and revoked.
 
+### Removed
+- **Breaking:** the SSE transport and the `alpacon-mcp-sse` console script are removed. SSE is deprecated in the MCP specification. Use `alpacon-mcp` (stdio) for local clients, or `alpacon-mcp-http` (streamable HTTP with OAuth) for remote access.
+
 ### Fixed
 - A `purpose_required` response now states what happens after its deadline and how to read the result without resubmitting, alongside the approval-expiry guidance introduced in #417. Clients parsing the response gain `deadline_at`, the server's absolute ISO 8601 expiry, alongside the existing `deadline_seconds` when the server reports a valid expiry; statuses, error codes, and the 60-second purpose window are unchanged.
 - On a deployment with `ALPACON_MCP_ENV` set to `staging` or `dev`, every tool's `region` parameter also accepts `dev`, the region `list_workspaces` reports there (#434). Since #404 the SDK refused `region: "dev"`, so a client that passed back the region it had just been given failed with `Input should be 'ap1' or 'us1'`. Production publishes `ap1` and `us1` only, as before; a client has nothing new to handle.

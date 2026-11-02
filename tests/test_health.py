@@ -60,7 +60,7 @@ def _patched_health_remote(mock_http_client):
 
 
 class TestGetHealthInfoLocal:
-    """Tests for get_health_info in local (stdio/SSE) mode."""
+    """Tests for get_health_info in local (stdio) mode."""
 
     @pytest.mark.asyncio
     async def test_returns_required_fields(self, _patched_health_local):

@@ -1,4 +1,4 @@
-"""Startup contract for the three transports: server imports in both modes, and the
+"""Startup contract for stdio and streamable-http: server imports in both modes, and the
 streamable-http app keeps host, json_response and stateless_http (SDK 2.x moved them).
 """
 
