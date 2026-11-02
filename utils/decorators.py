@@ -206,7 +206,7 @@ _PAGINATION_FIELDS = ('limit', 'page_size')
 
 
 def _get_jwt_token() -> str | None:
-    """The raw JWT from the SDK auth context; None in stdio/SSE mode."""
+    """The raw JWT from the SDK auth context; None in stdio mode."""
     access_token = get_access_token()
     return access_token.token if access_token is not None else None
 

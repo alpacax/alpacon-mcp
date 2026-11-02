@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- The local stdio server raises a desktop notification for a refused command or file transfer, a paused Work Session, or a tool result awaiting human approval (#440). Notifications omit command arguments and fold repeated events per session and kind over 60 seconds; delivery is always attempted for emitted local events except OS-reported Windows session 0, fails silently when the desktop cannot show it, and never runs over SSE or streamable-http. Clients see no response or output change and need no new parsing.
+- The local stdio server raises a desktop notification for a refused command or file transfer, a paused Work Session, or a tool result awaiting human approval (#440). Notifications omit command arguments and fold repeated events per session and kind over 60 seconds; delivery is always attempted for emitted local events except OS-reported Windows session 0, fails silently when the desktop cannot show it, and never runs over streamable-http. Clients see no response or output change and need no new parsing.
 - `work_session_create` now names `work_session_update` and the created session ID in `next_action` when the session is pending, approved, or active, directing agents to widen the existing session when more servers are needed (#439). The `work_session_create` description now says the same, and the `work_session_update` description says its `servers` list replaces the current one. Clients parsing results gain `next_action` on approved/active creates and see appended guidance on pending creates; refusal and error results are unchanged.
 - An `alpacon` agent plugin in `plugins/alpacon/`, installed with `/plugin marketplace add alpacax/alpacon-mcp` and `/plugin install alpacon@alpacon-mcp` (#222). It connects to the hosted server `https://mcp.alpacon.io/mcp`, adds a `using-alpacon` skill carrying the server UUID, Work Session, approval, and `outcome_unknown` rules, and a Bash hook that refuses the `alpacon` CLI. The tool surface and every response are unchanged; the same directory also installs in Codex, Copilot CLI, and Cursor.
 - In remote mode, a tool call that Alpacon refuses with `auth_mfa_required` now returns `status="mfa_required"` with an `mfa_url` (Auth0's MFA link from Alpacon, or `null`) and a retry instruction instead of the 403 `insufficient_scope` challenge (#427). A client parsing results must handle the new `status`. When a tool that is not read-only caught the refusal and returned normally, the result also carries `partial_result`, the tool's own result as returned (it may hold no successful part), and asks for a retry of the refused parts only. When the refusal ended the call after a POST or PATCH of that call had succeeded, such as a command submitted before its result poll was refused, the result carries `already_sent` (each as `METHOD /path`) and asks to check those before retrying what did not run; a read-only tool asks for the whole call to be retried. A refused call sends no further request of the tool's own (only the fetch of `mfa_url` follows), and `execute_command_multi_server` marks a refused server `status: "mfa_required"` in `deploy_shell_results`. `auth_token_mfa_missing` still answers with the 403 re-login.
@@ -17,8 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in again through a 403 `insufficient_scope` challenge naming `ledger:<workspace>`; the OAuth proxy then obtains a
   ledger token for that person and carries it, encrypted, in the access token it hands that one client. The
   returned access token can therefore be an opaque `amcpl1.` value rather than an Auth0 JWT, and when the client
-  cannot step up the tool returns `authorization_required` without a `verification_uri`. SSE still never serves
-  these tools.
+  cannot step up the tool returns `authorization_required` without a `verification_uri`.
 - A coded refusal's `gate`, `missing`, `next` and `hint` now ride the error result as sent, and a server `hint` replaces the local hints, `recovery_hints` included; without one, a known `gate` or `missing` class picks a local hint that says whom to ask (#242). A rejected command on `execute_command`, `execute_file` and `list_commands` carries `rejection_cause`, `rejection_gate` and a new `rejection_hint`, and a rejected `command` item on `work_session_timeline` carries `rejection_hint`. A client parsing `message` sees two changes: a rejected command's message ends with its hint, an older server's rejected command included, and a refusal whose `gate` or `missing` this client recognizes no longer carries `recovery_hints` or `related_tools`. An older server's other errors are unchanged, and a current server's feature-lock 402 now also carries the `gate: "plan"` it sends.
 - `list_latest_metrics` accepts `metric_severity` and `-metric_severity` ordering and preserves
   row `metric_severity`, cell `threshold` and `operator`, and envelope `summary` fields (#397).
@@ -30,12 +29,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `enable_ledger_entry`, `list_ledger_admins`, `grant_ledger_admin` and `revoke_ledger_admin`, in a new
   `ledger` toolset. They manage Pre-approved commands and Command ACL admins on a workspace whose
   `command_acl_surface` is `ai`. They are served over stdio, and in remote mode as the entry above
-  describes; SSE does not register them, and a call that reaches one where they are not served is refused before any
+  describes; a call that reaches one where they are not served is refused before any
   sign-in is read. Over stdio the first call returns a new `status` value, `authorization_required`, carrying a
   sign-in link a person must open before the call is retried, so a client branching on `status` has to handle it. `issue_ledger_entries` takes
   `service_token` entries only: a personal API token has no command list on the ledger, and
   `api_token` stays a `list_ledger_entries` filter so entries such a token already has can still be
   listed and revoked.
+
+### Removed
+- **Breaking:** the SSE transport and the `alpacon-mcp-sse` console script are removed. SSE is deprecated in the MCP specification. Use `alpacon-mcp` (stdio) for local clients, or `alpacon-mcp-http` (streamable HTTP with OAuth) for remote access.
 
 ### Fixed
 - A `purpose_required` response now states what happens after its deadline and how to read the result without resubmitting, alongside the approval-expiry guidance introduced in #417. Clients parsing the response gain `deadline_at`, the server's absolute ISO 8601 expiry, alongside the existing `deadline_seconds` when the server reports a valid expiry; statuses, error codes, and the 60-second purpose window are unchanged.

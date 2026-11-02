@@ -330,7 +330,7 @@ Notifications are limited to one per Work Session and kind per 60 seconds.
 Suppressed events appear as `+N more` on the next notification. Command arguments
 are omitted, as are server names the response does not already provide.
 
-No notification appears over SSE or streamable-http. For every emitted local
+No notification appears over streamable-http. For every emitted local
 event under the rate limit, notification delivery is attempted even in CI, SSH
 shells, and sessions without a desktop. Only Windows services in session 0,
 reported by the OS, are skipped. On Linux, delivery uses `notify-send` from

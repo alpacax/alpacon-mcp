@@ -31,7 +31,6 @@ uv venv && source .venv/bin/activate
 uv sync --extra dev         # runtime + dev dependencies
 
 python main.py              # stdio transport (default MCP mode)
-python main_sse.py          # SSE transport
 python main_http.py         # streamable-http; needs AUTH0_ALPACON_* configured
 
 pytest                      # test suite
@@ -138,7 +137,7 @@ Things the code will not tell you at a glance:
   them. `host` decides DNS rebinding protection—the SDK enables it for loopback
   addresses only—and must be the address uvicorn actually binds, or a deployment
   on `0.0.0.0` rejects its own public Host header with a 421.
-- **`server.run()` refuses streamable-http.** It serves stdio and SSE only;
+- **`server.run()` refuses streamable-http.** It serves stdio only;
   `main_http.py` composes that transport itself, wrapping
   `create_streamable_http_app()` in `UpstreamAuthErrorMiddleware`. An app built
   through any other path is unguarded—no 401 is ever turned into a re-auth

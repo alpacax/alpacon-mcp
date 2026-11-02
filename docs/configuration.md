@@ -184,14 +184,11 @@ python main.py --config-file /path/to/config.json
 # Register only some toolsets (local mode)
 python main.py --toolsets servers,commands,webftp
 
-# SSE mode
-python main_sse.py
-
 # Help
 python main.py --help
 ```
 
-The `alpacon-mcp` CLI takes the same flags plus the `setup`, `test`, `list`, and `add` subcommands. `--toolsets` is also accepted by `main_sse.py`; the `ALPACON_MCP_TOOLSETS` environment variable is the equivalent, and the flag wins when both are set. Available toolsets: `servers`, `commands`, `webftp`, `metrics`, `alerts`, `events`, `system-info`, `iam`, `security`, `audit`, `approvals`, `webhooks`, `packages`, `certs`, `tokens`, `ledger` (stdio, or streamable-http with `ALPACON_MCP_REMOTE_LEDGER=true`; `main_sse.py` skips it). Workspace, health, Work Session tools, and prompts are always registered. Remote mode ignores the setting. A few resources cross module boundaries—`alpacon://servers/.../overview` is backed by `system_info_tools`, so `--toolsets servers` alone silently drops it; add `system-info` to keep it. `commands` alone still writes and reads files through WebFTP when `execute_file` is called with `write_file` or `read_from_server`, so leaving out `webftp` does not keep file transfers away from the agent.
+The `alpacon-mcp` CLI takes the same flags plus the `setup`, `test`, `list`, and `add` subcommands. The `ALPACON_MCP_TOOLSETS` environment variable is the equivalent of `--toolsets`, and the flag wins when both are set. Available toolsets: `servers`, `commands`, `webftp`, `metrics`, `alerts`, `events`, `system-info`, `iam`, `security`, `audit`, `approvals`, `webhooks`, `packages`, `certs`, `tokens`, `ledger` (stdio, or streamable-http with `ALPACON_MCP_REMOTE_LEDGER=true`). Workspace, health, Work Session tools, and prompts are always registered. Remote mode ignores the setting. A few resources cross module boundaries—`alpacon://servers/.../overview` is backed by `system_info_tools`, so `--toolsets servers` alone silently drops it; add `system-info` to keep it. `commands` alone still writes and reads files through WebFTP when `execute_file` is called with `write_file` or `read_from_server`, so leaving out `webftp` does not keep file transfers away from the agent.
 
 ### Transport modes
 
@@ -199,19 +196,10 @@ The `alpacon-mcp` CLI takes the same flags plus the `setup`, `test`, `list`, and
 - Standard MCP protocol transport
 - Bidirectional communication via stdin/stdout
 - Recommended for most MCP clients
-- Declares the calling agent to Alpacon from the client's `clientInfo`. When a client sends no `clientInfo` name, the server reads the same environment markers the Alpacon CLI reads, which the agent sets in the processes it launches: `AI_AGENT` (`name`, `name/version`, or Claude Code's `claude-code_2-1-120_agent`), `CLAUDE_CODE_CHILD_SESSION`, `CODEX_CI`, `CODEX_THREAD_ID`, `CODEX_SANDBOX`, `GEMINI_CLI`, `COPILOT_AGENT`, `COPILOT_CLI`, `CURSOR_AGENT`, `CLINE_ACTIVE`, `GOOSE_TERMINAL`, and `AGENT=goose`. The SSE and streamable-HTTP transports never read the environment for this, because their server process is not a child of the agent; only STDIO uses the fallback.
+- Declares the calling agent to Alpacon from the client's `clientInfo`. When a client sends no `clientInfo` name, the server reads the same environment markers the Alpacon CLI reads, which the agent sets in the processes it launches: `AI_AGENT` (`name`, `name/version`, or Claude Code's `claude-code_2-1-120_agent`), `CLAUDE_CODE_CHILD_SESSION`, `CODEX_CI`, `CODEX_THREAD_ID`, `CODEX_SANDBOX`, `GEMINI_CLI`, `COPILOT_AGENT`, `COPILOT_CLI`, `CURSOR_AGENT`, `CLINE_ACTIVE`, `GOOSE_TERMINAL`, and `AGENT=goose`. The streamable-HTTP transport never reads the environment for this, because its server process is not a child of the agent; only STDIO uses the fallback.
 
 ```bash
 python main.py
-```
-
-#### SSE mode (Server-Sent Events)
-- HTTP-based transport with Server-Sent Events
-- Useful for web-based integrations
-- Binds `127.0.0.1:8237` by default; override with `ALPACON_MCP_HOST` and `ALPACON_MCP_PORT`
-
-```bash
-python main_sse.py
 ```
 
 #### Streamable-HTTP mode (remote deployment)
@@ -271,7 +259,7 @@ export ALPACON_MCP_LEDGER_AUDIENCE="https://alpacon.ai/"  # Matched verbatim; ke
 # A stdio ledger sign-in also sends device:<id>, a random per-installation id kept in
 # a device_id file beside token.json (created on first use; delete it to mint a new one)
 
-# Transport binding (SSE and streamable-http)
+# Transport binding (streamable-http)
 export ALPACON_MCP_HOST=127.0.0.1
 export ALPACON_MCP_PORT=8237
 
@@ -407,7 +395,7 @@ export ALPACON_MCP_LOG_LEVEL=INFO
 export ALPACON_MCP_LOG_LEVEL=ERROR
 ```
 
-`ALPACON_MCP_LOG_LEVEL` is the only logging knob stdio and SSE read. The streamable-http entry point also reads `LOG_FORMAT`: `json` writes one JSON record per line to stdout for Datadog. See [LOGGING.md](../LOGGING.md) for where the log output goes and why stdio mode never writes to stdout.
+`ALPACON_MCP_LOG_LEVEL` is the only logging knob stdio reads. The streamable-http entry point also reads `LOG_FORMAT`: `json` writes one JSON record per line to stdout for Datadog. See [LOGGING.md](../LOGGING.md) for where the log output goes and why stdio mode never writes to stdout.
 
 ---
 
@@ -444,7 +432,7 @@ Access is decided by the token, not by local configuration: a workspace is reach
 ## 🚦 Health check
 
 ```bash
-# HTTP transports (SSE, streamable-http) expose a health route
+# Streamable-http exposes a health route
 curl http://127.0.0.1:8237/health
 ```
 

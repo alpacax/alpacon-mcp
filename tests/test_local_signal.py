@@ -939,10 +939,7 @@ async def test_command_context_already_in_result(desktop_notifications):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('transport', ['stdio', 'sse', 'streamable-http'])
-async def test_only_stdio_run_enables_notifications(
-    monkeypatch, desktop_notifications, transport
-):
+async def test_only_stdio_run_enables_notifications(monkeypatch, desktop_notifications):
     monkeypatch.setenv('ALPACON_MCP_TRANSPORT', 'stdio')
     monkeypatch.setattr(server, 'prepare', Mock())
     payload = {'status': 'pending_approval'}
@@ -951,15 +948,24 @@ async def test_only_stdio_run_enables_notifications(
         local_signal.signal_result(payload, {}, tool_name='tool')
 
     monkeypatch.setattr(server.mcp, 'run', serve)
-    if transport == 'streamable-http':
-        server.create_streamable_http_app(host='127.0.0.1')
-        serve()
-    else:
-        server.run(transport=transport)
+    server.run(transport='stdio')
     await drain_signals()
-    assert desktop_notifications.call_count == (1 if transport == 'stdio' else 0)
+    assert desktop_notifications.call_count == 1
     desktop_notifications.reset_mock()
+    # Outside the stdio run, as in the streamable-http app, nothing is raised.
     serve()
+    await drain_signals()
+    desktop_notifications.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_run_refuses_streamable_http_without_enabling_notifications(
+    monkeypatch, desktop_notifications
+):
+    monkeypatch.setattr(server, 'prepare', Mock())
+    with pytest.raises(RuntimeError):
+        server.run(transport='streamable-http')  # type: ignore[arg-type]
+    local_signal.signal_result({'status': 'pending_approval'}, {}, tool_name='tool')
     await drain_signals()
     desktop_notifications.assert_not_called()
 

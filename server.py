@@ -28,16 +28,11 @@ logger = get_logger('server')
 SERVER_MIDDLEWARE = [capture_declared_agent, log_client_surfaces]
 
 TRANSPORT_STDIO: Final = 'stdio'
-TRANSPORT_SSE: Final = 'sse'
 TRANSPORT_STREAMABLE_HTTP: Final = 'streamable-http'
 
-Transport = Literal['stdio', 'sse', 'streamable-http']
-# run() serves these two; streamable-http is composed by main_http.py instead.
-ServedTransport = Literal['stdio', 'sse']
-
-HTTP_TRANSPORTS: frozenset[Transport] = frozenset(
-    {TRANSPORT_SSE, TRANSPORT_STREAMABLE_HTTP}
-)
+Transport = Literal['stdio', 'streamable-http']
+# run() serves stdio; streamable-http is composed by main_http.py instead.
+ServedTransport = Literal['stdio']
 
 DEFAULT_HOST = '127.0.0.1'
 DEFAULT_PORT = 8237  # MCAR - MCP Alpacon Remote
@@ -54,7 +49,7 @@ TOOLSETS_HELP = (
     f'e.g. servers,commands,webftp (default: {TOOLSETS_ALL})'
 )
 
-# Local (stdio/SSE) mode can register a subset of these; remote loads all.
+# Local (stdio) mode can register a subset of these; remote loads all.
 TOOLSET_REGISTRY: dict[str, str] = {
     'servers': 'server_tools',
     'commands': 'command_tools',
@@ -77,7 +72,7 @@ ALL_TOOL_MODULES: frozenset[str] = frozenset(TOOLSET_REGISTRY.values())
 
 # Served over stdio, and over streamable-http once ALPACON_MCP_REMOTE_LEDGER is
 # on. stdio caches a person's sign-in in the process; remote mode carries it in
-# each caller's own credential. SSE has neither, so it never serves them.
+# each caller's own credential.
 LEDGER_MODULES: frozenset[str] = frozenset({'ledger_tools'})
 
 # Always registered; these names are accepted in --toolsets but select nothing.
@@ -151,7 +146,7 @@ def _create_mcp_server() -> MCPServer[None]:
     auth_enabled = is_auth_enabled()
 
     if auth_enabled:
-        # Local: only remote/JWT mode reaches this branch, so stdio/SSE startup does not pay the Auth0 verifier's import cost (30 ms, 50 modules).
+        # Local: only remote/JWT mode reaches this branch, so stdio startup does not pay the Auth0 verifier's import cost (30 ms, 50 modules).
         from mcp.server.auth.settings import AuthSettings
         from pydantic import AnyHttpUrl
 
@@ -211,7 +206,7 @@ def _create_mcp_server() -> MCPServer[None]:
             middleware=SERVER_MIDDLEWARE,
         )
     else:
-        logger.info('Creating MCP server without auth (stdio/SSE mode)')
+        logger.info('Creating MCP server without auth (stdio mode)')
         return MCPServer(
             'alpacon',
             version=MCP_VERSION,
@@ -283,6 +278,11 @@ def _modules_to_load(toolsets: str | None, remote_mode: bool) -> set[str]:
 def create_streamable_http_app(*, host: str) -> Starlette:
     """Build the streamable-http ASGI app; host must be what the server binds, as it
     decides DNS rebinding protection."""
+    if not is_auth_enabled() or mcp.settings.auth is None:
+        raise RuntimeError(
+            'The streamable-http app requires ALPACON_MCP_AUTH_ENABLED=true; '
+            'run alpacon-mcp-http.'
+        )
     return mcp.streamable_http_app(
         host=host,
         json_response=True,
@@ -297,7 +297,7 @@ def resource_metadata_url() -> str:
 
 
 def _register_http_health_endpoint() -> None:
-    """Register /health for HTTP transports outside auth, for liveness and readiness
+    """Register /health for streamable-http outside auth, for liveness and readiness
     probes."""
     routes: RouteRegistry = mcp
 
@@ -320,7 +320,7 @@ def prepare(
     toolsets: str | None = None,
 ) -> None:
     """Set up a transport: OAuth routes (remote mode, needs AUTH0_CLIENT_ID), /health
-    for HTTP transports, tool modules and resources."""
+    for streamable-http, tool modules and resources."""
     logger.info('Starting MCP server with transport: %s', transport)
 
     # Set transport type for health check reporting
@@ -352,8 +352,8 @@ def prepare(
         register_oauth_routes(mcp)
         logger.info('Remote mode: OAuth routes registered')
 
-    if transport in HTTP_TRANSPORTS:
-        # HTTP transports: register HTTP /health endpoint (bypasses auth)
+    if transport == TRANSPORT_STREAMABLE_HTTP:
+        # Register the HTTP /health endpoint (bypasses auth)
         _register_http_health_endpoint()
         logger.info('HTTP /health endpoint registered for transport: %s', transport)
 
@@ -381,33 +381,18 @@ def run(
     transport: ServedTransport = TRANSPORT_STDIO,
     config_file: str | None = None,
     toolsets: str | None = None,
-    host: str | None = None,
-    port: int | None = None,
 ) -> None:
-    """Run the MCP server on stdio or SSE; host and port default to
-    ALPACON_MCP_HOST/PORT and are ignored for stdio."""
+    """Run the MCP server on stdio; HTTP is served by alpacon-mcp-http."""
+    if transport != TRANSPORT_STDIO:
+        raise RuntimeError(
+            'run() serves stdio only; streamable-http is served by main_http.py.'
+        )
     prepare(transport, config_file=config_file, toolsets=toolsets)
-
-    resolved_host = host if host is not None else resolve_host()
-    resolved_port = port if port is not None else resolve_port()
 
     try:
         logger.info('Starting MCP server...')
-        if transport == TRANSPORT_STDIO:
-            with local_signal.stdio_transport():
-                mcp.run(transport=TRANSPORT_STDIO)
-        elif transport == TRANSPORT_SSE:
-            mcp.run(
-                transport=TRANSPORT_SSE,
-                host=resolved_host,
-                port=resolved_port,
-                max_request_body_size=MAX_REQUEST_BODY_SIZE,
-            )
-        else:
-            raise RuntimeError(
-                'streamable-http is served by main_http.py, which composes the '
-                'ASGI app with the upstream auth middleware.'
-            )
+        with local_signal.stdio_transport():
+            mcp.run(transport=TRANSPORT_STDIO)
     except Exception as e:
         logger.exception('MCP server failed to run: %s', e)
         raise

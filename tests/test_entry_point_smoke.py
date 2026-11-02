@@ -218,16 +218,6 @@ def test_main_answers_initialize_with_an_env_var_token_only(entry_env, tmp_path)
     assert reply['result']['serverInfo']['name'] == 'alpacon'
 
 
-def test_main_sse_serves_health_on_the_port_it_binds(entry_env):
-    env = {**entry_env, 'ALPACON_MCP_HOST': '127.0.0.1'}
-    argv = ['main_sse.py', '--config-file', entry_env['SMOKE_CONFIG_FILE']]
-    with _serve_http(argv, env) as url:
-        response = httpx.get(f'{url}/health', trust_env=False)
-
-    assert response.status_code == 200, response.text
-    assert response.json()['transport'] == 'sse'
-
-
 def test_main_http_serves_health_on_the_port_it_binds(entry_env):
     with _serve_http(['main_http.py'], entry_env) as url:
         response = httpx.get(f'{url}/health', trust_env=False)
