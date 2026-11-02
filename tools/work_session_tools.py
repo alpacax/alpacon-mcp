@@ -326,6 +326,8 @@ async def work_session_list(
 @mcp_tool_handler(
     description=(
         'Update a Work Session (partial update). Only provided fields are sent. '
+        'servers replaces the whole server list, so pass every server the session '
+        'keeps. '
         'Pending sessions update immediately; approved/active sessions go through '
         'the modification flow—when the server queues an approval request, this '
         'tool returns status="pending_approval" and the changes only apply after '
