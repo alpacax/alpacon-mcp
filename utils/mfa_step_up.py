@@ -26,8 +26,9 @@ _LEAD_LINK = (
 )
 _LEAD_ALREADY_DONE = 'Alpacon reports MFA already completed; '
 _LEAD_NO_LINK = (
-    'Alpacon needs a fresh MFA for this action and no link could be fetched. Ask a '
-    'person to complete MFA in the Alpacon web console, '
+    'Alpacon needs a fresh MFA for this action, but no link could be fetched. MFA done '
+    'in the web console does not count for this connection, so wait for the service '
+    'to recover, '
 )
 _RETRY_WHOLE = 'then retry the same call once with the same arguments.'
 _RETRY_PARTIAL = 'then retry only the refused parts, never the whole call.'

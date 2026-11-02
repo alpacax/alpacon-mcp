@@ -116,7 +116,7 @@ class TestMfaRequiredResult:
         ids=['error-dict', 'not-a-dict', 'unknown-body', 'empty-link', 'exception'],
     )
     @pytest.mark.asyncio
-    async def test_failed_link_fetch_returns_no_link_and_points_to_the_console(
+    async def test_failed_link_fetch_returns_no_link_and_asks_for_a_later_retry(
         self, remote, mfa_fetch, failure, caplog
     ):
         if isinstance(failure, Exception):
@@ -129,7 +129,7 @@ class TestMfaRequiredResult:
 
         assert result['status'] == 'mfa_required'
         assert result['mfa_url'] is None
-        assert 'web console' in result['message']
+        assert 'does not count for this connection' in result['message']
         assert any(
             r.levelno == logging.WARNING and r.name == STEP_UP_LOGGER
             for r in caplog.records
