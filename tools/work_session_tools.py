@@ -132,8 +132,9 @@ _SESSION_DESCRIPTION = (
         'human approves out-of-band (Alpacon web console or Slack). Do not open another '
         'session; call work_session_get and proceed once data.status is active, or stop '
         'if it is rejected, cancelled, expired, revoked, or completed, since those never become active. '
-        'Use work_session_update to add servers or accounts to an existing session '
-        'instead of creating a new one. '
+        'Use work_session_update to add servers to an existing session (pass every '
+        'server it keeps; the list replaces the current one) instead of creating a '
+        'new one. '
         'Related: work_session_close (end session), execute_command (pass work_session_id).'
     ),
     annotations=ADDITIVE,
@@ -212,9 +213,10 @@ async def work_session_create(
         and session_id
     ):
         guidance = (
-            'If you need more servers or accounts, use work_session_update with '
-            f'session_id="{session_id}" to widen this session instead of creating '
-            'another one.'
+            'If you need more servers, use work_session_update with '
+            f'session_id="{session_id}" and every server the session keeps (the '
+            'list replaces the current one) to widen this session instead of '
+            'creating another one.'
         )
         response['next_action'] = (
             f'{response["next_action"]} {guidance}'

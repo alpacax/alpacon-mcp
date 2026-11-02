@@ -52,9 +52,10 @@ class TestWorkSessionCreate:
         )
         assert result['data'] == {'id': SESSION_ID, 'status': status}
         assert result['next_action'].endswith(
-            'If you need more servers or accounts, use work_session_update with '
-            f'session_id="{SESSION_ID}" to widen this session instead of creating '
-            'another one.'
+            'If you need more servers, use work_session_update with '
+            f'session_id="{SESSION_ID}" and every server the session keeps (the '
+            'list replaces the current one) to widen this session instead of '
+            'creating another one.'
         )
 
     @pytest.mark.asyncio
@@ -1353,8 +1354,9 @@ class TestDescriptionIsNotAnExecutionChannel:
         assert 'pending_approval' in text
         assert 'data.status' in text
         assert (
-            'Use work_session_update to add servers or accounts to an existing '
-            'session instead of creating a new one.'
+            'Use work_session_update to add servers to an existing session (pass '
+            'every server it keeps; the list replaces the current one) instead of '
+            'creating a new one.'
         ) in text
         for state in ('rejected', 'cancelled', 'expired', 'revoked', 'completed'):
             assert state in text
