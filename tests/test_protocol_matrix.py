@@ -39,6 +39,7 @@ def _discover() -> dict[str, object]:
     }
 
 
+@pytest.mark.usefixtures('authenticated_mcp')
 @pytest.mark.asyncio
 @pytest.mark.parametrize('revision', ['2025-03-26', '2025-06-18'])
 async def test_2025_revisions_are_echoed_back(revision):
@@ -56,6 +57,7 @@ async def test_2025_revisions_are_echoed_back(revision):
     assert response.json()['result']['protocolVersion'] == revision
 
 
+@pytest.mark.usefixtures('authenticated_mcp')
 @pytest.mark.asyncio
 async def test_initialize_does_not_negotiate_the_2026_revision():
     """Given a client asking for 2026-07-28 over initialize, When it handshakes,
@@ -75,6 +77,7 @@ async def test_initialize_does_not_negotiate_the_2026_revision():
     assert negotiated.startswith('2025-')
 
 
+@pytest.mark.usefixtures('authenticated_mcp')
 @pytest.mark.asyncio
 async def test_discover_reports_the_2026_revision_and_the_package_version():
     """Given a modern client, When it discovers the server, Then it learns the
@@ -100,6 +103,7 @@ async def test_discover_reports_the_2026_revision_and_the_package_version():
     assert server_info['version'] != ''
 
 
+@pytest.mark.usefixtures('authenticated_mcp')
 @pytest.mark.asyncio
 async def test_lifespan_runs_once_across_several_stateless_requests(monkeypatch):
     """Given stateless HTTP, When several requests arrive, Then the lifespan that

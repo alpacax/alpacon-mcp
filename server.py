@@ -277,6 +277,11 @@ def _modules_to_load(toolsets: str | None, remote_mode: bool) -> set[str]:
 def create_streamable_http_app(*, host: str) -> Starlette:
     """Build the streamable-http ASGI app; host must be what the server binds, as it
     decides DNS rebinding protection."""
+    if not is_auth_enabled() or mcp.settings.auth is None:
+        raise RuntimeError(
+            'The streamable-http app requires ALPACON_MCP_AUTH_ENABLED=true; '
+            'run alpacon-mcp-http.'
+        )
     return mcp.streamable_http_app(
         host=host,
         json_response=True,

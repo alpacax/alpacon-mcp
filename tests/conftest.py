@@ -9,9 +9,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
+from mcp.server.auth.provider import AccessToken
 
-from server import create_streamable_http_app, mcp
+import server as server_module
+from server import mcp
 from utils import request_signal
+from utils.auth import Auth0TokenVerifier
 from utils.http_client import AlpaconHTTPClient
 
 # The AlpaconHTTPClient methods a tool calls.
@@ -29,16 +32,46 @@ HTTP_ERROR_ENVELOPE = {
 VALID_SERVER_ID = '550e8400-e29b-41d4-a716-446655440001'
 
 
+STREAMABLE_HTTP_TOKEN = 'test-streamable-http-token'  # noqa: S105
+
+
+@pytest.fixture
+def authenticated_mcp(monkeypatch):
+    """Build the streamable-http server with auth and a fixed test bearer token."""
+
+    async def accept_test_token(self, token: str) -> AccessToken | None:
+        if token != STREAMABLE_HTTP_TOKEN:
+            return None
+        return AccessToken(
+            token=token,
+            client_id='test-client-id',
+            scopes=['openid', 'profile', 'email', 'offline_access'],
+            expires_at=None,
+            subject='auth0|test-user',
+            claims={'sub': 'auth0|test-user'},
+        )
+
+    monkeypatch.setenv('ALPACON_MCP_AUTH_ENABLED', 'true')
+    monkeypatch.setenv('AUTH0_ALPACON_DOMAIN', 'example.us.auth0.com')
+    monkeypatch.setenv('ALPACON_MCP_RESOURCE_URL', 'https://mcp.example.com')
+    monkeypatch.setattr(Auth0TokenVerifier, 'verify_token', accept_test_token)
+    authenticated = server_module._create_mcp_server()
+    monkeypatch.setattr(server_module, 'mcp', authenticated)
+    return authenticated
+
+
 @asynccontextmanager
 async def streamable_http_client(
     host: str = '0.0.0.0',  # noqa: S104
 ) -> AsyncIterator[httpx.AsyncClient]:
     """Drive the streamable-http app's own ASGI lifespan, which is what
     initializes the session manager's task group."""
-    app = create_streamable_http_app(host=host)
+    app = server_module.create_streamable_http_app(host=host)
     async with app.router.lifespan_context(app):
         async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url='http://testserver'
+            transport=httpx.ASGITransport(app=app),
+            base_url='http://testserver',
+            headers={'Authorization': f'Bearer {STREAMABLE_HTTP_TOKEN}'},
         ) as client:
             yield client
 

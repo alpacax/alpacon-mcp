@@ -9,8 +9,9 @@ import sys
 import httpx
 import pytest
 
-from server import MAX_REQUEST_BODY_SIZE, create_streamable_http_app, mcp
-from tests.conftest import streamable_http_client
+import server as server_module
+from server import MAX_REQUEST_BODY_SIZE, create_streamable_http_app
+from tests.conftest import STREAMABLE_HTTP_TOKEN, streamable_http_client
 from utils.common import MCP_VERSION
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -47,6 +48,7 @@ def test_server_module_imports_in_auth_mode():
     assert result.returncode == 0, result.stderr
 
 
+@pytest.mark.usefixtures('authenticated_mcp')
 @pytest.mark.asyncio
 async def test_streamable_http_app_accepts_external_host():
     """Given an app built for 0.0.0.0, When a request arrives with the public
@@ -75,6 +77,7 @@ async def test_streamable_http_app_accepts_external_host():
     assert response.headers['content-type'].startswith('application/json')
 
 
+@pytest.mark.usefixtures('authenticated_mcp')
 @pytest.mark.asyncio
 async def test_initialize_reports_package_version():
     """Given the server, When a client initializes, Then serverInfo carries the
@@ -104,12 +107,13 @@ async def test_initialize_reports_package_version():
     assert server_info['version'] != ''
 
 
+@pytest.mark.usefixtures('authenticated_mcp')
 @pytest.mark.asyncio
-async def test_streamable_http_app_mints_no_session():
+async def test_streamable_http_app_mints_no_session(authenticated_mcp):
     """Given the app this deployment serves, When a client initializes, Then no
     mcp-session-id comes back, which the same app built stateful does return."""
     stateless = create_streamable_http_app(host='0.0.0.0')  # noqa: S104
-    stateful = mcp.streamable_http_app(
+    stateful = authenticated_mcp.streamable_http_app(
         host='0.0.0.0',  # noqa: S104
         json_response=True,
         stateless_http=False,
@@ -119,7 +123,9 @@ async def test_streamable_http_app_mints_no_session():
     for name, app in (('stateless', stateless), ('stateful', stateful)):
         async with app.router.lifespan_context(app):
             async with httpx.AsyncClient(
-                transport=httpx.ASGITransport(app=app), base_url='http://testserver'
+                transport=httpx.ASGITransport(app=app),
+                base_url='http://testserver',
+                headers={'Authorization': f'Bearer {STREAMABLE_HTTP_TOKEN}'},
             ) as client:
                 response = await client.post(
                     '/mcp',
@@ -145,6 +151,7 @@ async def test_streamable_http_app_mints_no_session():
     assert sessions['stateless'] is None
 
 
+@pytest.mark.usefixtures('authenticated_mcp')
 @pytest.mark.asyncio
 async def test_streamable_http_app_raises_body_limit_above_sdk_default():
     """A body over the SDK's 4 MiB default is accepted, not rejected as too large:
@@ -165,6 +172,7 @@ async def test_streamable_http_app_raises_body_limit_above_sdk_default():
     assert response.status_code != 413, response.text
 
 
+@pytest.mark.usefixtures('authenticated_mcp')
 @pytest.mark.asyncio
 async def test_streamable_http_app_rejects_body_over_configured_limit():
     """A body over MAX_REQUEST_BODY_SIZE gets a 413 at the ASGI layer,
@@ -183,3 +191,14 @@ async def test_streamable_http_app_rejects_body_over_configured_limit():
         )
 
     assert response.status_code == 413, response.text
+
+
+@pytest.mark.parametrize('auth_enabled', ['false', 'true'])
+def test_streamable_http_app_requires_auth_settings(monkeypatch, auth_enabled):
+    monkeypatch.setenv('ALPACON_MCP_AUTH_ENABLED', 'false')
+    unauthenticated = server_module._create_mcp_server()
+    monkeypatch.setattr(server_module, 'mcp', unauthenticated)
+    monkeypatch.setenv('ALPACON_MCP_AUTH_ENABLED', auth_enabled)
+
+    with pytest.raises(RuntimeError, match='requires ALPACON_MCP_AUTH_ENABLED=true'):
+        create_streamable_http_app(host='127.0.0.1')
