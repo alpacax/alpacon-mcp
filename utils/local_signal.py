@@ -14,10 +14,11 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, fields
 from time import monotonic
-from typing import Literal
+from typing import Literal, get_args
+from urllib.parse import urlsplit
 from xml.sax.saxutils import escape
 
-from utils.common import resolve_work_session_id
+from utils.common import WorkSessionGateCode, resolve_work_session_id
 from utils.logger import get_logger
 from utils.notification_context import ConsoleLinks
 
@@ -50,16 +51,22 @@ DENIAL_TOOLS = frozenset(
         'remove_python_package',
     }
 )
+# alpacon-cli mirrors this allowlist; keep the two clients in sync.
 _REFUSAL_GATES = frozenset(
     {
+        'server_reach',
+        'command_preapproval',
         'command_acl',
         'file_acl',
         'risk',
         'approval',
         'sudo',
         'work_session',
+        'block',
     }
 )
+_WORK_SESSION_GATE_CODES = frozenset(get_args(WorkSessionGateCode.__value__))
+_APPROVAL_LAPSES = frozenset({'approval_expired', 'approval_cancelled'})
 _CONTROL_CHARACTERS = re.compile(
     r'[\x00-\x1f\x7f\u200e\u200f\u202a-\u202e\u2066-\u2069]'
 )
@@ -73,6 +80,15 @@ def is_stdio() -> bool:
 
 def clean(value: str) -> str:
     return _CONTROL_CHARACTERS.sub('', value)
+
+
+def _https_console_url(value: str) -> str:
+    value = clean(value)
+    try:
+        parsed = urlsplit(value)
+        return value if parsed.scheme == 'https' and parsed.hostname else ''
+    except ValueError:
+        return ''
 
 
 @contextmanager
@@ -125,6 +141,7 @@ class Signal:
     def __post_init__(self) -> None:
         for field in fields(self):
             object.__setattr__(self, field.name, clean(getattr(self, field.name)))
+        object.__setattr__(self, 'console_url', _https_console_url(self.console_url))
 
     def text(self, folded: int = 0) -> tuple[str, str]:
         if self.kind == 'paused':
@@ -258,7 +275,8 @@ $toast = [Windows.UI.Notifications.ToastNotification]::new($xml)
 
 def notify(title: str, body: str, console_url: str = '') -> None:
     try:
-        title, body, console_url = clean(title), clean(body), clean(console_url)
+        title, body = clean(title), clean(body)
+        console_url = _https_console_url(console_url)
         if is_headless():
             return
         if sys.platform == 'darwin':
@@ -321,7 +339,14 @@ def _from_result(
     row = row if isinstance(row, dict) else {}
     status = result.get('status')
     code = result.get('code') or result.get('error_code')
-    gate = _string(result, 'gate') or _string(result, 'rejection_gate')
+    gate = (
+        _string(result, 'gate')
+        or _string(result, 'rejection_gate')
+        or _string(row, 'rejection_gate')
+    )
+    if not gate and isinstance(code, str) and code in _WORK_SESSION_GATE_CODES:
+        gate = 'work_session'
+    cause = _string(result, 'rejection_cause') or _string(row, 'rejection_cause')
     missing = result.get('missing')
     missing_classes = missing if isinstance(missing, list) else [missing]
     excluded_missing = any(
@@ -332,27 +357,26 @@ def _from_result(
         kind: SignalKind = 'paused'
     elif status == 'pending_approval':
         kind = 'approval_pending'
-    elif tool_name in DENIAL_TOOLS and (
-        _string(result, 'rejection_gate')
-        or _string(row, 'rejection_gate')
-        or _string(result, 'rejection_cause')
-        or _string(row, 'rejection_cause')
-        or (
-            status == 'error'
-            and result.get('status_code') == 403
-            and gate in _REFUSAL_GATES
-            and not (
-                isinstance(code, str)
-                and code.startswith(('auth_', 'mfa_', 'validation'))
-            )
-            and not excluded_missing
+    elif (
+        tool_name in DENIAL_TOOLS
+        and gate in _REFUSAL_GATES
+        and cause not in _APPROVAL_LAPSES
+        and not excluded_missing
+        and not (
+            isinstance(code, str) and code.startswith(('auth_', 'mfa_', 'validation'))
+        )
+        and (
+            (status == 'error' and result.get('status_code') == 403)
+            or status == 'rejected'
+            or row.get('status') == 'rejected'
+            # Polling also flattens a rejected row into an error result.
+            or (status == 'error' and bool(cause))
         )
     ):
         kind = 'denied'
     else:
         return None
 
-    gate = gate or _string(row, 'rejection_gate')
     session_id = _string(result, 'work_session_id') or _string(result, 'session_id')
     session_id = session_id or _string(arguments, 'work_session_id')
     session_id = session_id or _string(row, 'work_session')

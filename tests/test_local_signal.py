@@ -3,6 +3,7 @@
 import ast
 import asyncio
 import base64
+import importlib
 import json
 import re
 import subprocess
@@ -524,6 +525,7 @@ async def test_command_context_already_in_result(desktop_notifications):
                 'status': 'error',
                 'rejection_gate': 'risk',
                 'details': {
+                    'status': 'rejected',
                     'command': '/usr/bin/sudo secret',
                     'username': 'operator',
                     'server': {'id': 'server-id', 'name': 'web-1'},
@@ -683,6 +685,130 @@ async def test_denial_tools_only_on_refusal(desktop_notifications, tool_name):
 
 
 @pytest.mark.asyncio
+async def test_denial_tool_allowlist_is_registered():
+    for module in server.ALL_TOOL_MODULES | server.ALWAYS_ON_MODULES:
+        importlib.import_module(f'{server.TOOLS_PACKAGE}.{module}')
+    registered = {tool.name for tool in await server.mcp.list_tools()}
+    assert local_signal.DENIAL_TOOLS <= registered
+
+
+@pytest.mark.parametrize(
+    'gate',
+    [
+        'server_reach',
+        'command_preapproval',
+        'command_acl',
+        'file_acl',
+        'risk',
+        'approval',
+        'sudo',
+        'work_session',
+        'block',
+        'plan',
+        'rate',
+        'token_scope',
+        'role',
+        'presence',
+        'network',
+        'future_gate',
+        '',
+    ],
+)
+@pytest.mark.parametrize('shape', ['http', 'row', 'details', 'flat', 'raw_row'])
+def test_denial_gate_allowlist(gate, shape):
+    allowed = {
+        'server_reach',
+        'command_preapproval',
+        'command_acl',
+        'file_acl',
+        'risk',
+        'approval',
+        'sudo',
+        'work_session',
+        'block',
+    }
+    row = {
+        'status': 'rejected',
+        'rejection_gate': gate,
+        'rejection_cause': 'risk_denied',
+    }
+    if shape == 'http':
+        result = {'status': 'error', 'status_code': 403, 'gate': gate}
+    elif shape == 'row':
+        result = {'status': 'success', 'data': row}
+    elif shape == 'details':
+        result = {'status': 'error', 'details': row}
+    elif shape == 'flat':
+        result = {**row, 'status': 'error'}
+    else:
+        result = row
+    signal = local_signal._from_result(result, {}, 'execute_command')
+    assert (signal is not None) is (gate in allowed)
+    if signal is not None:
+        assert signal.kind == 'denied'
+        assert signal.gate == gate
+
+
+@pytest.mark.parametrize(
+    'code',
+    [
+        'work_session_required',
+        'work_session_not_usable',
+        'work_session_expired',
+        'work_session_scope_not_allowed',
+        'work_session_server_not_allowed',
+        'work_session_assignee_mismatch',
+    ],
+)
+def test_work_session_code_without_gate_is_denied(code):
+    result = unwrap_http_result(
+        {
+            'error': 'HTTP Error',
+            'status_code': 403,
+            'response': json.dumps({'code': code}),
+        },
+        default_message='Refused',
+    )
+    assert result is not None
+    signal = local_signal._from_result(result, {}, 'execute_command')
+    assert signal is not None
+    assert signal.kind == 'denied'
+    assert signal.gate == 'work_session'
+    assert local_signal._from_result(result, {}, 'list_servers') is None
+    result['gate'] = 'role'
+    assert local_signal._from_result(result, {}, 'execute_command') is None
+    result.pop('gate')
+    result['status_code'] = 400
+    assert local_signal._from_result(result, {}, 'execute_command') is None
+
+
+@pytest.mark.parametrize('cause', ['approval_expired', 'approval_cancelled'])
+@pytest.mark.parametrize('shape', ['http', 'row', 'details', 'flat'])
+def test_approval_lapse_never_denies(cause, shape):
+    row = {'status': 'rejected', 'rejection_gate': 'approval', 'rejection_cause': cause}
+    if shape == 'http':
+        result = {
+            'status': 'error',
+            'status_code': 403,
+            'gate': 'approval',
+            'rejection_cause': cause,
+        }
+    elif shape == 'row':
+        result = {'status': 'success', 'data': row}
+    elif shape == 'details':
+        result = {'status': 'error', 'details': row}
+    else:
+        result = {**row, 'status': 'error'}
+    assert local_signal._from_result(result, {}, 'execute_command') is None
+
+
+@pytest.mark.parametrize('status', ['success', 'running', 'awaiting_purpose'])
+def test_rejection_gate_alone_is_not_a_rejected_command(status):
+    result = {'status': 'success', 'data': {'status': status, 'rejection_gate': 'risk'}}
+    assert local_signal._from_result(result, {}, 'execute_command') is None
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     'tool_name',
     [
@@ -766,7 +892,11 @@ async def test_non_refusal_errors_never_deny(desktop_notifications, result):
     'row',
     [
         {'status': 'rejected', 'rejection_gate': 'risk'},
-        {'status': 'rejected', 'rejection_cause': 'approval_rejected'},
+        {
+            'status': 'rejected',
+            'rejection_gate': 'approval',
+            'rejection_cause': 'approval_rejected',
+        },
     ],
 )
 async def test_rejected_command_row(desktop_notifications, row):
@@ -808,6 +938,43 @@ def test_long_console_link_does_not_truncate_body():
     )
     assert signal.text() == local_signal.Signal('denied').text()
     assert 'http' not in local_signal.Signal('denied').text()[1]
+
+
+@pytest.mark.parametrize(
+    'url',
+    [
+        'file:///tmp/example',
+        'search-ms:query=example',
+        'ms-settings:privacy',
+        'http://alpacon.io/example',
+        '/example/commands/1',
+        'javascript:alert(1)',
+        'https:///example',
+        'https://',
+        'https://[]/example',
+        '//alpacon.io/example',
+    ],
+)
+def test_invalid_console_url_is_dropped(monkeypatch, url):
+    signal = local_signal._from_result(
+        {'status': 'error', 'status_code': 403, 'gate': 'risk', 'console_url': url},
+        {},
+        'execute_command',
+    )
+    assert signal is not None
+    assert signal.console_url == ''
+    assert url not in signal.text()[1]
+    assert local_signal.Signal('denied', console_url=url).console_url == ''
+
+    run = Mock()
+    monkeypatch.setattr('utils.local_signal.sys.platform', 'win32')
+    monkeypatch.setattr(local_signal, 'is_headless', lambda: False)
+    monkeypatch.setattr('utils.local_signal.subprocess.run', run)
+    platform_notify('title', 'body', url)
+    script = base64.b64decode(run.call_args.args[0][-1]).decode('utf-16-le')
+    payload = re.search(r"FromBase64String\('([^']+)'\)", script)
+    assert payload is not None
+    assert json.loads(base64.b64decode(payload[1]))['console_url'] == ''
 
 
 @pytest.mark.parametrize('platform', ['darwin', 'linux', 'win32'])
