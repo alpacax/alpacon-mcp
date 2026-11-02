@@ -20,6 +20,7 @@ from tools import command_tools
 from utils import local_signal
 from utils.common import unwrap_http_result
 from utils.decorators import mcp_tool_handler, with_error_handling
+from utils.http_client import http_client
 from utils.local_signal import notify as platform_notify
 
 
@@ -274,6 +275,20 @@ def test_exact_text_and_command_privacy(kind, title, body):
         ('echo\nSECRET', 'echo'),
         ('PGPASSWORD="two words" OTHER=abc123 psql -h db', 'psql'),
         ("PGPASSWORD='two words' psql", 'psql'),
+        ('X="$(printf "%s" "a b")" psql', ''),
+        ('X=`printf a b` psql', ''),
+        ('X="${HOME}" psql', ''),
+        ('X="plain value" psql', 'psql'),
+        ('X="plain" Y="$(printf "%s" "a b")" psql', ''),
+        ("""X="plain 'value'" psql""", ''),
+        ("""X='plain "value"' psql""", ''),
+        (r'X="plain \"value\"" psql', ''),
+        ('psql$(printf "%s" "a b")', ''),
+        ('psql`printf a b`', ''),
+        ('psql${HOME}', ''),
+        ('psql$X$(printf a b)', ''),
+        (r'psql\ $(printf a b)', ''),
+        ('psql "$(printf a b)"', 'psql'),
         ('bad=name', ''),
         ('a' * 65, ''),
         ('/opt/雪/run', 'run'),
@@ -286,6 +301,7 @@ def test_argv0(command, expected):
     text = ' '.join(local_signal.Signal('denied', argv0=argv0).text())
     for forbidden in ('=', 'hunter2', 'SECRET', 'abc123'):
         assert forbidden not in text
+    assert not re.search(r'\b(?:a|b|printf)\b', text)
 
 
 def test_windows_argv0(monkeypatch):
@@ -1370,6 +1386,106 @@ async def test_pending_command_row_link_preserves_tool_response(
     assert json.dumps(result).encode() == baseline
     assert 'console_url' not in result
     assert desktop_notifications.call_args.args[2] == url
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('tool_name', ['execute_command', 'state_command_purpose'])
+async def test_completed_sudo_pending_row_preserves_result_and_rate_limit(
+    monkeypatch, desktop_notifications, tool_name
+):
+    row = {
+        'status': 'failed',
+        'handled_at': '2026-11-02T00:00:00Z',
+        'result': 'Alpacon denied this sudo command (SUDO_APPROVAL_REQUIRED).',
+        'command': '/usr/bin/sudo id',
+        'server': {'name': 'web-1'},
+        'username': 'operator',
+        'work_session': 'session-1',
+    }
+    monkeypatch.setattr(
+        command_tools, '_get_command_result', AsyncMock(return_value=row)
+    )
+    now = [0.0]
+    monkeypatch.setattr(local_signal, 'monotonic', lambda: now[0])
+    deliver = AsyncMock()
+    monkeypatch.setattr(local_signal, '_deliver', deliver)
+
+    async def poll(workspace='example', region='ap1'):
+        return await command_tools._poll_command_result(
+            'cmd-1', workspace, 1, region, None
+        )
+
+    poll.__name__ = tool_name
+    tool = with_error_handling(poll)
+    baseline = await tool()
+    baseline_bytes = json.dumps(baseline).encode()
+    assert baseline['status'] == 'success'
+    assert baseline['sudo_denial']['status'] == 'pending_approval'
+    with local_signal.stdio_transport():
+        result = await tool()
+        repeated = await tool()
+    await drain_signals()
+    assert json.dumps(result).encode() == baseline_bytes
+    assert json.dumps(repeated).encode() == baseline_bytes
+    assert result['data'] is row
+    deliver.assert_awaited_once()
+    title, body, signal = deliver.call_args.args
+    assert signal.kind == 'approval_pending'
+    assert (signal.argv0, signal.server, signal.account, signal.session_id) == (
+        'sudo',
+        'web-1',
+        'operator',
+        'session-1',
+    )
+    assert title == 'Alpacon: approval pending'
+    assert body == (
+        'sudo on web-1 as operator is waiting for approval. Session session-1. '
+        'Open the approval or wait for an approver.'
+    )
+    now[0] = 60
+    with local_signal.stdio_transport():
+        assert await tool() == baseline
+    await drain_signals()
+    assert deliver.await_count == 2
+    assert deliver.call_args.args[1].endswith(' +1 more.')
+    desktop_notifications.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('code', ['SUDO_APPROVAL_REQUIRED', 'SUDO_RISK_DENIED'])
+async def test_history_sudo_guidance_preserves_result(
+    monkeypatch, mock_token_manager, desktop_notifications, code
+):
+    row = {
+        'status': 'failed',
+        'handled_at': '2026-11-02T00:00:00Z',
+        'result': f'Alpacon denied this sudo command ({code}).',
+        'command': '/usr/bin/sudo id',
+        'server': {'name': 'web-1'},
+        'username': 'operator',
+        'work_session': 'session-1',
+    }
+    monkeypatch.setattr(
+        http_client,
+        'get',
+        AsyncMock(side_effect=lambda **kwargs: {'results': [deepcopy(row)]}),
+    )
+    baseline = await command_tools.list_commands(workspace='example', region='ap1')
+    with local_signal.stdio_transport():
+        result = await command_tools.list_commands(workspace='example', region='ap1')
+        repeated = await command_tools.list_commands(workspace='example', region='ap1')
+    await drain_signals()
+    assert json.dumps(result).encode() == json.dumps(baseline).encode()
+    assert repeated == baseline
+    if code == 'SUDO_APPROVAL_REQUIRED':
+        desktop_notifications.assert_called_once_with(
+            'Alpacon: approval pending',
+            'sudo on web-1 as operator is waiting for approval. Session session-1. '
+            'Open the approval or wait for an approver.',
+            '',
+        )
+    else:
+        desktop_notifications.assert_not_called()
 
 
 def test_command_controls_are_delimiters_before_cleaning():

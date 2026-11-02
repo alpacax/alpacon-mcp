@@ -150,10 +150,15 @@ def stdio_transport() -> Iterator[None]:
 
 def command_argv0(command: str) -> str:
     remaining = command.lstrip()
-    while re.match(r'[A-Za-z_][A-Za-z0-9_]*=', remaining):
+    while remaining:
+        assignment = bool(re.match(r'[A-Za-z_][A-Za-z0-9_]*=', remaining))
         quote = ''
         escaped = False
         for index, character in enumerate(remaining):
+            if character == '`' or remaining.startswith(('$(', '${'), index):
+                return ''
+            if quote and character in '"\'' and (escaped or character != quote):
+                return ''
             if escaped:
                 escaped = False
             elif character == '\\' and quote != "'":
@@ -163,13 +168,19 @@ def command_argv0(command: str) -> str:
                     quote = ''
             elif character in '"\'':
                 quote = character
-            elif character in ';|&<>()$`':
-                return ''
+            elif character in ';|&<>()' or (character == '$' and assignment):
+                if assignment:
+                    return ''
+                break
             elif character.isspace():
-                remaining = remaining[index:].lstrip()
+                if assignment:
+                    remaining = remaining[index:].lstrip()
                 break
         else:
-            return ''
+            if assignment:
+                return ''
+        if not assignment:
+            break
     word = re.split(r"[\s;|&<>()$`'\"\\]", remaining, maxsplit=1)[0]
     basename = word.rsplit('/', 1)[-1]
     return basename if _ARGV0.fullmatch(basename) else ''
@@ -406,6 +417,7 @@ def _from_result(
     row = data if isinstance(data, dict) else details
     row = row if isinstance(row, dict) else {}
     status = result.get('status')
+    sudo_denial = result.get('sudo_denial') or row.get('sudo_denial')
     code = result.get('code') or result.get('error_code')
     gate = (
         _string(result, 'gate')
@@ -423,7 +435,10 @@ def _from_result(
     )
     if status == 'error' and code == 'session_paused':
         kind: SignalKind = 'paused'
-    elif status == 'pending_approval':
+    elif status == 'pending_approval' or (
+        isinstance(sudo_denial, dict)
+        and sudo_denial.get('status') == 'pending_approval'
+    ):
         kind = 'approval_pending'
     elif (
         tool_name in DENIAL_TOOLS
@@ -523,5 +538,11 @@ def signal_result(
                 signal_result(
                     entry, arguments, tool_name=tool_name, console_links=console_links
                 )
+        if tool_name == 'list_commands':
+            data = result.get('data')
+            entries = data.get('results') if isinstance(data, dict) else None
+            for entry in entries if isinstance(entries, list) else ():
+                if isinstance(entry, dict):
+                    signal_result({'data': entry}, arguments, tool_name=tool_name)
     except Exception:
         logger.debug('Desktop notification skipped: result hook failed')
