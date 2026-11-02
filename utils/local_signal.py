@@ -5,19 +5,21 @@ import base64
 import ctypes
 import json
 import os
-import shlex
+import re
 import shutil
 import subprocess
 import sys
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from time import monotonic
 from typing import Literal
+from xml.sax.saxutils import escape
 
 from utils.common import resolve_work_session_id
 from utils.logger import get_logger
+from utils.notification_context import ConsoleLinks
 
 logger = get_logger('local_signal')
 
@@ -25,6 +27,52 @@ type SignalKind = Literal['denied', 'approval_pending', 'paused']
 
 _stdio: ContextVar[bool] = ContextVar('local_signal_stdio', default=False)
 _tasks: set[asyncio.Task[None]] = set()
+
+# Only tools that submit host commands or move files can report a denial.
+DENIAL_TOOLS = frozenset(
+    {
+        'execute_command',
+        'execute_command_multi_server',
+        'execute_file',
+        'state_command_purpose',
+        'webftp_upload_file',
+        'webftp_upload_content',
+        'webftp_download_file',
+        'webftp_bulk_upload',
+        'webftp_bulk_download',
+        'restart_agent',
+        'upgrade_agent',
+        'install_pam',
+        'update_information',
+        'install_system_package',
+        'remove_system_package',
+        'install_python_package',
+        'remove_python_package',
+    }
+)
+_REFUSAL_GATES = frozenset(
+    {
+        'command_acl',
+        'file_acl',
+        'risk',
+        'approval',
+        'sudo',
+        'work_session',
+    }
+)
+_CONTROL_CHARACTERS = re.compile(
+    r'[\x00-\x1f\x7f\u200e\u200f\u202a-\u202e\u2066-\u2069]'
+)
+_ARGV0 = re.compile(r'[A-Za-z0-9._+-]{1,64}')
+_MAX_BODY = 256
+
+
+def is_stdio() -> bool:
+    return _stdio.get()
+
+
+def clean(value: str) -> str:
+    return _CONTROL_CHARACTERS.sub('', value)
 
 
 @contextmanager
@@ -37,15 +85,30 @@ def stdio_transport() -> Iterator[None]:
 
 
 def command_argv0(command: str) -> str:
-    # Read only the first shell word; a malformed argument later is irrelevant.
-    lexer = shlex.shlex(command, posix=sys.platform != 'win32')
-    lexer.whitespace_split = True
-    lexer.commenters = ''
-    try:
-        word = next(lexer, '').strip('"\'')
-    except ValueError:
-        return ''
-    return word.replace('\\', '/').rsplit('/', 1)[-1]
+    remaining = command.lstrip()
+    while re.match(r'[A-Za-z_][A-Za-z0-9_]*=', remaining):
+        quote = ''
+        escaped = False
+        for index, character in enumerate(remaining):
+            if escaped:
+                escaped = False
+            elif character == '\\' and quote != "'":
+                escaped = True
+            elif quote:
+                if character == quote:
+                    quote = ''
+            elif character in '"\'':
+                quote = character
+            elif character in ';|&<>()$`':
+                return ''
+            elif character.isspace():
+                remaining = remaining[index:].lstrip()
+                break
+        else:
+            return ''
+    word = re.split(r"[\s;|&<>()$`'\"\\]", remaining, maxsplit=1)[0]
+    basename = word.rsplit('/', 1)[-1]
+    return basename if _ARGV0.fullmatch(basename) else ''
 
 
 @dataclass(frozen=True)
@@ -57,6 +120,11 @@ class Signal:
     gate: str = ''
     session: str = ''
     session_id: str = ''
+    console_url: str = ''
+
+    def __post_init__(self) -> None:
+        for field in fields(self):
+            object.__setattr__(self, field.name, clean(getattr(self, field.name)))
 
     def text(self, folded: int = 0) -> tuple[str, str]:
         if self.kind == 'paused':
@@ -92,6 +160,9 @@ class Signal:
                 body += ' Open the approval or wait for an approver.'
         if folded:
             body += f' +{folded} more.'
+        body = body[:_MAX_BODY]
+        if self.console_url and len(body) + len(self.console_url) + 1 <= _MAX_BODY:
+            body += f' {self.console_url}'
         return title, body
 
 
@@ -100,14 +171,21 @@ class RateLimiter:
         self._windows: dict[tuple[str, SignalKind], tuple[float, int]] = {}
 
     def take(self, session_id: str, kind: SignalKind) -> int | None:
-        key = (session_id, kind)
         now = monotonic()
+        self._windows = {
+            key: value
+            for key, value in self._windows.items()
+            if value[1] or now - value[0] <= 24 * 60 * 60
+        }
+        key = (session_id[:128], kind)
         previous = self._windows.get(key)
         if previous is not None:
             started, folded = previous
-            if now - started < 60:
+            if 0 <= now - started < 60:
                 self._windows[key] = (started, folded + 1)
                 return None
+            if started > now:
+                folded = 0
         else:
             folded = 0
         self._windows[key] = (now, 0)
@@ -121,12 +199,15 @@ def _windows_session_zero() -> bool:
     # WinDLL is available only on Windows.
     load_library = getattr(ctypes, 'WinDLL', None)
     if load_library is None:
-        return True
-    kernel32 = load_library('kernel32', use_last_error=True)
-    session = ctypes.c_ulong()
-    if not kernel32.ProcessIdToSessionId(os.getpid(), ctypes.byref(session)):
-        return True
-    return session.value == 0
+        return False
+    try:
+        kernel32 = load_library('kernel32', use_last_error=True)
+        session = ctypes.c_ulong()
+        if not kernel32.ProcessIdToSessionId(os.getpid(), ctypes.byref(session)):
+            return False
+        return session.value == 0
+    except Exception:
+        return False
 
 
 def is_headless() -> bool:
@@ -142,9 +223,11 @@ def is_headless() -> bool:
     return sys.platform == 'win32' and _windows_session_zero()
 
 
-def _powershell_toast(title: str, body: str) -> list[str]:
+def _powershell_toast(title: str, body: str, console_url: str) -> list[str]:
     payload = base64.b64encode(
-        json.dumps({'title': title, 'body': body}).encode('utf-8')
+        json.dumps({'title': title, 'body': body, 'console_url': console_url}).encode(
+            'utf-8'
+        )
     ).decode('ascii')
     # Only base64 enters script text; decoded values become XML text nodes.
     script = f"""$ErrorActionPreference = 'Stop'
@@ -153,11 +236,15 @@ $data = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('{payload}')
 [Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime] > $null
 $xml = New-Object Windows.Data.Xml.Dom.XmlDocument
 $xml.LoadXml('<toast><visual><binding template="ToastGeneric"><text></text><text></text></binding></visual></toast>')
+if ($data.console_url) {{
+    $xml.DocumentElement.SetAttribute('launch', $data.console_url)
+    $xml.DocumentElement.SetAttribute('activationType', 'protocol')
+}}
 $nodes = $xml.GetElementsByTagName('text')
 $nodes.Item(0).InnerText = $data.title
 $nodes.Item(1).InnerText = $data.body
 $toast = [Windows.UI.Notifications.ToastNotification]::new($xml)
-[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('Alpacon').Show($toast)
+[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('{{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}}\\WindowsPowerShell\\v1.0\\powershell.exe').Show($toast)
 """
     encoded = base64.b64encode(script.encode('utf-16-le')).decode('ascii')
     return [
@@ -169,8 +256,9 @@ $toast = [Windows.UI.Notifications.ToastNotification]::new($xml)
     ]
 
 
-def notify(title: str, body: str) -> None:
+def notify(title: str, body: str, console_url: str = '') -> None:
     try:
+        title, body, console_url = clean(title), clean(body), clean(console_url)
         if is_headless():
             return
         if sys.platform == 'darwin':
@@ -196,11 +284,11 @@ def notify(title: str, body: str) -> None:
                 '-u',
                 'normal',
                 '--',
-                title,
-                body,
+                escape(title),
+                escape(body),
             ]
         elif sys.platform == 'win32':
-            command = _powershell_toast(title, body)
+            command = _powershell_toast(title, body, console_url)
         else:
             return
         # Platform tools only; values are data, never shell text.
@@ -218,28 +306,53 @@ def notify(title: str, body: str) -> None:
 
 def _string(fields: Mapping[str, object], key: str) -> str:
     value = fields.get(key)
-    return value.strip() if isinstance(value, str) else ''
+    return clean(value).strip() if isinstance(value, str) else ''
 
 
 def _from_result(
-    result: Mapping[str, object], arguments: Mapping[str, object], tool_name: str
+    result: Mapping[str, object],
+    arguments: Mapping[str, object],
+    tool_name: str,
+    console_url: str = '',
 ) -> Signal | None:
-    status = result.get('status')
-    code = result.get('code') or result.get('error_code')
-    gate = _string(result, 'gate') or _string(result, 'rejection_gate')
-    if status == 'error' and code == 'session_paused':
-        kind: SignalKind = 'paused'
-    elif status == 'pending_approval':
-        kind = 'approval_pending'
-    elif status == 'error' and gate:
-        kind = 'denied'
-    else:
-        return None
-
     data = result.get('data')
     details = result.get('details')
     row = data if isinstance(data, dict) else details
     row = row if isinstance(row, dict) else {}
+    status = result.get('status')
+    code = result.get('code') or result.get('error_code')
+    gate = _string(result, 'gate') or _string(result, 'rejection_gate')
+    missing = result.get('missing')
+    missing_classes = missing if isinstance(missing, list) else [missing]
+    excluded_missing = any(
+        value in ('presence', 'role', 'token_scope', 'auth')
+        for value in missing_classes
+    )
+    if status == 'error' and code == 'session_paused':
+        kind: SignalKind = 'paused'
+    elif status == 'pending_approval':
+        kind = 'approval_pending'
+    elif tool_name in DENIAL_TOOLS and (
+        _string(result, 'rejection_gate')
+        or _string(row, 'rejection_gate')
+        or _string(result, 'rejection_cause')
+        or _string(row, 'rejection_cause')
+        or (
+            status == 'error'
+            and result.get('status_code') == 403
+            and gate in _REFUSAL_GATES
+            and not (
+                isinstance(code, str)
+                and code.startswith(('auth_', 'mfa_', 'validation'))
+            )
+            and not excluded_missing
+        )
+    ):
+        kind = 'denied'
+    else:
+        return None
+
+    gate = gate or _string(row, 'rejection_gate')
     session_id = _string(result, 'work_session_id') or _string(result, 'session_id')
     session_id = session_id or _string(arguments, 'work_session_id')
     session_id = session_id or _string(row, 'work_session')
@@ -254,45 +367,54 @@ def _from_result(
     server_object = row.get('server')
     if not server and isinstance(server_object, dict):
         server = _string(server_object, 'name')
+    command = arguments.get('command') or result.get('command') or row.get('command')
     return Signal(
         kind=kind,
-        argv0=command_argv0(
-            _string(arguments, 'command')
-            or _string(result, 'command')
-            or _string(row, 'command')
-        ),
+        argv0=command_argv0(command if isinstance(command, str) else ''),
         server=server,
         account=_string(arguments, 'username') or _string(row, 'username'),
         gate=gate,
         session=session,
         session_id=session_id,
+        console_url=_string(result, 'console_url')
+        or _string(row, 'console_url')
+        or console_url,
     )
 
 
-async def _deliver(title: str, body: str) -> None:
+async def _deliver(title: str, body: str, console_url: str) -> None:
     try:
-        await asyncio.to_thread(notify, title, body)
+        await asyncio.to_thread(notify, title, body, console_url)
     except Exception:
         logger.debug('Desktop notification skipped: background notifier failed')
 
 
 def signal_result(
-    result: object, arguments: Mapping[str, object], *, tool_name: str
+    result: object,
+    arguments: Mapping[str, object],
+    *,
+    tool_name: str,
+    console_links: ConsoleLinks | None = None,
 ) -> None:
     try:
-        if not _stdio.get() or not isinstance(result, dict):
+        if not is_stdio() or not isinstance(result, dict):
             return
-        signal = _from_result(result, arguments, tool_name)
+        link = console_links.get(id(result)) if console_links else None
+        signal = _from_result(result, arguments, tool_name, link[1] if link else '')
         if signal is not None:
             folded = _limiter.take(signal.session_id, signal.kind)
             if folded is not None:
-                task = asyncio.create_task(_deliver(*signal.text(folded)))
+                task = asyncio.create_task(
+                    _deliver(*signal.text(folded), signal.console_url)
+                )
                 _tasks.add(task)
                 task.add_done_callback(_tasks.discard)
         # Batch submissions return normalized, per-server tool results here.
         batch = result.get('deploy_shell_results')
         if isinstance(batch, dict):
             for entry in batch.values():
-                signal_result(entry, arguments, tool_name=tool_name)
+                signal_result(
+                    entry, arguments, tool_name=tool_name, console_links=console_links
+                )
     except Exception:
         logger.debug('Desktop notification skipped: result hook failed')

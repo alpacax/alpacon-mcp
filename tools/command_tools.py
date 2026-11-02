@@ -40,6 +40,7 @@ from utils.host_transfer import (
     deadline_after,
 )
 from utils.http_client import http_client
+from utils.notification_context import remember_console_link
 from utils.tool_annotations import ADDITIVE, READ_ONLY
 from utils.types import (
     JsonValue,
@@ -1666,7 +1667,7 @@ async def _poll_command_result(
                         shell_lane=bool(command),
                         stdin_fed=stdin_fed,
                     )
-                    return response
+                    return remember_console_link(response, result)
 
                 # Terminal non-approval statuses: the command will not produce a
                 # result (denied/rejected never run; stuck gave up), so fail

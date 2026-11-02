@@ -14,6 +14,7 @@ from urllib.parse import urlparse
 from pydantic import TypeAdapter, ValidationError
 
 from utils.logger import get_logger
+from utils.notification_context import remember_console_link
 from utils.token_manager import get_token_manager
 from utils.types import (
     JsonValue,
@@ -814,7 +815,9 @@ def unwrap_http_result(
 
     code = http_error_code(result)
     if code is not None and _is_work_session_gate_code(code):
-        return work_session_gate_response(code, **error_kwargs)
+        return remember_console_link(
+            work_session_gate_response(code, **error_kwargs), body
+        )
 
     # A plan-limit refusal gets its own actionable result, ahead of the
     # generic _ERROR_CODE_HINT lookup below. The contract is 402-specific
@@ -845,7 +848,7 @@ def unwrap_http_result(
     if hint is not None:
         message = f'{message} {hint}'
 
-    return error_response(message, **error_kwargs)
+    return remember_console_link(error_response(message, **error_kwargs), body)
 
 
 def _refusal_fields(body: Mapping[str, JsonValue] | None) -> dict[str, JsonValue]:

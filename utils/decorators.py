@@ -37,6 +37,7 @@ from utils.error_handler import (
 )
 from utils.http_client import AlpaconHTTPClient, http_client
 from utils.logger import describe_for_log, get_logger
+from utils.notification_context import capture_console_links
 from utils.recovery_hints import enrich_error_response
 from utils.types import JsonValue, ToolErrorResponse, ToolResult
 from utils.workspace_resolver import resolve_workspace
@@ -575,7 +576,10 @@ def with_error_handling[**P, R](
     async def wrapper(*args: P.args, **kwargs: P.kwargs) -> ToolResult[R]:
         raised = False
         result: ToolResult[R] | None = None
-        with mfa_step_up.tool_call() as call:
+        with (
+            mfa_step_up.tool_call() as call,
+            capture_console_links(local_signal.is_stdio()) as console_links,
+        ):
             try:
                 result = await answer(*args, **kwargs)
             except mfa_step_up.MfaStepUpRequired:
@@ -583,9 +587,13 @@ def with_error_handling[**P, R](
                     raise
                 raised = True
         if call is None or not call.required:
-            local_signal.signal_result(
-                result, call_arguments(*args, **kwargs), tool_name=func_name
-            )
+            if local_signal.is_stdio():
+                local_signal.signal_result(
+                    result,
+                    call_arguments(*args, **kwargs),
+                    tool_name=func_name,
+                    console_links=console_links,
+                )
             return cast(ToolResult[R], result)
         # The holder is released above, so the link fetch is not refused by it.
         logger.info('%s needs an MFA step-up (source=%s)', func_name, call.source)

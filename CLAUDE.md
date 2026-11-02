@@ -7,7 +7,8 @@ stack: python
 
 Alpacon MCP Server: an MCP server that bridges Alpacon's zero-trust
 infrastructure access to AI assistants over plain HTTP. No alpacon CLI, no
-subprocess, no external binaries in the runtime path.
+subprocess, no external binaries in the runtime path, except that a local stdio
+server raises desktop notifications through the platform tool, best effort.
 
 ## Red lines
 

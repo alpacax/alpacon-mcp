@@ -11,14 +11,15 @@ import httpx
 import pytest
 
 from server import create_streamable_http_app, mcp
-from utils import request_signal
+from utils import local_signal, request_signal
 from utils.http_client import AlpaconHTTPClient
 
 
 @pytest.fixture(autouse=True)
 def desktop_notifications(monkeypatch):
     notifier = MagicMock()
-    monkeypatch.setattr('utils.local_signal.notify', notifier)
+    monkeypatch.setattr(local_signal, 'notify', notifier)
+    monkeypatch.setattr(local_signal, '_limiter', local_signal.RateLimiter())
     return notifier
 
 

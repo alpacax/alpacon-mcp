@@ -1,18 +1,21 @@
 """Desktop signals never affect a tool's answer or transport output."""
 
+import ast
 import asyncio
 import base64
-import inspect
 import json
 import re
 import subprocess
 import threading
 from copy import deepcopy
-from unittest.mock import Mock
+from html import escape
+from pathlib import Path
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
 import server
+from tools import command_tools
 from utils import local_signal
 from utils.common import unwrap_http_result
 from utils.decorators import mcp_tool_handler, with_error_handling
@@ -81,21 +84,36 @@ def test_exact_text_and_command_privacy(kind, title, body):
     [
         ('/usr/bin/sudo -u root id', 'sudo'),
         ('  echo secret', 'echo'),
-        ('"/opt/my tools/run" secret', 'run'),
+        ('"/opt/my tools/run" secret', ''),
         ('/usr/bin/echo "unclosed argument', 'echo'),
         ('"unclosed command', ''),
         ('', ''),
+        ('PGPASSWORD=hunter2 psql -h db', 'psql'),
+        ('AWS_SECRET_ACCESS_KEY=abc123 aws s3 ls', 'aws'),
+        ('"/opt/my tool/run --token=SECRET" x', ''),
+        ('token=abc;curl x', ''),
+        ('echo;cat /etc/shadow', 'echo'),
+        ('echo\tSECRET', 'echo'),
+        ('echo\nSECRET', 'echo'),
+        ('PGPASSWORD="two words" OTHER=abc123 psql -h db', 'psql'),
+        ("PGPASSWORD='two words' psql", 'psql'),
+        ('bad=name', ''),
+        ('a' * 65, ''),
+        ('/opt/雪/run', 'run'),
+        ('雪', ''),
     ],
 )
 def test_argv0(command, expected):
-    assert local_signal.command_argv0(command) == expected
+    argv0 = local_signal.command_argv0(command)
+    assert argv0 == expected
+    text = ' '.join(local_signal.Signal('denied', argv0=argv0).text())
+    for forbidden in ('=', 'hunter2', 'SECRET', 'abc123'):
+        assert forbidden not in text
 
 
 def test_windows_argv0(monkeypatch):
     monkeypatch.setattr('utils.local_signal.sys.platform', 'win32')
-    assert (
-        local_signal.command_argv0('"C:\\Program Files\\tool.exe" secret') == 'tool.exe'
-    )
+    assert local_signal.command_argv0('"C:\\Program Files\\tool.exe" secret') == ''
 
 
 def test_unknown_clauses_and_session_approval_text():
@@ -141,7 +159,7 @@ def test_headless_rules(monkeypatch, platform, env, session_zero, expected):
 
 @pytest.mark.parametrize(
     'session_id, succeeds, expected',
-    [(0, True, True), (1, True, False), (1, False, True)],
+    [(0, True, True), (1, True, False), (1, False, False)],
 )
 def test_windows_service_session_detection(monkeypatch, session_id, succeeds, expected):
     def get_session(pid, pointer):
@@ -176,16 +194,105 @@ def test_rate_limit_folds_by_session_and_kind(monkeypatch):
 
 
 def test_no_opt_out_or_tty_gate():
-    source = inspect.getsource(local_signal)
-    env_reads = set(re.findall(r"os\.environ\.get\('([^']+)'", source))
-    assert env_reads == {'CI', 'DISPLAY', 'WAYLAND_DISPLAY', 'DBUS_SESSION_BUS_ADDRESS'}
-    assert set(re.findall(r"'([^']+)' in os\.environ", source)) == {
+    # Scan the signal module, its decorator caller and its transport entry point.
+    sources = {
+        'utils/local_signal.py': None,
+        'utils/notification_context.py': None,
+        'utils/common.py': {'unwrap_http_result'},
+        'tools/command_tools.py': {'_poll_command_result'},
+        'utils/decorators.py': {'with_error_handling'},
+        'server.py': {'run'},
+    }
+    approved_file_env_reads = {
+        'utils/local_signal.py': {
+            'CI',
+            'DISPLAY',
+            'WAYLAND_DISPLAY',
+            'DBUS_SESSION_BUS_ADDRESS',
+        },
+        'utils/notification_context.py': set(),
+        'utils/common.py': {
+            'ALPACON_MCP_TRANSPORT',
+            'ALPACON_MCP_AUTH_ENABLED',
+            'ALPACON_WORK_SESSION',
+            'REMOTE_LEDGER_ENV',
+        },
+        'tools/command_tools.py': set(),
+        'utils/decorators.py': set(),
+        'server.py': {
+            'ALPACON_MCP_HOST',
+            'ALPACON_MCP_PORT',
+            'ALPACON_MCP_RESOURCE_URL',
+            'TOOLSETS_ENV_VAR',
+        },
+    }
+    env_reads = set()
+    for path, functions in sources.items():
+        tree = ast.parse(Path(path).read_text())
+        file_env_reads = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call):
+                name = ast.unparse(node.func)
+                if name in ('os.environ.get', 'os.getenv'):
+                    argument = node.args[0]
+                    file_env_reads.add(
+                        argument.value
+                        if isinstance(argument, ast.Constant)
+                        else ast.unparse(argument)
+                    )
+                if any(
+                    word in name.lower()
+                    for word in ('config', 'settings', 'argparse', 'isatty')
+                ):
+                    assert name == 'AuthSettings'
+            if isinstance(node, ast.Subscript) and isinstance(node.ctx, ast.Load):
+                assert ast.unparse(node.value) != 'os.environ'
+        assert file_env_reads == approved_file_env_reads[path]
+
+        nodes = (
+            [tree]
+            if functions is None
+            else [
+                node
+                for node in tree.body
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                and node.name in functions
+            ]
+        )
+        assert nodes
+        for root in nodes:
+            for node in ast.walk(root):
+                if isinstance(node, ast.Call):
+                    name = ast.unparse(node.func)
+                    assert not any(
+                        word in name.lower()
+                        for word in (
+                            'getenv',
+                            'isatty',
+                            'argparse',
+                            'config',
+                            'settings',
+                        )
+                    )
+                    if name == 'os.environ.get':
+                        assert isinstance(node.args[0], ast.Constant)
+                        env_reads.add(node.args[0].value)
+                if isinstance(node, ast.Subscript) and isinstance(node.ctx, ast.Load):
+                    assert ast.unparse(node.value) != 'os.environ'
+                if (
+                    isinstance(node, ast.Compare)
+                    and ast.unparse(node.comparators[-1]) == 'os.environ'
+                ):
+                    assert isinstance(node.left, ast.Constant)
+                    env_reads.add(node.left.value)
+    assert env_reads == {
+        'CI',
+        'DISPLAY',
+        'WAYLAND_DISPLAY',
+        'DBUS_SESSION_BUS_ADDRESS',
         'SSH_CONNECTION',
         'SSH_TTY',
     }
-    assert 'getenv(' not in source
-    assert 'isatty' not in source
-    assert 'argparse' not in source
 
 
 @pytest.mark.parametrize('platform', ['darwin', 'linux', 'win32'])
@@ -219,7 +326,7 @@ def test_platform_invocation_keeps_values_as_data(monkeypatch, platform):
             'normal',
             '--',
             title,
-            body,
+            escape(body, quote=False),
         ]
     else:
         assert command[:4] == [
@@ -235,6 +342,7 @@ def test_platform_invocation_keeps_values_as_data(monkeypatch, platform):
         assert json.loads(base64.b64decode(payload[1])) == {
             'title': title,
             'body': body,
+            'console_url': '',
         }
         assert body not in script
         assert '.InnerText = $data.body' in script
@@ -273,7 +381,10 @@ def test_platform_errors_never_raise(monkeypatch, error, capsys):
 @pytest.mark.parametrize(
     'result, expected_title',
     [
-        ({'status': 'error', 'gate': 'risk'}, 'Alpacon: command denied'),
+        (
+            {'status': 'error', 'status_code': 403, 'gate': 'risk'},
+            'Alpacon: command denied',
+        ),
         (
             {
                 'status': 'error',
@@ -303,11 +414,11 @@ async def test_hook_classification_and_unchanged_result(
     original = deepcopy(result)
 
     @with_error_handling
-    async def tool(command, username='root', work_session_id='s1'):
+    async def execute_command(command, username='root', work_session_id='s1'):
         return result
 
     with local_signal.stdio_transport():
-        answer = await tool('/usr/bin/sudo --secret hidden')
+        answer = await execute_command('/usr/bin/sudo --secret hidden')
     await drain_signals()
     assert answer is result
     assert answer == original
@@ -327,7 +438,7 @@ async def test_validated_arguments_and_http_refusal(
     monkeypatch.setattr(server.mcp, 'tool', Mock(return_value=lambda func: func))
 
     @mcp_tool_handler(description='Signal test')
-    async def tool(
+    async def execute_command(
         workspace,
         command,
         server_id,
@@ -347,10 +458,10 @@ async def test_validated_arguments_and_http_refusal(
 
     monkeypatch.setenv('ALPACON_WORK_SESSION', 'default-session')
     with local_signal.stdio_transport():
-        invalid = await tool('ws', '/bin/sudo hidden', 'invalid')
+        invalid = await execute_command('ws', '/bin/sudo hidden', 'invalid')
         assert invalid['field'] == 'server_id'
         desktop_notifications.assert_not_called()
-        result = await tool(
+        result = await execute_command(
             'ws', '/bin/sudo hidden', '550e8400-e29b-41d4-a716-446655440001'
         )
     await drain_signals()
@@ -358,6 +469,7 @@ async def test_validated_arguments_and_http_refusal(
     desktop_notifications.assert_called_once_with(
         'Alpacon: command denied',
         'sudo as root was refused by the risk gate and did not run. Session default-session.',
+        '',
     )
 
 
@@ -376,7 +488,12 @@ async def test_session_title_name_and_batch_folding(monkeypatch, desktop_notific
         )
         batch = {
             'deploy_shell_results': {
-                str(i): {'status': 'error', 'gate': 'risk', 'server_name': 'web-1'}
+                str(i): {
+                    'status': 'error',
+                    'status_code': 403,
+                    'gate': 'risk',
+                    'server_name': 'web-1',
+                }
                 for i in range(3)
             }
         }
@@ -414,12 +531,13 @@ async def test_command_context_already_in_result(desktop_notifications):
                 },
             },
             {},
-            tool_name='answer_command_purpose',
+            tool_name='state_command_purpose',
         )
     await drain_signals()
     desktop_notifications.assert_called_once_with(
         'Alpacon: command denied',
         'sudo on web-1 as operator was refused by the risk gate and did not run. Session s1.',
+        '',
     )
 
 
@@ -455,7 +573,7 @@ async def test_notifier_runs_off_loop_without_delaying_result(monkeypatch):
     thread_ids = []
     loop_thread = threading.get_ident()
 
-    def blocking_notifier(title, body):
+    def blocking_notifier(title, body, console_url=''):
         thread_ids.append(threading.get_ident())
         started.set()
         release.wait(timeout=3)
@@ -515,3 +633,374 @@ async def test_platform_failure_keeps_tool_result(monkeypatch, error, capsys):
     assert answer is result
     assert answer == original
     assert capsys.readouterr() == ('', '')
+
+
+@pytest.mark.parametrize('failure', ['missing', 'load', 'call'])
+def test_windows_session_detection_failure_attempts_notification(monkeypatch, failure):
+    loader = Mock()
+    if failure == 'load':
+        loader.side_effect = OSError('unavailable')
+    elif failure == 'call':
+        loader.return_value.ProcessIdToSessionId.side_effect = OSError('unavailable')
+    monkeypatch.setattr(
+        'utils.local_signal.ctypes.WinDLL',
+        None if failure == 'missing' else loader,
+        raising=False,
+    )
+    assert local_signal._windows_session_zero() is False
+
+
+def test_rate_state_expiration_key_cap_and_pruning(monkeypatch):
+    now = [100_000.0]
+    monkeypatch.setattr(local_signal, 'monotonic', lambda: now[0])
+    limiter = local_signal.RateLimiter()
+    limiter._windows = {
+        ('old', 'denied'): (0, 0),
+        ('folded', 'denied'): (0, 2),
+        ('future', 'denied'): (now[0] + 100, 4),
+    }
+    assert limiter.take('future', 'denied') == 0
+    assert ('old', 'denied') not in limiter._windows
+    assert limiter.take('folded', 'denied') == 2
+    assert limiter.take('s' * 1000, 'denied') == 0
+    assert limiter.take('s' * 128, 'denied') is None
+    assert max(len(key[0]) for key in limiter._windows) <= 128
+    now[0] += 24 * 60 * 60 + 1
+    limiter.take('new', 'paused')
+    assert ('future', 'denied') not in limiter._windows
+    assert ('folded', 'denied') not in limiter._windows
+    assert ('s' * 128, 'denied') in limiter._windows  # pending folded count
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('tool_name', sorted(local_signal.DENIAL_TOOLS))
+async def test_denial_tools_only_on_refusal(desktop_notifications, tool_name):
+    result = {'status': 'error', 'status_code': 403, 'gate': 'risk'}
+    with local_signal.stdio_transport():
+        local_signal.signal_result(result, {}, tool_name=tool_name)
+    await drain_signals()
+    desktop_notifications.assert_called_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    'tool_name',
+    [
+        'list_servers',
+        'get_system_info',
+        'work_session_get',
+        'list_commands',
+        'webftp_session_create',
+        'webftp_check_status',
+        'list_api_tokens',
+    ],
+)
+@pytest.mark.parametrize(
+    'result',
+    [
+        {'status': 'error', 'status_code': 403, 'gate': 'risk'},
+        {'status': 'error', 'status_code': 402, 'gate': 'plan', 'axis': 'server'},
+        {'status': 'error', 'rejection_gate': 'risk'},
+    ],
+)
+async def test_non_command_tools_never_deny(desktop_notifications, tool_name, result):
+    with local_signal.stdio_transport():
+        local_signal.signal_result(result, {}, tool_name=tool_name)
+    await drain_signals()
+    desktop_notifications.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    'result',
+    [
+        {'status': 'error', 'gate': 'risk'},
+        {'status': 'error', 'status_code': 402, 'gate': 'plan'},
+        {'status': 'error', 'status_code': 429, 'gate': 'rate'},
+        {'status': 'error', 'status_code': 401, 'gate': 'risk'},
+        {'status': 'error', 'status_code': 400, 'gate': 'risk'},
+        {'status': 'error', 'status_code': 503, 'gate': 'risk'},
+        *[
+            {'status': 'error', 'status_code': 403, 'gate': gate}
+            for gate in ('token_scope', 'role', 'presence', 'auth', 'plan', 'rate')
+        ],
+        *[
+            {
+                'status': 'error',
+                'status_code': 403,
+                'gate': 'approval',
+                'error_code': code,
+            }
+            for code in (
+                'auth_mfa_required',
+                'auth_token_mfa_missing',
+                'validation',
+                'auth_failed',
+            )
+        ],
+        {
+            'status': 'error',
+            'status_code': 403,
+            'gate': 'approval',
+            'missing': 'presence',
+        },
+        {
+            'status': 'error',
+            'status_code': 403,
+            'gate': 'approval',
+            'missing': ['presence'],
+        },
+        {'status': 'mfa_required', 'gate': 'presence'},
+        {'status': 'error', 'error_type': 'network'},
+    ],
+)
+async def test_non_refusal_errors_never_deny(desktop_notifications, result):
+    with local_signal.stdio_transport():
+        local_signal.signal_result(result, {}, tool_name='execute_command')
+    await drain_signals()
+    desktop_notifications.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    'row',
+    [
+        {'status': 'rejected', 'rejection_gate': 'risk'},
+        {'status': 'rejected', 'rejection_cause': 'approval_rejected'},
+    ],
+)
+async def test_rejected_command_row(desktop_notifications, row):
+    with local_signal.stdio_transport():
+        local_signal.signal_result(
+            {'status': 'success', 'data': row}, {}, tool_name='execute_command'
+        )
+    await drain_signals()
+    desktop_notifications.assert_called_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    'result',
+    [
+        {'status': 'error', 'status_code': 403, 'gate': 'risk'},
+        {'status': 'error', 'error_code': 'session_paused'},
+        {'status': 'pending_approval'},
+        {'status': 'success', 'data': {'status': 'rejected', 'rejection_gate': 'risk'}},
+    ],
+)
+async def test_console_link_from_response(desktop_notifications, result):
+    url = 'https://alpacon.io/example/session/1'
+    target = result.get('data', result)
+    target['console_url'] = url
+    original = deepcopy(result)
+    with local_signal.stdio_transport():
+        local_signal.signal_result(result, {}, tool_name='execute_command')
+    await drain_signals()
+    title, body, link = desktop_notifications.call_args.args
+    assert url in body
+    assert link == url
+    assert result == original
+
+
+def test_long_console_link_does_not_truncate_body():
+    signal = local_signal.Signal(
+        'denied', console_url='https://alpacon.io/' + 'x' * 256
+    )
+    assert signal.text() == local_signal.Signal('denied').text()
+    assert 'http' not in local_signal.Signal('denied').text()[1]
+
+
+@pytest.mark.parametrize('platform', ['darwin', 'linux', 'win32'])
+def test_platform_cleans_controls_and_linux_markup(monkeypatch, platform):
+    run = Mock()
+    monkeypatch.setattr('utils.local_signal.sys.platform', platform)
+    monkeypatch.setattr(local_signal, 'is_headless', lambda: False)
+    monkeypatch.setattr(
+        'utils.local_signal.shutil.which', lambda name: '/usr/bin/notify-send'
+    )
+    monkeypatch.setattr('utils.local_signal.subprocess.run', run)
+    controls = ''.join(
+        chr(c)
+        for c in [
+            *range(32),
+            127,
+            0x200E,
+            0x200F,
+            *range(0x202A, 0x202F),
+            *range(0x2066, 0x206A),
+        ]
+    )
+    title, body, url = 'A&<B>', 'body&<text>', 'https://alpacon.io/example?a=1&b=2'
+    platform_notify(title + controls, body + controls, url + controls)
+    command = run.call_args.args[0]
+    if platform == 'win32':
+        script = base64.b64decode(command[-1]).decode('utf-16-le')
+        payload = re.search(r"FromBase64String\('([^']+)'\)", script)
+        assert payload is not None
+        assert json.loads(base64.b64decode(payload[1])) == {
+            'title': title,
+            'body': body,
+            'console_url': url,
+        }
+        assert "SetAttribute('launch', $data.console_url)" in script
+        assert "SetAttribute('activationType', 'protocol')" in script
+        assert (
+            "CreateToastNotifier('{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\WindowsPowerShell\\v1.0\\powershell.exe')"
+            in script
+        )
+    elif platform == 'linux':
+        assert command[-2:] == [escape(title, quote=False), escape(body, quote=False)]
+    else:
+        assert command[-2:] == [title, body]
+    assert url not in command
+
+
+def test_server_fields_are_cleaned():
+    signal = local_signal._from_result(
+        {
+            'status': 'error',
+            'status_code': 403,
+            'gate': 'ri\u202ask',
+            'server_name': 'we\x1bb',
+            'console_url': 'https://alpacon.io/\u200ex',
+        },
+        {'username': 'ro\x00ot', 'work_session_id': 's\u20661'},
+        'execute_command',
+    )
+    assert signal is not None
+    assert signal.server == 'web'
+    assert signal.account == 'root'
+    assert signal.session == 's1'
+    assert signal.console_url == 'https://alpacon.io/x'
+
+
+@pytest.mark.asyncio
+async def test_remote_call_does_not_bind_signal_arguments(monkeypatch):
+    signature = Mock()
+    monkeypatch.setattr(
+        'utils.decorators.inspect.signature', Mock(return_value=signature)
+    )
+
+    @with_error_handling
+    async def tool():
+        return {'status': 'success'}
+
+    assert await tool() == {'status': 'success'}
+    signature.bind.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_package_fixture_never_invokes_platform_notifier(
+    desktop_notifications, monkeypatch
+):
+    real_sink = Mock(side_effect=AssertionError('platform notifier reached'))
+    monkeypatch.setattr('utils.local_signal.subprocess.run', real_sink)
+    with local_signal.stdio_transport():
+        local_signal.signal_result({'status': 'pending_approval'}, {}, tool_name='tool')
+    await drain_signals()
+    desktop_notifications.assert_called_once()
+    real_sink.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('failure', ['raise', 'hang'])
+async def test_fail_open_result_bytes_match_no_signal(monkeypatch, capsys, failure):
+    started, release = threading.Event(), threading.Event()
+    result = {
+        'status': 'pending_approval',
+        'data': {'message': 'original', 'bytes': [0, 255]},
+    }
+
+    @with_error_handling
+    async def tool():
+        return deepcopy(result)
+
+    baseline = json.dumps(await tool(), ensure_ascii=False).encode()
+    baseline_output = capsys.readouterr()
+
+    def notifier(*args):
+        started.set()
+        if failure == 'raise':
+            raise OSError('unavailable')
+        release.wait(timeout=3)
+
+    monkeypatch.setattr(local_signal, 'notify', notifier)
+    try:
+        with local_signal.stdio_transport():
+            answer = await asyncio.wait_for(tool(), timeout=1)
+        assert json.dumps(answer, ensure_ascii=False).encode() == baseline
+        assert capsys.readouterr() == baseline_output
+        assert await asyncio.to_thread(started.wait, 1)
+    finally:
+        release.set()
+        await drain_signals()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    'code, gate',
+    [
+        ('risk_denied', 'risk'),
+        ('session_paused', 'work_session'),
+        ('work_session_not_active', 'work_session'),
+    ],
+)
+async def test_upstream_refusal_link_preserves_tool_response(
+    desktop_notifications, code, gate
+):
+    url = 'https://alpacon.io/example/sessions/1'
+    raw = {
+        'error': 'HTTP Error',
+        'status_code': 403,
+        'response': json.dumps({'code': code, 'gate': gate, 'console_url': url}),
+    }
+
+    @with_error_handling
+    async def execute_command():
+        return unwrap_http_result(raw, default_message='Refused')
+
+    baseline = json.dumps(await execute_command()).encode()
+    with local_signal.stdio_transport():
+        result = await execute_command()
+    await drain_signals()
+    assert json.dumps(result).encode() == baseline
+    assert 'console_url' not in result
+    assert desktop_notifications.call_args.args[2] == url
+    assert url in desktop_notifications.call_args.args[1]
+
+
+@pytest.mark.asyncio
+async def test_pending_command_row_link_preserves_tool_response(
+    monkeypatch, desktop_notifications
+):
+    url = 'https://alpacon.io/example/commands/1'
+    monkeypatch.setattr(
+        command_tools,
+        '_get_command_result',
+        AsyncMock(return_value={'status': 'awaiting_approval', 'console_url': url}),
+    )
+
+    @with_error_handling
+    async def execute_command():
+        return await command_tools._poll_command_result(
+            'cmd-1', 'example', 1, 'ap1', None
+        )
+
+    baseline = json.dumps(await execute_command()).encode()
+    with local_signal.stdio_transport():
+        result = await execute_command()
+    await drain_signals()
+    assert json.dumps(result).encode() == baseline
+    assert 'console_url' not in result
+    assert desktop_notifications.call_args.args[2] == url
+
+
+def test_command_controls_are_delimiters_before_cleaning():
+    signal = local_signal._from_result(
+        {'status': 'error', 'status_code': 403, 'gate': 'risk'},
+        {'command': 'echo\tSECRET'},
+        'execute_command',
+    )
+    assert signal is not None
+    assert signal.argv0 == 'echo'
+    assert 'SECRET' not in signal.text()[1]
