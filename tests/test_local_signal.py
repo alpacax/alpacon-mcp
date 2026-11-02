@@ -82,7 +82,7 @@ def test_exact_text_and_command_privacy(kind, title, body):
 @pytest.mark.parametrize(
     'command, expected',
     [
-        ('/usr/bin/sudo -u root id', 'sudo'),
+        ('/usr/bin/sudo -u x id', 'sudo'),
         ('  echo secret', 'echo'),
         ('"/opt/my tools/run" secret', ''),
         ('/usr/bin/echo "unclosed argument', 'echo'),
