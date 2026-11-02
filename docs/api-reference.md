@@ -944,6 +944,8 @@ Open a session. **Parameters:** `workspace`, `scopes` (array; agents may request
 
 A session that needs human approval comes back with `status="pending_approval"`, and no command or file transfer runs in it until a human approves it out-of-band (Alpacon web console or Slack). Surface it to a person, then call `work_session_get` and proceed once `data.status` is `active`; stop if it is `rejected`, `cancelled`, `expired`, `revoked`, or `completed`, since those never become active.
 
+When the created session is `pending`, `approved`, or `active`, the result's `next_action` names `work_session_update` and the returned session ID: use it, with every server the session keeps, to widen this session if more servers are needed instead of creating another one. For a pending session, this guidance follows the existing human-approval and status-check instructions. Refusal and error results do not gain this guidance.
+
 ### `work_session_get` / `work_session_list`
 Read one session (`session_id`) or list them (`status`, `requester_type`, `limit` filters).
 
