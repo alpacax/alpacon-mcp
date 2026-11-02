@@ -53,7 +53,7 @@ class MfaStepUpRequired(ToolError):  # noqa: N818  # a signal, named for the sta
     """Alpacon refused with ``auth_mfa_required``. Not an UpstreamAuthError, which comes
     with a request_signal entry and so a re-auth challenge in place of the result."""
 
-    def __init__(self, source: str = ''):
+    def __init__(self, source: str = '') -> None:
         self.source = source
         super().__init__('MFA step-up required')
 

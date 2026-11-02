@@ -905,9 +905,8 @@ def register_oauth_routes(mcp_server: RouteRegistry) -> None:
             device_id = _mint_device_id()
         scope = f'{_strip_device_scopes(scope)} device:{device_id}'.strip()
 
-        # A ledger tool asks for `ledger:<workspace>` the way an auth_token_mfa_missing
-        # refusal asks for `mfa`; it becomes a sign-in for the ledger audience ahead
-        # of the regular one, and never reaches Auth0 as a scope.
+        # A ledger:<workspace> challenge starts the ledger sign-in before the regular one;
+        # strip the pseudo-scope before either authorization reaches Auth0.
         ledger_org = _ledger_org(scope)
         scope = _strip_ledger_scopes(scope)
 
