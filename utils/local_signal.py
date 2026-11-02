@@ -3,12 +3,14 @@
 import asyncio
 import base64
 import ctypes
+import ipaddress
 import json
 import os
 import re
 import shutil
 import subprocess
 import sys
+import unicodedata
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -18,7 +20,10 @@ from typing import Literal, get_args
 from urllib.parse import urlsplit
 from xml.sax.saxutils import escape
 
+import httpx
+
 from utils.common import WorkSessionGateCode, resolve_work_session_id
+from utils.http_client import http_client
 from utils.logger import get_logger
 from utils.notification_context import ConsoleLinks
 
@@ -82,12 +87,55 @@ def clean(value: str) -> str:
     return _CONTROL_CHARACTERS.sub('', value)
 
 
-def _https_console_url(value: str) -> str:
-    value = clean(value)
+def _normalized_host(host: str) -> str:
+    host = host.lower()
     try:
-        parsed = urlsplit(value)
-        return value if parsed.scheme == 'https' and parsed.hostname else ''
+        return str(ipaddress.ip_address(host))
     except ValueError:
+        host = httpx.URL(host=host).raw_host.decode('ascii').removesuffix('.')
+        if not all(
+            re.fullmatch(r'[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?', label)
+            for label in host.split('.')
+        ):
+            raise ValueError('Invalid URL host')
+        return host
+
+
+def _origin(value: str) -> tuple[str, str, int]:
+    if len(value) > 2048 or any(
+        unicodedata.category(character) in ('Cc', 'Cf') for character in value
+    ):
+        raise ValueError('Invalid URL text')
+    parsed = urlsplit(value)
+    if (
+        parsed.scheme not in ('http', 'https')
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.netloc.endswith(':')
+    ):
+        raise ValueError('Invalid URL origin')
+    default_port = 443 if parsed.scheme == 'https' else 80
+    port = parsed.port if parsed.port is not None else default_port
+    return parsed.scheme, _normalized_host(parsed.hostname), port
+
+
+def _console_url(value: str, workspace_url: str, base_domain: str = '') -> str:
+    try:
+        scheme, host, port = _origin(value)
+        workspace_scheme, workspace_host, workspace_port = _origin(workspace_url)
+        if scheme != workspace_scheme:
+            return ''
+        if host == workspace_host and port == workspace_port:
+            return value
+        if base_domain:
+            domain = _normalized_host(base_domain)
+            if (host == domain or host.endswith('.' + domain)) and port == (
+                443 if scheme == 'https' else 80
+            ):
+                return value
+        return ''
+    except (ValueError, httpx.InvalidURL):
         return ''
 
 
@@ -137,11 +185,17 @@ class Signal:
     session: str = ''
     session_id: str = ''
     console_url: str = ''
+    workspace_url: str = ''
+    base_domain: str = ''
 
     def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            'console_url',
+            _console_url(self.console_url, self.workspace_url, self.base_domain),
+        )
         for field in fields(self):
             object.__setattr__(self, field.name, clean(getattr(self, field.name)))
-        object.__setattr__(self, 'console_url', _https_console_url(self.console_url))
 
     def text(self, folded: int = 0) -> tuple[str, str]:
         if self.kind == 'paused':
@@ -273,10 +327,17 @@ $toast = [Windows.UI.Notifications.ToastNotification]::new($xml)
     ]
 
 
-def notify(title: str, body: str, console_url: str = '') -> None:
+def notify(
+    title: str,
+    body: str,
+    console_url: str = '',
+    *,
+    workspace_url: str = '',
+    base_domain: str = '',
+) -> None:
     try:
         title, body = clean(title), clean(body)
-        console_url = _https_console_url(console_url)
+        console_url = _console_url(console_url, workspace_url, base_domain)
         if is_headless():
             return
         if sys.platform == 'darwin':
@@ -325,6 +386,11 @@ def notify(title: str, body: str, console_url: str = '') -> None:
 def _string(fields: Mapping[str, object], key: str) -> str:
     value = fields.get(key)
     return clean(value).strip() if isinstance(value, str) else ''
+
+
+def _raw_console_url(fields: Mapping[str, object]) -> str:
+    value = fields.get('console_url')
+    return value if isinstance(value, str) else ''
 
 
 def _from_result(
@@ -392,6 +458,11 @@ def _from_result(
     if not server and isinstance(server_object, dict):
         server = _string(server_object, 'name')
     command = arguments.get('command') or result.get('command') or row.get('command')
+    console_url = _raw_console_url(result) or _raw_console_url(row) or console_url
+    workspace, region = arguments.get('workspace'), arguments.get('region')
+    workspace_url = ''
+    if console_url and isinstance(workspace, str) and isinstance(region, str):
+        workspace_url = http_client.get_base_url(region, workspace)
     return Signal(
         kind=kind,
         argv0=command_argv0(command if isinstance(command, str) else ''),
@@ -400,15 +471,25 @@ def _from_result(
         gate=gate,
         session=session,
         session_id=session_id,
-        console_url=_string(result, 'console_url')
-        or _string(row, 'console_url')
-        or console_url,
+        console_url=console_url,
+        workspace_url=workspace_url,
+        # MCP has no base_domain configuration; never infer one from the API host.
     )
 
 
-async def _deliver(title: str, body: str, console_url: str) -> None:
+async def _deliver(title: str, body: str, signal: Signal) -> None:
     try:
-        await asyncio.to_thread(notify, title, body, console_url)
+        if signal.console_url:
+            await asyncio.to_thread(
+                notify,
+                title,
+                body,
+                signal.console_url,
+                workspace_url=signal.workspace_url,
+                base_domain=signal.base_domain,
+            )
+        else:
+            await asyncio.to_thread(notify, title, body, '')
     except Exception:
         logger.debug('Desktop notification skipped: background notifier failed')
 
@@ -428,9 +509,7 @@ def signal_result(
         if signal is not None:
             folded = _limiter.take(signal.session_id, signal.kind)
             if folded is not None:
-                task = asyncio.create_task(
-                    _deliver(*signal.text(folded), signal.console_url)
-                )
+                task = asyncio.create_task(_deliver(*signal.text(folded), signal))
                 _tasks.add(task)
                 task.add_done_callback(_tasks.discard)
         # Batch submissions return normalized, per-server tool results here.

@@ -45,6 +45,182 @@ async def drain_signals():
 
 
 @pytest.mark.parametrize(
+    'workspace_url, url, kept',
+    [
+        ('https://alpacax.ap1.alpacon.io', 'https://alpacon.io/alpacax/1', False),
+        ('https://alpacax.ap1.alpacon.io', 'https://alpacax.ap1.alpacon.io/1', True),
+        ('http://10.0.0.5:8080', 'http://10.0.0.5:8080/1', True),
+        ('http://10.0.0.5:8080', 'http://10.0.0.6:8080/1', False),
+        ('https://alpacax.ap1.alpacon.io', 'https://evil-alpacon.io/1', False),
+        ('https://alpacax.ap1.alpacon.io', 'https://alpacon.io.evil.com/1', False),
+    ],
+)
+def test_console_link_uses_resolved_workspace_origin(
+    monkeypatch, workspace_url, url, kept
+):
+    base_url = Mock(return_value=workspace_url)
+    monkeypatch.setattr('utils.http_client.http_client.get_base_url', base_url)
+    signal = local_signal._from_result(
+        {'status': 'pending_approval', 'console_url': url},
+        {'workspace': 'alpacax', 'region': 'ap1'},
+        'execute_command',
+    )
+    assert signal is not None
+    assert signal.console_url == (url if kept else '')
+    base_url.assert_called_once_with('ap1', 'alpacax')
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('platform', ['darwin', 'linux', 'win32'])
+@pytest.mark.parametrize(
+    'workspace_url, base_domain, url, kept',
+    [
+        (
+            'https://alpacax.ap1.alpacon.io',
+            'alpacon.io',
+            'https://alpacon.io/alpacax/1',
+            True,
+        ),
+        (
+            'https://alpacax.ap1.alpacon.io',
+            '',
+            'https://alpacax.ap1.alpacon.io/1',
+            True,
+        ),
+        ('http://10.0.0.5:8080', '', 'http://10.0.0.5:8080/1', True),
+        ('http://10.0.0.5:8080', '', 'http://10.0.0.6:8080/1', False),
+        (
+            'https://alpacax.ap1.alpacon.io',
+            'alpacon.io',
+            'https://evil-alpacon.io/1',
+            False,
+        ),
+        (
+            'https://alpacax.ap1.alpacon.io',
+            'alpacon.io',
+            'https://alpacon.io.evil.com/1',
+            False,
+        ),
+        (
+            'https://alpacax.ap1.alpacon.io',
+            'alpacon.io',
+            'https://alpacon.io:8443/1',
+            False,
+        ),
+        ('https://alpacax.ap1.alpacon.io', 'alpacon.io', 'http://alpacon.io/1', False),
+        (
+            'https://alpacax.ap1.alpacon.io',
+            'alpacon.io',
+            'https://user@alpacon.io/1',
+            False,
+        ),
+        ('https://alpacax.ap1.alpacon.io', 'alpacon.io', 'file:///tmp/example', False),
+        ('https://alpacax.ap1.alpacon.io', 'alpacon.io', 'javascript:alert(1)', False),
+        (
+            'https://alpacax.ap1.alpacon.io',
+            'alpacon.io',
+            'search-ms:query=example',
+            False,
+        ),
+        ('https://alpacax.ap1.alpacon.io', '', 'https://alpacon.io/alpacax/1', False),
+        (
+            'https://alpacax.ap1.alpacon.io',
+            'alpacon.io',
+            'https://x.alpacon.io/1',
+            True,
+        ),
+        (
+            'https://alpacax.ap1.alpacon.io',
+            'alpacon.io',
+            'https://ALPACON.IO.:443/1',
+            True,
+        ),
+        ('https://bücher.example', '', 'https://xn--bcher-kva.example/1', True),
+        ('https://faß.example', '', 'https://xn--fa-hia.example/1', True),
+        ('https://faß.example', '', 'https://fass.example/1', False),
+        (
+            'https://workspace.example',
+            'bücher.example',
+            'https://x.xn--bcher-kva.example/1',
+            True,
+        ),
+        (
+            'https://alpacax.ap1.alpacon.io',
+            '',
+            'https://alpacax.ap1.alpacon.io:443/1',
+            True,
+        ),
+        ('http://10.0.0.5:8080', '', 'http://10.0.0.5/1', False),
+        (
+            'http://workspace.example:8080',
+            'example',
+            'http://console.example:80/1',
+            True,
+        ),
+        (
+            'http://workspace.example:8080',
+            'example',
+            'http://console.example:8080/1',
+            False,
+        ),
+        ('http://10.0.0.5:8080', '', 'https://10.0.0.5:8080/1', False),
+        ('https://alpacon.io', '', 'https://alpacon.io/\n1', False),
+        ('https://alpacon.io', '', 'https://alpacon.io/\x851', False),
+        ('https://alpacon.io', '', 'https://alpacon.io/\u200e1', False),
+        ('https://alpacon.io', '', 'https://alpacon.io/' + 'x' * 2030, False),
+        ('https://alpacon.io', '', 'https://alpacon.io/' + 'x' * 2029, True),
+        ('https://alpacon.io', '', 'https://alpacon.io:invalid/1', False),
+        ('https://alpacon.io', '', 'https://alpacon.io:65536/1', False),
+        ('https://alpacon.io', '', 'https://alpacon.io:/1', False),
+        ('https://alpacon.io', '', 'https://alpacon.io\\@evil.com/1', False),
+        ('https://alpacon.io', '', '//alpacon.io/1', False),
+        ('https://alpacon.io', '', '/1', False),
+        ('https://[::1]:8443', '', 'https://[::1]:8443/1', True),
+        ('https://alpacon.io', '', 'https://alpacon.io../1', False),
+    ],
+)
+async def test_console_link_rule_on_every_platform(
+    monkeypatch, capsys, platform, workspace_url, base_domain, url, kept
+):
+    run = Mock()
+    monkeypatch.setattr('utils.local_signal.sys.platform', platform)
+    monkeypatch.setattr(local_signal, 'is_headless', lambda: False)
+    monkeypatch.setattr(local_signal, 'notify', platform_notify)
+    monkeypatch.setattr(
+        'utils.local_signal.shutil.which', lambda name: '/usr/bin/notify-send'
+    )
+    monkeypatch.setattr('utils.local_signal.subprocess.run', run)
+    signal = local_signal.Signal(
+        'denied', console_url=url, workspace_url=workspace_url, base_domain=base_domain
+    )
+    assert signal.console_url == (url if kept else '')
+    title, body = signal.text()
+    await local_signal._deliver(title, body, signal)
+    run.assert_called_once()
+    command = run.call_args.args[0]
+    if platform == 'win32':
+        script = base64.b64decode(command[-1]).decode('utf-16-le')
+        payload = re.search(r"FromBase64String\('([^']+)'\)", script)
+        assert payload is not None
+        arguments = json.loads(base64.b64decode(payload[1]))
+        assert arguments == {
+            'title': title,
+            'body': body,
+            'console_url': signal.console_url,
+        }
+    elif platform == 'linux':
+        assert command[-2:] == [escape(title, quote=False), escape(body, quote=False)]
+        arguments = command
+    else:
+        assert command[-2:] == [title, body]
+        arguments = command
+    if not kept:
+        assert url not in json.dumps(arguments)
+        assert body == local_signal.Signal('denied').text()[1]
+    assert capsys.readouterr() == ('', '')
+
+
+@pytest.mark.parametrize(
     'kind, title, body',
     [
         (
@@ -919,12 +1095,16 @@ async def test_rejected_command_row(desktop_notifications, row):
     ],
 )
 async def test_console_link_from_response(desktop_notifications, result):
-    url = 'https://alpacon.io/example/session/1'
+    url = 'https://example.ap1.alpacon.io/session/1'
     target = result.get('data', result)
     target['console_url'] = url
     original = deepcopy(result)
     with local_signal.stdio_transport():
-        local_signal.signal_result(result, {}, tool_name='execute_command')
+        local_signal.signal_result(
+            result,
+            {'workspace': 'example', 'region': 'ap1'},
+            tool_name='execute_command',
+        )
     await drain_signals()
     title, body, link = desktop_notifications.call_args.args
     assert url in body
@@ -934,8 +1114,11 @@ async def test_console_link_from_response(desktop_notifications, result):
 
 def test_long_console_link_does_not_truncate_body():
     signal = local_signal.Signal(
-        'denied', console_url='https://alpacon.io/' + 'x' * 256
+        'denied',
+        console_url='https://alpacon.io/' + 'x' * 256,
+        workspace_url='https://alpacon.io',
     )
+    assert signal.console_url
     assert signal.text() == local_signal.Signal('denied').text()
     assert 'http' not in local_signal.Signal('denied').text()[1]
 
@@ -998,7 +1181,9 @@ def test_platform_cleans_controls_and_linux_markup(monkeypatch, platform):
         ]
     )
     title, body, url = 'A&<B>', 'body&<text>', 'https://alpacon.io/example?a=1&b=2'
-    platform_notify(title + controls, body + controls, url + controls)
+    platform_notify(
+        title + controls, body + controls, url, workspace_url='https://alpacon.io'
+    )
     command = run.call_args.args[0]
     if platform == 'win32':
         script = base64.b64decode(command[-1]).decode('utf-16-le')
@@ -1029,16 +1214,21 @@ def test_server_fields_are_cleaned():
             'status_code': 403,
             'gate': 'ri\u202ask',
             'server_name': 'we\x1bb',
-            'console_url': 'https://alpacon.io/\u200ex',
+            'console_url': 'https://example.ap1.alpacon.io/\u200ex',
         },
-        {'username': 'ro\x00ot', 'work_session_id': 's\u20661'},
+        {
+            'username': 'ro\x00ot',
+            'work_session_id': 's\u20661',
+            'workspace': 'example',
+            'region': 'ap1',
+        },
         'execute_command',
     )
     assert signal is not None
     assert signal.server == 'web'
     assert signal.account == 'root'
     assert signal.session == 's1'
-    assert signal.console_url == 'https://alpacon.io/x'
+    assert signal.console_url == ''
 
 
 @pytest.mark.asyncio
@@ -1115,7 +1305,7 @@ async def test_fail_open_result_bytes_match_no_signal(monkeypatch, capsys, failu
 async def test_upstream_refusal_link_preserves_tool_response(
     desktop_notifications, code, gate
 ):
-    url = 'https://alpacon.io/example/sessions/1'
+    url = 'https://example.ap1.alpacon.io/sessions/1'
     raw = {
         'error': 'HTTP Error',
         'status_code': 403,
@@ -1123,7 +1313,7 @@ async def test_upstream_refusal_link_preserves_tool_response(
     }
 
     @with_error_handling
-    async def execute_command():
+    async def execute_command(workspace='example', region='ap1'):
         return unwrap_http_result(raw, default_message='Refused')
 
     baseline = json.dumps(await execute_command()).encode()
@@ -1140,7 +1330,7 @@ async def test_upstream_refusal_link_preserves_tool_response(
 async def test_pending_command_row_link_preserves_tool_response(
     monkeypatch, desktop_notifications
 ):
-    url = 'https://alpacon.io/example/commands/1'
+    url = 'https://example.ap1.alpacon.io/commands/1'
     monkeypatch.setattr(
         command_tools,
         '_get_command_result',
@@ -1148,7 +1338,7 @@ async def test_pending_command_row_link_preserves_tool_response(
     )
 
     @with_error_handling
-    async def execute_command():
+    async def execute_command(workspace='example', region='ap1'):
         return await command_tools._poll_command_result(
             'cmd-1', 'example', 1, 'ap1', None
         )
