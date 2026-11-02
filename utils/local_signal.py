@@ -74,6 +74,7 @@ _REFUSAL_GATES = frozenset(
 _WORK_SESSION_GATE_CODES = frozenset(get_args(WorkSessionGateCode.__value__))
 _APPROVAL_LAPSES = frozenset({'approval_expired', 'approval_cancelled'})
 _ARGV0 = re.compile(r'[A-Za-z0-9._+-]{1,64}')
+_ACCOUNT = re.compile(r'[a-z_][a-z0-9_.-]{0,31}\$?')
 _ASSIGNMENT = re.compile(r'[A-Za-z_][A-Za-z0-9_]*=')
 _SESSION_ID = re.compile(r'[A-Za-z0-9_-]{1,64}')
 _WORD_SPACE = ' \t\n\r'
@@ -182,6 +183,8 @@ def command_argv0(command: str) -> str:
         escaped = False
         while index < len(command):
             character = command[index]
+            if not assignment and character in '\'"\\':
+                return ''
             if (not character.isascii()) or (
                 (ord(character) < 32 or ord(character) == 127)
                 and character not in _WORD_SPACE
@@ -232,6 +235,8 @@ class Signal:
     workspace_url: str = ''
 
     def __post_init__(self) -> None:
+        if not _ACCOUNT.fullmatch(self.account):
+            object.__setattr__(self, 'account', '')
         object.__setattr__(
             self,
             'console_url',
@@ -241,9 +246,9 @@ class Signal:
             object.__setattr__(self, field.name, clean(getattr(self, field.name)))
         if not _SESSION_ID.fullmatch(self.session):
             object.__setattr__(self, 'session', '')
-        for name in ('server', 'account'):
-            value = getattr(self, name)
-            object.__setattr__(self, name, '' if '://' in value else value[:64])
+        object.__setattr__(
+            self, 'server', '' if '://' in self.server else self.server[:64]
+        )
 
     def text(self, folded: int = 0) -> tuple[str, str]:
         if self.kind == 'paused':
@@ -332,18 +337,7 @@ def _windows_session_zero() -> bool:
 
 
 def is_headless() -> bool:
-    if os.environ.get('CI'):
-        return True
-    if 'SSH_CONNECTION' in os.environ or 'SSH_TTY' in os.environ:
-        return True
-    # A plain str so mypy checks every branch on every platform it runs on.
-    platform: str = sys.platform
-    if platform.startswith('linux'):
-        return not (
-            (os.environ.get('DISPLAY') or os.environ.get('WAYLAND_DISPLAY'))
-            and os.environ.get('DBUS_SESSION_BUS_ADDRESS')
-        )
-    return platform == 'win32' and _windows_session_zero()
+    return sys.platform == 'win32' and _windows_session_zero()
 
 
 def _powershell_toast(title: str, body: str, console_url: str) -> list[str]:
@@ -370,13 +364,18 @@ $toast = [Windows.UI.Notifications.ToastNotification]::new($xml)
 [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('{{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}}\\WindowsPowerShell\\v1.0\\powershell.exe').Show($toast)
 """
     encoded = base64.b64encode(script.encode('utf-16-le')).decode('ascii')
-    system_root = os.environ.get('SystemRoot') or r'C:\Windows'
-    if not ntpath.isabs(system_root) or not ntpath.splitdrive(system_root)[0]:
-        system_root = r'C:\Windows'
+    system_directory = ctypes.create_unicode_buffer(32768)
+    # windll is available only on Windows.
+    windll = getattr(ctypes, 'windll')  # noqa: B009
+    length = windll.kernel32.GetSystemDirectoryW(
+        system_directory, len(system_directory)
+    )
+    if not 0 < length < len(system_directory):
+        raise OSError('Could not resolve the Windows system directory')
     return [
         ntpath.join(
-            system_root,
-            r'System32\WindowsPowerShell\v1.0\powershell.exe',
+            system_directory.value,
+            r'WindowsPowerShell\v1.0\powershell.exe',
         ),
         '-NoProfile',
         '-NonInteractive',
@@ -543,7 +542,11 @@ def _from_result(
         kind=kind,
         argv0=command_argv0(command if isinstance(command, str) else ''),
         server=server,
-        account=_string(arguments, 'username') or _string(row, 'username'),
+        account=(
+            _raw_string(result, 'username')
+            or _raw_string(row, 'username')
+            or _raw_string(arguments, 'username')
+        ),
         gate=gate,
         session=session_id,
         session_id=session_id,

@@ -1275,6 +1275,9 @@ does not grant access or retry an operation.
 Notifications contain only the command's first word with its path stripped, the
 server name when already available, the OS account, the gate, and the Work Session
 id or title. Unknown clauses are omitted, and command arguments are never shown.
+The account must match `[a-z_][a-z0-9_.-]{0,31}\$?`; a server-provided username
+takes precedence over the tool argument. A first word containing a quote or
+backslash is omitted.
 Console links must share the workspace API origin, or, for a workspace on a
 subdomain of the built-in cloud domain `alpacon.io`, use `alpacon.io` or one of
 its subdomains with the same scheme and its default port; all links must be
@@ -1284,12 +1287,14 @@ Repeated events for the same session and kind are limited to one notification
 per 60 seconds; the next notification appends `+N more` for events folded during
 the previous window. Without a session id, the limit applies to the kind alone.
 
-SSE and streamable-http never raise desktop notifications. Local notifications
-are also skipped in CI, SSH shells, Linux sessions without a display and a D-Bus
-session bus, and Windows session 0. They use the operating system's notification
-tools without a new dependency or an opt-out setting. Delivery runs in the
-background with a two-second timeout and failures logged only at debug level.
-Tool results and stdout/stderr are unchanged.
+SSE and streamable-http never raise desktop notifications. For every emitted
+local event under the rate limit, the operating system's notification tool is
+attempted, including in CI, SSH shells, and sessions without a desktop. Only
+Windows session 0, reported by the OS, is skipped. There is no new dependency or
+opt-out setting. Delivery runs in the background with a two-second timeout and
+fails silently when the desktop cannot show it, with a debug log only. Windows
+PowerShell is located using the system directory reported by the OS. Tool results
+and stdout/stderr are unchanged; MCP writes no banner.
 
 ### Plan-limit refusals (402)
 

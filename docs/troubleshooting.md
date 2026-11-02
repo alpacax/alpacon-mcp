@@ -330,14 +330,17 @@ Notifications are limited to one per Work Session and kind per 60 seconds.
 Suppressed events appear as `+N more` on the next notification. Command arguments
 are omitted, as are server names the response does not already provide.
 
-No notification appears over SSE or streamable-http, in CI, or in an SSH shell.
-On Linux, a display (`DISPLAY` or `WAYLAND_DISPLAY`),
-`DBUS_SESSION_BUS_ADDRESS`, and `notify-send` on PATH are required. Windows
-services in session 0 do not notify. On macOS, delivery uses `/usr/bin/osascript`;
-on Windows, it uses PowerShell and the Windows toast API. OS notification
+No notification appears over SSE or streamable-http. For every emitted local
+event under the rate limit, notification delivery is attempted even in CI, SSH
+shells, and sessions without a desktop. Only Windows services in session 0,
+reported by the OS, are skipped. On Linux, delivery uses `notify-send` from
+`/usr/bin` or `/bin`; on macOS, `/usr/bin/osascript`; on Windows, PowerShell from
+the OS-reported system directory and the Windows toast API. OS notification
 permissions and Focus/Do Not Disturb settings also control what appears.
-An unavailable or failing platform tool is skipped silently, with a debug log;
-it cannot delay or change the tool result. There is no local-signal opt-out setting.
+Delivery runs in the background with a two-second timeout and fails silently
+when the desktop cannot show it, with a debug log only. It cannot delay or change
+the tool result or stdout/stderr. MCP writes no banner. There is no local-signal
+opt-out setting.
 
 ---
 

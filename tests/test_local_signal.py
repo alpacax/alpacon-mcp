@@ -3,6 +3,7 @@
 import ast
 import asyncio
 import base64
+import ctypes
 import importlib
 import json
 import re
@@ -39,8 +40,17 @@ def signal_environment(monkeypatch):
         'SystemRoot',
     ):
         monkeypatch.delenv(key, raising=False)
+
+    def get_system_directory(buffer, size):
+        buffer.value = r'C:\Windows\System32'
+        return len(buffer.value)
+
+    kernel = Mock()
+    kernel.GetSystemDirectoryW.side_effect = get_system_directory
+    monkeypatch.setattr(ctypes, 'windll', Mock(kernel32=kernel), raising=False)
     monkeypatch.setattr(local_signal, '_limiter', local_signal.RateLimiter())
     monkeypatch.setattr('utils.local_signal.sys.platform', 'darwin')
+    return kernel
 
 
 async def drain_signals():
@@ -420,6 +430,13 @@ def test_exact_text_and_command_privacy(kind, title, body):
         ('psql$X$(printf a b)', ''),
         (r'psql\ $(printf a b)', ''),
         ('psql "$(printf a b)"', 'psql'),
+        ('cu"rl" secret', ''),
+        ("cu'rl' secret", ''),
+        (r'cu\rl secret', ''),
+        ('/opt/"tools"/curl secret', ''),
+        ('curl" secret', ''),
+        ("curl' secret", ''),
+        (r'curl\ secret', ''),
         ('bad=name', ''),
         ('a' * 65, ''),
         ('/opt/雪/run', ''),
@@ -456,12 +473,12 @@ def test_unknown_clauses_and_session_approval_text():
     [
         ('darwin', {}, False, False),
         ('darwin', {'CI': ''}, False, False),
-        ('darwin', {'CI': 'false'}, False, True),
-        ('darwin', {'SSH_CONNECTION': ''}, False, True),
-        ('darwin', {'SSH_TTY': '/dev/pts/1'}, False, True),
-        ('linux', {}, False, True),
-        ('linux', {'DISPLAY': ':0'}, False, True),
-        ('linux', {'DBUS_SESSION_BUS_ADDRESS': 'unix:path=bus'}, False, True),
+        ('darwin', {'CI': 'false'}, False, False),
+        ('darwin', {'SSH_CONNECTION': ''}, False, False),
+        ('darwin', {'SSH_TTY': '/dev/pts/1'}, False, False),
+        ('linux', {}, False, False),
+        ('linux', {'DISPLAY': ':0'}, False, False),
+        ('linux', {'DBUS_SESSION_BUS_ADDRESS': 'unix:path=bus'}, False, False),
         ('linux', {'DISPLAY': ':0', 'DBUS_SESSION_BUS_ADDRESS': 'bus'}, False, False),
         (
             'linux',
@@ -479,6 +496,73 @@ def test_headless_rules(monkeypatch, platform, env, session_zero, expected):
     for key, value in env.items():
         monkeypatch.setenv(key, value)
     assert local_signal.is_headless() is expected
+
+
+@pytest.mark.asyncio
+async def test_environment_does_not_skip_notification(
+    monkeypatch, desktop_notifications
+):
+    monkeypatch.setenv('CI', '1')
+    monkeypatch.setenv('SSH_TTY', '/dev/pts/1')
+    monkeypatch.setattr('utils.local_signal.sys.platform', 'linux')
+    with local_signal.stdio_transport():
+        local_signal.signal_result(
+            {'status': 'pending_approval'}, {}, tool_name='execute_command'
+        )
+    await drain_signals()
+    desktop_notifications.assert_called_once()
+
+    run = Mock()
+    monkeypatch.setattr('utils.local_signal.subprocess.run', run)
+    monkeypatch.setattr(
+        'utils.local_signal.shutil.which', lambda name, **kwargs: '/usr/bin/notify-send'
+    )
+    platform_notify('title', 'body')
+    run.assert_called_once()
+
+
+@pytest.mark.parametrize('source', ['argument', 'row', 'result'])
+@pytest.mark.parametrize(
+    'username, expected',
+    [
+        ('root (dry run, expected - ignore)', ''),
+        ('deploy', 'deploy'),
+        ('svc$', 'svc$'),
+        ('_svc.name-1', '_svc.name-1'),
+        ('a' * 32, 'a' * 32),
+        ('a' * 32 + '$', 'a' * 32 + '$'),
+        ('a' * 33, ''),
+        ('Root', ''),
+        (' deploy', ''),
+        ('deploy\n', ''),
+    ],
+)
+def test_account_names(source, username, expected):
+    row: dict[str, object] = {}
+    result: dict[str, object] = {
+        'status': 'error',
+        'status_code': 403,
+        'gate': 'risk',
+        'data': row,
+    }
+    arguments = {'username': 'fallback'} if source != 'argument' else {}
+    target = arguments if source == 'argument' else row if source == 'row' else result
+    target['username'] = username
+    signal = local_signal._from_result(result, arguments, 'execute_command')
+    assert signal is not None
+    assert signal.account == expected
+    assert (' as ' in signal.text()[1]) is bool(expected)
+
+
+@pytest.mark.parametrize('tool_name', ['execute_command', 'work_session_get'])
+def test_server_account_wins_over_argument(tool_name):
+    signal = local_signal._from_result(
+        {'status': 'pending_approval', 'data': {'username': 'deploy'}},
+        {'username': 'root'},
+        tool_name,
+    )
+    assert signal is not None
+    assert signal.account == 'deploy'
 
 
 @pytest.mark.parametrize(
@@ -528,13 +612,7 @@ def test_no_opt_out_or_tty_gate():
         'server.py': {'run'},
     }
     approved_file_env_reads = {
-        'utils/local_signal.py': {
-            'CI',
-            'DISPLAY',
-            'WAYLAND_DISPLAY',
-            'DBUS_SESSION_BUS_ADDRESS',
-            'SystemRoot',
-        },
+        'utils/local_signal.py': set(),
         'utils/notification_context.py': set(),
         'utils/common.py': {
             'ALPACON_MCP_TRANSPORT',
@@ -610,15 +688,7 @@ def test_no_opt_out_or_tty_gate():
                 ):
                     assert isinstance(node.left, ast.Constant)
                     env_reads.add(node.left.value)
-    assert env_reads == {
-        'CI',
-        'DISPLAY',
-        'WAYLAND_DISPLAY',
-        'DBUS_SESSION_BUS_ADDRESS',
-        'SSH_CONNECTION',
-        'SSH_TTY',
-        'SystemRoot',
-    }
+    assert env_reads == set()
 
 
 @pytest.mark.parametrize('platform', ['darwin', 'linux', 'win32'])
@@ -1395,7 +1465,7 @@ def test_server_fields_are_cleaned():
     )
     assert signal is not None
     assert signal.server == 'web'
-    assert signal.account == 'root'
+    assert signal.account == ''
     assert signal.session == 's1'
     assert signal.console_url == ''
 
@@ -1699,7 +1769,7 @@ def test_work_session_signal_uses_id_instead_of_title():
 def test_server_and_account_display_limits():
     signal = local_signal.Signal('denied', server='雪' * 65, account='a' * 65)
     assert signal.server == '雪' * 64
-    assert signal.account == 'a' * 64
+    assert signal.account == ''
     assert len(signal.text()[1]) <= 256
     assert (
         local_signal.Signal(
@@ -1728,7 +1798,7 @@ def test_all_display_values_strip_unicode_controls(character):
             'denied',
             argv0='echo',
             server='web',
-            account='root',
+            account='',
             gate='risk',
             session='s1',
         ).text()
@@ -1778,26 +1848,45 @@ def test_linux_notifier_ignores_path(monkeypatch, tmp_path):
         assert run.call_args.args[0][0] in ('/usr/bin/notify-send', '/bin/notify-send')
 
 
-@pytest.mark.parametrize(
-    'system_root, expected',
-    [
-        (None, r'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe'),
-        ('', r'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe'),
-        ('.', r'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe'),
-        (r'C:Windows', r'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe'),
-        (r'\Windows', r'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe'),
-        (r'D:\Windows', r'D:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe'),
-    ],
-)
-def test_windows_notifier_uses_system_root(monkeypatch, system_root, expected):
+@pytest.mark.parametrize('system_root', [None, '', '.', r'C:\Windows', r'E:\Other'])
+def test_windows_notifier_uses_os_system_directory(
+    monkeypatch, system_root, signal_environment
+):
     if system_root is not None:
         monkeypatch.setenv('SystemRoot', system_root)
+
+    def get_system_directory(buffer, size):
+        assert size == len(buffer)
+        buffer.value = r'D:\Windows\System32'
+        return len(buffer.value)
+
+    kernel = signal_environment
+    kernel.GetSystemDirectoryW.side_effect = get_system_directory
     monkeypatch.setattr('utils.local_signal.sys.platform', 'win32')
     monkeypatch.setattr(local_signal, 'is_headless', lambda: False)
     run = Mock()
     monkeypatch.setattr('utils.local_signal.subprocess.run', run)
     platform_notify('title', 'body')
-    assert run.call_args.args[0][0] == expected
+    kernel.GetSystemDirectoryW.assert_called_once()
+    assert run.call_args.args[0][0] == (
+        r'D:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe'
+    )
+
+
+@pytest.mark.parametrize('length', [0, 32768, 32769])
+def test_windows_system_directory_failure_is_silent(
+    monkeypatch, length, capsys, signal_environment
+):
+    kernel = signal_environment
+    kernel.GetSystemDirectoryW.side_effect = None
+    kernel.GetSystemDirectoryW.return_value = length
+    monkeypatch.setattr('utils.local_signal.sys.platform', 'win32')
+    monkeypatch.setattr(local_signal, 'is_headless', lambda: False)
+    run = Mock()
+    monkeypatch.setattr('utils.local_signal.subprocess.run', run)
+    platform_notify('title', 'body')
+    run.assert_not_called()
+    assert capsys.readouterr() == ('', '')
 
 
 @pytest.mark.asyncio
