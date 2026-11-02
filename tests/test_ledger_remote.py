@@ -818,7 +818,6 @@ def remote(mock_http_client, remote_env):
         patch('tools.ledger_tools.ledger_authorizer', stdio_cache),
         patch('utils.decorators._get_jwt_token', return_value='session-jwt'),
         patch('utils.decorators.get_token_workspaces', return_value=claims),
-        patch('utils.decorators._check_mfa_requirement', AsyncMock()),
     ):
         yield mock_http_client
 

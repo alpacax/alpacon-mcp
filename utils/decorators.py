@@ -7,16 +7,15 @@ import logging
 import re
 from collections.abc import Awaitable, Callable, Mapping
 from functools import wraps
-from typing import Annotated, Protocol
+from typing import Annotated, Protocol, cast
 
 from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
-from utils import request_signal, token_manager
+from utils import mfa_step_up, token_manager
 from utils.auth import (
     WorkspaceClaim,
-    decode_claims_unverified,
     get_token_workspaces,
     match_workspace,
 )
@@ -36,15 +35,10 @@ from utils.error_handler import (
     validate_uuid_format,
     validate_workspace_format,
 )
-from utils.http_client import AlpaconHTTPClient
+from utils.http_client import AlpaconHTTPClient, http_client
 from utils.logger import describe_for_log, get_logger
 from utils.recovery_hints import enrich_error_response
-from utils.security_settings import (
-    check_mfa_completed,
-    get_action_for_tool,
-    security_cache,
-)
-from utils.types import ToolErrorResponse, ToolResult
+from utils.types import JsonValue, ToolErrorResponse, ToolResult
 from utils.workspace_resolver import resolve_workspace
 
 logger = get_logger('decorators')
@@ -283,45 +277,6 @@ def _resolve_region_local(workspace: str | None) -> tuple[str | None, str | None
     return None, 'No regions configured. Please run setup first.'
 
 
-async def _check_mfa_requirement(
-    tool_name: str, jwt_token: str, workspace: str
-) -> None:
-    """Signal and raise UpstreamAuthError when the tool's MFA action is required but not
-    completed; any other failure is ignored (fail-open)."""
-    action = get_action_for_tool(tool_name)
-    if not action:
-        return
-
-    try:
-        settings = await security_cache.get_settings(jwt_token, workspace)
-        if not settings or not settings.is_action_mfa_required(action):
-            return
-
-        claims = decode_claims_unverified(jwt_token)
-        if not claims:
-            return
-
-        if check_mfa_completed(claims, settings):
-            return
-
-        # MFA required but not completed
-        request_signal.signal_upstream_auth_error(
-            {'mfa_required': True, 'source': action},
-        )
-        logger.info(
-            'MFA pre-check: %s requires MFA for workspace %s, raising UpstreamAuthError',
-            action,
-            workspace,
-        )
-        raise UpstreamAuthError(mfa_required=True, source=action)
-    except UpstreamAuthError:
-        raise
-    except Exception as e:
-        # Fail-open: if pre-check fails, let the API call proceed.
-        # The upstream API's own MFA check will catch it as a fallback.
-        logger.debug('MFA pre-check failed (non-fatal): %s', e)
-
-
 def _validate_path_identifier(field: str, value: object) -> ToolErrorResponse | None:
     # A non-str never matches the pattern, but the f-string that builds the
     # endpoint stringifies it anyway, so its separators reach the path.
@@ -414,7 +369,7 @@ def with_token_validation[**P, R](
     catch-all is dropped from the published signature, which also offers region as
     ap1, us1 or None. requires_workspace=False (list_workspaces only) is for a tool
     that answers before a workspace is known; it skips workspace checks, region
-    resolution, JWT authorization, the MFA pre-check and stdio token injection, and
+    resolution, JWT authorization and stdio token injection, and
     reads an omitted region as all regions (a given one is still validated), so a tool
     reaching any workspace-scoped resource must not set it. ALPACON_MCP_AUTH_ENABLED=true
     uses the JWT and never token.json; otherwise token.json and never JWT."""
@@ -537,17 +492,14 @@ def with_token_validation[**P, R](
 
         if auth_enabled:
             # Streamable-HTTP mode — JWT auth only
-            if requires_workspace:
-                if not _validate_jwt_workspace(jwt_workspaces, region, workspace):
-                    return error_response(
-                        f'Workspace {workspace}.{region} not authorized by JWT',
-                        region=region,
-                        workspace=workspace,
-                    )
-
-                # Signals request_signal and raises when MFA is required but
-                # not done; the ASGI middleware reads the signal for HTTP 401.
-                await _check_mfa_requirement(func.__name__, jwt_token, workspace)
+            if requires_workspace and not _validate_jwt_workspace(
+                jwt_workspaces, region, workspace
+            ):
+                return error_response(
+                    f'Workspace {workspace}.{region} not authorized by JWT',
+                    region=region,
+                    workspace=workspace,
+                )
 
             extra_kwargs['token'] = jwt_token
         elif requires_workspace:
@@ -578,15 +530,20 @@ def with_token_validation[**P, R](
 
 
 def with_error_handling[**P, R](
-    func: Callable[P, Awaitable[R]],
+    func: Callable[P, Awaitable[R]], *, read_only: bool = False
 ) -> Callable[P, Awaitable[ToolResult[R]]]:
-    """Turn an unhandled exception into an error response with recovery hints;
-    UpstreamAuthError propagates. Marks the wrapper with ERROR_HANDLING_MARKER."""
+    """Turn an unhandled exception into an error response with recovery hints. UpstreamAuthError
+    propagates; an MFA step-up becomes the mfa_required result at the outermost call only,
+    and a read_only tool always asks for the whole call to be retried."""
+    func_name = func.__name__
+    sig = inspect.signature(func)
 
-    @wraps(func)
-    async def wrapper(*args: P.args, **kwargs: P.kwargs) -> ToolResult[R]:
-        func_name = func.__name__
+    def call_arguments(*args: object, **kwargs: object) -> dict[str, object]:
+        bound_args = sig.bind(*args, **kwargs)
+        bound_args.apply_defaults()
+        return dict(bound_args.arguments)
 
+    async def answer(*args: P.args, **kwargs: P.kwargs) -> ToolResult[R]:
         try:
             result = await func(*args, **kwargs)
 
@@ -595,18 +552,13 @@ def with_error_handling[**P, R](
 
             return result
 
-        except UpstreamAuthError:
-            # Only ends the tool call: SDK 2.x keeps handler exceptions off the
-            # ASGI boundary, and request_signal carries the re-auth signal there.
+        except (UpstreamAuthError, mfa_step_up.MfaStepUpRequired):
+            # The wrapper answers MfaStepUpRequired; UpstreamAuthError only ends the call,
+            # and request_signal carries its re-auth signal to the ASGI boundary.
             raise
 
         except Exception as e:
-            # Get workspace and region for context
-            sig = inspect.signature(func)
-            bound_args = sig.bind(*args, **kwargs)
-            bound_args.apply_defaults()
-            arguments = bound_args.arguments
-
+            arguments = call_arguments(*args, **kwargs)
             workspace = arguments.get('workspace', 'unknown')
             region = arguments.get('region', 'unknown')
 
@@ -618,6 +570,39 @@ def with_error_handling[**P, R](
                 f'Failed in {func_name}: {str(e)}', workspace=workspace, region=region
             )
             return enrich_error_response(resp, tool_name=func_name)
+
+    @wraps(func)
+    async def wrapper(*args: P.args, **kwargs: P.kwargs) -> ToolResult[R]:
+        raised = False
+        result: ToolResult[R] | None = None
+        with mfa_step_up.tool_call() as call:
+            try:
+                result = await answer(*args, **kwargs)
+            except mfa_step_up.MfaStepUpRequired:
+                if call is None:
+                    raise
+                raised = True
+        if call is None or not call.required:
+            return cast(ToolResult[R], result)
+        # The holder is released above, so the link fetch is not refused by it.
+        logger.info('%s needs an MFA step-up (source=%s)', func_name, call.source)
+        token = kwargs.get('token')
+        arguments = call_arguments(*args, **kwargs)
+        retry: mfa_step_up.Retry
+        if read_only or (raised and not call.sent):
+            retry = 'whole'
+        else:
+            retry = 'sent' if raised else 'partial'
+        return await mfa_step_up.step_up_result(
+            http_client,
+            workspace=str(arguments.get('workspace', 'unknown')),
+            region=str(arguments.get('region', 'unknown')),
+            token=token if isinstance(token, str) else None,
+            source=call.source,
+            retry=retry,
+            already_sent=call.sent,
+            partial_result=cast(JsonValue, result),
+        )
 
     setattr(wrapper, ERROR_HANDLING_MARKER, True)
     return wrapper
@@ -727,7 +712,9 @@ def mcp_tool_handler(
     def decorator[**P, R](
         func: Callable[P, Awaitable[R]],
     ) -> Callable[P, Awaitable[ToolResult[R]]]:
-        handled = with_error_handling(func)
+        handled = with_error_handling(
+            func, read_only=bool(annotations and annotations.read_only_hint)
+        )
         validated = with_token_validation(
             handled, requires_workspace=requires_workspace
         )

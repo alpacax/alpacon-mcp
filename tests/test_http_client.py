@@ -18,9 +18,10 @@ from mcp.types import (
 )
 
 from tests.conftest import HTTP_VERBS
-from utils import request_signal
+from utils import mfa_step_up, request_signal
 from utils.error_handler import UpstreamAuthError
 from utils.http_client import AlpaconHTTPClient, http_client
+from utils.mfa_step_up import MfaStepUpRequired
 from utils.recovery_hints import _detect_error_domain, enrich_error_response
 
 SERVER_ID = '550e8400-e29b-41d4-a716-446655440123'
@@ -588,20 +589,21 @@ class TestHandleUpstream401:
         assert 'response' not in result
 
     @patch.dict('os.environ', {'ALPACON_MCP_AUTH_ENABLED': 'true'})
-    def test_raises_and_signals_in_remote_mode(self):
-        """Raises UpstreamAuthError and records the request signal in remote mode."""
+    def test_step_up_raises_without_touching_the_request_signal_in_remote_mode(self):
+        """A step-up answers in the tool result, so no entry may reach the middleware."""
         token = 'header.payload.signature'  # Must pass _is_jwt() check
         exc = self._make_401_exc({'code': 'auth_mfa_required', 'source': 'websh'})
         holder = request_signal.begin_request()
 
-        with pytest.raises(UpstreamAuthError) as exc_info:
-            AlpaconHTTPClient._handle_upstream_401(exc, token=token)
+        with mfa_step_up.tool_call() as call:
+            assert call is not None
+            with pytest.raises(MfaStepUpRequired) as exc_info:
+                AlpaconHTTPClient._handle_upstream_401(exc, token=token)
 
-        assert exc_info.value.mfa_required is True
-        assert exc_info.value.source == 'websh'
-
-        assert holder['mfa_required'] is True
-        assert holder['source'] == 'websh'
+            assert exc_info.value.source == 'websh'
+            assert not isinstance(exc_info.value, UpstreamAuthError)
+            assert holder == {}
+            assert (call.required, call.source) == (True, 'websh')
 
     @patch.dict('os.environ', {'ALPACON_MCP_AUTH_ENABLED': 'true'})
     def test_sign_in_mfa_missing_signals_mfa_in_remote_mode(self):
