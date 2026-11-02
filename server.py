@@ -14,7 +14,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from utils.auth0_env import get_auth0_env
-from utils.client_surfaces import log_client_surfaces
+from utils.client_surfaces import bind_tool_call_round
 from utils.common import MCP_VERSION, is_auth_enabled, serves_ledger_tools
 from utils.declared_agent import capture_declared_agent, use_environment_fallback
 from utils.health import get_health_info
@@ -24,7 +24,7 @@ from utils.routes import RouteRegistry
 
 logger = get_logger('server')
 
-SERVER_MIDDLEWARE = [capture_declared_agent, log_client_surfaces]
+SERVER_MIDDLEWARE = [capture_declared_agent, bind_tool_call_round]
 
 TRANSPORT_STDIO: Final = 'stdio'
 TRANSPORT_STREAMABLE_HTTP: Final = 'streamable-http'
@@ -147,9 +147,14 @@ def _create_mcp_server() -> MCPServer[None]:
     if auth_enabled:
         # Local: only remote/JWT mode reaches this branch, so stdio startup does not pay the Auth0 verifier's import cost (30 ms, 50 modules).
         from mcp.server.auth.settings import AuthSettings
+        from mcp.server.request_state import (
+            AESGCMRequestStateCodec,
+            RequestStateSecurity,
+        )
         from pydantic import AnyHttpUrl
 
         from utils.auth import Auth0TokenVerifier
+        from utils.oauth import request_state_key
 
         auth0_domain = get_auth0_env('AUTH0_ALPACON_DOMAIN', '')
         resource_url = os.getenv('ALPACON_MCP_RESOURCE_URL', 'https://mcp.alpacon.io')
@@ -201,6 +206,9 @@ def _create_mcp_server() -> MCPServer[None]:
             version=MCP_VERSION,
             auth=auth_settings,
             token_verifier=token_verifier,
+            request_state_security=RequestStateSecurity(
+                codec=AESGCMRequestStateCodec([request_state_key()])
+            ),
             lifespan=app_lifespan,
             middleware=SERVER_MIDDLEWARE,
         )

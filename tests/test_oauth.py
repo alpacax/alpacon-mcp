@@ -14,6 +14,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from urllib.parse import parse_qs, urlparse
 
 import pytest
+from mcp.server.request_state import AESGCMRequestStateCodec, InvalidRequestState
 from starlette.applications import Starlette
 from starlette.routing import Route
 from starlette.testclient import TestClient
@@ -46,6 +47,7 @@ from utils.oauth import (
     _unseal_refresh_token,
     _verify_state,
     register_oauth_routes,
+    request_state_key,
 )
 
 # Test configuration constants
@@ -2892,3 +2894,40 @@ class TestClientValuesInLogs:
         assert response.json()['error'] == 'invalid_client'
         _assert_single_line_records(caplog)
         assert 'other-client\\r\\n2026-09-30' in caplog.text
+
+
+def _replica() -> AESGCMRequestStateCodec:
+    return AESGCMRequestStateCodec([request_state_key()])
+
+
+class TestRequestStateKey:
+    """A tools/call requestState opens on whichever replica the retry reaches."""
+
+    def test_state_sealed_by_one_replica_opens_on_another(self, monkeypatch):
+        monkeypatch.setenv('ALPACON_MCP_GRANT_SECRET', '11' * 32)
+        sealed = _replica().seal(b'{"asked":1}')
+
+        opened = _replica().unseal(sealed)
+
+        assert opened == b'{"asked":1}'
+
+    def test_state_sealed_under_another_grant_secret_is_refused(self, monkeypatch):
+        monkeypatch.setenv('ALPACON_MCP_GRANT_SECRET', '11' * 32)
+        sealed = _replica().seal(b'{"asked":1}')
+        monkeypatch.setenv('ALPACON_MCP_GRANT_SECRET', '22' * 32)
+
+        with pytest.raises(InvalidRequestState):
+            _replica().unseal(sealed)
+
+    def test_without_a_grant_secret_state_opens_only_where_it_was_sealed(
+        self, monkeypatch
+    ):
+        monkeypatch.delenv('ALPACON_MCP_GRANT_SECRET', raising=False)
+        monkeypatch.delenv('AUTH0_ALPACON_LOGIN_CLIENT_SECRET', raising=False)
+        monkeypatch.delenv('AUTH0_CLIENT_SECRET', raising=False)
+        codec = _replica()
+        sealed = codec.seal(b'{"asked":1}')
+
+        with pytest.raises(InvalidRequestState):
+            _replica().unseal(sealed)
+        assert codec.unseal(sealed) == b'{"asked":1}'
